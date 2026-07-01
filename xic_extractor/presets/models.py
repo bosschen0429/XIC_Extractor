@@ -7,7 +7,7 @@ from typing import Literal
 PresetStrategy = Literal["neutral_loss", "product_ion", "delta_mass"]
 CombineMode = Literal["single", "union", "intersection"]
 
-SUPPORTED_STRATEGIES = frozenset({"neutral_loss"})
+SUPPORTED_STRATEGIES = frozenset({"neutral_loss", "delta_mass"})
 SUPPORTED_COMBINE_MODES = frozenset({"single", "union", "intersection"})
 
 
@@ -19,7 +19,8 @@ class PresetError(ValueError):
 class PresetTag:
     strategy: str
     name: str
-    value: float
+    value: float | None = None
+    pattern_id: str | None = None
 
 
 @dataclass(frozen=True)
