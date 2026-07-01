@@ -138,6 +138,7 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
             f"preset {preset.name!r} has no 'delta_mass' tag; "
             "use apply_to_discovery() for neutral-loss presets"
         )
+    _validate_delta_mass_tag_shape(preset)
 
     overrides = dict(preset.discovery_overrides)
     method_label = overrides.get("method_label")
@@ -259,6 +260,30 @@ def apply_to_alignment(preset: Preset) -> tuple[AlignmentConfig, dict[str, objec
         ),
         "backfill_expansion_min_shape_r": backfill_expansion_min_shape_r,
     }
+
+
+def _validate_delta_mass_tag_shape(preset: Preset) -> None:
+    """Defensively re-check the composite delta_mass tag shape.
+
+    ``load_preset()`` already enforces this via the loader's
+    ``_validate_composite_delta_mass_tags`` for any preset parsed from TOML.
+    This mirrors that rule so ``apply_to_delta_mass_discovery()`` is also
+    safe when called on a ``Preset`` constructed directly (bypassing the
+    loader), instead of silently trusting an unvalidated tag shape.
+    """
+    delta_mass_tags = [tag for tag in preset.tags if tag.strategy == "delta_mass"]
+    neutral_loss_tags = [tag for tag in preset.tags if tag.strategy == "neutral_loss"]
+
+    if len(delta_mass_tags) > 1:
+        raise PresetError(
+            f"preset {preset.name!r} has more than one 'delta_mass' tag; "
+            "a delta_mass preset supports exactly one 'delta_mass' tag"
+        )
+    if neutral_loss_tags and preset.combine_mode != "intersection":
+        raise PresetError(
+            f"preset {preset.name!r} combines 'delta_mass' with 'neutral_loss' "
+            'tags and requires combine_mode = "intersection"'
+        )
 
 
 def _neutral_loss_value(tag: PresetTag) -> float:

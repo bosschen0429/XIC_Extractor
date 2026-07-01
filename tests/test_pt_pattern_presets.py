@@ -19,6 +19,7 @@ import pytest
 
 from xic_extractor.presets import PresetError, list_presets, load_preset
 from xic_extractor.presets.apply import apply_to_delta_mass_discovery
+from xic_extractor.presets.models import Preset, PresetTag
 
 
 def test_pt_pattern_preset_is_listed_as_a_builtin_preset() -> None:
@@ -53,3 +54,47 @@ def test_pt_pattern_preset_discovery_overrides_carries_raw_method_label() -> Non
 def test_missing_preset_error_lists_pt_pattern_presets_as_available() -> None:
     with pytest.raises(PresetError, match="pt_pattern"):
         load_preset("not-a-real-preset")
+
+
+def test_apply_to_delta_mass_discovery_rejects_multiple_delta_mass_tags() -> None:
+    """Reproduces the reviewer's finding: a directly-constructed ``Preset``
+    bypasses loader-level composite-shape validation, so
+    ``apply_to_delta_mass_discovery()`` must reject this shape itself.
+    """
+    preset = Preset(
+        name="Two delta_mass tags",
+        description="Invalid: two delta_mass tags",
+        tags=(
+            PresetTag(strategy="delta_mass", name="pt_a", pattern_id="pt"),
+            PresetTag(strategy="delta_mass", name="pt_b", pattern_id="pt"),
+        ),
+        combine_mode="union",
+        discovery_overrides={"method_label": "pt_pattern"},
+        alignment_overrides={},
+        source="test",
+    )
+
+    with pytest.raises(PresetError, match="more than one 'delta_mass' tag"):
+        apply_to_delta_mass_discovery(preset)
+
+
+def test_apply_to_delta_mass_discovery_rejects_stray_neutral_loss_tag() -> None:
+    """A stray neutral_loss tag alongside delta_mass must require
+    combine_mode == "intersection", mirroring the loader's composite-shape
+    rule, even when the ``Preset`` was constructed directly.
+    """
+    preset = Preset(
+        name="Delta mass plus stray neutral loss",
+        description="Invalid: neutral_loss tag with non-intersection combine_mode",
+        tags=(
+            PresetTag(strategy="delta_mass", name="pt_a", pattern_id="pt"),
+            PresetTag(strategy="neutral_loss", name="DNA_dR", value=116.0474),
+        ),
+        combine_mode="union",
+        discovery_overrides={"method_label": "pt_pattern"},
+        alignment_overrides={},
+        source="test",
+    )
+
+    with pytest.raises(PresetError, match='combine_mode = "intersection"'):
+        apply_to_delta_mass_discovery(preset)
