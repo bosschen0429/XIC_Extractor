@@ -39,6 +39,8 @@ self-explanatory from context.
 | --- | --- |
 | **XIC** | Extracted-ion chromatogram — the signal intensity over time for a specific m/z value extracted from a full-scan LC-MS run. |
 | **CID-NL** | Collision-Induced Dissociation Neutral Loss — a fragmentation pattern used as seed evidence for untargeted feature discovery. |
+| **Delta Mass** | MS1 delta-pattern Discovery strategy family. The first planned built-in pattern is `pt` / `Pt pattern`; `pt_pattern` is a method or preset label, not a separate primitive strategy. |
+| **Pt pattern** | First planned built-in `delta_mass` pattern for Pt-related MS1 feature discovery. It creates candidates and review evidence, not direct Matrix write authority. |
 | **HCD** | Higher-energy Collision Dissociation — a fragmentation technique whose product-ion audit serves as a review surface (not an automatic gate). |
 | **DDA** | Data-Dependent Acquisition — MS2 scan trigger mode where fragmentation events depend on MS1 signal intensity. |
 | **ISTD** | Internal Standard — a spiked reference compound used for RT calibration and paired area ratios in targeted workflows. |

@@ -37,6 +37,13 @@ Backfill values. Production write authority must come from a
 remain non-authority. Old plans that discuss broad promotion, sidecar-driven
 promotion, or productization gates are historical unless explicitly reactivated.
 
+## Draft Implementation Baselines
+
+- `2026-07-01-pt-pattern-discovery-baseline.md` is the current draft baseline
+  for Pt pattern discovery. It is not implementation-ready until the current
+  code hook points, schemas, config keys, call-cost model, and Pt sample
+  validation gates are pinned.
+
 ## Rule
 
 Do not treat old implementation checklists as open work. First check the control

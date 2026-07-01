@@ -22,6 +22,10 @@ they are not product authority by themselves.
   Backfill activation when sample universe, expected-diff packet, and authority
   scope match. It does not create GUI behavior, broaden Backfill or CID-NL
   authority, or make candidate-only evidence publishable.
+- Discovery method or preset labels can wrap strategy families for usability.
+  For example, `pt_pattern` means `delta_mass(pattern_id=pt)`. The preset layer
+  must not turn that label into a separate primitive strategy or ProductWriter
+  authority.
 
 ## Surfaces
 

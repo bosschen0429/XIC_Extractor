@@ -8,6 +8,10 @@ or candidate tables into the matrix.
 
 - Backfill acceptance means accepted quantification values, not automatic truth
   claims about every candidate feature.
+- Backfill is evidence-based recovery for accepted candidates or aligned groups
+  after Discovery and Alignment have established the relevant context. It is not
+  blind imputation, not a way to create first Discovery hits, and not counted
+  detection.
 - Any broader Backfill publication requires an explicit public authority
   contract, expected-diff evidence, and focused output tests.
 - Broad auto-write from the full candidate universe is parked. The

@@ -10,6 +10,10 @@ path.
 - Discovery produces candidate and review surfaces, not final product authority.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
+- CID-NL, HCD-PI, Delta Mass, and future configured methods are Discovery
+  methods when they are used to find features matching method-specific evidence
+  settings. They produce feature candidates plus typed evidence, not
+  cross-sample identity or matrix writes by themselves.
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
   detail) and `discovery_review.csv` (compact human review).
 - Discovery `feature_family_id` remains a public output header and dataclass
@@ -47,6 +51,46 @@ path.
   surfaces. Do not judge the lane by exact equality to old upstream feature
   tables when the accepted contract is matrix hygiene plus targeted benchmark
   recovery.
+
+## Untargeted Product Flow
+
+The intended product flow is:
+
+1. Discovery finds sample-local feature candidates that satisfy configured
+   method evidence such as CID-NL, HCD-PI, Delta Mass, or explicit composites.
+2. Alignment resolves the cross-sample owner or group problem for those
+   candidates using evidence. A Discovery hit is a candidate anchor, not
+   cross-sample truth by itself.
+3. Backfill revisits accepted candidates or aligned groups to recover cells
+   that were not detected for normal signal, threshold, or workflow reasons.
+   Backfill still requires provenance-valid evidence; it is not blind
+   imputation and it does not create counted Discovery detections.
+4. Product matrices are downstream-analysis surfaces only after the relevant
+   projection, Backfill/ProductWriter authority, expected-diff, and schema
+   contracts are satisfied.
+
+## Evidence Provider Naming
+
+Discovery strategy families name reusable evidence-provider classes. Current
+and planned families include `neutral_loss` for CID-NL-style methods and
+`delta_mass` for MS1 delta-pattern methods.
+
+Concrete patterns or tags live under a family. `DNA_dR` is a neutral-loss tag;
+`pt` is the first built-in delta-mass pattern. `Pt pattern` is the human-facing
+method name, and `pt_pattern` may be used as a method or preset label for
+`delta_mass(pattern_id=pt)`. Do not add `pt_pattern` as a separate primitive
+Discovery strategy unless a successor design intentionally replaces the
+strategy-family model.
+
+Composite methods combine providers by explicit set operations, not by creating
+new primitive strategies. The planned first composite is
+`pt_pattern + cid_nl(dR)`, defined as `delta_mass(pattern_id=pt)` intersected
+with existing `neutral_loss(tag=DNA_dR)` evidence on the same base peak. Union
+or OR modes are out of scope until separately designed.
+
+These providers create candidates and typed review evidence. They must not
+directly grant ProductWriter authority, Backfill promotion, counted detection,
+or Matrix changes.
 
 ## Surfaces
 
