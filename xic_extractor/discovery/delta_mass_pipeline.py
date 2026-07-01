@@ -14,6 +14,7 @@ this module implements.
 
 from __future__ import annotations
 
+import bisect
 import csv
 import math
 from dataclasses import dataclass, replace
@@ -35,6 +36,7 @@ from xic_extractor.presets import apply_to_delta_mass_discovery, load_preset
 
 if TYPE_CHECKING:
     from xic_extractor.diagnostics.timing import TimingRecorder
+    from xic_extractor.discovery.detected_features import DetectedFeature
 
 _ALLOWED_CID_NL_TAG = "DNA_dR"
 _ALLOWED_CID_NL_STATES = frozenset(
@@ -47,6 +49,8 @@ _CID_NL_REQUIRED_COLUMNS = (
 )
 _CID_NL_MZ_TOLERANCE_PPM = 20.0
 _CID_NL_RT_TOLERANCE_SEC = 30.0
+_SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
+_SCAN_PROXY_MARKER = "|scan_proxy|"
 
 
 @dataclass(frozen=True)
@@ -118,10 +122,18 @@ def run_pt_pattern_discovery(
     settings = apply_to_delta_mass_discovery(preset)
 
     features = load_detected_features_csv(detected_features_csv)
-    candidates = match_delta_mass_pattern(features, settings=settings)
-
     if is_composite:
         cid_nl_rows = _load_cid_nl_candidate_rows(cid_nl_candidates_csv)  # type: ignore[arg-type]
+        base_feature_ids = _cid_nl_seed_base_feature_ids(features, cid_nl_rows)
+        candidates = (
+            match_delta_mass_pattern(
+                features,
+                settings=settings,
+                base_feature_ids=base_feature_ids,
+            )
+            if base_feature_ids
+            else ()
+        )
         source_feature_row_id_by_feature_id = {
             feature.feature_id: feature.source_feature_row_id
             for feature in features
@@ -131,6 +143,8 @@ def run_pt_pattern_discovery(
             cid_nl_rows=cid_nl_rows,
             source_feature_row_id_by_feature_id=source_feature_row_id_by_feature_id,
         )
+    else:
+        candidates = match_delta_mass_pattern(features, settings=settings)
 
     if timing_recorder is not None:
         timing_recorder.record(
@@ -207,6 +221,97 @@ def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
             continue
         parsed.append(_parse_cid_nl_row(row, path=path, row_index=row_index))
     return tuple(parsed)
+
+
+def _cid_nl_seed_base_feature_ids(
+    features: tuple["DetectedFeature", ...],
+    cid_nl_rows: tuple[_CidNlCandidateRow, ...],
+) -> frozenset[str]:
+    """Return detected-feature IDs that CID-NL(dR) can seed as Pt bases.
+
+    Composite discovery should not run Pt matching over every feature and then
+    intersect after the fact. It first finds base features supported by eligible
+    CID-NL rows, then lets the Pt matcher look for +1/+2/+4 only from those
+    base anchors.
+    """
+
+    eligible_rows = _eligible_cid_nl_rows(cid_nl_rows)
+    if not eligible_rows:
+        return frozenset()
+
+    base_features = [feature for feature in features if _is_seed_base_feature(feature)]
+    identity_index: dict[tuple[str, str], set[str]] = {}
+    sample_has_source_identity: dict[str, bool] = {}
+    features_by_sample: dict[str, list["DetectedFeature"]] = {}
+    for feature in base_features:
+        features_by_sample.setdefault(feature.sample_stem, []).append(feature)
+        if feature.source_feature_row_id:
+            sample_has_source_identity[feature.sample_stem] = True
+            identity_index.setdefault(
+                (feature.sample_stem, feature.source_feature_row_id),
+                set(),
+            ).add(feature.feature_id)
+        identity_index.setdefault((feature.sample_stem, feature.feature_id), set()).add(
+            feature.feature_id
+        )
+
+    sorted_by_sample: dict[str, tuple[list[float], list["DetectedFeature"]]] = {}
+    for sample_stem, sample_features in features_by_sample.items():
+        ordered = sorted(sample_features, key=lambda item: item.mz)
+        sorted_by_sample[sample_stem] = ([feature.mz for feature in ordered], ordered)
+
+    seed_ids: set[str] = set()
+    for row in eligible_rows:
+        identity_matches = identity_index.get((row.sample_stem, row.ms1_feature_row_id))
+        if identity_matches:
+            seed_ids.update(identity_matches)
+            continue
+        if sample_has_source_identity.get(row.sample_stem, False):
+            continue
+        seed_ids.update(_fallback_seed_base_feature_ids(row, sorted_by_sample))
+
+    return frozenset(seed_ids)
+
+
+def _eligible_cid_nl_rows(
+    cid_nl_rows: tuple[_CidNlCandidateRow, ...],
+) -> tuple[_CidNlCandidateRow, ...]:
+    return tuple(
+        row
+        for row in cid_nl_rows
+        if row.neutral_loss_tag == _ALLOWED_CID_NL_TAG
+        and row.discovery_candidate_state in _ALLOWED_CID_NL_STATES
+    )
+
+
+def _is_seed_base_feature(feature: "DetectedFeature") -> bool:
+    if feature.source != _SCAN_PROXY_SOURCE_LABEL:
+        return True
+    return _SCAN_PROXY_MARKER in feature.feature_id and feature.feature_id.endswith(
+        "|base"
+    )
+
+
+def _fallback_seed_base_feature_ids(
+    row: _CidNlCandidateRow,
+    sorted_by_sample: dict[str, tuple[list[float], list["DetectedFeature"]]],
+) -> set[str]:
+    if row.precursor_mz is None or row.ms1_apex_rt is None:
+        return set()
+    sample_entry = sorted_by_sample.get(row.sample_stem)
+    if sample_entry is None:
+        return set()
+
+    sorted_mzs, sample_features = sample_entry
+    window_da = row.precursor_mz * _CID_NL_MZ_TOLERANCE_PPM * 1e-6
+    start_index = bisect.bisect_left(sorted_mzs, row.precursor_mz - window_da)
+    end_index = bisect.bisect_right(sorted_mzs, row.precursor_mz + window_da)
+    seed_ids: set[str] = set()
+    for feature in sample_features[start_index:end_index]:
+        rt_delta_sec = abs(feature.rt_apex_min - row.ms1_apex_rt) * 60.0
+        if rt_delta_sec <= _CID_NL_RT_TOLERANCE_SEC:
+            seed_ids.add(feature.feature_id)
+    return seed_ids
 
 
 def _parse_cid_nl_row_state(
@@ -337,12 +442,7 @@ def _apply_cid_nl_composite_join(
     composite output entirely (plan line 839).
     """
 
-    eligible_rows = [
-        row
-        for row in cid_nl_rows
-        if row.neutral_loss_tag == _ALLOWED_CID_NL_TAG
-        and row.discovery_candidate_state in _ALLOWED_CID_NL_STATES
-    ]
+    eligible_rows = _eligible_cid_nl_rows(cid_nl_rows)
 
     joined: list[PtPatternCandidate] = []
     for candidate in candidates:
@@ -355,18 +455,18 @@ def _apply_cid_nl_composite_join(
 
         match: _CidNlCandidateRow | None = None
         join_mode = ""
+        identity_values = {candidate.base_feature_id}
+        identity_comparable = bool(base_source_feature_row_id)
         if base_source_feature_row_id:
-            identity_matches = [
-                row
-                for row in sample_rows
-                if row.ms1_feature_row_id
-                in {base_source_feature_row_id, candidate.base_feature_id}
-            ]
-            if identity_matches:
-                match = _best_identity_match(candidate, identity_matches)
-                join_mode = "same_feature_id"
+            identity_values.add(base_source_feature_row_id)
+        identity_matches = [
+            row for row in sample_rows if row.ms1_feature_row_id in identity_values
+        ]
+        if identity_matches:
+            match = _best_identity_match(candidate, identity_matches)
+            join_mode = "same_feature_id"
 
-        if match is None:
+        if match is None and not identity_comparable:
             fallback_matches = [
                 row
                 for row in sample_rows

@@ -115,6 +115,79 @@ def test_all_four_positions_within_tolerance_and_rt_span_produce_candidate() -> 
     assert len(candidates) == 1
 
 
+def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
+    shifted_base_mz = BASE_MZ + PT_PLUS_1_DELTA
+    features = [
+        _feature(
+            feature_id="Sample_1|scan_proxy|group1|base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="raw_scan_proxy_v1",
+        ),
+        _feature(
+            feature_id="Sample_1|scan_proxy|group1|pt_plus_1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="raw_scan_proxy_v1",
+        ),
+        _feature(
+            feature_id="Sample_1|scan_proxy|group1|pt_plus_2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="raw_scan_proxy_v1",
+        ),
+        _feature(
+            feature_id="Sample_1|scan_proxy|group1|pt_plus_4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="raw_scan_proxy_v1",
+        ),
+        # Without scan-proxy group/label constraints, group1|pt_plus_1 can be
+        # incorrectly treated as a shifted base and mixed with these decoys.
+        _feature(
+            feature_id="Sample_1|scan_proxy|group2|pt_plus_1",
+            mz=shifted_base_mz + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="raw_scan_proxy_v1",
+        ),
+        _feature(
+            feature_id="Sample_1|scan_proxy|group2|pt_plus_2",
+            mz=shifted_base_mz + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="raw_scan_proxy_v1",
+        ),
+        _feature(
+            feature_id="Sample_1|scan_proxy|group2|pt_plus_4",
+            mz=shifted_base_mz + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="raw_scan_proxy_v1",
+        ),
+    ]
+
+    candidates = match_delta_mass_pattern(features)
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.base_feature_id == "Sample_1|scan_proxy|group1|base"
+    assert candidate.pt_plus_1_feature_id == "Sample_1|scan_proxy|group1|pt_plus_1"
+    assert candidate.pt_plus_2_feature_id == "Sample_1|scan_proxy|group1|pt_plus_2"
+    assert candidate.pt_plus_4_feature_id == "Sample_1|scan_proxy|group1|pt_plus_4"
+
+
 def test_missing_plus_4_position_yields_no_candidate() -> None:
     features = [
         _feature(feature_id="base", mz=BASE_MZ, rt_apex_min=10.000),

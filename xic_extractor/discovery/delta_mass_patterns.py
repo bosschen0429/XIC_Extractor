@@ -16,6 +16,7 @@ implements.
 from __future__ import annotations
 
 import bisect
+from collections.abc import Collection
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable
 
@@ -31,6 +32,9 @@ _REQUIRED_NON_BASE_SUPPORT_COUNT = 2
 
 _BASE_LABEL = "base"
 _NON_BASE_LABELS: tuple[str, ...] = ("pt_plus_1", "pt_plus_2", "pt_plus_4")
+_SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
+_SCAN_PROXY_MARKER = "|scan_proxy|"
+_SCAN_PROXY_LABELS = (_BASE_LABEL, *_NON_BASE_LABELS)
 
 
 @dataclass(frozen=True)
@@ -182,6 +186,7 @@ def match_delta_mass_pattern(
     *,
     pattern: DeltaMassPattern | None = None,
     settings: "DeltaMassPatternSettings | None" = None,
+    base_feature_ids: Collection[str] | None = None,
 ) -> tuple[PtPatternCandidate, ...]:
     """Match sample-local detected features against ``pattern``.
 
@@ -213,11 +218,22 @@ def match_delta_mass_pattern(
     for feature in features:
         features_by_sample.setdefault(feature.sample_stem, []).append(feature)
 
+    allowed_base_feature_ids = (
+        set(base_feature_ids) if base_feature_ids is not None else None
+    )
+
     candidates: list[PtPatternCandidate] = []
     for sample_stem, sample_features in features_by_sample.items():
         sorted_features = sorted(sample_features, key=lambda item: item.mz)
         sorted_mzs = [item.mz for item in sorted_features]
         for base in sorted_features:
+            if (
+                allowed_base_feature_ids is not None
+                and base.feature_id not in allowed_base_feature_ids
+            ):
+                continue
+            if not _is_base_anchor_eligible(base):
+                continue
             candidate = _match_base(
                 sample_stem=sample_stem,
                 base=base,
@@ -310,6 +326,8 @@ def _best_position_match(
     for feature in sample_features[start_index:end_index]:
         if feature is base:
             continue
+        if not _is_position_match_eligible(base, feature, position.label):
+            continue
         rt_delta_sec = abs(feature.rt_apex_min - base.rt_apex_min) * 60.0
         if rt_delta_sec > rt_tolerance_sec:
             continue
@@ -325,6 +343,47 @@ def _best_position_match(
         if best is None or _is_better_match(candidate_match, best):
             best = candidate_match
     return best
+
+
+def _is_base_anchor_eligible(feature: "DetectedFeature") -> bool:
+    if feature.source != _SCAN_PROXY_SOURCE_LABEL:
+        return True
+    parsed = _scan_proxy_group_and_label(feature.feature_id)
+    return parsed is not None and parsed[1] == _BASE_LABEL
+
+
+def _is_position_match_eligible(
+    base: "DetectedFeature",
+    feature: "DetectedFeature",
+    expected_label: str,
+) -> bool:
+    if base.source != _SCAN_PROXY_SOURCE_LABEL:
+        return feature.source != _SCAN_PROXY_SOURCE_LABEL
+
+    base_parsed = _scan_proxy_group_and_label(base.feature_id)
+    feature_parsed = _scan_proxy_group_and_label(feature.feature_id)
+    if base_parsed is None or feature_parsed is None:
+        return False
+    base_group, base_label = base_parsed
+    feature_group, feature_label = feature_parsed
+    return (
+        base_label == _BASE_LABEL
+        and feature_group == base_group
+        and feature_label == expected_label
+    )
+
+
+def _scan_proxy_group_and_label(feature_id: str) -> tuple[str, str] | None:
+    if _SCAN_PROXY_MARKER not in feature_id:
+        return None
+    _, suffix = feature_id.split(_SCAN_PROXY_MARKER, 1)
+    parts = suffix.rsplit("|", 1)
+    if len(parts) != 2:
+        return None
+    group_id, label = parts
+    if not group_id or label not in _SCAN_PROXY_LABELS:
+        return None
+    return group_id, label
 
 
 def _is_better_match(candidate: _PositionMatch, current_best: _PositionMatch) -> bool:
@@ -415,7 +474,7 @@ def _build_candidate(
         method_label=settings.method_label,
         pattern_id="pt",
         candidate_id=candidate_id,
-        candidate_state="pt_pattern_detected",
+        candidate_state="pt_pattern_candidate",
         review_priority="HIGH",
         evidence_tier="A",
         evidence_score=90,

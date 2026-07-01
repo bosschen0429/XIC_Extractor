@@ -19,11 +19,16 @@ from tools.diagnostics.pt_pattern_scan_proxy import (
     Ms1ScanRecord,
     detected_feature_rows,
     features_from_groups,
+    filter_scan_hit_groups,
     group_scan_hits,
     scan_pattern_hits,
     write_detected_features_csv,
 )
-from xic_extractor.discovery.delta_mass_csv import DETECTED_FEATURES_COLUMNS
+from xic_extractor.discovery.delta_mass_csv import (
+    DETECTED_FEATURES_COLUMNS,
+    load_detected_features_csv,
+)
+from xic_extractor.discovery.delta_mass_patterns import match_delta_mass_pattern
 
 _BASE_MZ = 500.0
 _PLUS_1_MZ = _BASE_MZ + 1.0021
@@ -137,7 +142,7 @@ def test_full_pipeline_emits_detected_features_columns_exactly(
     assert all(row[source_index] == PROXY_SOURCE_LABEL for row in data_rows)
 
 
-def test_detected_feature_rows_use_proxy_source_and_conservative_placeholders() -> (
+def test_detected_feature_rows_use_proxy_source_and_diagnostic_support_fields() -> (
     None
 ):
     scans = [_fake_full_pattern_scan(scan_number=100, rt_min=10.00)]
@@ -161,12 +166,48 @@ def test_detected_feature_rows_use_proxy_source_and_conservative_placeholders() 
     for row in rows:
         assert row["source"] == PROXY_SOURCE_LABEL
         assert row["sample_stem"] == "TestSample"
-        # Conservative, honestly-non-passing placeholders: not one of the
-        # matcher's accepted "supported" trace qualities, and below its
-        # shape_score floor -- see module docstring for the reasoning.
-        assert row["trace_quality"] == "REVIEW"
-        assert row["shape_score"] == 0.0
+        # The proxy is still diagnostic_only, but its repeated scan-level
+        # full-pattern groups are allowed to satisfy the matcher's local signal
+        # gate so the bridge can actually produce review candidates.
+        assert row["trace_quality"] == "OK"
+        assert row["shape_score"] == ""
         assert set(row) == set(DETECTED_FEATURES_COLUMNS)
+
+
+def test_proxy_rows_round_trip_to_pt_matcher_as_diagnostic_candidates(
+    tmp_path: Path,
+) -> None:
+    scans = [
+        _fake_full_pattern_scan(scan_number=100, rt_min=10.00),
+        _fake_full_pattern_scan(scan_number=101, rt_min=10.01),
+    ]
+    hits = [
+        hit
+        for scan in scans
+        for hit in scan_pattern_hits(
+            scan,
+            lookup_ppm=20.0,
+            min_base_intensity=0.0,
+            min_position_intensity=0.0,
+            max_candidates_per_scan=500,
+        )
+    ]
+    groups = filter_scan_hit_groups(
+        group_scan_hits(hits, group_width_da=0.005, rt_gap_split_min=0.20),
+        min_scans_per_group=2,
+    )
+    rows = detected_feature_rows(
+        features_from_groups(groups),
+        sample_stem="TestSample",
+    )
+    csv_path = tmp_path / "detected_features.csv"
+    write_detected_features_csv(csv_path, rows)
+
+    candidates = match_delta_mass_pattern(load_detected_features_csv(csv_path))
+
+    assert len(candidates) == 1
+    assert candidates[0].sample_stem == "TestSample"
+    assert candidates[0].local_signal_support_status == "supported"
 
 
 def test_group_scan_hits_splits_on_rt_gap() -> None:
@@ -193,6 +234,32 @@ def test_group_scan_hits_splits_on_rt_gap() -> None:
     assert len(groups) == 2
     assert len(groups[0]) == 2
     assert len(groups[1]) == 1
+
+
+def test_filter_scan_hit_groups_requires_minimum_scan_count() -> None:
+    scans = [
+        _fake_full_pattern_scan(scan_number=100, rt_min=10.00),
+        _fake_full_pattern_scan(scan_number=101, rt_min=10.01),
+        _fake_full_pattern_scan(scan_number=200, rt_min=15.00),
+    ]
+    hits = [
+        hit
+        for scan in scans
+        for hit in scan_pattern_hits(
+            scan,
+            lookup_ppm=50.0,
+            min_base_intensity=0.0,
+            min_position_intensity=0.0,
+            max_candidates_per_scan=500,
+        )
+    ]
+    groups = group_scan_hits(hits, group_width_da=0.005, rt_gap_split_min=0.20)
+
+    filtered = filter_scan_hit_groups(groups, min_scans_per_group=2)
+
+    assert len(groups) == 2
+    assert len(filtered) == 1
+    assert len(filtered[0]) == 2
 
 
 def test_write_detected_features_csv_header_only_when_no_rows(

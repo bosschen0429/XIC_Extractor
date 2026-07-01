@@ -23,17 +23,13 @@ JSON recording what was actually done.
 This is explicitly **not** a product feature detector:
 
 - No chromatographic peak-shape modeling, no smoothing, no deconvolution.
-- No real trace-quality assessment -- ``trace_quality``/``shape_score`` are
-  fixed, conservative placeholders (see ``_TRACE_QUALITY_PLACEHOLDER`` /
-  ``_SHAPE_SCORE_PLACEHOLDER`` below for the reasoning) precisely so this
-  proxy cannot manufacture false "supported" signal for the real Pt matcher's
-  local-signal-support gate.
-- Its own internal m/z lookup window (``--lookup-ppm``, default 50 ppm) is
-  deliberately looser than the Pt pattern's real 20 ppm / 30 sec Global
-  Constraint gates. The real gates are re-applied later by
-  ``xic_extractor.discovery.delta_mass_patterns.match_delta_mass_pattern``;
-  this proxy only needs to emit plausible candidate rows for that matcher to
-  filter, not to pre-filter with product-grade precision itself.
+- No real trace-quality assessment. The proxy only uses repeated scan-level
+  full-pattern support as a diagnostic local-signal surrogate, records that
+  surrogate in provenance, and leaves ``shape_score`` blank.
+- Its own internal m/z lookup window (``--lookup-ppm``, default 20 ppm) matches
+  the Pt pattern's real m/z gate by default. Wider exploratory windows remain
+  available through the CLI, but the real gates are always re-applied later by
+  ``xic_extractor.discovery.delta_mass_patterns.match_delta_mass_pattern``.
 
 Reuse notes: this module reuses ``xic_extractor.raw_reader.open_raw`` /
 ``RawFileHandle`` for RAW access (the same low-level Thermo COM calls already
@@ -68,17 +64,15 @@ from xic_extractor.tabular_io import write_delimited_rows
 PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
 PROVENANCE_SCHEMA_VERSION = "pt_pattern_scan_proxy_provenance.v1"
 
-# Deliberately conservative, fixed placeholders -- see module docstring. A
-# scan-level proxy has no real chromatographic trace to assess, so it must
-# not report a quality signal strong enough to pass the real Pt matcher's
-# local-signal-support gate (`_LOCAL_SIGNAL_SUPPORT_QUALITIES` /
-# `_LOCAL_SIGNAL_SUPPORT_SHAPE_SCORE_MIN` in delta_mass_patterns.py) on its
-# own say-so. "REVIEW" is not one of the matcher's accepted "supported"
-# qualities (GOOD/OK/PASS) and 0.0 is below the 0.80 shape_score floor, so
-# every proxy row requires a human (or a smarter downstream detector) to
-# actually confirm signal quality before a Pt candidate is trusted.
-_TRACE_QUALITY_PLACEHOLDER = "REVIEW"
-_SHAPE_SCORE_PLACEHOLDER = 0.0
+# Diagnostic-only local support fields. ``OK`` lets repeated full-pattern
+# scan-proxy groups pass the Pt matcher's local-signal gate so this bridge can
+# produce review candidates; provenance keeps the result from being confused
+# with product-grade chromatographic peak quality. Shape score is blank because
+# the proxy does not compute a chromatographic shape model.
+_TRACE_QUALITY_PLACEHOLDER = "OK"
+_SHAPE_SCORE_PLACEHOLDER = ""
+_DEFAULT_LOOKUP_PPM = 20.0
+_DEFAULT_MIN_SCANS_PER_GROUP = 2
 
 _MS1_ORDER_LABEL = "Ms"
 
@@ -321,6 +315,24 @@ def group_scan_hits(
     return groups
 
 
+def filter_scan_hit_groups(
+    groups: Sequence[Sequence[ScanPatternHit]],
+    *,
+    min_scans_per_group: int,
+) -> list[list[ScanPatternHit]]:
+    """Keep only scan-hit groups observed across enough scans in one RAW file.
+
+    A single scan can contain an accidental four-position co-occurrence. The
+    proxy has no chromatographic shape model, so repeated scan-level support is
+    its simplest diagnostic surrogate for local signal support. This is not a
+    cross-sample or multi-RAW requirement.
+    """
+
+    if min_scans_per_group < 1:
+        raise ValueError("min_scans_per_group must be >= 1")
+    return [list(group) for group in groups if len(group) >= min_scans_per_group]
+
+
 def features_from_groups(
     groups: Sequence[Sequence[ScanPatternHit]],
 ) -> list[ProxyFeature]:
@@ -411,8 +423,10 @@ def build_provenance_payload(
     max_candidates_per_scan: int,
     group_width_da: float,
     rt_gap_split_min: float,
+    min_scans_per_group: int,
     ms1_scan_count: int,
     scan_hit_count: int,
+    raw_group_count: int,
     group_count: int,
     feature_count: int,
 ) -> dict[str, Any]:
@@ -435,16 +449,22 @@ def build_provenance_payload(
         "proxy_lookup_parameters": {
             "lookup_ppm": lookup_ppm,
             "note": (
-                "This is the proxy's own scan-level lookup window, looser "
-                "than the matcher's real mz_tolerance_ppm above by design -- "
-                "the Pt matcher re-validates every candidate against the "
-                "real 20ppm/30sec Global Constraint gates."
+                "This is the proxy's scan-level lookup window. The default "
+                "matches the real Pt matcher m/z gate; if widened for "
+                "exploration, the Pt matcher still re-validates every "
+                "candidate against the real 20ppm/30sec Global Constraint "
+                "gates."
             ),
             "min_base_intensity": min_base_intensity,
             "min_position_intensity": min_position_intensity,
             "max_candidates_per_scan": max_candidates_per_scan,
             "group_width_da": group_width_da,
             "rt_gap_split_min": rt_gap_split_min,
+            "min_scans_per_group": min_scans_per_group,
+            "min_scans_per_group_note": (
+                "Minimum MS1 scans inside one RAW file for a proxy group; "
+                "this is not a sample-count or cross-RAW requirement."
+            ),
         },
         "trace_quality_placeholder": _TRACE_QUALITY_PLACEHOLDER,
         "shape_score_placeholder": _SHAPE_SCORE_PLACEHOLDER,
@@ -452,6 +472,7 @@ def build_provenance_payload(
         "counts": {
             "ms1_scan_count": ms1_scan_count,
             "scan_hit_count": scan_hit_count,
+            "raw_group_count": raw_group_count,
             "group_count": group_count,
             "feature_count": feature_count,
         },
@@ -466,12 +487,13 @@ def run_proxy(
     sample_stem: str,
     rt_min: float = 0.0,
     rt_max: float = 999.0,
-    lookup_ppm: float = 50.0,
+    lookup_ppm: float = _DEFAULT_LOOKUP_PPM,
     min_base_intensity: float = 0.0,
     min_position_intensity: float = 0.0,
     max_candidates_per_scan: int = 500,
     group_width_da: float = 0.005,
     rt_gap_split_min: float = 0.20,
+    min_scans_per_group: int = _DEFAULT_MIN_SCANS_PER_GROUP,
 ) -> tuple[Path, Path]:
     """Run the scan-level Pt pattern proxy end-to-end against a real RAW file.
 
@@ -499,10 +521,14 @@ def run_proxy(
             )
         )
 
-    groups = group_scan_hits(
+    raw_groups = group_scan_hits(
         all_hits,
         group_width_da=group_width_da,
         rt_gap_split_min=rt_gap_split_min,
+    )
+    groups = filter_scan_hit_groups(
+        raw_groups,
+        min_scans_per_group=min_scans_per_group,
     )
     features = features_from_groups(groups)
     rows = detected_feature_rows(features, sample_stem=sample_stem)
@@ -521,8 +547,10 @@ def run_proxy(
         max_candidates_per_scan=max_candidates_per_scan,
         group_width_da=group_width_da,
         rt_gap_split_min=rt_gap_split_min,
+        min_scans_per_group=min_scans_per_group,
         ms1_scan_count=len(scans),
         scan_hit_count=len(all_hits),
+        raw_group_count=len(raw_groups),
         group_count=len(groups),
         feature_count=len(features),
     )
@@ -553,10 +581,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--lookup-ppm",
         type=float,
-        default=50.0,
+        default=_DEFAULT_LOOKUP_PPM,
         help=(
-            "Proxy's own scan-level lookup window (looser than the Pt "
-            "matcher's real 20ppm gate by design; see module docstring)."
+            "Proxy's scan-level lookup window. Defaults to the Pt matcher's "
+            "real 20ppm gate; widen only for diagnostic exploration."
         ),
     )
     parser.add_argument("--min-base-intensity", type=float, default=0.0)
@@ -564,6 +592,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--max-candidates-per-scan", type=int, default=500)
     parser.add_argument("--group-width-da", type=float, default=0.005)
     parser.add_argument("--rt-gap-split-min", type=float, default=0.20)
+    parser.add_argument(
+        "--min-scans-per-group",
+        type=int,
+        default=_DEFAULT_MIN_SCANS_PER_GROUP,
+        help=(
+            "Require a scan-proxy Pt group to appear in at least this many "
+            "MS1 scans within one RAW file before emitting pseudo-features; "
+            "not a sample-count or cross-RAW requirement."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -591,6 +629,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_candidates_per_scan=args.max_candidates_per_scan,
             group_width_da=args.group_width_da,
             rt_gap_split_min=args.rt_gap_split_min,
+            min_scans_per_group=args.min_scans_per_group,
         )
     except RawReaderError as exc:
         print(str(exc), file=sys.stderr)

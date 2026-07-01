@@ -1,8 +1,8 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Last refreshed:** 2026-07-01
-**Total entry-points:** 108
-**Total files (incl. helpers):** 192 Python files under `tools/diagnostics/`
+**Last refreshed:** 2026-07-02
+**Total entry-points:** 109
+**Total files (incl. helpers):** 193 Python files under `tools/diagnostics/`
 **Governing spec:** `docs/architecture-contract.md`; the retired dated
 diagnostic lifecycle spec remains only as a same-path public stub.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
@@ -42,7 +42,7 @@ top-level `tools/diagnostics/*.py` files for total files.
 8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization) — 7 tools
 9. [Area / Region Audits](#area--region-audits) — 4 tools
 10. [One-off Fixtures](#one-off-fixtures) — 1 tool
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 1 tool
+11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 2 tools
 12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
 
 ---
@@ -1664,16 +1664,33 @@ first diagnostic look at a real Fullscan sample.
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md` (Task 7)
 **Status note**: This is explicitly **not** a product feature detector — no
 chromatographic peak-shape modeling, no smoothing, no deconvolution. Its own
-scan-level m/z lookup window (`--lookup-ppm`, default 50 ppm) is deliberately
-looser than the Pt pattern matcher's real 20 ppm / 30 sec Global Constraint
-gates, which are re-applied downstream by
-`xic_extractor.discovery.delta_mass_patterns.match_delta_mass_pattern`.
-`trace_quality`/`shape_score` are fixed, conservative placeholders
-(`"REVIEW"` / `0.0`) that intentionally fail the matcher's local-signal-support
-gate on their own, so a human (or a smarter downstream detector) must confirm
-signal quality before any Pt candidate produced from this proxy is trusted.
-Any run against this proxy's output must be labeled `diagnostic_only`; see
+scan-level m/z lookup window (`--lookup-ppm`, default 20 ppm) matches the Pt
+pattern matcher's real m/z gate by default, while wider exploratory windows
+remain opt-in. Repeated full-pattern scan groups are written with
+`trace_quality = "OK"` and blank `shape_score` so the bridge can produce review
+candidates, but the provenance labels the output `diagnostic_only`; see
 `docs/superpowers/validation/pt_pattern_discovery_v1/README.md`.
+
+---
+
+### `pt_pattern_trace_diagnosis.py`
+
+**Purpose**: Chromatography-aware Pt pattern trace diagnostic. Reads an existing
+`pt_pattern_candidates.csv`, extracts vendor XIC traces for base / +1 / +2 /
++4 around each candidate's base RT using
+`xic_extractor.raw_reader.open_raw` / `RawFileHandle.extract_xic_many`, and
+writes candidate-level trace support summaries, position-level co-elution
+metrics, and optional trace points.
+**Topic group**: `pt_pattern_trace_diagnosis.py` (single-file)
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only evidence probe. It does not create Pt
+candidates, mutate Discovery outputs, read Alignment/Backfill state, or write
+Matrix/workbook artifacts. The summary separates `scan_pattern_seed_status`
+from `trace_support_status` and reports a diagnostic-only
+`combined_pt_pattern_status`; `pt_pattern_detected_diagnostic` means scan seed
+plus co-elution support in this ignored output only. Use it to evaluate whether
+scan-proxy or feature-level Pt candidates have RT-close, shape-supported
+chromatographic families before promoting any rule into the product lane.
 
 ---
 

@@ -88,6 +88,24 @@ new primitive strategies. The planned first composite is
 with existing `neutral_loss(tag=DNA_dR)` evidence on the same base peak. Union
 or OR modes are out of scope until separately designed.
 
+When an intersection method has a natural base seed, implement it seed-first
+instead of running a broad provider over every possible anchor and filtering
+afterward. For `pt_pattern + cid_nl(dR)`, CID-NL(dR) base candidates seed the
+base feature IDs, then Pt pattern evidence checks only those bases for
+`+1.0021`, `+2.0023`, and `+4.0052`.
+
+Delta Mass / Pt pattern evidence has two layers. The first layer is a
+scan-level delta-pattern seed: base / `+1.0021` / `+2.0023` / `+4.0052` are
+seen together in MS1 scans often enough to propose a sample-local candidate.
+The second layer is chromatographic co-elution confirmation: those four m/z
+positions, viewed as XIC traces or trace-like featurelets, have close RT/apex
+behavior and compatible peak shape. A scan-level hit by itself is a seed, not a
+complete Pt pattern detection. A Pt pattern candidate is detection-grade only
+when the delta-pattern seed and the co-elution evidence both support the same
+candidate. The scan-level RAW proxy remains a diagnostic bridge for the seed
+layer; it must not become Matrix authority or the whole product detector by
+itself.
+
 These providers create candidates and typed review evidence. They must not
 directly grant ProductWriter authority, Backfill promotion, counted detection,
 or Matrix changes.

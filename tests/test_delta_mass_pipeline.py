@@ -15,6 +15,10 @@ import json
 from pathlib import Path
 
 import pytest
+
+from xic_extractor.discovery.delta_mass_patterns import (
+    match_delta_mass_pattern as real_match_delta_mass_pattern,
+)
 from xic_extractor.discovery.delta_mass_pipeline import (
     DeltaMassDiscoveryOutputs,
     run_pt_pattern_discovery,
@@ -122,7 +126,7 @@ def test_run_pt_pattern_discovery_writes_three_pt_only_outputs(
         rows = list(csv.DictReader(handle))
     assert len(rows) == 1
     assert rows[0]["method_label"] == "pt_pattern"
-    assert rows[0]["candidate_state"] == "pt_pattern_detected"
+    assert rows[0]["candidate_state"] == "pt_pattern_candidate"
 
 
 def test_run_pt_pattern_discovery_requires_cid_nl_csv_for_composite_method(
@@ -186,6 +190,63 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
     assert rows_out[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
     assert rows_out[0]["cid_nl_base_status"] == "matched"
     assert rows_out[0]["cid_nl_base_join_mode"] == "same_feature_id"
+
+
+def test_composite_uses_cid_nl_base_seeds_before_matching(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    rows = _full_pattern_rows()
+    rows[0]["source_feature_row_id"] = "Sample_1|DNA_dR|258.108512|7.841234"
+    # Decoy full pattern: Pt-only would match it, but composite seed-first must
+    # not even offer this base to the matcher because CID-NL does not seed it.
+    decoy_rows = _full_pattern_rows()
+    for row in decoy_rows:
+        row["mz"] = float(row["mz"]) + 200.0
+        row["feature_id"] = f"decoy-{row['feature_id']}"
+    rows.extend(decoy_rows)
+    _write_detected_features_csv(detected_features_csv, rows)
+
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state\n"
+        "Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,ms1_feature_nl_supported\n",
+        encoding="utf-8",
+    )
+    seen_base_feature_ids: set[str] | None = None
+
+    def _capturing_match_delta_mass_pattern(
+        features: object,
+        *,
+        settings: object,
+        base_feature_ids: set[str] | None = None,
+    ) -> object:
+        nonlocal seen_base_feature_ids
+        seen_base_feature_ids = set(base_feature_ids or ())
+        return real_match_delta_mass_pattern(
+            features,  # type: ignore[arg-type]
+            settings=settings,  # type: ignore[arg-type]
+            base_feature_ids=base_feature_ids,
+        )
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.delta_mass_pipeline.match_delta_mass_pattern",
+        _capturing_match_delta_mass_pattern,
+    )
+
+    outputs = run_pt_pattern_discovery(
+        detected_features_csv=detected_features_csv,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    assert seen_base_feature_ids == {"base-1"}
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        rows_out = list(csv.DictReader(handle))
+    assert len(rows_out) == 1
+    assert rows_out[0]["base_feature_id"] == "base-1"
 
 
 def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_strings(

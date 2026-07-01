@@ -13,9 +13,12 @@ lane.
 Status: Task 8 (Diagnostic Real-Sample Candidate Generation) of
 `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
 has run the scan-level proxy and the Pt pattern Discovery CLI end-to-end
-against the real-sample Fullscan RAW file. See "Results" below. The run is
-`diagnostic_only`, never product validation or Matrix authority, and awaits
-manual user review before any oracle promotion.
+against the real-sample Fullscan RAW file. A follow-up bug/performance pass
+fixed two proxy-path problems: scan-proxy rows now satisfy the diagnostic local
+support gate, and scan-proxy labels cannot be reused as shifted base anchors.
+See "Current Results" below. The run is `diagnostic_only`, never product
+validation or Matrix authority, and awaits manual user review before any oracle
+promotion.
 
 ## Purpose
 
@@ -51,20 +54,23 @@ validation_status = diagnostic_only
   `diagnostic_only` / "not a product feature detector" marker).
 - This proxy is a SCAN-LEVEL bridge, not a real peak detector: no
   chromatographic peak-shape modeling, no smoothing, no deconvolution. Its
-  own internal m/z lookup window is deliberately looser than the Pt pattern
-  matcher's real 20 ppm / 30 sec Global Constraint gates, which the matcher
-  re-applies to every candidate regardless of proxy output.
-- `trace_quality` / `shape_score` are fixed, conservative placeholders
-  (`"REVIEW"` / `0.0`) that intentionally do not pass the matcher's
-  local-signal-support gate on their own, so a human must confirm signal
-  quality before any candidate produced from this proxy is trusted.
+  default internal m/z lookup window now matches the Pt pattern matcher's real
+  20 ppm m/z gate, and the matcher still re-applies the 20 ppm / 30 sec Global
+  Constraint gates to every candidate regardless of proxy output.
+- `trace_quality` is set to `"OK"` and `shape_score` is left blank so repeated
+  scan-level full-pattern groups can pass the diagnostic local-support gate.
+  This is recorded as `raw_scan_proxy_v1` / `diagnostic_only`; it is not a
+  product chromatographic peak-quality claim.
+- Proxy groups must appear in at least two MS1 scans within the same RAW file
+  before pseudo-features are emitted. This is an LC-contiguity diagnostic
+  filter, not a cross-sample or multi-RAW requirement.
 
 If an accepted detected-feature CSV becomes available in a later task (a
 real MS1 peak detector emitting this exact schema), that source should be
 used directly instead and this section updated to name it, with
 `detected_feature_source` changed accordingly.
 
-## Results
+## Current Results
 
 Sample used: the Dec 2025 CSMU delta-mass Fullscan sample (a real
 user-provided Fullscan RAW file; local absolute path kept only in the
@@ -84,51 +90,100 @@ Get-Content .env.xic-local |
 .venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_scan_proxy `
   --raw "$env:PT_PATTERN_SAMPLE_DIR\CT-DNA+100uMCP_Fullscan.raw" `
   --dll-dir "$env:THERMO_RAWFILE_READER_DLL_DIR" `
-  --output-dir output\pt_pattern_discovery_v1\fullscan_proxy
+  --output-dir output\pt_pattern_discovery_v1\fullscan_proxy_fixed
 
 .venv\Scripts\python.exe -m scripts.run_pt_pattern_discovery `
-  --detected-features-csv output\pt_pattern_discovery_v1\fullscan_proxy\detected_features.csv `
-  --output-dir output\pt_pattern_discovery_v1\fullscan_proxy\pt_candidates `
+  --detected-features-csv output\pt_pattern_discovery_v1\fullscan_proxy_fixed\detected_features.csv `
+  --output-dir output\pt_pattern_discovery_v1\fullscan_proxy_fixed\pt_candidates_anchor_fixed `
   --preset pt_pattern
+
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_trace_diagnosis `
+  --candidates-csv output\pt_pattern_discovery_v1\fullscan_proxy_fixed\pt_candidates_anchor_fixed\pt_pattern_candidates.csv `
+  --raw "$env:PT_PATTERN_SAMPLE_DIR\CT-DNA+100uMCP_Fullscan.raw" `
+  --dll-dir "$env:THERMO_RAWFILE_READER_DLL_DIR" `
+  --output-dir output\pt_pattern_discovery_v1\fullscan_proxy_fixed\trace_diagnosis_limit50 `
+  --limit 50
 ```
 
 Output directories (relative to repo root, git-ignored, not committed):
 
-- `output/pt_pattern_discovery_v1/fullscan_proxy/` -- proxy
-  `detected_features.csv` (78,976 pseudo-feature rows: 19,744 scan-level
+- `output/pt_pattern_discovery_v1/fullscan_proxy_fixed/` -- proxy
+  `detected_features.csv` (37,320 pseudo-feature rows: 9,330 scan-level
   groups x 4 Pt positions each) + `proxy_provenance.json`
-  (`ms1_scan_count: 2726`, `scan_hit_count: 387924`).
-- `output/pt_pattern_discovery_v1/fullscan_proxy/pt_candidates/` --
+  (`ms1_scan_count: 2726`, `scan_hit_count: 232780`,
+  `raw_group_count: 12286`, `group_count: 9330`).
+- `output/pt_pattern_discovery_v1/fullscan_proxy_fixed/pt_candidates_anchor_fixed/` --
   `pt_pattern_candidates.csv`, `pt_pattern_review.csv`,
   `pt_pattern_sidecar.json` (Pt pattern Discovery CLI output,
   `--preset pt_pattern`).
 
-Candidate count: **0** (header-only `pt_pattern_candidates.csv` and
-`pt_pattern_review.csv`; `pt_pattern_sidecar.json` summary reports
-`candidate_count: 0`, `pt_only_candidate_count: 0`,
-`cid_nl_supported_candidate_count: 0`, empty `candidates` array).
+Candidate count: **8,722** Pt-only diagnostic candidates. All candidate base
+features are scan-proxy `...|base` rows; scan-proxy `pt_plus_1` /
+`pt_plus_2` / `pt_plus_4` rows are no longer allowed to become shifted base
+anchors. All rows now use `candidate_state = pt_pattern_candidate`; this is a
+delta-pattern candidate state, not the final Pt detection verdict.
 
-Zero candidates is a valid, expected diagnostic outcome here, not a failure:
-the proxy's placeholder `trace_quality = "REVIEW"` / `shape_score = 0.0` on
-every row are deliberately below the real Pt matcher's local-signal-support
-gate, and the matcher re-applies its real 20 ppm / 30 sec Global Constraint
-gates on top of the proxy's looser 50 ppm scan-level lookup window. No
-tolerance, gate, or CLI default was loosened to try to manufacture a
-nonzero result.
+Runtime observed: proxy scan pass ~31.3 seconds over the full RAW file
+(2,726 MS1 scans); Pt pattern Discovery CLI pass over the resulting
+37,320-row detected-features CSV took ~2.8 seconds after the matcher
+anchor fix. This confirms the feature-level matcher is not the bottleneck;
+the scan-level proxy remains the expensive diagnostic bridge.
 
-Runtime observed: proxy scan pass ~34 seconds over the full RAW file (2,726
-MS1 scans); Pt pattern Discovery CLI pass over the resulting 78,976-row
-detected-features CSV took approximately 19 minutes wall-clock -- notably
-slower than its typical usage against much smaller, real feature-detector
-outputs, since a scan-level proxy emits far more candidate rows per group
-than a true chromatographic peak detector would. This is a diagnostic-lane
-observation about a first real-sample run, not a change to any product
-code or gate.
+## Trace Co-Elution Diagnostic
+
+A follow-up chromatography-aware trace diagnostic was run against the first 50
+Pt-only candidates using `tools/diagnostics/pt_pattern_trace_diagnosis.py`.
+This tool extracts vendor XIC traces for base / `+1.0021` / `+2.0023` /
+`+4.0052` around the base RT and writes diagnostic-only co-elution metrics. It
+does not create candidates, write Matrix values, or change Discovery outputs.
+The summary explicitly separates the scan-level seed (`scan_pattern_seed_status`)
+from trace confirmation (`trace_support_status`) and writes
+`combined_pt_pattern_status`; `pt_pattern_detected_diagnostic` means both
+evidence layers support the candidate in this diagnostic output only.
+
+Output directory:
+
+- `output/pt_pattern_discovery_v1/fullscan_proxy_fixed/trace_diagnosis_limit50/`
+
+Candidate-level trace support summary, 50-row sample:
+
+- `supported`: 12
+- `partial_support`: 32
+- `review`: 5
+- `incomplete_trace_signal`: 1
+
+Combined diagnostic Pt status, 50-row sample:
+
+- `pt_pattern_detected_diagnostic`: 12
+- `pt_pattern_candidate_partial`: 32
+- `pt_pattern_candidate_review`: 5
+- `pt_pattern_candidate_incomplete`: 1
+
+Position-level support summary, 50-row sample:
+
+- `pt_plus_1`: 38 supported, 12 review
+- `pt_plus_2`: 34 supported, 16 review
+- `pt_plus_4`: 18 supported, 31 review, 1 missing signal
+
+Interpretation: the scan-level proxy can find many same-scan Pt-like seeds, but
+trace co-elution is the confirmation layer that separates diagnostic detected
+patterns from partial/review candidates. The `+4` position is the main weak
+point in this sample slice. This supports the current architecture conclusion:
+scan-level pattern finding should remain the seed layer, and product-grade Pt
+pattern detection should require chromatographic co-elution evidence as well.
+
+## Superseded Initial Run
+
+The initial Task 8 run used the older proxy defaults (`lookup_ppm = 50`,
+`trace_quality = "REVIEW"`, `shape_score = 0.0`) and produced 78,976
+pseudo-feature rows but 0 Pt candidates. That result is superseded by the
+current run above because the proxy-to-matcher contract was internally
+inconsistent: the proxy rows could not pass the local-support gate they were
+intended to exercise.
 
 **Result status: `diagnostic_only`.** This candidate set (in this case, an
-empty set) is a first-look diagnostic result only. It does not validate
-peak-detection accuracy, does not promote any oracle, and does not change
-counted detection, Matrix authority, or production readiness. It awaits
-manual user review of the underlying proxy features and gate behavior
-before any candidate example from this or a future run can be accepted as
-an oracle.
+8,722-row diagnostic review queue) is a first-look diagnostic result only. It
+does not validate peak-detection accuracy, does not promote any oracle, and
+does not change counted detection, Matrix authority, or production readiness.
+It awaits manual user review of sampled candidate rows before any candidate
+example from this or a future run can be accepted as an oracle.

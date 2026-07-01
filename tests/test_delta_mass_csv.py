@@ -127,7 +127,7 @@ def _pt_candidate(**overrides: object) -> PtPatternCandidate:
         "method_label": "pt_pattern",
         "pattern_id": "pt",
         "candidate_id": "Sample_1@pt@base-1",
-        "candidate_state": "pt_pattern_detected",
+        "candidate_state": "pt_pattern_candidate",
         "review_priority": "HIGH",
         "evidence_tier": "A",
         "evidence_score": 90,
