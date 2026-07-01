@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 
 import pytest
+
 from xic_extractor.discovery.delta_mass_csv import (
     DeltaMassDiscoveryResult,
     load_detected_features_csv,
@@ -415,3 +416,147 @@ def test_pt_sidecar_json_writes_empty_candidates_summary_for_no_matches(
         "cid_nl_supported_candidate_count": 0,
     }
     assert payload["candidates"] == []
+
+
+def test_load_detected_features_csv_rejects_non_finite_required_field(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "detected_features.csv"
+    header = ",".join(DETECTED_FEATURES_COLUMNS)
+    bad_row = "Sample_1,base-1,,nan,10.00,,,1000.0,,GOOD,,targeted"
+    csv_path.write_text(f"{header}\r\n{bad_row}\r\n", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        load_detected_features_csv(csv_path)
+
+
+def test_load_detected_features_csv_rejects_non_finite_optional_field(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "detected_features.csv"
+    header = ",".join(DETECTED_FEATURES_COLUMNS)
+    bad_row = "Sample_1,base-1,,500.0,10.00,,,1000.0,inf,GOOD,,targeted"
+    csv_path.write_text(f"{header}\r\n{bad_row}\r\n", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        load_detected_features_csv(csv_path)
+
+
+def test_pt_candidate_csv_writes_header_only_when_no_candidates(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_candidates.csv"
+
+    write_pt_pattern_candidates_csv(output_path, [])
+
+    with output_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle)
+        rows = list(reader)
+    assert rows == [list(PT_CANDIDATE_COLUMNS)]
+
+
+def test_pt_review_csv_writes_header_only_when_no_candidates(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_review.csv"
+
+    write_pt_pattern_review_csv(output_path, [])
+
+    with output_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle)
+        rows = list(reader)
+    assert rows == [list(PT_REVIEW_COLUMNS)]
+
+
+def test_pt_candidate_csv_creates_parent_directories(tmp_path: Path) -> None:
+    output_path = tmp_path / "nested" / "dir" / "pt_pattern_candidates.csv"
+
+    write_pt_pattern_candidates_csv(output_path, [_pt_candidate()])
+
+    assert output_path.exists()
+
+
+def test_pt_candidate_csv_fails_loudly_on_unexpected_extra_field(
+    tmp_path: Path,
+) -> None:
+    """Extra row fields must fail the shared writer API (extrasaction='raise'),
+    not only a test-local renderer, per the Task 3 plan requirement."""
+    from xic_extractor.discovery import delta_mass_csv
+
+    output_path = tmp_path / "pt_pattern_candidates.csv"
+    candidate = _pt_candidate()
+
+    original_candidate_row = delta_mass_csv._candidate_row
+
+    def _row_with_extra_field(candidate: PtPatternCandidate) -> dict[str, object]:
+        row = original_candidate_row(candidate)
+        row["unexpected_extra_field"] = "boom"
+        return row
+
+    monkeypatched = delta_mass_csv._candidate_row
+    try:
+        delta_mass_csv._candidate_row = _row_with_extra_field  # type: ignore[assignment]
+        with pytest.raises(ValueError):
+            write_pt_pattern_candidates_csv(output_path, [candidate])
+    finally:
+        delta_mass_csv._candidate_row = monkeypatched  # type: ignore[assignment]
+
+
+def test_pt_review_csv_fails_loudly_on_unexpected_extra_field(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.discovery import delta_mass_csv
+
+    output_path = tmp_path / "pt_pattern_review.csv"
+    candidate = _pt_candidate()
+
+    original_review_row = delta_mass_csv._review_row
+
+    def _row_with_extra_field(candidate: PtPatternCandidate) -> dict[str, object]:
+        row = original_review_row(candidate)
+        row["unexpected_extra_field"] = "boom"
+        return row
+
+    monkeypatched = delta_mass_csv._review_row
+    try:
+        delta_mass_csv._review_row = _row_with_extra_field  # type: ignore[assignment]
+        with pytest.raises(ValueError):
+            write_pt_pattern_review_csv(output_path, [candidate])
+    finally:
+        delta_mass_csv._review_row = monkeypatched  # type: ignore[assignment]
+
+
+def test_pt_candidate_csv_escapes_formula_like_text_consistently(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_candidates.csv"
+    candidate = _pt_candidate(
+        sample_stem="=cmd|'/c calc'!A1",
+        base_feature_id="+base-1",
+        reason="-suspicious reason",
+        pt_plus_1_feature_id="@plus1-1",
+    )
+
+    write_pt_pattern_candidates_csv(output_path, [candidate])
+
+    row = _read_csv(output_path)[0]
+    assert row["sample_stem"] == "'=cmd|'/c calc'!A1"
+    assert row["base_feature_id"] == "'+base-1"
+    assert row["reason"] == "'-suspicious reason"
+    assert row["pt_plus_1_feature_id"] == "'@plus1-1"
+
+
+def test_pt_review_csv_escapes_formula_like_text_consistently(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_review.csv"
+    candidate = _pt_candidate(
+        sample_stem="=cmd|'/c calc'!A1",
+        reason="+suspicious reason",
+    )
+
+    write_pt_pattern_review_csv(output_path, [candidate])
+
+    row = _read_csv(output_path)[0]
+    assert row["sample_stem"] == "'=cmd|'/c calc'!A1"
+    assert row["reason"] == "'+suspicious reason"

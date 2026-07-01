@@ -9,7 +9,7 @@ from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_COLUMNS,
     DiscoveryCandidate,
 )
-from xic_extractor.tabular_io import write_delimited_rows
+from xic_extractor.tabular_io import escape_excel_formula, write_delimited_rows
 
 _PRIORITY_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 
@@ -103,16 +103,10 @@ def format_discovery_csv_value(column: str, value: object) -> str:
             return ";".join(str(item) for item in value)
         return str(value)
     if isinstance(value, Path):
-        return _escape_excel_formula(str(value))
+        return escape_excel_formula(str(value))
     if isinstance(value, float):
         return f"{value:.6g}"
-    return _escape_excel_formula(str(value))
+    return escape_excel_formula(str(value))
 
 
 _format_csv_value = format_discovery_csv_value
-
-
-def _escape_excel_formula(value: str) -> str:
-    if value.startswith(("=", "+", "-", "@")):
-        return f"'{value}"
-    return value

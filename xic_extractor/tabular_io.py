@@ -215,6 +215,12 @@ def _write_formatted_delimited_rows(
         )
 
 
+def escape_excel_formula(value: str) -> str:
+    if value.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 def format_diagnostic_value(value: Any) -> str:
     if value is None:
         return ""
