@@ -1,8 +1,8 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Last refreshed:** 2026-06-30
-**Total entry-points:** 107
-**Total files (incl. helpers):** 191 Python files under `tools/diagnostics/`
+**Last refreshed:** 2026-07-01
+**Total entry-points:** 108
+**Total files (incl. helpers):** 192 Python files under `tools/diagnostics/`
 **Governing spec:** `docs/architecture-contract.md`; the retired dated
 diagnostic lifecycle spec remains only as a same-path public stub.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
@@ -42,7 +42,8 @@ top-level `tools/diagnostics/*.py` files for total files.
 8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization) — 7 tools
 9. [Area / Region Audits](#area--region-audits) — 4 tools
 10. [One-off Fixtures](#one-off-fixtures) — 1 tool
-11. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
+11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 1 tool
+12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
 
 ---
 
@@ -1637,6 +1638,42 @@ to be re-run only when the underlying data shape changes.
 **Topic group**: `build_istd_false_missing_fixture.py` (single-file)
 **Originating plan**: `retired-provenance:6d2a06f8be03`
 **Cadence note**: "Build-once" — should declare a per-campaign or per-data-shape cadence per the lifecycle spec's seasonal-cadence exception.
+
+---
+
+## Delta Mass / Pt Pattern Discovery
+
+Diagnostics-only bridge tooling for the `delta_mass(pattern_id=pt)` Discovery
+lane (`docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`).
+This group must stay diagnostics-only: no Alignment, Backfill, ProductWriter,
+or workbook Matrix imports (enforced by `tests/test_pt_pattern_boundaries.py`
+for the core `xic_extractor.discovery` / `scripts.run_pt_pattern_discovery`
+modules; this tool follows the same boundary by convention).
+
+### `pt_pattern_scan_proxy.py`
+
+**Purpose**: Scan-level Pt pattern proxy. Reads MS1 scans directly from a
+RAW file (reusing `xic_extractor.raw_reader.open_raw`/`RawFileHandle`) and
+emits a schema-valid Detected Features CSV
+(`xic_extractor.discovery.delta_mass_csv.DETECTED_FEATURES_COLUMNS`) with
+`source = "raw_scan_proxy_v1"` on every row, plus a `proxy_provenance.json`
+provenance file, so the Pt pattern CLI
+(`scripts/run_pt_pattern_discovery.py`) has something to run against for a
+first diagnostic look at a real Fullscan sample.
+**Topic group**: `pt_pattern_scan_proxy.py` (single-file)
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md` (Task 7)
+**Status note**: This is explicitly **not** a product feature detector — no
+chromatographic peak-shape modeling, no smoothing, no deconvolution. Its own
+scan-level m/z lookup window (`--lookup-ppm`, default 50 ppm) is deliberately
+looser than the Pt pattern matcher's real 20 ppm / 30 sec Global Constraint
+gates, which are re-applied downstream by
+`xic_extractor.discovery.delta_mass_patterns.match_delta_mass_pattern`.
+`trace_quality`/`shape_score` are fixed, conservative placeholders
+(`"REVIEW"` / `0.0`) that intentionally fail the matcher's local-signal-support
+gate on their own, so a human (or a smarter downstream detector) must confirm
+signal quality before any Pt candidate produced from this proxy is trusted.
+Any run against this proxy's output must be labeled `diagnostic_only`; see
+`docs/superpowers/validation/pt_pattern_discovery_v1/README.md`.
 
 ---
 
