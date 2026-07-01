@@ -207,6 +207,48 @@ def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_string
     assert payload["inputs"]["cid_nl_candidates_csv"] is None
 
 
+def test_run_pt_pattern_discovery_ignores_review_only_orphan_nl_rows(
+    tmp_path: Path,
+) -> None:
+    """Regression test: real ``discovery_candidates.csv`` files from the
+    existing ``scripts.run_discovery`` CLI contain a mix of join-eligible
+    rows (``ms1_feature_nl_supported``/``ms1_feature_nl_rescued``, with a
+    populated ``ms1_feature_row_id``) and ``review_only_orphan_nl`` rows
+    (blank ``ms1_feature_row_id`` by design, since they are not backed by
+    any MS1 feature). The composite pipeline must not raise on the orphan
+    rows and must simply exclude them from join consideration.
+    """
+
+    detected_features_csv = tmp_path / "detected_features.csv"
+    rows = _full_pattern_rows()
+    rows[0]["source_feature_row_id"] = "Sample_1|DNA_dR|258.108512|7.841234"
+    _write_detected_features_csv(detected_features_csv, rows)
+
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state\n"
+        "Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,ms1_feature_nl_supported\n"
+        ",DNA_dR,review_only_orphan_nl\n"
+        ",DNA_dR,review_only_orphan_nl\n",
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "out"
+
+    outputs = run_pt_pattern_discovery(
+        detected_features_csv=detected_features_csv,
+        output_dir=output_dir,
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        rows_out = list(csv.DictReader(handle))
+    assert len(rows_out) == 1
+    assert rows_out[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
+    assert rows_out[0]["cid_nl_base_status"] == "matched"
+    assert rows_out[0]["cid_nl_base_join_mode"] == "same_feature_id"
+
+
 def test_run_pt_pattern_discovery_writes_header_only_outputs_when_no_pattern_found(
     tmp_path: Path,
 ) -> None:

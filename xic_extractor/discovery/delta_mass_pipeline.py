@@ -170,15 +170,21 @@ def run_pt_pattern_discovery(
 def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
     """Load and validate CID-NL(dR) candidate rows for the composite join.
 
-    Required columns (``ms1_feature_row_id``, ``neutral_loss_tag``,
-    ``discovery_candidate_state``) must be present on every row; missing or
-    malformed values raise ``ValueError`` rather than being silently skipped.
-    ``sample_stem`` (used to scope the join to the same sample) is read from
-    an optional ``sample_stem`` column when present, else derived from the
-    leading segment of ``ms1_feature_row_id`` (see ``_sample_stem_from_row_id``).
-    ``precursor_mz``, ``ms1_apex_rt``, and ``evidence_score`` are optional
-    per-row (only required by the m/z/RT fallback path) but must be finite
-    when present.
+    Every row must carry non-blank ``neutral_loss_tag`` and
+    ``discovery_candidate_state`` values (missing/malformed values raise
+    ``ValueError`` rather than being silently skipped) -- these fields are
+    what make a row identifiable and filterable in the first place, so they
+    are validated regardless of state.
+
+    Only rows whose ``discovery_candidate_state`` is in
+    ``_ALLOWED_CID_NL_STATES`` are eligible for the CID-NL base join (see the
+    plan's join predicate); such rows must additionally carry a non-blank
+    ``ms1_feature_row_id``, and finite ``precursor_mz``/``ms1_apex_rt``/
+    ``evidence_score`` when present. Rows in any other state -- e.g. the
+    legitimate ``review_only_orphan_nl`` state, which by design has no
+    ``ms1_feature_row_id`` because it is not backed by an MS1 feature -- are
+    excluded from the returned set without raising, since they were never
+    join candidates to begin with.
     """
 
     with path.open(newline="", encoding="utf-8") as handle:
@@ -196,13 +202,48 @@ def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
 
     parsed: list[_CidNlCandidateRow] = []
     for row_index, row in enumerate(rows):
+        state = _parse_cid_nl_row_state(row, path=path, row_index=row_index)
+        if state not in _ALLOWED_CID_NL_STATES:
+            continue
         parsed.append(_parse_cid_nl_row(row, path=path, row_index=row_index))
     return tuple(parsed)
+
+
+def _parse_cid_nl_row_state(
+    row: dict[str, str | None], *, path: Path, row_index: int
+) -> str:
+    """Parse the fields required on EVERY row regardless of join eligibility.
+
+    ``neutral_loss_tag`` and ``discovery_candidate_state`` make a row
+    structurally identifiable/filterable; a row genuinely missing either is
+    malformed regardless of its state, so this always validates them.
+    Returns the row's ``discovery_candidate_state`` so the caller can decide
+    whether the row is eligible for the stricter join-field parse.
+    """
+
+    def _row_label() -> str:
+        return f"{path} row {row_index}"
+
+    _required_text(row.get("neutral_loss_tag"), "neutral_loss_tag", _row_label())
+    return _required_text(
+        row.get("discovery_candidate_state"),
+        "discovery_candidate_state",
+        _row_label(),
+    )
 
 
 def _parse_cid_nl_row(
     row: dict[str, str | None], *, path: Path, row_index: int
 ) -> _CidNlCandidateRow:
+    """Parse a row already known to be eligible for the CID-NL base join.
+
+    Only called for rows whose ``discovery_candidate_state`` is in
+    ``_ALLOWED_CID_NL_STATES``; validates the join-only fields
+    (``ms1_feature_row_id``, and the optional-but-finite-when-present
+    ``precursor_mz``/``ms1_apex_rt``/``evidence_score``) that ineligible-state
+    rows are not required to carry.
+    """
+
     def _row_label() -> str:
         return f"{path} row {row_index}"
 
