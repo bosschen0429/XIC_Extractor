@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from xic_extractor.discovery.delta_mass_pipeline import (
-    PtPatternRunOutputs,
+    DeltaMassDiscoveryOutputs,
     run_pt_pattern_discovery,
 )
 
@@ -106,11 +106,11 @@ def test_run_pt_pattern_discovery_writes_three_pt_only_outputs(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        method_label="pt_pattern",
+        preset_name="pt_pattern",
         cid_nl_candidates_csv=None,
     )
 
-    assert isinstance(outputs, PtPatternRunOutputs)
+    assert isinstance(outputs, DeltaMassDiscoveryOutputs)
     assert outputs.candidates_csv == output_dir / "pt_pattern_candidates.csv"
     assert outputs.review_csv == output_dir / "pt_pattern_review.csv"
     assert outputs.sidecar_json == output_dir / "pt_pattern_sidecar.json"
@@ -136,7 +136,23 @@ def test_run_pt_pattern_discovery_requires_cid_nl_csv_for_composite_method(
         run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             output_dir=output_dir,
-            method_label="pt_pattern_cid_nl_dr",
+            preset_name="pt_pattern_cid_nl_dr",
+            cid_nl_candidates_csv=None,
+        )
+
+
+def test_run_pt_pattern_discovery_rejects_non_pt_pattern_preset(
+    tmp_path: Path,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
+    output_dir = tmp_path / "out"
+
+    with pytest.raises(ValueError, match="pt_pattern"):
+        run_pt_pattern_discovery(
+            detected_features_csv=detected_features_csv,
+            output_dir=output_dir,
+            preset_name="dna_dr",
             cid_nl_candidates_csv=None,
         )
 
@@ -151,7 +167,8 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
 
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
     cid_nl_candidates_csv.write_text(
-        "ms1_feature_row_id\nSample_1|DNA_dR|258.108512|7.841234\n",
+        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state\n"
+        "Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,ms1_feature_nl_supported\n",
         encoding="utf-8",
     )
     output_dir = tmp_path / "out"
@@ -159,7 +176,7 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        method_label="pt_pattern_cid_nl_dr",
+        preset_name="pt_pattern_cid_nl_dr",
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
@@ -181,7 +198,7 @@ def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_string
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        method_label="pt_pattern",
+        preset_name="pt_pattern",
         cid_nl_candidates_csv=None,
     )
 
@@ -201,7 +218,7 @@ def test_run_pt_pattern_discovery_writes_header_only_outputs_when_no_pattern_fou
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
-        method_label="pt_pattern",
+        preset_name="pt_pattern",
         cid_nl_candidates_csv=None,
     )
 

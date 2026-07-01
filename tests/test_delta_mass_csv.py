@@ -17,12 +17,13 @@ from pathlib import Path
 
 import pytest
 from xic_extractor.discovery.delta_mass_csv import (
+    DeltaMassDiscoveryResult,
     load_detected_features_csv,
     write_pt_pattern_candidates_csv,
     write_pt_pattern_review_csv,
     write_pt_pattern_sidecar_json,
 )
-from xic_extractor.discovery.delta_mass_patterns import PtPatternCandidate
+from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, PtPatternCandidate
 from xic_extractor.discovery.detected_features import DetectedFeature
 
 DETECTED_FEATURES_COLUMNS = (
@@ -322,14 +323,15 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
     tmp_path: Path,
 ) -> None:
     output_path = tmp_path / "pt_pattern_sidecar.json"
-
-    write_pt_pattern_sidecar_json(
-        output_path,
+    result = DeltaMassDiscoveryResult(
         method_label="pt_pattern",
+        pattern=PT_PATTERN,
         detected_features_csv="detected_features.csv",
         cid_nl_candidates_csv=None,
         candidates=[_pt_candidate()],
     )
+
+    write_pt_pattern_sidecar_json(output_path, result=result)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["schema_version"] == "pt_pattern_sidecar.v1"
@@ -371,13 +373,15 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
         cid_nl_base_join_mode="same_feature_id",
     )
 
-    write_pt_pattern_sidecar_json(
-        output_path,
+    result = DeltaMassDiscoveryResult(
         method_label="pt_pattern_cid_nl_dr",
+        pattern=PT_PATTERN,
         detected_features_csv="detected_features.csv",
         cid_nl_candidates_csv="discovery_candidates.csv",
         candidates=[composite_candidate],
     )
+
+    write_pt_pattern_sidecar_json(output_path, result=result)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["method_label"] == "pt_pattern_cid_nl_dr"
@@ -394,14 +398,15 @@ def test_pt_sidecar_json_writes_empty_candidates_summary_for_no_matches(
     tmp_path: Path,
 ) -> None:
     output_path = tmp_path / "pt_pattern_sidecar.json"
-
-    write_pt_pattern_sidecar_json(
-        output_path,
+    result = DeltaMassDiscoveryResult(
         method_label="pt_pattern",
+        pattern=PT_PATTERN,
         detected_features_csv="detected_features.csv",
         cid_nl_candidates_csv=None,
         candidates=[],
     )
+
+    write_pt_pattern_sidecar_json(output_path, result=result)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["summary"] == {

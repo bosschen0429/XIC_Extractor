@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from xic_extractor.discovery.delta_mass_pipeline import PtPatternRunOutputs
+from xic_extractor.discovery.delta_mass_pipeline import DeltaMassDiscoveryOutputs
 
 from scripts import run_pt_pattern_discovery
 
@@ -40,12 +40,12 @@ def test_cli_accepts_pt_pattern_preset_with_no_raw_or_dll_requirement(
         *,
         detected_features_csv,
         output_dir,
-        method_label,
+        preset_name,
         cid_nl_candidates_csv,
     ):
         captured["detected_features_csv"] = detected_features_csv
         captured["output_dir"] = output_dir
-        captured["method_label"] = method_label
+        captured["preset_name"] = preset_name
         captured["cid_nl_candidates_csv"] = cid_nl_candidates_csv
         output_dir.mkdir(parents=True, exist_ok=True)
         candidates_csv = output_dir / "pt_pattern_candidates.csv"
@@ -54,7 +54,7 @@ def test_cli_accepts_pt_pattern_preset_with_no_raw_or_dll_requirement(
         candidates_csv.write_text("schema_version\n", encoding="utf-8")
         review_csv.write_text("review_priority\n", encoding="utf-8")
         sidecar_json.write_text("{}", encoding="utf-8")
-        return PtPatternRunOutputs(
+        return DeltaMassDiscoveryOutputs(
             candidates_csv=candidates_csv,
             review_csv=review_csv,
             sidecar_json=sidecar_json,
@@ -78,7 +78,7 @@ def test_cli_accepts_pt_pattern_preset_with_no_raw_or_dll_requirement(
     )
 
     assert code == 0
-    assert captured["method_label"] == "pt_pattern"
+    assert captured["preset_name"] == "pt_pattern"
     assert captured["cid_nl_candidates_csv"] is None
     stdout = capsys.readouterr().out
     assert "pt_pattern_candidates.csv" in stdout
@@ -101,10 +101,10 @@ def test_cli_accepts_pt_pattern_cid_nl_dr_preset_with_composite_csv(
         *,
         detected_features_csv,
         output_dir,
-        method_label,
+        preset_name,
         cid_nl_candidates_csv,
     ):
-        captured["method_label"] = method_label
+        captured["preset_name"] = preset_name
         captured["cid_nl_candidates_csv"] = cid_nl_candidates_csv
         output_dir.mkdir(parents=True, exist_ok=True)
         candidates_csv = output_dir / "pt_pattern_candidates.csv"
@@ -113,7 +113,7 @@ def test_cli_accepts_pt_pattern_cid_nl_dr_preset_with_composite_csv(
         candidates_csv.write_text("schema_version\n", encoding="utf-8")
         review_csv.write_text("review_priority\n", encoding="utf-8")
         sidecar_json.write_text("{}", encoding="utf-8")
-        return PtPatternRunOutputs(
+        return DeltaMassDiscoveryOutputs(
             candidates_csv=candidates_csv,
             review_csv=review_csv,
             sidecar_json=sidecar_json,
@@ -139,7 +139,7 @@ def test_cli_accepts_pt_pattern_cid_nl_dr_preset_with_composite_csv(
     )
 
     assert code == 0
-    assert captured["method_label"] == "pt_pattern+cid_nl_dr"
+    assert captured["preset_name"] == "pt_pattern_cid_nl_dr"
     assert captured["cid_nl_candidates_csv"] == cid_nl_candidates_csv.resolve()
 
 
