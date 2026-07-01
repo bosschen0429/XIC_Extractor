@@ -15,6 +15,7 @@ implements.
 
 from __future__ import annotations
 
+import bisect
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable
 
@@ -215,11 +216,13 @@ def match_delta_mass_pattern(
     candidates: list[PtPatternCandidate] = []
     for sample_stem, sample_features in features_by_sample.items():
         sorted_features = sorted(sample_features, key=lambda item: item.mz)
+        sorted_mzs = [item.mz for item in sorted_features]
         for base in sorted_features:
             candidate = _match_base(
                 sample_stem=sample_stem,
                 base=base,
                 sample_features=sorted_features,
+                sorted_mzs=sorted_mzs,
                 non_base_positions=non_base_positions,
                 settings=resolved_settings,
             )
@@ -242,6 +245,7 @@ def _match_base(
     sample_stem: str,
     base: "DetectedFeature",
     sample_features: list["DetectedFeature"],
+    sorted_mzs: list[float],
     non_base_positions: list[DeltaMassPatternPosition],
     settings: "DeltaMassPatternSettings",
 ) -> PtPatternCandidate | None:
@@ -251,6 +255,7 @@ def _match_base(
             base=base,
             position=position,
             sample_features=sample_features,
+            sorted_mzs=sorted_mzs,
             mz_tolerance_ppm=settings.mz_tolerance_ppm,
             rt_tolerance_sec=settings.rt_tolerance_sec,
         )
@@ -282,6 +287,7 @@ def _best_position_match(
     base: "DetectedFeature",
     position: DeltaMassPatternPosition,
     sample_features: list["DetectedFeature"],
+    sorted_mzs: list[float],
     mz_tolerance_ppm: float,
     rt_tolerance_sec: float,
 ) -> _PositionMatch | None:
@@ -290,11 +296,19 @@ def _best_position_match(
     lower_mz = expected_mz - window_da
     upper_mz = expected_mz + window_da
 
+    # ``sample_features`` is sorted ascending by m/z and ``sorted_mzs`` is the
+    # parallel list of its m/z values, so the [lower_mz, upper_mz] window's
+    # index range can be found in O(log n) via bisect instead of scanning
+    # every feature in the sample. This preserves the exact same inclusive
+    # ``lower_mz <= feature.mz <= upper_mz`` semantics as the prior linear
+    # scan: bisect_left(lower_mz) is the first index >= lower_mz, and
+    # bisect_right(upper_mz) is one past the last index <= upper_mz.
+    start_index = bisect.bisect_left(sorted_mzs, lower_mz)
+    end_index = bisect.bisect_right(sorted_mzs, upper_mz)
+
     best: _PositionMatch | None = None
-    for feature in sample_features:
+    for feature in sample_features[start_index:end_index]:
         if feature is base:
-            continue
-        if not (lower_mz <= feature.mz <= upper_mz):
             continue
         rt_delta_sec = abs(feature.rt_apex_min - base.rt_apex_min) * 60.0
         if rt_delta_sec > rt_tolerance_sec:
