@@ -2,20 +2,20 @@
 
 Doc placement: repo_support_doc
 Doc kind: validation_artifact
-Doc lifecycle: active
+Doc lifecycle: archived
 Repo owner: docs/product/discovery.md
-Doc exit rule: Set `Doc lifecycle: archived` once Task 8 records the
-real-sample run results in this same file (candidate count, output paths,
-review status). Keep this file (active or archived) until Discovery product
-docs or a newer validation artifact covers the same Pt pattern real-sample
-diagnostic lane.
+Doc exit rule: This file is archived as a point-in-time diagnostic snapshot
+(Task 8 real-sample run recorded below: candidate count, output paths,
+review status). Keep this file (archived) until Discovery product docs or a
+newer validation artifact covers the same Pt pattern real-sample diagnostic
+lane.
 
-Status: not yet run. This is a stub created by Task 7 (Detected-Feature
-Source Gate For Real Samples) of
-`docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`.
-No real-sample run has happened yet -- the "Results" section below is a
-placeholder only. When it is filled in (Task 8), the run will be
-`diagnostic_only`, never product validation or Matrix authority.
+Status: Task 8 (Diagnostic Real-Sample Candidate Generation) of
+`docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+has run the scan-level proxy and the Pt pattern Discovery CLI end-to-end
+against the real-sample Fullscan RAW file. See "Results" below. The run is
+`diagnostic_only`, never product validation or Matrix authority, and awaits
+manual user review before any oracle promotion.
 
 ## Purpose
 
@@ -66,8 +66,69 @@ used directly instead and this section updated to name it, with
 
 ## Results
 
-Not yet run. Task 8 (Diagnostic Real-Sample Candidate Generation) will run
-the proxy and/or the Pt pattern CLI against the user-provided Fullscan RAW
-sample and append results here: candidate count, output paths, and review
-status. Until that section is added, treat this validation lane as
-`status: not yet run`.
+Sample used: the Dec 2025 CSMU delta-mass Fullscan sample (a real
+user-provided Fullscan RAW file; local absolute path kept only in the
+git-ignored `.env.xic-local` local config, never in this doc).
+
+Commands run (env vars loaded from `.env.xic-local` per the plan's command
+shape):
+
+```powershell
+Get-Content .env.xic-local |
+  Where-Object { $_ -match '^\s*[^#=]+=' } |
+  ForEach-Object {
+    $name, $value = $_ -split '=', 2
+    Set-Item "Env:$name" $value
+  }
+
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_scan_proxy `
+  --raw "$env:PT_PATTERN_SAMPLE_DIR\CT-DNA+100uMCP_Fullscan.raw" `
+  --dll-dir "$env:THERMO_RAWFILE_READER_DLL_DIR" `
+  --output-dir output\pt_pattern_discovery_v1\fullscan_proxy
+
+.venv\Scripts\python.exe -m scripts.run_pt_pattern_discovery `
+  --detected-features-csv output\pt_pattern_discovery_v1\fullscan_proxy\detected_features.csv `
+  --output-dir output\pt_pattern_discovery_v1\fullscan_proxy\pt_candidates `
+  --preset pt_pattern
+```
+
+Output directories (relative to repo root, git-ignored, not committed):
+
+- `output/pt_pattern_discovery_v1/fullscan_proxy/` -- proxy
+  `detected_features.csv` (78,976 pseudo-feature rows: 19,744 scan-level
+  groups x 4 Pt positions each) + `proxy_provenance.json`
+  (`ms1_scan_count: 2726`, `scan_hit_count: 387924`).
+- `output/pt_pattern_discovery_v1/fullscan_proxy/pt_candidates/` --
+  `pt_pattern_candidates.csv`, `pt_pattern_review.csv`,
+  `pt_pattern_sidecar.json` (Pt pattern Discovery CLI output,
+  `--preset pt_pattern`).
+
+Candidate count: **0** (header-only `pt_pattern_candidates.csv` and
+`pt_pattern_review.csv`; `pt_pattern_sidecar.json` summary reports
+`candidate_count: 0`, `pt_only_candidate_count: 0`,
+`cid_nl_supported_candidate_count: 0`, empty `candidates` array).
+
+Zero candidates is a valid, expected diagnostic outcome here, not a failure:
+the proxy's placeholder `trace_quality = "REVIEW"` / `shape_score = 0.0` on
+every row are deliberately below the real Pt matcher's local-signal-support
+gate, and the matcher re-applies its real 20 ppm / 30 sec Global Constraint
+gates on top of the proxy's looser 50 ppm scan-level lookup window. No
+tolerance, gate, or CLI default was loosened to try to manufacture a
+nonzero result.
+
+Runtime observed: proxy scan pass ~34 seconds over the full RAW file (2,726
+MS1 scans); Pt pattern Discovery CLI pass over the resulting 78,976-row
+detected-features CSV took approximately 19 minutes wall-clock -- notably
+slower than its typical usage against much smaller, real feature-detector
+outputs, since a scan-level proxy emits far more candidate rows per group
+than a true chromatographic peak detector would. This is a diagnostic-lane
+observation about a first real-sample run, not a change to any product
+code or gate.
+
+**Result status: `diagnostic_only`.** This candidate set (in this case, an
+empty set) is a first-look diagnostic result only. It does not validate
+peak-detection accuracy, does not promote any oracle, and does not change
+counted detection, Matrix authority, or production readiness. It awaits
+manual user review of the underlying proxy features and gate behavior
+before any candidate example from this or a future run can be accepted as
+an oracle.
