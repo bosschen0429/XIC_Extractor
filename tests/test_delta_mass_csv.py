@@ -374,7 +374,7 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
     )
 
     result = DeltaMassDiscoveryResult(
-        method_label="pt_pattern_cid_nl_dr",
+        method_label="pt_pattern+cid_nl_dr",
         pattern=PT_PATTERN,
         detected_features_csv="detected_features.csv",
         cid_nl_candidates_csv="discovery_candidates.csv",
@@ -384,7 +384,7 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
     write_pt_pattern_sidecar_json(output_path, result=result)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["method_label"] == "pt_pattern_cid_nl_dr"
+    assert payload["method_label"] == "pt_pattern+cid_nl_dr"
     assert payload["inputs"]["cid_nl_candidates_csv"] == "discovery_candidates.csv"
     assert payload["inputs"]["cid_nl_candidates_csv"] is not None
     assert payload["summary"] == {
