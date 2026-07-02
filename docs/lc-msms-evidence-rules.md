@@ -42,6 +42,9 @@ plane, `docs/superpowers/validation/productization_status_index_v1.tsv`, and
 
 ## MS1 Morphology And Area Owner
 
+For the first-principles design rationale behind smoothed-everywhere trace
+processing, see [`product/signal-processing-rationale.md`](product/signal-processing-rationale.md).
+
 - The active MS1 morphology trace for peak shape, noise-shape, paired area-ratio
   review, and user-facing/final matrix area is Gaussian15-smoothed positive AsLS
   residual (`gaussian15_positive_asls_residual`) by default. The smoothing
