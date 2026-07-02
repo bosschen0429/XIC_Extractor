@@ -1057,6 +1057,7 @@ Steps:
 
 Files:
 
+- `xic_extractor/discovery/pt_pattern_trace_evidence.py`
 - `tools/diagnostics/pt_pattern_trace_diagnosis.py`
 - `tests/test_pt_pattern_trace_diagnosis.py`
 - `tools/diagnostics/INDEX.md`
@@ -1105,6 +1106,16 @@ Observed 50-row diagnostic slices:
   `pt_pattern_detected_diagnostic` means "scan seed plus co-elution support" in
   this ignored diagnostic output only; it is not counted detection or Matrix
   authority.
+- Trace diagnosis schema v2 uses Gaussian15-smoothed XIC intensity as the
+  decision basis for apex, shape similarity, active overlap, and support
+  status. Raw vendor trace points and raw audit metrics remain available for
+  inspection, but raw trace similarity is not the default support gate.
+- The reusable support semantics now live in
+  `xic_extractor.discovery.pt_pattern_trace_evidence`; the diagnostic CLI only
+  opens RAW files, batches XIC extraction, and writes diagnostic artifacts.
+- The diagnostic JSON sidecar records `readiness_tier = diagnostic_only` and
+  `evidence_owner = xic_extractor.discovery.pt_pattern_trace_evidence` so this
+  probe cannot be mistaken for Matrix/counting authority.
 
 Conclusion:
 
@@ -1112,6 +1123,206 @@ Conclusion:
   pivot: keep scan-level pattern finding as the seed layer, then require
   chromatographic co-elution evidence before calling a candidate
   detection-grade. Do not productize scan-level matching by itself.
+
+### Task 11: Manual Review Packet For Oracle Promotion
+
+Files:
+
+- `xic_extractor/discovery/pt_pattern_review_packet.py`
+- `tools/diagnostics/pt_pattern_review_packet.py`
+- `tests/test_pt_pattern_review_packet.py`
+- `tools/diagnostics/INDEX.md`
+
+Purpose:
+
+- Convert existing Pt candidate + trace diagnosis outputs into a bounded,
+  human-reviewable packet.
+- Let the user mark sampled rows as `accepted`, `rejected`, or `uncertain`
+  before any oracle or promotion packet exists.
+- Keep the packet `diagnostic_only`: blank human-review columns and
+  `oracle_status = pending_human_review` are not product authority.
+
+Command outline:
+
+```powershell
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_review_packet `
+  --candidates-csv output\pt_pattern_discovery_v1\fullscan_proxy_fixed\pt_candidates_anchor_fixed\pt_pattern_candidates.csv `
+  --trace-summary-csv output\pt_pattern_discovery_v1\fullscan_proxy_fixed\trace_diagnosis_limit50\pt_pattern_trace_summary.csv `
+  --trace-metrics-csv output\pt_pattern_discovery_v1\fullscan_proxy_fixed\trace_diagnosis_limit50\pt_pattern_trace_metrics.csv `
+  --output-dir output\pt_pattern_productization_v1\manual_review_packet\pt_only_fullscan `
+  --packet-label pt_pattern_productization_v1 `
+  --source-label pt_only_fullscan `
+  --max-per-status 5
+```
+
+Rules:
+
+- The packet samples up to `--max-per-status` rows from each
+  `combined_pt_pattern_status` bucket in deterministic RT/m/z order.
+- The CSV must include `human_review_decision`, `human_review_note`, and
+  `oracle_status` columns, but generated rows keep the decision blank and
+  `oracle_status = pending_human_review`.
+- The JSON sidecar must record `readiness_tier = diagnostic_only` and the
+  package evidence owner. It must not claim an accepted oracle.
+- A future promotion step may consume reviewed rows only after the user marks
+  decisions and the packet is treated as a human-created oracle artifact.
+
+### Task 12: Double-Blind MS1/XIC Overlay Review
+
+Files:
+
+- `xic_extractor/discovery/pt_pattern_blind_overlay.py`
+- `tools/diagnostics/pt_pattern_blind_overlay.py`
+- `tests/test_pt_pattern_blind_overlay.py`
+- `tools/diagnostics/INDEX.md`
+
+Purpose:
+
+- Support a double-blind review of the bounded Pt review packets.
+- Generate an HTML overlay gallery that shows normalized base / `+1.0021` /
+  `+2.0023` / `+4.0052` traces for each packet row.
+- Keep Codex's rule-based call in a separate sealed CSV so the HTML does not
+  bias the user's visual judgment.
+
+Command outline:
+
+```powershell
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_trace_diagnosis `
+  --candidates-csv output\pt_pattern_discovery_v1\fullscan_proxy_fixed\pt_candidates_anchor_fixed\pt_pattern_candidates.csv `
+  --raw "$env:PT_PATTERN_SAMPLE_DIR\CT-DNA+100uMCP_Fullscan.raw" `
+  --dll-dir "$env:THERMO_RAWFILE_READER_DLL_DIR" `
+  --output-dir output\pt_pattern_productization_v1\blind_overlay_trace_points\pt_only_fullscan `
+  --limit 50 `
+  --write-trace-points
+
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_blind_overlay `
+  --review-packet-csv output\pt_pattern_productization_v1\manual_review_packet\pt_only_fullscan\pt_pattern_manual_review_packet.csv `
+  --trace-points-csv output\pt_pattern_productization_v1\blind_overlay_trace_points\pt_only_fullscan\pt_pattern_trace_points.csv `
+  --output-dir output\pt_pattern_productization_v1\blind_overlay\pt_only_fullscan `
+  --title "Pt Pattern Blind Overlay - Pt Only Fullscan"
+```
+
+Rules:
+
+- HTML must not include `combined_pt_pattern_status`, machine calls, or
+  accept/reject/uncertain strings.
+- HTML trace curves and sealed machine calls use the same Gaussian15-smoothed
+  trace-decision metrics. Raw trace-point CSVs remain unchanged and no Matrix
+  authority, counted detection, or quantitation contract is granted.
+- Summary JSON must not expose machine-call distribution.
+- `pt_pattern_machine_calls_sealed.csv` is Codex's blind call surface; do not
+  open it until the user has recorded independent calls.
+- Overlay review remains `diagnostic_only`; it does not promote an oracle,
+  Matrix authority, or counted detection.
+
+### Task 13: Bounded Manual Oracle Promotion Packet
+
+Files:
+
+- `xic_extractor/discovery/pt_pattern_oracle_promotion.py`
+- `tools/diagnostics/pt_pattern_oracle_promotion.py`
+- `tests/test_pt_pattern_oracle_promotion.py`
+- `tools/diagnostics/INDEX.md`
+
+Purpose:
+
+- Convert reviewed and adjudicated Pt blind-review rows into a bounded manual
+  oracle promotion packet.
+- Fail closed unless every adjudicated row is `accept` or `reject`, has a
+  nonblank adjudication basis, and matches exactly one original manual-review
+  packet row by `packet_row_id` / `candidate_id`.
+- Record input SHA-256 provenance and make the scope explicit:
+  `bounded_manual_oracle_only`.
+
+Command outline:
+
+```powershell
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_oracle_promotion `
+  --adjudicated-oracle-csv output\pt_pattern_productization_v1\blind_overlay_review\pt_pattern_blind_review_adjudicated_oracle_candidate.csv `
+  --adjudication-summary-json output\pt_pattern_productization_v1\blind_overlay_review\pt_pattern_blind_review_adjudicated_oracle_summary.json `
+  --review-packet-csv output\pt_pattern_productization_v1\manual_review_packet\pt_only_fullscan\pt_pattern_manual_review_packet.csv `
+  --review-packet-csv output\pt_pattern_productization_v1\manual_review_packet\pt_cid_nl_dr_ddms2\pt_pattern_manual_review_packet.csv `
+  --output-dir output\pt_pattern_productization_v1\oracle_promotion\pt_detected_oracle_v1 `
+  --oracle-packet-id pt_detected_oracle_v1
+```
+
+Historical v1 output:
+
+- `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v1/`
+- `pt_pattern_oracle_promotion_packet.csv`: 28 rows, 10 `accept` /
+  `detected`, 18 `reject` / `non_detected`.
+- `pt_pattern_oracle_promotion_summary.json`: records `readiness_tier =
+  production_candidate`, `authority_scope = bounded_manual_oracle_only`, input
+  SHA-256 values, and explicit false flags for Matrix, counted-detection, and
+  export changes.
+
+Current v2 status:
+
+- `pt_pattern_trace_diagnosis.v2` changes the trace decision basis to
+  Gaussian15-smoothed XIC intensity and regenerates the bounded packet
+  population.
+- The regenerated bounded v2 packets have 24 rows total. They overlap 20 old
+  adjudicated row ids, add 4 new row ids, and leave 8 old v1 oracle row ids
+  outside the bounded packets.
+- `pt_pattern_oracle_refresh.v1` writes a no-RAW refresh worklist under
+  `output/pt_pattern_productization_v1/oracle_refresh/pt_detected_oracle_v2_refresh/`:
+  20 labels are carried forward with current packet provenance, 4 rows were
+  adjudicated by the user as `reject`, and 8 old oracle rows are marked stale.
+- The initial 24-row v2 adjudicated oracle candidate is
+  `output/pt_pattern_productization_v1/oracle_refresh/pt_detected_oracle_v2_refresh/pt_pattern_v2_adjudicated_oracle_candidate.csv`
+  with 24 rows: 5 `accept`, 19 `reject`, 0 `uncertain`. This artifact is an
+  intermediate refresh result, not the calibration baseline, because it omits
+  the 8 old v1 oracle rows that fell outside the bounded packet selection.
+- The repaired v2 oracle rechecks all 8 stale old rows against current
+  Gaussian15 packet metrics and combines them with the 24-row refresh result:
+  `output/pt_pattern_productization_v1/oracle_repair/pt_detected_oracle_v2_repaired_32/`.
+  The repaired adjudicated oracle has 32 rows: 10 `accept`, 22 `reject`, 0
+  `uncertain`.
+- The current repaired v2 oracle promotion output is
+  `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2_repaired_32/`.
+  Its summary records `readiness_tier = production_candidate`,
+  `authority_scope = bounded_manual_oracle_only`, 10 `detected`, 22
+  `non_detected`, and explicit false flags for Matrix, counted-detection, and
+  export changes.
+- The current repaired v2 threshold calibration output is
+  `output/pt_pattern_productization_v1/oracle_thresholds/pt_detected_oracle_v2_repaired_32/`.
+  It recommends full-pattern status plus `max_abs_apex_delta_sec <= 10`,
+  `min_pearson_r_to_base >= 0.90`, and
+  `min_active_overlap_fraction >= 0.50`. Against the repaired 32-row v2 oracle,
+  that rule has 10 true positives, 22 true negatives, 0 false positives, and 0
+  false negatives. The previous sealed machine-call rule has 3 false positives
+  and 8 uncertain reject rows on the repaired oracle.
+- The current repaired v2 diagnostic gate replay output is
+  `output/pt_pattern_productization_v1/diagnostic_gate/pt_detected_oracle_v2_repaired_32/`.
+  It applies the same calibrated rule through
+  `xic_extractor.discovery.pt_pattern_diagnostic_gate` and schema
+  `pt_pattern_diagnostic_gate.v1`. With `--require-zero-fpfn`, the replay exits
+  `0` on the repaired 32-row v2 oracle and reports 10 true positives, 22 true
+  negatives, 0 false positives, and 0 false negatives.
+- The v1 promotion packet is now historical calibration context only, not
+  current v2 authority.
+
+Rules:
+
+- A promotion packet can be production-candidate only for the exact bounded
+  manual oracle rows it validates. It does not make the Pt detector
+  production-candidate, does not change Matrix authority, and does not redefine
+  counted detection.
+- A threshold calibration report is `diagnostic_only`. It can justify the next
+  diagnostic gate, but it is not detector activation and must not become a
+  counted-detection, Matrix, workbook, or export rule without a later explicit
+  public-surface contract.
+- A diagnostic gate replay is still `diagnostic_only`. It is useful because the
+  calibrated rule is now machine-repeatable and fail-closed against a bounded
+  oracle, but it still does not activate the detector, write Matrix/Backfill, or
+  define counted detection/export behavior.
+- A refresh draft is not a promoted oracle. It can only feed promotion after
+  every pending/conflicting row has an `accept` or `reject` adjudication and
+  current packet provenance still matches.
+- `uncertain` rows cannot be promoted. They must be adjudicated to `accept` or
+  `reject` before this step.
+- Natural-language notes stay preserved as rationale and are not normalized into
+  a controlled vocabulary yet.
 
 ## Verification Commands
 
@@ -1125,6 +1336,12 @@ $env:UV_CACHE_DIR='.uv-cache'; uv run pytest -q `
   tests/test_pt_pattern_presets.py `
   tests/test_run_pt_pattern_discovery.py `
   tests/test_pt_pattern_trace_diagnosis.py `
+  tests/test_pt_pattern_review_packet.py `
+  tests/test_pt_pattern_blind_overlay.py `
+  tests/test_pt_pattern_oracle_promotion.py `
+  tests/test_pt_pattern_oracle_refresh.py `
+  tests/test_pt_pattern_oracle_thresholds.py `
+  tests/test_pt_pattern_diagnostic_gate.py `
   tests/test_pt_pattern_boundaries.py `
   tests/test_presets_loader.py `
   tests/test_presets_apply.py `
@@ -1189,14 +1406,15 @@ Select-String -Path $scanPaths `
 
 ## Productization Control-Plane Impact
 
-This branch adds diagnostic Pt pattern artifacts and one diagnostic trace CLI,
-but it still does not change maturity tier, active product lane, selected area,
-counted detection, Matrix writer authority, workbook schema, review/replay
-behavior, or persisted production identifiers. The new
-`pt_pattern_trace_diagnosis.v1` schema is an ignored `tools/diagnostics/`
-output used for validation only; even
+The first diagnostic implementation pass did not require a control-plane tier
+change. The product goal has now changed: this branch is the active
+`pt_pattern_discovery_productization_v1` lane in
+`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
+
+Current tier remains `diagnostic_only`. The near-term target is
+`production_candidate`, not `production_ready`, and only after trace/co-elution
+evidence is package-owned, schema/provenance tests are locked, and a manual
+accepted/rejected oracle exists. `pt_pattern_trace_diagnosis.v2` is still a
+diagnostic output; even
 `combined_pt_pattern_status = pt_pattern_detected_diagnostic` is not counted
-detection, ProductWriter authority, workbook, Matrix, or activation schema. No
-edit to
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md` is required
-for this diagnostic-only implementation pass.
+detection, ProductWriter authority, workbook, Matrix, or activation schema.

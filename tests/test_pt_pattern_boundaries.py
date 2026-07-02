@@ -50,6 +50,13 @@ PT_PATTERN_MODULE_PATHS = (
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_patterns.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_csv.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_pipeline.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_trace_evidence.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_review_packet.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_blind_overlay.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_promotion.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_refresh.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_thresholds.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_diagnostic_gate.py",
     REPO_ROOT / "scripts" / "run_pt_pattern_discovery.py",
 )
 
@@ -93,6 +100,76 @@ def test_delta_mass_csv_module_does_not_import_forbidden_roots() -> None:
 
 def test_delta_mass_pipeline_module_does_not_import_forbidden_roots() -> None:
     path = REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_pipeline.py"
+    assert _violations(path) == []
+
+
+def test_pt_pattern_trace_evidence_module_does_not_import_forbidden_roots() -> None:
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_trace_evidence.py"
+    )
+    assert _violations(path) == []
+
+
+def test_pt_pattern_review_packet_module_does_not_import_forbidden_roots() -> None:
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_review_packet.py"
+    )
+    assert _violations(path) == []
+
+
+def test_pt_pattern_blind_overlay_module_does_not_import_forbidden_roots() -> None:
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_blind_overlay.py"
+    )
+    assert _violations(path) == []
+
+
+def test_pt_pattern_oracle_promotion_module_does_not_import_forbidden_roots() -> None:
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_oracle_promotion.py"
+    )
+    assert _violations(path) == []
+
+
+def test_pt_pattern_oracle_refresh_module_does_not_import_forbidden_roots() -> None:
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_oracle_refresh.py"
+    )
+    assert _violations(path) == []
+
+
+def test_pt_pattern_oracle_thresholds_module_does_not_import_forbidden_roots() -> None:
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_oracle_thresholds.py"
+    )
+    assert _violations(path) == []
+
+
+def test_pt_pattern_diagnostic_gate_module_does_not_import_forbidden_roots() -> None:
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_diagnostic_gate.py"
+    )
     assert _violations(path) == []
 
 
@@ -192,7 +269,7 @@ def test_no_pt_pattern_module_source_mentions_product_writer_call_site() -> None
 def test_no_pt_pattern_module_source_contains_backfill_terminology() -> None:
     """Backfill is a separate lane; Pt pattern CSV schemas/enums must not
 
-    reference it. A case-insensitive substring scan across the five Pt
+    reference it. A case-insensitive substring scan across the Pt
     pattern module files (which is where ``PT_CANDIDATE_COLUMNS``,
     ``PT_REVIEW_COLUMNS``, and every fixed ``candidate_state`` /
     ``cid_nl_base_status`` / ``local_signal_support_status`` enum value used

@@ -1,8 +1,8 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
 **Last refreshed:** 2026-07-02
-**Total entry-points:** 109
-**Total files (incl. helpers):** 193 Python files under `tools/diagnostics/`
+**Total entry-points:** 115
+**Total files (incl. helpers):** 199 Python files under `tools/diagnostics/`
 **Governing spec:** `docs/architecture-contract.md`; the retired dated
 diagnostic lifecycle spec remains only as a same-path public stub.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
@@ -42,7 +42,7 @@ top-level `tools/diagnostics/*.py` files for total files.
 8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization) — 7 tools
 9. [Area / Region Audits](#area--region-audits) — 4 tools
 10. [One-off Fixtures](#one-off-fixtures) — 1 tool
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 2 tools
+11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 8 tools
 12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
 
 ---
@@ -1681,7 +1681,8 @@ candidates, but the provenance labels the output `diagnostic_only`; see
 `xic_extractor.raw_reader.open_raw` / `RawFileHandle.extract_xic_many`, and
 writes candidate-level trace support summaries, position-level co-elution
 metrics, and optional trace points.
-**Topic group**: `pt_pattern_trace_diagnosis.py` (single-file)
+**Topic group**: `pt_pattern_trace_diagnosis.py` +
+`xic_extractor.discovery.pt_pattern_trace_evidence`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
 **Status note**: Diagnostic-only evidence probe. It does not create Pt
 candidates, mutate Discovery outputs, read Alignment/Backfill state, or write
@@ -1690,7 +1691,128 @@ from `trace_support_status` and reports a diagnostic-only
 `combined_pt_pattern_status`; `pt_pattern_detected_diagnostic` means scan seed
 plus co-elution support in this ignored output only. Use it to evaluate whether
 scan-proxy or feature-level Pt candidates have RT-close, shape-supported
-chromatographic families before promoting any rule into the product lane.
+chromatographic families before promoting any rule into the product lane. The
+diagnostic wrapper owns RAW opening and file writes only; reusable support
+semantics live in the Discovery package module. Schema v2 records
+`trace_decision_basis = gaussian15_smoothed_trace`: apex, shape similarity,
+active overlap, and support status use Gaussian15-smoothed XIC intensity, while
+raw vendor trace points and raw audit metrics are retained as reference
+evidence. The JSON sidecar records `readiness_tier = diagnostic_only` and
+`evidence_owner = xic_extractor.discovery.pt_pattern_trace_evidence`.
+
+---
+
+### `pt_pattern_review_packet.py`
+
+**Purpose**: Build a bounded manual-review packet for Pt pattern candidates by
+joining `pt_pattern_candidates.csv`, `pt_pattern_trace_summary.csv`, and
+`pt_pattern_trace_metrics.csv`. The output is a small CSV with blank
+`human_review_decision` / `human_review_note` columns for accepted/rejected/
+uncertain oracle work plus a JSON sidecar.
+**Topic group**: `pt_pattern_review_packet.py` +
+`xic_extractor.discovery.pt_pattern_review_packet`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only review-surface builder. It does not open RAW,
+create candidates, mutate Discovery outputs, read Alignment/Backfill state, or
+write Matrix/workbook artifacts. The sidecar records
+`readiness_tier = diagnostic_only`, `oracle_status = pending_human_review`, and
+`evidence_owner = xic_extractor.discovery.pt_pattern_trace_evidence`; rows only
+become an oracle after human review fills and promotes them through a separate
+promotion packet.
+
+---
+
+### `pt_pattern_blind_overlay.py`
+
+**Purpose**: Build a blind MS1/XIC overlay gallery from a Pt pattern manual
+review packet and `pt_pattern_trace_points.csv`. The HTML intentionally hides
+machine calls and diagnostic status buckets so the user can make an independent
+visual call before opening the sealed machine-call CSV.
+**Topic group**: `pt_pattern_blind_overlay.py` +
+`xic_extractor.discovery.pt_pattern_blind_overlay`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only human-review surface. It reads existing
+review-packet and trace-points CSVs, writes an HTML gallery, a sealed machine
+call CSV, and a summary JSON with no call distribution. It does not open RAW,
+create candidates, mutate Discovery outputs, read Alignment/Backfill state, or
+write Matrix/workbook artifacts. The sealed machine-call CSV is not an oracle;
+it is revealed only after the user records independent review decisions. The
+HTML plots Gaussian15-smoothed traces for review and sealed machine calls use
+the same Gaussian15 trace-decision metrics. Raw trace-point CSVs remain raw
+vendor evidence and are not Matrix, counting, or quantitation authority.
+
+---
+
+### `pt_pattern_oracle_promotion.py`
+
+**Purpose**: Validate adjudicated Pt pattern blind-review rows against their
+manual review packet provenance and write a bounded oracle promotion packet.
+**Topic group**: `pt_pattern_oracle_promotion.py` +
+`xic_extractor.discovery.pt_pattern_oracle_promotion`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Production-candidate only for the bounded manual-oracle
+artifact. It consumes an adjudicated oracle CSV plus one or more manual-review
+packet CSVs, fails closed on blank, duplicate, unmatched, or `uncertain`
+adjudicated calls, and writes `pt_pattern_oracle_promotion_packet.csv` plus a
+summary JSON with input SHA-256 provenance. It does not open RAW, create
+candidates, recompute trace evidence, mutate Discovery outputs, read
+Alignment/Backfill state, or write Matrix/workbook artifacts.
+
+---
+
+### `pt_pattern_oracle_refresh.py`
+
+**Purpose**: Compare an older adjudicated Pt pattern oracle CSV with current
+manual-review packets and sealed machine-call CSVs, then write a v2 refresh
+draft, a pending human-review worklist, stale old-oracle rows, and a summary
+JSON with input SHA-256 provenance.
+**Topic group**: `pt_pattern_oracle_refresh.py` +
+`xic_extractor.discovery.pt_pattern_oracle_refresh`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only oracle maintenance surface. It does not open
+RAW, create candidates, recompute trace evidence, mutate Discovery outputs,
+read Alignment/Backfill state, or write Matrix/workbook artifacts. It carries
+old human labels forward only when the current packet row id and candidate id
+match, leaves new or conflicting rows as `pending_human_review`, and reports
+old oracle rows that no longer exist in the current packet as stale. A refresh
+draft is promotable only after every pending/conflicting row is resolved.
+
+---
+
+### `pt_pattern_oracle_thresholds.py`
+
+**Purpose**: Calibrate simple Pt pattern trace thresholds against the current
+bounded manual oracle promotion packet. It joins `pt_pattern_oracle_promotion`
+rows with current manual-review packet metrics, sweeps full-pattern
+apex/Pearson/overlap threshold candidates, and writes a threshold-candidate CSV,
+a case-level audit CSV, and a summary JSON.
+**Topic group**: `pt_pattern_oracle_thresholds.py` +
+`xic_extractor.discovery.pt_pattern_oracle_thresholds`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only threshold calibration surface. It does not
+open RAW, create candidates, recompute trace evidence, mutate Discovery
+outputs, read Alignment state, or write Matrix/workbook artifacts. The
+recommended rule is review evidence only; it must not be treated as detector
+activation, counted-detection authority, or export authority without a later
+explicit public-surface contract.
+
+---
+
+### `pt_pattern_diagnostic_gate.py`
+
+**Purpose**: Apply the calibrated Pt full-pattern diagnostic gate to one or
+more manual-review packet CSVs, optionally replaying against a bounded oracle
+promotion packet, and write row-level gate calls plus a summary JSON.
+**Topic group**: `pt_pattern_diagnostic_gate.py` +
+`xic_extractor.discovery.pt_pattern_diagnostic_gate`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only replay surface. It does not open RAW, create
+candidates, recompute trace evidence, mutate Discovery outputs, read Alignment
+state, or write Matrix/workbook artifacts. `--require-zero-fpfn` makes the CLI
+fail if bounded-oracle replay has any false positive or false negative, but that
+pass/fail result is only a diagnostic gate and must not be treated as detector
+activation, counted-detection authority, or export authority without a later
+public-surface contract.
 
 ---
 

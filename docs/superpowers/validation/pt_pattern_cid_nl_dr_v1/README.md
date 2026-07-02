@@ -163,30 +163,167 @@ Output directory:
 
 - `output/pt_pattern_cid_nl_dr_v1/pt_intersection_seed_first_fixed/trace_diagnosis_limit50/`
 
-Candidate-level trace support summary, 50-row sample:
+Candidate-level trace support summary, 50-row sample after the Gaussian15
+decision-basis v2 rerun:
 
-- `supported`: 34
-- `partial_support`: 14
+- `supported`: 41
+- `partial_support`: 7
 - `incomplete_trace_signal`: 2
 
 Combined diagnostic Pt status, 50-row sample:
 
-- `pt_pattern_detected_diagnostic`: 34
-- `pt_pattern_candidate_partial`: 14
+- `pt_pattern_detected_diagnostic`: 41
+- `pt_pattern_candidate_partial`: 7
 - `pt_pattern_candidate_incomplete`: 2
 
 Position-level support summary, 50-row sample:
 
 - `pt_plus_1`: 48 supported, 1 review, 1 missing signal
-- `pt_plus_2`: 47 supported, 2 review, 1 missing signal
-- `pt_plus_4`: 35 supported, 13 review, 2 missing signal
+- `pt_plus_2`: 48 supported, 1 review, 1 missing signal
+- `pt_plus_4`: 41 supported, 7 review, 2 missing signal
 
 Interpretation: CID-NL seed-first intersection produces a much stronger
 trace-confirmed slice than Pt-only scan-proxy matching in the sampled rows, but
-`+4` remains the main weak position. This supports a two-layer design:
-scan-level pattern finding proposes seeds, chromatographic co-elution confirms
-which seeds are diagnostic Pt detections, and composite CID-NL search should
-remain seed-first.
+the v2 rerun shows that raw trace similarity was too sensitive for the machine
+gate. Gaussian15 smoothing is the current decision basis, and `+4` remains the
+main weak position. This supports a two-layer design: scan-level pattern
+finding proposes seeds, chromatographic co-elution confirms which seeds are
+diagnostic Pt detections, and composite CID-NL search should remain seed-first.
+
+## Manual Review Packet
+
+A bounded manual-review packet was generated from the composite candidate CSV
+and trace-diagnosis outputs. This packet is the intended handoff for user
+review; it is not an oracle until the user fills `human_review_decision` and
+the reviewed rows are promoted by a separate oracle/promotion step.
+
+Command:
+
+```powershell
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_review_packet `
+  --candidates-csv output\pt_pattern_cid_nl_dr_v1\pt_intersection_seed_first_fixed\pt_pattern_candidates.csv `
+  --trace-summary-csv output\pt_pattern_cid_nl_dr_v1\pt_intersection_seed_first_fixed\trace_diagnosis_limit50\pt_pattern_trace_summary.csv `
+  --trace-metrics-csv output\pt_pattern_cid_nl_dr_v1\pt_intersection_seed_first_fixed\trace_diagnosis_limit50\pt_pattern_trace_metrics.csv `
+  --output-dir output\pt_pattern_productization_v1\manual_review_packet\pt_cid_nl_dr_ddms2 `
+  --packet-label pt_pattern_productization_v1 `
+  --source-label pt_cid_nl_dr_ddms2 `
+  --max-per-status 5
+```
+
+Output directory, relative to repo root and git-ignored:
+
+- `output/pt_pattern_productization_v1/manual_review_packet/pt_cid_nl_dr_ddms2/`
+
+Packet summary:
+
+- `schema_version = pt_pattern_manual_review_packet.v1`
+- `readiness_tier = diagnostic_only`
+- `oracle_status = pending_human_review`
+- Row count: 12
+- Status buckets: 5 `pt_pattern_detected_diagnostic`, 5
+  `pt_pattern_candidate_partial`, and 2 `pt_pattern_candidate_incomplete`.
+
+## Blind Overlay Review
+
+The composite manual review packet was converted into a blind MS1/XIC overlay
+gallery. The HTML shows normalized base / `+1.0021` / `+2.0023` / `+4.0052`
+traces for each packet row. It intentionally hides diagnostic status buckets
+and Codex's rule-based calls. Codex's calls are written only to the sealed CSV
+and should not be opened until the user has recorded independent visual
+decisions.
+
+Commands:
+
+```powershell
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_trace_diagnosis `
+  --candidates-csv output\pt_pattern_cid_nl_dr_v1\pt_intersection_seed_first_fixed\pt_pattern_candidates.csv `
+  --raw "$env:PT_PATTERN_SAMPLE_DIR\DNA+100uMCP_DDMS2_new.raw" `
+  --dll-dir "$env:THERMO_RAWFILE_READER_DLL_DIR" `
+  --output-dir output\pt_pattern_productization_v1\blind_overlay_trace_points\pt_cid_nl_dr_ddms2 `
+  --limit 50 `
+  --write-trace-points
+
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_blind_overlay `
+  --review-packet-csv output\pt_pattern_productization_v1\manual_review_packet\pt_cid_nl_dr_ddms2\pt_pattern_manual_review_packet.csv `
+  --trace-points-csv output\pt_pattern_productization_v1\blind_overlay_trace_points\pt_cid_nl_dr_ddms2\pt_pattern_trace_points.csv `
+  --output-dir output\pt_pattern_productization_v1\blind_overlay\pt_cid_nl_dr_ddms2 `
+  --title "Pt Pattern Blind Overlay - Pt + CID-NL DDMS2"
+```
+
+Output directories, relative to repo root and git-ignored:
+
+- `output/pt_pattern_productization_v1/blind_overlay_trace_points/pt_cid_nl_dr_ddms2/`
+- `output/pt_pattern_productization_v1/blind_overlay/pt_cid_nl_dr_ddms2/`
+
+Blind-review outputs:
+
+- `pt_pattern_blind_overlay_gallery.html` for human visual review.
+- HTML trace curves and sealed calls use the same Gaussian15-smoothed
+  trace-decision metrics. Raw trace points remain unchanged audit/reference
+  evidence.
+- `pt_pattern_machine_calls_sealed.csv` for Codex's sealed calls; do not open
+  until user calls are recorded.
+- `pt_pattern_blind_overlay_summary.json`, with no machine-call distribution.
+
+## Manual Oracle Promotion
+
+The bounded blind review across Pt-only and Pt+CID-NL packets was adjudicated
+into:
+
+- `output/pt_pattern_productization_v1/blind_overlay_review/pt_pattern_blind_review_adjudicated_oracle_candidate.csv`
+- `output/pt_pattern_productization_v1/blind_overlay_review/pt_pattern_blind_review_adjudicated_oracle_summary.json`
+
+Promotion command:
+
+```powershell
+.venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_oracle_promotion `
+  --adjudicated-oracle-csv output\pt_pattern_productization_v1\blind_overlay_review\pt_pattern_blind_review_adjudicated_oracle_candidate.csv `
+  --adjudication-summary-json output\pt_pattern_productization_v1\blind_overlay_review\pt_pattern_blind_review_adjudicated_oracle_summary.json `
+  --review-packet-csv output\pt_pattern_productization_v1\manual_review_packet\pt_only_fullscan\pt_pattern_manual_review_packet.csv `
+  --review-packet-csv output\pt_pattern_productization_v1\manual_review_packet\pt_cid_nl_dr_ddms2\pt_pattern_manual_review_packet.csv `
+  --output-dir output\pt_pattern_productization_v1\oracle_promotion\pt_detected_oracle_v1 `
+  --oracle-packet-id pt_detected_oracle_v1
+```
+
+Historical v1 output:
+
+- `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v1/`
+- `pt_pattern_oracle_promotion_packet.csv`: 28 provenance-matched rows; 10
+  `accept` / `detected`, 18 `reject` / `non_detected`.
+- `pt_pattern_oracle_promotion_summary.json`: `readiness_tier =
+  production_candidate`, scoped to `bounded_manual_oracle_only`.
+
+This v1 packet is historical calibration context because v2 Gaussian-basis
+rebucketing changed the current review packet population. Its adjudications are
+still reused where the same row is rechecked against current v2 metrics.
+
+Intermediate 24-row v2 refresh output:
+
+- `output/pt_pattern_productization_v1/oracle_refresh/pt_detected_oracle_v2_refresh/pt_pattern_v2_adjudicated_oracle_candidate.csv`
+- `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2/`
+- `pt_pattern_oracle_promotion_packet.csv`: 24 provenance-matched rows; 5
+  `accept` / `detected`, 19 `reject` / `non_detected`.
+- `pt_pattern_oracle_promotion_summary.json`: `readiness_tier =
+  production_candidate`, scoped to `bounded_manual_oracle_only`.
+
+Current repaired v2 oracle output:
+
+- `output/pt_pattern_productization_v1/oracle_repair/pt_detected_oracle_v2_repaired_32/`
+- `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2_repaired_32/`
+- `output/pt_pattern_productization_v1/oracle_thresholds/pt_detected_oracle_v2_repaired_32/`
+- `output/pt_pattern_productization_v1/diagnostic_gate/pt_detected_oracle_v2_repaired_32/`
+- `pt_pattern_oracle_promotion_packet.csv`: 32 provenance-matched rows; 10
+  `accept` / `detected`, 22 `reject` / `non_detected`.
+- The threshold calibration recommends full-pattern status plus apex <= 10 s,
+  Pearson >= 0.90, and overlap >= 0.50, giving 10 TP / 22 TN / 0 FP / 0 FN on
+  the repaired oracle.
+- The diagnostic gate replay applies the same rule through schema
+  `pt_pattern_diagnostic_gate.v1`; with `--require-zero-fpfn`, it exits `0` and
+  reports 10 TP / 22 TN / 0 FP / 0 FN on the repaired oracle.
+
+The repaired v2 packet is current bounded manual-oracle evidence only. It still
+does not promote scan-proxy, detector/runtime behavior, Matrix authority,
+counted detection, Backfill, workbook, or export behavior.
 
 ## Superseded Initial Run
 

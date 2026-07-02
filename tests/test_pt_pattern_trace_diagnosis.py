@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
 from pathlib import Path
 
 import numpy as np
 
 from tools.diagnostics import pt_pattern_trace_diagnosis as diag
+from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
 from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
 from xic_extractor.xic_models import XICTrace
 
@@ -33,7 +35,7 @@ def _trace(intensities: list[float]) -> XICTrace:
 
 
 def test_build_trace_requests_uses_expected_mz_and_base_rt_window() -> None:
-    requests = diag.build_trace_requests_for_candidate(
+    requests = evidence.build_trace_requests_for_candidate(
         _candidate_row(),
         ppm=20.0,
         rt_half_window_sec=30.0,
@@ -61,7 +63,7 @@ def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
         "pt_plus_4": _trace([0.0, 10.0, 0.0]),
     }
 
-    diagnosis = diag.diagnose_candidate_traces(
+    diagnosis = evidence.diagnose_candidate_traces(
         _candidate_row(),
         traces,
         ppm=20.0,
@@ -79,6 +81,11 @@ def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
         == "pt_pattern_detected_diagnostic"
     )
     assert diagnosis.summary_row["scan_pattern_seed_status"] == "full_pattern_seeded"
+    assert (
+        diagnosis.summary_row["trace_decision_basis"]
+        == evidence.TRACE_DECISION_BASIS
+    )
+    assert diagnosis.summary_row["trace_smoothing_method"] == "gaussian15"
     assert diagnosis.summary_row["non_base_positions_supported"] == 3
     assert diagnosis.summary_row["max_abs_apex_delta_sec"] == 0.0
     assert math.isclose(
@@ -86,6 +93,11 @@ def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
         1.0,
     )
     assert len(diagnosis.metric_rows) == 4
+    base_metric = next(
+        row for row in diagnosis.metric_rows if row["position_label"] == "base"
+    )
+    assert base_metric["raw_max_intensity"] == 100.0
+    assert float(base_metric["max_intensity"]) < 100.0
     assert len(diagnosis.trace_point_rows) == 12
 
 
@@ -97,7 +109,7 @@ def test_diagnose_candidate_traces_keeps_shifted_shape_in_review() -> None:
         "pt_plus_4": _trace([0.0, 10.0, 0.0]),
     }
 
-    diagnosis = diag.diagnose_candidate_traces(
+    diagnosis = evidence.diagnose_candidate_traces(
         _candidate_row(),
         traces,
         ppm=20.0,
@@ -121,6 +133,29 @@ def test_diagnose_candidate_traces_keeps_shifted_shape_in_review() -> None:
     assert diagnosis.summary_row["non_base_positions_supported"] == 2
 
 
+def test_combined_status_mapping_stays_diagnostic_not_product_authority() -> None:
+    assert (
+        evidence.combined_pt_pattern_status("supported")
+        == "pt_pattern_detected_diagnostic"
+    )
+    assert (
+        evidence.combined_pt_pattern_status("partial_support")
+        == "pt_pattern_candidate_partial"
+    )
+    assert (
+        evidence.combined_pt_pattern_status("incomplete_trace_signal")
+        == "pt_pattern_candidate_incomplete"
+    )
+    assert (
+        evidence.combined_pt_pattern_status("base_missing_signal")
+        == "pt_pattern_candidate_base_missing"
+    )
+    assert (
+        evidence.combined_pt_pattern_status("review")
+        == "pt_pattern_candidate_review"
+    )
+
+
 def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     tmp_path: Path,
     monkeypatch,
@@ -129,7 +164,7 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     write_delimited_rows(
         candidates_csv,
         [_candidate_row()],
-        diag.REQUIRED_CANDIDATE_COLUMNS,
+        evidence.REQUIRED_CANDIDATE_COLUMNS,
     )
 
     class FakeRaw:
@@ -185,7 +220,7 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     )
     trace_point_rows = read_delimited_rows(
         outputs["trace_points_csv"],
-        required_columns=("position_label", "rt_min", "intensity"),
+        required_columns=("position_label", "intensity_basis", "rt_min", "intensity"),
         delimiter=",",
     )
 
@@ -197,4 +232,17 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     )
     assert len(metric_rows) == 4
     assert len(trace_point_rows) == 12
+    assert trace_point_rows[0]["intensity_basis"] == evidence.RAW_TRACE_BASIS
     assert outputs["sidecar_json"].is_file()
+
+    sidecar = json.loads(outputs["sidecar_json"].read_text(encoding="utf-8"))
+    assert sidecar["schema_version"] == evidence.SCHEMA_VERSION
+    assert sidecar["readiness_tier"] == evidence.READINESS_TIER
+    assert sidecar["evidence_owner"] == evidence.EVIDENCE_OWNER
+    assert sidecar["diagnostic_only"] is True
+    assert sidecar["trace_request_count"] == 4
+    assert sidecar["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
+    assert sidecar["trace_smoothing_method"] == evidence.TRACE_SMOOTH_METHOD
+    assert sidecar["combined_pt_pattern_status_counts"] == {
+        "pt_pattern_detected_diagnostic": 1,
+    }

@@ -99,6 +99,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_overlay_trace_data.py",
             "tests/test_owner_backfill_request_economics.py",
             "tests/test_pre_backfill_consolidation.py",
+            "tests/test_pt_pattern_*.py",
             "tests/test_pt_pattern_boundaries.py",
             "tests/test_pt_pattern_scan_proxy.py",
             "tests/test_run_alignment.py",
