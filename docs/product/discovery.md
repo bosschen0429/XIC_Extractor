@@ -126,6 +126,8 @@ or Matrix changes.
 | Surface | Role |
 | --- | --- |
 | `xic_extractor/discovery/` | Discovery domain package |
+| `xic_extractor/discovery/delta_mass_pipeline.py` | Pt pattern Discovery pipeline; writes feature-level candidate/review output plus Discovery evidence rows |
+| `xic_extractor/discovery/pt_pattern_discovery_evidence.py` | Bridges feature-level Pt candidates with optional trace-summary rows; emits `pt_pattern_evidence.csv` rows and never grants Matrix/export authority |
 | `xic_extractor/discovery/pt_pattern_evidence_rule.py` | Package-owned reusable Pt full-pattern accept/reject rule for trace-diagnosed rows; not detector activation |
 | `xic_extractor/discovery/pt_pattern_trace_evidence.py` | Package-owned Pt trace/co-elution support semantics |
 | `xic_extractor/discovery/pt_pattern_review_packet.py` | Bounded Pt manual-review packet builder; not oracle authority until reviewed |
@@ -137,6 +139,16 @@ or Matrix changes.
 | `discovery_candidates.csv` | Detailed candidate table for archival or downstream handoff |
 | `discovery_review.csv` | Compact review table |
 | `discovery_batch_index.csv` | Batch handoff index for downstream alignment |
+
+Pt pattern Discovery additionally writes `pt_pattern_evidence.csv`
+(`pt_pattern_discovery_evidence.v1`) and `pt_pattern_sidecar.json`
+(`pt_pattern_sidecar.v2`). `pt_pattern_evidence.csv` separates feature-level
+full-pattern seed status from trace-level evidence. If no trace summary is
+provided, trace rule fields are `not_evaluated`; if a trace summary is provided,
+the shared Pt rule writes `accept`/`reject` and `detected`/`non_detected`
+without changing Matrix, Backfill, counted detection, workbook, or export
+authority. The sidecar summary records trace status/call/reason counts so
+partial trace-summary coverage is visible without opening the full evidence CSV.
 
 ## Boundaries
 

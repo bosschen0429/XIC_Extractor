@@ -1,13 +1,13 @@
 """CSV and JSON IO for Pt pattern Delta Mass Discovery.
 
 Implements the Detected Features CSV v1 loader and the Pt Candidate / Pt
-Review CSV v1 and Pt Sidecar JSON v1 writers described in the Public Contract
+Review CSV v1, Pt Discovery Evidence CSV v1, and Pt Sidecar JSON v2 writers
+described in the Public Contract
 Details section of
 ``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``.
 
 Column tuples and field rules are copied verbatim from that plan and are
-pinned by the approved contract tests in ``tests/test_delta_mass_csv.py``
-(Task 1, RED phase). This module is the Task 3 GREEN implementation.
+pinned by the approved contract tests in ``tests/test_delta_mass_csv.py``.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from __future__ import annotations
 import csv
 import json
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -111,7 +111,36 @@ PT_REVIEW_COLUMNS = (
     "review_note",
 )
 
-_SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar.v1"
+PT_EVIDENCE_COLUMNS = (
+    "schema_version",
+    "sample_stem",
+    "method_label",
+    "pattern_id",
+    "candidate_id",
+    "candidate_state",
+    "scan_pattern_seed_status",
+    "trace_evidence_status",
+    "trace_rule_call",
+    "trace_detection_status",
+    "trace_rule_reason",
+    "evidence_rule_id",
+    "evidence_rule_owner",
+    "required_combined_status",
+    "min_non_base_positions_supported",
+    "max_abs_apex_delta_threshold_sec",
+    "min_pearson_r_to_base_threshold",
+    "min_active_overlap_fraction_threshold",
+    "combined_pt_pattern_status",
+    "non_base_positions_supported",
+    "max_abs_apex_delta_sec",
+    "min_pearson_r_to_base",
+    "min_active_overlap_fraction",
+    "matrix_write_authority",
+    "counted_detection_authority",
+    "export_activation_authority",
+)
+
+_SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar.v2"
 
 # Free-text / sample-derived fields that can plausibly start with a
 # formula-trigger character ("=", "+", "-", "@") and therefore need Excel
@@ -145,9 +174,10 @@ _REVIEW_ESCAPED_FIELDS = frozenset(
 class DeltaMassDiscoveryResult:
     """A completed Pt pattern Discovery run, ready for sidecar JSON output.
 
-    ``detected_features_csv`` and ``cid_nl_candidates_csv`` are recorded as
-    the literal CLI-provided path strings (not resolved local absolute
-    paths), per the Pt Sidecar JSON v1 contract.
+    ``detected_features_csv``, ``cid_nl_candidates_csv``, and
+    ``trace_summary_csv`` are recorded as the literal CLI-provided path
+    strings (not resolved local absolute paths), per the Pt Sidecar JSON v2
+    contract.
     """
 
     method_label: str
@@ -155,6 +185,8 @@ class DeltaMassDiscoveryResult:
     detected_features_csv: str
     cid_nl_candidates_csv: str | None
     candidates: Sequence[PtPatternCandidate]
+    trace_summary_csv: str | None = None
+    evidence_rows: Sequence[Mapping[str, object]] = ()
 
 
 def load_detected_features_csv(path: Path) -> tuple[DetectedFeature, ...]:
@@ -316,12 +348,29 @@ def write_pt_pattern_review_csv(
     return path
 
 
+def write_pt_pattern_evidence_csv(
+    path: Path,
+    evidence_rows: Sequence[Mapping[str, object]],
+) -> Path:
+    """Write the Pt Discovery Evidence CSV v1 contract."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_delimited_rows(
+        path,
+        evidence_rows,
+        PT_EVIDENCE_COLUMNS,
+        extrasaction="raise",
+        formatter=_format_pt_value,
+    )
+    return path
+
+
 def write_pt_pattern_sidecar_json(
     path: Path,
     *,
     result: DeltaMassDiscoveryResult,
 ) -> Path:
-    """Write the Pt Sidecar JSON v1 contract."""
+    """Write the Pt Sidecar JSON v2 contract."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -331,8 +380,12 @@ def write_pt_pattern_sidecar_json(
         "inputs": {
             "detected_features_csv": result.detected_features_csv,
             "cid_nl_candidates_csv": result.cid_nl_candidates_csv,
+            "trace_summary_csv": result.trace_summary_csv,
         },
-        "summary": _summary_payload(result.candidates),
+        "summary": _summary_payload(
+            result.candidates,
+            evidence_rows=result.evidence_rows,
+        ),
         "candidates": [asdict(candidate) for candidate in result.candidates],
     }
     path.write_text(
@@ -357,7 +410,9 @@ def _pattern_payload(pattern: DeltaMassPattern) -> dict[str, Any]:
 
 def _summary_payload(
     candidates: Sequence[PtPatternCandidate],
-) -> dict[str, int]:
+    *,
+    evidence_rows: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
     cid_nl_supported_count = sum(
         1
         for candidate in candidates
@@ -368,7 +423,32 @@ def _summary_payload(
         "candidate_count": len(candidates),
         "pt_only_candidate_count": len(candidates) - cid_nl_supported_count,
         "cid_nl_supported_candidate_count": cid_nl_supported_count,
+        "evidence_row_count": len(evidence_rows),
+        "trace_rule_call_counts": _count_by_text_field(
+            evidence_rows, "trace_rule_call"
+        ),
+        "trace_evidence_status_counts": _count_by_text_field(
+            evidence_rows, "trace_evidence_status"
+        ),
+        "trace_detection_status_counts": _count_by_text_field(
+            evidence_rows, "trace_detection_status"
+        ),
+        "trace_rule_reason_counts": _count_by_text_field(
+            evidence_rows, "trace_rule_reason"
+        ),
     }
+
+
+def _count_by_text_field(
+    rows: Sequence[Mapping[str, object]], field: str
+) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row.get(field, "")).strip()
+        if not value:
+            continue
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _candidate_row(candidate: PtPatternCandidate) -> dict[str, object]:

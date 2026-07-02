@@ -5,7 +5,7 @@ the Task 3 CSV/JSON IO (``xic_extractor.discovery.delta_mass_csv``), and the
 Task 4 preset stack (``xic_extractor.presets``) into a single
 ``run_pt_pattern_discovery()`` entry point: Detected Features CSV (+ optional
 CID-NL(dR) candidates CSV for the composite strategy) in, Pt Candidate CSV,
-Pt Review CSV, and Pt Sidecar JSON out.
+Pt Review CSV, Pt Discovery Evidence CSV, and Pt Sidecar JSON out.
 
 See ``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``
 Task 5 (pipeline steps + CID-NL base join predicate) for the binding contract
@@ -25,12 +25,17 @@ from xic_extractor.discovery.delta_mass_csv import (
     DeltaMassDiscoveryResult,
     load_detected_features_csv,
     write_pt_pattern_candidates_csv,
+    write_pt_pattern_evidence_csv,
     write_pt_pattern_review_csv,
     write_pt_pattern_sidecar_json,
 )
 from xic_extractor.discovery.delta_mass_patterns import (
     PtPatternCandidate,
     match_delta_mass_pattern,
+)
+from xic_extractor.discovery.pt_pattern_discovery_evidence import (
+    build_pt_pattern_evidence_rows,
+    load_pt_trace_summary_rows,
 )
 from xic_extractor.presets import apply_to_delta_mass_discovery, load_preset
 
@@ -59,6 +64,7 @@ class DeltaMassDiscoveryOutputs:
 
     candidates_csv: Path
     review_csv: Path
+    evidence_csv: Path
     sidecar_json: Path
 
 
@@ -94,6 +100,7 @@ def run_pt_pattern_discovery(
     output_dir: Path,
     preset_name: str = "pt_pattern",
     cid_nl_candidates_csv: Path | None = None,
+    trace_summary_csv: Path | None = None,
     timing_recorder: "TimingRecorder | None" = None,
 ) -> DeltaMassDiscoveryOutputs:
     """Run the Pt pattern Discovery pipeline end-to-end.
@@ -101,8 +108,9 @@ def run_pt_pattern_discovery(
     Loads ``preset_name``, rejects it unless it carries a ``delta_mass`` tag,
     loads and matches the Detected Features CSV, optionally joins CID-NL(dR)
     base evidence for the composite (``pt_pattern_cid_nl_dr``) strategy, and
-    writes ``pt_pattern_candidates.csv``, ``pt_pattern_review.csv``, and
-    ``pt_pattern_sidecar.json`` into ``output_dir``.
+    writes ``pt_pattern_candidates.csv``, ``pt_pattern_review.csv``,
+    ``pt_pattern_evidence.csv``, and ``pt_pattern_sidecar.json`` into
+    ``output_dir``.
     """
 
     preset = load_preset(preset_name)
@@ -153,12 +161,24 @@ def run_pt_pattern_discovery(
             metrics={"candidate_count": len(candidates)},
         )
 
+    trace_summary_rows = (
+        load_pt_trace_summary_rows(trace_summary_csv)
+        if trace_summary_csv is not None
+        else None
+    )
+    evidence_rows = build_pt_pattern_evidence_rows(
+        candidates,
+        trace_summary_rows=trace_summary_rows,
+    )
+
     candidates_path = output_dir / "pt_pattern_candidates.csv"
     review_path = output_dir / "pt_pattern_review.csv"
+    evidence_path = output_dir / "pt_pattern_evidence.csv"
     sidecar_path = output_dir / "pt_pattern_sidecar.json"
 
     write_pt_pattern_candidates_csv(candidates_path, candidates)
     write_pt_pattern_review_csv(review_path, candidates)
+    write_pt_pattern_evidence_csv(evidence_path, evidence_rows)
     write_pt_pattern_sidecar_json(
         sidecar_path,
         result=DeltaMassDiscoveryResult(
@@ -171,12 +191,17 @@ def run_pt_pattern_discovery(
                 else None
             ),
             candidates=candidates,
+            trace_summary_csv=(
+                str(trace_summary_csv) if trace_summary_csv is not None else None
+            ),
+            evidence_rows=evidence_rows,
         ),
     )
 
     return DeltaMassDiscoveryOutputs(
         candidates_csv=candidates_path,
         review_csv=review_path,
+        evidence_csv=evidence_path,
         sidecar_json=sidecar_path,
     )
 

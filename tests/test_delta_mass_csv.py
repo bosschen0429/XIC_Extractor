@@ -1,12 +1,12 @@
-"""Contract tests for Pt pattern CSV/JSON I/O (Task 1 RED phase).
+"""Contract tests for Pt pattern CSV/JSON I/O.
 
 Covers ``load_detected_features_csv()``, ``write_pt_pattern_candidates_csv()``,
-``write_pt_pattern_review_csv()``, and ``write_pt_pattern_sidecar_json()`` from
-``xic_extractor.discovery.delta_mass_csv``. Header order and field names are
-copied verbatim from the Public Contract Details section of the implementation
-plan (Detected Features CSV v1, Pt Candidate CSV v1, Pt Review CSV v1, Pt
-Sidecar JSON v1). These tests are expected to fail on import until Task 3
-implements the real module.
+``write_pt_pattern_review_csv()``, ``write_pt_pattern_evidence_csv()``, and
+``write_pt_pattern_sidecar_json()`` from ``xic_extractor.discovery.delta_mass_csv``.
+Header order and field names are copied verbatim from the Public Contract
+Details section of the implementation plan (Detected Features CSV v1, Pt
+Candidate CSV v1, Pt Review CSV v1, Pt Discovery Evidence CSV v1, Pt Sidecar
+JSON v2).
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from xic_extractor.discovery.delta_mass_csv import (
     DeltaMassDiscoveryResult,
     load_detected_features_csv,
     write_pt_pattern_candidates_csv,
+    write_pt_pattern_evidence_csv,
     write_pt_pattern_review_csv,
     write_pt_pattern_sidecar_json,
 )
@@ -111,6 +112,35 @@ PT_REVIEW_COLUMNS = (
     "review_note",
 )
 
+PT_EVIDENCE_COLUMNS = (
+    "schema_version",
+    "sample_stem",
+    "method_label",
+    "pattern_id",
+    "candidate_id",
+    "candidate_state",
+    "scan_pattern_seed_status",
+    "trace_evidence_status",
+    "trace_rule_call",
+    "trace_detection_status",
+    "trace_rule_reason",
+    "evidence_rule_id",
+    "evidence_rule_owner",
+    "required_combined_status",
+    "min_non_base_positions_supported",
+    "max_abs_apex_delta_threshold_sec",
+    "min_pearson_r_to_base_threshold",
+    "min_active_overlap_fraction_threshold",
+    "combined_pt_pattern_status",
+    "non_base_positions_supported",
+    "max_abs_apex_delta_sec",
+    "min_pearson_r_to_base",
+    "min_active_overlap_fraction",
+    "matrix_write_authority",
+    "counted_detection_authority",
+    "export_activation_authority",
+)
+
 
 def _detected_features_csv_text() -> str:
     header = ",".join(DETECTED_FEATURES_COLUMNS)
@@ -179,6 +209,41 @@ def _pt_candidate(**overrides: object) -> PtPatternCandidate:
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+def _pt_evidence_row(**overrides: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "schema_version": "pt_pattern_discovery_evidence.v1",
+        "sample_stem": "Sample_1",
+        "method_label": "pt_pattern",
+        "pattern_id": "pt",
+        "candidate_id": "Sample_1@pt@base-1",
+        "candidate_state": "pt_pattern_candidate",
+        "scan_pattern_seed_status": "full_pattern_seeded",
+        "trace_evidence_status": "evaluated",
+        "trace_rule_call": "accept",
+        "trace_detection_status": "detected",
+        "trace_rule_reason": "full_pattern_close_apex_shape_overlap",
+        "evidence_rule_id": (
+            "pt_v2_fullpattern_apex_le_10s_pearson_ge_0p9_overlap_ge_0p5"
+        ),
+        "evidence_rule_owner": "xic_extractor.discovery.pt_pattern_evidence_rule",
+        "required_combined_status": "pt_pattern_detected_diagnostic",
+        "min_non_base_positions_supported": 3,
+        "max_abs_apex_delta_threshold_sec": 10.0,
+        "min_pearson_r_to_base_threshold": 0.90,
+        "min_active_overlap_fraction_threshold": 0.50,
+        "combined_pt_pattern_status": "pt_pattern_detected_diagnostic",
+        "non_base_positions_supported": 3,
+        "max_abs_apex_delta_sec": 4.0,
+        "min_pearson_r_to_base": 0.95,
+        "min_active_overlap_fraction": 0.70,
+        "matrix_write_authority": False,
+        "counted_detection_authority": False,
+        "export_activation_authority": False,
+    }
+    row.update(overrides)
+    return row
 
 
 def test_load_detected_features_csv_parses_required_and_blank_optional_fields(
@@ -297,6 +362,33 @@ def test_pt_review_csv_header_order_matches_public_contract(tmp_path: Path) -> N
         assert next(reader) == list(PT_REVIEW_COLUMNS)
 
 
+def test_pt_evidence_csv_header_order_matches_public_contract(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_evidence.csv"
+
+    write_pt_pattern_evidence_csv(output_path, [_pt_evidence_row()])
+
+    with output_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle)
+        assert next(reader) == list(PT_EVIDENCE_COLUMNS)
+
+
+def test_pt_evidence_csv_writes_trace_rule_and_authority_fields(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_evidence.csv"
+
+    write_pt_pattern_evidence_csv(output_path, [_pt_evidence_row()])
+
+    row = _read_csv(output_path)[0]
+    assert row["trace_rule_call"] == "accept"
+    assert row["trace_detection_status"] == "detected"
+    assert row["matrix_write_authority"] == "FALSE"
+    assert row["counted_detection_authority"] == "FALSE"
+    assert row["export_activation_authority"] == "FALSE"
+
+
 def test_pt_review_csv_uses_same_candidate_ordering_as_candidates_csv(
     tmp_path: Path,
 ) -> None:
@@ -330,12 +422,13 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
         detected_features_csv="detected_features.csv",
         cid_nl_candidates_csv=None,
         candidates=[_pt_candidate()],
+        evidence_rows=[_pt_evidence_row()],
     )
 
     write_pt_pattern_sidecar_json(output_path, result=result)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "pt_pattern_sidecar.v1"
+    assert payload["schema_version"] == "pt_pattern_sidecar.v2"
     assert payload["method_label"] == "pt_pattern"
     assert payload["pattern"] == {
         "pattern_id": "pt",
@@ -353,11 +446,17 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
     assert payload["inputs"] == {
         "detected_features_csv": "detected_features.csv",
         "cid_nl_candidates_csv": None,
+        "trace_summary_csv": None,
     }
     assert payload["summary"] == {
         "candidate_count": 1,
         "pt_only_candidate_count": 1,
         "cid_nl_supported_candidate_count": 0,
+        "evidence_row_count": 1,
+        "trace_rule_call_counts": {"accept": 1},
+        "trace_evidence_status_counts": {"evaluated": 1},
+        "trace_detection_status_counts": {"detected": 1},
+        "trace_rule_reason_counts": {"full_pattern_close_apex_shape_overlap": 1},
     }
     assert len(payload["candidates"]) == 1
 
@@ -380,6 +479,16 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
         detected_features_csv="detected_features.csv",
         cid_nl_candidates_csv="discovery_candidates.csv",
         candidates=[composite_candidate],
+        trace_summary_csv="trace_summary.csv",
+        evidence_rows=[
+            _pt_evidence_row(
+                method_label="pt_pattern+cid_nl_dr",
+                candidate_state="pt_pattern_cid_nl_supported",
+                trace_rule_call="reject",
+                trace_detection_status="non_detected",
+                trace_rule_reason="pearson_below_threshold",
+            )
+        ],
     )
 
     write_pt_pattern_sidecar_json(output_path, result=result)
@@ -388,10 +497,16 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
     assert payload["method_label"] == "pt_pattern+cid_nl_dr"
     assert payload["inputs"]["cid_nl_candidates_csv"] == "discovery_candidates.csv"
     assert payload["inputs"]["cid_nl_candidates_csv"] is not None
+    assert payload["inputs"]["trace_summary_csv"] == "trace_summary.csv"
     assert payload["summary"] == {
         "candidate_count": 1,
         "pt_only_candidate_count": 0,
         "cid_nl_supported_candidate_count": 1,
+        "evidence_row_count": 1,
+        "trace_rule_call_counts": {"reject": 1},
+        "trace_evidence_status_counts": {"evaluated": 1},
+        "trace_detection_status_counts": {"non_detected": 1},
+        "trace_rule_reason_counts": {"pearson_below_threshold": 1},
     }
 
 
@@ -414,6 +529,11 @@ def test_pt_sidecar_json_writes_empty_candidates_summary_for_no_matches(
         "candidate_count": 0,
         "pt_only_candidate_count": 0,
         "cid_nl_supported_candidate_count": 0,
+        "evidence_row_count": 0,
+        "trace_rule_call_counts": {},
+        "trace_evidence_status_counts": {},
+        "trace_detection_status_counts": {},
+        "trace_rule_reason_counts": {},
     }
     assert payload["candidates"] == []
 
@@ -466,6 +586,17 @@ def test_pt_review_csv_writes_header_only_when_no_candidates(
         reader = csv.reader(handle)
         rows = list(reader)
     assert rows == [list(PT_REVIEW_COLUMNS)]
+
+
+def test_pt_evidence_csv_writes_header_only_when_no_rows(tmp_path: Path) -> None:
+    output_path = tmp_path / "pt_pattern_evidence.csv"
+
+    write_pt_pattern_evidence_csv(output_path, [])
+
+    with output_path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.reader(handle)
+        rows = list(reader)
+    assert rows == [list(PT_EVIDENCE_COLUMNS)]
 
 
 def test_pt_candidate_csv_creates_parent_directories(tmp_path: Path) -> None:
@@ -526,6 +657,16 @@ def test_pt_review_csv_fails_loudly_on_unexpected_extra_field(
         delta_mass_csv._review_row = monkeypatched  # type: ignore[assignment]
 
 
+def test_pt_evidence_csv_fails_loudly_on_unexpected_extra_field(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_evidence.csv"
+    row = _pt_evidence_row(unexpected_extra_field="boom")
+
+    with pytest.raises(ValueError):
+        write_pt_pattern_evidence_csv(output_path, [row])
+
+
 def test_pt_candidate_csv_escapes_formula_like_text_consistently(
     tmp_path: Path,
 ) -> None:
@@ -560,3 +701,25 @@ def test_pt_review_csv_escapes_formula_like_text_consistently(
     row = _read_csv(output_path)[0]
     assert row["sample_stem"] == "'=cmd|'/c calc'!A1"
     assert row["reason"] == "'+suspicious reason"
+
+
+def test_pt_evidence_csv_escapes_formula_like_text_consistently(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_evidence.csv"
+
+    write_pt_pattern_evidence_csv(
+        output_path,
+        [
+            _pt_evidence_row(
+                sample_stem="=cmd|'/c calc'!A1",
+                candidate_id="+candidate-1",
+                trace_rule_reason="-suspicious reason",
+            )
+        ],
+    )
+
+    row = _read_csv(output_path)[0]
+    assert row["sample_stem"] == "'=cmd|'/c calc'!A1"
+    assert row["candidate_id"] == "'+candidate-1"
+    assert row["trace_rule_reason"] == "'-suspicious reason"

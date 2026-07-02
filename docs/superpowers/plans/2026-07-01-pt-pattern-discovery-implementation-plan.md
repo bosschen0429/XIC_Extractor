@@ -381,7 +381,29 @@ review_note
 The review CSV is a human queue. It must use the same candidate ordering as
 `pt_pattern_candidates.csv`.
 
-### Pt Sidecar JSON v1
+### Pt Discovery Evidence CSV v1
+
+Output path: `pt_pattern_evidence.csv`.
+
+Required semantics:
+
+- `schema_version = pt_pattern_discovery_evidence.v1`
+- one row per `pt_pattern_candidates.csv` row
+- feature-level full-pattern candidates write
+  `scan_pattern_seed_status = full_pattern_seeded`
+- when no trace summary is provided, trace rule fields write
+  `not_evaluated` rather than `detected` or `non_detected`
+- when a trace summary row is provided for the same `candidate_id`, the shared
+  Pt evidence rule writes `trace_rule_call in {"accept", "reject"}` and
+  `trace_detection_status in {"detected", "non_detected"}`
+- every row writes `matrix_write_authority = FALSE`,
+  `counted_detection_authority = FALSE`, and
+  `export_activation_authority = FALSE`
+
+This CSV is an evidence handoff surface. It does not change Matrix, Backfill,
+counted detection, workbook, selected area, or export behavior.
+
+### Pt Sidecar JSON v2
 
 Output path: `pt_pattern_sidecar.json`.
 
@@ -389,7 +411,7 @@ Required top-level shape:
 
 ```json
 {
-  "schema_version": "pt_pattern_sidecar.v1",
+  "schema_version": "pt_pattern_sidecar.v2",
   "method_label": "<selected method label>",
   "pattern": {
     "pattern_id": "pt",
@@ -406,12 +428,18 @@ Required top-level shape:
   },
   "inputs": {
     "detected_features_csv": "detected_features.csv",
-    "cid_nl_candidates_csv": null
+    "cid_nl_candidates_csv": null,
+    "trace_summary_csv": null
   },
   "summary": {
     "candidate_count": 0,
     "pt_only_candidate_count": 0,
-    "cid_nl_supported_candidate_count": 0
+    "cid_nl_supported_candidate_count": 0,
+    "evidence_row_count": 0,
+    "trace_rule_call_counts": {},
+    "trace_evidence_status_counts": {},
+    "trace_detection_status_counts": {},
+    "trace_rule_reason_counts": {}
   },
   "candidates": []
 }
@@ -854,8 +882,8 @@ Steps:
 - [ ] Keep scan-proxy labels source-specific: `raw_scan_proxy_v1` rows ending
       in `|pt_plus_1`, `|pt_plus_2`, or `|pt_plus_4` must never become shifted
       base anchors.
-- [ ] Write `pt_pattern_candidates.csv`, `pt_pattern_review.csv`, and
-      `pt_pattern_sidecar.json`.
+- [ ] Write `pt_pattern_candidates.csv`, `pt_pattern_review.csv`,
+      `pt_pattern_evidence.csv`, and `pt_pattern_sidecar.json`.
 - [ ] Add `pyproject.toml` script entry:
 
 ```toml

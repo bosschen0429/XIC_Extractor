@@ -1,11 +1,10 @@
-"""Contract tests for the Pt pattern discovery pipeline (Task 1 RED phase).
+"""Contract tests for the Pt pattern discovery pipeline.
 
 Covers ``run_pt_pattern_discovery()`` from
 ``xic_extractor.discovery.delta_mass_pipeline``: end-to-end from a Detected
 Features CSV (and optional CID-NL(dR) candidates CSV for the composite
-strategy) to ``pt_pattern_candidates.csv``, ``pt_pattern_review.csv``, and
-``pt_pattern_sidecar.json``. Expected to fail on import until Task 5
-implements the real module.
+strategy) to ``pt_pattern_candidates.csv``, ``pt_pattern_review.csv``,
+``pt_pattern_evidence.csv``, and ``pt_pattern_sidecar.json``.
 """
 
 from __future__ import annotations
@@ -23,6 +22,7 @@ from xic_extractor.discovery.delta_mass_pipeline import (
     DeltaMassDiscoveryOutputs,
     run_pt_pattern_discovery,
 )
+from xic_extractor.discovery.pt_pattern_trace_evidence import SUMMARY_COLUMNS
 
 DETECTED_FEATURES_COLUMNS = (
     "sample_stem",
@@ -48,6 +48,14 @@ def _write_detected_features_csv(path: Path, rows: list[dict[str, object]]) -> N
             writer.writerow(
                 {column: row.get(column, "") for column in DETECTED_FEATURES_COLUMNS}
             )
+
+
+def _write_trace_summary_csv(path: Path, rows: list[dict[str, object]]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=SUMMARY_COLUMNS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in SUMMARY_COLUMNS})
 
 
 def _full_pattern_rows(sample_stem: str = "Sample_1") -> list[dict[str, object]]:
@@ -100,7 +108,7 @@ def _full_pattern_rows(sample_stem: str = "Sample_1") -> list[dict[str, object]]
     ]
 
 
-def test_run_pt_pattern_discovery_writes_three_pt_only_outputs(
+def test_run_pt_pattern_discovery_writes_pt_only_outputs(
     tmp_path: Path,
 ) -> None:
     detected_features_csv = tmp_path / "detected_features.csv"
@@ -117,9 +125,11 @@ def test_run_pt_pattern_discovery_writes_three_pt_only_outputs(
     assert isinstance(outputs, DeltaMassDiscoveryOutputs)
     assert outputs.candidates_csv == output_dir / "pt_pattern_candidates.csv"
     assert outputs.review_csv == output_dir / "pt_pattern_review.csv"
+    assert outputs.evidence_csv == output_dir / "pt_pattern_evidence.csv"
     assert outputs.sidecar_json == output_dir / "pt_pattern_sidecar.json"
     assert outputs.candidates_csv.exists()
     assert outputs.review_csv.exists()
+    assert outputs.evidence_csv.exists()
     assert outputs.sidecar_json.exists()
 
     with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
@@ -127,6 +137,14 @@ def test_run_pt_pattern_discovery_writes_three_pt_only_outputs(
     assert len(rows) == 1
     assert rows[0]["method_label"] == "pt_pattern"
     assert rows[0]["candidate_state"] == "pt_pattern_candidate"
+
+    with outputs.evidence_csv.open(newline="", encoding="utf-8") as handle:
+        evidence_rows = list(csv.DictReader(handle))
+    assert len(evidence_rows) == 1
+    assert evidence_rows[0]["scan_pattern_seed_status"] == "full_pattern_seeded"
+    assert evidence_rows[0]["trace_rule_call"] == "not_evaluated"
+    assert evidence_rows[0]["trace_detection_status"] == "not_evaluated"
+    assert evidence_rows[0]["matrix_write_authority"] == "FALSE"
 
 
 def test_run_pt_pattern_discovery_requires_cid_nl_csv_for_composite_method(
@@ -190,6 +208,11 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
     assert rows_out[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
     assert rows_out[0]["cid_nl_base_status"] == "matched"
     assert rows_out[0]["cid_nl_base_join_mode"] == "same_feature_id"
+
+    with outputs.evidence_csv.open(newline="", encoding="utf-8") as handle:
+        evidence_rows = list(csv.DictReader(handle))
+    assert evidence_rows[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
+    assert evidence_rows[0]["trace_rule_call"] == "not_evaluated"
 
 
 def test_composite_uses_cid_nl_base_seeds_before_matching(
@@ -266,6 +289,59 @@ def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_string
     payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
     assert payload["inputs"]["detected_features_csv"] == str(detected_features_csv)
     assert payload["inputs"]["cid_nl_candidates_csv"] is None
+    assert payload["inputs"]["trace_summary_csv"] is None
+
+
+def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
+    tmp_path: Path,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
+    trace_summary_csv = tmp_path / "trace_summary.csv"
+    _write_trace_summary_csv(
+        trace_summary_csv,
+        [
+            {
+                "schema_version": "pt_pattern_trace_diagnosis.v2",
+                "sample_stem": "Sample_1",
+                "candidate_id": (
+                    "Sample_1|pt|base:base-1|mz:500.000000|rt:10.000000"
+                ),
+                "scan_pattern_seed_status": "full_pattern_seeded",
+                "base_mz": 500.0,
+                "base_rt_apex_min": 10.0,
+                "non_base_positions_supported": 3,
+                "max_abs_apex_delta_sec": 4.0,
+                "min_pearson_r_to_base": 0.95,
+                "min_active_overlap_fraction": 0.70,
+                "trace_support_status": "supported",
+                "combined_pt_pattern_status": "pt_pattern_detected_diagnostic",
+                "reason": "supported",
+            }
+        ],
+    )
+
+    outputs = run_pt_pattern_discovery(
+        detected_features_csv=detected_features_csv,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern",
+        cid_nl_candidates_csv=None,
+        trace_summary_csv=trace_summary_csv,
+    )
+
+    with outputs.evidence_csv.open(newline="", encoding="utf-8") as handle:
+        evidence_rows = list(csv.DictReader(handle))
+    assert len(evidence_rows) == 1
+    assert evidence_rows[0]["trace_evidence_status"] == "evaluated"
+    assert evidence_rows[0]["trace_rule_call"] == "accept"
+    assert evidence_rows[0]["trace_detection_status"] == "detected"
+    assert evidence_rows[0]["trace_rule_reason"] == (
+        "full_pattern_close_apex_shape_overlap"
+    )
+
+    payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
+    assert payload["inputs"]["trace_summary_csv"] == str(trace_summary_csv)
+    assert payload["summary"]["trace_rule_call_counts"] == {"accept": 1}
 
 
 def test_run_pt_pattern_discovery_ignores_review_only_orphan_nl_rows(

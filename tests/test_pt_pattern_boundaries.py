@@ -50,6 +50,7 @@ PT_PATTERN_MODULE_PATHS = (
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_patterns.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_csv.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_pipeline.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_discovery_evidence.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_evidence_rule.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_trace_evidence.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_review_packet.py",

@@ -4,7 +4,7 @@ Unlike ``scripts.run_discovery``, this CLI consumes a Detected Features CSV
 (not a RAW file / DLL directory), so it has no ``--raw``/``--dll-dir``
 requirement. See
 ``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``
-Task 5 for the CLI contract.
+for the CLI contract.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Run Pt pattern Discovery against a Detected Features CSV, "
             "optionally intersected with existing CID-NL(dR) candidate "
-            "evidence."
+            "evidence and optional trace-summary evidence."
         )
     )
     parser.add_argument(
@@ -38,7 +38,8 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("output") / "pt_pattern",
         help=(
             "Output directory for pt_pattern_candidates.csv, "
-            "pt_pattern_review.csv, and pt_pattern_sidecar.json."
+            "pt_pattern_review.csv, pt_pattern_evidence.csv, and "
+            "pt_pattern_sidecar.json."
         ),
     )
     parser.add_argument(
@@ -53,6 +54,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "Existing discovery_candidates.csv, required when --preset is a "
             "composite Pt pattern + CID-NL(dR) preset such as "
             "pt_pattern_cid_nl_dr."
+        ),
+    )
+    parser.add_argument(
+        "--trace-summary-csv",
+        type=Path,
+        help=(
+            "Optional pt_pattern_trace_diagnosis summary CSV. When supplied, "
+            "the Discovery evidence CSV evaluates trace-level accept/reject "
+            "with the shared Pt evidence rule."
         ),
     )
     return parser
@@ -100,16 +110,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.cid_nl_candidates_csv is not None
         else None
     )
+    trace_summary_csv = (
+        args.trace_summary_csv.resolve()
+        if args.trace_summary_csv is not None
+        else None
+    )
+    if trace_summary_csv is not None and not trace_summary_csv.is_file():
+        print(
+            f"{trace_summary_csv}: trace summary csv does not exist",
+            file=sys.stderr,
+        )
+        return 2
 
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
         output_dir=output_dir,
         preset_name=args.preset,
         cid_nl_candidates_csv=cid_nl_candidates_csv,
+        trace_summary_csv=trace_summary_csv,
     )
 
     print(f"Pt pattern candidates CSV: {outputs.candidates_csv}")
     print(f"Pt pattern review CSV: {outputs.review_csv}")
+    print(f"Pt pattern evidence CSV: {outputs.evidence_csv}")
     print(f"Pt pattern sidecar JSON: {outputs.sidecar_json}")
 
     return 0
