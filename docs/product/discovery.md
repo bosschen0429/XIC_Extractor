@@ -126,12 +126,13 @@ or Matrix changes.
 | Surface | Role |
 | --- | --- |
 | `xic_extractor/discovery/` | Discovery domain package |
+| `xic_extractor/discovery/pt_pattern_evidence_rule.py` | Package-owned reusable Pt full-pattern accept/reject rule for trace-diagnosed rows; not detector activation |
 | `xic_extractor/discovery/pt_pattern_trace_evidence.py` | Package-owned Pt trace/co-elution support semantics |
 | `xic_extractor/discovery/pt_pattern_review_packet.py` | Bounded Pt manual-review packet builder; not oracle authority until reviewed |
 | `xic_extractor/discovery/pt_pattern_blind_overlay.py` | Blind Pt MS1/XIC overlay review surface; visual traces and sealed machine calls share the Gaussian15 trace-decision basis, and sealed calls are not oracle authority |
 | `xic_extractor/discovery/pt_pattern_oracle_promotion.py` | Bounded Pt manual-oracle promotion packet builder; production-candidate only for reviewed oracle rows, not detector or Matrix authority |
-| `xic_extractor/discovery/pt_pattern_oracle_thresholds.py` | Diagnostic-only threshold calibration against a bounded Pt manual oracle; not detector activation |
-| `xic_extractor/discovery/pt_pattern_diagnostic_gate.py` | Diagnostic-only replay of the calibrated Pt full-pattern gate against review packets and optional bounded oracle; not detector activation |
+| `xic_extractor/discovery/pt_pattern_oracle_thresholds.py` | Diagnostic-only threshold calibration against a bounded Pt manual oracle using the reusable Pt evidence rule; not detector activation |
+| `xic_extractor/discovery/pt_pattern_diagnostic_gate.py` | Diagnostic-only replay wrapper for the reusable Pt evidence rule against review packets or full trace summary rows, with optional bounded-oracle replay; not detector activation |
 | `scripts/run_discovery.py` | Discovery CLI entry point |
 | `discovery_candidates.csv` | Detailed candidate table for archival or downstream handoff |
 | `discovery_review.csv` | Compact review table |

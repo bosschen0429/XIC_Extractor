@@ -312,6 +312,7 @@ Current repaired v2 oracle output:
 - `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2_repaired_32/`
 - `output/pt_pattern_productization_v1/oracle_thresholds/pt_detected_oracle_v2_repaired_32/`
 - `output/pt_pattern_productization_v1/diagnostic_gate/pt_detected_oracle_v2_repaired_32/`
+- `output/pt_pattern_productization_v1/diagnostic_gate/trace_summary_limit50_current/`
 - `pt_pattern_oracle_promotion_packet.csv`: 32 provenance-matched rows; 10
   `accept` / `detected`, 22 `reject` / `non_detected`.
 - The threshold calibration recommends full-pattern status plus apex <= 10 s,
@@ -320,6 +321,11 @@ Current repaired v2 oracle output:
 - The diagnostic gate replay applies the same rule through schema
   `pt_pattern_diagnostic_gate.v1`; with `--require-zero-fpfn`, it exits `0` and
   reports 10 TP / 22 TN / 0 FP / 0 FN on the repaired oracle.
+- The full trace-summary diagnostic gate replay applies the same rule directly
+  to the current 50-row Pt-only Fullscan trace summary and current 50-row
+  Pt+CID-NL DDMS2 trace summary. It reports 100 rows total: 45 `accept`, 55
+  `reject`; Pt-only contributes 15 accept / 35 reject, and Pt+CID-NL contributes
+  30 accept / 20 reject.
 
 The repaired v2 packet is current bounded manual-oracle evidence only. It still
 does not promote scan-proxy, detector/runtime behavior, Matrix authority,

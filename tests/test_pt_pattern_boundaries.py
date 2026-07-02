@@ -50,6 +50,7 @@ PT_PATTERN_MODULE_PATHS = (
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_patterns.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_csv.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_pipeline.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_evidence_rule.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_trace_evidence.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_review_packet.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_blind_overlay.py",
@@ -100,6 +101,16 @@ def test_delta_mass_csv_module_does_not_import_forbidden_roots() -> None:
 
 def test_delta_mass_pipeline_module_does_not_import_forbidden_roots() -> None:
     path = REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_pipeline.py"
+    assert _violations(path) == []
+
+
+def test_pt_pattern_evidence_rule_module_does_not_import_forbidden_roots() -> None:
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_evidence_rule.py"
+    )
     assert _violations(path) == []
 
 

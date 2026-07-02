@@ -8,8 +8,11 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_extractor.discovery.pt_pattern_diagnostic_gate import run_diagnostic_gate
-from xic_extractor.discovery.pt_pattern_oracle_thresholds import (
+from xic_extractor.discovery.pt_pattern_diagnostic_gate import (
+    TraceSummaryInput,
+    run_diagnostic_gate,
+)
+from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_APEX_DELTA_MAX_SEC,
     DEFAULT_OVERLAP_MIN,
     DEFAULT_PEARSON_MIN,
@@ -28,8 +31,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "--review-packet-csv",
         type=Path,
         action="append",
-        required=True,
         help="Manual review packet CSV. Repeat for multi-packet replay.",
+    )
+    parser.add_argument(
+        "--trace-summary-input",
+        action="append",
+        default=[],
+        metavar="SOURCE_LABEL=PATH",
+        help=(
+            "Full Pt trace summary CSV with its source label. Repeat for "
+            "multi-source full-candidate gate replay."
+        ),
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--gate-id", required=True)
@@ -58,9 +70,14 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    for review_packet_csv in args.review_packet_csv:
+    if not args.review_packet_csv and not args.trace_summary_input:
+        parser.error(
+            "at least one --review-packet-csv or --trace-summary-input is required"
+        )
+    for review_packet_csv in args.review_packet_csv or []:
         if not review_packet_csv.is_file():
             parser.error(f"{review_packet_csv}: review packet CSV does not exist")
+    _parse_trace_summary_inputs(args.trace_summary_input, parser)
     if args.oracle_promotion_csv and not args.oracle_promotion_csv.is_file():
         parser.error(
             f"{args.oracle_promotion_csv}: oracle promotion CSV does not exist"
@@ -81,7 +98,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     _validate_args(args, parser)
     try:
         outputs = run_diagnostic_gate(
-            review_packet_csvs=[path.resolve() for path in args.review_packet_csv],
+            review_packet_csvs=[
+                path.resolve() for path in args.review_packet_csv or []
+            ],
+            trace_summary_csvs=_parse_trace_summary_inputs(
+                args.trace_summary_input,
+                parser,
+            ),
             output_dir=args.output_dir.resolve(),
             gate_id=args.gate_id,
             oracle_promotion_csv=(
@@ -109,6 +132,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 3
     return 0
+
+
+def _parse_trace_summary_inputs(
+    values: Sequence[str],
+    parser: argparse.ArgumentParser,
+) -> tuple[TraceSummaryInput, ...]:
+    inputs: list[TraceSummaryInput] = []
+    for value in values:
+        source_label, separator, path_text = value.partition("=")
+        if not separator or not source_label.strip() or not path_text.strip():
+            parser.error(
+                "--trace-summary-input must use SOURCE_LABEL=PATH with "
+                "non-empty values"
+            )
+        path = Path(path_text)
+        if not path.is_file():
+            parser.error(f"{path}: trace summary CSV does not exist")
+        inputs.append(
+            TraceSummaryInput(
+                source_label=source_label.strip(),
+                path=path.resolve(),
+            )
+        )
+    return tuple(inputs)
 
 
 if __name__ == "__main__":

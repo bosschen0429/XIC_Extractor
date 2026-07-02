@@ -5,17 +5,24 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.discovery.pt_pattern_oracle_promotion import PROMOTION_COLUMNS
-from xic_extractor.discovery.pt_pattern_oracle_thresholds import (
+from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_APEX_DELTA_MAX_SEC,
     DEFAULT_OVERLAP_MIN,
     DEFAULT_PEARSON_MIN,
     MIN_SUPPORTED_POSITIONS,
     REQUIRED_COMBINED_STATUS,
+    PtPatternEvidenceThresholds,
+    evaluate_pt_pattern_evidence,
+    pt_pattern_rule_id,
 )
+from xic_extractor.discovery.pt_pattern_oracle_promotion import PROMOTION_COLUMNS
 from xic_extractor.discovery.pt_pattern_review_packet import PACKET_COLUMNS
+from xic_extractor.discovery.pt_pattern_trace_evidence import (
+    SUMMARY_COLUMNS as TRACE_SUMMARY_COLUMNS,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
@@ -27,6 +34,13 @@ SCHEMA_VERSION = "pt_pattern_diagnostic_gate.v1"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_diagnostic_gate"
 AUTHORITY_SCOPE = "diagnostic_gate_replay_only"
+
+
+@dataclass(frozen=True)
+class TraceSummaryInput:
+    source_label: str
+    path: Path
+
 
 GATE_COLUMNS = (
     "schema_version",
@@ -62,7 +76,8 @@ GATE_COLUMNS = (
 
 def run_diagnostic_gate(
     *,
-    review_packet_csvs: Sequence[Path],
+    review_packet_csvs: Sequence[Path] = (),
+    trace_summary_csvs: Sequence[TraceSummaryInput] = (),
     output_dir: Path,
     gate_id: str,
     oracle_promotion_csv: Path | None = None,
@@ -70,15 +85,24 @@ def run_diagnostic_gate(
     pearson_min: float = DEFAULT_PEARSON_MIN,
     overlap_min: float = DEFAULT_OVERLAP_MIN,
 ) -> dict[str, Path]:
-    review_rows = _read_review_packets(review_packet_csvs)
-    oracle_rows = _read_oracle_rows(oracle_promotion_csv)
-    gate_rows = build_diagnostic_gate_rows(
-        review_rows=review_rows,
-        oracle_rows=oracle_rows,
-        gate_id=gate_id,
+    thresholds = _thresholds(
         apex_delta_max_sec=apex_delta_max_sec,
         pearson_min=pearson_min,
         overlap_min=overlap_min,
+    )
+    review_rows = _read_review_packets(review_packet_csvs)
+    trace_summary_rows = _read_trace_summary_inputs(trace_summary_csvs)
+    gate_input_rows = [*review_rows, *trace_summary_rows]
+    if not gate_input_rows:
+        raise ValueError(
+            "at least one review packet CSV or trace summary CSV is required"
+        )
+    oracle_rows = _read_oracle_rows(oracle_promotion_csv)
+    gate_rows = build_diagnostic_gate_rows(
+        review_rows=gate_input_rows,
+        oracle_rows=oracle_rows,
+        gate_id=gate_id,
+        thresholds=thresholds,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -99,19 +123,24 @@ def run_diagnostic_gate(
         "evidence_owner": EVIDENCE_OWNER,
         "authority_scope": AUTHORITY_SCOPE,
         "gate_id": gate_id,
-        "rule_id": _rule_id(
-            apex_delta_max_sec=apex_delta_max_sec,
-            pearson_min=pearson_min,
-            overlap_min=overlap_min,
+        "rule_id": pt_pattern_rule_id(thresholds),
+        "required_combined_status": thresholds.required_combined_status,
+        "min_non_base_positions_supported": (
+            thresholds.min_non_base_positions_supported
         ),
-        "required_combined_status": REQUIRED_COMBINED_STATUS,
-        "min_non_base_positions_supported": MIN_SUPPORTED_POSITIONS,
-        "max_abs_apex_delta_sec": apex_delta_max_sec,
-        "min_pearson_r_to_base": pearson_min,
-        "min_active_overlap_fraction": overlap_min,
+        "max_abs_apex_delta_sec": thresholds.max_abs_apex_delta_sec,
+        "min_pearson_r_to_base": thresholds.min_pearson_r_to_base,
+        "min_active_overlap_fraction": thresholds.min_active_overlap_fraction,
         "review_packet_csvs": [str(path) for path in review_packet_csvs],
         "review_packet_csv_sha256s": {
             str(path): file_sha256(path) for path in review_packet_csvs
+        },
+        "trace_summary_csvs": [
+            f"{item.source_label}={item.path}" for item in trace_summary_csvs
+        ],
+        "trace_summary_csv_sha256s": {
+            f"{item.source_label}={item.path}": file_sha256(item.path)
+            for item in trace_summary_csvs
         },
         "oracle_promotion_csv": str(oracle_promotion_csv or ""),
         "oracle_promotion_csv_sha256": (
@@ -144,10 +173,11 @@ def build_diagnostic_gate_rows(
     apex_delta_max_sec: float = DEFAULT_APEX_DELTA_MAX_SEC,
     pearson_min: float = DEFAULT_PEARSON_MIN,
     overlap_min: float = DEFAULT_OVERLAP_MIN,
+    thresholds: PtPatternEvidenceThresholds | None = None,
 ) -> tuple[dict[str, object], ...]:
     if not gate_id.strip():
         raise ValueError("gate_id must be non-empty")
-    _validate_thresholds(
+    thresholds = thresholds or _thresholds(
         apex_delta_max_sec=apex_delta_max_sec,
         pearson_min=pearson_min,
         overlap_min=overlap_min,
@@ -171,11 +201,9 @@ def build_diagnostic_gate_rows(
         ),
     ):
         packet_row_id = _required_text(review, "packet_row_id")
-        gate_call, reason = diagnostic_gate_call(
+        decision = evaluate_pt_pattern_evidence(
             review,
-            apex_delta_max_sec=apex_delta_max_sec,
-            pearson_min=pearson_min,
-            overlap_min=overlap_min,
+            thresholds=thresholds,
         )
         oracle = oracle_by_packet_row_id.get(packet_row_id, {})
         oracle_call = str(oracle.get("oracle_call", "")).strip().lower()
@@ -186,25 +214,27 @@ def build_diagnostic_gate_rows(
                 "evidence_owner": EVIDENCE_OWNER,
                 "authority_scope": AUTHORITY_SCOPE,
                 "gate_id": gate_id,
-                "rule_id": _rule_id(
-                    apex_delta_max_sec=apex_delta_max_sec,
-                    pearson_min=pearson_min,
-                    overlap_min=overlap_min,
-                ),
+                "rule_id": pt_pattern_rule_id(thresholds),
                 "packet_row_id": packet_row_id,
                 "source_label": review.get("source_label", ""),
                 "sample_stem": review.get("sample_stem", ""),
                 "candidate_id": review.get("candidate_id", ""),
-                "diagnostic_gate_call": gate_call,
-                "diagnostic_detection_status": (
-                    "detected" if gate_call == "accept" else "non_detected"
+                "diagnostic_gate_call": decision.call,
+                "diagnostic_detection_status": decision.detection_status,
+                "gate_reason": decision.reason,
+                "required_combined_status": thresholds.required_combined_status,
+                "min_non_base_positions_supported": (
+                    thresholds.min_non_base_positions_supported
                 ),
-                "gate_reason": reason,
-                "required_combined_status": REQUIRED_COMBINED_STATUS,
-                "min_non_base_positions_supported": MIN_SUPPORTED_POSITIONS,
-                "max_abs_apex_delta_sec_threshold": apex_delta_max_sec,
-                "min_pearson_r_to_base_threshold": pearson_min,
-                "min_active_overlap_fraction_threshold": overlap_min,
+                "max_abs_apex_delta_sec_threshold": (
+                    thresholds.max_abs_apex_delta_sec
+                ),
+                "min_pearson_r_to_base_threshold": (
+                    thresholds.min_pearson_r_to_base
+                ),
+                "min_active_overlap_fraction_threshold": (
+                    thresholds.min_active_overlap_fraction
+                ),
                 "combined_pt_pattern_status": review.get(
                     "combined_pt_pattern_status", ""
                 ),
@@ -223,7 +253,9 @@ def build_diagnostic_gate_rows(
                     "oracle_detection_status", ""
                 ),
                 "replay_outcome": (
-                    _case_outcome(oracle_call, gate_call) if oracle_call else ""
+                    _case_outcome(oracle_call, decision.call)
+                    if oracle_call
+                    else ""
                 ),
             }
         )
@@ -231,41 +263,24 @@ def build_diagnostic_gate_rows(
 
 
 def diagnostic_gate_call(
-    row: Mapping[str, str],
+    row: Mapping[str, object],
     *,
     apex_delta_max_sec: float = DEFAULT_APEX_DELTA_MAX_SEC,
     pearson_min: float = DEFAULT_PEARSON_MIN,
     overlap_min: float = DEFAULT_OVERLAP_MIN,
 ) -> tuple[str, str]:
-    status = str(row.get("combined_pt_pattern_status", "")).strip()
-    if status != REQUIRED_COMBINED_STATUS:
-        return "reject", "combined_status_not_detected"
-
-    supported = optional_float(row.get("non_base_positions_supported"))
-    apex_delta = optional_float(row.get("max_abs_apex_delta_sec"))
-    pearson = optional_float(row.get("min_pearson_r_to_base"))
-    overlap = optional_float(row.get("min_active_overlap_fraction"))
-    if (
-        supported is None
-        or apex_delta is None
-        or pearson is None
-        or overlap is None
-    ):
-        return "reject", "missing_required_metric"
-    if supported < MIN_SUPPORTED_POSITIONS:
-        return "reject", "insufficient_non_base_positions"
-    if apex_delta > apex_delta_max_sec:
-        return "reject", "apex_delta_above_threshold"
-    if pearson < pearson_min:
-        return "reject", "pearson_below_threshold"
-    if overlap < overlap_min:
-        return "reject", "overlap_below_threshold"
-    return "accept", "full_pattern_close_apex_shape_overlap"
+    decision = evaluate_pt_pattern_evidence(
+        row,
+        thresholds=_thresholds(
+            apex_delta_max_sec=apex_delta_max_sec,
+            pearson_min=pearson_min,
+            overlap_min=overlap_min,
+        ),
+    )
+    return decision.call, decision.reason
 
 
 def _read_review_packets(paths: Sequence[Path]) -> list[dict[str, str]]:
-    if not paths:
-        raise ValueError("at least one review packet CSV is required")
     rows: list[dict[str, str]] = []
     for path in paths:
         rows.extend(
@@ -277,6 +292,51 @@ def _read_review_packets(paths: Sequence[Path]) -> list[dict[str, str]]:
             )
         )
     return rows
+
+
+def _read_trace_summary_inputs(
+    inputs: Sequence[TraceSummaryInput],
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in inputs:
+        source_label = item.source_label.strip()
+        if not source_label:
+            raise ValueError("trace summary source_label must be non-empty")
+        rows.extend(
+            _trace_summary_gate_row(row, source_label=source_label)
+            for row in read_delimited_rows(
+                item.path,
+                required_columns=TRACE_SUMMARY_COLUMNS,
+                delimiter=",",
+                encoding="utf-8-sig",
+            )
+        )
+    return rows
+
+
+def _trace_summary_gate_row(
+    row: Mapping[str, str],
+    *,
+    source_label: str,
+) -> dict[str, str]:
+    candidate_id = _required_text(row, "candidate_id")
+    return {
+        "source_label": source_label,
+        "packet_row_id": f"{source_label}|{candidate_id}",
+        "sample_stem": row.get("sample_stem", ""),
+        "candidate_id": candidate_id,
+        "combined_pt_pattern_status": row.get("combined_pt_pattern_status", ""),
+        "non_base_positions_supported": row.get(
+            "non_base_positions_supported", ""
+        ),
+        "max_abs_apex_delta_sec": row.get("max_abs_apex_delta_sec", ""),
+        "min_pearson_r_to_base": row.get("min_pearson_r_to_base", ""),
+        "min_active_overlap_fraction": row.get(
+            "min_active_overlap_fraction", ""
+        ),
+        "base_mz": row.get("base_mz", ""),
+        "base_rt_apex_min": row.get("base_rt_apex_min", ""),
+    }
 
 
 def _read_oracle_rows(path: Path | None) -> tuple[dict[str, str], ...]:
@@ -345,36 +405,18 @@ def _replay_status(
     return "diagnostic_gate_replay_failed"
 
 
-def _rule_id(
-    *,
+def _thresholds(
     apex_delta_max_sec: float,
     pearson_min: float,
     overlap_min: float,
-) -> str:
-    return (
-        "pt_v2_fullpattern"
-        f"_apex_le_{_token(apex_delta_max_sec)}s"
-        f"_pearson_ge_{_token(pearson_min)}"
-        f"_overlap_ge_{_token(overlap_min)}"
+) -> PtPatternEvidenceThresholds:
+    return PtPatternEvidenceThresholds(
+        required_combined_status=REQUIRED_COMBINED_STATUS,
+        min_non_base_positions_supported=MIN_SUPPORTED_POSITIONS,
+        max_abs_apex_delta_sec=apex_delta_max_sec,
+        min_pearson_r_to_base=pearson_min,
+        min_active_overlap_fraction=overlap_min,
     )
-
-
-def _token(value: float) -> str:
-    return f"{value:g}".replace(".", "p")
-
-
-def _validate_thresholds(
-    *,
-    apex_delta_max_sec: float,
-    pearson_min: float,
-    overlap_min: float,
-) -> None:
-    if apex_delta_max_sec <= 0:
-        raise ValueError("apex_delta_max_sec must be > 0")
-    if not 0 <= pearson_min <= 1:
-        raise ValueError("pearson_min must be between 0 and 1")
-    if not 0 <= overlap_min <= 1:
-        raise ValueError("overlap_min must be between 0 and 1")
 
 
 def _required_text(row: Mapping[str, str], key: str) -> str:

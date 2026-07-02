@@ -1801,18 +1801,25 @@ explicit public-surface contract.
 ### `pt_pattern_diagnostic_gate.py`
 
 **Purpose**: Apply the calibrated Pt full-pattern diagnostic gate to one or
-more manual-review packet CSVs, optionally replaying against a bounded oracle
-promotion packet, and write row-level gate calls plus a summary JSON.
+more manual-review packet CSVs or full `pt_pattern_trace_summary.csv` inputs,
+optionally replaying against a bounded oracle promotion packet, and write
+row-level gate calls plus a summary JSON.
 **Topic group**: `pt_pattern_diagnostic_gate.py` +
-`xic_extractor.discovery.pt_pattern_diagnostic_gate`
+`xic_extractor.discovery.pt_pattern_diagnostic_gate` +
+`xic_extractor.discovery.pt_pattern_evidence_rule`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
 **Status note**: Diagnostic-only replay surface. It does not open RAW, create
 candidates, recompute trace evidence, mutate Discovery outputs, read Alignment
-state, or write Matrix/workbook artifacts. `--require-zero-fpfn` makes the CLI
-fail if bounded-oracle replay has any false positive or false negative, but that
-pass/fail result is only a diagnostic gate and must not be treated as detector
-activation, counted-detection authority, or export authority without a later
-public-surface contract.
+state, or write Matrix/workbook artifacts. The reusable Pt full-pattern
+accept/reject rule lives in
+`xic_extractor.discovery.pt_pattern_evidence_rule`; this CLI only adapts review
+packet or trace-summary rows into replay artifacts. `--trace-summary-input
+SOURCE_LABEL=PATH` lets the same calibrated rule run on full trace-diagnosed
+candidate slices instead of only bounded manual-review packets.
+`--require-zero-fpfn` makes the CLI fail if bounded-oracle replay has any false
+positive or false negative, but that pass/fail result is only a diagnostic gate
+and must not be treated as detector activation, counted-detection authority, or
+export authority without a later public-surface contract.
 
 ---
 

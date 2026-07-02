@@ -1299,6 +1299,17 @@ Current v2 status:
   `pt_pattern_diagnostic_gate.v1`. With `--require-zero-fpfn`, the replay exits
   `0` on the repaired 32-row v2 oracle and reports 10 true positives, 22 true
   negatives, 0 false positives, and 0 false negatives.
+- The reusable row-level Pt full-pattern accept/reject rule now lives in
+  `xic_extractor.discovery.pt_pattern_evidence_rule`. Threshold calibration and
+  diagnostic gate replay call that shared rule; they no longer own separate
+  copies of the decision logic.
+- The current full trace-summary diagnostic gate replay output is
+  `output/pt_pattern_productization_v1/diagnostic_gate/trace_summary_limit50_current/`.
+  It uses `--trace-summary-input` on the current 50-row Pt-only Fullscan trace
+  summary and current 50-row Pt+CID-NL DDMS2 trace summary. This no-oracle
+  diagnostic replay reports 100 rows: 45 `accept`, 55 `reject`. Source-level
+  calls are 15/35 accept/reject for Pt-only and 30/20 accept/reject for
+  Pt+CID-NL.
 - The v1 promotion packet is now historical calibration context only, not
   current v2 authority.
 
@@ -1314,8 +1325,9 @@ Rules:
   public-surface contract.
 - A diagnostic gate replay is still `diagnostic_only`. It is useful because the
   calibrated rule is now machine-repeatable and fail-closed against a bounded
-  oracle, but it still does not activate the detector, write Matrix/Backfill, or
-  define counted detection/export behavior.
+  oracle or full trace-diagnosed candidate slices, but it still does not
+  activate the detector, write Matrix/Backfill, or define counted
+  detection/export behavior.
 - A refresh draft is not a promoted oracle. It can only feed promotion after
   every pending/conflicting row has an `accept` or `reject` adjudication and
   current packet provenance still matches.

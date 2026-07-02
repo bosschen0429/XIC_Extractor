@@ -50,6 +50,41 @@ def _review_row(
     return row
 
 
+def _trace_summary_row(
+    candidate_id: str,
+    *,
+    status: str = "pt_pattern_detected_diagnostic",
+    supported: str = "3",
+    apex_delta: str = "1.0",
+    pearson: str = "0.95",
+    overlap: str = "0.80",
+) -> dict[str, str]:
+    row = {column: "" for column in evidence.SUMMARY_COLUMNS}
+    row.update(
+        {
+            "schema_version": evidence.SCHEMA_VERSION,
+            "sample_stem": "SampleA",
+            "candidate_id": candidate_id,
+            "scan_pattern_seed_status": "full_pattern_seeded",
+            "base_mz": "500.0",
+            "base_rt_apex_min": "10.0",
+            "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
+            "trace_smoothing_method": evidence.TRACE_SMOOTH_METHOD,
+            "trace_smoothing_window_points": str(
+                evidence.TRACE_SMOOTH_WINDOW_POINTS
+            ),
+            "non_base_positions_supported": supported,
+            "max_abs_apex_delta_sec": apex_delta,
+            "min_pearson_r_to_base": pearson,
+            "min_active_overlap_fraction": overlap,
+            "trace_support_status": "supported",
+            "combined_pt_pattern_status": status,
+            "reason": "unit",
+        }
+    )
+    return row
+
+
 def _oracle_row(candidate_id: str, *, oracle_call: str) -> dict[str, str]:
     row = {column: "" for column in promotion.PROMOTION_COLUMNS}
     row.update(
@@ -163,8 +198,51 @@ def test_diagnostic_gate_rejects_missing_oracle_review_packet() -> None:
         gate.build_diagnostic_gate_rows(
             review_rows=[],
             oracle_rows=[_oracle_row("missing", oracle_call="accept")],
-            gate_id="unit_gate",
-        )
+        gate_id="unit_gate",
+    )
+
+
+def test_diagnostic_gate_can_read_full_trace_summary_inputs(
+    tmp_path: Path,
+) -> None:
+    trace_summary_csv = _write_csv(
+        tmp_path / "trace_summary.csv",
+        [
+            _trace_summary_row("accept-a"),
+            _trace_summary_row("reject-shape", pearson="0.84"),
+        ],
+        evidence.SUMMARY_COLUMNS,
+    )
+
+    outputs = gate.run_diagnostic_gate(
+        review_packet_csvs=[],
+        trace_summary_csvs=[
+            gate.TraceSummaryInput(source_label="pt_only", path=trace_summary_csv)
+        ],
+        output_dir=tmp_path / "gate",
+        gate_id="unit_trace_gate",
+    )
+
+    rows = read_delimited_rows(
+        outputs["gate_rows_csv"],
+        required_columns=gate.GATE_COLUMNS,
+        delimiter=",",
+    )
+    assert [row["packet_row_id"] for row in rows] == [
+        "pt_only|accept-a",
+        "pt_only|reject-shape",
+    ]
+    assert [row["diagnostic_gate_call"] for row in rows] == [
+        "accept",
+        "reject",
+    ]
+
+    summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
+    assert summary["row_count"] == 2
+    assert summary["review_packet_csvs"] == []
+    assert summary["trace_summary_csvs"] == [f"pt_only={trace_summary_csv}"]
+    assert summary["replay_status"] == "no_oracle_replay"
+    assert summary["changes_matrix"] is False
 
 
 def test_diagnostic_gate_cli_writes_outputs(tmp_path: Path) -> None:
@@ -203,6 +281,36 @@ def test_diagnostic_gate_cli_writes_outputs(tmp_path: Path) -> None:
         ).read_text(encoding="utf-8")
     )
     assert summary["replay_status"] == "diagnostic_gate_replay_passed"
+
+
+def test_diagnostic_gate_cli_accepts_trace_summary_input(tmp_path: Path) -> None:
+    trace_summary_csv = _write_csv(
+        tmp_path / "trace_summary.csv",
+        [_trace_summary_row("accept-a")],
+        evidence.SUMMARY_COLUMNS,
+    )
+
+    from tools.diagnostics import pt_pattern_diagnostic_gate as cli
+
+    assert cli.main(
+        [
+            "--trace-summary-input",
+            f"pt_only={trace_summary_csv}",
+            "--output-dir",
+            str(tmp_path / "gate"),
+            "--gate-id",
+            "unit_trace_gate",
+        ]
+    ) == 0
+
+    summary = json.loads(
+        (
+            tmp_path
+            / "gate"
+            / "pt_pattern_diagnostic_gate_summary.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert summary["diagnostic_gate_call_counts"] == {"accept": 1}
 
 
 def test_diagnostic_gate_cli_can_fail_zero_fpfn_requirement(tmp_path: Path) -> None:
