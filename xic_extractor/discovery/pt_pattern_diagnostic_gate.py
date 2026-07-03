@@ -12,6 +12,8 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_APEX_DELTA_MAX_SEC,
     DEFAULT_OVERLAP_MIN,
     DEFAULT_PEARSON_MIN,
+    DEFAULT_SHAPE_SHIFT_MAX_SEC,
+    DEFAULT_SHIFTED_PEARSON_MIN,
     MIN_SUPPORTED_POSITIONS,
     REQUIRED_COMBINED_STATUS,
     PtPatternEvidenceThresholds,
@@ -20,9 +22,6 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
 )
 from xic_extractor.discovery.pt_pattern_oracle_promotion import PROMOTION_COLUMNS
 from xic_extractor.discovery.pt_pattern_review_packet import PACKET_COLUMNS
-from xic_extractor.discovery.pt_pattern_trace_evidence import (
-    SUMMARY_COLUMNS as TRACE_SUMMARY_COLUMNS,
-)
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
@@ -34,6 +33,25 @@ SCHEMA_VERSION = "pt_pattern_diagnostic_gate.v1"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_diagnostic_gate"
 AUTHORITY_SCOPE = "diagnostic_gate_replay_only"
+
+TRACE_SUMMARY_GATE_REQUIRED_COLUMNS = (
+    "sample_stem",
+    "candidate_id",
+    "scan_pattern_seed_status",
+    "base_mz",
+    "base_rt_apex_min",
+    "trace_decision_basis",
+    "trace_smoothing_method",
+    "trace_smoothing_window_points",
+    "non_base_positions_supported",
+    "max_abs_apex_delta_sec",
+    "min_pearson_r_to_base",
+    "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
+    "trace_support_status",
+    "combined_pt_pattern_status",
+)
 
 
 @dataclass(frozen=True)
@@ -61,11 +79,15 @@ GATE_COLUMNS = (
     "max_abs_apex_delta_sec_threshold",
     "min_pearson_r_to_base_threshold",
     "min_active_overlap_fraction_threshold",
+    "min_shifted_pearson_r_to_base_threshold",
+    "max_abs_shape_shift_sec_to_base_threshold",
     "combined_pt_pattern_status",
     "non_base_positions_supported",
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
     "base_mz",
     "base_rt_apex_min",
     "oracle_call",
@@ -84,11 +106,15 @@ def run_diagnostic_gate(
     apex_delta_max_sec: float = DEFAULT_APEX_DELTA_MAX_SEC,
     pearson_min: float = DEFAULT_PEARSON_MIN,
     overlap_min: float = DEFAULT_OVERLAP_MIN,
+    shifted_pearson_min: float | None = None,
+    shape_shift_max_sec: float | None = None,
 ) -> dict[str, Path]:
     thresholds = _thresholds(
         apex_delta_max_sec=apex_delta_max_sec,
         pearson_min=pearson_min,
         overlap_min=overlap_min,
+        shifted_pearson_min=shifted_pearson_min,
+        shape_shift_max_sec=shape_shift_max_sec,
     )
     review_rows = _read_review_packets(review_packet_csvs)
     trace_summary_rows = _read_trace_summary_inputs(trace_summary_csvs)
@@ -131,6 +157,12 @@ def run_diagnostic_gate(
         "max_abs_apex_delta_sec": thresholds.max_abs_apex_delta_sec,
         "min_pearson_r_to_base": thresholds.min_pearson_r_to_base,
         "min_active_overlap_fraction": thresholds.min_active_overlap_fraction,
+        "min_shifted_pearson_r_to_base": (
+            thresholds.min_shifted_pearson_r_to_base
+        ),
+        "max_abs_shape_shift_sec_to_base": (
+            thresholds.max_abs_shape_shift_sec_to_base
+        ),
         "review_packet_csvs": [str(path) for path in review_packet_csvs],
         "review_packet_csv_sha256s": {
             str(path): file_sha256(path) for path in review_packet_csvs
@@ -235,6 +267,12 @@ def build_diagnostic_gate_rows(
                 "min_active_overlap_fraction_threshold": (
                     thresholds.min_active_overlap_fraction
                 ),
+                "min_shifted_pearson_r_to_base_threshold": (
+                    thresholds.min_shifted_pearson_r_to_base
+                ),
+                "max_abs_shape_shift_sec_to_base_threshold": (
+                    thresholds.max_abs_shape_shift_sec_to_base
+                ),
                 "combined_pt_pattern_status": review.get(
                     "combined_pt_pattern_status", ""
                 ),
@@ -245,6 +283,12 @@ def build_diagnostic_gate_rows(
                 "min_pearson_r_to_base": review.get("min_pearson_r_to_base", ""),
                 "min_active_overlap_fraction": review.get(
                     "min_active_overlap_fraction", ""
+                ),
+                "min_shifted_pearson_r_to_base": review.get(
+                    "min_shifted_pearson_r_to_base", ""
+                ),
+                "max_abs_shape_shift_sec_to_base": review.get(
+                    "max_abs_shape_shift_sec_to_base", ""
                 ),
                 "base_mz": review.get("base_mz", ""),
                 "base_rt_apex_min": review.get("base_rt_apex_min", ""),
@@ -268,6 +312,8 @@ def diagnostic_gate_call(
     apex_delta_max_sec: float = DEFAULT_APEX_DELTA_MAX_SEC,
     pearson_min: float = DEFAULT_PEARSON_MIN,
     overlap_min: float = DEFAULT_OVERLAP_MIN,
+    shifted_pearson_min: float | None = None,
+    shape_shift_max_sec: float | None = None,
 ) -> tuple[str, str]:
     decision = evaluate_pt_pattern_evidence(
         row,
@@ -275,6 +321,8 @@ def diagnostic_gate_call(
             apex_delta_max_sec=apex_delta_max_sec,
             pearson_min=pearson_min,
             overlap_min=overlap_min,
+            shifted_pearson_min=shifted_pearson_min,
+            shape_shift_max_sec=shape_shift_max_sec,
         ),
     )
     return decision.call, decision.reason
@@ -306,7 +354,7 @@ def _read_trace_summary_inputs(
             _trace_summary_gate_row(row, source_label=source_label)
             for row in read_delimited_rows(
                 item.path,
-                required_columns=TRACE_SUMMARY_COLUMNS,
+                required_columns=TRACE_SUMMARY_GATE_REQUIRED_COLUMNS,
                 delimiter=",",
                 encoding="utf-8-sig",
             )
@@ -333,6 +381,12 @@ def _trace_summary_gate_row(
         "min_pearson_r_to_base": row.get("min_pearson_r_to_base", ""),
         "min_active_overlap_fraction": row.get(
             "min_active_overlap_fraction", ""
+        ),
+        "min_shifted_pearson_r_to_base": row.get(
+            "min_shifted_pearson_r_to_base", ""
+        ),
+        "max_abs_shape_shift_sec_to_base": row.get(
+            "max_abs_shape_shift_sec_to_base", ""
         ),
         "base_mz": row.get("base_mz", ""),
         "base_rt_apex_min": row.get("base_rt_apex_min", ""),
@@ -409,6 +463,8 @@ def _thresholds(
     apex_delta_max_sec: float,
     pearson_min: float,
     overlap_min: float,
+    shifted_pearson_min: float | None = None,
+    shape_shift_max_sec: float | None = None,
 ) -> PtPatternEvidenceThresholds:
     return PtPatternEvidenceThresholds(
         required_combined_status=REQUIRED_COMBINED_STATUS,
@@ -416,6 +472,16 @@ def _thresholds(
         max_abs_apex_delta_sec=apex_delta_max_sec,
         min_pearson_r_to_base=pearson_min,
         min_active_overlap_fraction=overlap_min,
+        min_shifted_pearson_r_to_base=(
+            DEFAULT_SHIFTED_PEARSON_MIN
+            if shifted_pearson_min is None
+            else shifted_pearson_min
+        ),
+        max_abs_shape_shift_sec_to_base=(
+            DEFAULT_SHAPE_SHIFT_MAX_SEC
+            if shape_shift_max_sec is None
+            else shape_shift_max_sec
+        ),
     )
 
 

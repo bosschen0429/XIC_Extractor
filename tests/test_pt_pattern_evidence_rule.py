@@ -16,6 +16,8 @@ def _row(**overrides: object) -> dict[str, object]:
         "max_abs_apex_delta_sec": "1.0",
         "min_pearson_r_to_base": "0.95",
         "min_active_overlap_fraction": "0.80",
+        "min_shifted_pearson_r_to_base": "0.95",
+        "max_abs_shape_shift_sec_to_base": "2.0",
     }
     row.update(overrides)
     return row
@@ -29,7 +31,37 @@ def test_pt_pattern_evidence_rule_accepts_full_supported_pattern() -> None:
     assert decision.reason == "full_pattern_close_apex_shape_overlap"
     assert pt_pattern_rule_id() == (
         "pt_v2_fullpattern_apex_le_10s_pearson_ge_0p9_overlap_ge_0p5"
+        "_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
+
+
+def test_pt_pattern_evidence_rule_accepts_shifted_shape_pattern() -> None:
+    decision = evaluate_pt_pattern_evidence(
+        _row(
+            max_abs_apex_delta_sec="30.0",
+            min_pearson_r_to_base="0.10",
+            min_shifted_pearson_r_to_base="0.95",
+        )
+    )
+
+    assert decision.call == "accept"
+    assert decision.detection_status == "detected"
+    assert decision.reason == "full_pattern_shifted_shape_supported"
+
+
+def test_pt_pattern_evidence_rule_rejects_shifted_shape_above_hard_cap() -> None:
+    decision = evaluate_pt_pattern_evidence(
+        _row(
+            max_abs_apex_delta_sec="75.0",
+            min_pearson_r_to_base="0.10",
+            min_shifted_pearson_r_to_base="0.98",
+            max_abs_shape_shift_sec_to_base="75.0",
+        )
+    )
+
+    assert decision.call == "reject"
+    assert decision.detection_status == "non_detected"
+    assert decision.reason == "shape_shift_above_threshold"
 
 
 @pytest.mark.parametrize(
@@ -41,9 +73,27 @@ def test_pt_pattern_evidence_rule_accepts_full_supported_pattern() -> None:
         ),
         ({"min_pearson_r_to_base": ""}, "missing_required_metric"),
         ({"non_base_positions_supported": "2"}, "insufficient_non_base_positions"),
-        ({"max_abs_apex_delta_sec": "12.0"}, "apex_delta_above_threshold"),
-        ({"min_pearson_r_to_base": "0.80"}, "pearson_below_threshold"),
-        ({"min_active_overlap_fraction": "0.25"}, "overlap_below_threshold"),
+        (
+            {
+                "max_abs_apex_delta_sec": "12.0",
+                "min_shifted_pearson_r_to_base": "0.10",
+            },
+            "apex_delta_above_threshold",
+        ),
+        (
+            {
+                "min_pearson_r_to_base": "0.80",
+                "min_shifted_pearson_r_to_base": "0.10",
+            },
+            "pearson_below_threshold",
+        ),
+        (
+            {
+                "min_active_overlap_fraction": "0.25",
+                "min_shifted_pearson_r_to_base": "0.10",
+            },
+            "overlap_below_threshold",
+        ),
     ],
 )
 def test_pt_pattern_evidence_rule_rejects_expected_failure_modes(
@@ -62,6 +112,8 @@ def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
         max_abs_apex_delta_sec=2.0,
         min_pearson_r_to_base=0.99,
         min_active_overlap_fraction=0.90,
+        min_shifted_pearson_r_to_base=0.98,
+        max_abs_shape_shift_sec_to_base=12.0,
     )
 
     decision = evaluate_pt_pattern_evidence(
@@ -72,6 +124,7 @@ def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
     assert decision.reason == "pearson_below_threshold"
     assert pt_pattern_rule_id(thresholds) == (
         "pt_v2_fullpattern_apex_le_2s_pearson_ge_0p99_overlap_ge_0p9"
+        "_shiftedpearson_ge_0p98_shapeshift_le_12s"
     )
 
 
@@ -85,6 +138,9 @@ def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
         {"min_pearson_r_to_base": 1.1},
         {"min_active_overlap_fraction": -0.1},
         {"min_active_overlap_fraction": 1.1},
+        {"min_shifted_pearson_r_to_base": -0.1},
+        {"min_shifted_pearson_r_to_base": 1.1},
+        {"max_abs_shape_shift_sec_to_base": 0.0},
     ],
 )
 def test_pt_pattern_evidence_thresholds_reject_invalid_values(

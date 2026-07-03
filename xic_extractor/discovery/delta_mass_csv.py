@@ -1,9 +1,9 @@
 """CSV and JSON IO for Pt pattern Delta Mass Discovery.
 
-Implements the Detected Features CSV v1 loader and the Pt Candidate / Pt
-Review CSV v1, Pt Discovery Evidence CSV v1, and Pt Sidecar JSON v2 writers
-described in the Public Contract
-Details section of
+Re-exports the Detected Features CSV v1 loader owned by
+``xic_extractor.discovery.detected_features`` and implements the Pt Candidate /
+Pt Review CSV v1, Pt Discovery Evidence CSV v1, and Pt Sidecar JSON v3 writers
+described in the Public Contract Details section of
 ``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``.
 
 Column tuples and field rules are copied verbatim from that plan and are
@@ -12,7 +12,6 @@ pinned by the approved contract tests in ``tests/test_delta_mass_csv.py``.
 
 from __future__ import annotations
 
-import csv
 import json
 import math
 from collections.abc import Mapping, Sequence
@@ -24,23 +23,16 @@ from xic_extractor.discovery.delta_mass_patterns import (
     DeltaMassPattern,
     PtPatternCandidate,
 )
-from xic_extractor.discovery.detected_features import DetectedFeature
+from xic_extractor.discovery.detected_features import (
+    DETECTED_FEATURES_COLUMNS as _DETECTED_FEATURES_COLUMNS,
+)
+from xic_extractor.discovery.detected_features import (
+    load_detected_features_csv as _load_detected_features_csv,
+)
 from xic_extractor.tabular_io import escape_excel_formula, write_delimited_rows
 
-DETECTED_FEATURES_COLUMNS = (
-    "sample_stem",
-    "feature_id",
-    "source_feature_row_id",
-    "mz",
-    "rt_apex_min",
-    "rt_start_min",
-    "rt_end_min",
-    "height",
-    "area",
-    "trace_quality",
-    "shape_score",
-    "source",
-)
+DETECTED_FEATURES_COLUMNS = _DETECTED_FEATURES_COLUMNS
+load_detected_features_csv = _load_detected_features_csv
 
 PT_CANDIDATE_COLUMNS = (
     "schema_version",
@@ -130,17 +122,24 @@ PT_EVIDENCE_COLUMNS = (
     "max_abs_apex_delta_threshold_sec",
     "min_pearson_r_to_base_threshold",
     "min_active_overlap_fraction_threshold",
+    "min_shifted_pearson_r_to_base_threshold",
+    "max_abs_shape_shift_sec_to_base_threshold",
     "combined_pt_pattern_status",
     "non_base_positions_supported",
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
+    "trace_ambiguity_status",
+    "trace_ambiguity_flags",
+    "shifted_only_position_labels",
     "matrix_write_authority",
     "counted_detection_authority",
     "export_activation_authority",
 )
 
-_SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar.v2"
+_SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar.v3"
 
 # Free-text / sample-derived fields that can plausibly start with a
 # formula-trigger character ("=", "+", "-", "@") and therefore need Excel
@@ -176,130 +175,19 @@ class DeltaMassDiscoveryResult:
 
     ``detected_features_csv``, ``cid_nl_candidates_csv``, and
     ``trace_summary_csv`` are recorded as the literal CLI-provided path
-    strings (not resolved local absolute paths), per the Pt Sidecar JSON v2
+    strings (not resolved local absolute paths), per the Pt Sidecar JSON v3
     contract.
     """
 
     method_label: str
     pattern: DeltaMassPattern
     detected_features_csv: str
+    external_feature_table_tsv: str | None
+    mzmine_feature_table_csv: str | None
     cid_nl_candidates_csv: str | None
     candidates: Sequence[PtPatternCandidate]
     trace_summary_csv: str | None = None
     evidence_rows: Sequence[Mapping[str, object]] = ()
-
-
-def load_detected_features_csv(path: Path) -> tuple[DetectedFeature, ...]:
-    """Load and validate the Detected Features CSV v1 input contract.
-
-    Required non-empty fields: ``sample_stem``, ``feature_id``, ``mz``,
-    ``rt_apex_min``, ``height``, ``trace_quality``, ``source``. ``height``
-    must additionally be ``> 0``. ``mz``, ``rt_apex_min``, ``height``, and
-    any non-blank optional numeric field must be finite. Rows with invalid
-    required fields raise ``ValueError`` rather than being silently skipped.
-    """
-
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        rows = list(reader)
-
-    features: list[DetectedFeature] = []
-    for row_index, row in enumerate(rows):
-        features.append(_parse_detected_feature(row, path=path, row_index=row_index))
-    return tuple(features)
-
-
-def _parse_detected_feature(
-    row: dict[str, str], *, path: Path, row_index: int
-) -> DetectedFeature:
-    def _row_label() -> str:
-        return f"{path} row {row_index}"
-
-    sample_stem = _required_text(row.get("sample_stem"), "sample_stem", _row_label())
-    feature_id = _required_text(row.get("feature_id"), "feature_id", _row_label())
-    trace_quality = _required_text(
-        row.get("trace_quality"), "trace_quality", _row_label()
-    )
-    source = _required_text(row.get("source"), "source", _row_label())
-
-    mz = _required_finite_float(row.get("mz"), "mz", _row_label())
-    rt_apex_min = _required_finite_float(
-        row.get("rt_apex_min"), "rt_apex_min", _row_label()
-    )
-    height = _required_finite_float(row.get("height"), "height", _row_label())
-    if height <= 0:
-        raise ValueError(
-            f"{_row_label()} has invalid height: must be > 0, got {height!r}"
-        )
-
-    return DetectedFeature(
-        sample_stem=sample_stem,
-        feature_id=feature_id,
-        source_feature_row_id=_optional_text(row.get("source_feature_row_id")),
-        mz=mz,
-        rt_apex_min=rt_apex_min,
-        rt_start_min=_optional_finite_float(
-            row.get("rt_start_min"), "rt_start_min", _row_label()
-        ),
-        rt_end_min=_optional_finite_float(
-            row.get("rt_end_min"), "rt_end_min", _row_label()
-        ),
-        height=height,
-        area=_optional_finite_float(row.get("area"), "area", _row_label()),
-        trace_quality=trace_quality,
-        shape_score=_optional_finite_float(
-            row.get("shape_score"), "shape_score", _row_label()
-        ),
-        source=source,
-    )
-
-
-def _required_text(value: str | None, field: str, row_label: str) -> str:
-    text = (value or "").strip()
-    if not text:
-        raise ValueError(f"{row_label} is missing required field {field!r}")
-    return text
-
-
-def _optional_text(value: str | None) -> str | None:
-    text = (value or "").strip()
-    return text or None
-
-
-def _required_finite_float(value: str | None, field: str, row_label: str) -> float:
-    text = (value or "").strip()
-    if not text:
-        raise ValueError(f"{row_label} is missing required field {field!r}")
-    try:
-        parsed = float(text)
-    except ValueError as error:
-        raise ValueError(
-            f"{row_label} has non-numeric required field {field!r}: {value!r}"
-        ) from error
-    if not math.isfinite(parsed):
-        raise ValueError(
-            f"{row_label} has non-finite required field {field!r}: {value!r}"
-        )
-    return parsed
-
-
-def _optional_finite_float(
-    value: str | None, field: str, row_label: str
-) -> float | None:
-    text = (value or "").strip()
-    if not text:
-        return None
-    try:
-        parsed = float(text)
-    except ValueError as error:
-        raise ValueError(
-            f"{row_label} has non-numeric optional field {field!r}: {value!r}"
-        ) from error
-    if not math.isfinite(parsed):
-        raise ValueError(
-            f"{row_label} has non-finite optional field {field!r}: {value!r}"
-        )
-    return parsed
 
 
 def write_pt_pattern_candidates_csv(
@@ -370,7 +258,7 @@ def write_pt_pattern_sidecar_json(
     *,
     result: DeltaMassDiscoveryResult,
 ) -> Path:
-    """Write the Pt Sidecar JSON v2 contract."""
+    """Write the Pt Sidecar JSON v3 contract."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -379,6 +267,8 @@ def write_pt_pattern_sidecar_json(
         "pattern": _pattern_payload(result.pattern),
         "inputs": {
             "detected_features_csv": result.detected_features_csv,
+            "external_feature_table_tsv": result.external_feature_table_tsv,
+            "mzmine_feature_table_csv": result.mzmine_feature_table_csv,
             "cid_nl_candidates_csv": result.cid_nl_candidates_csv,
             "trace_summary_csv": result.trace_summary_csv,
         },
@@ -478,9 +368,14 @@ def _review_row(candidate: PtPatternCandidate) -> dict[str, object]:
 
 
 def _build_review_note(candidate: PtPatternCandidate) -> str:
+    support_text = (
+        "feature-source support only"
+        if candidate.local_signal_support_status == "feature_source_detected"
+        else f"{candidate.local_signal_support_status} local signal"
+    )
     return (
         f"{candidate.position_count}/{candidate.required_position_count} positions; "
-        f"{candidate.local_signal_support_status} local signal; "
+        f"{support_text}; "
         f"{candidate.pattern_rt_status} RT"
     )
 

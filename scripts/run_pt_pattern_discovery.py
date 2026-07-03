@@ -29,8 +29,29 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--detected-features-csv",
         type=Path,
-        required=True,
-        help="Detected Features CSV v1 input.",
+        help=(
+            "Detected Features CSV v1 input. Mutually exclusive with "
+            "--external-feature-table-tsv and --mzmine-feature-table-csv."
+        ),
+    )
+    parser.add_argument(
+        "--external-feature-table-tsv",
+        type=Path,
+        help=(
+            "External detected-feature table TSV. The pipeline writes a "
+            "canonical detected_features.csv copy into --output-dir before "
+            "matching."
+        ),
+    )
+    parser.add_argument(
+        "--mzmine-feature-table-csv",
+        type=Path,
+        help=(
+            "MZmine wide feature table CSV with row ID, row m/z, row retention "
+            "time, and '<sample>.mzML Peak area' columns. The pipeline writes "
+            "a canonical detected_features.csv copy into --output-dir before "
+            "matching."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -96,10 +117,53 @@ def main(argv: Sequence[str] | None = None) -> int:
             "composite Pt pattern + CID-NL(dR) preset"
         )
 
-    detected_features_csv = args.detected_features_csv.resolve()
-    if not detected_features_csv.is_file():
+    feature_source_count = sum(
+        source is not None
+        for source in (
+            args.detected_features_csv,
+            args.external_feature_table_tsv,
+            args.mzmine_feature_table_csv,
+        )
+    )
+    if feature_source_count != 1:
+        parser.error(
+            "pass exactly one feature source: --detected-features-csv, "
+            "--external-feature-table-tsv, or --mzmine-feature-table-csv"
+        )
+
+    detected_features_csv = (
+        args.detected_features_csv.resolve()
+        if args.detected_features_csv is not None
+        else None
+    )
+    external_feature_table_tsv = (
+        args.external_feature_table_tsv.resolve()
+        if args.external_feature_table_tsv is not None
+        else None
+    )
+    mzmine_feature_table_csv = (
+        args.mzmine_feature_table_csv.resolve()
+        if args.mzmine_feature_table_csv is not None
+        else None
+    )
+    if detected_features_csv is not None and not detected_features_csv.is_file():
         print(
             f"{detected_features_csv}: detected features csv does not exist",
+            file=sys.stderr,
+        )
+        return 2
+    if (
+        external_feature_table_tsv is not None
+        and not external_feature_table_tsv.is_file()
+    ):
+        print(
+            f"{external_feature_table_tsv}: external feature table does not exist",
+            file=sys.stderr,
+        )
+        return 2
+    if mzmine_feature_table_csv is not None and not mzmine_feature_table_csv.is_file():
+        print(
+            f"{mzmine_feature_table_csv}: MZmine feature table does not exist",
             file=sys.stderr,
         )
         return 2
@@ -124,6 +188,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     outputs = run_pt_pattern_discovery(
         detected_features_csv=detected_features_csv,
+        external_feature_table_tsv=external_feature_table_tsv,
+        mzmine_feature_table_csv=mzmine_feature_table_csv,
         output_dir=output_dir,
         preset_name=args.preset,
         cid_nl_candidates_csv=cid_nl_candidates_csv,

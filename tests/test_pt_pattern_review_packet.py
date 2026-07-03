@@ -39,13 +39,20 @@ def _summary_row(candidate_id: str, status: str) -> dict[str, str]:
         "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
         "trace_smoothing_method": evidence.TRACE_SMOOTH_METHOD,
         "trace_smoothing_window_points": str(evidence.TRACE_SMOOTH_WINDOW_POINTS),
+        "min_effective_smoothing_window_sec": "0.90",
+        "max_trace_point_count": "31",
         "non_base_positions_supported": "3",
         "max_abs_apex_delta_sec": "2.0",
         "min_pearson_r_to_base": "0.95",
         "min_active_overlap_fraction": "0.90",
+        "min_shifted_pearson_r_to_base": "0.98",
+        "max_abs_shape_shift_sec_to_base": "1.0",
         "raw_max_abs_apex_delta_sec": "2.0",
         "raw_min_pearson_r_to_base": "0.80",
         "raw_min_active_overlap_fraction": "0.70",
+        "trace_ambiguity_status": "review_required",
+        "trace_ambiguity_flags": "shifted_only_support_present",
+        "shifted_only_position_labels": "pt_plus_4",
         "trace_support_status": "supported",
         "combined_pt_pattern_status": status,
         "reason": "unit_fixture",
@@ -62,12 +69,18 @@ def _metric_rows(candidate_id: str) -> list[dict[str, str]]:
             "trace_smoothing_window_points": str(
                 evidence.TRACE_SMOOTH_WINDOW_POINTS
             ),
+            "median_rt_step_sec": "0.06",
+            "effective_smoothing_window_sec": "0.90",
             "apex_delta_sec_to_base": "1.0",
             "pearson_r_to_base": "0.95",
             "active_overlap_fraction": "0.90",
+            "shifted_pearson_r_to_base": "0.98",
+            "shape_shift_sec_to_base": "1.0",
             "raw_apex_delta_sec_to_base": "1.0",
+            "raw_smoothed_apex_delta_sec": "0.5",
             "raw_pearson_r_to_base": "0.80",
             "raw_active_overlap_fraction": "0.70",
+            "trace_quality_flags": "shifted_only_support",
             "trace_support_status": "supported",
             "reason": "unit_fixture",
         }
@@ -109,7 +122,19 @@ def test_build_review_packet_rows_samples_per_status_and_keeps_pending_oracle() 
     assert rows[0]["oracle_status"] == "pending_human_review"
     assert rows[0]["pt_plus_4_trace_support_status"] == "supported"
     assert rows[0]["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
+    assert rows[0]["min_shifted_pearson_r_to_base"] == "0.98"
+    assert rows[0]["max_abs_shape_shift_sec_to_base"] == "1.0"
+    assert rows[0]["trace_ambiguity_status"] == "review_required"
+    assert rows[0]["trace_ambiguity_flags"] == "shifted_only_support_present"
+    assert rows[0]["shifted_only_position_labels"] == "pt_plus_4"
+    assert rows[0]["min_effective_smoothing_window_sec"] == "0.90"
+    assert rows[0]["max_trace_point_count"] == "31"
     assert rows[0]["raw_min_pearson_r_to_base"] == "0.80"
+    assert rows[0]["pt_plus_4_trace_quality_flags"] == "shifted_only_support"
+    assert rows[0]["pt_plus_4_effective_smoothing_window_sec"] == "0.90"
+    assert rows[0]["pt_plus_4_raw_smoothed_apex_delta_sec"] == "0.5"
+    assert rows[0]["pt_plus_4_shifted_pearson_r_to_base"] == "0.98"
+    assert rows[0]["pt_plus_4_shape_shift_sec_to_base"] == "1.0"
     assert rows[0]["pt_plus_4_raw_active_overlap_fraction"] == "0.70"
 
 

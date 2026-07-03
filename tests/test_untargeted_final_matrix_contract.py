@@ -31,7 +31,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     matrix = AlignmentMatrix(
         clusters=(
             _feature("FAM001", evidence="owner_complete_link;owner_count=2"),
-            _feature("FAM_PROVISIONAL", evidence="single_sample_local_owner"),
+            _feature("FAM_PROVISIONAL", evidence="", has_anchor=False),
             _feature("FAM002", evidence="", has_anchor=False),
             _feature("FAM003", evidence="owner_complete_link;owner_count=2"),
         ),

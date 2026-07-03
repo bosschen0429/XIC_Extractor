@@ -3,6 +3,7 @@ from __future__ import annotations
 from xic_extractor.discovery.delta_mass_patterns import PtPatternCandidate
 from xic_extractor.discovery.pt_pattern_discovery_evidence import (
     build_pt_pattern_evidence_rows,
+    load_pt_trace_summary_rows,
 )
 
 
@@ -105,6 +106,72 @@ def test_discovery_evidence_applies_shared_rule_when_trace_summary_matches() -> 
     assert row["trace_rule_reason"] == "full_pattern_close_apex_shape_overlap"
     assert row["combined_pt_pattern_status"] == "pt_pattern_detected_diagnostic"
     assert row["min_pearson_r_to_base"] == 0.95
+
+
+def test_discovery_evidence_accepts_shifted_shape_support() -> None:
+    rows = build_pt_pattern_evidence_rows(
+        [_candidate()],
+        trace_summary_rows=[
+            _trace_summary_row(
+                max_abs_apex_delta_sec=25.0,
+                min_pearson_r_to_base=0.75,
+                min_shifted_pearson_r_to_base=0.85,
+                max_abs_shape_shift_sec_to_base=44.9,
+            )
+        ],
+    )
+
+    row = rows[0]
+    assert row["trace_rule_call"] == "accept"
+    assert row["trace_detection_status"] == "detected"
+    assert row["trace_rule_reason"] == "full_pattern_shifted_shape_supported"
+    assert row["min_shifted_pearson_r_to_base_threshold"] == 0.85
+    assert row["max_abs_shape_shift_sec_to_base_threshold"] == 45.0
+
+
+def test_discovery_evidence_loads_legacy_trace_summary_without_shifted_columns(
+    tmp_path,
+) -> None:
+    legacy_trace_summary = tmp_path / "legacy_trace_summary.csv"
+    legacy_trace_summary.write_text(
+        "\n".join(
+            [
+                (
+                    "schema_version,sample_stem,candidate_id,"
+                    "scan_pattern_seed_status,base_mz,base_rt_apex_min,"
+                    "rt_half_window_sec,ppm,mz_source,trace_decision_basis,"
+                    "trace_smoothing_method,trace_smoothing_window_points,"
+                    "positions_requested,positions_with_points,"
+                    "positions_with_signal,non_base_positions_supported,"
+                    "max_abs_apex_delta_sec,min_pearson_r_to_base,"
+                    "min_active_overlap_fraction,raw_max_abs_apex_delta_sec,"
+                    "raw_min_pearson_r_to_base,raw_min_active_overlap_fraction,"
+                    "trace_support_status,combined_pt_pattern_status,reason"
+                ),
+                (
+                    "pt_pattern_trace_diagnosis.v2,Sample_1,Sample_1@pt@base-1,"
+                    "full_pattern_seeded,500,10,30,20,observed,"
+                    "gaussian15_smoothed_trace,gaussian15,15,4,4,4,3,2,0.95,"
+                    "0.70,2,0.95,0.70,supported,"
+                    "pt_pattern_detected_diagnostic,legacy close-apex row"
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    trace_rows = load_pt_trace_summary_rows(legacy_trace_summary)
+    rows = build_pt_pattern_evidence_rows(
+        [_candidate()],
+        trace_summary_rows=trace_rows,
+    )
+
+    row = rows[0]
+    assert row["trace_rule_call"] == "accept"
+    assert row["trace_rule_reason"] == "full_pattern_close_apex_shape_overlap"
+    assert row["min_shifted_pearson_r_to_base"] == ""
+    assert row["trace_ambiguity_status"] == ""
 
 
 def test_discovery_evidence_records_reject_without_dropping_seed_candidate() -> None:

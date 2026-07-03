@@ -131,11 +131,18 @@ PT_EVIDENCE_COLUMNS = (
     "max_abs_apex_delta_threshold_sec",
     "min_pearson_r_to_base_threshold",
     "min_active_overlap_fraction_threshold",
+    "min_shifted_pearson_r_to_base_threshold",
+    "max_abs_shape_shift_sec_to_base_threshold",
     "combined_pt_pattern_status",
     "non_base_positions_supported",
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
+    "trace_ambiguity_status",
+    "trace_ambiguity_flags",
+    "shifted_only_position_labels",
     "matrix_write_authority",
     "counted_detection_authority",
     "export_activation_authority",
@@ -226,6 +233,7 @@ def _pt_evidence_row(**overrides: object) -> dict[str, object]:
         "trace_rule_reason": "full_pattern_close_apex_shape_overlap",
         "evidence_rule_id": (
             "pt_v2_fullpattern_apex_le_10s_pearson_ge_0p9_overlap_ge_0p5"
+            "_shiftedpearson_ge_0p85_shapeshift_le_45s"
         ),
         "evidence_rule_owner": "xic_extractor.discovery.pt_pattern_evidence_rule",
         "required_combined_status": "pt_pattern_detected_diagnostic",
@@ -233,11 +241,18 @@ def _pt_evidence_row(**overrides: object) -> dict[str, object]:
         "max_abs_apex_delta_threshold_sec": 10.0,
         "min_pearson_r_to_base_threshold": 0.90,
         "min_active_overlap_fraction_threshold": 0.50,
+        "min_shifted_pearson_r_to_base_threshold": 0.85,
+        "max_abs_shape_shift_sec_to_base_threshold": 45.0,
         "combined_pt_pattern_status": "pt_pattern_detected_diagnostic",
         "non_base_positions_supported": 3,
         "max_abs_apex_delta_sec": 4.0,
         "min_pearson_r_to_base": 0.95,
         "min_active_overlap_fraction": 0.70,
+        "min_shifted_pearson_r_to_base": 0.96,
+        "max_abs_shape_shift_sec_to_base": 2.0,
+        "trace_ambiguity_status": "clear",
+        "trace_ambiguity_flags": "none",
+        "shifted_only_position_labels": "none",
         "matrix_write_authority": False,
         "counted_detection_authority": False,
         "export_activation_authority": False,
@@ -420,6 +435,8 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
         method_label="pt_pattern",
         pattern=PT_PATTERN,
         detected_features_csv="detected_features.csv",
+        external_feature_table_tsv=None,
+        mzmine_feature_table_csv=None,
         cid_nl_candidates_csv=None,
         candidates=[_pt_candidate()],
         evidence_rows=[_pt_evidence_row()],
@@ -428,7 +445,7 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
     write_pt_pattern_sidecar_json(output_path, result=result)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "pt_pattern_sidecar.v2"
+    assert payload["schema_version"] == "pt_pattern_sidecar.v3"
     assert payload["method_label"] == "pt_pattern"
     assert payload["pattern"] == {
         "pattern_id": "pt",
@@ -445,6 +462,8 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
     }
     assert payload["inputs"] == {
         "detected_features_csv": "detected_features.csv",
+        "external_feature_table_tsv": None,
+        "mzmine_feature_table_csv": None,
         "cid_nl_candidates_csv": None,
         "trace_summary_csv": None,
     }
@@ -477,6 +496,8 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
         method_label="pt_pattern+cid_nl_dr",
         pattern=PT_PATTERN,
         detected_features_csv="detected_features.csv",
+        external_feature_table_tsv="external_features.tsv",
+        mzmine_feature_table_csv=None,
         cid_nl_candidates_csv="discovery_candidates.csv",
         candidates=[composite_candidate],
         trace_summary_csv="trace_summary.csv",
@@ -496,6 +517,8 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert payload["method_label"] == "pt_pattern+cid_nl_dr"
     assert payload["inputs"]["cid_nl_candidates_csv"] == "discovery_candidates.csv"
+    assert payload["inputs"]["external_feature_table_tsv"] == "external_features.tsv"
+    assert payload["inputs"]["mzmine_feature_table_csv"] is None
     assert payload["inputs"]["cid_nl_candidates_csv"] is not None
     assert payload["inputs"]["trace_summary_csv"] == "trace_summary.csv"
     assert payload["summary"] == {
@@ -518,6 +541,8 @@ def test_pt_sidecar_json_writes_empty_candidates_summary_for_no_matches(
         method_label="pt_pattern",
         pattern=PT_PATTERN,
         detected_features_csv="detected_features.csv",
+        external_feature_table_tsv=None,
+        mzmine_feature_table_csv=None,
         cid_nl_candidates_csv=None,
         candidates=[],
     )

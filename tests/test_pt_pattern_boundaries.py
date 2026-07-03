@@ -59,6 +59,7 @@ PT_PATTERN_MODULE_PATHS = (
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_refresh.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_thresholds.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_diagnostic_gate.py",
+    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_ddms2_support_replay.py",
     REPO_ROOT / "scripts" / "run_pt_pattern_discovery.py",
 )
 
@@ -181,6 +182,18 @@ def test_pt_pattern_diagnostic_gate_module_does_not_import_forbidden_roots() -> 
         / "xic_extractor"
         / "discovery"
         / "pt_pattern_diagnostic_gate.py"
+    )
+    assert _violations(path) == []
+
+
+def test_pt_pattern_ddms2_support_replay_module_does_not_import_forbidden_roots() -> (
+    None
+):
+    path = (
+        REPO_ROOT
+        / "xic_extractor"
+        / "discovery"
+        / "pt_pattern_ddms2_support_replay.py"
     )
     assert _violations(path) == []
 

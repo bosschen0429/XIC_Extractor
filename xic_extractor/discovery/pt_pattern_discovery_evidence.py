@@ -16,7 +16,6 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
     evaluate_pt_pattern_evidence,
     pt_pattern_rule_id,
 )
-from xic_extractor.discovery.pt_pattern_trace_evidence import SUMMARY_COLUMNS
 from xic_extractor.tabular_io import read_delimited_rows
 
 SCHEMA_VERSION = "pt_pattern_discovery_evidence.v1"
@@ -24,6 +23,14 @@ EVIDENCE_RULE_OWNER = "xic_extractor.discovery.pt_pattern_evidence_rule"
 TRACE_EVIDENCE_NOT_EVALUATED = "not_evaluated"
 TRACE_EVIDENCE_EVALUATED = "evaluated"
 NO_WRITE_AUTHORITY = False
+TRACE_SUMMARY_EVIDENCE_REQUIRED_COLUMNS = (
+    "candidate_id",
+    "combined_pt_pattern_status",
+    "non_base_positions_supported",
+    "max_abs_apex_delta_sec",
+    "min_pearson_r_to_base",
+    "min_active_overlap_fraction",
+)
 
 
 def load_pt_trace_summary_rows(path: Path) -> tuple[dict[str, str], ...]:
@@ -32,7 +39,7 @@ def load_pt_trace_summary_rows(path: Path) -> tuple[dict[str, str], ...]:
     return tuple(
         read_delimited_rows(
             path,
-            required_columns=SUMMARY_COLUMNS,
+            required_columns=TRACE_SUMMARY_EVIDENCE_REQUIRED_COLUMNS,
             delimiter=",",
             encoding="utf-8-sig",
         )
@@ -131,6 +138,21 @@ def _evidence_row(
             "min_active_overlap_fraction": _trace_value(
                 trace_row, "min_active_overlap_fraction"
             ),
+            "min_shifted_pearson_r_to_base": _trace_value(
+                trace_row, "min_shifted_pearson_r_to_base"
+            ),
+            "max_abs_shape_shift_sec_to_base": _trace_value(
+                trace_row, "max_abs_shape_shift_sec_to_base"
+            ),
+            "trace_ambiguity_status": _trace_value(
+                trace_row, "trace_ambiguity_status"
+            ),
+            "trace_ambiguity_flags": _trace_value(
+                trace_row, "trace_ambiguity_flags"
+            ),
+            "shifted_only_position_labels": _trace_value(
+                trace_row, "shifted_only_position_labels"
+            ),
         }
     )
     return row
@@ -164,11 +186,22 @@ def _base_evidence_row(
         "min_active_overlap_fraction_threshold": (
             thresholds.min_active_overlap_fraction
         ),
+        "min_shifted_pearson_r_to_base_threshold": (
+            thresholds.min_shifted_pearson_r_to_base
+        ),
+        "max_abs_shape_shift_sec_to_base_threshold": (
+            thresholds.max_abs_shape_shift_sec_to_base
+        ),
         "combined_pt_pattern_status": "",
         "non_base_positions_supported": "",
         "max_abs_apex_delta_sec": "",
         "min_pearson_r_to_base": "",
         "min_active_overlap_fraction": "",
+        "min_shifted_pearson_r_to_base": "",
+        "max_abs_shape_shift_sec_to_base": "",
+        "trace_ambiguity_status": "",
+        "trace_ambiguity_flags": "",
+        "shifted_only_position_labels": "",
         "matrix_write_authority": NO_WRITE_AUTHORITY,
         "counted_detection_authority": NO_WRITE_AUTHORITY,
         "export_activation_authority": NO_WRITE_AUTHORITY,

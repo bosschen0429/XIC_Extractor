@@ -35,6 +35,9 @@ _NON_BASE_LABELS: tuple[str, ...] = ("pt_plus_1", "pt_plus_2", "pt_plus_4")
 _SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
 _SCAN_PROXY_MARKER = "|scan_proxy|"
 _SCAN_PROXY_LABELS = (_BASE_LABEL, *_NON_BASE_LABELS)
+_EXTERNAL_FEATURE_SOURCE_PREFIX = "external_feature_table:"
+_UNSPECIFIED_TRACE_QUALITY = "UNSPECIFIED"
+_LOCAL_MS1_FEATURE_SOURCE_LEVEL_STATUS = "feature_source_detected"
 
 
 @dataclass(frozen=True)
@@ -282,7 +285,8 @@ def _match_base(
     if len(matches) != len(_NON_BASE_LABELS):
         return None
 
-    if not _has_local_signal_support(base, matches):
+    local_signal_support_status = _local_signal_support_status(base, matches)
+    if local_signal_support_status is None:
         return None
 
     rt_span_sec = _rt_span_sec(base, matches)
@@ -294,6 +298,7 @@ def _match_base(
         base=base,
         matches=matches,
         rt_span_sec=rt_span_sec,
+        local_signal_support_status=local_signal_support_status,
         settings=settings,
     )
 
@@ -357,20 +362,26 @@ def _is_position_match_eligible(
     feature: "DetectedFeature",
     expected_label: str,
 ) -> bool:
-    if base.source != _SCAN_PROXY_SOURCE_LABEL:
-        return feature.source != _SCAN_PROXY_SOURCE_LABEL
+    if base.source == _SCAN_PROXY_SOURCE_LABEL:
+        base_parsed = _scan_proxy_group_and_label(base.feature_id)
+        feature_parsed = _scan_proxy_group_and_label(feature.feature_id)
+        if base_parsed is None or feature_parsed is None:
+            return False
+        base_group, base_label = base_parsed
+        feature_group, feature_label = feature_parsed
+        return (
+            base_label == _BASE_LABEL
+            and feature_group == base_group
+            and feature_label == expected_label
+        )
 
-    base_parsed = _scan_proxy_group_and_label(base.feature_id)
-    feature_parsed = _scan_proxy_group_and_label(feature.feature_id)
-    if base_parsed is None or feature_parsed is None:
+    if _is_local_ms1_feature(base):
+        return _is_local_ms1_non_base_supported(feature)
+
+    if _is_local_ms1_feature(feature):
         return False
-    base_group, base_label = base_parsed
-    feature_group, feature_label = feature_parsed
-    return (
-        base_label == _BASE_LABEL
-        and feature_group == base_group
-        and feature_label == expected_label
-    )
+
+    return feature.source != _SCAN_PROXY_SOURCE_LABEL
 
 
 def _scan_proxy_group_and_label(feature_id: str) -> tuple[str, str] | None:
@@ -402,24 +413,87 @@ def _is_better_match(candidate: _PositionMatch, current_best: _PositionMatch) ->
     return candidate_key < best_key
 
 
-def _has_local_signal_support(
+def _local_signal_support_status(
     base: "DetectedFeature", matches: dict[str, _PositionMatch]
-) -> bool:
-    def _is_supported(feature: "DetectedFeature") -> bool:
-        if feature.trace_quality in _LOCAL_SIGNAL_SUPPORT_QUALITIES:
-            return True
-        return (
-            feature.shape_score is not None
-            and feature.shape_score >= _LOCAL_SIGNAL_SUPPORT_SHAPE_SCORE_MIN
+) -> str | None:
+    if _is_local_ms1_feature(base):
+        if not _is_local_ms1_base_supported(base):
+            return None
+        local_supported_non_base = sum(
+            1
+            for match in matches.values()
+            if _is_local_ms1_non_base_supported(match.feature)
         )
+        if local_supported_non_base < _REQUIRED_NON_BASE_SUPPORT_COUNT:
+            return None
+        return _LOCAL_MS1_FEATURE_SOURCE_LEVEL_STATUS
 
-    if not _is_supported(base):
-        return False
+    if not _is_supported_feature(base):
+        return None
 
     supported_non_base = sum(
-        1 for match in matches.values() if _is_supported(match.feature)
+        1 for match in matches.values() if _is_supported_feature(match.feature)
     )
-    return supported_non_base >= _REQUIRED_NON_BASE_SUPPORT_COUNT
+    if supported_non_base < _REQUIRED_NON_BASE_SUPPORT_COUNT:
+        return None
+
+    explicit_non_base = sum(
+        1
+        for match in matches.values()
+        if _has_explicit_local_signal_support(match.feature)
+    )
+    if (
+        _has_explicit_local_signal_support(base)
+        and explicit_non_base >= _REQUIRED_NON_BASE_SUPPORT_COUNT
+    ):
+        return "supported"
+    return "feature_source_detected"
+
+
+def _is_supported_feature(feature: "DetectedFeature") -> bool:
+    if _is_local_ms1_feature(feature):
+        return False
+    return _has_explicit_local_signal_support(feature) or (
+        feature.source.startswith(_EXTERNAL_FEATURE_SOURCE_PREFIX)
+        and feature.trace_quality == _UNSPECIFIED_TRACE_QUALITY
+    )
+
+
+def _is_local_ms1_feature(feature: "DetectedFeature") -> bool:
+    from xic_extractor.discovery.detected_features import is_local_ms1_feature_source
+
+    return is_local_ms1_feature_source(feature.source)
+
+
+def _is_local_ms1_base_supported(feature: "DetectedFeature") -> bool:
+    from xic_extractor.discovery.detected_features import (
+        LOCAL_MS1_FEATURE_TRACE_QUALITY_OK,
+    )
+
+    return (
+        _is_local_ms1_feature(feature)
+        and feature.trace_quality == LOCAL_MS1_FEATURE_TRACE_QUALITY_OK
+    )
+
+
+def _is_local_ms1_non_base_supported(feature: "DetectedFeature") -> bool:
+    from xic_extractor.discovery.detected_features import (
+        LOCAL_MS1_FEATURE_TRACE_QUALITIES,
+    )
+
+    return (
+        _is_local_ms1_feature(feature)
+        and feature.trace_quality in LOCAL_MS1_FEATURE_TRACE_QUALITIES
+    )
+
+
+def _has_explicit_local_signal_support(feature: "DetectedFeature") -> bool:
+    if feature.trace_quality in _LOCAL_SIGNAL_SUPPORT_QUALITIES:
+        return True
+    return (
+        feature.shape_score is not None
+        and feature.shape_score >= _LOCAL_SIGNAL_SUPPORT_SHAPE_SCORE_MIN
+    )
 
 
 def _rt_span_sec(base: "DetectedFeature", matches: dict[str, _PositionMatch]) -> float:
@@ -441,6 +515,7 @@ def _build_candidate(
     base: "DetectedFeature",
     matches: dict[str, _PositionMatch],
     rt_span_sec: float,
+    local_signal_support_status: str,
     settings: "DeltaMassPatternSettings",
 ) -> PtPatternCandidate:
     candidate_id = (
@@ -463,11 +538,16 @@ def _build_candidate(
         )
         position_fields[f"{label}_area_ratio_to_base"] = _ratio(feature.area, base.area)
 
-    # Fully-passing pattern: every hard gate (ppm, RT, local signal support)
-    # already passed by the time we reach this point, so this is treated as
-    # a maximal-confidence Pt-only detection. evidence_score/evidence_tier/
-    # review_priority are not locked in by any approved Task 1 test; these
-    # defaults are a design choice noted in the Task 2 report.
+    explicit_trace_support = local_signal_support_status == "supported"
+    evidence_score = 90 if explicit_trace_support else 70
+    evidence_tier = "A" if explicit_trace_support else "B"
+    review_priority = "HIGH" if explicit_trace_support else "MEDIUM"
+    reason = (
+        "full Pt pattern within tolerance"
+        if explicit_trace_support
+        else "full Pt pattern within tolerance; feature source support only"
+    )
+
     return PtPatternCandidate(
         schema_version="pt_pattern_candidates.v1",
         sample_stem=sample_stem,
@@ -475,9 +555,9 @@ def _build_candidate(
         pattern_id="pt",
         candidate_id=candidate_id,
         candidate_state="pt_pattern_candidate",
-        review_priority="HIGH",
-        evidence_tier="A",
-        evidence_score=90,
+        review_priority=review_priority,
+        evidence_tier=evidence_tier,
+        evidence_score=evidence_score,
         base_feature_id=base.feature_id,
         base_mz=base.mz,
         base_rt_apex_min=base.rt_apex_min,
@@ -487,12 +567,12 @@ def _build_candidate(
         required_position_count=4,
         rt_span_sec=rt_span_sec,
         pattern_rt_status="within_30s",
-        local_signal_support_status="supported",
+        local_signal_support_status=local_signal_support_status,
         cross_sample_support_status="not_evaluated",
         ratio_basis="both",
         cid_nl_base_status="not_required",
         cid_nl_base_candidate_id="",
         cid_nl_base_join_mode="not_required",
-        reason="full Pt pattern within tolerance",
+        reason=reason,
         **position_fields,  # type: ignore[arg-type]
     )

@@ -33,6 +33,11 @@ from xic_extractor.discovery.delta_mass_patterns import (
     PtPatternCandidate,
     match_delta_mass_pattern,
 )
+from xic_extractor.discovery.detected_features import (
+    load_external_feature_table_tsv,
+    load_mzmine_wide_feature_table_csv,
+    write_detected_features_csv,
+)
 from xic_extractor.discovery.pt_pattern_discovery_evidence import (
     build_pt_pattern_evidence_rows,
     load_pt_trace_summary_rows,
@@ -56,6 +61,7 @@ _CID_NL_MZ_TOLERANCE_PPM = 20.0
 _CID_NL_RT_TOLERANCE_SEC = 30.0
 _SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
 _SCAN_PROXY_MARKER = "|scan_proxy|"
+_MZMINE_FEATURE_SOURCE_PREFIX = "external_feature_table:MZmine:"
 
 
 @dataclass(frozen=True)
@@ -96,7 +102,9 @@ class _CidNlCandidateRow:
 
 def run_pt_pattern_discovery(
     *,
-    detected_features_csv: Path,
+    detected_features_csv: Path | None = None,
+    external_feature_table_tsv: Path | None = None,
+    mzmine_feature_table_csv: Path | None = None,
     output_dir: Path,
     preset_name: str = "pt_pattern",
     cid_nl_candidates_csv: Path | None = None,
@@ -129,7 +137,12 @@ def run_pt_pattern_discovery(
 
     settings = apply_to_delta_mass_discovery(preset)
 
-    features = load_detected_features_csv(detected_features_csv)
+    features, detected_features_source_csv = _load_feature_source(
+        detected_features_csv=detected_features_csv,
+        external_feature_table_tsv=external_feature_table_tsv,
+        mzmine_feature_table_csv=mzmine_feature_table_csv,
+        output_dir=output_dir,
+    )
     if is_composite:
         cid_nl_rows = _load_cid_nl_candidate_rows(cid_nl_candidates_csv)  # type: ignore[arg-type]
         base_feature_ids = _cid_nl_seed_base_feature_ids(features, cid_nl_rows)
@@ -146,10 +159,14 @@ def run_pt_pattern_discovery(
             feature.feature_id: feature.source_feature_row_id
             for feature in features
         }
+        source_by_feature_id = {
+            feature.feature_id: feature.source for feature in features
+        }
         candidates = _apply_cid_nl_composite_join(
             candidates,
             cid_nl_rows=cid_nl_rows,
             source_feature_row_id_by_feature_id=source_feature_row_id_by_feature_id,
+            source_by_feature_id=source_by_feature_id,
         )
     else:
         candidates = match_delta_mass_pattern(features, settings=settings)
@@ -184,7 +201,17 @@ def run_pt_pattern_discovery(
         result=DeltaMassDiscoveryResult(
             method_label=settings.method_label,
             pattern=settings.pattern,
-            detected_features_csv=str(detected_features_csv),
+            detected_features_csv=str(detected_features_source_csv),
+            external_feature_table_tsv=(
+                str(external_feature_table_tsv)
+                if external_feature_table_tsv is not None
+                else None
+            ),
+            mzmine_feature_table_csv=(
+                str(mzmine_feature_table_csv)
+                if mzmine_feature_table_csv is not None
+                else None
+            ),
             cid_nl_candidates_csv=(
                 str(cid_nl_candidates_csv)
                 if cid_nl_candidates_csv is not None
@@ -204,6 +231,40 @@ def run_pt_pattern_discovery(
         evidence_csv=evidence_path,
         sidecar_json=sidecar_path,
     )
+
+
+def _load_feature_source(
+    *,
+    detected_features_csv: Path | None,
+    external_feature_table_tsv: Path | None,
+    mzmine_feature_table_csv: Path | None,
+    output_dir: Path,
+) -> tuple[tuple["DetectedFeature", ...], Path]:
+    source_count = sum(
+        source is not None
+        for source in (
+            detected_features_csv,
+            external_feature_table_tsv,
+            mzmine_feature_table_csv,
+        )
+    )
+    if source_count != 1:
+        raise ValueError(
+            "pass exactly one feature source: detected_features_csv, "
+            "external_feature_table_tsv, or mzmine_feature_table_csv"
+        )
+    if detected_features_csv is not None:
+        assert detected_features_csv is not None
+        return load_detected_features_csv(detected_features_csv), detected_features_csv
+
+    if external_feature_table_tsv is not None:
+        features = load_external_feature_table_tsv(external_feature_table_tsv)
+    else:
+        assert mzmine_feature_table_csv is not None
+        features = load_mzmine_wide_feature_table_csv(mzmine_feature_table_csv)
+    prepared_csv = output_dir / "detected_features.csv"
+    write_detected_features_csv(prepared_csv, features)
+    return features, prepared_csv
 
 
 def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
@@ -266,12 +327,13 @@ def _cid_nl_seed_base_feature_ids(
 
     base_features = [feature for feature in features if _is_seed_base_feature(feature)]
     identity_index: dict[tuple[str, str], set[str]] = {}
-    sample_has_source_identity: dict[str, bool] = {}
-    features_by_sample: dict[str, list["DetectedFeature"]] = {}
+    fallback_features_by_sample: dict[str, list["DetectedFeature"]] = {}
     for feature in base_features:
-        features_by_sample.setdefault(feature.sample_stem, []).append(feature)
+        if _allows_cid_nl_mz_rt_fallback(feature.source):
+            fallback_features_by_sample.setdefault(feature.sample_stem, []).append(
+                feature
+            )
         if feature.source_feature_row_id:
-            sample_has_source_identity[feature.sample_stem] = True
             identity_index.setdefault(
                 (feature.sample_stem, feature.source_feature_row_id),
                 set(),
@@ -280,10 +342,15 @@ def _cid_nl_seed_base_feature_ids(
             feature.feature_id
         )
 
-    sorted_by_sample: dict[str, tuple[list[float], list["DetectedFeature"]]] = {}
-    for sample_stem, sample_features in features_by_sample.items():
+    sorted_fallback_by_sample: dict[
+        str, tuple[list[float], list["DetectedFeature"]]
+    ] = {}
+    for sample_stem, sample_features in fallback_features_by_sample.items():
         ordered = sorted(sample_features, key=lambda item: item.mz)
-        sorted_by_sample[sample_stem] = ([feature.mz for feature in ordered], ordered)
+        sorted_fallback_by_sample[sample_stem] = (
+            [feature.mz for feature in ordered],
+            ordered,
+        )
 
     seed_ids: set[str] = set()
     for row in eligible_rows:
@@ -291,9 +358,7 @@ def _cid_nl_seed_base_feature_ids(
         if identity_matches:
             seed_ids.update(identity_matches)
             continue
-        if sample_has_source_identity.get(row.sample_stem, False):
-            continue
-        seed_ids.update(_fallback_seed_base_feature_ids(row, sorted_by_sample))
+        seed_ids.update(_fallback_seed_base_feature_ids(row, sorted_fallback_by_sample))
 
     return frozenset(seed_ids)
 
@@ -315,6 +380,12 @@ def _is_seed_base_feature(feature: "DetectedFeature") -> bool:
     return _SCAN_PROXY_MARKER in feature.feature_id and feature.feature_id.endswith(
         "|base"
     )
+
+
+def _allows_cid_nl_mz_rt_fallback(source: str) -> bool:
+    """Return whether source IDs are detector-local, not CID-NL identities."""
+
+    return source.startswith(_MZMINE_FEATURE_SOURCE_PREFIX)
 
 
 def _fallback_seed_base_feature_ids(
@@ -456,6 +527,7 @@ def _apply_cid_nl_composite_join(
     *,
     cid_nl_rows: tuple[_CidNlCandidateRow, ...],
     source_feature_row_id_by_feature_id: dict[str, str | None],
+    source_by_feature_id: dict[str, str],
 ) -> tuple[PtPatternCandidate, ...]:
     """Join each Pt base candidate against CID-NL(dR) base evidence.
 
@@ -477,11 +549,14 @@ def _apply_cid_nl_composite_join(
         base_source_feature_row_id = source_feature_row_id_by_feature_id.get(
             candidate.base_feature_id
         )
+        base_source = source_by_feature_id.get(candidate.base_feature_id, "")
 
         match: _CidNlCandidateRow | None = None
         join_mode = ""
         identity_values = {candidate.base_feature_id}
-        identity_comparable = bool(base_source_feature_row_id)
+        identity_comparable = bool(
+            base_source_feature_row_id
+        ) and not _allows_cid_nl_mz_rt_fallback(base_source)
         if base_source_feature_row_id:
             identity_values.add(base_source_feature_row_id)
         identity_matches = [

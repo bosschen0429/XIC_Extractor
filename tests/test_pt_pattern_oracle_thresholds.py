@@ -131,7 +131,10 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
     recommended = threshold_rows[0]
     assert recommended["rule_id"] == (
         "pt_v2_fullpattern_apex_le_10s_pearson_ge_0p9_overlap_ge_0p5"
+        "_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
+    assert recommended["min_shifted_pearson_r_to_base"] == "0.85"
+    assert recommended["max_abs_shape_shift_sec_to_base"] == "45"
     assert recommended["true_positive"] == "2"
     assert recommended["false_positive"] == "0"
     assert recommended["false_negative"] == "0"
@@ -152,6 +155,7 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
     assert summary["readiness_tier"] == "diagnostic_only"
     assert summary["calibration_status"] == "threshold_candidate_ready_for_review"
     assert summary["recommended_rule"]["false_positive"] == 0
+    assert summary["recommended_rule"]["max_abs_shape_shift_sec_to_base"] == 45.0
     assert summary["changes_matrix"] is False
     assert summary["changes_counted_detection"] is False
 

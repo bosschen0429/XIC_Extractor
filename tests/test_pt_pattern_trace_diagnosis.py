@@ -34,6 +34,13 @@ def _trace(intensities: list[float]) -> XICTrace:
     )
 
 
+def _trace_with_rt(rt: list[float], intensities: list[float]) -> XICTrace:
+    return XICTrace.from_arrays(
+        np.array(rt, dtype=float),
+        np.array(intensities, dtype=float),
+    )
+
+
 def test_build_trace_requests_uses_expected_mz_and_base_rt_window() -> None:
     requests = evidence.build_trace_requests_for_candidate(
         _candidate_row(),
@@ -96,12 +103,67 @@ def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
     base_metric = next(
         row for row in diagnosis.metric_rows if row["position_label"] == "base"
     )
+    plus_4_metric = next(
+        row for row in diagnosis.metric_rows if row["position_label"] == "pt_plus_4"
+    )
     assert base_metric["raw_max_intensity"] == 100.0
     assert float(base_metric["max_intensity"]) < 100.0
+    assert "plus4_window_tail_dominance" not in plus_4_metric["trace_quality_flags"]
     assert len(diagnosis.trace_point_rows) == 12
 
 
-def test_diagnose_candidate_traces_keeps_shifted_shape_in_review() -> None:
+def test_diagnose_candidate_traces_flags_plus4_window_tail_dominance() -> None:
+    rt = [9.5 + index * 0.01 for index in range(201)]
+    peak = [
+        math.exp(-0.5 * ((rt_min - 10.0) / 0.08) ** 2) * 100.0
+        for rt_min in rt
+    ]
+    plus4_tail = [
+        max(
+            math.exp(-0.5 * ((rt_min - 9.95) / 0.07) ** 2) * 70.0,
+            math.exp(-max(rt_min - 9.95, 0.0) / 0.85) * 70.0
+            if rt_min >= 9.95
+            else 0.0,
+        )
+        for rt_min in rt
+    ]
+    traces = {
+        "base": _trace_with_rt(rt, peak),
+        "pt_plus_1": _trace_with_rt(rt, [value * 0.40 for value in peak]),
+        "pt_plus_2": _trace_with_rt(rt, [value * 0.30 for value in peak]),
+        "pt_plus_4": _trace_with_rt(rt, plus4_tail),
+    }
+
+    diagnosis = evidence.diagnose_candidate_traces(
+        _candidate_row(),
+        traces,
+        ppm=20.0,
+        rt_half_window_sec=30.0,
+        mz_source="expected",
+        active_fraction=0.1,
+        min_pearson_r=0.7,
+        max_apex_delta_sec=30.0,
+    )
+
+    plus_4_metric = next(
+        row for row in diagnosis.metric_rows if row["position_label"] == "pt_plus_4"
+    )
+
+    assert plus_4_metric["trace_support_status"] == "supported"
+    assert "plus4_window_tail_dominance" in plus_4_metric["trace_quality_flags"]
+    assert diagnosis.summary_row["trace_support_status"] == "supported"
+    assert (
+        diagnosis.summary_row["combined_pt_pattern_status"]
+        == "pt_pattern_detected_diagnostic"
+    )
+    assert diagnosis.summary_row["trace_ambiguity_status"] == "review_required"
+    assert (
+        "plus4_window_tail_dominance"
+        in diagnosis.summary_row["trace_ambiguity_flags"]
+    )
+
+
+def test_diagnose_candidate_traces_supports_shifted_shape() -> None:
     traces = {
         "base": _trace([0.0, 100.0, 0.0]),
         "pt_plus_1": _trace([40.0, 0.0, 0.0]),
@@ -123,14 +185,69 @@ def test_diagnose_candidate_traces_keeps_shifted_shape_in_review() -> None:
     plus_1_metric = next(
         row for row in diagnosis.metric_rows if row["position_label"] == "pt_plus_1"
     )
-    assert plus_1_metric["trace_support_status"] == "review"
-    assert plus_1_metric["reason"] == "rt_supported_shape_review"
-    assert diagnosis.summary_row["trace_support_status"] == "partial_support"
+    assert plus_1_metric["trace_support_status"] == "supported"
+    assert plus_1_metric["reason"] == "shifted_shape_supported"
+    assert "shifted_only_support" in plus_1_metric["trace_quality_flags"]
+    assert "low_scan_density" in plus_1_metric["trace_quality_flags"]
+    assert math.isclose(plus_1_metric["shifted_pearson_r_to_base"], 1.0)
+    assert math.isclose(plus_1_metric["shape_shift_sec_to_base"], 1.2)
+    assert diagnosis.summary_row["trace_support_status"] == "supported"
+    assert diagnosis.summary_row["trace_ambiguity_status"] == "review_required"
+    assert (
+        "shifted_only_support_present"
+        in diagnosis.summary_row["trace_ambiguity_flags"]
+    )
     assert (
         diagnosis.summary_row["combined_pt_pattern_status"]
-        == "pt_pattern_candidate_partial"
+        == "pt_pattern_detected_diagnostic"
     )
-    assert diagnosis.summary_row["non_base_positions_supported"] == 2
+    assert math.isclose(diagnosis.summary_row["min_shifted_pearson_r_to_base"], 1.0)
+    assert diagnosis.summary_row["non_base_positions_supported"] == 3
+
+
+def test_diagnose_candidate_traces_flags_short_effective_smoothing_window() -> None:
+    rt = [9.985 + index * 0.001 for index in range(31)]
+    peak = [
+        math.exp(-0.5 * ((index - 15) / 4.0) ** 2) * 100.0
+        for index in range(31)
+    ]
+    traces = {
+        "base": _trace_with_rt(rt, peak),
+        "pt_plus_1": _trace_with_rt(rt, [value * 0.40 for value in peak]),
+        "pt_plus_2": _trace_with_rt(rt, [value * 0.20 for value in peak]),
+        "pt_plus_4": _trace_with_rt(rt, [value * 0.10 for value in peak]),
+    }
+
+    diagnosis = evidence.diagnose_candidate_traces(
+        _candidate_row(),
+        traces,
+        ppm=20.0,
+        rt_half_window_sec=30.0,
+        mz_source="expected",
+        active_fraction=0.1,
+        min_pearson_r=0.7,
+        max_apex_delta_sec=30.0,
+    )
+
+    plus_1_metric = next(
+        row for row in diagnosis.metric_rows if row["position_label"] == "pt_plus_1"
+    )
+
+    assert math.isclose(plus_1_metric["median_rt_step_sec"], 0.06)
+    assert math.isclose(plus_1_metric["effective_smoothing_window_sec"], 0.9)
+    assert plus_1_metric["trace_support_status"] == "supported"
+    assert "short_effective_smoothing_window" in plus_1_metric["trace_quality_flags"]
+    assert diagnosis.summary_row["trace_support_status"] == "supported"
+    assert diagnosis.summary_row["trace_ambiguity_status"] == "review_required"
+    assert (
+        "short_effective_smoothing_window"
+        in diagnosis.summary_row["trace_ambiguity_flags"]
+    )
+    assert math.isclose(
+        diagnosis.summary_row["min_effective_smoothing_window_sec"],
+        0.9,
+    )
+    assert diagnosis.summary_row["max_trace_point_count"] == 31
 
 
 def test_combined_status_mapping_stays_diagnostic_not_product_authority() -> None:

@@ -180,6 +180,7 @@ def test_diagnostic_gate_replays_zero_false_positive_rule(
     assert summary["readiness_tier"] == "diagnostic_only"
     assert summary["rule_id"] == (
         "pt_v2_fullpattern_apex_le_10s_pearson_ge_0p9_overlap_ge_0p5"
+        "_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
     assert summary["row_count"] == 5
     assert summary["diagnostic_gate_call_counts"] == {"accept": 2, "reject": 3}
@@ -243,6 +244,33 @@ def test_diagnostic_gate_can_read_full_trace_summary_inputs(
     assert summary["trace_summary_csvs"] == [f"pt_only={trace_summary_csv}"]
     assert summary["replay_status"] == "no_oracle_replay"
     assert summary["changes_matrix"] is False
+
+
+def test_diagnostic_gate_accepts_legacy_trace_summary_without_review_flags(
+    tmp_path: Path,
+) -> None:
+    trace_summary_csv = _write_csv(
+        tmp_path / "legacy_trace_summary.csv",
+        [_trace_summary_row("accept-a")],
+        gate.TRACE_SUMMARY_GATE_REQUIRED_COLUMNS,
+    )
+
+    outputs = gate.run_diagnostic_gate(
+        review_packet_csvs=[],
+        trace_summary_csvs=[
+            gate.TraceSummaryInput(source_label="pt_only", path=trace_summary_csv)
+        ],
+        output_dir=tmp_path / "gate",
+        gate_id="unit_legacy_trace_gate",
+    )
+
+    rows = read_delimited_rows(
+        outputs["gate_rows_csv"],
+        required_columns=gate.GATE_COLUMNS,
+        delimiter=",",
+    )
+    assert rows[0]["packet_row_id"] == "pt_only|accept-a"
+    assert rows[0]["diagnostic_gate_call"] == "accept"
 
 
 def test_diagnostic_gate_cli_writes_outputs(tmp_path: Path) -> None:

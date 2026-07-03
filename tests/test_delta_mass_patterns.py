@@ -272,6 +272,300 @@ def test_missing_local_signal_support_yields_no_candidate() -> None:
     assert len(candidates) == 0
 
 
+def test_external_feature_source_without_trace_label_can_seed_candidate() -> None:
+    source = "external_feature_table:MZmine:mzmine_wide_area_proxy_v1"
+    features = [
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            trace_quality="UNSPECIFIED",
+            shape_score=None,
+            source=source,
+        ),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="UNSPECIFIED",
+            shape_score=None,
+            source=source,
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="UNSPECIFIED",
+            shape_score=None,
+            source=source,
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="UNSPECIFIED",
+            shape_score=None,
+            source=source,
+        ),
+    ]
+
+    candidates = match_delta_mass_pattern(features)
+
+    assert len(candidates) == 1
+    assert candidates[0].base_feature_id == "base"
+    assert candidates[0].local_signal_support_status == "feature_source_detected"
+    assert candidates[0].evidence_tier == "B"
+    assert candidates[0].evidence_score == 70
+
+
+def test_local_ms1_feature_all_ok_pattern_stays_feature_source_detected() -> None:
+    features = [
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+    ]
+
+    candidates = match_delta_mass_pattern(features)
+
+    assert len(candidates) == 1
+    assert candidates[0].local_signal_support_status == "feature_source_detected"
+    assert candidates[0].evidence_tier == "B"
+    assert candidates[0].evidence_score == 70
+
+
+def test_local_ms1_feature_weak_support_can_match_non_base_only() -> None:
+    features = [
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="WEAK_SUPPORT",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="WEAK_SUPPORT",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="WEAK_SUPPORT",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+    ]
+
+    candidates = match_delta_mass_pattern(features)
+
+    assert len(candidates) == 1
+    assert candidates[0].local_signal_support_status == "feature_source_detected"
+    assert candidates[0].evidence_tier == "B"
+
+
+def test_local_ms1_feature_weak_base_is_rejected_even_with_shape_score() -> None:
+    features = [
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            trace_quality="WEAK_SUPPORT",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+    ]
+
+    assert match_delta_mass_pattern(features) == ()
+
+
+def test_local_ms1_feature_unknown_quality_bypassing_loader_is_fail_closed() -> None:
+    features = [
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            trace_quality="GOOD",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+    ]
+
+    assert match_delta_mass_pattern(features) == ()
+
+
+def test_local_ms1_feature_shape_score_cannot_upgrade_tier() -> None:
+    features = [
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+    ]
+
+    candidates = match_delta_mass_pattern(features)
+
+    assert len(candidates) == 1
+    assert candidates[0].local_signal_support_status == "feature_source_detected"
+    assert candidates[0].evidence_tier == "B"
+    assert candidates[0].evidence_score == 70
+
+
+def test_non_local_base_cannot_use_local_ms1_feature_support() -> None:
+    features = [
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            trace_quality="GOOD",
+            shape_score=0.99,
+            source="targeted",
+        ),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="WEAK_SUPPORT",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            trace_quality="OK",
+            shape_score=0.99,
+            source="local_ms1_feature",
+        ),
+    ]
+
+    assert match_delta_mass_pattern(features) == ()
+
+
 def test_both_height_and_area_produce_both_ratio_kinds() -> None:
     features = [
         _feature(

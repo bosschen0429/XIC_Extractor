@@ -50,6 +50,65 @@ def _write_detected_features_csv(path: Path, rows: list[dict[str, object]]) -> N
             )
 
 
+def _write_external_feature_table(path: Path, rows: list[dict[str, object]]) -> None:
+    fieldnames = (
+        "external_tool",
+        "external_run_id",
+        "external_tool_version",
+        "external_adapter_version",
+        "sample_id",
+        "feature_id",
+        "source_feature_row_id",
+        "mz",
+        "rt",
+        "rt_start_min",
+        "rt_end_min",
+        "area_or_intensity",
+        "area_or_intensity_semantics",
+        "area",
+        "trace_quality",
+        "shape_score",
+        "mz_tolerance_unit",
+        "rt_tolerance_unit",
+        "duplicate_feature_policy",
+        "missing_value_policy",
+    )
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        for row in rows:
+            source_row = {
+                "external_tool": "MZmine",
+                "external_run_id": "run1",
+                "external_tool_version": "4.9.14",
+                "external_adapter_version": "contract_v1",
+                "mz_tolerance_unit": "ppm",
+                "rt_tolerance_unit": "minutes",
+                "duplicate_feature_policy": "source_unique",
+                "missing_value_policy": "blank_is_missing",
+                "area_or_intensity_semantics": "height",
+                **row,
+            }
+            writer.writerow(
+                {column: source_row.get(column, "") for column in fieldnames}
+            )
+
+
+def _write_mzmine_wide_feature_table(path: Path, rows: list[dict[str, object]]) -> None:
+    fieldnames = (
+        "row ID",
+        "row m/z",
+        "row retention time",
+        "Sample_A.mzML Peak area",
+        "Sample_B.mzML Peak area",
+    )
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({column: row.get(column, "") for column in fieldnames})
+
+
 def _write_trace_summary_csv(path: Path, rows: list[dict[str, object]]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=SUMMARY_COLUMNS)
@@ -145,6 +204,153 @@ def test_run_pt_pattern_discovery_writes_pt_only_outputs(
     assert evidence_rows[0]["trace_rule_call"] == "not_evaluated"
     assert evidence_rows[0]["trace_detection_status"] == "not_evaluated"
     assert evidence_rows[0]["matrix_write_authority"] == "FALSE"
+
+
+def test_run_pt_pattern_discovery_accepts_external_feature_table_source(
+    tmp_path: Path,
+) -> None:
+    external_table = tmp_path / "external_features.tsv"
+    external_rows = [
+        {
+            "sample_id": row["sample_stem"],
+            "feature_id": row["feature_id"],
+            "source_feature_row_id": row.get("source_feature_row_id", ""),
+            "mz": row["mz"],
+            "rt": row["rt_apex_min"],
+            "rt_start_min": row.get("rt_start_min", ""),
+            "rt_end_min": row.get("rt_end_min", ""),
+            "area_or_intensity": row["height"],
+            "area": row.get("area", ""),
+            "trace_quality": row["trace_quality"],
+            "shape_score": row.get("shape_score", ""),
+        }
+        for row in _full_pattern_rows()
+    ]
+    _write_external_feature_table(external_table, external_rows)
+    output_dir = tmp_path / "out"
+
+    outputs = run_pt_pattern_discovery(
+        external_feature_table_tsv=external_table,
+        output_dir=output_dir,
+        preset_name="pt_pattern",
+        cid_nl_candidates_csv=None,
+    )
+
+    prepared_csv = output_dir / "detected_features.csv"
+    assert prepared_csv.exists()
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+
+    payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
+    assert payload["inputs"]["detected_features_csv"] == str(prepared_csv)
+    assert payload["inputs"]["external_feature_table_tsv"] == str(external_table)
+    assert payload["inputs"]["mzmine_feature_table_csv"] is None
+
+
+def test_run_pt_pattern_discovery_accepts_mzmine_wide_feature_table_source(
+    tmp_path: Path,
+) -> None:
+    mzmine_table = tmp_path / "mzmine_features.csv"
+    base_mz = 500.0
+    _write_mzmine_wide_feature_table(
+        mzmine_table,
+        [
+            {
+                "row ID": "1",
+                "row m/z": base_mz,
+                "row retention time": 10.000,
+                "Sample_A.mzML Peak area": 1000.0,
+                "Sample_B.mzML Peak area": 900.0,
+            },
+            {
+                "row ID": "2",
+                "row m/z": base_mz + 1.0021,
+                "row retention time": 10.001,
+                "Sample_A.mzML Peak area": 800.0,
+                "Sample_B.mzML Peak area": 700.0,
+            },
+            {
+                "row ID": "3",
+                "row m/z": base_mz + 2.0023,
+                "row retention time": 10.002,
+                "Sample_A.mzML Peak area": 200.0,
+                "Sample_B.mzML Peak area": 180.0,
+            },
+            {
+                "row ID": "4",
+                "row m/z": base_mz + 4.0052,
+                "row retention time": 10.003,
+                "Sample_A.mzML Peak area": 50.0,
+                "Sample_B.mzML Peak area": 0,
+            },
+        ],
+    )
+    output_dir = tmp_path / "out"
+
+    outputs = run_pt_pattern_discovery(
+        mzmine_feature_table_csv=mzmine_table,
+        output_dir=output_dir,
+        preset_name="pt_pattern",
+        cid_nl_candidates_csv=None,
+    )
+
+    prepared_csv = output_dir / "detected_features.csv"
+    assert prepared_csv.exists()
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert rows[0]["sample_stem"] == "Sample_A"
+    assert rows[0]["base_area"] == "1000"
+    assert rows[0]["local_signal_support_status"] == "feature_source_detected"
+    assert rows[0]["evidence_tier"] == "B"
+    assert rows[0]["evidence_score"] == "70"
+    assert "feature source support only" in rows[0]["reason"]
+    with outputs.review_csv.open(newline="", encoding="utf-8") as handle:
+        review_rows = list(csv.DictReader(handle))
+    assert "feature-source support only" in review_rows[0]["review_note"]
+
+    payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
+    assert payload["inputs"]["detected_features_csv"] == str(prepared_csv)
+    assert payload["inputs"]["external_feature_table_tsv"] is None
+    assert payload["inputs"]["mzmine_feature_table_csv"] == str(mzmine_table)
+
+
+def test_composite_mzmine_feature_source_uses_mz_rt_fallback(
+    tmp_path: Path,
+) -> None:
+    mzmine_table = tmp_path / "mzmine_features.csv"
+    base_mz = 500.0
+    mzmine_table.write_text(
+        "row ID,row m/z,row retention time,Sample_1.raw Peak area,\n"
+        f"1,{base_mz},10.000,1000.0,\n"
+        f"2,{base_mz + 1.0021},10.001,800.0,\n"
+        f"3,{base_mz + 2.0023},10.002,200.0,\n"
+        f"4,{base_mz + 4.0052},10.003,50.0,\n",
+        encoding="utf-8",
+    )
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state,"
+        "precursor_mz,ms1_apex_rt,evidence_score\n"
+        "Sample_1|DNA_dR|500.000000|10.000000,DNA_dR,"
+        "ms1_feature_nl_supported,500.0,10.000,90\n",
+        encoding="utf-8",
+    )
+
+    outputs = run_pt_pattern_discovery(
+        mzmine_feature_table_csv=mzmine_table,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert rows[0]["sample_stem"] == "Sample_1"
+    assert rows[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
+    assert rows[0]["cid_nl_base_join_mode"] == "mz_rt_fallback"
 
 
 def test_run_pt_pattern_discovery_requires_cid_nl_csv_for_composite_method(
@@ -288,6 +494,8 @@ def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_string
 
     payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
     assert payload["inputs"]["detected_features_csv"] == str(detected_features_csv)
+    assert payload["inputs"]["external_feature_table_tsv"] is None
+    assert payload["inputs"]["mzmine_feature_table_csv"] is None
     assert payload["inputs"]["cid_nl_candidates_csv"] is None
     assert payload["inputs"]["trace_summary_csv"] is None
 
@@ -314,6 +522,11 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
                 "max_abs_apex_delta_sec": 4.0,
                 "min_pearson_r_to_base": 0.95,
                 "min_active_overlap_fraction": 0.70,
+                "min_shifted_pearson_r_to_base": 0.96,
+                "max_abs_shape_shift_sec_to_base": 2.0,
+                "trace_ambiguity_status": "review_required",
+                "trace_ambiguity_flags": "shifted_only_support_present",
+                "shifted_only_position_labels": "pt_plus_4",
                 "trace_support_status": "supported",
                 "combined_pt_pattern_status": "pt_pattern_detected_diagnostic",
                 "reason": "supported",
@@ -338,6 +551,11 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
     assert evidence_rows[0]["trace_rule_reason"] == (
         "full_pattern_close_apex_shape_overlap"
     )
+    assert evidence_rows[0]["trace_ambiguity_status"] == "review_required"
+    assert evidence_rows[0]["trace_ambiguity_flags"] == (
+        "shifted_only_support_present"
+    )
+    assert evidence_rows[0]["shifted_only_position_labels"] == "pt_plus_4"
 
     payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
     assert payload["inputs"]["trace_summary_csv"] == str(trace_summary_csv)

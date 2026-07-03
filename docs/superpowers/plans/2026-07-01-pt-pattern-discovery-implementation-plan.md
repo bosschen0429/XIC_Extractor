@@ -270,6 +270,70 @@ Rules:
 - Rows with invalid required fields fail the run. They are not silently skipped.
 - This CSV is a detected-feature input, not an FH tag setting file.
 
+### External Feature Table Adapter v1
+
+Entry points:
+
+- `scripts/run_pt_pattern_discovery.py --external-feature-table-tsv ...`
+- `scripts/run_pt_pattern_discovery.py --mzmine-feature-table-csv ...`
+- `scripts/prepare_delta_mass_detected_features.py`
+
+Purpose:
+
+- Convert an external detected-feature TSV into the Detected Features CSV v1
+  contract before Pt matching.
+- Convert a MZmine wide feature table CSV (`row ID`, `row m/z`,
+  `row retention time`, and `<sample>.mzML Peak area` columns) into the same
+  canonical feature source.
+- Let Pt Discovery run directly from an external feature table while preserving
+  a canonical `detected_features.csv` copy in the output directory.
+- Keep feature-source preparation separate from Pt matching and from the
+  scan-level diagnostic proxy.
+- Fail loudly when the external source does not carry m/z, RT, and positive
+  area/intensity evidence.
+
+Required external columns:
+
+```text
+external_tool
+external_run_id
+external_tool_version
+external_adapter_version
+sample_id
+feature_id
+mz
+rt
+area_or_intensity
+area_or_intensity_semantics
+mz_tolerance_unit
+rt_tolerance_unit
+duplicate_feature_policy
+missing_value_policy
+```
+
+Rules:
+
+- `sample_id` maps to `sample_stem`; `feature_id` remains the detected-feature
+  source identity.
+- Optional `source_feature_row_id` or `ms1_feature_row_id` is preserved for
+  composite joins when present.
+- `mz` and `rt` must be finite; `rt` is interpreted as apex RT in minutes.
+- The source must provide positive intensity evidence through `height` /
+  `ms1_height`, through `area_or_intensity_semantics` in `{height, peak_height,
+  intensity, peak_intensity, max_intensity, apex_intensity}`, or through area
+  semantics in `{area, peak_area}`.
+- Area-only rows use the positive area value as the matcher's intensity proxy
+  and preserve the same value in `area`.
+- Missing local signal labels are recorded as `UNSPECIFIED`; the adapter must
+  not fabricate `GOOD` or `OK`. Pt candidates seeded only by external
+  feature-source presence are labelled `feature_source_detected`, not
+  trace-supported detections.
+- The preparation adapter writes only `detected_features.csv`. The Pt Discovery
+  CLI may then run matching from that canonical copy and records the original
+  external feature table in `pt_pattern_sidecar.v3` inputs. Neither entry point
+  reads RAW, writes Matrix/Backfill outputs, or grants counted-detection/export
+  authority.
+
 ### Pt Candidate CSV v1
 
 Output path: `pt_pattern_candidates.csv`.
@@ -403,7 +467,7 @@ Required semantics:
 This CSV is an evidence handoff surface. It does not change Matrix, Backfill,
 counted detection, workbook, selected area, or export behavior.
 
-### Pt Sidecar JSON v2
+### Pt Sidecar JSON v3
 
 Output path: `pt_pattern_sidecar.json`.
 
@@ -411,7 +475,7 @@ Required top-level shape:
 
 ```json
 {
-  "schema_version": "pt_pattern_sidecar.v2",
+  "schema_version": "pt_pattern_sidecar.v3",
   "method_label": "<selected method label>",
   "pattern": {
     "pattern_id": "pt",
@@ -428,6 +492,8 @@ Required top-level shape:
   },
   "inputs": {
     "detected_features_csv": "detected_features.csv",
+    "external_feature_table_tsv": null,
+    "mzmine_feature_table_csv": null,
     "cid_nl_candidates_csv": null,
     "trace_summary_csv": null
   },
@@ -1316,10 +1382,12 @@ Current v2 status:
   `output/pt_pattern_productization_v1/oracle_thresholds/pt_detected_oracle_v2_repaired_32/`.
   It recommends full-pattern status plus `max_abs_apex_delta_sec <= 10`,
   `min_pearson_r_to_base >= 0.90`, and
-  `min_active_overlap_fraction >= 0.50`. Against the repaired 32-row v2 oracle,
-  that rule has 10 true positives, 22 true negatives, 0 false positives, and 0
-  false negatives. The previous sealed machine-call rule has 3 false positives
-  and 8 uncertain reject rows on the repaired oracle.
+  `min_active_overlap_fraction >= 0.50`, with shifted-shape support requiring
+  `min_shifted_pearson_r_to_base >= 0.85` and
+  `max_abs_shape_shift_sec_to_base <= 45`. Against the repaired 32-row v2
+  oracle, that rule has 10 true positives, 22 true negatives, 0 false positives,
+  and 0 false negatives. The previous sealed machine-call rule has 3 false
+  positives and 8 uncertain reject rows on the repaired oracle.
 - The current repaired v2 diagnostic gate replay output is
   `output/pt_pattern_productization_v1/diagnostic_gate/pt_detected_oracle_v2_repaired_32/`.
   It applies the same calibrated rule through

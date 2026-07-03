@@ -30,9 +30,14 @@ SUMMARY_REQUIRED_COLUMNS = (
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
     "raw_max_abs_apex_delta_sec",
     "raw_min_pearson_r_to_base",
     "raw_min_active_overlap_fraction",
+    "trace_ambiguity_status",
+    "trace_ambiguity_flags",
+    "shifted_only_position_labels",
     "trace_support_status",
     "combined_pt_pattern_status",
     "reason",
@@ -61,9 +66,13 @@ METRIC_REQUIRED_COLUMNS = (
     "apex_delta_sec_to_base",
     "pearson_r_to_base",
     "active_overlap_fraction",
+    "shifted_pearson_r_to_base",
+    "shape_shift_sec_to_base",
     "raw_apex_delta_sec_to_base",
+    "raw_smoothed_apex_delta_sec",
     "raw_pearson_r_to_base",
     "raw_active_overlap_fraction",
+    "trace_quality_flags",
     "trace_support_status",
     "reason",
 )
@@ -100,34 +109,59 @@ PACKET_COLUMNS = (
     "trace_decision_basis",
     "trace_smoothing_method",
     "trace_smoothing_window_points",
+    "min_effective_smoothing_window_sec",
+    "max_trace_point_count",
     "trace_support_status",
     "combined_pt_pattern_status",
     "non_base_positions_supported",
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
     "raw_max_abs_apex_delta_sec",
     "raw_min_pearson_r_to_base",
     "raw_min_active_overlap_fraction",
+    "trace_ambiguity_status",
+    "trace_ambiguity_flags",
+    "shifted_only_position_labels",
     "trace_reason",
     "pt_plus_1_trace_support_status",
+    "pt_plus_1_trace_quality_flags",
+    "pt_plus_1_median_rt_step_sec",
+    "pt_plus_1_effective_smoothing_window_sec",
     "pt_plus_1_pearson_r_to_base",
     "pt_plus_1_active_overlap_fraction",
     "pt_plus_1_apex_delta_sec_to_base",
+    "pt_plus_1_shifted_pearson_r_to_base",
+    "pt_plus_1_shape_shift_sec_to_base",
+    "pt_plus_1_raw_smoothed_apex_delta_sec",
     "pt_plus_1_raw_pearson_r_to_base",
     "pt_plus_1_raw_active_overlap_fraction",
     "pt_plus_1_raw_apex_delta_sec_to_base",
     "pt_plus_2_trace_support_status",
+    "pt_plus_2_trace_quality_flags",
+    "pt_plus_2_median_rt_step_sec",
+    "pt_plus_2_effective_smoothing_window_sec",
     "pt_plus_2_pearson_r_to_base",
     "pt_plus_2_active_overlap_fraction",
     "pt_plus_2_apex_delta_sec_to_base",
+    "pt_plus_2_shifted_pearson_r_to_base",
+    "pt_plus_2_shape_shift_sec_to_base",
+    "pt_plus_2_raw_smoothed_apex_delta_sec",
     "pt_plus_2_raw_pearson_r_to_base",
     "pt_plus_2_raw_active_overlap_fraction",
     "pt_plus_2_raw_apex_delta_sec_to_base",
     "pt_plus_4_trace_support_status",
+    "pt_plus_4_trace_quality_flags",
+    "pt_plus_4_median_rt_step_sec",
+    "pt_plus_4_effective_smoothing_window_sec",
     "pt_plus_4_pearson_r_to_base",
     "pt_plus_4_active_overlap_fraction",
     "pt_plus_4_apex_delta_sec_to_base",
+    "pt_plus_4_shifted_pearson_r_to_base",
+    "pt_plus_4_shape_shift_sec_to_base",
+    "pt_plus_4_raw_smoothed_apex_delta_sec",
     "pt_plus_4_raw_pearson_r_to_base",
     "pt_plus_4_raw_active_overlap_fraction",
     "pt_plus_4_raw_apex_delta_sec_to_base",
@@ -291,6 +325,10 @@ def _packet_row(
         "trace_smoothing_window_points": summary.get(
             "trace_smoothing_window_points", ""
         ),
+        "min_effective_smoothing_window_sec": summary.get(
+            "min_effective_smoothing_window_sec", ""
+        ),
+        "max_trace_point_count": summary.get("max_trace_point_count", ""),
         "trace_support_status": summary.get("trace_support_status", ""),
         "combined_pt_pattern_status": summary.get("combined_pt_pattern_status", ""),
         "non_base_positions_supported": summary.get(
@@ -301,12 +339,23 @@ def _packet_row(
         "min_active_overlap_fraction": summary.get(
             "min_active_overlap_fraction", ""
         ),
+        "min_shifted_pearson_r_to_base": summary.get(
+            "min_shifted_pearson_r_to_base", ""
+        ),
+        "max_abs_shape_shift_sec_to_base": summary.get(
+            "max_abs_shape_shift_sec_to_base", ""
+        ),
         "raw_max_abs_apex_delta_sec": summary.get(
             "raw_max_abs_apex_delta_sec", ""
         ),
         "raw_min_pearson_r_to_base": summary.get("raw_min_pearson_r_to_base", ""),
         "raw_min_active_overlap_fraction": summary.get(
             "raw_min_active_overlap_fraction", ""
+        ),
+        "trace_ambiguity_status": summary.get("trace_ambiguity_status", ""),
+        "trace_ambiguity_flags": summary.get("trace_ambiguity_flags", ""),
+        "shifted_only_position_labels": summary.get(
+            "shifted_only_position_labels", ""
         ),
         "trace_reason": summary.get("reason", ""),
         "human_review_decision": "",
@@ -319,12 +368,30 @@ def _packet_row(
         row[f"{prefix}_trace_support_status"] = metric.get(
             "trace_support_status", ""
         )
+        row[f"{prefix}_trace_quality_flags"] = metric.get(
+            "trace_quality_flags", ""
+        )
+        row[f"{prefix}_median_rt_step_sec"] = metric.get(
+            "median_rt_step_sec", ""
+        )
+        row[f"{prefix}_effective_smoothing_window_sec"] = metric.get(
+            "effective_smoothing_window_sec", ""
+        )
         row[f"{prefix}_pearson_r_to_base"] = metric.get("pearson_r_to_base", "")
         row[f"{prefix}_active_overlap_fraction"] = metric.get(
             "active_overlap_fraction", ""
         )
         row[f"{prefix}_apex_delta_sec_to_base"] = metric.get(
             "apex_delta_sec_to_base", ""
+        )
+        row[f"{prefix}_shifted_pearson_r_to_base"] = metric.get(
+            "shifted_pearson_r_to_base", ""
+        )
+        row[f"{prefix}_shape_shift_sec_to_base"] = metric.get(
+            "shape_shift_sec_to_base", ""
+        )
+        row[f"{prefix}_raw_smoothed_apex_delta_sec"] = metric.get(
+            "raw_smoothed_apex_delta_sec", ""
         )
         row[f"{prefix}_raw_pearson_r_to_base"] = metric.get(
             "raw_pearson_r_to_base", ""

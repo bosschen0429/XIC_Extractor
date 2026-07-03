@@ -386,8 +386,8 @@ def _promotion_decision(
         )
     if primary_evidence == "single_sample_local_owner":
         return (
-            False,
-            "provisional_discovery",
+            True,
+            "production_family",
             "review",
             "single_sample_local_owner",
         )
@@ -453,7 +453,7 @@ def _is_provisional_retention_candidate(
         return False
     if _is_consolidation_loser(evidence):
         return False
-    if primary_evidence in {"none", "single_sample_local_owner"}:
+    if primary_evidence == "none":
         return False
     if q_detected != 1 or q_rescue <= 0:
         return False

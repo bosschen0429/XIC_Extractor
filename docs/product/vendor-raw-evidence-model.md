@@ -63,6 +63,12 @@ decisions.
     the same feature group.
 - A scan-level proxy may propose candidates or debug missing evidence, but it is
   not the full Pt pattern detector and must not become Matrix authority.
+- When two acquisition methods were designed for different roles, compare them
+  by role. A high-resolution Fullscan MS1 run can be the Pt-pattern Discovery
+  authority, while a lower-resolution DDMS2 or targeted/DDA run is support
+  evidence for already-found bases. Absence of DDMS2/MS2 evidence is not
+  negative evidence unless the relevant target/inclusion list proves that the
+  candidate should have been queried.
 
 ## Provenance Minimum
 

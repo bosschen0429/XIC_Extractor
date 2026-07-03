@@ -5,10 +5,16 @@ from __future__ import annotations
 import html
 import json
 import math
+import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Literal
 
+from xic_extractor.discovery.pt_pattern_evidence_rule import (
+    PtPatternEvidenceThresholds,
+    evaluate_pt_pattern_evidence,
+)
 from xic_extractor.discovery.pt_pattern_review_packet import (
     EVIDENCE_OWNER,
     READINESS_TIER,
@@ -30,6 +36,7 @@ from xic_extractor.tabular_io import (
 SCHEMA_VERSION = "pt_pattern_blind_overlay.v2"
 SMOOTH_METHOD = TRACE_SMOOTH_METHOD
 SMOOTH_WINDOW_POINTS = TRACE_SMOOTH_WINDOW_POINTS
+VISUAL_TIME_SMOOTH_WINDOW_SEC = 20.0
 
 PACKET_REQUIRED_COLUMNS = (
     "packet_label",
@@ -47,6 +54,8 @@ PACKET_REQUIRED_COLUMNS = (
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
     "oracle_status",
 )
 
@@ -70,11 +79,18 @@ MACHINE_CALL_COLUMNS = (
     "trace_decision_basis",
     "trace_smoothing_method",
     "trace_smoothing_window_points",
+    "min_effective_smoothing_window_sec",
+    "max_trace_point_count",
     "combined_pt_pattern_status",
     "non_base_positions_supported",
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
+    "trace_ambiguity_status",
+    "trace_ambiguity_flags",
+    "shifted_only_position_labels",
     "oracle_status",
 )
 
@@ -91,6 +107,8 @@ POSITION_LABELS = {
     "pt_plus_2": "+2.0023",
     "pt_plus_4": "+4.0052",
 }
+
+MACHINE_CALL_THRESHOLDS = PtPatternEvidenceThresholds()
 
 
 def run_blind_overlay(
@@ -140,8 +158,12 @@ def run_blind_overlay(
         "case_count": len(packet_rows),
         "smooth_method": SMOOTH_METHOD,
         "smooth_window_points": SMOOTH_WINDOW_POINTS,
+        "time_smooth_window_sec": VISUAL_TIME_SMOOTH_WINDOW_SEC,
         "trace_decision_basis": TRACE_DECISION_BASIS,
-        "smooth_applies_to": "gallery_html_and_sealed_machine_calls",
+        "smooth_applies_to": (
+            "sealed_machine_calls_use_packet_decision_metrics;"
+            "gallery_html_shows_raw_point_smoothed_time_smoothed"
+        ),
         "sealed_machine_calls_written": True,
         "blind_to_machine_calls_in_html": True,
         "oracle_status": "pending_human_review",
@@ -179,11 +201,26 @@ def machine_call_row(row: Mapping[str, str]) -> dict[str, object]:
         "trace_smoothing_window_points": row.get(
             "trace_smoothing_window_points", ""
         ),
+        "min_effective_smoothing_window_sec": row.get(
+            "min_effective_smoothing_window_sec", ""
+        ),
+        "max_trace_point_count": row.get("max_trace_point_count", ""),
         "combined_pt_pattern_status": row.get("combined_pt_pattern_status", ""),
         "non_base_positions_supported": row.get("non_base_positions_supported", ""),
         "max_abs_apex_delta_sec": row.get("max_abs_apex_delta_sec", ""),
         "min_pearson_r_to_base": row.get("min_pearson_r_to_base", ""),
         "min_active_overlap_fraction": row.get("min_active_overlap_fraction", ""),
+        "min_shifted_pearson_r_to_base": row.get(
+            "min_shifted_pearson_r_to_base", ""
+        ),
+        "max_abs_shape_shift_sec_to_base": row.get(
+            "max_abs_shape_shift_sec_to_base", ""
+        ),
+        "trace_ambiguity_status": row.get("trace_ambiguity_status", ""),
+        "trace_ambiguity_flags": row.get("trace_ambiguity_flags", ""),
+        "shifted_only_position_labels": row.get(
+            "shifted_only_position_labels", ""
+        ),
         "oracle_status": row.get("oracle_status", ""),
     }
 
@@ -201,22 +238,16 @@ def classify_machine_call(row: Mapping[str, str]) -> tuple[str, str]:
 
     status = str(row.get("combined_pt_pattern_status", "")).strip()
     supported = optional_float(row.get("non_base_positions_supported"))
-    apex_delta = optional_float(row.get("max_abs_apex_delta_sec"))
     min_pearson = optional_float(row.get("min_pearson_r_to_base"))
-    min_overlap = optional_float(row.get("min_active_overlap_fraction"))
 
-    if (
-        status == "pt_pattern_detected_diagnostic"
-        and supported is not None
-        and supported >= 3
-        and apex_delta is not None
-        and apex_delta <= 10.0
-        and min_pearson is not None
-        and min_pearson >= 0.70
-        and min_overlap is not None
-        and min_overlap >= 0.50
-    ):
-        return "accept", "all_positions_trace_supported_with_close_apex_and_shape"
+    decision = evaluate_pt_pattern_evidence(
+        row,
+        thresholds=MACHINE_CALL_THRESHOLDS,
+    )
+    if decision.call == "accept":
+        return decision.call, decision.reason
+    if decision.reason == "shape_shift_above_threshold":
+        return "reject", decision.reason
 
     if status in {
         "pt_pattern_candidate_incomplete",
@@ -309,6 +340,20 @@ def render_blind_overlay_html(
       background: #ffffff;
       overflow: hidden;
     }}
+    .overlay-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }}
+    .overlay-panel {{
+      min-width: 0;
+    }}
+    .overlay-title {{
+      color: #374151;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }}
     .legend {{
       display: flex;
       flex-wrap: wrap;
@@ -333,6 +378,7 @@ def render_blind_overlay_html(
       main {{ grid-template-columns: 1fr; padding: 12px; }}
       header {{ padding: 18px 16px 10px; }}
       .case-meta {{ grid-template-columns: 1fr; }}
+      .overlay-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
 </head>
@@ -343,8 +389,9 @@ def render_blind_overlay_html(
       Blind review overlay. This HTML intentionally hides machine calls and
       diagnostic status buckets. Use the packet row id to record your own call
       in the review packet CSV before opening the sealed machine-call file.
-      Overlay curves and sealed machine calls use the same Gaussian15-smoothed
-      decision metrics. The trace-point CSV remains the raw vendor trace.
+      The HTML shows raw vendor traces, Gaussian15 point-smoothed traces, and
+      20 sec time-smoothed review traces. Sealed machine calls use packet
+      decision metrics and stay out of this blind HTML.
     </div>
   </header>
   <main>
@@ -367,7 +414,12 @@ def _render_case_card(
     sample_stem = html.escape(str(row.get("sample_stem", "")))
     base_mz = html.escape(str(row.get("base_mz", "")))
     base_rt = html.escape(str(row.get("base_rt_apex_min", "")))
-    svg = _render_overlay_svg(traces)
+    effective_smoothing = html.escape(
+        str(row.get("min_effective_smoothing_window_sec", ""))
+    )
+    max_trace_point_count = html.escape(str(row.get("max_trace_point_count", "")))
+    case_label = html.escape(_case_label(row=row, index=index))
+    overlay_panels = _render_overlay_panels(traces)
     legend = "".join(
         (
             '<span><span class="swatch" '
@@ -378,7 +430,7 @@ def _render_case_card(
     )
     point_count = sum(len(points) for points in traces.values())
     return f"""<section>
-  <h2>Case {index:02d}</h2>
+  <h2>{case_label}</h2>
   <div class="case-meta">
     <div><strong>packet row</strong>: {packet_row_id}</div>
     <div><strong>source</strong>: {source_label}</div>
@@ -386,11 +438,65 @@ def _render_case_card(
     <div><strong>base m/z</strong>: {base_mz}</div>
     <div><strong>base RT</strong>: {base_rt} min</div>
     <div><strong>trace points</strong>: {point_count}</div>
+    <div><strong>effective smoothing</strong>: {effective_smoothing} sec</div>
+    <div><strong>max trace points</strong>: {max_trace_point_count}</div>
   </div>
-  <div class="svg-wrap">{svg}</div>
+  {overlay_panels}
   <div class="legend">{legend}</div>
   <div class="note">candidate: {html.escape(candidate_id)}</div>
 </section>"""
+
+
+def _case_label(*, row: Mapping[str, str], index: int) -> str:
+    packet_row_id = str(row.get("packet_row_id", ""))
+    match = re.search(r"(?:^|\|)(Case\s+\d+)(?:\||$)", packet_row_id)
+    if match:
+        return match.group(1)
+    return f"Case {index:02d}"
+
+
+def _render_overlay_panels(
+    traces: Mapping[str, Sequence[tuple[float, float]]],
+) -> str:
+    panels = (
+        ("Raw vendor trace", _prepare_traces(traces, mode="raw")),
+        ("Gaussian15 point-smoothed trace", _prepare_traces(traces, mode="point")),
+        (
+            f"{VISUAL_TIME_SMOOTH_WINDOW_SEC:g} sec time-smoothed trace",
+            _prepare_traces(traces, mode="time"),
+        ),
+    )
+    return '<div class="overlay-grid">' + "".join(
+        '<div class="overlay-panel">'
+        f'<div class="overlay-title">{html.escape(title)}</div>'
+        f'<div class="svg-wrap">{_render_overlay_svg(panel_traces)}</div>'
+        "</div>"
+        for title, panel_traces in panels
+    ) + "</div>"
+
+
+def _prepare_traces(
+    traces: Mapping[str, Sequence[tuple[float, float]]],
+    *,
+    mode: Literal["raw", "point", "time"],
+) -> dict[str, tuple[tuple[float, float], ...]]:
+    if mode == "raw":
+        return {
+            label: _clean_trace_points(traces.get(label, ()))
+            for label in POSITION_ORDER
+        }
+    if mode == "point":
+        return {
+            label: smooth_trace_points(traces.get(label, ()))
+            for label in POSITION_ORDER
+        }
+    return {
+        label: smooth_trace_points_by_time(
+            traces.get(label, ()),
+            window_sec=VISUAL_TIME_SMOOTH_WINDOW_SEC,
+        )
+        for label in POSITION_ORDER
+    }
 
 
 def _render_overlay_svg(
@@ -403,14 +509,14 @@ def _render_overlay_svg(
     right = 18
     top = 18
     bottom = 34
-    smoothed_traces = {
-        label: smooth_trace_points(traces.get(label, ()))
+    plot_traces = {
+        label: _clean_trace_points(traces.get(label, ()))
         for label in POSITION_ORDER
     }
     all_rt = [
         rt_value
         for label in POSITION_ORDER
-        for rt_value, _intensity in smoothed_traces.get(label, ())
+        for rt_value, _intensity in plot_traces.get(label, ())
         if math.isfinite(rt_value)
     ]
     if not all_rt:
@@ -436,7 +542,7 @@ def _render_overlay_svg(
 
     paths: list[str] = []
     for label in POSITION_ORDER:
-        points = list(smoothed_traces.get(label, ()))
+        points = list(plot_traces.get(label, ()))
         if not points:
             continue
         max_intensity = max((value for _rt, value in points), default=0.0)
@@ -484,11 +590,7 @@ def smooth_trace_points(
     *,
     window_points: int = SMOOTH_WINDOW_POINTS,
 ) -> tuple[tuple[float, float], ...]:
-    sorted_points = tuple(
-        (float(rt_value), max(0.0, float(intensity)))
-        for rt_value, intensity in sorted(points)
-        if math.isfinite(rt_value) and math.isfinite(intensity)
-    )
+    sorted_points = _clean_trace_points(points)
     if len(sorted_points) < 3:
         return sorted_points
     smoothed = gaussian_smooth_values(
@@ -502,6 +604,50 @@ def smooth_trace_points(
             smoothed,
             strict=True,
         )
+    )
+
+
+def smooth_trace_points_by_time(
+    points: Sequence[tuple[float, float]],
+    *,
+    window_sec: float = VISUAL_TIME_SMOOTH_WINDOW_SEC,
+) -> tuple[tuple[float, float], ...]:
+    sorted_points = _clean_trace_points(points)
+    if len(sorted_points) < 3 or window_sec <= 0.0:
+        return sorted_points
+    half_window_min = (window_sec / 60.0) / 2.0
+    sigma_min = (window_sec / 60.0) / 6.0
+    if sigma_min <= 0.0:
+        return sorted_points
+    smoothed: list[tuple[float, float]] = []
+    for center_rt, _center_intensity in sorted_points:
+        weighted_sum = 0.0
+        weight_total = 0.0
+        for rt_value, intensity in sorted_points:
+            delta = rt_value - center_rt
+            if abs(delta) > half_window_min:
+                continue
+            weight = math.exp(-0.5 * (delta / sigma_min) ** 2)
+            weighted_sum += intensity * weight
+            weight_total += weight
+        smoothed.append(
+            (
+                center_rt,
+                max(0.0, weighted_sum / weight_total)
+                if weight_total > 0.0
+                else _center_intensity,
+            )
+        )
+    return tuple(smoothed)
+
+
+def _clean_trace_points(
+    points: Sequence[tuple[float, float]],
+) -> tuple[tuple[float, float], ...]:
+    return tuple(
+        (float(rt_value), max(0.0, float(intensity)))
+        for rt_value, intensity in sorted(points)
+        if math.isfinite(rt_value) and math.isfinite(intensity)
     )
 
 

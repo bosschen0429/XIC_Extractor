@@ -35,6 +35,7 @@ pt_pattern_rule_id = evidence_rule.pt_pattern_rule_id
 
 APEX_DELTA_GRID_SEC = (2.0, 3.0, 5.0, 10.0, 20.0, 30.0)
 PEARSON_GRID = (0.50, 0.70, 0.80, 0.85, 0.90, 0.95, 0.99)
+SHIFTED_PEARSON_GRID = (0.50, 0.70, 0.80, 0.85, 0.90, 0.95, 0.99)
 OVERLAP_GRID = (0.25, 0.50, 0.70, 0.80, 0.90, 0.95)
 
 THRESHOLD_COLUMNS = (
@@ -51,6 +52,8 @@ THRESHOLD_COLUMNS = (
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
     "row_count",
     "oracle_accept_count",
     "oracle_reject_count",
@@ -89,6 +92,8 @@ CASE_AUDIT_COLUMNS = (
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
     "base_mz",
     "base_rt_apex_min",
     "machine_call",
@@ -225,16 +230,18 @@ def evaluate_threshold_grid(
     rows: list[dict[str, object]] = []
     for apex_delta in APEX_DELTA_GRID_SEC:
         for pearson_min in PEARSON_GRID:
-            for overlap_min in OVERLAP_GRID:
-                rows.append(
-                    _threshold_row(
-                        cases=cases,
-                        calibration_id=calibration_id,
-                        apex_delta_max_sec=apex_delta,
-                        pearson_min=pearson_min,
-                        overlap_min=overlap_min,
+            for shifted_pearson_min in SHIFTED_PEARSON_GRID:
+                for overlap_min in OVERLAP_GRID:
+                    rows.append(
+                        _threshold_row(
+                            cases=cases,
+                            calibration_id=calibration_id,
+                            apex_delta_max_sec=apex_delta,
+                            pearson_min=pearson_min,
+                            shifted_pearson_min=shifted_pearson_min,
+                            overlap_min=overlap_min,
+                        )
                     )
-                )
     rows = sorted(rows, key=_recommendation_key)
     for rank, row in enumerate(rows, start=1):
         row["recommendation_rank"] = rank
@@ -265,10 +272,20 @@ def build_case_audit_rows(
         recommended_rule,
         "min_active_overlap_fraction",
     )
+    shifted_pearson_min = _required_threshold_float(
+        recommended_rule,
+        "min_shifted_pearson_r_to_base",
+    )
+    shape_shift_max_sec = _required_threshold_float(
+        recommended_rule,
+        "max_abs_shape_shift_sec_to_base",
+    )
     thresholds = PtPatternEvidenceThresholds(
         max_abs_apex_delta_sec=apex_delta,
         min_pearson_r_to_base=pearson_min,
         min_active_overlap_fraction=overlap_min,
+        min_shifted_pearson_r_to_base=shifted_pearson_min,
+        max_abs_shape_shift_sec_to_base=shape_shift_max_sec,
     )
     rows: list[dict[str, object]] = []
     for case in cases:
@@ -299,6 +316,12 @@ def build_case_audit_rows(
                 "max_abs_apex_delta_sec": case.max_abs_apex_delta_sec,
                 "min_pearson_r_to_base": case.min_pearson_r_to_base,
                 "min_active_overlap_fraction": case.min_active_overlap_fraction,
+                "min_shifted_pearson_r_to_base": case.review_row.get(
+                    "min_shifted_pearson_r_to_base", ""
+                ),
+                "max_abs_shape_shift_sec_to_base": case.review_row.get(
+                    "max_abs_shape_shift_sec_to_base", ""
+                ),
                 "base_mz": case.base_mz,
                 "base_rt_apex_min": case.base_rt_apex_min,
                 "machine_call": case.machine_call,
@@ -329,12 +352,14 @@ def _threshold_row(
     calibration_id: str,
     apex_delta_max_sec: float,
     pearson_min: float,
+    shifted_pearson_min: float,
     overlap_min: float,
 ) -> dict[str, object]:
     thresholds = PtPatternEvidenceThresholds(
         max_abs_apex_delta_sec=apex_delta_max_sec,
         min_pearson_r_to_base=pearson_min,
         min_active_overlap_fraction=overlap_min,
+        min_shifted_pearson_r_to_base=shifted_pearson_min,
     )
     counts: Counter[str] = Counter()
     for case in cases:
@@ -384,6 +409,12 @@ def _threshold_row(
         "max_abs_apex_delta_sec": thresholds.max_abs_apex_delta_sec,
         "min_pearson_r_to_base": thresholds.min_pearson_r_to_base,
         "min_active_overlap_fraction": thresholds.min_active_overlap_fraction,
+        "min_shifted_pearson_r_to_base": (
+            thresholds.min_shifted_pearson_r_to_base
+        ),
+        "max_abs_shape_shift_sec_to_base": (
+            thresholds.max_abs_shape_shift_sec_to_base
+        ),
         "row_count": len(cases),
         "oracle_accept_count": counts["oracle_accept"],
         "oracle_reject_count": counts["oracle_reject"],
@@ -424,6 +455,10 @@ def _recommendation_key(row: Mapping[str, object]) -> tuple[float, ...]:
             - DEFAULT_OVERLAP_MIN
         ),
         abs(_metric(row, "min_pearson_r_to_base") - DEFAULT_PEARSON_MIN),
+        abs(
+            _metric(row, "min_shifted_pearson_r_to_base")
+            - evidence_rule.DEFAULT_SHIFTED_PEARSON_MIN
+        ),
     )
 
 
@@ -512,6 +547,10 @@ def _summary_rule(row: Mapping[str, object]) -> dict[str, object]:
         "max_abs_apex_delta_sec": row["max_abs_apex_delta_sec"],
         "min_pearson_r_to_base": row["min_pearson_r_to_base"],
         "min_active_overlap_fraction": row["min_active_overlap_fraction"],
+        "min_shifted_pearson_r_to_base": row["min_shifted_pearson_r_to_base"],
+        "max_abs_shape_shift_sec_to_base": row[
+            "max_abs_shape_shift_sec_to_base"
+        ],
         "true_positive": row["true_positive"],
         "false_positive": row["false_positive"],
         "true_negative": row["true_negative"],

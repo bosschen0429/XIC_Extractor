@@ -740,8 +740,8 @@ def test_matrix_identity_ignores_targeted_only_priority_metadata() -> None:
     ).row("FAM001")
 
     assert adversarial == base
-    assert adversarial.include_in_primary_matrix is False
-    assert adversarial.identity_decision == "provisional_discovery"
+    assert adversarial.include_in_primary_matrix is True
+    assert adversarial.identity_decision == "production_family"
 
 
 def test_weak_seed_gate_reads_owner_events_when_trusted_support_is_thin() -> None:
@@ -894,7 +894,7 @@ def test_neighboring_ms1_interference_blocks_backfill_promotion() -> None:
     assert "neighboring_ms1_interference" in decision.row_flags
 
 
-def test_single_sample_local_owner_is_audit_even_with_rescue() -> None:
+def test_single_sample_local_owner_is_production_with_review_confidence() -> None:
     matrix = _matrix(
         _feature("FAM001", evidence="single_sample_local_owner"),
         (
@@ -905,8 +905,9 @@ def test_single_sample_local_owner_is_audit_even_with_rescue() -> None:
 
     decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
 
-    assert decision.include_in_primary_matrix is False
-    assert decision.identity_decision == "provisional_discovery"
+    assert decision.include_in_primary_matrix is True
+    assert decision.identity_decision == "production_family"
+    assert decision.identity_confidence == "review"
     assert decision.identity_reason == "single_sample_local_owner"
     assert "single_sample_local_owner" in decision.row_flags
 
@@ -1034,7 +1035,7 @@ def test_family_consolidation_loser_is_audit_only() -> None:
     assert "family_consolidation_loser" in decision.row_flags
 
 
-def test_multi_tag_support_does_not_promote_single_sample_family() -> None:
+def test_single_sample_family_is_production_regardless_of_tag_count() -> None:
     matrix = _matrix(
         _feature(
             "FAM001",
@@ -1046,8 +1047,8 @@ def test_multi_tag_support_does_not_promote_single_sample_family() -> None:
 
     decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
 
-    assert decision.identity_decision == "provisional_discovery"
-    assert decision.include_in_primary_matrix is False
+    assert decision.identity_decision == "production_family"
+    assert decision.include_in_primary_matrix is True
 
 
 def test_artificial_adduct_annotation_does_not_demote_supported_family() -> None:

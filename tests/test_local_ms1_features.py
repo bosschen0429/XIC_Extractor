@@ -1,0 +1,558 @@
+from __future__ import annotations
+
+import csv
+import json
+from dataclasses import replace
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+import xic_extractor.discovery.local_ms1_features as local_ms1_features
+from xic_extractor.discovery.local_ms1_features import (
+    LocalMs1FeatureSettings,
+    _local_linear_baseline_area,
+    _peak_regions_from_smoothed_trace,
+    _validate_summary,
+    build_local_ms1_feature_table,
+    write_local_ms1_feature_outputs,
+)
+from xic_extractor.ms1_scan_index import MS1Scan
+
+
+def _scan(scan_number: int, rt: float, peaks: list[tuple[float, float]]) -> MS1Scan:
+    return MS1Scan(
+        scan_number=scan_number,
+        rt=rt,
+        masses=np.asarray([mz for mz, _intensity in peaks], dtype=np.float64),
+        intensities=np.asarray(
+            [intensity for _mz, intensity in peaks],
+            dtype=np.float64,
+        ),
+    )
+
+
+def _settings(**overrides: object) -> LocalMs1FeatureSettings:
+    values = {
+        "mass_detection_noise_level": 0.0,
+        "min_trace_seed_intensity": 0.0,
+        "min_consecutive_trace_intensity": 0.0,
+    }
+    values.update(overrides)
+    return LocalMs1FeatureSettings(**values)
+
+
+def test_local_ms1_feature_settings_use_lab_default_noise_level() -> None:
+    assert LocalMs1FeatureSettings().mass_detection_noise_level == 25_000.0
+
+
+def test_build_local_ms1_feature_table_emits_ok_and_weak_support_features() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0), (501.0000, 2.0)]),
+        _scan(2, 1.05, [(500.0002, 40.0), (501.0002, 5.0)]),
+        _scan(3, 1.10, [(500.0001, 100.0), (501.0001, 10.0)]),
+        _scan(4, 1.15, [(500.0002, 45.0), (501.0002, 5.0)]),
+        _scan(5, 1.20, [(500.0000, 10.0), (501.0000, 2.0)]),
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Sample_1",
+        raw_path="Sample_1.raw",
+        settings=_settings(
+            min_ok_prominence=20.0,
+            weak_support_prominence=3.0,
+        ),
+    )
+
+    assert [feature.trace_quality for feature in features] == ["OK", "WEAK_SUPPORT"]
+    assert features[0].feature_id == "Sample_1|local_ms1_feature|000001"
+    assert features[0].source_feature_row_id == features[0].feature_id
+    assert features[0].source == "local_ms1_feature"
+    assert features[0].height > 0
+    assert features[0].area is not None and features[0].area > 0
+    assert summary.detected_features_rows == 2
+    assert summary.ok_feature_count == 1
+    assert summary.weak_support_feature_count == 1
+    assert summary.fail_count == len(diagnostics)
+    assert summary.detected_features_rows == (
+        summary.ok_feature_count + summary.weak_support_feature_count
+    )
+
+
+def test_seeded_builder_requires_high_intensity_seed_before_low_points_join() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 60.0), (501.0000, 80.0)]),
+        _scan(2, 1.05, [(500.0001, 150.0), (501.0001, 90.0)]),
+        _scan(3, 1.10, [(500.0000, 60.0), (501.0000, 80.0)]),
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Seeded",
+        raw_path="Seeded.raw",
+        settings=_settings(
+            mass_detection_noise_level=50.0,
+            min_trace_seed_intensity=100.0,
+            min_consecutive_trace_intensity=50.0,
+            min_ok_prominence=10.0,
+            weak_support_prominence=1.0,
+            gaussian_window_points=1,
+        ),
+    )
+
+    assert diagnostics == ()
+    assert len(features) == 1
+    assert features[0].mz == pytest.approx(500.0001)
+    assert summary.candidate_edge_count == 6
+    assert summary.conflict_component_count == 1
+    assert summary.degraded_assignment_component_fraction == 0.0
+
+
+def test_seeded_builder_respects_max_missing_scans_when_reusing_seed_range() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0)]),
+        _scan(2, 1.05, [(500.0001, 40.0)]),
+        _scan(3, 1.10, []),
+        _scan(4, 1.15, [(500.0000, 45.0)]),
+        _scan(5, 1.20, [(500.0001, 100.0)]),
+        _scan(6, 1.25, [(500.0000, 45.0)]),
+        _scan(7, 1.30, [(500.0001, 10.0)]),
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="StrictGap",
+        raw_path="StrictGap.raw",
+        settings=_settings(
+            max_missing_scans=0,
+            min_observed_scans=3,
+            gaussian_window_points=1,
+            min_ok_prominence=20.0,
+            weak_support_prominence=1.0,
+        ),
+    )
+
+    assert summary.detected_features_rows == 1
+    assert features[0].rt_start_min == pytest.approx(index[3].rt)
+    assert features[0].rt_end_min == pytest.approx(index[-1].rt)
+    assert diagnostics[0].reason == "too_few_observed_scans"
+
+
+def test_seeded_builder_uses_scan_order_for_low_intensity_bridge_points() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0)]),
+        _scan(2, 1.05, [(500.0001, 100.0)]),
+        _scan(3, 1.10, [(500.0000, 10.0)]),
+        _scan(4, 1.15, [(500.0001, 90.0)]),
+        _scan(5, 1.20, [(500.0000, 10.0)]),
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Bridge",
+        raw_path="Bridge.raw",
+        settings=_settings(
+            mass_detection_noise_level=1.0,
+            min_trace_seed_intensity=50.0,
+            max_missing_scans=0,
+            min_observed_scans=3,
+            gaussian_window_points=1,
+            min_ok_prominence=5.0,
+            weak_support_prominence=1.0,
+        ),
+    )
+
+    assert summary.total_traces == 1
+    assert summary.total_peak_regions == 2
+    assert len(features) == 2
+    assert diagnostics == ()
+
+
+def test_local_ms1_feature_table_rejects_edge_apex_to_diagnostics() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 100.0)]),
+        _scan(2, 1.05, [(500.0001, 50.0)]),
+        _scan(3, 1.10, [(500.0000, 10.0)]),
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Sample_1",
+        raw_path="Sample_1.raw",
+        settings=_settings(),
+    )
+
+    assert features == ()
+    assert summary.detected_features_rows == 0
+    assert summary.fail_count == 1
+    assert diagnostics[0].reason == "apex_at_region_edge"
+
+
+def test_peak_regions_split_only_when_valley_is_low_enough() -> None:
+    settings = _settings(min_observed_scans=3)
+    scan_numbers = (1, 2, 3, 4, 5)
+    rts = np.asarray([1.00, 1.05, 1.10, 1.15, 1.20], dtype=float)
+    mzs = np.asarray([500.0, 500.0, 500.0, 500.0, 500.0], dtype=float)
+    intensities = np.asarray([0.0, 10.0, 4.0, 9.0, 0.0], dtype=float)
+
+    split_regions = _peak_regions_from_smoothed_trace(
+        trace_id="Sample_1|trace|000001",
+        scan_numbers=scan_numbers,
+        rts=rts,
+        mzs=mzs,
+        intensities=intensities,
+        smoothed=intensities,
+        internal_missing_scan_count=0,
+        candidate_edge_count=4,
+        assignment_mode="optimal_component",
+        component_size=3,
+        component_edge_density=0.5,
+        assignment_degraded_large_component=False,
+        settings=settings,
+    )
+    no_split_regions = _peak_regions_from_smoothed_trace(
+        trace_id="Sample_1|trace|000001",
+        scan_numbers=scan_numbers,
+        rts=rts,
+        mzs=mzs,
+        intensities=intensities,
+        smoothed=np.asarray([0.0, 10.0, 6.0, 9.0, 0.0], dtype=float),
+        internal_missing_scan_count=0,
+        candidate_edge_count=4,
+        assignment_mode="optimal_component",
+        component_size=3,
+        component_edge_density=0.5,
+        assignment_degraded_large_component=False,
+        settings=settings,
+    )
+
+    assert len(split_regions) == 2
+    assert all(region.split_peak for region in split_regions)
+    assert len(no_split_regions) == 1
+    assert no_split_regions[0].split_peak is False
+
+
+def test_assignment_components_record_degraded_dense_and_sparse_modes() -> None:
+    dense_index = (
+        _scan(1, 1.00, [(500.0000, 10.0), (500.0004, 9.0)]),
+        _scan(2, 1.05, [(500.0002, 12.0), (500.0006, 11.0)]),
+        _scan(3, 1.10, [(500.0003, 10.0), (500.0007, 9.0)]),
+    )
+
+    _features, dense_summary, dense_diagnostics = build_local_ms1_feature_table(
+        dense_index,
+        sample_stem="Dense",
+        raw_path="Dense.raw",
+        settings=_settings(
+            trace_builder_mode="scan_link",
+            optimal_component_max_size=2,
+            optimal_component_max_edge_density=0.10,
+            min_ok_prominence=999.0,
+            weak_support_prominence=999.0,
+            min_observed_scans=2,
+        ),
+    )
+
+    assert dense_summary.degraded_assignment_component_count > 0
+    assert any(row.assignment_degraded_large_component for row in dense_diagnostics)
+
+    sparse_index = (
+        _scan(1, 1.00, [(500.0000, 10.0), (500.0080, 9.0), (500.0160, 8.0)]),
+        _scan(2, 1.05, [(500.0040, 12.0), (500.0120, 11.0), (500.0200, 10.0)]),
+        _scan(3, 1.10, [(500.0080, 10.0), (500.0160, 9.0), (500.0240, 8.0)]),
+    )
+    _features, sparse_summary, _diagnostics = build_local_ms1_feature_table(
+        sparse_index,
+        sample_stem="Sparse",
+        raw_path="Sparse.raw",
+        settings=_settings(
+            trace_builder_mode="scan_link",
+            optimal_component_max_size=2,
+            optimal_component_max_edge_density=0.80,
+            min_observed_scans=2,
+        ),
+    )
+
+    assert sparse_summary.conflict_component_count > 0
+    assert sparse_summary.degraded_assignment_component_count == 0
+
+
+def test_link_traces_uses_mz_window_index_for_large_non_overlapping_scan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    search_calls = 0
+    original_searchsorted = local_ms1_features.np.searchsorted
+
+    def _counting_searchsorted(*args: object, **kwargs: object) -> object:
+        nonlocal search_calls
+        search_calls += 1
+        return original_searchsorted(*args, **kwargs)
+
+    monkeypatch.setattr(
+        local_ms1_features.np,
+        "searchsorted",
+        _counting_searchsorted,
+    )
+    peak_count = 3000
+    index = (
+        _scan(
+            1,
+            1.00,
+            [(500.0 + offset * 0.01, 10.0) for offset in range(peak_count)],
+        ),
+        _scan(
+            2,
+            1.05,
+            [(800.0 + offset * 0.01, 10.0) for offset in range(peak_count)],
+        ),
+    )
+
+    traces, edge_count, component_count, degraded_count = (
+        local_ms1_features._link_traces(
+            index,
+            _settings(
+                feature_link_ppm=1.0,
+                max_missing_scans=0,
+            ),
+        )
+    )
+
+    assert edge_count == 0
+    assert component_count == 0
+    assert degraded_count == 0
+    assert len(traces) == peak_count * 2
+    assert search_calls == peak_count * 2
+
+
+def test_large_sparse_component_exceeding_edge_bound_degrades_to_greedy() -> None:
+    trace_count = 8
+    base_mz = 500.0
+    step = 0.010
+    index = (
+        _scan(
+            1,
+            1.00,
+            [(base_mz + offset * step, 10.0) for offset in range(trace_count)],
+        ),
+        _scan(
+            2,
+            1.05,
+            [
+                (base_mz + offset * step + step / 2, 12.0)
+                for offset in range(trace_count)
+            ],
+        ),
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="SparseEdgeBound",
+        raw_path="SparseEdgeBound.raw",
+        settings=_settings(
+            trace_builder_mode="scan_link",
+            feature_link_ppm=12.0,
+            optimal_component_max_size=4,
+            optimal_component_max_edge_density=0.80,
+            optimal_component_max_edges=6,
+            min_observed_scans=2,
+            gaussian_window_points=1,
+            min_ok_prominence=999.0,
+            weak_support_prominence=999.0,
+        ),
+    )
+
+    assert features == ()
+    assert summary.candidate_edge_count == trace_count * 2 - 1
+    assert summary.conflict_component_count == 1
+    assert summary.degraded_assignment_component_count == 1
+    assert {
+        row.assignment_mode for row in diagnostics
+    } == {"greedy_edge_count_limited_component"}
+    assert all(row.assignment_degraded_large_component for row in diagnostics)
+
+
+def test_large_boundary_ppm_complete_component_degrades_to_greedy() -> None:
+    base_mzs = [500.00000, 500.00005, 500.00010, 500.00015]
+    near_boundary_shift = 0.0095
+    index = tuple(
+        _scan(
+            scan_number,
+            1.00 + (scan_number - 1) * 0.05,
+            [
+                (mz + near_boundary_shift * (scan_number - 1), 10.0 + offset)
+                for offset, mz in enumerate(base_mzs)
+            ],
+        )
+        for scan_number in (1, 2, 3)
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="DenseBoundary",
+        raw_path="DenseBoundary.raw",
+        settings=_settings(
+            trace_builder_mode="scan_link",
+            feature_link_ppm=20.0,
+            optimal_component_max_size=4,
+            optimal_component_max_edge_density=0.35,
+            min_observed_scans=2,
+            gaussian_window_points=1,
+            min_ok_prominence=999.0,
+            weak_support_prominence=999.0,
+        ),
+    )
+
+    assert features == ()
+    assert summary.degraded_assignment_component_count > 0
+    assert {row.assignment_mode for row in diagnostics} == {
+        "greedy_large_dense_component"
+    }
+    assert all(row.assignment_degraded_large_component for row in diagnostics)
+    assert {row.component_edge_density for row in diagnostics} == {1.0}
+
+
+def test_single_apex_peak_region_uses_nearest_tail_valleys_not_trace_edges() -> None:
+    intensities = [0.1, 0.1, 1.0, 10.0, 100.0, 10.0, 1.0, 0.1, 0.1]
+    index = tuple(
+        _scan(
+            scan_number,
+            1.00 + (scan_number - 1) * 0.05,
+            [(500.0, intensity)],
+        )
+        for scan_number, intensity in enumerate(intensities, start=1)
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Bounded",
+        raw_path="Bounded.raw",
+        settings=_settings(
+            gaussian_window_points=1,
+            min_ok_prominence=5.0,
+            weak_support_prominence=1.0,
+        ),
+    )
+
+    assert diagnostics == ()
+    assert summary.detected_features_rows == 1
+    assert features[0].rt_start_min == pytest.approx(index[1].rt)
+    assert features[0].rt_end_min == pytest.approx(index[-2].rt)
+    assert features[0].rt_start_min > index[0].rt
+    assert features[0].rt_end_min < index[-1].rt
+
+
+def test_missing_scan_tolerance_counts_internal_gap_not_trailing_gap() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0)]),
+        _scan(2, 1.05, []),
+        _scan(3, 1.10, [(500.0002, 50.0)]),
+        _scan(4, 1.15, []),
+    )
+
+    _features, _summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Gap",
+        raw_path="Gap.raw",
+        settings=_settings(
+            max_missing_scans=1,
+            min_observed_scans=2,
+            min_ok_prominence=999.0,
+            weak_support_prominence=999.0,
+        ),
+    )
+
+    assert diagnostics[0].missing_scan_count == 1
+    assert diagnostics[0].gap_fraction == pytest.approx(1 / 3)
+
+
+def test_split_peak_child_regions_count_missing_gaps_independently() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 1.0)]),
+        _scan(2, 1.05, [(500.0001, 10.0)]),
+        _scan(3, 1.10, []),
+        _scan(4, 1.15, [(500.0000, 2.0)]),
+        _scan(5, 1.20, [(500.0001, 0.5)]),
+        _scan(6, 1.25, [(500.0000, 9.0)]),
+        _scan(7, 1.30, [(500.0001, 1.0)]),
+    )
+
+    features, _summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="SplitGap",
+        raw_path="SplitGap.raw",
+        settings=_settings(
+            trace_builder_mode="scan_link",
+            max_missing_scans=1,
+            min_observed_scans=3,
+            gaussian_window_points=1,
+            min_ok_prominence=999.0,
+            weak_support_prominence=999.0,
+        ),
+    )
+
+    assert features == ()
+    assert len(diagnostics) == 2
+    assert all(row.split_peak for row in diagnostics)
+    assert diagnostics[0].missing_scan_count == 1
+    assert diagnostics[0].gap_fraction == pytest.approx(1 / 5)
+    assert diagnostics[1].missing_scan_count == 0
+    assert diagnostics[1].gap_fraction == 0.0
+
+
+def test_local_linear_baseline_area_has_numeric_contract() -> None:
+    rts = np.asarray([1.0, 2.0, 3.0], dtype=float)
+    smoothed = np.asarray([10.0, 30.0, 10.0], dtype=float)
+
+    assert _local_linear_baseline_area(rts, smoothed, 0, 2) == pytest.approx(1200.0)
+
+
+def test_summary_invariant_failure_raises() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0)]),
+        _scan(2, 1.05, [(500.0001, 50.0)]),
+        _scan(3, 1.10, [(500.0000, 10.0)]),
+    )
+    _features, summary, _diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Sample_1",
+        raw_path="Sample_1.raw",
+        settings=_settings(min_ok_prominence=5.0),
+    )
+
+    with pytest.raises(ValueError, match="summary count invariant"):
+        _validate_summary(
+            replace(
+                summary,
+                detected_features_rows=summary.detected_features_rows + 1,
+            )
+        )
+
+
+def test_write_local_ms1_feature_outputs_writes_contract_files(tmp_path: Path) -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0)]),
+        _scan(2, 1.05, [(500.0001, 50.0)]),
+        _scan(3, 1.10, [(500.0000, 10.0)]),
+    )
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Sample_1",
+        raw_path="Sample_1.raw",
+        settings=_settings(min_ok_prominence=5.0),
+    )
+
+    outputs = write_local_ms1_feature_outputs(tmp_path, features, summary, diagnostics)
+
+    assert outputs.detected_features_csv == tmp_path / "detected_features.csv"
+    assert outputs.summary_json == tmp_path / "local_ms1_feature_summary.json"
+    assert outputs.diagnostics_csv == tmp_path / "local_ms1_feature_diagnostics.csv"
+    with outputs.detected_features_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["source"] == "local_ms1_feature"
+    payload = json.loads(outputs.summary_json.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "local_ms1_feature_summary.v1"
+    assert payload["trace_builder_mode"] == "mzmine_seeded"
+    assert payload["parameters"]["trace_builder_mode"] == payload["trace_builder_mode"]
+    assert payload["area_contract"] == "screening_only"
+    assert payload["quant_ready"] is False

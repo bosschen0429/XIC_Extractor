@@ -16,6 +16,8 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_APEX_DELTA_MAX_SEC,
     DEFAULT_OVERLAP_MIN,
     DEFAULT_PEARSON_MIN,
+    DEFAULT_SHAPE_SHIFT_MAX_SEC,
+    DEFAULT_SHIFTED_PEARSON_MIN,
 )
 
 
@@ -62,6 +64,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_OVERLAP_MIN,
     )
     parser.add_argument(
+        "--min-shifted-pearson-r-to-base",
+        type=float,
+        default=DEFAULT_SHIFTED_PEARSON_MIN,
+    )
+    parser.add_argument(
+        "--max-abs-shape-shift-sec",
+        type=float,
+        default=DEFAULT_SHAPE_SHIFT_MAX_SEC,
+    )
+    parser.add_argument(
         "--require-zero-fpfn",
         action="store_true",
         help="Return exit code 3 unless oracle replay has zero FP and zero FN.",
@@ -90,6 +102,10 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error("--min-pearson-r-to-base must be between 0 and 1")
     if not 0 <= args.min_active_overlap_fraction <= 1:
         parser.error("--min-active-overlap-fraction must be between 0 and 1")
+    if not 0 <= args.min_shifted_pearson_r_to_base <= 1:
+        parser.error("--min-shifted-pearson-r-to-base must be between 0 and 1")
+    if args.max_abs_shape_shift_sec <= 0:
+        parser.error("--max-abs-shape-shift-sec must be > 0")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -115,6 +131,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             apex_delta_max_sec=args.max_abs_apex_delta_sec,
             pearson_min=args.min_pearson_r_to_base,
             overlap_min=args.min_active_overlap_fraction,
+            shifted_pearson_min=args.min_shifted_pearson_r_to_base,
+            shape_shift_max_sec=args.max_abs_shape_shift_sec,
         )
     except (OSError, ValueError) as exc:
         print(f"pt_pattern_diagnostic_gate failed: {exc}", file=sys.stderr)
