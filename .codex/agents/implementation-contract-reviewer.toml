@@ -18,7 +18,10 @@ Focus on:
 - Ownership boundaries, call paths, public entry points, and existing helpers when the owner module is unclear.
 - Diagnostics mode: when tools/diagnostics entry points change, check tools/diagnostics/INDEX.md and duplicate diagnostic-script risk.
 
-Return this compact contract:
+First write a plain-language result for a reader who did not see this work: your
+verdict/finding and what it means for the next decision, in 2-4 sentences with no
+artifact filenames, `field=value`, or test node ids. Then this compact contract
+as evidence:
 Verdict:
 Public contract touched:
 Tests/coverage checked:

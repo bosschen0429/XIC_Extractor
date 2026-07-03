@@ -1,6 +1,6 @@
 ---
 name: xic-architecture-preflight
-description: Architecture preflight before non-trivial XIC implementation touching diagnostics, RAW-backed evidence, preset performance, matrix/activation/value-delta, model selection, or evidence providers; requires owner reuse, call-cost, public-contract risk, validation gate, and stop rule.
+description: Architecture preflight before non-trivial XIC implementation that touches diagnostics, RAW-backed evidence, matrix/activation/value-delta, model selection, or new evidence providers.
 ---
 
 # XIC Architecture Preflight

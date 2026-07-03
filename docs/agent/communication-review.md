@@ -5,14 +5,20 @@ root `AGENTS.md`. Keep the root file limited to high-frequency guardrails.
 
 ## Verdict-First Communication
 
-- Non-trivial wrap-ups must state the current verdict first: what is done, what
-  is still blocked, and the next recommended step.
-- Use plain language before implementation detail. Say what changed, where, how
-  it was checked, what was skipped, and what risk remains.
+- Open every non-trivial report with 2-4 sentences written for a reader who did
+  not see this work: what now works, whether it is safe to use/write/ship, and
+  the next step. This opener must contain no artifact filenames, `field=value`
+  pairs, or test node ids — if the reader would have to open a file to understand
+  a sentence, rewrite it.
+- Explain by meaning, not by internal label. Bad: `feature_source_detected tier
+  B score 70`. Good: "locally detected features are now supporting evidence only
+  and can no longer promote themselves to a high-confidence source."
+- Command output, RED/GREEN history, and per-item self-review are evidence: put
+  them after the verdict or omit them. A report is not a process log.
+- When relaying a subagent's slice report, translate it into the plain-language
+  verdict above; do not paste its field contract verbatim.
 - During long, tool-heavy work, explain what question the current tools are
-  answering and how the result changes the next action. Do not rely on internal
-  artifact names such as board row counts, slice labels, or TSV filenames
-  without translating what they mean for the product decision.
+  answering and how the result changes the next action.
 - Final answers for implementation or validation work should include, when
   applicable: conclusion, changed files or artifact paths, verification run,
   remaining risk, and next action.

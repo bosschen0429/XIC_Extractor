@@ -1,6 +1,6 @@
 ---
 name: xic-performance-diagnosis
-description: Performance diagnosis before XIC preset/runtime optimization, timing analysis, RAW locality, worker budget, exact-safe planning, baseline triage, or fast-mode review; requires timing artifacts, bottleneck rank, correctness oracle, and validation gate before edits.
+description: Performance diagnosis before XIC preset/runtime optimization, timing analysis, RAW locality, worker-budget tuning, baseline triage, or fast-mode review.
 ---
 
 # XIC Performance Diagnosis

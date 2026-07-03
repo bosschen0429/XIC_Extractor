@@ -1,6 +1,6 @@
 ---
 name: xic-large-pr-review
-description: Large XIC PR review for diagnostics, architecture, preset performance, parity, 8RAW/85RAW, activation/value-delta, matrix identity, or RAW-locality diffs; review blast radius, public contracts, evidence, and residual risk.
+description: Large XIC PR review for diffs touching diagnostics, architecture, preset performance, parity, 8RAW/85RAW, activation/value-delta, matrix identity, or RAW locality.
 ---
 
 # XIC Large PR Review

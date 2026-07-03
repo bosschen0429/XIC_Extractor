@@ -158,7 +158,7 @@ python -m scripts.agent_sandbox_doctor --command "<command-to-check>"
 | --- | --- | --- |
 | 寫入 RAW/DLL storage、桌面資料夾、`$CODEX_HOME` / `%USERPROFILE%\.codex` 失敗 | 把 output / cache / sidecar 改到目前 worktree 的 `output/...` 或 sandbox-provided temp dir；若真的要改全域 Codex 設定，先明確取得使用者要求 | 不要切 `danger-full-access` 或擴大 writable root 只為了省一次路徑修正 |
 | package install、`npx`、下載文件、GitHub/網路失敗 | 確認這是任務必要條件後，用 narrow approval / prefix；成功後記錄穩定命令或替代離線路徑 | 不要把 network access 永久打開當預設 |
-| pytest / Python 產生 cache 被擋 | 在 worktree 內跑；必要時加 `$env:PYTHONDONTWRITEBYTECODE='1'` 和 `-p no:cacheprovider`；tester role 可 workspace-write 只為 verification side effects，驗證後要回報 `git status` 是否只剩預期 side effects | 不要把 tester 當 implementation worker 讓它改 source |
+| pytest / Python 產生 cache 被擋 | 在 worktree 內跑；必要時加 `$env:PYTHONDONTWRITEBYTECODE='1'` 和 `-p no:cacheprovider`；verification run 可 workspace-write 只為 verification side effects，驗證後要回報 `git status` 是否只剩預期 side effects | 不要讓 verification run 改 source |
 | pytest 回 `no tests ran` 或 `not found` | 先用 `rg -n "<test_name>|def test_" tests\...` 找實際名稱；必要時跑 `$env:UV_CACHE_DIR='.uv-cache'; uv run pytest --collect-only -q <test-file>` 後再下精準 node id | 不要把 `no tests ran` 當成測試失敗或通過；不要猜 node id 一直重跑 |
 | RAW / DLL 讀不到 | 先跑本檔 Preflight 的 `Test-Path` 與 Python runner check；RAW 命令用 `.venv\Scripts\python.exe` | 不要用 bare `python` 重試 RAW，也不要掃 sibling directory 猜路徑 |
 | PowerShell 語法錯誤 | 改成 PowerShell 語法；多行命令用 backtick；inline Python 用 `python -c` 或 PowerShell here-string pipe；不確定時先跑 `scripts.agent_sandbox_doctor` | 不要貼 Bash heredoc、`export`、`&&` |

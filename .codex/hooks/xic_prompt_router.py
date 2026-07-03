@@ -25,8 +25,31 @@ ARCHITECTURE_PATTERNS = [
     r"Delta Mass",
     r"evidence",
     r"diagnostic",
-    r"performance|perf|bottleneck|cache|batch",
-    r"架構|效能|瓶頸|診斷|證據",
+    r"架構|診斷|證據",
+]
+
+# Performance work has a dedicated diagnosis skill that must run before
+# architecture-preflight, so route it explicitly instead of letting the broad
+# architecture bucket claim it. Bare "optimize" is excluded unless a perf noun
+# is nearby, so ordinary "optimize docs/skills" prompts do not fire this.
+PERFORMANCE_PATTERNS = [
+    r"performance|perf\b|bottleneck",
+    r"(optimi[sz]e|optimi[sz]ation|speed\s*up|faster|加速|優化|优化)[^\n]{0,40}"
+    r"(perf|performance|bottleneck|瓶頸|效能|timing|runtime|batch|cache|locality|worker|耗時|call[\s_-]?cost)",
+    r"timing\.(json|live)|wall[\s-]?clock|profil(e|ing)|worker\s+budget|call[\s_-]?cost",
+    r"效能|耗時|瓶頸",
+]
+
+# RAW-backed validation launch/acceptance is its own preflight skill. Match run
+# or acceptance intent (not a bare RAW mention) so RAW code edits still route to
+# architecture-preflight.
+RAW_VALIDATION_PATTERNS = [
+    r"(8|85)\s*-?\s*RAW[^\n]{0,40}(valid|驗證|跑|run|rerun|launch|benchmark|accept|gate|heartbeat)",
+    r"(valid|驗證|跑|run|rerun|launch|benchmark|accept|gate|heartbeat)[^\n]{0,40}(8|85)\s*-?\s*RAW",
+    r"production[\s-]?equivalent",
+    r"RAW[\s-]?backed\s+(validation|gate|evidence|run)",
+    r"heartbeat|timing\s+sidecar",
+    r"(alignment|benchmark)[^\n]{0,20}validation|validation[^\n]{0,20}(alignment|benchmark)",
 ]
 
 PR_REVIEW_PATTERNS = [
@@ -34,6 +57,15 @@ PR_REVIEW_PATTERNS = [
     r"pull request",
     r"review",
     r"code review",
+]
+
+# Stacked/superseded PR CI trouble is a boundary problem, not an ordinary
+# review. It takes precedence over the general PR-review bucket.
+PR_STACK_PATTERNS = [
+    r"stack(ed)?\s+PR|PR\s+stack|PR\s+series|split\s+PR",
+    r"superseded\s+(branch|PR)|stale\s+base|retarget|rebuild[^\n]{0,20}(PR|branch|分支)",
+    r"stack[\s-]?boundary|clean[\s-]?checkout",
+    r"堆疊[^\n]{0,6}PR|PR[^\n]{0,6}堆疊|拆[^\n]{0,6}PR|重建[^\n]{0,6}(branch|分支|PR)|過時[^\n]{0,6}base|superseded",
 ]
 
 GOAL_PATTERNS = [
@@ -91,27 +123,61 @@ def main() -> int:
         )
         return 0
 
+    def matches(patterns: list[str]) -> bool:
+        return any(re.search(pattern, prompt, re.IGNORECASE) for pattern in patterns)
+
     contexts: list[str] = []
-    if any(re.search(pattern, prompt, re.IGNORECASE) for pattern in ARCHITECTURE_PATTERNS):
+
+    perf = matches(PERFORMANCE_PATTERNS)
+    raw_validation = matches(RAW_VALIDATION_PATTERNS)
+
+    if perf:
+        contexts.append(
+            "XIC performance context detected: use xic-performance-diagnosis first. "
+            "Inspect timing artifacts, rank bottlenecks, classify the optimization lane "
+            "(exact_safe / expected_diff / fast_mode_candidate / diagnostic_only), and name a "
+            "correctness oracle and validation gate before edits. Then use xic-architecture-preflight "
+            "before changing performance-sensitive code."
+        )
+
+    if raw_validation:
+        contexts.append(
+            "XIC RAW validation context detected: use xic-raw-validation before launching or accepting "
+            "8RAW/85RAW, alignment, benchmark, timing/heartbeat, or production-equivalent runs. "
+            "State the decision the run can close, sample set, documented runner/DLL/RAW paths, output "
+            "level, heartbeat/timeout, and why existing artifacts cannot answer it. Do not launch 85RAW "
+            "via background Start-Process from the Codex shell without explicit approval."
+        )
+
+    # The broad architecture reminder only fires when a more specific perf/RAW
+    # skill has not already claimed the prompt, to avoid duplicate reminders.
+    if matches(ARCHITECTURE_PATTERNS) and not (perf or raw_validation):
         contexts.append(
             "XIC high-risk work detected: before edits, use xic-architecture-preflight. "
             "Name existing owner/helper reuse, evidence-provider role, call-cost model, "
             "public contracts at risk, validation gate, and stop rule."
         )
 
-    if any(re.search(pattern, prompt, re.IGNORECASE) for pattern in PR_REVIEW_PATTERNS):
+    if matches(PR_STACK_PATTERNS):
+        contexts.append(
+            "XIC stacked/superseded PR context detected: use xic-pr-stack-repair before more CI fixes. "
+            "Map base/head, stale base, superseded status, repeated ledgers/handoffs, and artifact "
+            "ownership first. Do not fix CI on top of a stale base or depend on a later cleanup PR to "
+            "make an earlier PR pass."
+        )
+    elif matches(PR_REVIEW_PATTERNS):
         contexts.append(
             "XIC PR/review context detected: use xic-large-pr-review for large or diagnostics-heavy PRs. "
             "Start read-only, map blast radius, lead with findings, and label strongest evidence reviewed."
         )
 
-    if any(re.search(pattern, prompt, re.IGNORECASE) for pattern in GOAL_PATTERNS):
+    if matches(GOAL_PATTERNS):
         contexts.append(
             "XIC goal context detected: use the global goal-execution contract for phase-sized or drifting work. "
             "Keep one objective and name context, constraints, verification, done condition, stop rules, and handoff."
         )
 
-    if any(re.search(pattern, prompt, re.IGNORECASE) for pattern in PRODUCTIZATION_PATTERNS):
+    if matches(PRODUCTIZATION_PATTERNS):
         contexts.append(
             "XIC productization context detected: before claiming a feature is productized, read "
             f"{CONTROL_PLANE_PATH}. "

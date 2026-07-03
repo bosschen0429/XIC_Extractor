@@ -39,9 +39,14 @@ before recreating process instructions:
   execution; `$xic-goal-execution` is a manual overlay for XIC validation tiers,
   RAW stop rules, handoff, and productization constraints.
 - global `critical-artifact-review` for multi-angle review of durable specs,
-  plans, goal prompts, workflow rules, handoff docs, and public contracts. It
-  must read this routing doc when running in XIC; do not maintain a duplicate
-  XIC critical-review skill.
+  plans, goal prompts, workflow rules, handoff docs, and public contracts. It is
+  the review orchestrator: it owns the generic review process, angles, and output
+  shape, and it must read this routing doc when running in XIC. The repo reviewer
+  families below are its XIC overlays — they add only XIC-specific domain
+  knowledge and constraints, never a duplicate review process. Generic angles
+  with no XIC delta are not kept as repo roles: external research routes to the
+  global `deep-research` skill or `WebSearch`/`WebFetch`, and CI/ops triage routes
+  to `$gh-fix-ci` plus `docs/agent/parameter-settings.md`.
 - `xic-large-pr-review` for large XIC PR reviews, especially diagnostics,
   architecture, preset-performance, parity, 8RAW/85RAW, activation/value-delta,
   matrix identity, or RAW-locality changes. It complements the normal
@@ -109,10 +114,10 @@ specific lesson into the local skill or explicitly switch the route.
   brief into the prompt. Name the intended role in the prompt and final
   synthesis.
 - The main agent owns synthesis, file edits, final judgment, and verification.
-- Reviewer subagents are read-only. `implementation-worker` is the only
-  repo-local role allowed to edit assigned files. `tester` is workspace-write
-  only for command side effects such as caches, logs, and named output
-  artifacts. Do not give two agents the same write scope.
+- Reviewer subagents are read-only. Implementation slices and independent
+  verification go through the global `subagent-driven-development` /
+  `executing-plans` skills, not a repo-local worker/tester role. Do not give two
+  agents the same write scope.
 - If thread limits block full review, dispatch in this order: mandatory blocker
   reviewer, original blocker re-check, then optional specialist. Close stale
   agents before downgrading a required multi-angle review. If the review still
@@ -136,7 +141,9 @@ specific lesson into the local skill or explicitly switch the route.
 
 ## Reviewer Output Contract
 
-Every reviewer should return the same compact shape:
+Every reviewer opens with a plain-language result for a reader who did not see
+the work (2-4 sentences, no artifact filenames, `field=value`, or test node ids),
+then returns this compact shape:
 
 ```text
 Verdict:
@@ -149,19 +156,9 @@ Ownership / placement:
 ```
 
 Findings that cannot change the next action should be labeled minor or deferred.
-
-Family-specific required fields:
-
-- `strategy-challenger`: `Decision closed?`, `Exit rule`
-- `implementation-contract-reviewer`: `Public contract touched`,
-  `Tests/coverage checked`
-- `validation-evidence-reviewer`: `Mode`, `run_ok`, `gate_ok`,
-  `production_ready`, `inconclusive`
-- `docs-handoff-reviewer`: `Canonical source checked`,
-  `Human/machine surface impact`
-- `ops-triager`: `Existing skill used or bypass reason`,
-  `Reproduction command`
-- `outside-frame-researcher`: `Trigger met`, `Sources`
+Each role's family-specific evidence fields live in its
+`.codex/agents/<role>.toml` brief; that brief is the single source, so add or
+change fields there, not here.
 
 ## Active Role Families
 
@@ -173,15 +170,14 @@ Reviewer families:
 | `implementation-contract-reviewer` | Code/public contract change, CLI/config/schema/parser/test behavior, diagnostic entrypoint changes | Code path mapping, contract review, test strategy, diagnostics reuse; add the PR-review lenses below when their triggers fire |
 | `validation-evidence-reviewer` | RAW/science/benchmark decision, 8RAW/85RAW preflight or acceptance, timing/performance evidence | Validation ops, gate acceptance, LC-MS/MS evidence, performance profiling |
 | `docs-handoff-reviewer` | Docs/source-of-truth change, output handoff, report/review surface, agent routing/TOML changes | Docs drift, output contract, human review UX, agent workflow regression |
-| `ops-triager` | CI red, Windows/PowerShell/runbook failure, local runner or path problem | CI triage, Windows ops, command reproduction |
-| `outside-frame-researcher` | Manual trigger only: local evidence cannot discriminate design options, or two local iterations failed | Bounded external docs/literature/open-source scan |
 
 Execution roles:
 
-| Role | Use when | Guardrail |
-| --- | --- | --- |
-| `implementation-worker` | A small, self-contained implementation slice can be assigned with an explicit non-overlapping write scope | Workspace-write; must stop if the scope needs unassigned files |
-| `tester` | Clean-context verification, failure reproduction, or test-validity review is useful | Workspace-write for command side effects only; no source/docs/config/test edits, staging, commits, or reverts |
+Implementation slices and independent verification are handled by the global
+`subagent-driven-development` and `executing-plans` skills, which own worker and
+tester dispatch. The repo does not maintain its own execution-role tomls; give
+the SDD worker an explicit non-overlapping write scope and keep verification
+independent from the implementer.
 
 ## Hard Triggers
 
@@ -189,9 +185,11 @@ Execution roles:
   must document `validation-evidence-reviewer` preflight before launch and
   acceptance review after completion, or state the bypass reason.
 - Any CI red or required-check uncertainty starts with the existing CI skill
-  workflow, such as `$gh-fix-ci`, when available. Use `ops-triager` only when
-  check metadata, branch protection, Windows runner behavior, or local
-  reproduction remains unclear after the skill path.
+  workflow, such as `$gh-fix-ci`, when available. If check metadata, branch
+  protection, Windows runner behavior, or local reproduction is still unclear,
+  use `docs/agent/parameter-settings.md` for runner/path/PowerShell facts and, if
+  a second pair of eyes is needed, paste a CI/ops focus into a generic read-only
+  reviewer.
 - Any `.codex/agents/*.toml`, `docs/agent/subagent-routing.md`, or AGENTS
   workflow-rule change gets `docs-handoff-reviewer` to check role overlap,
   trigger drift, and output-contract regression.
@@ -209,12 +207,12 @@ Execution roles:
 - Any PR/update that changes behavior, parser/writer gates, diagnostics,
   public output contracts, matrix-writing authority, or validation acceptance
   adds the `test-coverage-quality` lens to `implementation-contract-reviewer`
-  or a verification-only `tester`.
-- Use `implementation-worker` only when the task can be split like a small
-  self-contained CL: one reason to change, explicit write scope, related tests,
-  and no shared write surface with the main agent or another worker.
-- Use `tester` when verification should be independent from the implementer, a
-  regression must be reproduced, or test validity is the risk.
+  or an independent verification pass.
+- Split work into a small self-contained slice (one reason to change, explicit
+  write scope, related tests, no shared write surface) before handing it to the
+  `subagent-driven-development` worker flow. Keep verification independent from
+  the implementer when a regression must be reproduced or test validity is the
+  risk.
 - Use a goal-shaped contract when the task is long-running, multi-step, crosses
   multiple turns, or has repeatedly drifted in past work. Register an active goal
   only when the user explicitly asks for one or the runtime explicitly permits
@@ -225,17 +223,17 @@ Execution roles:
 
 | Situation | Default | Add only if trigger fires |
 | --- | --- | --- |
-| New phase plan / spec | `strategy-challenger` | `outside-frame-researcher` only when local evidence cannot discriminate options |
+| New phase plan / spec | `strategy-challenger` | `deep-research` skill / `WebSearch` only when local evidence cannot discriminate options |
 | Handoff productization planning | `strategy-challenger` | `implementation-contract-reviewer` if consumer migration touches code/public contract |
 | Code implementation review | `implementation-contract-reviewer` | `docs-handoff-reviewer` for public docs/output, `validation-evidence-reviewer` for RAW/science behavior |
-| Parallel implementation slice | `implementation-worker` | `tester` after the worker returns when behavior or tests changed |
+| Parallel implementation slice | `subagent-driven-development` worker flow | independent verification after the slice returns when behavior or tests changed |
 | Diagnostics / tool changes | `implementation-contract-reviewer` | `docs-handoff-reviewer` if `tools/diagnostics/INDEX.md` or lifecycle docs change |
-| Expensive RAW run preflight | `validation-evidence-reviewer` with `mode=preflight` | `ops-triager` if runner/path/PowerShell failure is suspected |
+| Expensive RAW run preflight | `validation-evidence-reviewer` with `mode=preflight` | `docs/agent/parameter-settings.md` if runner/path/PowerShell failure is suspected |
 | Validation result acceptance | `validation-evidence-reviewer` with `mode=acceptance`; add `mode=science` or `mode=performance` only when needed | `docs-handoff-reviewer` if the result changes downstream or human review surfaces |
-| CI red / PR check failure | Existing CI skill first; `ops-triager` only for unclear check metadata, branch protection, Windows runner, or reproduction | `implementation-contract-reviewer` or `validation-evidence-reviewer` after failure class is known |
+| CI red / PR check failure | Existing CI skill first; `parameter-settings.md` + a generic ops-focused reviewer only for unclear check metadata, branch protection, Windows runner, or reproduction | `implementation-contract-reviewer` or `validation-evidence-reviewer` after failure class is known |
 | Documentation / workflow rules | `docs-handoff-reviewer` | `strategy-challenger` if the rule changes phase planning or gate behavior |
 | Performance optimization | `validation-evidence-reviewer` | `implementation-contract-reviewer` if code changes public behavior |
-| Long-running goal execution | Main agent uses a goal-shaped contract and owns completion; register an active goal only with explicit user request or runtime permission | `strategy-challenger` before launch when goal scope could become a backlog; `tester` at the end when verification integrity matters |
+| Long-running goal execution | Main agent uses a goal-shaped contract and owns completion; register an active goal only with explicit user request or runtime permission | `strategy-challenger` before launch when goal scope could become a backlog; independent verification at the end when integrity matters |
 
 `validation-evidence-reviewer` prompts must name a mode. Allowed modes are
 `preflight`, `acceptance`, `science`, and `performance`; use at most two modes in
@@ -247,7 +245,8 @@ The Claude official `pr-review-toolkit` plugin is useful as a prompt library,
 not as a primary Codex runtime surface. Its agents are Claude-agent/command
 files, not Codex skills in this environment. Do not add parallel XIC role
 families for them. Instead, paste the relevant lens into the existing
-`implementation-contract-reviewer` or `tester` prompt when the trigger fires.
+`implementation-contract-reviewer` prompt (or the SDD verification pass) when the
+trigger fires.
 
 - `silent-failure`: inspect all `try/except`, broad catches, warning-only
   failures, fallback/default branches, missing-artifact handling, optional
@@ -284,7 +283,7 @@ sequentially.
 | --- | --- | --- |
 | Handoff productization spec or phase plan | `strategy-challenger` and `implementation-contract-reviewer` | `docs-handoff-reviewer` when docs/source-of-truth wording changes |
 | Cleanup-only structural spec | `implementation-contract-reviewer` | `strategy-challenger` when phase order, legacy retirement, or product direction could drift |
-| Validation, RAW, benchmark, or gate spec | `strategy-challenger` and `validation-evidence-reviewer` | `ops-triager` for runner/path/PowerShell risk |
+| Validation, RAW, benchmark, or gate spec | `strategy-challenger` and `validation-evidence-reviewer` | `docs/agent/parameter-settings.md` for runner/path/PowerShell risk |
 | Workflow, AGENTS, subagent, hook, sandbox, or goal-routing spec | `docs-handoff-reviewer` and `strategy-challenger` | `implementation-contract-reviewer` when CLI/config/tests are touched |
 | Small docs wording-only change | `docs-handoff-reviewer` | none unless it changes a gate or public contract |
 
@@ -337,17 +336,20 @@ Post-review補強 should not spawn a new review group.
 
 ## Worker / Tester Rules
 
-- Worker roles are for execution, not design authority. The main agent must give
-  the worker a file/module write scope and acceptance criteria.
-- Do not use a worker to explore an unclear architecture. Use
-  `strategy-challenger` or `implementation-contract-reviewer` first.
-- Do not run multiple workers on overlapping files or schemas.
-- Tester roles are verification-only. They may run commands that create normal
-  test caches, logs, and named output artifacts, but they should not edit source
-  files or silently fix failures. Tester reports must include whether `git
-  status --short` contains only expected verification side effects.
-- If a tester finds a failure, the main agent decides whether to fix directly,
-  assign an implementation worker with a new write scope, or revise the plan.
+Implementation slices and independent verification run through the global
+`subagent-driven-development` and `executing-plans` skills. The repo keeps only
+the rules those skills must honor here:
+
+- A worker is for execution, not design authority: give it an explicit write
+  scope and acceptance criteria, and do not use it to explore unclear
+  architecture (use `strategy-challenger` or `implementation-contract-reviewer`
+  first).
+- Do not run two workers on overlapping files or schemas.
+- Verification may create test caches, logs, and named output artifacts, but
+  must not edit source or silently fix failures, and must report whether `git
+  status --short` is only expected side effects.
+- If verification finds a failure, the main agent decides whether to fix
+  directly, assign a new write scope, or revise the plan.
 
 ## Sandbox And Approval Posture
 
@@ -355,12 +357,11 @@ Current recommended posture for this repo:
 
 - Main implementation sessions: `sandbox_mode = "workspace-write"` with
   `approval_policy = "on-request"`.
-- Reviewer, ops-triage, and outside-frame research roles:
-  `sandbox_mode = "read-only"`.
-- Tester role: `sandbox_mode = "workspace-write"` only because pytest,
-  validation commands, and local runners often write caches, logs, and output
-  sidecars. Tester prompts must forbid source/docs/config/test edits, staging,
-  commits, reverts, renames, and deletes, and must report the final dirty scope.
+- Reviewer roles: `sandbox_mode = "read-only"`.
+- Verification runs (pytest, validation commands, local runners) need
+  `sandbox_mode = "workspace-write"` only for caches, logs, and output sidecars;
+  the run must forbid source/docs/config/test edits, staging, commits, reverts,
+  renames, and deletes, and must report the final dirty scope.
 - `danger-full-access`, `approval_policy = "never"`, broad writable roots, and
   persistent execpolicy rules are not default development settings. Use them
   only for a reviewed, bounded operation with a named rollback or recovery path.
@@ -441,18 +442,19 @@ Validation summaries must keep these separate:
 - `inconclusive`: the run cannot close the decision; name the missing evidence
   or exit rule.
 
-## Outside-Frame Trigger
+## Outside Research
 
-Use `outside-frame-researcher` only when one of these is true:
+External literature, docs, or open-source scans are handled by the global
+`deep-research` skill or `WebSearch`/`WebFetch`, not a repo-local role. Reach for
+them only when one of these is true:
 
 - Existing local oracles cannot discriminate between credible design options.
 - Two bounded local iterations failed to change the decision.
 - The method family itself is uncertain and an external guideline, paper, or
   mature implementation could change the gate design.
 
-Output must be bounded: 2-4 sources or examples, the design idea each source
-supports, and the minimum local experiment that would make it worth
-implementing.
+Keep the output bounded: 2-4 sources or examples, the design idea each supports,
+and the minimum local experiment that would make it worth implementing.
 
 ## Anti-Patterns
 

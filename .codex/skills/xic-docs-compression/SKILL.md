@@ -1,6 +1,6 @@
 ---
 name: xic-docs-compression
-description: Docs compression for XIC docs/superpowers cleanup, Obsidian copy/retirement, product-owner absorption, stubs, route decisions, or referrer-bound docs; classify lifecycle, durable payload, owner, absorption, and retirement gate before moving or deleting docs.
+description: Docs compression for XIC docs/superpowers cleanup, Obsidian copy/retirement, product-owner absorption, stubs, route decisions, or referrer-bound docs.
 ---
 
 # XIC Docs Compression

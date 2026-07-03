@@ -25,7 +25,10 @@ Focus on:
 - Performance mode: timing evidence, RAW I/O cost, output thinning, exact-safe
   optimization versus explicit approximate mode.
 
-Return this compact contract:
+First write a plain-language result for a reader who did not see this work: your
+verdict/finding and what it means for the next decision, in 2-4 sentences with no
+artifact filenames, `field=value`, or test node ids. Then this compact contract
+as evidence:
 Verdict:
 Mode:
 run_ok:

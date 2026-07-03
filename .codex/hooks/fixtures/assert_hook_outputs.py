@@ -72,6 +72,74 @@ def main() -> int:
         "branch-scoped file",
     )
 
+    def router_output(prompt: str) -> str:
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "turn_id": "fixture",
+            "cwd": ".",
+            "permission_mode": "default",
+            "prompt": prompt,
+        }
+        return json.dumps(run_hook("xic_prompt_router.py", payload), ensure_ascii=False)
+
+    def assert_absent(text: str, unexpected: str) -> None:
+        if unexpected in text:
+            raise AssertionError(f"did not expect {unexpected!r} in {text}")
+
+    # Performance work routes to xic-performance-diagnosis, not the broad
+    # architecture reminder.
+    perf_out = router_output(
+        "這個 preset 的 performance bottleneck 在哪？先看 timing.json"
+    )
+    assert_contains(perf_out, "xic-performance-diagnosis")
+    assert_absent(perf_out, "high-risk work detected")
+
+    # RAW-run/validation intent routes to xic-raw-validation and suppresses the
+    # architecture reminder even though the prompt mentions 85RAW.
+    raw_out = router_output("準備跑 85RAW alignment 驗證，先確認 runner 跟 DLL 路徑")
+    assert_contains(raw_out, "xic-raw-validation")
+    assert_absent(raw_out, "high-risk work detected")
+
+    # A bare RAW code edit still routes to architecture-preflight, not raw-validation.
+    raw_code_out = router_output("改 85RAW 的 matrix 抽取邏輯")
+    assert_contains(raw_code_out, "high-risk work detected")
+    assert_absent(raw_code_out, "xic-raw-validation")
+
+    # Stacked/superseded PR trouble routes to xic-pr-stack-repair, not large-pr-review.
+    stack_out = router_output(
+        "這個 stacked PR series 一直 red CI，先 map stale base 再修"
+    )
+    assert_contains(stack_out, "xic-pr-stack-repair")
+    assert_absent(stack_out, "xic-large-pr-review")
+
+    # Ordinary large PR review still routes to xic-large-pr-review.
+    review_out = router_output("幫我 review 這個大 PR 的 diagnostics 改動")
+    assert_contains(review_out, "xic-large-pr-review")
+
+    # An ordinary "optimize skills" prompt must not trigger any routing context.
+    skills_result = subprocess.run(
+        [sys.executable, str(HOOKS / "xic_prompt_router.py")],
+        input=json.dumps(
+            {
+                "hook_event_name": "UserPromptSubmit",
+                "turn_id": "fixture",
+                "cwd": ".",
+                "permission_mode": "default",
+                "prompt": "幫我優化 repo local skills",
+            }
+        ),
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if "performance" in skills_result.stdout or "xic-" in skills_result.stdout:
+        raise AssertionError(
+            "ordinary optimize-skills prompt emitted routing context: "
+            f"{skills_result.stdout!r}"
+        )
+
     pre_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",

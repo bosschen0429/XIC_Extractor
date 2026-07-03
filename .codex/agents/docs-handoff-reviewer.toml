@@ -21,7 +21,10 @@ Focus on:
 - Agent workflow regression mode: role overlap, trigger drift, bad delegation
   examples, and reviewer output format regressions.
 
-Return this compact contract:
+First write a plain-language result for a reader who did not see this work: your
+verdict/finding and what it means for the next decision, in 2-4 sentences with no
+artifact filenames, `field=value`, or test node ids. Then this compact contract
+as evidence:
 Verdict:
 Canonical source checked:
 Human/machine surface impact:
