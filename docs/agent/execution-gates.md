@@ -23,9 +23,10 @@ python -m scripts.agent_sandbox_doctor
 - State validation status explicitly: `diagnostic_only`, `shadow_ready`,
   `production_candidate`, `production_ready`, or `inconclusive`.
 - Tests passing is not the same as production readiness. For extraction,
-  alignment, scoring, and matrix behavior changes, report whether validation
-  used synthetic tests, 8RAW, 85RAW, targeted benchmark, or manual EIC/MS2
-  review.
+  alignment, scoring, and matrix behavior changes, report which
+  method-appropriate evidence was used: synthetic tests, lane-specified
+  8RAW/85RAW, targeted benchmark, method-specific real samples, or manual
+  EIC/MS2 review.
 
 ## Artifact Boundary Gate
 

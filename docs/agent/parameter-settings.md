@@ -183,15 +183,22 @@ python -m scripts.agent_sandbox_doctor --command "<command-to-check>"
 
 ## Validation Tiers
 
+Validation datasets are lane- and method-specific. 8RAW and 85RAW are reusable
+fixtures only when the active goal, product owner, or validation packet names
+them. They are not universal Discovery gates; for example, Pt pattern validation
+uses Pt-method real samples, trace/co-elution evidence, and manual oracle review
+instead of inheriting CID-NL 8RAW/85RAW gates by default.
+
 | Tier | 使用時機 | 常用資料 | Gate 意義 |
 | --- | --- | --- | --- |
 | synthetic/unit tests | code behavior、schema、CLI parsing | none | regression only，不代表 production readiness |
 | manual-2raw | resolver calibration 對 manual truth | manual 2RAW truth data | manual truth / calibration evidence |
-| 8RAW | smoke、parity、benchmark gate，先於昂貴的大規模 run | validation subset 或當前 spec 指定的 8RAW artifacts | 只有 gate docs 通過後，才可說 `shadow_ready` 或 `production_candidate` |
-| 85RAW | full tissue validation | 85RAW tissue root | 昂貴 gate；只有 8RAW gate 通過後才跑 |
+| 8RAW | lane-specified smoke、parity、benchmark gate，先於昂貴的大規模 run | validation subset 或當前 spec 指定的 8RAW artifacts | 只有該 lane 的 gate docs 通過後，才可說 `shadow_ready` 或 `production_candidate` |
+| 85RAW | lane-specified full tissue validation | 85RAW tissue root | 昂貴 gate；只有該 lane 明確要求且前置 gate 通過後才跑 |
 
-如果 8RAW gate 是 `inconclusive`，不要為了「看看結果」直接開 85RAW。先說明
-blocker，修正或重訂 gate 後再進下一層。
+如果某 lane 明確使用 8RAW -> 85RAW gate，而 8RAW gate 是 `inconclusive`，
+不要為了「看看結果」直接開 85RAW。先說明 blocker，修正或重訂 gate 後再進
+下一層。
 
 ## Common Command Shapes
 

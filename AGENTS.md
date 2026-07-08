@@ -99,8 +99,9 @@ and untargeted product lanes. See `docs/engineering-skills/domain.md`.
 - State validation status explicitly: `diagnostic_only`, `shadow_ready`,
   `production_candidate`, `production_ready`, or `inconclusive`.
 - Tests passing is not production readiness. For extraction, alignment, scoring,
-  and matrix behavior changes, report whether validation used synthetic tests,
-  8RAW, 85RAW, targeted benchmark, or manual EIC/MS2 review.
+  and matrix behavior changes, report which method-appropriate evidence was
+  used: synthetic tests, lane-specified 8RAW/85RAW, targeted benchmark,
+  method-specific real samples, or manual EIC/MS2 review.
 - Do not launch 85RAW or likely long RAW runs through background
   `Start-Process` from the Codex shell. Use the foreground heartbeat/timing
   command shapes in `docs/agent/parameter-settings.md`, or get explicit approval
@@ -174,6 +175,9 @@ debugging the shard runner itself.
   single-dataset or CID-NL-only pipeline.
 - 8RAW and 85RAW are validation fixtures and stress oracles, not architecture
   boundaries.
+- Different Discovery methods require different validation datasets. Do not
+  apply CID-NL 8RAW/85RAW fixtures as the default science gate for Pt pattern or
+  other evidence providers unless that lane explicitly names them.
 - CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 pattern, shape, standards, library
   matches, and future learned models are evidence providers. They feed
   `EvidenceVector`, `PeakHypothesis`, model selection, and `AuditTrail`; they

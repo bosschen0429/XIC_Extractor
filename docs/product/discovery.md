@@ -14,6 +14,10 @@ path.
   methods when they are used to find features matching method-specific evidence
   settings. They produce feature candidates plus typed evidence, not
   cross-sample identity or matrix writes by themselves.
+- Discovery validation is method-specific. CID-NL 8RAW/85RAW fixtures are not
+  universal Discovery gates; Pt pattern work should use Pt-method real samples,
+  trace/co-elution evidence, no-write authority checks, and manual oracle review
+  unless a later Pt owner explicitly names a different fixture.
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
   detail) and `discovery_review.csv` (compact human review).
 - Discovery `feature_family_id` remains a public output header and dataclass
@@ -92,19 +96,44 @@ When an intersection method has a natural base seed, implement it seed-first
 instead of running a broad provider over every possible anchor and filtering
 afterward. For `pt_pattern + cid_nl(dR)`, CID-NL(dR) base candidates seed the
 base feature IDs, then Pt pattern evidence checks only those bases for
-`+1.0021`, `+2.0023`, and `+4.0052`.
+`+1.002111`, `+2.002271`, and `+4.005213`.
 
 Delta Mass / Pt pattern evidence has two layers. The first layer is a
-scan-level delta-pattern seed: base / `+1.0021` / `+2.0023` / `+4.0052` are
+scan-level delta-pattern seed: base / `+1.002111` / `+2.002271` / `+4.005213` are
 seen together in MS1 scans often enough to propose a sample-local candidate.
-The second layer is chromatographic co-elution confirmation: those four m/z
-positions, viewed as XIC traces or trace-like featurelets, have close RT/apex
-behavior and compatible peak shape. A scan-level hit by itself is a seed, not a
-complete Pt pattern detection. A Pt pattern candidate is detection-grade only
-when the delta-pattern seed and the co-elution evidence both support the same
-candidate. The scan-level RAW proxy remains a diagnostic bridge for the seed
-layer; it must not become Matrix authority or the whole product detector by
-itself.
+The `+1.002111` position, experimentally referred to as the 195 position in the
+current Pt workflow, is the preferred high-recall seed because it is expected to
+carry the strongest Pt isotope signal. That seed role does not make `+1` the
+candidate identity; when a Pt pattern is promoted to a candidate, the canonical
+identity anchor remains `base` / the lowest m/z 0 position. The pattern is
+defined as `0/+1/+2/+4`, not `-1/0/+1/+3`, because the `-1/0/+1/+3` frame would
+depend on two adjacent one-Da gaps (`-1 -> 0` and `0 -> +1`). Those paired
+one-Da relationships are more likely to be confounded by natural isotope
+structure from other elements such as `13C` and `15N` than the current
+`0/+1/+2/+4` evidence shape. The second layer is chromatographic co-elution
+confirmation: those four m/z positions, viewed as XIC traces or trace-like
+featurelets, have close RT/apex behavior and compatible peak shape. A
+scan-level hit by itself is a seed, not a complete Pt pattern detection. A Pt
+pattern candidate is detection-grade only when the delta-pattern seed and the
+co-elution evidence both support the same candidate. The scan-level RAW proxy
+remains a diagnostic bridge for the seed layer; it must not become Matrix
+authority or the whole product detector by itself.
+
+The science target for Pt pattern is a single Pt isotope envelope represented by
+the base/+1/+2/+4 positions. The current operational detector cannot prove that
+physical identity directly; it uses the observable proxy of a sample-local full
+pattern plus close-apex co-elution support while ratio behavior and envelope
+overlap remain under review. Therefore, dense RT clusters, suspected isotope
+envelope collisions, and distorted position ratios are review evidence and
+oracle-building signals first. In V1, a candidate that passes the full-pattern
+seed and close-apex co-elution rule can still be called `detected` when ratios
+look unusual. Ratio and collision concerns may add ambiguity/review flags, but
+they must not be turned into a hard accept/reject gate until a bounded Pt oracle
+shows that they separate true and false patterns.
+
+Pt pattern m/z arithmetic uses shared mass-accuracy primitives: expected m/z is
+the ppm denominator, exact Pt deltas are part of the built-in pattern contract,
+and local `_ppm()` helpers should not be added to the core matcher path.
 
 The product-facing Pt matcher consumes `DetectedFeature` rows, not centroid
 scan peaks. A detected-feature source must provide m/z, apex RT, positive
@@ -151,11 +180,16 @@ Pt pattern trace decisions use Gaussian15-smoothed XIC intensity as the
 decision basis for apex, shape similarity, active overlap, and support status.
 Raw vendor trace points remain in the artifacts as audit/reference evidence;
 they are not the default machine decision basis and are not quantitation
-authority. Shift-aware shape support is bounded: a translated-shape match can
-support co-elution only when shifted Pearson-to-base is at least 0.85 and the
-absolute shift to the base is at most 45 seconds. Larger shifted-only matches
-are review evidence, not machine `detected` Pt pattern calls. The close-apex
-shape path stays stricter at Pearson-to-base at least 0.90.
+authority. The only Pt pattern machine `detected` path is close-apex
+co-elution: the full base/+1/+2/+4 pattern must pass the combined diagnostic
+status, have all three non-base positions supported, keep the maximum apex
+delta at or below the larger of 0.6 seconds and 1.25 acquisition intervals,
+keep Pearson-to-base at least 0.90, and keep active overlap at least 0.50.
+Shift-aware shape metrics stay in the artifacts as review evidence only.
+A translated-shape match with shifted Pearson-to-base
+at least 0.85 and absolute shift at most 45 seconds is reported as
+`shifted_shape_review_only`, not as `detected`; larger shifted-only matches are
+hard rejected as `shape_shift_above_threshold`.
 
 Because Gaussian15 is point-based, its time width depends on scan density.
 Trace diagnosis therefore records `median_rt_step_sec` and
@@ -175,13 +209,74 @@ can display raw vendor traces, the current Gaussian15 point-smoothed trace, and
 a 20-second time-smoothed trace side by side while sealed machine calls continue
 to use the packet's trace-decision metrics.
 
+Intensity ratios are useful Pt-pattern evidence but are not a machine gate yet.
+Treat base/+1/+2/+4 ratios as ambiguity and review-priority signals until a
+bounded manual oracle proves they separate accepted and rejected cases beyond
+the close-apex co-elution metrics. Ratio is a future hard-gate candidate and
+should be studied with explicit experiment design, starting from the current
+Fullscan close-apex accepted set. Until that evidence exists, ratio fields only
+support human review, hypothesis generation, and outlier explanation. The first
+ratio profiling pass must not emit machine pass/fail decisions; it should emit
+values, distribution summaries, data-driven outlier/review flags, and RT/mz
+context. RT context must preserve the existing scan-aware close-apex semantics;
+do not use coarse RT bins such as 0.25 min for Pt ratio profiling. If RT
+sensitivity views are added, the upper exploratory bin/window should be
+0.05 min / 3 sec. RT binning may be explored in a later hypothesis slice, but it
+is out of scope for the first ratio profile. First-pass ratio outliers should be
+based on quantiles/IQR within the
+observed accepted set, not fixed FeatureHunter or theoretical thresholds. The
+first profile should focus on the Fullscan close-apex accepted rows and use
+rejected rows only as a background distribution summary; rejected rows must not
+be treated as ratio-training truth in this slice. First-pass flags should stay
+column-level, with only a thin candidate summary such as outlier count, extreme
+columns, and review note. Do not emit ratio scores, ratio confidence, ratio pass,
+or ratio fail. The first profile may include a static diagnostic HTML surface for
+distribution plots, RT/mz scatter views, and outlier tables. That HTML is a
+review/visualization artifact only: it must be labelled `diagnostic_only`, avoid
+accept/reject/pass/fail language, and must not become an interactive product UI
+or detector gate. First-pass ratio rows should carry references back to existing
+trace/evidence/overlay artifacts, but the ratio profiler itself should stay
+no-RAW: it must not reopen RAW files, re-extract XIC traces, or redraw overlay
+evidence. The
+preferred next evidence shape separates smoothed apex-height ratio, local
+apex-window area ratio, and full-window area ratio: apex height highlights crest
+distortion, local apex-window area describes the co-eluting core, and full-window
+area is report-only context for tail, shoulder, or background enrichment. A
+Pt-only reference envelope may be recorded as a loose reference, not as a hard
+threshold; molecular isotope composition, adducts, co-eluting species,
+saturation, and feature-picking artifacts can all distort the observed ratios.
+FeatureHunter category-3 intensity ratio is a pairwise
+`Precursor ion / Precursor ion'` formula. In the manual's positive delta-mass
+figure, `Precursor ion` is the lower-m/z member and `Precursor ion'` is the
+higher-m/z member, so historical positive-delta thresholds for `+1`, `+2`, and
+`+4` correspond to `base/+1`, `base/+2`, and `base/+4`. If `+1` is used as the
+Pt isotope-envelope reference because it is expected to be the strongest
+position, then `+1/base`, `+1/+2`, and `+1/+4` are derived review ratios rather
+than the raw FeatureHunter pairwise formula. The FeatureHunter formula is a
+historical comparator and possible failure source, not a Pt-pattern authority:
+ratio profiling should test whether FH-compatible `base/+delta` thresholds,
+`+1`-normalized ratios, or some other bounded ratio family better explains the
+accepted and rejected Pt candidates.
+Smoothed-trace ratios must be labelled as decision-trace ratios, not raw
+abundance ratios: smoothing stabilizes apex/shape decisions but can attenuate
+or redistribute signal, especially when the effective smoothing window is short
+or trace density is high. Raw trace ratios and raw bounded-area ratios may be
+recorded as audit context, but raw traces do not become the default shape
+decision basis unless a later oracle proves that they improve discrimination.
+
+Small RT/apex shifts just beyond the close-apex threshold may be review evidence
+when expressed with `median_rt_step_sec`, apex-delta scan steps, and effective
+smoothing-window context. They must not become `detected` without a later
+bounded oracle showing improved discrimination without nearby-coeluter or
+tail-following failures.
+
 For the current 20251210 Pt validation pair, the Fullscan RAW is the Discovery
 authority because it was acquired as high-resolution MS1 specifically to find
 Pt-pattern candidates. The DDMS2 RAW has lower MS1 resolution and targeted/DDA
 fragmentation coverage; it is useful as support evidence for Fullscan seeds,
 but not as a global Pt-only denominator. A Fullscan-seeded DDMS2 support replay
 therefore starts from Fullscan `accept` rows and asks whether the DDMS2 local
-feature table contains matching base / `+1.0021` / `+2.0023` / `+4.0052`
+feature table contains matching base / `+1.002111` / `+2.002271` / `+4.005213`
 feature evidence within explicit m/z and RT windows. Until the historical
 DDMS2 target/inclusion list is available, missing DDMS2 or MS2 evidence means
 `not_evaluable_without_target_list`, not `reject`.
@@ -236,6 +331,10 @@ the shared Pt rule writes `accept`/`reject` and `detected`/`non_detected`
 without changing Matrix, Backfill, counted detection, workbook, or export
 authority. The sidecar summary records trace status/call/reason counts so
 partial trace-summary coverage is visible without opening the full evidence CSV.
+Future ratio or small-shift fields must follow the same no-write authority
+contract: they can explain ambiguity or route manual review, but they do not
+activate Matrix, Backfill, counted detection, workbook, export, or ProductWriter
+behavior.
 
 ## Boundaries
 
@@ -265,6 +364,8 @@ Before changing discovery behavior, require the relevant subset of:
 - Treating `discovery_review.csv` as a product matrix.
 - Treating discovery family membership, evidence tier, or review priority as a
   ProductWriter decision.
+- Treating CID-NL 8RAW/85RAW fixtures as required gates for Pt pattern or other
+  Discovery methods whose evidence and sample design are not comparable.
 - Depending on old worktree output directories instead of explicit batch index.
 - Hiding discovery output-contract changes in dated implementation notes.
 - Treating a new evidence provider as ProductWriter authority without Backfill

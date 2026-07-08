@@ -60,6 +60,16 @@ pattern in that family; `pt_pattern` is a user-facing method or preset label.
 Composites such as `pt_pattern + cid_nl(dR)` intersect evidence providers and
 do not become product authority by themselves.
 
+For Pt pattern, distinguish the science target from the current operational
+proxy. The science target is a single Pt isotope envelope represented by
+base/+1/+2/+4 positions. The operational proxy is the observable evidence shape:
+those four positions appear as a sample-local full pattern and pass close-apex
+co-elution support. Ratio fit, isotope-envelope overlap, and co-eluting
+interference are unresolved review evidence until a bounded oracle proves how
+they should change the decision. In V1, a close-apex full-pattern candidate can
+still be called `detected` when ratios look unusual; ratio and collision
+concerns explain ambiguity and review priority, not the detected call itself.
+
 ## Product Authority Terms
 
 - `candidate/audit universe`: rows that are visible for review, audit, or

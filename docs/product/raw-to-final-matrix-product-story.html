@@ -517,10 +517,11 @@
 
           <div class="callout warning">
             <strong>Discovery 策略與 Alignment 的關係：</strong>
-            目前 alignment pipeline 的輸入是 CID-NL discovery 產出的
-            <code>discovery_candidates.csv</code>。Delta mass candidates 不直接進入 alignment——
-            在 composite 模式下，delta mass 提供 MS1 pattern evidence 來支持或挑戰
-            CID-NL candidates 的判斷。Product ion（HCD-PI）策略已在型別系統中定義但尚未實作。
+            目前已 release / 預設的 alignment intake 仍以 CID-NL discovery 產出的
+            <code>discovery_candidates.csv</code> 為主。Delta mass / Pt pattern candidates
+            在沒有 activation 或 export contract 前不直接變成 alignment 或 Matrix authority——
+            它們先提供 MS1 pattern evidence；在 composite 模式下，CID-NL 可作為 base evidence 支持。
+            Product ion（HCD-PI）策略已在型別系統中定義但尚未實作。
           </div>
 
           <div class="callout">

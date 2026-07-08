@@ -510,7 +510,7 @@ scope.
 | `AuditTrail` | `partial_internal` | `PeakHypothesis.audit` | 不是 user-visible operation history | `review_roundtrip_v1` | unassigned |
 | `Review Queue` | `production_surface` as worklist | workbook `Review Queue` sheet | 不能讀回 decision；不能 reintegrate | `review_roundtrip_v1` | unassigned |
 | ReviewAction audited apply copy | `production_surface` for audited targeted-long copy; `production_candidate` for candidate-sidecar verification | `xic_extractor.review_actions`, `scripts/apply_review_action_changesets.py`, `scripts/plan_review_action_candidate_sidecars.py`, `review_action_apply_audit_v1`, `review_action_candidate_sidecar_v1` | accept/mark/reject 可寫 audited output copy；`select_candidate` candidate_id 現在可對 `peak_candidates.tsv` 做唯一性/SHA 驗證；selected candidate switch/manual boundary 仍 deferred | selected-candidate writer + manual boundary recompute writer only after expected-diff/product decision | none; audited apply and candidate-sidecar verifier slices done |
-| Pt pattern Discovery: `delta_mass(pattern_id=pt)` | `production_candidate` for the repaired v2 bounded manual oracle packet only; `diagnostic_only` for detector/runtime, trace/review/overlay/refresh/threshold/gate/support-replay artifacts | `xic_extractor.discovery.delta_mass_*`, `xic_extractor.discovery.detected_features`, `xic_extractor.discovery.pt_pattern_discovery_evidence`, `xic_extractor.discovery.pt_pattern_evidence_rule`, `xic_extractor.discovery.pt_pattern_trace_evidence`, `xic_extractor.discovery.pt_pattern_review_packet`, `xic_extractor.discovery.pt_pattern_blind_overlay`, `xic_extractor.discovery.pt_pattern_oracle_promotion`, `xic_extractor.discovery.pt_pattern_oracle_refresh`, `xic_extractor.discovery.pt_pattern_oracle_thresholds`, `xic_extractor.discovery.pt_pattern_diagnostic_gate`, `xic_extractor.discovery.pt_pattern_ddms2_support_replay`, `scripts/prepare_delta_mass_detected_features.py`, `scripts/run_pt_pattern_discovery.py`, `tools/diagnostics/pt_pattern_scan_proxy.py`, `tools/diagnostics/pt_pattern_trace_diagnosis.py`, `tools/diagnostics/pt_pattern_review_packet.py`, `tools/diagnostics/pt_pattern_blind_overlay.py`, `tools/diagnostics/pt_pattern_oracle_promotion.py`, `tools/diagnostics/pt_pattern_oracle_refresh.py`, `tools/diagnostics/pt_pattern_oracle_thresholds.py`, `tools/diagnostics/pt_pattern_diagnostic_gate.py`, `tools/diagnostics/pt_pattern_ddms2_support_replay.py`, Pt validation notes | candidate/review schema exists and real Fullscan/DDMS2 slices show useful discrimination; normal Discovery now also writes `pt_pattern_evidence.csv` (`pt_pattern_discovery_evidence.v1`) and `pt_pattern_sidecar.v3`, separating feature-level full-pattern seeds from optional trace-summary rule calls and summarizing trace status/call/reason coverage. A feature-source adapter now lets the Pt Discovery CLI run directly from normalized external feature TSVs or MZmine wide feature table CSVs by writing a canonical `detected_features.csv` copy; positive area-only feature-detector rows may seed feature-level candidates as an intensity proxy, are labelled `feature_source_detected` / `MEDIUM` / tier `B`, and no `GOOD`/`OK` support is fabricated. Without a trace summary, evidence rows record `not_evaluated`; with a trace summary, the shared Pt rule writes `accept`/`reject` and `detected`/`non_detected` while still granting no Matrix, Backfill, counted-detection, workbook, or export authority. Co-elution support, bounded review packets, blind overlays, oracle promotion, oracle refresh, threshold calibration, diagnostic gate replay, and Fullscan-seeded DDMS2 support replay are package-owned. The DDMS2 replay treats high-resolution Fullscan MS1 as the current discovery authority and DDMS2 as support-only because the DDMS2 target/inclusion list is not available; missing DDMS2/MS2 evidence is `not_evaluable_without_target_list`, not rejection. The reusable Pt full-pattern accept/reject rule is package-owned in `xic_extractor.discovery.pt_pattern_evidence_rule`; bounded Pt-only and Pt+CID-NL review packets plus blind overlay HTML exist under ignored output; trace evidence schema v2 makes Gaussian15-smoothed XIC the decision basis for apex/shape/overlap/support and retains raw vendor trace points as audit/reference evidence. The initial 24-row v2 refresh under `output/pt_pattern_productization_v1/oracle_refresh/pt_detected_oracle_v2_refresh/` carried forward 20 old labels and 4 new user-adjudicated `reject` rows, but it was an intermediate artifact because 8 old v1 oracle rows fell outside the bounded packet selection. The repaired oracle under `output/pt_pattern_productization_v1/oracle_repair/pt_detected_oracle_v2_repaired_32/` rechecks those 8 stale old rows against current Gaussian15 metrics and yields 32 rows: 10 `accept` / `detected` and 22 `reject` / `non_detected`. Promotion under `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2_repaired_32/` remains `bounded_manual_oracle_only`. Threshold calibration under `output/pt_pattern_productization_v1/oracle_thresholds/pt_detected_oracle_v2_repaired_32/` recommends full-pattern status plus `max_abs_apex_delta_sec <= 10`, `min_pearson_r_to_base >= 0.90`, and `min_active_overlap_fraction >= 0.50`; on the repaired 32-row oracle this gives 10 TP, 22 TN, 0 FP, 0 FN, while the previous sealed machine-call rule has 3 FP and 8 uncertain reject rows. Diagnostic gate replay under `output/pt_pattern_productization_v1/diagnostic_gate/pt_detected_oracle_v2_repaired_32/` applies that same rule through schema `pt_pattern_diagnostic_gate.v1` and passes the repaired oracle with 10 TP, 22 TN, 0 FP, and 0 FN. Scan proxy is not an accepted feature detector, detector/runtime outputs remain diagnostic-only, and there is no Matrix, Backfill, counted-detection, workbook, export, or default activation contract beyond the bounded reviewed oracle artifact | next checkpoint is obtaining the historical DDMS2 target list or creating a deliberately reviewed activation contract; the feature-source adapter, Discovery evidence CSV, diagnostic gate, and DDMS2 support replay remain evidence handoff surfaces only; none of these write Matrix, Backfill, counted-detection, workbook, or export authority | `codex/pt-pattern-discovery` |
+| Pt pattern Discovery: `delta_mass(pattern_id=pt)` | `production_candidate` for the repaired v2 bounded manual oracle packet only; `diagnostic_only` for detector/runtime, trace/review/overlay/refresh/threshold/gate/support-replay artifacts | `xic_extractor.discovery.delta_mass_*`, `xic_extractor.discovery.detected_features`, `xic_extractor.discovery.pt_pattern_discovery_evidence`, `xic_extractor.discovery.pt_pattern_evidence_rule`, `xic_extractor.discovery.pt_pattern_trace_evidence`, `xic_extractor.discovery.pt_pattern_review_packet`, `xic_extractor.discovery.pt_pattern_blind_overlay`, `xic_extractor.discovery.pt_pattern_oracle_promotion`, `xic_extractor.discovery.pt_pattern_oracle_refresh`, `xic_extractor.discovery.pt_pattern_oracle_thresholds`, `xic_extractor.discovery.pt_pattern_diagnostic_gate`, `xic_extractor.discovery.pt_pattern_ddms2_support_replay`, `scripts/prepare_delta_mass_detected_features.py`, `scripts/run_pt_pattern_discovery.py`, `tools/diagnostics/pt_pattern_scan_proxy.py`, `tools/diagnostics/pt_pattern_trace_diagnosis.py`, `tools/diagnostics/pt_pattern_review_packet.py`, `tools/diagnostics/pt_pattern_blind_overlay.py`, `tools/diagnostics/pt_pattern_oracle_promotion.py`, `tools/diagnostics/pt_pattern_oracle_refresh.py`, `tools/diagnostics/pt_pattern_oracle_thresholds.py`, `tools/diagnostics/pt_pattern_diagnostic_gate.py`, `tools/diagnostics/pt_pattern_ddms2_support_replay.py`, Pt validation notes | candidate/review schema exists and real Fullscan/DDMS2 slices show useful discrimination; normal Discovery now also writes `pt_pattern_evidence.csv` (`pt_pattern_discovery_evidence.v1`) and `pt_pattern_sidecar.v3`, separating feature-level full-pattern seeds from optional trace-summary rule calls and summarizing trace status/call/reason coverage. A feature-source adapter now lets the Pt Discovery CLI run directly from normalized external feature TSVs or MZmine wide feature table CSVs by writing a canonical `detected_features.csv` copy; positive area-only feature-detector rows may seed feature-level candidates as an intensity proxy, are labelled `feature_source_detected` / `MEDIUM` / tier `B`, and no `GOOD`/`OK` support is fabricated. Without a trace summary, evidence rows record `not_evaluated`; with a trace summary, the shared Pt rule writes `accept`/`reject` and `detected`/`non_detected` while still granting no Matrix, Backfill, counted-detection, workbook, or export authority. Co-elution support, bounded review packets, blind overlays, oracle promotion, oracle refresh, threshold calibration, diagnostic gate replay, and Fullscan-seeded DDMS2 support replay are package-owned. The DDMS2 replay treats high-resolution Fullscan MS1 as the current discovery authority and DDMS2 as support-only because the DDMS2 target/inclusion list is not available; missing DDMS2/MS2 evidence is `not_evaluable_without_target_list`, not rejection. The reusable Pt full-pattern accept/reject rule is package-owned in `xic_extractor.discovery.pt_pattern_evidence_rule`; bounded Pt-only and Pt+CID-NL review packets plus blind overlay HTML exist under ignored output; trace evidence schema v2 makes Gaussian15-smoothed XIC the decision basis for apex/shape/overlap/support and retains raw vendor trace points as audit/reference evidence. The initial 24-row v2 refresh under `output/pt_pattern_productization_v1/oracle_refresh/pt_detected_oracle_v2_refresh/` carried forward 20 old labels and 4 new user-adjudicated `reject` rows, but it was an intermediate artifact because 8 old v1 oracle rows fell outside the bounded packet selection. The repaired oracle under `output/pt_pattern_productization_v1/oracle_repair/pt_detected_oracle_v2_repaired_32/` rechecks those 8 stale old rows against current Gaussian15 metrics and yields 32 rows: 10 `accept` / `detected` and 22 `reject` / `non_detected`. Promotion under `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2_repaired_32/` remains `bounded_manual_oracle_only`. Historical threshold calibration under `output/pt_pattern_productization_v1/oracle_thresholds/pt_detected_oracle_v2_repaired_32/` used a 10-second apex-delta threshold and remains historical evidence only. The active isotope-constrained machine rule now requires `max_abs_apex_delta_sec <= max(0.6 sec, 1.25 * scan_interval_sec)` plus `min_pearson_r_to_base >= 0.90` and `min_active_overlap_fraction >= 0.50`; shifted-shape evidence remains review-only. The current no-RAW replay under `output/pt_pattern_productization_v1/two_raw_pt_only_scanaware_closeapex_20260703/` gives Fullscan 146 accept / 240 reject from 386 candidates, DDMS2 MZmine 25 accept / 375 reject from 400 candidates, and DDMS2 local 64 accept / 3185 reject from 3249 candidates. The mass-accuracy foundation replay under `output/pt_pattern_productization_v1/two_raw_pt_only_scanaware_closeapex_20260703/mass_accuracy_foundation_20260708/fullscan_basefirst_exact_delta/` uses exact Pt deltas `1.002111/2.002271/4.005213`, yields 388 Fullscan feature-level candidates, and preserves all old 386 candidate keys; it remains diagnostic-only and does not change Matrix, Backfill, counted-detection, workbook, export, active lane, or maturity tier. Scan proxy is not an accepted feature detector, detector/runtime outputs remain diagnostic-only, and there is no Matrix, Backfill, counted-detection, workbook, export, or default activation contract beyond the bounded reviewed oracle artifact | next checkpoint is obtaining the historical DDMS2 target list or creating a deliberately reviewed activation contract; the feature-source adapter, Discovery evidence CSV, diagnostic gate, and DDMS2 support replay remain evidence handoff surfaces only; none of these write Matrix, Backfill, counted-detection, workbook, or export authority | `codex/pt-pattern-discovery` |
 | Manual boundary / reintegration | `parked`; `production_candidate` for deferred changeset and candidate-sidecar verification only | candidate sidecar verifier + action schema + changeset rows | 沒有 area recompute writer；沒有 selected candidate switch writer；candidate sidecar 只驗證 id，不授權改 selected peak/area；需要產品決策確認是否可改 selected peak/area | `review_action_reintegration_v1` product decision | parked |
 | `Run Metadata` | `production_surface` as workbook metadata | workbook sheet + manifest/schema reverse reference | 不是 full replay manifest；只反向記錄 targeted output schema 與 manifest schema/path/hash | workbook hash capture / release metadata docs | unassigned |
 | `method_manifest.json` | `production_ready` for targeted CLI replay parity | `xic_extractor.output.method_manifest`, `output/method_manifest.json` | 8RAW/85RAW CSV + normalized workbook replay parity passed；artifact policy says CSV exact, workbook normalized compare, manifest provenance-only | full byte-exact workbook replay only if a future release needs it | unassigned |
@@ -593,8 +593,9 @@ shifted-shape; the wide-window HTML preserves the original 24-row case ids
 the subset 1-5. Human labels for the wide-window follow-up are 3 `accepted`, 2
 `uncertain`, and 0 `rejected`; resolved across the full 24-row stress set this
 is 22 `accepted`, 2 `uncertain` (`Case 04`, `Case 11`), and 0 `rejected`. This
-supports the shift-aware rule against this stress set but still is not a final
-oracle because two rows remain uncertain. All local-generator candidates remained
+was historical support for keeping shifted-shape metrics visible, but the later
+Pt-isotope semantics update supersedes using shifted shape as an accept path.
+All local-generator candidates remained
 tier `B` / score `70` feature-source evidence. The summary now exposes
 top-level `trace_builder_mode` so seeded-mode metrics are not mistaken for
 scan-link bipartite assignment metrics. This does not change Matrix, Backfill,
@@ -614,43 +615,30 @@ export, or production-readiness authority.
 A focused wide-window recheck then used a 90-second half-window for `Case 04`,
 `Case 11`, `Case 22`, `Case 14`, `Case 07`, and `Case 01` under
 `shiftaware_false_positive_stress_review/ambiguity_flags_refresh/focused_recheck_case04_11_22_14_07_01_wide90/`.
-Human review plus follow-up correction now records 3 `accepted`, 1 `rejected`,
-and 2 `uncertain`. The accepted diagnostic hard cap for shifted-shape support is
-`max_abs_shape_shift_sec_to_base <= 45`, which changes the sealed machine calls
-to 4 `accept` and 2 `reject`. `Case 01` is an agreement reject because the
-shifted pattern drifts about 75 seconds; `Case 22` is human `uncertain` and
-machine `reject` because its 107-second shift is too problematic; `Case 11`
-remains human `uncertain` because the +4 signal is stronger than the base despite
-pattern-like shape. This keeps shifted-only +4 support as review evidence unless
-the shift is also plausible. A follow-up local Fullscan replay keeps the close-
-apex Pearson threshold at 0.90, lowers only shifted-shape Pearson support to
-0.85, and keeps the 45-second shape-shift cap. No Pt pattern tier, active lane,
-Matrix, Backfill, counted-detection, workbook, export, or production readiness
-authority changes.
-The formal Discovery evidence replay for the same local Fullscan feature-source
-run is
-`output/local_ms1_feature_table_v1/fullscan_seeded_mzmine_like_noise25000/pt_pattern_with_trace_wide90_current_rule/`:
-all 386 candidates are evaluated in `pt_pattern_evidence.csv`, with 356
-`accept` / `detected` and 30 `reject` / `non_detected`, matching the wide90
-diagnostic gate. This records the current rule on the normal evidence handoff
-surface, not a Matrix/Backfill/export activation.
-The DDMS2 Pt+CID-NL(dR) formal Discovery evidence replay now lives at
-`output/pt_pattern_productization_v1/feature_source_real_smoke/20251210_ddms2_mzmine_pt_cid_nl_dr_with_trace_current_rule/`:
-5 composite candidates are evaluated, with 4 `accept` / `detected` and 1
-`reject` / `non_detected`. This also fixes the Discovery evidence reader so
-legacy trace summaries without shifted-shape or ambiguity columns remain
-readable; those missing columns are blank optional evidence and do not weaken
-the current rule. No maturity tier or active lane changes.
-Both user-provided 20251210 samples now have complete Pt-only machine judgement:
-Fullscan has 386 evaluated candidates with 356 `accept` / `detected` and 30
-`reject` / `non_detected` under
-`output/local_ms1_feature_table_v1/fullscan_seeded_mzmine_like_noise25000/pt_pattern_with_trace_wide90_current_rule/`;
-DDMS2 has 397 evaluated candidates with 175 `accept` / `detected` and 222
-`reject` / `non_detected` under
-`output/pt_pattern_productization_v1/feature_source_real_smoke/20251210_ddms2_mzmine_pt_only_with_trace_current_rule_v2/`.
-This is still evidence completion only, with no Matrix, Backfill,
-counted-detection, workbook, export, maturity-tier, active-lane, or
-production-readiness authority change.
+Human review plus follow-up correction recorded 3 `accepted`, 1 `rejected`, and
+2 `uncertain`, but the later isotope interpretation tightened the Pt pattern
+machine rule: shifted-shape evidence is review-only. The only machine
+`detected` path is close-apex co-elution for the full base/+1/+2/+4 pattern:
+full diagnostic status, all three non-base positions supported,
+`max_abs_apex_delta_sec <= max(0.6 sec, 1.25 * scan_interval_sec)`,
+`min_pearson_r_to_base >= 0.90`, and `min_active_overlap_fraction >= 0.50`.
+A shifted match with
+`min_shifted_pearson_r_to_base >= 0.85` and
+`max_abs_shape_shift_sec_to_base <= 45` is reported as
+`shifted_shape_review_only` and remains `non_detected`; larger shifted-only
+matches remain `shape_shift_above_threshold`.
+The formal Discovery evidence replay with this scan-aware active rule lives at
+`output/pt_pattern_productization_v1/two_raw_pt_only_scanaware_closeapex_20260703/`.
+It changes no candidate universe and recovers one-scan Fullscan apex jitter
+while keeping high-frequency DDMS2 unchanged:
+Fullscan stays 386 evaluated candidates but moves from 39 accept / 347 reject
+to 146 accept / 240 reject.
+DDMS2 MZmine stays 400 evaluated candidates at 25 accept / 375 reject.
+DDMS2 local stays 3249 evaluated candidates at 64 accept / 3185 reject. The
+comparison CSV is
+`output/pt_pattern_productization_v1/two_raw_pt_only_scanaware_closeapex_20260703/scanaware_closeapex_replay_summary.csv`.
+No Pt pattern maturity tier, active lane, Matrix, Backfill, counted-detection,
+workbook, export, selected-area, or production readiness authority changes.
 A 12-case detected spotcheck then exposed that fixed-point Gaussian15 smoothing
 is not time-equivalent across acquisition density: Fullscan replay has
 `min_effective_smoothing_window_sec` around 19.7 seconds, while the DDMS2 replay
@@ -5558,15 +5546,17 @@ the later low-height writer entry above as the current tier source.
   No default preset, Matrix, workbook, selected peak/area, counted detection,
   Backfill authority, ProductWriter authority, export behavior, or detector
   activation changed.
-- Evidence: the no-RAW replay under
+- Evidence: the older no-RAW replay under
   `output/pt_pattern_productization_v1/diagnostic_gate/pt_detected_oracle_v2_repaired_32/`
-  applies the calibrated rule
-  `pt_v2_fullpattern_apex_le_10s_pearson_ge_0p9_overlap_ge_0p5` to the repaired
-  32-row v2 oracle and reports 10 TP, 22 TN, 0 FP, 0 FN with
+  applied the historical 10-second calibrated rule to the repaired 32-row v2
+  oracle and reported 10 TP, 22 TN, 0 FP, 0 FN with
   `changes_matrix=false`, `changes_counted_detection=false`, and
-  `changes_export=false`. The full trace-summary diagnostic replay under
+  `changes_export=false`. That 10-second gate is superseded for active Pt
+  machine calls by the scan-aware isotope-constrained
+  `max_abs_apex_delta_sec <= max(0.6 sec, 1.25 * scan_interval_sec)` rule.
+  The older full trace-summary diagnostic replay under
   `output/pt_pattern_productization_v1/diagnostic_gate/trace_summary_limit50_current/`
-  runs the same rule on the current 100-row real-data trace-diagnosis slice
+  ran the historical diagnostic rule on a 100-row real-data trace-diagnosis slice
   (50 Pt-only Fullscan + 50 Pt+CID-NL DDMS2 rows): 45 accept, 55 reject;
   source-level calls are 15/35 accept/reject for Pt-only and 30/20 for
   Pt+CID-NL.

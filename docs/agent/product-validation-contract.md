@@ -39,6 +39,9 @@ say so.
 - Treat 8RAW and 85RAW as validation fixtures and stress oracles, not product
   boundaries. Architecture must stay dataset-agnostic unless an approved
   product contract explicitly narrows the scope.
+- Choose validation data by Discovery method and lane. CID-NL 8RAW/85RAW
+  fixtures are not default science gates for Pt pattern, HCD-PI, Delta Mass, or
+  future evidence providers unless the active owner explicitly names them.
 - Treat CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 pattern, shape, standards,
   library matches, and future learned models as evidence providers. They feed
   `EvidenceVector` and model selection; they must not directly become permanent

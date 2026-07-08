@@ -40,9 +40,16 @@ ruff, mypy, uv, and the repo-local RAW runner rules in
 
 - First version supports positive mode and z=1 only.
 - Built-in pattern is exactly `pt` with positions:
-  `base=0`, `pt_plus_1=1.0021`, `pt_plus_2=2.0023`,
-  `pt_plus_4=4.0052`.
+  `base=0`, `pt_plus_1=1.002111`, `pt_plus_2=2.002271`,
+  `pt_plus_4=4.005213`.
 - `base` is the lowest m/z anchor. Only `base + delta` is valid.
+- `pt_plus_1` can be used as a high-recall seed because the current Pt workflow
+  expects the 195/+1 position to carry the strongest isotope signal, but the
+  candidate identity still resolves back to `base`.
+- The pattern is `0/+1/+2/+4`, not `-1/0/+1/+3`, because the
+  `-1/0/+1/+3` frame depends on two adjacent one-Da gaps (`-1 -> 0` and
+  `0 -> +1`). Those paired one-Da relationships are more likely to collide with
+  natural isotope structure from elements such as `13C` and `15N`.
 - Nonzero position ppm uses expected m/z as denominator:
 
 ```text
@@ -50,6 +57,9 @@ expected_mz = base_mz + expected_delta
 mz_error_ppm = (observed_mz - expected_mz) / expected_mz * 1e6
 ```
 
+- Pt pattern m/z arithmetic must call the shared
+  `xic_extractor.mass_accuracy` primitives for ppm error, tolerance windows,
+  and boundary checks. Do not add new local `_ppm()` helpers in Pt matcher code.
 - Hard m/z gate is `abs(mz_error_ppm) <= 20` for every nonzero Pt position.
 - RT hard ceiling is `<= 30 sec` across all positions. Tighter RT is scored as
   better, but the first hard fail threshold is 30 sec.
@@ -68,6 +78,30 @@ mz_error_ppm = (observed_mz - expected_mz) / expected_mz * 1e6
   counted detection in this implementation.
 - Validation status after implementation is at most `diagnostic_only` until the
   user manually reviews candidate output and promotes a manual oracle.
+
+## Mass Accuracy Migration Follow-Up List
+
+The mass accuracy foundation slice only wires the shared primitive into the core
+Pt matcher. Do not expand that slice into a broad migration. Future slices
+should migrate the remaining local ppm/window helpers by responsibility:
+
+- XIC extraction windows: `xic_extractor/raw_reader.py`,
+  `xic_extractor/ms1_scan_index.py`, and RAW validation scripts still compute
+  `mz * ppm / 1e6` locally.
+- Pt support/diagnostic surfaces:
+  `xic_extractor/discovery/pt_pattern_ddms2_support_replay.py` and
+  `tools/diagnostics/pt_pattern_scan_proxy.py` still compute Pt ppm/window
+  values locally.
+- Local feature generation: `xic_extractor/discovery/local_ms1_features.py`
+  still owns feature-link ppm and within-trace ppm spread logic; migrate only
+  after preserving its detector-specific semantics.
+- Discovery and Backfill helpers:
+  `xic_extractor/discovery/delta_mass_pipeline.py`,
+  `xic_extractor/discovery/grouping.py`, and
+  `xic_extractor/discovery/ms1_backfill.py` still have local ppm helpers.
+- Alignment and identity modules contain several `_ppm()` or `_ppm_error()`
+  helpers. Migrate in behavior-preserving slices with characterization tests,
+  not as part of Pt pattern constant precision.
 
 ## Architecture Preflight
 
@@ -138,6 +172,13 @@ Validation gate:
 - Existing neutral-loss discovery tests must still pass.
 - Real sample candidate generation is diagnostic-only until manual review
   promotes a regression oracle.
+- 8RAW/85RAW are not Pt pattern science gates by default. They belong to lanes
+  whose data strategy names those fixtures; Pt pattern validation uses
+  method-relevant samples, trace/co-elution evidence, and manual oracle review.
+- Ratio and small-shift evidence, if added in a follow-up slice, stays
+  ambiguity / review-priority evidence first. It must not change the sealed
+  machine `detected` path, counted detection, Matrix, Backfill, workbook,
+  export, or ProductWriter authority.
 
 Stop rule:
 
@@ -483,9 +524,9 @@ Required top-level shape:
     "polarity": "positive",
     "positions": [
       {"label": "base", "delta_da": 0.0},
-      {"label": "pt_plus_1", "delta_da": 1.0021},
-      {"label": "pt_plus_2", "delta_da": 2.0023},
-      {"label": "pt_plus_4", "delta_da": 4.0052}
+      {"label": "pt_plus_1", "delta_da": 1.002111},
+      {"label": "pt_plus_2", "delta_da": 2.002271},
+      {"label": "pt_plus_4", "delta_da": 4.005213}
     ],
     "mz_tolerance_ppm": 20.0,
     "rt_tolerance_sec": 30.0
@@ -550,7 +591,7 @@ Steps:
 ```python
 def test_matcher_pt_plus_one_window_uses_expected_mz_denominator() -> None:
     base_mz = 500.0
-    expected_mz = base_mz + 1.0021
+    expected_mz = base_mz + 1.002111
     inside = expected_mz + expected_mz * 20e-6
     outside = expected_mz + expected_mz * 20.1e-6
 
@@ -1163,7 +1204,7 @@ Purpose:
 
 - Test the user hypothesis that Pt pattern detection should combine scan-level
   delta-pattern seed evidence with chromatographic co-elution confirmation.
-- Extract vendor XIC traces for base / `+1.0021` / `+2.0023` / `+4.0052`
+- Extract vendor XIC traces for base / `+1.002111` / `+2.002271` / `+4.005213`
   around sampled candidates and report RT/apex/shape support.
 - Keep the vocabulary strict: a scan-level full pattern is a seed/candidate;
   a diagnostic Pt pattern detection requires both scan seed and trace support.
@@ -1273,8 +1314,8 @@ Files:
 Purpose:
 
 - Support a double-blind review of the bounded Pt review packets.
-- Generate an HTML overlay gallery that shows normalized base / `+1.0021` /
-  `+2.0023` / `+4.0052` traces for each packet row.
+- Generate an HTML overlay gallery that shows normalized base / `+1.002111` /
+  `+2.002271` / `+4.005213` traces for each packet row.
 - Keep Codex's rule-based call in a separate sealed CSV so the HTML does not
   bias the user's visual judgment.
 
@@ -1380,30 +1421,32 @@ Current v2 status:
   export changes.
 - The current repaired v2 threshold calibration output is
   `output/pt_pattern_productization_v1/oracle_thresholds/pt_detected_oracle_v2_repaired_32/`.
-  It recommends full-pattern status plus `max_abs_apex_delta_sec <= 10`,
-  `min_pearson_r_to_base >= 0.90`, and
+  It historically recommended full-pattern status plus a 10-second apex-delta
+  threshold, `min_pearson_r_to_base >= 0.90`, and
   `min_active_overlap_fraction >= 0.50`, with shifted-shape support requiring
   `min_shifted_pearson_r_to_base >= 0.85` and
-  `max_abs_shape_shift_sec_to_base <= 45`. Against the repaired 32-row v2
-  oracle, that rule has 10 true positives, 22 true negatives, 0 false positives,
-  and 0 false negatives. The previous sealed machine-call rule has 3 false
-  positives and 8 uncertain reject rows on the repaired oracle.
-- The current repaired v2 diagnostic gate replay output is
+  `max_abs_shape_shift_sec_to_base <= 45`. That shifted-shape accept semantics
+  and the 10-second close-apex tolerance are now superseded by the Pt isotope
+  interpretation: shifted-shape metrics are review evidence only, and only the
+  close-apex co-elution path with
+  `max_abs_apex_delta_sec <= max(0.6 sec, 1.25 * scan_interval_sec)` can
+  produce a machine `detected` Pt pattern call.
+- The historical repaired v2 diagnostic gate replay output is
   `output/pt_pattern_productization_v1/diagnostic_gate/pt_detected_oracle_v2_repaired_32/`.
-  It applies the same calibrated rule through
+  It applied the same historical 10-second calibrated rule through
   `xic_extractor.discovery.pt_pattern_diagnostic_gate` and schema
-  `pt_pattern_diagnostic_gate.v1`. With `--require-zero-fpfn`, the replay exits
+  `pt_pattern_diagnostic_gate.v1`. With `--require-zero-fpfn`, that replay exited
   `0` on the repaired 32-row v2 oracle and reports 10 true positives, 22 true
   negatives, 0 false positives, and 0 false negatives.
 - The reusable row-level Pt full-pattern accept/reject rule now lives in
   `xic_extractor.discovery.pt_pattern_evidence_rule`. Threshold calibration and
   diagnostic gate replay call that shared rule; they no longer own separate
   copies of the decision logic.
-- The current full trace-summary diagnostic gate replay output is
+- The historical full trace-summary diagnostic gate replay output is
   `output/pt_pattern_productization_v1/diagnostic_gate/trace_summary_limit50_current/`.
-  It uses `--trace-summary-input` on the current 50-row Pt-only Fullscan trace
-  summary and current 50-row Pt+CID-NL DDMS2 trace summary. This no-oracle
-  diagnostic replay reports 100 rows: 45 `accept`, 55 `reject`. Source-level
+  It used `--trace-summary-input` on the then-current 50-row Pt-only Fullscan
+  trace summary and 50-row Pt+CID-NL DDMS2 trace summary. That no-oracle
+  diagnostic replay reported 100 rows: 45 `accept`, 55 `reject`. Source-level
   calls are 15/35 accept/reject for Pt-only and 30/20 accept/reject for
   Pt+CID-NL.
 - The v1 promotion packet is now historical calibration context only, not
@@ -1526,3 +1569,23 @@ accepted/rejected oracle exists. `pt_pattern_trace_diagnosis.v2` is still a
 diagnostic output; even
 `combined_pt_pattern_status = pt_pattern_detected_diagnostic` is not counted
 detection, ProductWriter authority, workbook, Matrix, or activation schema.
+
+## Follow-Up Slice: Ratio And Small-Shift Review Evidence
+
+Oracle Deep Research session `pt-pattern-ratio-rt-shift` recommended accepting
+intensity ratio and small RT/apex shift as typed review evidence, not as a new
+machine-detected gate. The next useful branch slice is Option B:
+
+- add trace-derived ratio fields and apex-delta scan-step fields;
+- summarize them into candidate/evidence-level ambiguity statuses;
+- surface them in review packets and manual oracle materials;
+- keep the close-apex co-elution path as the only machine `detected` path;
+- keep all no-write authority fields false.
+
+The first useful validation packet should be bounded and method-specific: about
+24-32 Pt-relevant Fullscan rows stratified into clear close-apex support,
+close-apex rejects/partials, and ambiguity-enriched rows such as weak `pt_plus_4`
+or shifted-only cases. DDMS2 may be used as support replay, not as the
+denominator. Stop before promotion if ratio interpretation does not separate
+manual accept/reject/ambiguity better than current apex/shape/overlap evidence,
+or if small-shift review labels mainly appear in manual rejects.
