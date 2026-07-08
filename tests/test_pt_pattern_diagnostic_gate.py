@@ -17,7 +17,7 @@ def _review_row(
     *,
     status: str = "pt_pattern_detected_diagnostic",
     supported: str = "3",
-    apex_delta: str = "1.0",
+    apex_delta: str = "0.5",
     pearson: str = "0.95",
     overlap: str = "0.80",
 ) -> dict[str, str]:
@@ -55,7 +55,7 @@ def _trace_summary_row(
     *,
     status: str = "pt_pattern_detected_diagnostic",
     supported: str = "3",
-    apex_delta: str = "1.0",
+    apex_delta: str = "0.5",
     pearson: str = "0.95",
     overlap: str = "0.80",
 ) -> dict[str, str]:
@@ -179,9 +179,10 @@ def test_diagnostic_gate_replays_zero_false_positive_rule(
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
     assert summary["readiness_tier"] == "diagnostic_only"
     assert summary["rule_id"] == (
-        "pt_v2_fullpattern_apex_le_10s_pearson_ge_0p9_overlap_ge_0p5"
-        "_shiftedpearson_ge_0p85_shapeshift_le_45s"
+        "pt_v2_fullpattern_apex_le_0p6s_or_1p25scan_pearson_ge_0p9_overlap_ge_0p5"
+        "_shiftedreviewonly_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
+    assert summary["max_abs_apex_delta_scan_step_multiplier"] == 1.25
     assert summary["row_count"] == 5
     assert summary["diagnostic_gate_call_counts"] == {"accept": 2, "reject": 3}
     assert summary["replay_outcome_counts"] == {
@@ -238,8 +239,43 @@ def test_diagnostic_gate_can_read_full_trace_summary_inputs(
         "reject",
     ]
 
+
+def test_diagnostic_gate_uses_scan_aware_apex_threshold(
+    tmp_path: Path,
+) -> None:
+    trace_summary_csv = _write_csv(
+        tmp_path / "trace_summary.csv",
+        [
+            _trace_summary_row(
+                "accept-one-scan",
+                apex_delta="1.30413",
+                pearson="0.982299",
+                overlap="0.952381",
+            )
+            | {"min_effective_smoothing_window_sec": "19.7353"}
+        ],
+        evidence.SUMMARY_COLUMNS,
+    )
+
+    outputs = gate.run_diagnostic_gate(
+        review_packet_csvs=[],
+        trace_summary_csvs=[
+            gate.TraceSummaryInput(source_label="pt_only", path=trace_summary_csv)
+        ],
+        output_dir=tmp_path / "gate",
+        gate_id="unit_trace_gate",
+    )
+
+    rows = read_delimited_rows(
+        outputs["gate_rows_csv"],
+        required_columns=gate.GATE_COLUMNS,
+        delimiter=",",
+    )
+    assert rows[0]["diagnostic_gate_call"] == "accept"
+    assert rows[0]["max_abs_apex_delta_sec_threshold"] == "1.64461"
+
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
-    assert summary["row_count"] == 2
+    assert summary["row_count"] == 1
     assert summary["review_packet_csvs"] == []
     assert summary["trace_summary_csvs"] == [f"pt_only={trace_summary_csv}"]
     assert summary["replay_status"] == "no_oracle_replay"

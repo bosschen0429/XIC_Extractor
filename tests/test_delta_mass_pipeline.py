@@ -134,7 +134,7 @@ def _full_pattern_rows(sample_stem: str = "Sample_1") -> list[dict[str, object]]
         {
             "sample_stem": sample_stem,
             "feature_id": "plus1-1",
-            "mz": base_mz + 1.0021,
+            "mz": base_mz + 1.002111,
             "rt_apex_min": 10.001,
             "height": 800.0,
             "area": 400.0,
@@ -145,7 +145,7 @@ def _full_pattern_rows(sample_stem: str = "Sample_1") -> list[dict[str, object]]
         {
             "sample_stem": sample_stem,
             "feature_id": "plus2-1",
-            "mz": base_mz + 2.0023,
+            "mz": base_mz + 2.002271,
             "rt_apex_min": 10.002,
             "height": 200.0,
             "area": 100.0,
@@ -156,7 +156,7 @@ def _full_pattern_rows(sample_stem: str = "Sample_1") -> list[dict[str, object]]
         {
             "sample_stem": sample_stem,
             "feature_id": "plus4-1",
-            "mz": base_mz + 4.0052,
+            "mz": base_mz + 4.005213,
             "rt_apex_min": 10.003,
             "height": 50.0,
             "area": 25.0,
@@ -265,21 +265,21 @@ def test_run_pt_pattern_discovery_accepts_mzmine_wide_feature_table_source(
             },
             {
                 "row ID": "2",
-                "row m/z": base_mz + 1.0021,
+                "row m/z": base_mz + 1.002111,
                 "row retention time": 10.001,
                 "Sample_A.mzML Peak area": 800.0,
                 "Sample_B.mzML Peak area": 700.0,
             },
             {
                 "row ID": "3",
-                "row m/z": base_mz + 2.0023,
+                "row m/z": base_mz + 2.002271,
                 "row retention time": 10.002,
                 "Sample_A.mzML Peak area": 200.0,
                 "Sample_B.mzML Peak area": 180.0,
             },
             {
                 "row ID": "4",
-                "row m/z": base_mz + 4.0052,
+                "row m/z": base_mz + 4.005213,
                 "row retention time": 10.003,
                 "Sample_A.mzML Peak area": 50.0,
                 "Sample_B.mzML Peak area": 0,
@@ -324,9 +324,9 @@ def test_composite_mzmine_feature_source_uses_mz_rt_fallback(
     mzmine_table.write_text(
         "row ID,row m/z,row retention time,Sample_1.raw Peak area,\n"
         f"1,{base_mz},10.000,1000.0,\n"
-        f"2,{base_mz + 1.0021},10.001,800.0,\n"
-        f"3,{base_mz + 2.0023},10.002,200.0,\n"
-        f"4,{base_mz + 4.0052},10.003,50.0,\n",
+        f"2,{base_mz + 1.002111},10.001,800.0,\n"
+        f"3,{base_mz + 2.002271},10.002,200.0,\n"
+        f"4,{base_mz + 4.005213},10.003,50.0,\n",
         encoding="utf-8",
     )
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
@@ -519,7 +519,7 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
                 "base_mz": 500.0,
                 "base_rt_apex_min": 10.0,
                 "non_base_positions_supported": 3,
-                "max_abs_apex_delta_sec": 4.0,
+                "max_abs_apex_delta_sec": 0.4,
                 "min_pearson_r_to_base": 0.95,
                 "min_active_overlap_fraction": 0.70,
                 "min_shifted_pearson_r_to_base": 0.96,

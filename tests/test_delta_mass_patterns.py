@@ -9,6 +9,8 @@ They are expected to fail on import until Task 2 implements the real modules.
 
 from __future__ import annotations
 
+import pytest
+
 from xic_extractor.discovery.delta_mass_patterns import (
     PT_PATTERN,
     is_within_ppm,
@@ -20,9 +22,9 @@ from xic_extractor.discovery.detected_features import (
 )
 
 BASE_MZ = 500.0
-PT_PLUS_1_DELTA = 1.0021
-PT_PLUS_2_DELTA = 2.0023
-PT_PLUS_4_DELTA = 4.0052
+PT_PLUS_1_DELTA = 1.002111
+PT_PLUS_2_DELTA = 2.002271
+PT_PLUS_4_DELTA = 4.005213
 
 
 def _feature(
@@ -73,7 +75,7 @@ def _features_with_pt_plus_1(plus_one_mz: float) -> list[DetectedFeature]:
 
 def test_matcher_pt_plus_one_window_uses_expected_mz_denominator() -> None:
     base_mz = 500.0
-    expected_mz = base_mz + 1.0021
+    expected_mz = base_mz + PT_PLUS_1_DELTA
     inside = expected_mz + expected_mz * 20e-6
     outside = expected_mz + expected_mz * 20.1e-6
 
@@ -113,6 +115,56 @@ def test_all_four_positions_within_tolerance_and_rt_span_produce_candidate() -> 
     candidates = match_delta_mass_pattern(features)
 
     assert len(candidates) == 1
+
+
+def test_exact_pt_deltas_recover_high_mz_boundary_candidate() -> None:
+    """Regression for high-m/z cases lost by rounded Pt delta constants."""
+
+    features = [
+        _feature(
+            feature_id="base_1612p6",
+            mz=1612.6,
+            rt_apex_min=14.6627,
+            height=318154.0,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus1_1613p6",
+            mz=1613.6,
+            rt_apex_min=14.7060,
+            height=180417.0,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus2_1614p57",
+            mz=1614.57,
+            rt_apex_min=14.6407,
+            height=209912.0,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+        _feature(
+            feature_id="plus4_1616p58",
+            mz=1616.58,
+            rt_apex_min=14.7498,
+            height=126864.0,
+            trace_quality="OK",
+            shape_score=None,
+            source="local_ms1_feature",
+        ),
+    ]
+
+    candidates = match_delta_mass_pattern(features)
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.base_feature_id == "base_1612p6"
+    assert candidate.pt_plus_2_mz_error_ppm == pytest.approx(-19.986966)
 
 
 def test_scan_proxy_candidates_use_only_same_group_base_anchor() -> None:
@@ -661,9 +713,9 @@ def test_pt_pattern_constant_defines_expected_positions_and_tolerances() -> None
     }
     assert position_deltas == {
         "base": 0.0,
-        "pt_plus_1": 1.0021,
-        "pt_plus_2": 2.0023,
-        "pt_plus_4": 4.0052,
+        "pt_plus_1": 1.002111,
+        "pt_plus_2": 2.002271,
+        "pt_plus_4": 4.005213,
     }
 
 

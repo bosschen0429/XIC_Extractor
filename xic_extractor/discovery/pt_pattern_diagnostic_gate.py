@@ -17,6 +17,7 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
     MIN_SUPPORTED_POSITIONS,
     REQUIRED_COMBINED_STATUS,
     PtPatternEvidenceThresholds,
+    effective_max_abs_apex_delta_sec,
     evaluate_pt_pattern_evidence,
     pt_pattern_rule_id,
 )
@@ -155,6 +156,9 @@ def run_diagnostic_gate(
             thresholds.min_non_base_positions_supported
         ),
         "max_abs_apex_delta_sec": thresholds.max_abs_apex_delta_sec,
+        "max_abs_apex_delta_scan_step_multiplier": (
+            thresholds.max_abs_apex_delta_scan_step_multiplier
+        ),
         "min_pearson_r_to_base": thresholds.min_pearson_r_to_base,
         "min_active_overlap_fraction": thresholds.min_active_overlap_fraction,
         "min_shifted_pearson_r_to_base": (
@@ -237,6 +241,10 @@ def build_diagnostic_gate_rows(
             review,
             thresholds=thresholds,
         )
+        effective_apex_threshold = effective_max_abs_apex_delta_sec(
+            review,
+            thresholds=thresholds,
+        )
         oracle = oracle_by_packet_row_id.get(packet_row_id, {})
         oracle_call = str(oracle.get("oracle_call", "")).strip().lower()
         rows.append(
@@ -259,7 +267,7 @@ def build_diagnostic_gate_rows(
                     thresholds.min_non_base_positions_supported
                 ),
                 "max_abs_apex_delta_sec_threshold": (
-                    thresholds.max_abs_apex_delta_sec
+                    effective_apex_threshold
                 ),
                 "min_pearson_r_to_base_threshold": (
                     thresholds.min_pearson_r_to_base
@@ -387,6 +395,12 @@ def _trace_summary_gate_row(
         ),
         "max_abs_shape_shift_sec_to_base": row.get(
             "max_abs_shape_shift_sec_to_base", ""
+        ),
+        "min_effective_smoothing_window_sec": row.get(
+            "min_effective_smoothing_window_sec", ""
+        ),
+        "trace_smoothing_window_points": row.get(
+            "trace_smoothing_window_points", ""
         ),
         "base_mz": row.get("base_mz", ""),
         "base_rt_apex_min": row.get("base_rt_apex_min", ""),

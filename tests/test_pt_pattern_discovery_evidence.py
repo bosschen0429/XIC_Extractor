@@ -70,7 +70,7 @@ def _trace_summary_row(**overrides: object) -> dict[str, object]:
         "scan_pattern_seed_status": "full_pattern_seeded",
         "combined_pt_pattern_status": "pt_pattern_detected_diagnostic",
         "non_base_positions_supported": 3,
-        "max_abs_apex_delta_sec": 4.0,
+        "max_abs_apex_delta_sec": 0.4,
         "min_pearson_r_to_base": 0.95,
         "min_active_overlap_fraction": 0.70,
     }
@@ -108,7 +108,26 @@ def test_discovery_evidence_applies_shared_rule_when_trace_summary_matches() -> 
     assert row["min_pearson_r_to_base"] == 0.95
 
 
-def test_discovery_evidence_accepts_shifted_shape_support() -> None:
+def test_discovery_evidence_records_effective_scan_aware_apex_threshold() -> None:
+    rows = build_pt_pattern_evidence_rows(
+        [_candidate()],
+        trace_summary_rows=[
+            _trace_summary_row(
+                max_abs_apex_delta_sec=1.30413,
+                min_effective_smoothing_window_sec=19.7353,
+                trace_smoothing_window_points=15,
+                min_pearson_r_to_base=0.982299,
+                min_active_overlap_fraction=0.952381,
+            )
+        ],
+    )
+
+    row = rows[0]
+    assert row["trace_rule_call"] == "accept"
+    assert row["max_abs_apex_delta_threshold_sec"] == 1.6446083333333332
+
+
+def test_discovery_evidence_keeps_shifted_shape_review_only() -> None:
     rows = build_pt_pattern_evidence_rows(
         [_candidate()],
         trace_summary_rows=[
@@ -122,9 +141,9 @@ def test_discovery_evidence_accepts_shifted_shape_support() -> None:
     )
 
     row = rows[0]
-    assert row["trace_rule_call"] == "accept"
-    assert row["trace_detection_status"] == "detected"
-    assert row["trace_rule_reason"] == "full_pattern_shifted_shape_supported"
+    assert row["trace_rule_call"] == "reject"
+    assert row["trace_detection_status"] == "non_detected"
+    assert row["trace_rule_reason"] == "shifted_shape_review_only"
     assert row["min_shifted_pearson_r_to_base_threshold"] == 0.85
     assert row["max_abs_shape_shift_sec_to_base_threshold"] == 45.0
 
@@ -141,6 +160,7 @@ def test_discovery_evidence_loads_legacy_trace_summary_without_shifted_columns(
                     "scan_pattern_seed_status,base_mz,base_rt_apex_min,"
                     "rt_half_window_sec,ppm,mz_source,trace_decision_basis,"
                     "trace_smoothing_method,trace_smoothing_window_points,"
+                    "min_effective_smoothing_window_sec,"
                     "positions_requested,positions_with_points,"
                     "positions_with_signal,non_base_positions_supported,"
                     "max_abs_apex_delta_sec,min_pearson_r_to_base,"
@@ -151,8 +171,8 @@ def test_discovery_evidence_loads_legacy_trace_summary_without_shifted_columns(
                 (
                     "pt_pattern_trace_diagnosis.v2,Sample_1,Sample_1@pt@base-1,"
                     "full_pattern_seeded,500,10,30,20,observed,"
-                    "gaussian15_smoothed_trace,gaussian15,15,4,4,4,3,2,0.95,"
-                    "0.70,2,0.95,0.70,supported,"
+                    "gaussian15_smoothed_trace,gaussian15,15,19.5,4,4,4,3,0.4,0.95,"
+                    "0.70,0.4,0.95,0.70,supported,"
                     "pt_pattern_detected_diagnostic,legacy close-apex row"
                 ),
             ]

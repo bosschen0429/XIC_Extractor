@@ -17,7 +17,7 @@ def _review_row(
     *,
     status: str = "pt_pattern_detected_diagnostic",
     supported: str = "3",
-    apex_delta: str = "1.0",
+    apex_delta: str = "0.5",
     pearson: str = "0.95",
     overlap: str = "0.80",
 ) -> dict[str, str]:
@@ -130,8 +130,8 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
     )
     recommended = threshold_rows[0]
     assert recommended["rule_id"] == (
-        "pt_v2_fullpattern_apex_le_10s_pearson_ge_0p9_overlap_ge_0p5"
-        "_shiftedpearson_ge_0p85_shapeshift_le_45s"
+        "pt_v2_fullpattern_apex_le_0p6s_or_1p25scan_pearson_ge_0p9_overlap_ge_0p5"
+        "_shiftedreviewonly_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
     assert recommended["min_shifted_pearson_r_to_base"] == "0.85"
     assert recommended["max_abs_shape_shift_sec_to_base"] == "45"

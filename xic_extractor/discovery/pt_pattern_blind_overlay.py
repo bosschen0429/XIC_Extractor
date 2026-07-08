@@ -103,9 +103,9 @@ POSITION_COLORS = {
 }
 POSITION_LABELS = {
     "base": "base",
-    "pt_plus_1": "+1.0021",
-    "pt_plus_2": "+2.0023",
-    "pt_plus_4": "+4.0052",
+    "pt_plus_1": "+1.002111",
+    "pt_plus_2": "+2.002271",
+    "pt_plus_4": "+4.005213",
 }
 
 MACHINE_CALL_THRESHOLDS = PtPatternEvidenceThresholds()
@@ -246,7 +246,10 @@ def classify_machine_call(row: Mapping[str, str]) -> tuple[str, str]:
     )
     if decision.call == "accept":
         return decision.call, decision.reason
-    if decision.reason == "shape_shift_above_threshold":
+    if decision.reason in {
+        "shape_shift_above_threshold",
+        "shifted_shape_review_only",
+    }:
         return "reject", decision.reason
 
     if status in {

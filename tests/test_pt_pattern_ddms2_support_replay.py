@@ -63,9 +63,9 @@ def test_ddms2_support_replay_requires_fullscan_accept_and_reports_support_only(
         ddms2_features_csv,
         [
             _feature_row("ddms2_base", 500.0000, 10.05, 1000.0),
-            _feature_row("ddms2_plus1", 501.0021, 10.04, 900.0),
-            _feature_row("ddms2_plus2", 502.0023, 10.03, 800.0),
-            _feature_row("ddms2_plus4", 504.0052, 10.02, 700.0),
+            _feature_row("ddms2_plus1", 501.002111, 10.04, 900.0),
+            _feature_row("ddms2_plus2", 502.002271, 10.03, 800.0),
+            _feature_row("ddms2_plus4", 504.005213, 10.02, 700.0),
         ],
     )
 
@@ -103,7 +103,7 @@ def test_ddms2_support_replay_uses_expected_mz_as_ppm_denominator(
         base_mz=500.0,
         base_rt_apex_min=10.0,
     )
-    expected_plus1 = 501.0021
+    expected_plus1 = 501.002111
     observed_plus1 = expected_plus1 * (1 + 10e-6)
     _write_detected_features(
         ddms2_features_csv,

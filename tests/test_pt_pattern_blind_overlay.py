@@ -36,7 +36,7 @@ def _packet_row(
             "max_trace_point_count": "31",
             "combined_pt_pattern_status": status,
             "non_base_positions_supported": "3",
-            "max_abs_apex_delta_sec": "2.0",
+            "max_abs_apex_delta_sec": "0.5",
             "min_pearson_r_to_base": "0.95",
             "min_active_overlap_fraction": "0.90",
             "min_shifted_pearson_r_to_base": "0.98",
@@ -88,7 +88,7 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
     assert "pt_pattern_detected_diagnostic" not in html
     assert "machine_call" not in html
     assert ">accept<" not in html
-    assert "+4.0052" in html
+    assert "+4.005213" in html
     assert "<svg" in html
     assert "Raw vendor trace" in html
     assert "Gaussian15 point-smoothed trace" in html
@@ -226,7 +226,7 @@ def test_machine_call_marks_weak_partial_cases_uncertain_or_reject() -> None:
     )
 
 
-def test_machine_call_accepts_shifted_shape_supported_packet() -> None:
+def test_machine_call_rejects_shifted_shape_review_only_packet() -> None:
     call, reason = overlay.classify_machine_call(
         _packet_row()
         | {
@@ -238,10 +238,7 @@ def test_machine_call_accepts_shifted_shape_supported_packet() -> None:
         }
     )
 
-    assert (call, reason) == (
-        "accept",
-        "full_pattern_shifted_shape_supported",
-    )
+    assert (call, reason) == ("reject", "shifted_shape_review_only")
 
 
 def test_machine_call_rejects_shifted_shape_above_hard_cap() -> None:

@@ -20,6 +20,12 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable
 
+from xic_extractor.mass_accuracy import (
+    is_within_mz_tolerance,
+    mz_window,
+    signed_ppm_error,
+)
+
 if TYPE_CHECKING:
     from xic_extractor.discovery.detected_features import (
         DeltaMassPatternSettings,
@@ -78,9 +84,9 @@ PT_PATTERN = DeltaMassPattern(
     polarity="positive",
     positions=(
         DeltaMassPatternPosition(label="base", delta_da=0.0),
-        DeltaMassPatternPosition(label="pt_plus_1", delta_da=1.0021),
-        DeltaMassPatternPosition(label="pt_plus_2", delta_da=2.0023),
-        DeltaMassPatternPosition(label="pt_plus_4", delta_da=4.0052),
+        DeltaMassPatternPosition(label="pt_plus_1", delta_da=1.002111),
+        DeltaMassPatternPosition(label="pt_plus_2", delta_da=2.002271),
+        DeltaMassPatternPosition(label="pt_plus_4", delta_da=4.005213),
     ),
     mz_tolerance_ppm=20.0,
     rt_tolerance_sec=30.0,
@@ -107,8 +113,12 @@ def is_within_ppm(
     tolerance purely from float arithmetic.
     """
 
-    mz_error_ppm = (observed_mz - expected_mz) / expected_mz * 1e6
-    return abs(mz_error_ppm) <= tolerance_ppm + _PPM_GATE_EPSILON
+    return is_within_mz_tolerance(
+        observed_mz,
+        expected_mz,
+        tolerance_ppm=tolerance_ppm,
+        boundary_epsilon_ppm=_PPM_GATE_EPSILON,
+    )
 
 
 @dataclass(frozen=True)
@@ -313,9 +323,7 @@ def _best_position_match(
     rt_tolerance_sec: float,
 ) -> _PositionMatch | None:
     expected_mz = base.mz + position.delta_da
-    window_da = expected_mz * mz_tolerance_ppm * 1e-6
-    lower_mz = expected_mz - window_da
-    upper_mz = expected_mz + window_da
+    lower_mz, upper_mz = mz_window(expected_mz, mz_tolerance_ppm)
 
     # ``sample_features`` is sorted ascending by m/z and ``sorted_mzs`` is the
     # parallel list of its m/z values, so the [lower_mz, upper_mz] window's
@@ -336,7 +344,7 @@ def _best_position_match(
         rt_delta_sec = abs(feature.rt_apex_min - base.rt_apex_min) * 60.0
         if rt_delta_sec > rt_tolerance_sec:
             continue
-        mz_error_ppm = (feature.mz - expected_mz) / expected_mz * 1e6
+        mz_error_ppm = signed_ppm_error(feature.mz, expected_mz)
         candidate_match = _PositionMatch(
             label=position.label,
             feature=feature,

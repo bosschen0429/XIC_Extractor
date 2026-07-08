@@ -33,7 +33,7 @@ PtPatternEvidenceThresholds = evidence_rule.PtPatternEvidenceThresholds
 evaluate_pt_pattern_evidence = evidence_rule.evaluate_pt_pattern_evidence
 pt_pattern_rule_id = evidence_rule.pt_pattern_rule_id
 
-APEX_DELTA_GRID_SEC = (2.0, 3.0, 5.0, 10.0, 20.0, 30.0)
+APEX_DELTA_GRID_SEC = (0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0)
 PEARSON_GRID = (0.50, 0.70, 0.80, 0.85, 0.90, 0.95, 0.99)
 SHIFTED_PEARSON_GRID = (0.50, 0.70, 0.80, 0.85, 0.90, 0.95, 0.99)
 OVERLAP_GRID = (0.25, 0.50, 0.70, 0.80, 0.90, 0.95)

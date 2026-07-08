@@ -15,7 +15,8 @@ from xic_extractor.tabular_io import optional_float
 
 REQUIRED_COMBINED_STATUS = "pt_pattern_detected_diagnostic"
 MIN_SUPPORTED_POSITIONS = 3
-DEFAULT_APEX_DELTA_MAX_SEC = 10.0
+DEFAULT_APEX_DELTA_MAX_SEC = 0.6
+DEFAULT_APEX_DELTA_SCAN_STEP_MULTIPLIER = 1.25
 DEFAULT_PEARSON_MIN = 0.90
 DEFAULT_OVERLAP_MIN = 0.50
 DEFAULT_SHIFTED_PEARSON_MIN = 0.85
@@ -27,6 +28,9 @@ class PtPatternEvidenceThresholds:
     required_combined_status: str = REQUIRED_COMBINED_STATUS
     min_non_base_positions_supported: int = MIN_SUPPORTED_POSITIONS
     max_abs_apex_delta_sec: float = DEFAULT_APEX_DELTA_MAX_SEC
+    max_abs_apex_delta_scan_step_multiplier: float = (
+        DEFAULT_APEX_DELTA_SCAN_STEP_MULTIPLIER
+    )
     min_pearson_r_to_base: float = DEFAULT_PEARSON_MIN
     min_active_overlap_fraction: float = DEFAULT_OVERLAP_MIN
     min_shifted_pearson_r_to_base: float = DEFAULT_SHIFTED_PEARSON_MIN
@@ -39,6 +43,8 @@ class PtPatternEvidenceThresholds:
             raise ValueError("min_non_base_positions_supported must be > 0")
         if self.max_abs_apex_delta_sec <= 0:
             raise ValueError("max_abs_apex_delta_sec must be > 0")
+        if self.max_abs_apex_delta_scan_step_multiplier <= 0:
+            raise ValueError("max_abs_apex_delta_scan_step_multiplier must be > 0")
         if not 0 <= self.min_pearson_r_to_base <= 1:
             raise ValueError("min_pearson_r_to_base must be between 0 and 1")
         if not 0 <= self.min_active_overlap_fraction <= 1:
@@ -83,8 +89,12 @@ def evaluate_pt_pattern_evidence(
         return _reject("missing_required_metric")
     if supported < thresholds.min_non_base_positions_supported:
         return _reject("insufficient_non_base_positions")
+    effective_apex_delta_max_sec = effective_max_abs_apex_delta_sec(
+        row,
+        thresholds=thresholds,
+    )
     if (
-        apex_delta <= thresholds.max_abs_apex_delta_sec
+        apex_delta <= effective_apex_delta_max_sec
         and pearson >= thresholds.min_pearson_r_to_base
         and overlap >= thresholds.min_active_overlap_fraction
     ):
@@ -92,17 +102,6 @@ def evaluate_pt_pattern_evidence(
             call="accept",
             detection_status="detected",
             reason="full_pattern_close_apex_shape_overlap",
-        )
-    if (
-        shifted_pearson is not None
-        and shifted_pearson >= thresholds.min_shifted_pearson_r_to_base
-        and shape_shift is not None
-        and shape_shift <= thresholds.max_abs_shape_shift_sec_to_base
-    ):
-        return PtPatternEvidenceDecision(
-            call="accept",
-            detection_status="detected",
-            reason="full_pattern_shifted_shape_supported",
         )
     if (
         shifted_pearson is not None
@@ -117,7 +116,14 @@ def evaluate_pt_pattern_evidence(
         and shape_shift > thresholds.max_abs_shape_shift_sec_to_base
     ):
         return _reject("shape_shift_above_threshold")
-    if apex_delta > thresholds.max_abs_apex_delta_sec:
+    if (
+        shifted_pearson is not None
+        and shifted_pearson >= thresholds.min_shifted_pearson_r_to_base
+        and shape_shift is not None
+        and shape_shift <= thresholds.max_abs_shape_shift_sec_to_base
+    ):
+        return _reject("shifted_shape_review_only")
+    if apex_delta > effective_apex_delta_max_sec:
         return _reject("apex_delta_above_threshold")
     if pearson < thresholds.min_pearson_r_to_base:
         return _reject("pearson_below_threshold")
@@ -132,10 +138,34 @@ def pt_pattern_rule_id(
     return (
         "pt_v2_fullpattern"
         f"_apex_le_{_token(thresholds.max_abs_apex_delta_sec)}s"
+        f"_or_{_token(thresholds.max_abs_apex_delta_scan_step_multiplier)}scan"
         f"_pearson_ge_{_token(thresholds.min_pearson_r_to_base)}"
         f"_overlap_ge_{_token(thresholds.min_active_overlap_fraction)}"
+        "_shiftedreviewonly"
         f"_shiftedpearson_ge_{_token(thresholds.min_shifted_pearson_r_to_base)}"
         f"_shapeshift_le_{_token(thresholds.max_abs_shape_shift_sec_to_base)}s"
+    )
+
+
+def effective_max_abs_apex_delta_sec(
+    row: Mapping[str, object],
+    *,
+    thresholds: PtPatternEvidenceThresholds = DEFAULT_THRESHOLDS,
+) -> float:
+    """Return the row-level close-apex tolerance.
+
+    Pt isotope positions should co-elute, but a discrete XIC apex can move by
+    one acquisition interval when the real apex sits between scans. Keep the
+    hard floor strict, then allow one scan interval when the trace artifact
+    exposes enough timing context.
+    """
+
+    scan_interval_sec = _scan_interval_sec(row)
+    if scan_interval_sec is None:
+        return thresholds.max_abs_apex_delta_sec
+    return max(
+        thresholds.max_abs_apex_delta_sec,
+        scan_interval_sec * thresholds.max_abs_apex_delta_scan_step_multiplier,
     )
 
 
@@ -149,3 +179,31 @@ def _reject(reason: str) -> PtPatternEvidenceDecision:
 
 def _token(value: float) -> str:
     return f"{value:g}".replace(".", "p")
+
+
+def _scan_interval_sec(row: Mapping[str, object]) -> float | None:
+    for field in ("min_median_rt_step_sec", "median_rt_step_sec"):
+        value = optional_float(row.get(field))
+        if value is not None and value > 0:
+            return value
+
+    effective_window_sec = optional_float(row.get("min_effective_smoothing_window_sec"))
+    smoothing_window_points = optional_float(row.get("trace_smoothing_window_points"))
+    if (
+        effective_window_sec is not None
+        and effective_window_sec > 0
+        and smoothing_window_points is not None
+        and smoothing_window_points > 0
+    ):
+        return effective_window_sec / smoothing_window_points
+
+    per_position_steps = [
+        optional_float(row.get(f"{label}_median_rt_step_sec"))
+        for label in ("pt_plus_1", "pt_plus_2", "pt_plus_4")
+    ]
+    positive_steps = [
+        value for value in per_position_steps if value is not None and value > 0
+    ]
+    if positive_steps:
+        return min(positive_steps)
+    return None

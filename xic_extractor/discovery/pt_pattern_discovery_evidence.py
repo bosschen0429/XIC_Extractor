@@ -13,6 +13,7 @@ from xic_extractor.discovery.delta_mass_patterns import PtPatternCandidate
 from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_THRESHOLDS,
     PtPatternEvidenceThresholds,
+    effective_max_abs_apex_delta_sec,
     evaluate_pt_pattern_evidence,
     pt_pattern_rule_id,
 )
@@ -123,6 +124,10 @@ def _evidence_row(
             "trace_rule_call": decision.call,
             "trace_detection_status": decision.detection_status,
             "trace_rule_reason": decision.reason,
+            "max_abs_apex_delta_threshold_sec": effective_max_abs_apex_delta_sec(
+                trace_row,
+                thresholds=thresholds,
+            ),
             "combined_pt_pattern_status": _trace_value(
                 trace_row, "combined_pt_pattern_status"
             ),
