@@ -1,8 +1,8 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Last refreshed:** 2026-07-02
-**Total entry-points:** 115
-**Total files (incl. helpers):** 199 Python files under `tools/diagnostics/`
+**Last refreshed:** 2026-07-08
+**Total entry-points:** 117
+**Total files (incl. helpers):** 201 Python files under `tools/diagnostics/`
 **Governing spec:** `docs/architecture-contract.md`; the retired dated
 diagnostic lifecycle spec remains only as a same-path public stub.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
@@ -42,7 +42,7 @@ top-level `tools/diagnostics/*.py` files for total files.
 8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization) — 7 tools
 9. [Area / Region Audits](#area--region-audits) — 4 tools
 10. [One-off Fixtures](#one-off-fixtures) — 1 tool
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 8 tools
+11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 10 tools
 12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
 
 ---
@@ -1795,6 +1795,41 @@ outputs, read Alignment state, or write Matrix/workbook artifacts. The
 recommended rule is review evidence only; it must not be treated as detector
 activation, counted-detection authority, or export authority without a later
 explicit public-surface contract.
+
+---
+
+### `pt_pattern_ratio_profile.py`
+
+**Purpose**: Profile Pt pattern candidate intensity/area ratios from existing
+`pt_pattern_candidates.csv` and `pt_pattern_evidence.csv` artifacts. It writes
+primary-population ratio rows, primary/background distribution summaries, a
+static HTML review page, and a summary JSON without opening RAW or recalculating
+trace evidence.
+**Topic group**: `pt_pattern_ratio_profile.py` +
+`xic_extractor.discovery.pt_pattern_ratio_profile`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only ratio observation surface. It separates
+FeatureHunter-compatible `base/+N` ratios from derived `+1/base`, `+1/+2`, and
+`+1/+4` review ratios, and uses only data-driven distribution-tail flags. These
+flags are review aids, not detector activation, counted-detection authority,
+export authority, selected-area authority, or Matrix-writing authority.
+
+---
+
+### `pt_pattern_ddms2_support_replay.py`
+
+**Purpose**: Replay Fullscan-primary Pt pattern seeds against a DDMS2 local MS1
+feature table to inspect whether the DDMS2 run contains matching base/+1/+2/+4
+support near the Fullscan seed.
+**Topic group**: `pt_pattern_ddms2_support_replay.py` +
+`xic_extractor.discovery.pt_pattern_ddms2_support_replay`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only support replay. It does not open RAW, create
+Fullscan seeds, recompute trace evidence, decide DDMS2 targeting opportunity,
+mutate Discovery outputs, read Alignment/Backfill state, or write
+Matrix/workbook artifacts. Without the historical target/inclusion list,
+missing DDMS2 support is context only, not negative evidence against a Fullscan
+Discovery seed.
 
 ---
 
