@@ -48,7 +48,7 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "ipython>=8.39.0",
+    "ipython>=9.15.0",
     "mypy>=1.20.1",
     "ruff>=0.15.11",
 ]
