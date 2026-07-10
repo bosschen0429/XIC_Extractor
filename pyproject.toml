@@ -12,7 +12,7 @@ dependencies = [
     "numpy>=1.26",
     "openpyxl>=3.1",
     "pythonnet>=3.0",
-    "scipy>=1.11",
+    "scipy>=1.17.1",
 ]
 
 [project.optional-dependencies]
