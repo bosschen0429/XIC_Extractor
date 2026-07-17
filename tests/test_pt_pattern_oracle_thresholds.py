@@ -9,7 +9,14 @@ from xic_extractor.discovery import pt_pattern_oracle_promotion as promotion
 from xic_extractor.discovery import pt_pattern_oracle_thresholds as thresholds
 from xic_extractor.discovery import pt_pattern_review_packet as packet
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
-from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
+from xic_extractor.tabular_io import (
+    file_sha256,
+    read_delimited_rows,
+    write_delimited_rows,
+)
+
+UNIT_REVIEW_SHA256 = "A" * 64
+UNIT_OVERLAY_SUMMARY_SHA256 = "B" * 64
 
 
 def _review_row(
@@ -20,11 +27,17 @@ def _review_row(
     apex_delta: str = "0.5",
     pearson: str = "0.95",
     overlap: str = "0.80",
+    anchor_local: bool = False,
 ) -> dict[str, str]:
-    row = {column: "" for column in packet.PACKET_COLUMNS}
+    columns = packet.PACKET_COLUMNS if anchor_local else packet.LEGACY_PACKET_COLUMNS
+    row = {column: "" for column in columns}
     row.update(
         {
-            "schema_version": packet.SCHEMA_VERSION,
+            "schema_version": (
+                packet.ANCHOR_LOCAL_SCHEMA_VERSION
+                if anchor_local
+                else packet.SCHEMA_VERSION
+            ),
             "readiness_tier": packet.READINESS_TIER,
             "evidence_owner": packet.EVIDENCE_OWNER,
             "packet_label": "unit_packet",
@@ -47,10 +60,24 @@ def _review_row(
             "oracle_status": "pending_human_review",
         }
     )
+    if anchor_local:
+        row.update(
+            {
+                "trace_ambiguity_status": "clear",
+                "anchor_segmentation_status": "clear",
+                "anchor_segmentation_boundary_review_status": "clear",
+            }
+        )
     return row
 
 
-def _oracle_row(candidate_id: str, *, oracle_call: str) -> dict[str, str]:
+def _oracle_row(
+    review_row: dict[str, str],
+    *,
+    oracle_call: str,
+    review_packet_sha256: str = UNIT_REVIEW_SHA256,
+) -> dict[str, str]:
+    candidate_id = review_row["candidate_id"]
     row = {column: "" for column in promotion.PROMOTION_COLUMNS}
     row.update(
         {
@@ -61,13 +88,13 @@ def _oracle_row(candidate_id: str, *, oracle_call: str) -> dict[str, str]:
             "oracle_packet_id": "unit_oracle",
             "oracle_status": "manual_oracle_promoted",
             "oracle_call": oracle_call,
-            "oracle_detection_status": (
-                "detected" if oracle_call == "accept" else "non_detected"
-            ),
-            "packet_row_id": f"pt_only|{candidate_id}",
+            "oracle_detection_status": promotion.ORACLE_DETECTION_STATUS,
+            "packet_row_id": review_row["packet_row_id"],
+            "review_packet_csv_sha256": review_packet_sha256,
+            "blind_overlay_summary_json_sha256": UNIT_OVERLAY_SUMMARY_SHA256,
             "dataset": "pt_only",
             "case_index": candidate_id,
-            "sample_stem": "SampleA",
+            "sample_stem": review_row["sample_stem"],
             "candidate_id": candidate_id,
             "base_mz": "500.0",
             "base_rt_apex_min": "10.0",
@@ -75,13 +102,13 @@ def _oracle_row(candidate_id: str, *, oracle_call: str) -> dict[str, str]:
             "human_review_call": oracle_call,
             "machine_call": oracle_call,
             "machine_call_reason": "unit",
-            "review_packet_schema_version": packet.SCHEMA_VERSION,
-            "review_packet_readiness_tier": packet.READINESS_TIER,
-            "review_packet_oracle_status": "pending_human_review",
-            "review_packet_combined_pt_pattern_status": (
-                "pt_pattern_detected_diagnostic"
-            ),
-            "provenance_status": "review_packet_row_matched",
+            "review_packet_schema_version": review_row["schema_version"],
+            "review_packet_readiness_tier": review_row["readiness_tier"],
+            "review_packet_oracle_status": review_row["oracle_status"],
+            "review_packet_combined_pt_pattern_status": review_row[
+                "combined_pt_pattern_status"
+            ],
+            "provenance_status": "exact_review_evidence_bundle_matched",
         }
     )
     return row
@@ -102,12 +129,23 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
         ),
         _review_row("reject-apex", apex_delta="15.0", pearson="0.99"),
     ]
+    review_csv = _write_csv(
+        tmp_path / "review.csv",
+        review_rows,
+        packet.LEGACY_PACKET_COLUMNS,
+    )
+    review_sha256 = file_sha256(review_csv)
     oracle_rows = [
-        _oracle_row("accept-a", oracle_call="accept"),
-        _oracle_row("accept-b", oracle_call="accept"),
-        _oracle_row("reject-shape", oracle_call="reject"),
-        _oracle_row("reject-status", oracle_call="reject"),
-        _oracle_row("reject-apex", oracle_call="reject"),
+        _oracle_row(
+            review_row,
+            oracle_call=oracle_call,
+            review_packet_sha256=review_sha256,
+        )
+        for review_row, oracle_call in zip(
+            review_rows,
+            ("accept", "accept", "reject", "reject", "reject"),
+            strict=True,
+        )
     ]
 
     outputs = thresholds.run_threshold_calibration(
@@ -116,9 +154,7 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
             oracle_rows,
             promotion.PROMOTION_COLUMNS,
         ),
-        review_packet_csvs=[
-            _write_csv(tmp_path / "review.csv", review_rows, packet.PACKET_COLUMNS)
-        ],
+        review_packet_csvs=[review_csv],
         output_dir=tmp_path / "thresholds",
         calibration_id="unit_thresholds",
     )
@@ -161,23 +197,202 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
 
 
 def test_threshold_calibration_rejects_missing_review_packet() -> None:
+    review_row = _review_row("missing")
     with pytest.raises(ValueError, match="missing review packet"):
         thresholds.build_calibration_cases(
-            oracle_rows=[_oracle_row("missing", oracle_call="accept")],
+            oracle_rows=[_oracle_row(review_row, oracle_call="accept")],
             review_rows=[],
+            review_packet_sha256_by_row_id={},
+        )
+
+
+def test_threshold_calibration_accepts_true_anchor_v3_packet(
+    tmp_path: Path,
+) -> None:
+    review_row = _review_row("anchor-v3", anchor_local=True)
+    review_csv = _write_csv(
+        tmp_path / "review_v3.csv",
+        [review_row],
+        packet.PACKET_COLUMNS,
+    )
+    oracle_csv = _write_csv(
+        tmp_path / "oracle_v3.csv",
+        [
+            _oracle_row(
+                review_row,
+                oracle_call="accept",
+                review_packet_sha256=file_sha256(review_csv),
+            )
+        ],
+        promotion.PROMOTION_COLUMNS,
+    )
+
+    outputs = thresholds.run_threshold_calibration(
+        oracle_promotion_csv=oracle_csv,
+        review_packet_csvs=[review_csv],
+        output_dir=tmp_path / "thresholds_v3",
+        calibration_id="anchor_v3",
+    )
+
+    summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
+    assert summary["row_count"] == 1
+
+
+def test_threshold_calibration_rejects_partial_anchor_v3_packet(
+    tmp_path: Path,
+) -> None:
+    review_row = _review_row("partial-v3", anchor_local=True)
+    partial_columns = (
+        *packet.LEGACY_PACKET_COLUMNS,
+        evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS[0],
+    )
+    review_csv = _write_csv(
+        tmp_path / "review_partial_v3.csv",
+        [review_row],
+        partial_columns,
+    )
+    oracle_csv = _write_csv(
+        tmp_path / "oracle_partial_v3.csv",
+        [
+            _oracle_row(
+                review_row,
+                oracle_call="accept",
+                review_packet_sha256=file_sha256(review_csv),
+            )
+        ],
+        promotion.PROMOTION_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="v3 requires all anchor-local columns"):
+        thresholds.run_threshold_calibration(
+            oracle_promotion_csv=oracle_csv,
+            review_packet_csvs=[review_csv],
+            output_dir=tmp_path / "thresholds_partial_v3",
+            calibration_id="partial_v3",
+        )
+
+
+def test_threshold_calibration_rejects_mixed_packet_schemas(
+    tmp_path: Path,
+) -> None:
+    legacy_row = _review_row("legacy-v2")
+    anchor_row = _review_row("anchor-v3", anchor_local=True)
+    legacy_csv = _write_csv(
+        tmp_path / "review_v2.csv",
+        [legacy_row],
+        packet.LEGACY_PACKET_COLUMNS,
+    )
+    anchor_csv = _write_csv(
+        tmp_path / "review_v3.csv",
+        [anchor_row],
+        packet.PACKET_COLUMNS,
+    )
+    oracle_csv = _write_csv(
+        tmp_path / "oracle.csv",
+        [
+            _oracle_row(
+                legacy_row,
+                oracle_call="accept",
+                review_packet_sha256=file_sha256(legacy_csv),
+            )
+        ],
+        promotion.PROMOTION_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="must use one schema_version"):
+        thresholds.run_threshold_calibration(
+            oracle_promotion_csv=oracle_csv,
+            review_packet_csvs=[legacy_csv, anchor_csv],
+            output_dir=tmp_path / "thresholds_mixed",
+            calibration_id="mixed",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("schema_version", "pt_pattern_oracle_promotion_packet.v1"),
+        ("readiness_tier", "production_ready"),
+        ("authority_scope", "detector_activation"),
+        ("oracle_status", "pending_human_review"),
+        ("oracle_detection_status", "detected"),
+        ("provenance_status", "review_packet_row_matched"),
+        ("human_review_call", "reject"),
+        ("oracle_packet_id", ""),
+        ("review_packet_csv_sha256", "C" * 64),
+        ("blind_overlay_summary_json_sha256", "not-a-sha256"),
+        ("candidate_id", "different-candidate"),
+        ("sample_stem", "DifferentSample"),
+        ("review_packet_schema_version", packet.ANCHOR_LOCAL_SCHEMA_VERSION),
+        ("review_packet_readiness_tier", "production_ready"),
+        ("review_packet_oracle_status", "resolved"),
+        (
+            "review_packet_combined_pt_pattern_status",
+            "pt_pattern_candidate_partial",
+        ),
+    ],
+)
+def test_threshold_calibration_rejects_stale_or_invalid_oracle_binding(
+    field: str,
+    value: str,
+) -> None:
+    review_row = _review_row("binding")
+    oracle_row = _oracle_row(review_row, oracle_call="accept")
+    oracle_row[field] = value
+
+    with pytest.raises(ValueError, match=field):
+        thresholds.build_calibration_cases(
+            oracle_rows=[oracle_row],
+            review_rows=[review_row],
+            review_packet_sha256_by_row_id={
+                review_row["packet_row_id"]: UNIT_REVIEW_SHA256
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("readiness_tier", "production_ready"),
+        ("evidence_owner", "other.owner"),
+        ("oracle_status", "resolved"),
+    ],
+)
+def test_threshold_calibration_rejects_invalid_actual_review_status(
+    field: str,
+    value: str,
+) -> None:
+    review_row = _review_row("invalid-review")
+    review_row[field] = value
+    oracle_row = _oracle_row(review_row, oracle_call="accept")
+
+    with pytest.raises(ValueError, match=field):
+        thresholds.build_calibration_cases(
+            oracle_rows=[oracle_row],
+            review_rows=[review_row],
+            review_packet_sha256_by_row_id={
+                review_row["packet_row_id"]: UNIT_REVIEW_SHA256
+            },
         )
 
 
 def test_threshold_calibration_cli_writes_outputs(tmp_path: Path) -> None:
-    oracle_csv = _write_csv(
-        tmp_path / "oracle.csv",
-        [_oracle_row("accept-a", oracle_call="accept")],
-        promotion.PROMOTION_COLUMNS,
-    )
+    review_row = _review_row("accept-a")
     review_csv = _write_csv(
         tmp_path / "review.csv",
-        [_review_row("accept-a")],
-        packet.PACKET_COLUMNS,
+        [review_row],
+        packet.LEGACY_PACKET_COLUMNS,
+    )
+    oracle_csv = _write_csv(
+        tmp_path / "oracle.csv",
+        [
+            _oracle_row(
+                review_row,
+                oracle_call="accept",
+                review_packet_sha256=file_sha256(review_csv),
+            )
+        ],
+        promotion.PROMOTION_COLUMNS,
     )
 
     from tools.diagnostics import pt_pattern_oracle_thresholds as cli

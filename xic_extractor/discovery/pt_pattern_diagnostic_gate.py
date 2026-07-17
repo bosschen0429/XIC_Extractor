@@ -22,7 +22,10 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
     pt_pattern_rule_id,
 )
 from xic_extractor.discovery.pt_pattern_oracle_promotion import PROMOTION_COLUMNS
-from xic_extractor.discovery.pt_pattern_review_packet import PACKET_COLUMNS
+from xic_extractor.discovery.pt_pattern_oracle_replay_contract import (
+    load_review_packets,
+    validate_oracle_promotion_binding,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
@@ -117,7 +120,8 @@ def run_diagnostic_gate(
         shifted_pearson_min=shifted_pearson_min,
         shape_shift_max_sec=shape_shift_max_sec,
     )
-    review_rows = _read_review_packets(review_packet_csvs)
+    loaded_review_packets = load_review_packets(review_packet_csvs)
+    review_rows = list(loaded_review_packets.rows)
     trace_summary_rows = _read_trace_summary_inputs(trace_summary_csvs)
     gate_input_rows = [*review_rows, *trace_summary_rows]
     if not gate_input_rows:
@@ -128,6 +132,9 @@ def run_diagnostic_gate(
     gate_rows = build_diagnostic_gate_rows(
         review_rows=gate_input_rows,
         oracle_rows=oracle_rows,
+        review_packet_sha256_by_row_id=(
+            loaded_review_packets.sha256_by_packet_row_id
+        ),
         gate_id=gate_id,
         thresholds=thresholds,
     )
@@ -205,6 +212,7 @@ def build_diagnostic_gate_rows(
     *,
     review_rows: Sequence[Mapping[str, str]],
     oracle_rows: Sequence[Mapping[str, str]] = (),
+    review_packet_sha256_by_row_id: Mapping[str, str] | None = None,
     gate_id: str,
     apex_delta_max_sec: float = DEFAULT_APEX_DELTA_MAX_SEC,
     pearson_min: float = DEFAULT_PEARSON_MIN,
@@ -224,6 +232,18 @@ def build_diagnostic_gate_rows(
     if missing:
         raise ValueError(
             "oracle row missing review packet: " + ", ".join(missing[:5])
+        )
+    packet_sha256_by_row_id = review_packet_sha256_by_row_id or {}
+    for packet_row_id, oracle in oracle_by_packet_row_id.items():
+        review_packet_sha256 = packet_sha256_by_row_id.get(packet_row_id)
+        if review_packet_sha256 is None:
+            raise ValueError(
+                f"{packet_row_id}: oracle replay requires an exact review packet"
+            )
+        validate_oracle_promotion_binding(
+            oracle_row=oracle,
+            review_row=by_packet_row_id[packet_row_id],
+            review_packet_csv_sha256=review_packet_sha256,
         )
 
     rows: list[dict[str, object]] = []
@@ -334,20 +354,6 @@ def diagnostic_gate_call(
         ),
     )
     return decision.call, decision.reason
-
-
-def _read_review_packets(paths: Sequence[Path]) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    for path in paths:
-        rows.extend(
-            read_delimited_rows(
-                path,
-                required_columns=PACKET_COLUMNS,
-                delimiter=",",
-                encoding="utf-8-sig",
-            )
-        )
-    return rows
 
 
 def _read_trace_summary_inputs(

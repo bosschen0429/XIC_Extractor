@@ -10,7 +10,11 @@ from xic_extractor.discovery import pt_pattern_blind_overlay as overlay
 from xic_extractor.discovery import pt_pattern_blind_overlay_call as overlay_call
 from xic_extractor.discovery import pt_pattern_review_packet as packet
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
-from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
+from xic_extractor.tabular_io import (
+    file_sha256,
+    read_delimited_rows,
+    write_delimited_rows,
+)
 
 
 def _packet_row(
@@ -43,6 +47,7 @@ def _packet_row(
             "min_active_overlap_fraction": "0.90",
             "min_shifted_pearson_r_to_base": "0.98",
             "max_abs_shape_shift_sec_to_base": "1.0",
+            "trace_ambiguity_status": "clear",
             "anchor_segmentation_status": "clear",
             "anchor_segmentation_reason": "one_anchor_segment_per_position",
             "anchor_segmentation_common_rt_start_min": "9.8",
@@ -50,8 +55,8 @@ def _packet_row(
             "anchor_segmentation_common_duration_sec": "24.0",
             "anchor_segmentation_common_start_owner_labels": "base",
             "anchor_segmentation_common_end_owner_labels": "pt_plus_4",
-            "anchor_segmentation_boundary_review_status": "review_required",
-            "anchor_segmentation_boundary_review_position_labels": "pt_plus_4",
+            "anchor_segmentation_boundary_review_status": "clear",
+            "anchor_segmentation_boundary_review_position_labels": "",
             "anchor_segmentation_max_left_clip_sec": "3.0",
             "anchor_segmentation_max_right_clip_sec": "34.0",
             "anchor_segmentation_min_common_retained_fraction": "0.48",
@@ -117,7 +122,9 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
     assert "decision metrics" in html
     assert "有效平滑窗" in html
     assert "Anchor 局部邊界證據" in html
-    assert "不參與 final machine call" in html
+    assert "僅作 assessability gate" in html
+    assert "review_required 只會導向" in html
+    assert "uncertain，不作正向 accept/reject evidence" in html
     assert "共同右界 owner: pt_plus_4" in html
     assert "最大右側截斷: 34.0 sec" in html
     assert "共同右界仍下降: base|pt_plus_1|pt_plus_2|pt_plus_4" in html
@@ -151,9 +158,7 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
     assert machine_rows[0]["max_abs_shape_shift_sec_to_base"] == "1.0"
     assert machine_rows[0]["min_effective_smoothing_window_sec"] == "0.90"
     assert machine_rows[0]["max_trace_point_count"] == "31"
-    assert machine_rows[0]["anchor_segmentation_boundary_review_status"] == (
-        "review_required"
-    )
+    assert machine_rows[0]["anchor_segmentation_boundary_review_status"] == "clear"
     assert machine_rows[0]["anchor_segmentation_common_end_owner_labels"] == (
         "pt_plus_4"
     )
@@ -166,6 +171,15 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
     assert summary["smooth_window_points"] == 15
     assert summary["time_smooth_window_sec"] == 20.0
     assert summary["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
+    assert summary["review_packet_csv_sha256"] == file_sha256(review_packet)
+    assert summary["trace_points_csv_sha256"] == file_sha256(trace_points)
+    assert summary["context_trace_points_csv_sha256"] == ""
+    assert summary["outputs"]["gallery_html_sha256"] == file_sha256(
+        outputs["gallery_html"]
+    )
+    assert summary["outputs"]["machine_calls_csv_sha256"] == file_sha256(
+        outputs["machine_calls_csv"]
+    )
     assert summary["smooth_applies_to"] == (
         "sealed_machine_calls_use_packet_decision_metrics;"
         "gallery_html_shows_raw_point_smoothed_time_smoothed"
@@ -247,6 +261,86 @@ def test_blind_overlay_accepts_legacy_packet_without_ambiguity_columns(
     assert machine_rows[0]["shifted_only_position_labels"] == ""
     assert "anchor_segmentation_boundary_review_status" not in machine_rows[0]
     assert "anchor_segmentation_common_end_owner_labels" not in machine_rows[0]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["empty", "missing_position", "unknown_position", "extra_candidate"],
+)
+def test_blind_overlay_rejects_non_exact_local_trace_bundle(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    review_packet = tmp_path / "packet.csv"
+    trace_points = tmp_path / "trace_points.csv"
+    write_delimited_rows(review_packet, [_packet_row()], packet.PACKET_COLUMNS)
+    rows = _trace_points()
+    if mutation == "empty":
+        rows = []
+    elif mutation == "missing_position":
+        rows = [row for row in rows if row["position_label"] != "pt_plus_4"]
+    elif mutation == "unknown_position":
+        rows[-1]["position_label"] = "pt_plus_3"
+    else:
+        rows.extend(_trace_points("extra-candidate"))
+    write_delimited_rows(trace_points, rows, overlay.TRACE_POINT_REQUIRED_COLUMNS)
+
+    with pytest.raises(
+        ValueError,
+        match="must contain|must exactly match|must be exactly",
+    ):
+        overlay.run_blind_overlay(
+            review_packet_csv=review_packet,
+            trace_points_csv=trace_points,
+            output_dir=tmp_path / "overlay",
+            title="Invalid trace bundle",
+        )
+
+
+def test_blind_overlay_rejects_trace_sample_mismatch(tmp_path: Path) -> None:
+    review_packet = tmp_path / "packet.csv"
+    trace_points = tmp_path / "trace_points.csv"
+    write_delimited_rows(review_packet, [_packet_row()], packet.PACKET_COLUMNS)
+    rows = [dict(row) | {"sample_stem": "WrongSample"} for row in _trace_points()]
+    write_delimited_rows(
+        trace_points,
+        rows,
+        (*overlay.TRACE_POINT_REQUIRED_COLUMNS, "sample_stem"),
+    )
+
+    with pytest.raises(ValueError, match="sample_stem does not match"):
+        overlay.run_blind_overlay(
+            review_packet_csv=review_packet,
+            trace_points_csv=trace_points,
+            output_dir=tmp_path / "overlay",
+            title="Mismatched sample",
+        )
+
+
+def test_blind_overlay_rejects_non_exact_context_trace_bundle(tmp_path: Path) -> None:
+    review_packet = tmp_path / "packet.csv"
+    local_trace_points = tmp_path / "local.csv"
+    context_trace_points = tmp_path / "context.csv"
+    write_delimited_rows(review_packet, [_packet_row()], packet.PACKET_COLUMNS)
+    write_delimited_rows(
+        local_trace_points,
+        _trace_points(),
+        overlay.TRACE_POINT_REQUIRED_COLUMNS,
+    )
+    write_delimited_rows(
+        context_trace_points,
+        [row for row in _trace_points() if row["position_label"] != "base"],
+        overlay.TRACE_POINT_REQUIRED_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="context trace-points.*must be exactly"):
+        overlay.run_blind_overlay(
+            review_packet_csv=review_packet,
+            trace_points_csv=local_trace_points,
+            context_trace_points_csv=context_trace_points,
+            output_dir=tmp_path / "overlay",
+            title="Mismatched context",
+        )
 
 
 def test_blind_overlay_rejects_unknown_packet_schema(tmp_path: Path) -> None:
@@ -337,6 +431,61 @@ def test_machine_call_marks_weak_partial_cases_uncertain_or_reject() -> None:
         "reject",
         "pt_pattern_candidate_incomplete",
     )
+
+
+@pytest.mark.parametrize(
+    ("review_field", "expected_reason"),
+    [
+        ("trace_ambiguity_status", "trace_ambiguity_review_required"),
+        (
+            "anchor_segmentation_boundary_review_status",
+            "anchor_segmentation_boundary_review_required",
+        ),
+    ],
+)
+def test_machine_call_routes_review_required_evidence_to_uncertain(
+    review_field: str,
+    expected_reason: str,
+) -> None:
+    call, reason = overlay.classify_machine_call(
+        _packet_row() | {review_field: "review_required"}
+    )
+
+    assert (call, reason) == ("uncertain", expected_reason)
+    assert overlay_call.MACHINE_CALL_SCOPE == "trace_evidence_disposition_only"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_reason"),
+    [
+        ("trace_ambiguity_status", "", "trace_ambiguity_not_clear"),
+        ("trace_ambiguity_status", "unknown", "trace_ambiguity_not_clear"),
+        ("anchor_segmentation_status", "", "anchor_segmentation_not_clear"),
+        (
+            "anchor_segmentation_status",
+            "missing_anchor_segment",
+            "anchor_segmentation_not_clear",
+        ),
+        (
+            "anchor_segmentation_boundary_review_status",
+            "unavailable",
+            "anchor_segmentation_boundary_not_clear",
+        ),
+        (
+            "anchor_segmentation_boundary_review_status",
+            "unknown",
+            "anchor_segmentation_boundary_not_clear",
+        ),
+    ],
+)
+def test_anchor_machine_call_fails_closed_unless_assessability_is_clear(
+    field: str,
+    value: str,
+    expected_reason: str,
+) -> None:
+    call, reason = overlay.classify_machine_call(_packet_row() | {field: value})
+
+    assert (call, reason) == ("uncertain", expected_reason)
 
 
 def test_machine_call_rejects_shifted_shape_review_only_packet() -> None:
@@ -474,6 +623,9 @@ def test_blind_overlay_separates_context_shape_and_shared_scale(
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
     assert summary["gallery_mode"] == "anchor_local_semantic"
     assert "full_context_point_smoothed" in summary["smooth_applies_to"]
+    assert summary["context_trace_points_csv_sha256"] == file_sha256(
+        context_trace_points
+    )
 
 
 def test_shared_scale_svg_fails_closed_without_plus1_signal() -> None:

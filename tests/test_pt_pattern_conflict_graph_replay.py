@@ -115,6 +115,46 @@ def test_conflict_graph_replay_fails_closed_when_claim_is_missing_from_source(
         )
 
 
+def test_conflict_graph_replay_resolves_sample_local_feature_identity(
+    tmp_path: Path,
+) -> None:
+    features_csv = tmp_path / "detected_features.csv"
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    feature_ids = ("base", "plus1", "plus2", "plus4")
+    rows = []
+    for sample_index, sample_stem in enumerate(("SampleA", "SampleB")):
+        for feature_index, feature_id in enumerate(feature_ids):
+            rows.append(
+                {
+                    "sample_stem": sample_stem,
+                    "feature_id": feature_id,
+                    "source_feature_row_id": "",
+                    "mz": 500.0 + sample_index * 100.0 + feature_index,
+                    "rt_apex_min": 10.0,
+                    "rt_start_min": 9.9,
+                    "rt_end_min": 10.1,
+                    "height": 1000.0,
+                    "area": 5000.0,
+                    "trace_quality": "OK",
+                    "shape_score": "",
+                    "source": "local_ms1_feature",
+                }
+            )
+    write_delimited_rows(features_csv, rows, DETECTED_FEATURES_COLUMNS)
+    _write_candidates(candidates_csv, (("A", feature_ids),))
+
+    outputs = run_conflict_graph_replay(
+        candidates_csv=candidates_csv,
+        detected_features_csv=features_csv,
+        output_dir=tmp_path / "output",
+        report_id="sample_local_identity",
+    )
+
+    vertices = _read_csv(outputs["vertices_csv"])
+    assert len(vertices) == 1
+    assert vertices[0]["sample_stem"] == "SampleA"
+
+
 def test_conflict_graph_replay_cli_writes_summary(tmp_path: Path) -> None:
     features_csv = tmp_path / "detected_features.csv"
     candidates_csv = tmp_path / "pt_pattern_candidates.csv"

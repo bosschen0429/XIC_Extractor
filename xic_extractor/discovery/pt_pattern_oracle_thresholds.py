@@ -11,7 +11,10 @@ from pathlib import Path
 from xic_extractor.discovery import pt_pattern_evidence_rule as evidence_rule
 from xic_extractor.discovery.pt_pattern_blind_overlay import classify_machine_call
 from xic_extractor.discovery.pt_pattern_oracle_promotion import PROMOTION_COLUMNS
-from xic_extractor.discovery.pt_pattern_review_packet import PACKET_COLUMNS
+from xic_extractor.discovery.pt_pattern_oracle_replay_contract import (
+    load_review_packets,
+    validate_oracle_promotion_binding,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
@@ -131,16 +134,21 @@ def run_threshold_calibration(
     output_dir: Path,
     calibration_id: str,
 ) -> dict[str, Path]:
+    if not review_packet_csvs:
+        raise ValueError("at least one review packet CSV is required")
     oracle_rows = read_delimited_rows(
         oracle_promotion_csv,
         required_columns=PROMOTION_COLUMNS,
         delimiter=",",
         encoding="utf-8-sig",
     )
-    review_rows = _read_review_packets(review_packet_csvs)
+    loaded_review_packets = load_review_packets(review_packet_csvs)
     cases = build_calibration_cases(
         oracle_rows=oracle_rows,
-        review_rows=review_rows,
+        review_rows=loaded_review_packets.rows,
+        review_packet_sha256_by_row_id=(
+            loaded_review_packets.sha256_by_packet_row_id
+        ),
     )
     threshold_rows = evaluate_threshold_grid(
         cases=cases,
@@ -202,6 +210,7 @@ def build_calibration_cases(
     *,
     oracle_rows: Sequence[Mapping[str, str]],
     review_rows: Sequence[Mapping[str, str]],
+    review_packet_sha256_by_row_id: Mapping[str, str],
 ) -> tuple[CalibrationCase, ...]:
     if not oracle_rows:
         raise ValueError("oracle rows must be non-empty")
@@ -216,6 +225,16 @@ def build_calibration_cases(
         review = by_packet_row_id.get(packet_row_id)
         if review is None:
             raise ValueError(f"oracle row missing review packet: {packet_row_id}")
+        review_packet_sha256 = review_packet_sha256_by_row_id.get(packet_row_id)
+        if review_packet_sha256 is None:
+            raise ValueError(
+                f"{packet_row_id}: oracle replay requires an exact review packet"
+            )
+        validate_oracle_promotion_binding(
+            oracle_row=oracle,
+            review_row=review,
+            review_packet_csv_sha256=review_packet_sha256,
+        )
         cases.append(_calibration_case(oracle, review))
     return tuple(cases)
 
@@ -507,22 +526,6 @@ def _calibration_case(
         human_review_note=oracle.get("human_review_note", ""),
         review_row=review,
     )
-
-
-def _read_review_packets(paths: Sequence[Path]) -> list[dict[str, str]]:
-    if not paths:
-        raise ValueError("at least one review packet CSV is required")
-    rows: list[dict[str, str]] = []
-    for path in paths:
-        rows.extend(
-            read_delimited_rows(
-                path,
-                required_columns=PACKET_COLUMNS,
-                delimiter=",",
-                encoding="utf-8-sig",
-            )
-        )
-    return rows
 
 
 def _unique_review_rows(

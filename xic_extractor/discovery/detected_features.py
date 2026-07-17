@@ -21,7 +21,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, DeltaMassPattern
-from xic_extractor.tabular_io import read_tsv_with_header, write_delimited_rows
+from xic_extractor.tabular_io import (
+    read_delimited_rows,
+    read_tsv_with_header,
+    write_delimited_rows,
+)
 
 DETECTED_FEATURES_COLUMNS = (
     "sample_stem",
@@ -112,6 +116,45 @@ class DetectedFeature:
     source: str
 
 
+DetectedFeatureIdentity = tuple[str, str]
+
+
+def detected_feature_identity(feature: DetectedFeature) -> DetectedFeatureIdentity:
+    """Return the canonical sample-local identity for one detected feature."""
+
+    return (feature.sample_stem, feature.feature_id)
+
+
+def validate_unique_detected_feature_identities(
+    features: Sequence[DetectedFeature],
+    *,
+    source_label: str,
+) -> None:
+    """Reject duplicate ``(sample_stem, feature_id)`` rows fail-closed.
+
+    ``feature_id`` is intentionally sample-local. The same identifier may be
+    reused by different samples, but two rows in one sample cannot safely be
+    distinguished by downstream candidate and evidence joins.
+    """
+
+    seen: set[DetectedFeatureIdentity] = set()
+    duplicates: set[DetectedFeatureIdentity] = set()
+    for feature in features:
+        identity = detected_feature_identity(feature)
+        if identity in seen:
+            duplicates.add(identity)
+        seen.add(identity)
+    if duplicates:
+        rendered = ", ".join(
+            f"({sample_stem!r}, {feature_id!r})"
+            for sample_stem, feature_id in sorted(duplicates)
+        )
+        raise ValueError(
+            f"{source_label}: duplicate detected feature identity "
+            f"(sample_stem, feature_id): {rendered}"
+        )
+
+
 @dataclass(frozen=True)
 class DeltaMassPatternSettings:
     """Tunable parameters for ``match_delta_mass_pattern()``.
@@ -140,14 +183,19 @@ def load_detected_features_csv(path: Path) -> tuple[DetectedFeature, ...]:
     required fields raise ``ValueError`` rather than being silently skipped.
     """
 
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        rows = list(reader)
+    rows = read_delimited_rows(
+        path,
+        required_columns=DETECTED_FEATURES_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
 
-    return tuple(
+    features = tuple(
         _parse_detected_feature(row, path=path, row_index=row_index)
         for row_index, row in enumerate(rows)
     )
+    validate_unique_detected_feature_identities(features, source_label=str(path))
+    return features
 
 
 def load_external_feature_table_tsv(path: Path) -> tuple[DetectedFeature, ...]:
@@ -166,10 +214,12 @@ def load_external_feature_table_tsv(path: Path) -> tuple[DetectedFeature, ...]:
         required_columns=EXTERNAL_FEATURE_TABLE_REQUIRED_COLUMNS,
         encoding="utf-8-sig",
     )
-    return tuple(
+    features = tuple(
         _parse_external_feature_table_row(row, path=path, row_index=row_index)
         for row_index, row in enumerate(rows)
     )
+    validate_unique_detected_feature_identities(features, source_label=str(path))
+    return features
 
 
 def load_mzmine_wide_feature_table_csv(
@@ -209,7 +259,9 @@ def load_mzmine_wide_feature_table_csv(
                     row_index=row_index,
                 )
             )
-    return tuple(features)
+    result = tuple(features)
+    validate_unique_detected_feature_identities(result, source_label=str(path))
+    return result
 
 
 def write_detected_features_csv(
@@ -218,6 +270,7 @@ def write_detected_features_csv(
 ) -> Path:
     """Write the Detected Features CSV v1 handoff surface."""
 
+    validate_unique_detected_feature_identities(features, source_label=str(path))
     rows = tuple(
         _validated_detected_feature_row(feature, path=path, row_index=row_index)
         for row_index, feature in enumerate(features)
@@ -228,6 +281,7 @@ def write_detected_features_csv(
         rows,
         DETECTED_FEATURES_COLUMNS,
         extrasaction="raise",
+        formatter=_format_machine_csv_value,
     )
     return path
 
@@ -380,6 +434,22 @@ def _detected_feature_row(feature: DetectedFeature) -> dict[str, object]:
         "shape_score": feature.shape_score,
         "source": feature.source,
     }
+
+
+def _format_machine_csv_value(value: object) -> str:
+    """Format machine data without lossy display-oriented float rounding."""
+
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return ""
+        if value.is_integer():
+            return str(int(value))
+        return repr(value)
+    return str(value)
 
 
 def _validated_detected_feature_row(

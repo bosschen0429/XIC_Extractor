@@ -1,4 +1,8 @@
-"""Sealed machine-call projection for the Pt blind-review overlay."""
+"""Sealed trace-evidence disposition for the Pt blind-review overlay.
+
+The call is diagnostic routing over recorded trace evidence.  It is not a
+chemical-presence, compound-identity, counting, or quantitation decision.
+"""
 
 from __future__ import annotations
 
@@ -30,8 +34,12 @@ SCHEMA_VERSION = "pt_pattern_blind_overlay.v2"
 ANCHOR_LOCAL_SCHEMA_VERSION = "pt_pattern_blind_overlay.v3"
 SMOOTH_METHOD = TRACE_SMOOTH_METHOD
 SMOOTH_WINDOW_POINTS = TRACE_SMOOTH_WINDOW_POINTS
+MACHINE_CALL_SCOPE = "trace_evidence_disposition_only"
 
-PACKET_REQUIRED_COLUMNS = (
+LEGACY_PACKET_REQUIRED_COLUMNS = (
+    "schema_version",
+    "readiness_tier",
+    "evidence_owner",
     "packet_label",
     "source_label",
     "packet_row_id",
@@ -47,10 +55,9 @@ PACKET_REQUIRED_COLUMNS = (
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
-    "min_shifted_pearson_r_to_base",
-    "max_abs_shape_shift_sec_to_base",
     "oracle_status",
 )
+PACKET_REQUIRED_COLUMNS = LEGACY_PACKET_REQUIRED_COLUMNS
 
 MACHINE_CALL_COLUMNS = (
     "schema_version",
@@ -85,6 +92,26 @@ LEGACY_MACHINE_CALL_COLUMNS = tuple(
     for column in MACHINE_CALL_COLUMNS
     if column not in ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
 )
+LEGACY_MACHINE_CALL_REQUIRED_COLUMNS = (
+    "schema_version",
+    "readiness_tier",
+    "evidence_owner",
+    "packet_label",
+    "source_label",
+    "packet_row_id",
+    "candidate_id",
+    "machine_call",
+    "machine_call_reason",
+    "trace_decision_basis",
+    "trace_smoothing_method",
+    "trace_smoothing_window_points",
+    "combined_pt_pattern_status",
+    "non_base_positions_supported",
+    "max_abs_apex_delta_sec",
+    "min_pearson_r_to_base",
+    "min_active_overlap_fraction",
+    "oracle_status",
+)
 
 MACHINE_CALL_THRESHOLDS = PtPatternEvidenceThresholds()
 
@@ -114,6 +141,35 @@ def validate_packet_rows(rows: Sequence[Mapping[str, str]]) -> None:
             )
     if len(effective_versions) > 1:
         raise ValueError("review packet rows must use one schema_version")
+
+
+def validate_machine_call_rows(rows: Sequence[Mapping[str, str]]) -> None:
+    effective_versions: set[str] = set()
+    anchor_columns = set(ANCHOR_SEGMENTATION_SUMMARY_COLUMNS)
+    for row_index, row in enumerate(rows, start=2):
+        schema_version = str(row.get("schema_version", "")).strip()
+        present_anchor_columns = anchor_columns.intersection(row)
+        if schema_version in {"", SCHEMA_VERSION}:
+            effective_versions.add(SCHEMA_VERSION)
+            if present_anchor_columns:
+                raise ValueError(
+                    f"machine-call row {row_index}: v2 must not contain "
+                    "anchor-local columns"
+                )
+        elif schema_version == ANCHOR_LOCAL_SCHEMA_VERSION:
+            effective_versions.add(ANCHOR_LOCAL_SCHEMA_VERSION)
+            if present_anchor_columns != anchor_columns:
+                raise ValueError(
+                    f"machine-call row {row_index}: v3 requires all "
+                    "anchor-local columns"
+                )
+        else:
+            raise ValueError(
+                f"machine-call row {row_index}: unsupported schema_version "
+                f"{schema_version!r}"
+            )
+    if len(effective_versions) > 1:
+        raise ValueError("machine-call rows must use one schema_version")
 
 
 def machine_call_row(row: Mapping[str, str]) -> dict[str, object]:
@@ -173,6 +229,27 @@ def classify_machine_call(row: Mapping[str, str]) -> tuple[str, str]:
         or smooth_window != float(SMOOTH_WINDOW_POINTS)
     ):
         return "uncertain", "unsupported_or_stale_trace_decision_basis"
+
+    trace_ambiguity = str(row.get("trace_ambiguity_status", "")).strip()
+    segmentation_status = str(row.get("anchor_segmentation_status", "")).strip()
+    boundary_status = str(
+        row.get("anchor_segmentation_boundary_review_status", "")
+    ).strip()
+    if trace_ambiguity == "review_required":
+        return "uncertain", "trace_ambiguity_review_required"
+    if boundary_status == "review_required":
+        return "uncertain", "anchor_segmentation_boundary_review_required"
+
+    packet_schema = str(row.get("schema_version", "")).strip()
+    if packet_schema == ANCHOR_PACKET_SCHEMA_VERSION:
+        if trace_ambiguity != "clear":
+            return "uncertain", "trace_ambiguity_not_clear"
+        if segmentation_status != "clear":
+            return "uncertain", "anchor_segmentation_not_clear"
+        if boundary_status != "clear":
+            return "uncertain", "anchor_segmentation_boundary_not_clear"
+    elif trace_ambiguity not in {"", "clear"}:
+        return "uncertain", "trace_ambiguity_not_clear"
 
     status = str(row.get("combined_pt_pattern_status", "")).strip()
     supported = optional_float(row.get("non_base_positions_supported"))

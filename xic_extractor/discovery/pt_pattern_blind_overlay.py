@@ -12,6 +12,8 @@ from typing import Literal, assert_never
 from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
     ANCHOR_LOCAL_SCHEMA_VERSION,
     LEGACY_MACHINE_CALL_COLUMNS,
+    LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
+    LEGACY_PACKET_REQUIRED_COLUMNS,
     MACHINE_CALL_COLUMNS,
     PACKET_REQUIRED_COLUMNS,
     SCHEMA_VERSION,
@@ -19,6 +21,8 @@ from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
     SMOOTH_WINDOW_POINTS,
     classify_machine_call,
     machine_call_row,
+    validate_machine_call_rows,
+    validate_packet_rows,
 )
 from xic_extractor.discovery.pt_pattern_blind_overlay_writer import (
     TRACE_POINT_REQUIRED_COLUMNS,
@@ -32,6 +36,8 @@ from xic_extractor.tabular_io import optional_float
 __all__ = (
     "ANCHOR_LOCAL_SCHEMA_VERSION",
     "LEGACY_MACHINE_CALL_COLUMNS",
+    "LEGACY_MACHINE_CALL_REQUIRED_COLUMNS",
+    "LEGACY_PACKET_REQUIRED_COLUMNS",
     "MACHINE_CALL_COLUMNS",
     "PACKET_REQUIRED_COLUMNS",
     "SCHEMA_VERSION",
@@ -41,6 +47,8 @@ __all__ = (
     "classify_machine_call",
     "machine_call_row",
     "run_blind_overlay",
+    "validate_machine_call_rows",
+    "validate_packet_rows",
 )
 
 VISUAL_TIME_SMOOTH_WINDOW_SEC = 20.0
@@ -237,6 +245,8 @@ def render_blind_overlay_html(
       盲測疊圖：本頁刻意隱藏 final machine call 與既有 trace support 判斷，
       但顯示 anchor-local 選段的 diagnostic 邊界證據。請先依 packet row id
       在 review packet CSV 記錄人工判斷，再開啟密封的 machine-call 檔案。
+      boundary/ambiguity 僅作 assessability gate；review_required 只會導向
+      uncertain，不作正向 accept/reject evidence。
       {trace_explanation}
     </div>
   </header>
@@ -337,7 +347,7 @@ def _render_boundary_evidence(row: Mapping[str, str]) -> str:
     escaped = {key: html.escape(str(value)) for key, value in values.items()}
     common_interval = f"{escaped['common_start']}–{escaped['common_end']} min"
     return f"""<div class="boundary-evidence">
-    <strong>Anchor 局部邊界證據（diagnostic only；不參與 final machine call）</strong>
+    <strong>Anchor 局部邊界證據（diagnostic only；僅作 assessability gate）</strong>
     <div class="boundary-grid">
       <div>選段狀態: {escaped['selection']}</div>
       <div>邊界 review: {escaped['boundary']}</div>

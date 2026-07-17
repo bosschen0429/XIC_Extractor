@@ -89,6 +89,7 @@ METRIC_REQUIRED_COLUMNS = (
 )
 
 POSITION_LABELS = ("pt_plus_1", "pt_plus_2", "pt_plus_4")
+METRIC_POSITION_LABELS = ("base", *POSITION_LABELS)
 STATUS_ORDER = (
     "pt_pattern_detected_diagnostic",
     "pt_pattern_candidate_partial",
@@ -217,6 +218,10 @@ def build_review_packet_rows(
             "summary candidate_id values missing from candidates: " + joined
         )
     metrics_by_candidate = _metrics_by_candidate(metric_rows)
+    _validate_metric_coverage(
+        metrics_by_candidate=metrics_by_candidate,
+        summary_candidate_ids=set(summaries_by_id),
+    )
     grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
 
     for summary in summary_rows:
@@ -226,7 +231,7 @@ def build_review_packet_rows(
         row = _packet_row(
             candidate=candidate,
             summary=summary,
-            metrics_by_position=metrics_by_candidate.get(candidate_id, {}),
+            metrics_by_position=metrics_by_candidate[candidate_id],
             packet_label=packet_label,
             source_label=source_label,
             schema_version=packet_schema_version,
@@ -555,6 +560,43 @@ def _metrics_by_candidate(
         joined = ", ".join(sorted(set(duplicates))[:5])
         raise ValueError(f"duplicate metric candidate/position values: {joined}")
     return grouped
+
+
+def _validate_metric_coverage(
+    *,
+    metrics_by_candidate: Mapping[str, Mapping[str, Mapping[str, str]]],
+    summary_candidate_ids: set[str],
+) -> None:
+    metric_candidate_ids = set(metrics_by_candidate)
+    if metric_candidate_ids != summary_candidate_ids:
+        missing = sorted(summary_candidate_ids - metric_candidate_ids)
+        unexpected = sorted(metric_candidate_ids - summary_candidate_ids)
+        details: list[str] = []
+        if missing:
+            details.append("missing=" + ",".join(missing[:5]))
+        if unexpected:
+            details.append("unexpected=" + ",".join(unexpected[:5]))
+        raise ValueError(
+            "metric candidate_id set must exactly match summary candidate_id set: "
+            + "; ".join(details)
+        )
+
+    expected_positions = set(METRIC_POSITION_LABELS)
+    for candidate_id in sorted(summary_candidate_ids):
+        positions = set(metrics_by_candidate[candidate_id])
+        if positions == expected_positions:
+            continue
+        missing = sorted(expected_positions - positions)
+        unexpected = sorted(positions - expected_positions)
+        details = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if unexpected:
+            details.append("unexpected=" + ",".join(unexpected))
+        raise ValueError(
+            f"{candidate_id}: metric position_label set must be exactly "
+            f"{','.join(METRIC_POSITION_LABELS)}: " + "; ".join(details)
+        )
 
 
 def _review_bucket(combined_status: str) -> str:

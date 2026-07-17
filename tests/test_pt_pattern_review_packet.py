@@ -122,7 +122,7 @@ def _metric_rows(
             "trace_support_status": "supported",
             "reason": "unit_fixture",
         }
-        for label in ("pt_plus_1", "pt_plus_2", "pt_plus_4")
+        for label in evidence.POSITION_LABELS
     ]
 
 
@@ -159,6 +159,7 @@ def test_build_review_packet_rows_samples_per_status_and_keeps_pending_oracle() 
     assert rows[0]["human_review_decision"] == ""
     assert rows[0]["oracle_status"] == "pending_human_review"
     assert rows[0]["pt_plus_4_trace_support_status"] == "supported"
+    assert "base_trace_support_status" not in rows[0]
     assert rows[0]["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
     assert rows[0]["min_shifted_pearson_r_to_base"] == "0.98"
     assert rows[0]["max_abs_shape_shift_sec_to_base"] == "1.0"
@@ -201,6 +202,68 @@ def test_review_packet_rejects_duplicate_summary_candidate_id() -> None:
             summary_rows=[summary, dict(summary)],
             metric_rows=_metric_rows("cand"),
             packet_label="duplicate-summary",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_missing_metric_candidate() -> None:
+    with pytest.raises(ValueError, match="metric candidate_id set must exactly"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand-a"), _candidate_row("cand-b")],
+            summary_rows=[
+                _summary_row("cand-a", "pt_pattern_detected_diagnostic"),
+                _summary_row("cand-b", "pt_pattern_candidate_partial"),
+            ],
+            metric_rows=_metric_rows("cand-a"),
+            packet_label="missing-metric-candidate",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_unexpected_metric_candidate() -> None:
+    with pytest.raises(ValueError, match="metric candidate_id set must exactly"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[
+                _summary_row("cand", "pt_pattern_detected_diagnostic")
+            ],
+            metric_rows=[*_metric_rows("cand"), *_metric_rows("unexpected")],
+            packet_label="unexpected-metric-candidate",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_error"),
+    [
+        ("missing", "metric position_label set must be exactly"),
+        ("unknown", "metric position_label set must be exactly"),
+        ("duplicate", "duplicate metric candidate/position values"),
+    ],
+)
+def test_review_packet_rejects_invalid_metric_position_set(
+    mutate: str,
+    expected_error: str,
+) -> None:
+    metrics = _metric_rows("cand")
+    if mutate == "missing":
+        metrics.pop()
+    elif mutate == "unknown":
+        metrics[-1]["position_label"] = "pt_plus_3"
+    else:
+        metrics.append(dict(metrics[-1]))
+
+    with pytest.raises(ValueError, match=expected_error):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[
+                _summary_row("cand", "pt_pattern_detected_diagnostic")
+            ],
+            metric_rows=metrics,
+            packet_label="invalid-metric-position-set",
             source_label="pt_only",
             max_per_status=1,
         )

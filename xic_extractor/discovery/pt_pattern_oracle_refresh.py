@@ -7,11 +7,15 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from xic_extractor.discovery.pt_pattern_blind_overlay import MACHINE_CALL_COLUMNS
-from xic_extractor.discovery.pt_pattern_oracle_promotion import (
-    ADJUDICATED_REQUIRED_COLUMNS,
+from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
+    LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
+    LEGACY_PACKET_REQUIRED_COLUMNS,
+    validate_machine_call_rows,
+    validate_packet_rows,
 )
-from xic_extractor.discovery.pt_pattern_review_packet import PACKET_COLUMNS
+from xic_extractor.discovery.pt_pattern_oracle_promotion import (
+    LEGACY_ADJUDICATED_REQUIRED_COLUMNS,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
     read_delimited_rows,
@@ -28,7 +32,7 @@ PENDING_STATUS = "pending_human_review"
 CONFLICT_STATUS = "provenance_conflict"
 STALE_STATUS = "stale_old_oracle_row"
 
-REFRESH_DRAFT_COLUMNS = ADJUDICATED_REQUIRED_COLUMNS + (
+REFRESH_DRAFT_COLUMNS = LEGACY_ADJUDICATED_REQUIRED_COLUMNS + (
     "schema_version",
     "readiness_tier",
     "evidence_owner",
@@ -87,7 +91,7 @@ PENDING_REVIEW_COLUMNS = (
     "current_min_active_overlap_fraction",
 )
 
-STALE_ORACLE_COLUMNS = ADJUDICATED_REQUIRED_COLUMNS + (
+STALE_ORACLE_COLUMNS = LEGACY_ADJUDICATED_REQUIRED_COLUMNS + (
     "schema_version",
     "readiness_tier",
     "evidence_owner",
@@ -110,7 +114,7 @@ def run_oracle_refresh(
 ) -> dict[str, Path]:
     adjudicated_rows = read_delimited_rows(
         adjudicated_oracle_csv,
-        required_columns=ADJUDICATED_REQUIRED_COLUMNS,
+        required_columns=LEGACY_ADJUDICATED_REQUIRED_COLUMNS,
         delimiter=",",
         encoding="utf-8-sig",
     )
@@ -267,17 +271,30 @@ def _build_draft_row(
 ) -> dict[str, object]:
     packet_row_id = _required_text(review_row, "packet_row_id")
     candidate_id = _required_text(review_row, "candidate_id")
+    packet_label = _required_text(review_row, "packet_label")
     source_label = _required_text(review_row, "source_label")
     dataset = source_label
+    machine_identity_mismatches = _machine_identity_mismatches(
+        machine_row=machine_row,
+        review_row=review_row,
+    )
+    trusted_machine_row = (
+        machine_row
+        if machine_row is not None and not machine_identity_mismatches
+        else None
+    )
     base_row: dict[str, object] = {
         "dataset": dataset,
         "case_index": case_index,
         "adjudicated_call": "",
         "adjudication_basis": "",
         "user_call": "",
-        "machine_call": _machine_text(machine_row, "machine_call"),
+        "machine_call": _machine_text(trusted_machine_row, "machine_call"),
         "note_optional": "",
-        "machine_call_reason": _machine_text(machine_row, "machine_call_reason"),
+        "machine_call_reason": _machine_text(
+            trusted_machine_row,
+            "machine_call_reason",
+        ),
         "base_mz": _required_text(review_row, "base_mz"),
         "base_rt_apex_min": _required_text(review_row, "base_rt_apex_min"),
         "candidate_id": candidate_id,
@@ -287,14 +304,24 @@ def _build_draft_row(
         "evidence_owner": EVIDENCE_OWNER,
         "authority_scope": AUTHORITY_SCOPE,
         "refresh_packet_id": refresh_packet_id,
-        "refresh_status": PENDING_STATUS,
-        "provenance_status": "new_current_packet_row",
+        "refresh_status": (
+            CONFLICT_STATUS if machine_identity_mismatches else PENDING_STATUS
+        ),
+        "provenance_status": (
+            "current_machine_call_identity_mismatch"
+            if machine_identity_mismatches
+            else "new_current_packet_row"
+        ),
         "machine_call_status": (
             "current_machine_call_matched"
-            if machine_row is not None
-            else "missing_current_machine_call"
+            if trusted_machine_row is not None
+            else (
+                "current_machine_call_provenance_conflict"
+                if machine_identity_mismatches
+                else "missing_current_machine_call"
+            )
         ),
-        "current_packet_label": review_row.get("packet_label", ""),
+        "current_packet_label": packet_label,
         "current_source_label": source_label,
         "current_sample_stem": review_row.get("sample_stem", ""),
         "current_review_packet_schema_version": review_row.get(
@@ -339,6 +366,8 @@ def _build_draft_row(
         "source_note_optional": "",
         "source_adjudication_basis": "",
     }
+    if machine_identity_mismatches:
+        return base_row
     if source_row is None:
         return base_row
 
@@ -377,14 +406,14 @@ def _build_draft_row(
         )
         return base_row
 
+    # packet_row_id and candidate_id prove only logical-row continuity.  The v1
+    # adjudication schema does not bind the label to the exact review-packet
+    # artifact (or row hash), so carrying the verdict forward would silently
+    # reuse a potentially stale human judgment against changed evidence.
     base_row.update(
         {
-            "adjudicated_call": source_call,
-            "adjudication_basis": "v2_refresh_carryover_from_v1_manual_oracle",
-            "user_call": source_row.get("user_call", ""),
-            "note_optional": source_row.get("note_optional", ""),
-            "refresh_status": CARRYOVER_STATUS,
-            "provenance_status": "current_packet_row_matched_old_oracle",
+            "refresh_status": PENDING_STATUS,
+            "provenance_status": "old_oracle_exact_artifact_identity_unproven",
         }
     )
     return base_row
@@ -396,7 +425,7 @@ def _stale_row(
     refresh_packet_id: str,
 ) -> dict[str, object]:
     row: dict[str, object] = {
-        key: source_row.get(key, "") for key in ADJUDICATED_REQUIRED_COLUMNS
+        key: source_row.get(key, "") for key in LEGACY_ADJUDICATED_REQUIRED_COLUMNS
     }
     row.update(
         {
@@ -417,14 +446,14 @@ def _read_review_packets(paths: Sequence[Path]) -> list[dict[str, str]]:
         raise ValueError("at least one review packet CSV is required")
     rows: list[dict[str, str]] = []
     for path in paths:
-        rows.extend(
-            read_delimited_rows(
-                path,
-                required_columns=PACKET_COLUMNS,
-                delimiter=",",
-                encoding="utf-8-sig",
-            )
+        packet_rows = read_delimited_rows(
+            path,
+            required_columns=LEGACY_PACKET_REQUIRED_COLUMNS,
+            delimiter=",",
+            encoding="utf-8-sig",
         )
+        validate_packet_rows(packet_rows)
+        rows.extend(packet_rows)
     return rows
 
 
@@ -433,14 +462,14 @@ def _read_machine_calls(paths: Sequence[Path]) -> list[dict[str, str]]:
         return []
     rows: list[dict[str, str]] = []
     for path in paths:
-        rows.extend(
-            read_delimited_rows(
-                path,
-                required_columns=MACHINE_CALL_COLUMNS,
-                delimiter=",",
-                encoding="utf-8-sig",
-            )
+        machine_rows = read_delimited_rows(
+            path,
+            required_columns=LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
+            delimiter=",",
+            encoding="utf-8-sig",
         )
+        validate_machine_call_rows(machine_rows)
+        rows.extend(machine_rows)
     return rows
 
 
@@ -461,6 +490,22 @@ def _machine_text(row: Mapping[str, str] | None, key: str) -> str:
     if row is None:
         return ""
     return str(row.get(key, "")).strip()
+
+
+def _machine_identity_mismatches(
+    *,
+    machine_row: Mapping[str, str] | None,
+    review_row: Mapping[str, str],
+) -> tuple[str, ...]:
+    if machine_row is None:
+        return ()
+    mismatches: list[str] = []
+    for field in ("candidate_id", "packet_label", "source_label"):
+        machine_value = str(machine_row.get(field, "")).strip()
+        review_value = _required_text(review_row, field)
+        if machine_value != review_value:
+            mismatches.append(field)
+    return tuple(mismatches)
 
 
 def _normalize_call(value: object) -> str:

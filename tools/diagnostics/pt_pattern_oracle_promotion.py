@@ -27,6 +27,16 @@ def _build_parser() -> argparse.ArgumentParser:
         required=True,
         help="Manual review packet CSV. Repeat for multi-packet promotions.",
     )
+    parser.add_argument(
+        "--blind-overlay-summary-json",
+        type=Path,
+        action="append",
+        required=True,
+        help=(
+            "Blind-overlay summary that binds the reviewed packet, traces, "
+            "gallery, and sealed calls. Repeat for multi-packet promotions."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--oracle-packet-id", required=True)
     parser.add_argument("--adjudication-summary-json", type=Path)
@@ -41,6 +51,11 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
     for review_packet_csv in args.review_packet_csv:
         if not review_packet_csv.is_file():
             parser.error(f"{review_packet_csv}: review packet CSV does not exist")
+    for overlay_summary_json in args.blind_overlay_summary_json:
+        if not overlay_summary_json.is_file():
+            parser.error(
+                f"{overlay_summary_json}: blind-overlay summary JSON does not exist"
+            )
     if args.adjudication_summary_json and not args.adjudication_summary_json.is_file():
         parser.error(
             f"{args.adjudication_summary_json}: "
@@ -59,6 +74,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             adjudicated_oracle_csv=args.adjudicated_oracle_csv.resolve(),
             review_packet_csvs=[
                 path.resolve() for path in args.review_packet_csv
+            ],
+            blind_overlay_summary_jsons=[
+                path.resolve() for path in args.blind_overlay_summary_json
             ],
             output_dir=args.output_dir.resolve(),
             oracle_packet_id=args.oracle_packet_id,

@@ -26,7 +26,10 @@ from xic_extractor.discovery.delta_mass_csv import (
     write_pt_pattern_sidecar_json,
 )
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, PtPatternCandidate
-from xic_extractor.discovery.detected_features import DetectedFeature
+from xic_extractor.discovery.detected_features import (
+    DetectedFeature,
+    write_detected_features_csv,
+)
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
     load_candidate_rows,
     validate_candidate_sample_binding,
@@ -286,6 +289,98 @@ def test_load_detected_features_csv_parses_required_and_blank_optional_fields(
     assert feature.trace_quality == "GOOD"
     assert feature.shape_score == 0.9
     assert feature.source == "targeted"
+
+
+@pytest.mark.parametrize(
+    "contents",
+    (
+        "",
+        "sample_stem,feature_id\r\n",
+    ),
+)
+def test_load_detected_features_csv_rejects_missing_required_headers(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    csv_path = tmp_path / "detected_features.csv"
+    csv_path.write_text(contents, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing required columns"):
+        load_detected_features_csv(csv_path)
+
+
+def test_load_detected_features_csv_accepts_header_only_contract(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "detected_features.csv"
+    csv_path.write_text(
+        ",".join(DETECTED_FEATURES_COLUMNS) + "\r\n",
+        encoding="utf-8",
+    )
+
+    assert load_detected_features_csv(csv_path) == ()
+
+
+def test_detected_feature_identity_is_sample_local_and_duplicate_fails_closed(
+    tmp_path: Path,
+) -> None:
+    csv_path = tmp_path / "detected_features.csv"
+    header = ",".join(DETECTED_FEATURES_COLUMNS)
+    row_a = "Sample_A,F1,,500.0,10.0,,,1000,,GOOD,,targeted"
+    row_b = "Sample_B,F1,,600.0,11.0,,,900,,GOOD,,targeted"
+    csv_path.write_text(
+        f"{header}\r\n{row_a}\r\n{row_b}\r\n",
+        encoding="utf-8",
+    )
+
+    features = load_detected_features_csv(csv_path)
+
+    assert [(feature.sample_stem, feature.feature_id) for feature in features] == [
+        ("Sample_A", "F1"),
+        ("Sample_B", "F1"),
+    ]
+
+    csv_path.write_text(
+        f"{header}\r\n{row_a}\r\n{row_a}\r\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="duplicate detected feature identity"):
+        load_detected_features_csv(csv_path)
+
+
+def test_machine_csv_float_fields_round_trip_without_six_digit_rounding(
+    tmp_path: Path,
+) -> None:
+    precise_mz = 1537.5390625
+    feature = DetectedFeature(
+        sample_stem="Sample_1",
+        feature_id="F1",
+        source_feature_row_id=None,
+        mz=precise_mz,
+        rt_apex_min=13.1234567890123,
+        rt_start_min=None,
+        rt_end_min=None,
+        height=1000.0,
+        area=None,
+        trace_quality="GOOD",
+        shape_score=None,
+        source="targeted",
+    )
+    detected_path = write_detected_features_csv(
+        tmp_path / "detected_features.csv",
+        [feature],
+    )
+    candidate_path = write_pt_pattern_candidates_csv(
+        tmp_path / "pt_pattern_candidates.csv",
+        [_pt_candidate(base_mz=precise_mz)],
+    )
+
+    detected_row = _read_csv(detected_path)[0]
+    candidate_row = _read_csv(candidate_path)[0]
+    assert detected_row["mz"] == repr(precise_mz)
+    assert candidate_row["base_mz"] == repr(precise_mz)
+    assert float(detected_row["mz"]) == precise_mz
+    assert float(candidate_row["base_mz"]) == precise_mz
 
 
 def test_load_detected_features_csv_requires_non_blank_required_fields(

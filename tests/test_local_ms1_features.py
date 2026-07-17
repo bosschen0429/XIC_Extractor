@@ -67,7 +67,7 @@ def test_build_local_ms1_feature_table_emits_ok_and_weak_support_features() -> N
 
     assert [feature.trace_quality for feature in features] == ["OK", "WEAK_SUPPORT"]
     assert features[0].feature_id == "Sample_1|local_ms1_feature|000001"
-    assert features[0].source_feature_row_id == features[0].feature_id
+    assert features[0].source_feature_row_id is None
     assert features[0].source == "local_ms1_feature"
     assert features[0].height > 0
     assert features[0].area is not None and features[0].area > 0

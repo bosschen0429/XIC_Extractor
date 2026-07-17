@@ -34,6 +34,8 @@ from xic_extractor.discovery.delta_mass_patterns import (
     match_delta_mass_pattern,
 )
 from xic_extractor.discovery.detected_features import (
+    LOCAL_MS1_FEATURE_SOURCE,
+    detected_feature_identity,
     load_external_feature_table_tsv,
     load_mzmine_wide_feature_table_csv,
     write_detected_features_csv,
@@ -53,6 +55,7 @@ _ALLOWED_CID_NL_STATES = frozenset(
     {"ms1_feature_nl_supported", "ms1_feature_nl_rescued"}
 )
 _CID_NL_REQUIRED_COLUMNS = (
+    "candidate_id",
     "ms1_feature_row_id",
     "neutral_loss_tag",
     "discovery_candidate_state",
@@ -83,15 +86,19 @@ class _CidNlCandidateRow:
     because they are only required by the m/z/RT fallback join path, not by
     the same-feature-identity join path (plan lines 809-813).
 
-    ``sample_stem`` is not itself a required input column: the real
-    ``discovery_candidates.csv`` contract (``xic_extractor.discovery.models``)
-    has no ``sample_stem`` column of its own -- ``ms1_feature_row_id`` is
-    built as ``sample_stem|neutral_loss_tag|precursor_mz|rt_identity``
-    (``build_ms1_feature_row_id``), so ``sample_stem`` is derived from its
-    leading ``|``-delimited segment when a ``sample_stem`` column is absent.
+    ``candidate_id`` is required because composite output exposes the matched
+    CID-NL candidate identity. A source-row locator is provenance, not a
+    candidate ID, and must never be substituted into that public field.
+
+    ``sample_stem`` may be supplied explicitly. ``ms1_feature_row_id`` is built
+    as ``sample_stem|neutral_loss_tag|precursor_mz|rt_identity``
+    (``build_ms1_feature_row_id``), so the sample is also derived from its
+    leading ``|``-delimited segment. When both representations are present they
+    must agree; the parser never guesses across conflicting sample identities.
     """
 
     sample_stem: str
+    candidate_id: str
     ms1_feature_row_id: str
     neutral_loss_tag: str
     discovery_candidate_state: str
@@ -155,18 +162,20 @@ def run_pt_pattern_discovery(
             if base_feature_ids
             else ()
         )
-        source_feature_row_id_by_feature_id = {
-            feature.feature_id: feature.source_feature_row_id
+        source_feature_row_id_by_feature_identity = {
+            detected_feature_identity(feature): feature.source_feature_row_id
             for feature in features
         }
-        source_by_feature_id = {
-            feature.feature_id: feature.source for feature in features
+        source_by_feature_identity = {
+            detected_feature_identity(feature): feature.source for feature in features
         }
         candidates = _apply_cid_nl_composite_join(
             candidates,
             cid_nl_rows=cid_nl_rows,
-            source_feature_row_id_by_feature_id=source_feature_row_id_by_feature_id,
-            source_by_feature_id=source_by_feature_id,
+            source_feature_row_id_by_feature_identity=(
+                source_feature_row_id_by_feature_identity
+            ),
+            source_by_feature_identity=source_by_feature_identity,
         )
     else:
         candidates = match_delta_mass_pattern(features, settings=settings)
@@ -218,6 +227,8 @@ def run_pt_pattern_discovery(
                 else None
             ),
             candidates=candidates,
+            effective_mz_tolerance_ppm=settings.mz_tolerance_ppm,
+            effective_rt_tolerance_sec=settings.rt_tolerance_sec,
             trace_summary_csv=(
                 str(trace_summary_csv) if trace_summary_csv is not None else None
             ),
@@ -306,14 +317,25 @@ def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
         if state not in _ALLOWED_CID_NL_STATES:
             continue
         parsed.append(_parse_cid_nl_row(row, path=path, row_index=row_index))
+    seen_candidate_ids: set[str] = set()
+    duplicate_candidate_ids: set[str] = set()
+    for parsed_row in parsed:
+        if parsed_row.candidate_id in seen_candidate_ids:
+            duplicate_candidate_ids.add(parsed_row.candidate_id)
+        seen_candidate_ids.add(parsed_row.candidate_id)
+    if duplicate_candidate_ids:
+        raise ValueError(
+            f"{path}: duplicate eligible CID-NL candidate_id values: "
+            + ", ".join(sorted(duplicate_candidate_ids))
+        )
     return tuple(parsed)
 
 
 def _cid_nl_seed_base_feature_ids(
     features: tuple["DetectedFeature", ...],
     cid_nl_rows: tuple[_CidNlCandidateRow, ...],
-) -> frozenset[str]:
-    """Return detected-feature IDs that CID-NL(dR) can seed as Pt bases.
+) -> frozenset[tuple[str, str]]:
+    """Return sample-local feature identities CID-NL(dR) can seed as Pt bases.
 
     Composite discovery should not run Pt matching over every feature and then
     intersect after the fact. It first finds base features supported by eligible
@@ -326,23 +348,26 @@ def _cid_nl_seed_base_feature_ids(
         return frozenset()
 
     base_features = [feature for feature in features if _is_seed_base_feature(feature)]
-    identity_index: dict[tuple[str, str], set[str]] = {}
+    identity_index: dict[tuple[str, str], set[tuple[str, str]]] = {}
     fallback_features_by_sample: dict[str, list["DetectedFeature"]] = {}
     for feature in base_features:
-        if not _has_comparable_cid_nl_identity(
+        identity_comparable = _has_comparable_cid_nl_identity(
             source_feature_row_id=feature.source_feature_row_id,
             source=feature.source,
-        ):
+        )
+        if not identity_comparable:
             fallback_features_by_sample.setdefault(feature.sample_stem, []).append(
                 feature
             )
+            continue
+
         if feature.source_feature_row_id:
             identity_index.setdefault(
                 (feature.sample_stem, feature.source_feature_row_id),
                 set(),
-            ).add(feature.feature_id)
+            ).add(detected_feature_identity(feature))
         identity_index.setdefault((feature.sample_stem, feature.feature_id), set()).add(
-            feature.feature_id
+            detected_feature_identity(feature)
         )
 
     sorted_fallback_by_sample: dict[
@@ -355,7 +380,7 @@ def _cid_nl_seed_base_feature_ids(
             ordered,
         )
 
-    seed_ids: set[str] = set()
+    seed_ids: set[tuple[str, str]] = set()
     for row in eligible_rows:
         identity_matches = identity_index.get((row.sample_stem, row.ms1_feature_row_id))
         if identity_matches:
@@ -393,18 +418,21 @@ def _has_comparable_cid_nl_identity(
     """Return whether a feature has an ID comparable to CID-NL row identity.
 
     Missing source IDs cannot support an identity join regardless of detector.
-    MZmine row IDs are detector-local and remain eligible for m/z/RT fallback.
+    MZmine and local-MS1 IDs are detector-local and remain eligible for m/z/RT
+    fallback even when legacy artifacts populated ``source_feature_row_id``.
     """
 
-    return bool(source_feature_row_id) and not source.startswith(
-        _MZMINE_FEATURE_SOURCE_PREFIX
+    return (
+        bool(source_feature_row_id)
+        and source != LOCAL_MS1_FEATURE_SOURCE
+        and not source.startswith(_MZMINE_FEATURE_SOURCE_PREFIX)
     )
 
 
 def _fallback_seed_base_feature_ids(
     row: _CidNlCandidateRow,
     sorted_by_sample: dict[str, tuple[list[float], list["DetectedFeature"]]],
-) -> set[str]:
+) -> set[tuple[str, str]]:
     if row.precursor_mz is None or row.ms1_apex_rt is None:
         return set()
     sample_entry = sorted_by_sample.get(row.sample_stem)
@@ -415,11 +443,11 @@ def _fallback_seed_base_feature_ids(
     window_da = row.precursor_mz * _CID_NL_MZ_TOLERANCE_PPM * 1e-6
     start_index = bisect.bisect_left(sorted_mzs, row.precursor_mz - window_da)
     end_index = bisect.bisect_right(sorted_mzs, row.precursor_mz + window_da)
-    seed_ids: set[str] = set()
+    seed_ids: set[tuple[str, str]] = set()
     for feature in sample_features[start_index:end_index]:
         rt_delta_sec = abs(feature.rt_apex_min - row.ms1_apex_rt) * 60.0
         if rt_delta_sec <= _CID_NL_RT_TOLERANCE_SEC:
-            seed_ids.add(feature.feature_id)
+            seed_ids.add(detected_feature_identity(feature))
     return seed_ids
 
 
@@ -428,9 +456,10 @@ def _parse_cid_nl_row_state(
 ) -> str:
     """Parse the fields required on EVERY row regardless of join eligibility.
 
-    ``neutral_loss_tag`` and ``discovery_candidate_state`` make a row
-    structurally identifiable/filterable; a row genuinely missing either is
-    malformed regardless of its state, so this always validates them.
+    ``candidate_id``, ``neutral_loss_tag``, and ``discovery_candidate_state``
+    make a row structurally identifiable/filterable; a row genuinely missing
+    any of them is malformed regardless of its state, so this always validates
+    them.
     Returns the row's ``discovery_candidate_state`` so the caller can decide
     whether the row is eligible for the stricter join-field parse.
     """
@@ -438,6 +467,14 @@ def _parse_cid_nl_row_state(
     def _row_label() -> str:
         return f"{path} row {row_index}"
 
+    candidate_id = _required_text(
+        row.get("candidate_id"), "candidate_id", _row_label()
+    )
+    _reject_ambiguous_formula_escaped_identity(
+        candidate_id,
+        field="candidate_id",
+        row_label=_row_label(),
+    )
     _required_text(row.get("neutral_loss_tag"), "neutral_loss_tag", _row_label())
     return _required_text(
         row.get("discovery_candidate_state"),
@@ -453,9 +490,9 @@ def _parse_cid_nl_row(
 
     Only called for rows whose ``discovery_candidate_state`` is in
     ``_ALLOWED_CID_NL_STATES``; validates the join-only fields
-    (``ms1_feature_row_id``, and the optional-but-finite-when-present
-    ``precursor_mz``/``ms1_apex_rt``/``evidence_score``) that ineligible-state
-    rows are not required to carry.
+    (``ms1_feature_row_id``, coherent sample identity, and the
+    optional-but-finite-when-present ``precursor_mz``/``ms1_apex_rt``/
+    ``evidence_score``) that ineligible-state rows are not required to carry.
     """
 
     def _row_label() -> str:
@@ -472,12 +509,37 @@ def _parse_cid_nl_row(
         "discovery_candidate_state",
         _row_label(),
     )
-    sample_stem = _optional_text(row.get("sample_stem")) or _sample_stem_from_row_id(
-        ms1_feature_row_id
+    candidate_id = _required_text(
+        row.get("candidate_id"), "candidate_id", _row_label()
     )
+    explicit_sample_stem = _optional_text(row.get("sample_stem"))
+    derived_sample_stem = _sample_stem_from_row_id(ms1_feature_row_id)
+    for field, identity in (
+        ("candidate_id", candidate_id),
+        ("ms1_feature_row_id", ms1_feature_row_id),
+        ("sample_stem", explicit_sample_stem),
+        ("derived sample_stem", derived_sample_stem),
+    ):
+        if identity is not None:
+            _reject_ambiguous_formula_escaped_identity(
+                identity,
+                field=field,
+                row_label=_row_label(),
+            )
+    if (
+        explicit_sample_stem is not None
+        and explicit_sample_stem != derived_sample_stem
+    ):
+        raise ValueError(
+            f"{_row_label()} has sample_stem {explicit_sample_stem!r} that does not "
+            "match the sample identity derived from ms1_feature_row_id "
+            f"({derived_sample_stem!r})"
+        )
+    sample_stem = explicit_sample_stem or derived_sample_stem
 
     return _CidNlCandidateRow(
         sample_stem=sample_stem,
+        candidate_id=candidate_id,
         ms1_feature_row_id=ms1_feature_row_id,
         neutral_loss_tag=neutral_loss_tag,
         discovery_candidate_state=discovery_candidate_state,
@@ -502,6 +564,27 @@ def _sample_stem_from_row_id(ms1_feature_row_id: str) -> str:
     """
 
     return ms1_feature_row_id.split("|", 1)[0]
+
+
+def _reject_ambiguous_formula_escaped_identity(
+    value: str,
+    *,
+    field: str,
+    row_label: str,
+) -> None:
+    """Fail closed when an identity may have been Excel-formula escaped.
+
+    The legacy Discovery CSV writer prepends an apostrophe to strings beginning
+    with ``=``, ``+``, ``-``, or ``@``. That serialized form is indistinguishable
+    from an original identifier that genuinely began with the apostrophe, so a
+    composite identity join must not silently unescape or compare it literally.
+    """
+
+    if len(value) >= 2 and value[0] == "'" and value[1] in "=+-@":
+        raise ValueError(
+            f"{row_label} has ambiguous Excel formula-escaped machine identity "
+            f"in {field!r}: {value!r}"
+        )
 
 
 def _required_text(value: str | None, field: str, row_label: str) -> str:
@@ -539,17 +622,19 @@ def _apply_cid_nl_composite_join(
     candidates: tuple[PtPatternCandidate, ...],
     *,
     cid_nl_rows: tuple[_CidNlCandidateRow, ...],
-    source_feature_row_id_by_feature_id: dict[str, str | None],
-    source_by_feature_id: dict[str, str],
+    source_feature_row_id_by_feature_identity: dict[
+        tuple[str, str], str | None
+    ],
+    source_by_feature_identity: dict[tuple[str, str], str],
 ) -> tuple[PtPatternCandidate, ...]:
     """Join each Pt base candidate against CID-NL(dR) base evidence.
 
     Implements the plan's CID-NL base join predicate (plan lines 814-838):
     same-feature identity join is tried first and always wins over the m/z/RT
-    fallback join when both could apply; fallback is only used when Pt
-    feature identity cannot be compared (no ``source_feature_row_id`` on the
-    base feature). Candidates with no CID-NL match are excluded from the
-    composite output entirely (plan line 839).
+    fallback join when both could apply; fallback is only used when Pt feature
+    identity cannot be compared (missing identity or a detector-local identity
+    namespace). Candidates with no CID-NL match are excluded from the composite
+    output entirely (plan line 839).
     """
 
     eligible_rows = _eligible_cid_nl_rows(cid_nl_rows)
@@ -559,26 +644,30 @@ def _apply_cid_nl_composite_join(
         sample_rows = [
             row for row in eligible_rows if row.sample_stem == candidate.sample_stem
         ]
-        base_source_feature_row_id = source_feature_row_id_by_feature_id.get(
-            candidate.base_feature_id
+        base_identity = (candidate.sample_stem, candidate.base_feature_id)
+        base_source_feature_row_id = source_feature_row_id_by_feature_identity.get(
+            base_identity
         )
-        base_source = source_by_feature_id.get(candidate.base_feature_id, "")
+        base_source = source_by_feature_identity.get(base_identity, "")
 
         match: _CidNlCandidateRow | None = None
         join_mode = ""
-        identity_values = {candidate.base_feature_id}
         identity_comparable = _has_comparable_cid_nl_identity(
             source_feature_row_id=base_source_feature_row_id,
             source=base_source,
         )
-        if base_source_feature_row_id:
-            identity_values.add(base_source_feature_row_id)
-        identity_matches = [
-            row for row in sample_rows if row.ms1_feature_row_id in identity_values
-        ]
-        if identity_matches:
-            match = _best_identity_match(candidate, identity_matches)
-            join_mode = "same_feature_id"
+        if identity_comparable:
+            identity_values = {candidate.base_feature_id}
+            if base_source_feature_row_id:
+                identity_values.add(base_source_feature_row_id)
+            identity_matches = [
+                row
+                for row in sample_rows
+                if row.ms1_feature_row_id in identity_values
+            ]
+            if identity_matches:
+                match = _best_identity_match(candidate, identity_matches)
+                join_mode = "same_feature_id"
 
         if match is None and not identity_comparable:
             fallback_matches = [
@@ -593,7 +682,13 @@ def _apply_cid_nl_composite_join(
         if match is None:
             continue
 
-        joined.append(_mark_composite_supported(candidate, join_mode=join_mode))
+        joined.append(
+            _mark_composite_supported(
+                candidate,
+                join_mode=join_mode,
+                cid_nl_match=match,
+            )
+        )
 
     return tuple(joined)
 
@@ -604,14 +699,14 @@ def _best_identity_match(
     """Tie-break for multiple same-feature-identity matches (plan line 833):
     highest ``evidence_score``, then smallest absolute RT delta."""
 
-    def _key(row: _CidNlCandidateRow) -> tuple[float, float]:
+    def _key(row: _CidNlCandidateRow) -> tuple[float, float, str]:
         rt_delta = (
             abs(row.ms1_apex_rt - candidate.base_rt_apex_min)
             if row.ms1_apex_rt is not None
             else 0.0
         )
         evidence_score = row.evidence_score if row.evidence_score is not None else 0.0
-        return (-evidence_score, rt_delta)
+        return (-evidence_score, rt_delta, row.candidate_id)
 
     return min(matches, key=_key)
 
@@ -634,7 +729,7 @@ def _best_fallback_match(
     smallest absolute RT delta, then smallest absolute m/z ppm, then highest
     ``evidence_score``."""
 
-    def _key(row: _CidNlCandidateRow) -> tuple[float, float, float]:
+    def _key(row: _CidNlCandidateRow) -> tuple[float, float, float, str]:
         assert row.ms1_apex_rt is not None
         assert row.precursor_mz is not None
         rt_delta_sec = abs(row.ms1_apex_rt - candidate.base_rt_apex_min) * 60.0
@@ -642,13 +737,21 @@ def _best_fallback_match(
             (row.precursor_mz - candidate.base_mz) / candidate.base_mz * 1e6
         )
         evidence_score = row.evidence_score if row.evidence_score is not None else 0.0
-        return (rt_delta_sec, ppm_error, -evidence_score)
+        return (
+            rt_delta_sec,
+            ppm_error,
+            -evidence_score,
+            row.candidate_id,
+        )
 
     return min(matches, key=_key)
 
 
 def _mark_composite_supported(
-    candidate: PtPatternCandidate, *, join_mode: str
+    candidate: PtPatternCandidate,
+    *,
+    join_mode: str,
+    cid_nl_match: _CidNlCandidateRow,
 ) -> PtPatternCandidate:
     reason = candidate.reason
     if join_mode == "mz_rt_fallback":
@@ -660,6 +763,7 @@ def _mark_composite_supported(
         candidate,
         candidate_state="pt_pattern_cid_nl_supported",
         cid_nl_base_status="matched",
+        cid_nl_base_candidate_id=cid_nl_match.candidate_id,
         cid_nl_base_join_mode=join_mode,
         reason=reason,
     )

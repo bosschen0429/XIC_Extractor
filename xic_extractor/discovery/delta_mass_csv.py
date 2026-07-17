@@ -180,6 +180,8 @@ class DeltaMassDiscoveryResult:
     candidates: Sequence[PtPatternCandidate]
     trace_summary_csv: str | None = None
     evidence_rows: Sequence[Mapping[str, object]] = ()
+    effective_mz_tolerance_ppm: float | None = None
+    effective_rt_tolerance_sec: float | None = None
 
 
 def write_pt_pattern_candidates_csv(
@@ -269,7 +271,11 @@ def write_pt_pattern_sidecar_json(
     payload = {
         "schema_version": _SIDECAR_SCHEMA_VERSION,
         "method_label": result.method_label,
-        "pattern": _pattern_payload(result.pattern),
+        "pattern": _pattern_payload(
+            result.pattern,
+            effective_mz_tolerance_ppm=result.effective_mz_tolerance_ppm,
+            effective_rt_tolerance_sec=result.effective_rt_tolerance_sec,
+        ),
         "inputs": {
             "detected_features_csv": result.detected_features_csv,
             "external_feature_table_tsv": result.external_feature_table_tsv,
@@ -289,7 +295,12 @@ def write_pt_pattern_sidecar_json(
     return path
 
 
-def _pattern_payload(pattern: DeltaMassPattern) -> dict[str, Any]:
+def _pattern_payload(
+    pattern: DeltaMassPattern,
+    *,
+    effective_mz_tolerance_ppm: float | None,
+    effective_rt_tolerance_sec: float | None,
+) -> dict[str, Any]:
     return {
         "pattern_id": pattern.pattern_id,
         "charge": pattern.charge,
@@ -298,8 +309,16 @@ def _pattern_payload(pattern: DeltaMassPattern) -> dict[str, Any]:
             {"label": position.label, "delta_da": position.delta_da}
             for position in pattern.positions
         ],
-        "mz_tolerance_ppm": pattern.mz_tolerance_ppm,
-        "rt_tolerance_sec": pattern.rt_tolerance_sec,
+        "mz_tolerance_ppm": (
+            pattern.mz_tolerance_ppm
+            if effective_mz_tolerance_ppm is None
+            else effective_mz_tolerance_ppm
+        ),
+        "rt_tolerance_sec": (
+            pattern.rt_tolerance_sec
+            if effective_rt_tolerance_sec is None
+            else effective_rt_tolerance_sec
+        ),
     }
 
 
@@ -407,7 +426,12 @@ def _format_pt_value(value: object, *, escape_formula: bool) -> str:
     if isinstance(value, float):
         if not math.isfinite(value):
             return ""
-        return f"{value:.6g}"
+        # These CSVs are machine handoffs, not display-only reports. Python's
+        # repr is the shortest decimal that round-trips to the same binary
+        # float, avoiding ppm-scale center drift from the old ``.6g`` format.
+        if value.is_integer():
+            return str(int(value))
+        return repr(value)
     if isinstance(value, int):
         return str(value)
     text = str(value)

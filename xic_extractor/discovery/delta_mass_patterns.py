@@ -200,7 +200,7 @@ def match_delta_mass_pattern(
     *,
     pattern: DeltaMassPattern | None = None,
     settings: "DeltaMassPatternSettings | None" = None,
-    base_feature_ids: Collection[str] | None = None,
+    base_feature_ids: Collection[str | tuple[str, str]] | None = None,
 ) -> tuple[PtPatternCandidate, ...]:
     """Match sample-local detected features against ``pattern``.
 
@@ -217,7 +217,11 @@ def match_delta_mass_pattern(
     # module (delta_mass_patterns) is imported by detected_features for the
     # DeltaMassPattern/PT_PATTERN default, so importing DetectedFeature /
     # DeltaMassPatternSettings back at module scope would form a cycle.
-    from xic_extractor.discovery.detected_features import DeltaMassPatternSettings
+    from xic_extractor.discovery.detected_features import (
+        DeltaMassPatternSettings,
+        detected_feature_identity,
+        validate_unique_detected_feature_identities,
+    )
 
     resolved_settings = settings if settings is not None else DeltaMassPatternSettings()
     if resolved_settings.ratio_basis != "both":
@@ -226,6 +230,14 @@ def match_delta_mass_pattern(
             f"{resolved_settings.ratio_basis!r}"
         )
     resolved_pattern = pattern if pattern is not None else resolved_settings.pattern
+    if (
+        resolved_pattern != PT_PATTERN
+        or resolved_settings.pattern_id != PT_PATTERN.pattern_id
+    ):
+        raise ValueError(
+            "match_delta_mass_pattern currently supports only the built-in "
+            "PT_PATTERN with pattern_id='pt'"
+        )
 
     non_base_positions = [
         position
@@ -233,8 +245,13 @@ def match_delta_mass_pattern(
         if position.label != _BASE_LABEL
     ]
 
+    feature_rows = tuple(features)
+    validate_unique_detected_feature_identities(
+        feature_rows,
+        source_label="match_delta_mass_pattern input",
+    )
     features_by_sample: dict[str, list["DetectedFeature"]] = {}
-    for feature in features:
+    for feature in feature_rows:
         features_by_sample.setdefault(feature.sample_stem, []).append(feature)
 
     allowed_base_feature_ids = (
@@ -248,6 +265,10 @@ def match_delta_mass_pattern(
         for base in sorted_features:
             if (
                 allowed_base_feature_ids is not None
+                and detected_feature_identity(base) not in allowed_base_feature_ids
+                # Backward-compatible support for callers that still pass the
+                # legacy feature-id-only allowlist. The pipeline itself passes
+                # canonical sample-local identities.
                 and base.feature_id not in allowed_base_feature_ids
             ):
                 continue
@@ -532,6 +553,10 @@ def _build_candidate(
     local_signal_support_status: str,
     settings: "DeltaMassPatternSettings",
 ) -> PtPatternCandidate:
+    # ``(sample_stem, base.feature_id)`` is the canonical identity and is
+    # validated unique before matching. The rounded m/z/RT suffix remains only
+    # for persisted v1 candidate-id compatibility; it no longer supplies
+    # uniqueness or disambiguates duplicate feature rows.
     candidate_id = (
         f"{sample_stem}|pt|base:{base.feature_id}"
         f"|mz:{base.mz:.6f}|rt:{base.rt_apex_min:.6f}"

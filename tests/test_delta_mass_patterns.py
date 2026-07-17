@@ -9,6 +9,8 @@ They are expected to fail on import until Task 2 implements the real modules.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from xic_extractor.discovery.delta_mass_patterns import (
@@ -778,6 +780,34 @@ def test_matcher_rejects_unimplemented_direct_ratio_basis() -> None:
         match_delta_mass_pattern(
             _features_with_pt_plus_1(BASE_MZ + PT_PLUS_1_DELTA),
             settings=DeltaMassPatternSettings(ratio_basis="height_only"),
+        )
+
+
+def test_matcher_rejects_duplicate_sample_local_feature_identity_before_id_collision(
+) -> None:
+    features = _features_with_pt_plus_1(BASE_MZ + PT_PLUS_1_DELTA)
+    features.append(
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ + 0.0000004,
+            rt_apex_min=10.0000004,
+        )
+    )
+
+    with pytest.raises(ValueError, match="duplicate detected feature identity"):
+        match_delta_mass_pattern(features)
+
+
+def test_matcher_rejects_non_pt_pattern_until_candidate_model_is_generic() -> None:
+    custom_pattern = replace(PT_PATTERN, pattern_id="custom")
+
+    with pytest.raises(ValueError, match="only the built-in PT_PATTERN"):
+        match_delta_mass_pattern(
+            _features_with_pt_plus_1(BASE_MZ + PT_PLUS_1_DELTA),
+            settings=DeltaMassPatternSettings(
+                pattern=custom_pattern,
+                pattern_id="custom",
+            ),
         )
 
 

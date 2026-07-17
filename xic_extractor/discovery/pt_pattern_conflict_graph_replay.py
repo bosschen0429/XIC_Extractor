@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from xic_extractor.discovery.delta_mass_patterns import (
 )
 from xic_extractor.discovery.detected_features import (
     DETECTED_FEATURES_SCHEMA_VERSION,
+    detected_feature_identity,
     load_detected_features_csv,
 )
 from xic_extractor.discovery.pt_pattern_conflict_graph import (
@@ -270,15 +270,9 @@ def _graph_inputs(
     feature_hash: str,
 ) -> tuple[PtConflictGraphInput, ...]:
     features = load_detected_features_csv(detected_features_csv)
-    feature_counts = Counter(feature.feature_id for feature in features)
-    duplicate_feature_ids = sorted(
-        feature_id for feature_id, count in feature_counts.items() if count > 1
-    )
-    if duplicate_feature_ids:
-        raise ValueError(
-            "detected feature ids must be unique: " + ", ".join(duplicate_feature_ids)
-        )
-    feature_by_id = {feature.feature_id: feature for feature in features}
+    feature_by_identity = {
+        detected_feature_identity(feature): feature for feature in features
+    }
 
     inputs = []
     for row_index, row in enumerate(candidate_rows, start=2):
@@ -298,7 +292,7 @@ def _graph_inputs(
         for position in PT_PATTERN_POSITIONS:
             column = _FEATURE_ID_COLUMN_BY_POSITION[position]
             feature_id = _required_text(row, column, row_index=row_index)
-            feature = feature_by_id.get(feature_id)
+            feature = feature_by_identity.get((sample_stem, feature_id))
             if feature is None:
                 raise ValueError(
                     f"candidate row {row_index} {candidate_id}: {column} "

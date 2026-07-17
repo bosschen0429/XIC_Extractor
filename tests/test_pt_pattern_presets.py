@@ -15,6 +15,8 @@ raw TOML ``[discovery]`` keys through ``discovery_overrides`` (plan lines
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from xic_extractor.presets import PresetError, list_presets, load_preset
@@ -117,7 +119,7 @@ def test_apply_to_delta_mass_discovery_rejects_invalid_positive_tolerances(
         name="Invalid Pt tolerance",
         description="Invalid numeric gate",
         tags=(PresetTag(strategy="delta_mass", name="pt", pattern_id="pt"),),
-        combine_mode="union",
+        combine_mode="single",
         discovery_overrides={"method_label": "pt_pattern", field: value},
         alignment_overrides={},
         source="test",
@@ -132,7 +134,7 @@ def test_apply_to_delta_mass_discovery_rejects_unsupported_ratio_basis() -> None
         name="Unsupported Pt ratio basis",
         description="Only the implemented height-and-area basis is valid",
         tags=(PresetTag(strategy="delta_mass", name="pt", pattern_id="pt"),),
-        combine_mode="union",
+        combine_mode="single",
         discovery_overrides={
             "method_label": "pt_pattern",
             "delta_mass_ratio_basis": "height_only",
@@ -143,3 +145,144 @@ def test_apply_to_delta_mass_discovery_rejects_unsupported_ratio_basis() -> None
 
     with pytest.raises(PresetError, match="delta_mass_ratio_basis"):
         apply_to_delta_mass_discovery(preset)
+
+
+@pytest.mark.parametrize(
+    ("direct_tags", "toml_tag", "message"),
+    (
+        (
+            (
+                PresetTag(
+                    strategy="delta_mass",
+                    name="pt",
+                    value=999.0,
+                    pattern_id="pt",
+                ),
+            ),
+            """
+[[tag]]
+strategy = "delta_mass"
+name = "pt"
+pattern_id = "pt"
+value = 999.0
+""",
+            "must not set 'value'",
+        ),
+        (
+            (
+                PresetTag(strategy="delta_mass", name="pt", pattern_id="pt"),
+                PresetTag(
+                    strategy="neutral_loss",
+                    name="DNA_dR",
+                    value=116.0474,
+                    pattern_id="not_allowed",
+                ),
+            ),
+            """
+[[tag]]
+strategy = "delta_mass"
+name = "pt"
+pattern_id = "pt"
+
+[[tag]]
+strategy = "neutral_loss"
+name = "DNA_dR"
+value = 116.0474
+pattern_id = "not_allowed"
+""",
+            "must not set 'pattern_id'",
+        ),
+    ),
+)
+def test_delta_mass_tag_field_shape_is_equally_fail_closed_for_direct_and_loader(
+    tmp_path: Path,
+    direct_tags: tuple[PresetTag, ...],
+    toml_tag: str,
+    message: str,
+) -> None:
+    combine_mode = "single" if len(direct_tags) == 1 else "intersection"
+    preset = Preset(
+        name="Invalid tag field shape",
+        description="Direct Preset must obey the TOML loader contract",
+        tags=direct_tags,
+        combine_mode=combine_mode,  # type: ignore[arg-type]
+        discovery_overrides={"method_label": "pt_pattern"},
+        alignment_overrides={},
+        source="test",
+    )
+    with pytest.raises(PresetError, match=message):
+        apply_to_delta_mass_discovery(preset)
+
+    preset_path = tmp_path / "invalid_tag_field_shape.toml"
+    preset_path.write_text(
+        (
+            'name = "Invalid tag field shape"\n'
+            'description = "Loader must obey the same contract"\n'
+            f'combine_mode = "{combine_mode}"\n'
+            f"{toml_tag}\n"
+            "[discovery]\n"
+            'method_label = "pt_pattern"\n'
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(PresetError, match=message):
+        load_preset(preset_path)
+
+
+@pytest.mark.parametrize(
+    ("tag_name", "tag_value"),
+    (("other_loss", 116.0474), ("DNA_dR", 100.0)),
+)
+def test_apply_to_delta_mass_discovery_rejects_unimplemented_composite_semantics(
+    tag_name: str,
+    tag_value: float,
+) -> None:
+    preset = Preset(
+        name="Unsupported Pt composite",
+        description="Only exact Pt + DNA_dR is implemented",
+        tags=(
+            PresetTag(strategy="delta_mass", name="pt", pattern_id="pt"),
+            PresetTag(
+                strategy="neutral_loss",
+                name=tag_name,
+                value=tag_value,
+            ),
+        ),
+        combine_mode="intersection",
+        discovery_overrides={"method_label": "pt_pattern+unsupported"},
+        alignment_overrides={},
+        source="test",
+    )
+
+    with pytest.raises(PresetError, match="requires exactly neutral_loss"):
+        apply_to_delta_mass_discovery(preset)
+
+
+def test_loader_rejects_unimplemented_delta_mass_composite_semantics(
+    tmp_path: Path,
+) -> None:
+    preset_path = tmp_path / "unsupported_pt_composite.toml"
+    preset_path.write_text(
+        """
+name = "Unsupported Pt composite"
+description = "Not implemented"
+combine_mode = "intersection"
+
+[[tag]]
+strategy = "delta_mass"
+name = "Pt pattern"
+pattern_id = "pt"
+
+[[tag]]
+strategy = "neutral_loss"
+name = "other_loss"
+value = 116.0474
+
+[discovery]
+method_label = "pt_pattern+other"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PresetError, match="requires exactly neutral_loss"):
+        load_preset(preset_path)

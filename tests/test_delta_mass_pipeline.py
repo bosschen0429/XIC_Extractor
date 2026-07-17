@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.delta_mass_patterns import (
     match_delta_mass_pattern as real_match_delta_mass_pattern,
 )
@@ -22,6 +23,7 @@ from xic_extractor.discovery.delta_mass_pipeline import (
     DeltaMassDiscoveryOutputs,
     run_pt_pattern_discovery,
 )
+from xic_extractor.discovery.detected_features import DeltaMassPatternSettings
 from xic_extractor.discovery.pt_pattern_trace_evidence import SUMMARY_COLUMNS
 
 DETECTED_FEATURES_COLUMNS = (
@@ -331,9 +333,9 @@ def test_composite_mzmine_feature_source_uses_mz_rt_fallback(
     )
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
     cid_nl_candidates_csv.write_text(
-        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state,"
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state,"
         "precursor_mz,ms1_apex_rt,evidence_score\n"
-        "Sample_1|DNA_dR|500.000000|10.000000,DNA_dR,"
+        "cid-mzmine,Sample_1|DNA_dR|500.000000|10.000000,DNA_dR,"
         "ms1_feature_nl_supported,500.0,10.000,90\n",
         encoding="utf-8",
     )
@@ -351,6 +353,7 @@ def test_composite_mzmine_feature_source_uses_mz_rt_fallback(
     assert rows[0]["sample_stem"] == "Sample_1"
     assert rows[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
     assert rows[0]["cid_nl_base_join_mode"] == "mz_rt_fallback"
+    assert rows[0]["cid_nl_base_candidate_id"] == "cid-mzmine"
 
 
 def test_composite_identity_less_external_source_uses_mz_rt_fallback(
@@ -377,9 +380,10 @@ def test_composite_identity_less_external_source_uses_mz_rt_fallback(
     _write_external_feature_table(external_table, external_rows)
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
     cid_nl_candidates_csv.write_text(
-        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state,"
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state,"
         "precursor_mz,ms1_apex_rt,evidence_score\n"
-        "Sample_1|unrelated-detector-id,DNA_dR,ms1_feature_nl_supported,"
+        "cid-openms,Sample_1|unrelated-detector-id,DNA_dR,"
+        "ms1_feature_nl_supported,"
         "500.0,10.0,90\n",
         encoding="utf-8",
     )
@@ -396,6 +400,206 @@ def test_composite_identity_less_external_source_uses_mz_rt_fallback(
     assert len(rows) == 1
     assert rows[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
     assert rows[0]["cid_nl_base_join_mode"] == "mz_rt_fallback"
+    assert rows[0]["cid_nl_base_candidate_id"] == "cid-openms"
+
+
+def test_composite_local_detector_identity_uses_sample_local_mz_rt_fallback(
+    tmp_path: Path,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    sample_a = _full_pattern_rows("Sample_A")
+    for row in sample_a:
+        row["source"] = "local_ms1_feature"
+        row["trace_quality"] = "OK"
+        # Backward-compatible old local artifacts carried this detector-local
+        # pointer even though it is not comparable to CID-NL row identity.
+        row["source_feature_row_id"] = row["feature_id"]
+    sample_b = _full_pattern_rows("Sample_B")
+    for row in sample_b:
+        row["source_feature_row_id"] = f"Sample_B|source|{row['feature_id']}"
+    _write_detected_features_csv(detected_features_csv, [*sample_a, *sample_b])
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state,precursor_mz,ms1_apex_rt,evidence_score\n"
+        "cid-a,Sample_A|unrelated-cid-id,DNA_dR,ms1_feature_nl_supported,"
+        "500.0,10.0,90\n",
+        encoding="utf-8",
+    )
+
+    outputs = run_pt_pattern_discovery(
+        detected_features_csv=detected_features_csv,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert rows[0]["sample_stem"] == "Sample_A"
+    assert rows[0]["cid_nl_base_join_mode"] == "mz_rt_fallback"
+    assert rows[0]["cid_nl_base_candidate_id"] == "cid-a"
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "local_ms1_feature",
+        "external_feature_table:MZmine:mzmine_wide_area_proxy_v1",
+    ),
+)
+def test_composite_detector_local_matching_string_cannot_bypass_mz_rt_fallback(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    rows = _full_pattern_rows("Sample_A")
+    collision_id = "Sample_A|detector-local-collision"
+    rows[0]["feature_id"] = collision_id
+    for row in rows:
+        row["source"] = source
+        row["source_feature_row_id"] = row["feature_id"]
+        row["trace_quality"] = "OK"
+    _write_detected_features_csv(detected_features_csv, rows)
+
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state,precursor_mz,ms1_apex_rt,evidence_score\n"
+        f"cid-far,{collision_id},DNA_dR,ms1_feature_nl_supported,900.0,99.0,90\n",
+        encoding="utf-8",
+    )
+
+    outputs = run_pt_pattern_discovery(
+        detected_features_csv=detected_features_csv,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        assert list(csv.DictReader(handle)) == []
+
+
+@pytest.mark.parametrize(
+    ("raw_candidate_id", "raw_ms1_feature_row_id", "raw_sample_stem", "field"),
+    (
+        ("+cid", "Sample_1|DNA_dR|500|10", "Sample_1", "candidate_id"),
+        ("cid", "+Sample|DNA_dR|500|10", None, "ms1_feature_row_id"),
+        ("cid", "Sample_1|DNA_dR|500|10", "+Sample", "sample_stem"),
+    ),
+)
+def test_composite_rejects_formula_escaped_legacy_machine_identity(
+    tmp_path: Path,
+    raw_candidate_id: str,
+    raw_ms1_feature_row_id: str,
+    raw_sample_stem: str | None,
+    field: str,
+) -> None:
+    """The legacy producer escapes formula-like strings with an apostrophe.
+
+    The consumer cannot distinguish that output from a genuine leading
+    apostrophe, so identity joins must fail closed instead of unescaping or
+    silently producing zero matches.
+    """
+
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    fieldnames = (
+        "candidate_id",
+        "sample_stem",
+        "ms1_feature_row_id",
+        "neutral_loss_tag",
+        "discovery_candidate_state",
+        "precursor_mz",
+        "ms1_apex_rt",
+    )
+    source_values: dict[str, object] = {
+        "candidate_id": raw_candidate_id,
+        "sample_stem": raw_sample_stem,
+        "ms1_feature_row_id": raw_ms1_feature_row_id,
+        "neutral_loss_tag": "DNA_dR",
+        "discovery_candidate_state": "ms1_feature_nl_supported",
+        "precursor_mz": 500.0,
+        "ms1_apex_rt": 10.0,
+    }
+    with cid_nl_candidates_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                column: format_discovery_csv_value(column, source_values[column])
+                for column in fieldnames
+            }
+        )
+
+    with pytest.raises(
+        ValueError,
+        match=rf"formula-escaped machine identity.*{field}",
+    ):
+        run_pt_pattern_discovery(
+            detected_features_csv=detected_features_csv,
+            output_dir=tmp_path / "out",
+            preset_name="pt_pattern_cid_nl_dr",
+            cid_nl_candidates_csv=cid_nl_candidates_csv,
+        )
+
+
+def test_composite_rejects_conflicting_explicit_and_derived_sample_identity(
+    tmp_path: Path,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv, _full_pattern_rows("Sample_A"))
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "candidate_id,sample_stem,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state,precursor_mz,ms1_apex_rt\n"
+        "cid,Sample_A,Sample_B|DNA_dR|500|10,DNA_dR,"
+        "ms1_feature_nl_supported,500.0,10.0\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="sample_stem.*does not match"):
+        run_pt_pattern_discovery(
+            detected_features_csv=detected_features_csv,
+            output_dir=tmp_path / "out",
+            preset_name="pt_pattern_cid_nl_dr",
+            cid_nl_candidates_csv=cid_nl_candidates_csv,
+        )
+
+
+@pytest.mark.parametrize(
+    "contents",
+    (
+        (
+            "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state\n"
+            "Sample_1|DNA_dR|500|10,DNA_dR,ms1_feature_nl_supported\n"
+        ),
+        (
+            "candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+            "discovery_candidate_state\n"
+            ",Sample_1|DNA_dR|500|10,DNA_dR,ms1_feature_nl_supported\n"
+        ),
+    ),
+)
+def test_composite_requires_nonblank_cid_nl_candidate_id(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(contents, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="candidate_id"):
+        run_pt_pattern_discovery(
+            detected_features_csv=detected_features_csv,
+            output_dir=tmp_path / "out",
+            preset_name="pt_pattern_cid_nl_dr",
+            cid_nl_candidates_csv=cid_nl_candidates_csv,
+        )
 
 
 def test_run_pt_pattern_discovery_requires_cid_nl_csv_for_composite_method(
@@ -440,8 +644,12 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
 
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
     cid_nl_candidates_csv.write_text(
-        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state\n"
-        "Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,ms1_feature_nl_supported\n",
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state,ms1_apex_rt,evidence_score\n"
+        "cid-lower,Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,"
+        "ms1_feature_nl_supported,10.0,50\n"
+        "cid-selected,Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,"
+        "ms1_feature_nl_supported,10.0,90\n",
         encoding="utf-8",
     )
     output_dir = tmp_path / "out"
@@ -458,6 +666,7 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
     assert len(rows_out) == 1
     assert rows_out[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
     assert rows_out[0]["cid_nl_base_status"] == "matched"
+    assert rows_out[0]["cid_nl_base_candidate_id"] == "cid-selected"
     assert rows_out[0]["cid_nl_base_join_mode"] == "same_feature_id"
 
     with outputs.evidence_csv.open(newline="", encoding="utf-8") as handle:
@@ -484,17 +693,19 @@ def test_composite_uses_cid_nl_base_seeds_before_matching(
 
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
     cid_nl_candidates_csv.write_text(
-        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state\n"
-        "Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,ms1_feature_nl_supported\n",
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state\n"
+        "cid-winner,Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,"
+        "ms1_feature_nl_supported\n",
         encoding="utf-8",
     )
-    seen_base_feature_ids: set[str] | None = None
+    seen_base_feature_ids: set[str | tuple[str, str]] | None = None
 
     def _capturing_match_delta_mass_pattern(
         features: object,
         *,
         settings: object,
-        base_feature_ids: set[str] | None = None,
+        base_feature_ids: set[str | tuple[str, str]] | None = None,
     ) -> object:
         nonlocal seen_base_feature_ids
         seen_base_feature_ids = set(base_feature_ids or ())
@@ -516,11 +727,12 @@ def test_composite_uses_cid_nl_base_seeds_before_matching(
         cid_nl_candidates_csv=cid_nl_candidates_csv,
     )
 
-    assert seen_base_feature_ids == {"base-1"}
+    assert seen_base_feature_ids == {("Sample_1", "base-1")}
     with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
         rows_out = list(csv.DictReader(handle))
     assert len(rows_out) == 1
     assert rows_out[0]["base_feature_id"] == "base-1"
+    assert rows_out[0]["cid_nl_base_candidate_id"] == "cid-winner"
 
 
 def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_strings(
@@ -543,6 +755,31 @@ def test_run_pt_pattern_discovery_sidecar_records_input_paths_as_provided_string
     assert payload["inputs"]["mzmine_feature_table_csv"] is None
     assert payload["inputs"]["cid_nl_candidates_csv"] is None
     assert payload["inputs"]["trace_summary_csv"] is None
+
+
+def test_run_pt_pattern_discovery_sidecar_records_effective_matcher_tolerances(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
+    monkeypatch.setattr(
+        "xic_extractor.discovery.delta_mass_pipeline.apply_to_delta_mass_discovery",
+        lambda _preset: DeltaMassPatternSettings(
+            mz_tolerance_ppm=7.5,
+            rt_tolerance_sec=12.0,
+        ),
+    )
+
+    outputs = run_pt_pattern_discovery(
+        detected_features_csv=detected_features_csv,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern",
+    )
+
+    payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
+    assert payload["pattern"]["mz_tolerance_ppm"] == 7.5
+    assert payload["pattern"]["rt_tolerance_sec"] == 12.0
 
 
 def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
@@ -626,10 +863,12 @@ def test_run_pt_pattern_discovery_ignores_review_only_orphan_nl_rows(
 
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
     cid_nl_candidates_csv.write_text(
-        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state\n"
-        "Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,ms1_feature_nl_supported\n"
-        ",DNA_dR,review_only_orphan_nl\n"
-        ",DNA_dR,review_only_orphan_nl\n",
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state\n"
+        "cid-supported,Sample_1|DNA_dR|258.108512|7.841234,DNA_dR,"
+        "ms1_feature_nl_supported\n"
+        "cid-orphan-1,,DNA_dR,review_only_orphan_nl\n"
+        "cid-orphan-2,,DNA_dR,review_only_orphan_nl\n",
         encoding="utf-8",
     )
     output_dir = tmp_path / "out"
@@ -646,6 +885,7 @@ def test_run_pt_pattern_discovery_ignores_review_only_orphan_nl_rows(
     assert len(rows_out) == 1
     assert rows_out[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
     assert rows_out[0]["cid_nl_base_status"] == "matched"
+    assert rows_out[0]["cid_nl_base_candidate_id"] == "cid-supported"
     assert rows_out[0]["cid_nl_base_join_mode"] == "same_feature_id"
 
 

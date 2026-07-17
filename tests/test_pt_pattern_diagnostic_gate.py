@@ -9,7 +9,14 @@ from xic_extractor.discovery import pt_pattern_diagnostic_gate as gate
 from xic_extractor.discovery import pt_pattern_oracle_promotion as promotion
 from xic_extractor.discovery import pt_pattern_review_packet as packet
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
-from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
+from xic_extractor.tabular_io import (
+    file_sha256,
+    read_delimited_rows,
+    write_delimited_rows,
+)
+
+UNIT_REVIEW_SHA256 = "A" * 64
+UNIT_OVERLAY_SUMMARY_SHA256 = "B" * 64
 
 
 def _review_row(
@@ -20,11 +27,17 @@ def _review_row(
     apex_delta: str = "0.5",
     pearson: str = "0.95",
     overlap: str = "0.80",
+    anchor_local: bool = False,
 ) -> dict[str, str]:
-    row = {column: "" for column in packet.PACKET_COLUMNS}
+    columns = packet.PACKET_COLUMNS if anchor_local else packet.LEGACY_PACKET_COLUMNS
+    row = {column: "" for column in columns}
     row.update(
         {
-            "schema_version": packet.SCHEMA_VERSION,
+            "schema_version": (
+                packet.ANCHOR_LOCAL_SCHEMA_VERSION
+                if anchor_local
+                else packet.SCHEMA_VERSION
+            ),
             "readiness_tier": packet.READINESS_TIER,
             "evidence_owner": packet.EVIDENCE_OWNER,
             "packet_label": "unit_packet",
@@ -47,6 +60,14 @@ def _review_row(
             "oracle_status": "pending_human_review",
         }
     )
+    if anchor_local:
+        row.update(
+            {
+                "trace_ambiguity_status": "clear",
+                "anchor_segmentation_status": "clear",
+                "anchor_segmentation_boundary_review_status": "clear",
+            }
+        )
     return row
 
 
@@ -85,7 +106,13 @@ def _trace_summary_row(
     return row
 
 
-def _oracle_row(candidate_id: str, *, oracle_call: str) -> dict[str, str]:
+def _oracle_row(
+    review_row: dict[str, str],
+    *,
+    oracle_call: str,
+    review_packet_sha256: str = UNIT_REVIEW_SHA256,
+) -> dict[str, str]:
+    candidate_id = review_row["candidate_id"]
     row = {column: "" for column in promotion.PROMOTION_COLUMNS}
     row.update(
         {
@@ -96,13 +123,13 @@ def _oracle_row(candidate_id: str, *, oracle_call: str) -> dict[str, str]:
             "oracle_packet_id": "unit_oracle",
             "oracle_status": "manual_oracle_promoted",
             "oracle_call": oracle_call,
-            "oracle_detection_status": (
-                "detected" if oracle_call == "accept" else "non_detected"
-            ),
-            "packet_row_id": f"pt_only|{candidate_id}",
+            "oracle_detection_status": promotion.ORACLE_DETECTION_STATUS,
+            "packet_row_id": review_row["packet_row_id"],
+            "review_packet_csv_sha256": review_packet_sha256,
+            "blind_overlay_summary_json_sha256": UNIT_OVERLAY_SUMMARY_SHA256,
             "dataset": "pt_only",
             "case_index": candidate_id,
-            "sample_stem": "SampleA",
+            "sample_stem": review_row["sample_stem"],
             "candidate_id": candidate_id,
             "base_mz": "500.0",
             "base_rt_apex_min": "10.0",
@@ -110,13 +137,13 @@ def _oracle_row(candidate_id: str, *, oracle_call: str) -> dict[str, str]:
             "human_review_call": oracle_call,
             "machine_call": oracle_call,
             "machine_call_reason": "unit",
-            "review_packet_schema_version": packet.SCHEMA_VERSION,
-            "review_packet_readiness_tier": packet.READINESS_TIER,
-            "review_packet_oracle_status": "pending_human_review",
-            "review_packet_combined_pt_pattern_status": (
-                "pt_pattern_detected_diagnostic"
-            ),
-            "provenance_status": "review_packet_row_matched",
+            "review_packet_schema_version": review_row["schema_version"],
+            "review_packet_readiness_tier": review_row["readiness_tier"],
+            "review_packet_oracle_status": review_row["oracle_status"],
+            "review_packet_combined_pt_pattern_status": review_row[
+                "combined_pt_pattern_status"
+            ],
+            "provenance_status": "exact_review_evidence_bundle_matched",
         }
     )
     return row
@@ -137,18 +164,27 @@ def test_diagnostic_gate_replays_zero_false_positive_rule(
         ),
         _review_row("reject-apex", apex_delta="15.0", pearson="0.99"),
     ]
+    review_csv = _write_csv(
+        tmp_path / "review.csv",
+        review_rows,
+        packet.LEGACY_PACKET_COLUMNS,
+    )
+    review_sha256 = file_sha256(review_csv)
     oracle_rows = [
-        _oracle_row("accept-a", oracle_call="accept"),
-        _oracle_row("accept-b", oracle_call="accept"),
-        _oracle_row("reject-shape", oracle_call="reject"),
-        _oracle_row("reject-status", oracle_call="reject"),
-        _oracle_row("reject-apex", oracle_call="reject"),
+        _oracle_row(
+            review_row,
+            oracle_call=oracle_call,
+            review_packet_sha256=review_sha256,
+        )
+        for review_row, oracle_call in zip(
+            review_rows,
+            ("accept", "accept", "reject", "reject", "reject"),
+            strict=True,
+        )
     ]
 
     outputs = gate.run_diagnostic_gate(
-        review_packet_csvs=[
-            _write_csv(tmp_path / "review.csv", review_rows, packet.PACKET_COLUMNS)
-        ],
+        review_packet_csvs=[review_csv],
         oracle_promotion_csv=_write_csv(
             tmp_path / "oracle.csv",
             oracle_rows,
@@ -196,12 +232,157 @@ def test_diagnostic_gate_replays_zero_false_positive_rule(
 
 
 def test_diagnostic_gate_rejects_missing_oracle_review_packet() -> None:
+    review_row = _review_row("missing")
     with pytest.raises(ValueError, match="missing review packet"):
         gate.build_diagnostic_gate_rows(
             review_rows=[],
-            oracle_rows=[_oracle_row("missing", oracle_call="accept")],
-        gate_id="unit_gate",
+            oracle_rows=[_oracle_row(review_row, oracle_call="accept")],
+            review_packet_sha256_by_row_id={},
+            gate_id="unit_gate",
+        )
+
+
+def test_diagnostic_gate_rejects_oracle_replay_over_synthetic_trace_row(
+    tmp_path: Path,
+) -> None:
+    trace_summary_csv = _write_csv(
+        tmp_path / "trace_summary.csv",
+        [_trace_summary_row("synthetic-only")],
+        evidence.SUMMARY_COLUMNS,
     )
+    synthetic_identity = _review_row("synthetic-only")
+    oracle_csv = _write_csv(
+        tmp_path / "oracle.csv",
+        [_oracle_row(synthetic_identity, oracle_call="accept")],
+        promotion.PROMOTION_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="requires an exact review packet"):
+        gate.run_diagnostic_gate(
+            review_packet_csvs=[],
+            trace_summary_csvs=[
+                gate.TraceSummaryInput(
+                    source_label="pt_only",
+                    path=trace_summary_csv,
+                )
+            ],
+            oracle_promotion_csv=oracle_csv,
+            output_dir=tmp_path / "gate",
+            gate_id="synthetic_oracle",
+        )
+
+
+def test_diagnostic_gate_accepts_true_anchor_v3_packet(tmp_path: Path) -> None:
+    review_row = _review_row("anchor-v3", anchor_local=True)
+    review_csv = _write_csv(
+        tmp_path / "review_v3.csv",
+        [review_row],
+        packet.PACKET_COLUMNS,
+    )
+    oracle_csv = _write_csv(
+        tmp_path / "oracle_v3.csv",
+        [
+            _oracle_row(
+                review_row,
+                oracle_call="accept",
+                review_packet_sha256=file_sha256(review_csv),
+            )
+        ],
+        promotion.PROMOTION_COLUMNS,
+    )
+
+    outputs = gate.run_diagnostic_gate(
+        review_packet_csvs=[review_csv],
+        oracle_promotion_csv=oracle_csv,
+        output_dir=tmp_path / "gate_v3",
+        gate_id="anchor_v3",
+    )
+
+    summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
+    assert summary["replay_status"] == "diagnostic_gate_replay_passed"
+
+
+def test_diagnostic_gate_rejects_partial_anchor_v3_packet(tmp_path: Path) -> None:
+    review_row = _review_row("partial-v3", anchor_local=True)
+    partial_columns = (
+        *packet.LEGACY_PACKET_COLUMNS,
+        evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS[0],
+    )
+    review_csv = _write_csv(
+        tmp_path / "review_partial_v3.csv",
+        [review_row],
+        partial_columns,
+    )
+
+    with pytest.raises(ValueError, match="v3 requires all anchor-local columns"):
+        gate.run_diagnostic_gate(
+            review_packet_csvs=[review_csv],
+            output_dir=tmp_path / "gate_partial_v3",
+            gate_id="partial_v3",
+        )
+
+
+def test_diagnostic_gate_rejects_stale_review_packet_hash(tmp_path: Path) -> None:
+    review_row = _review_row("stale-hash")
+    review_csv = _write_csv(
+        tmp_path / "review.csv",
+        [review_row],
+        packet.LEGACY_PACKET_COLUMNS,
+    )
+    oracle_csv = _write_csv(
+        tmp_path / "oracle.csv",
+        [
+            _oracle_row(
+                review_row,
+                oracle_call="accept",
+                review_packet_sha256="C" * 64,
+            )
+        ],
+        promotion.PROMOTION_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="review_packet_csv_sha256"):
+        gate.run_diagnostic_gate(
+            review_packet_csvs=[review_csv],
+            oracle_promotion_csv=oracle_csv,
+            output_dir=tmp_path / "gate_stale_hash",
+            gate_id="stale_hash",
+        )
+
+
+def test_diagnostic_gate_rejects_stale_review_identity_or_status(
+    tmp_path: Path,
+) -> None:
+    review_row = _review_row("stale-status")
+    review_csv = _write_csv(
+        tmp_path / "review.csv",
+        [review_row],
+        packet.LEGACY_PACKET_COLUMNS,
+    )
+    oracle_row = _oracle_row(
+        review_row,
+        oracle_call="accept",
+        review_packet_sha256=file_sha256(review_csv),
+    )
+    oracle_row["review_packet_combined_pt_pattern_status"] = (
+        "pt_pattern_candidate_partial"
+    )
+    oracle_csv = _write_csv(
+        tmp_path / "oracle.csv",
+        [oracle_row],
+        promotion.PROMOTION_COLUMNS,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="review_packet_combined_pt_pattern_status",
+    ):
+        gate.run_diagnostic_gate(
+            review_packet_csvs=[review_csv],
+            oracle_promotion_csv=oracle_csv,
+            output_dir=tmp_path / "gate_stale_status",
+            gate_id="stale_status",
+        )
 
 
 def test_diagnostic_gate_can_read_full_trace_summary_inputs(
@@ -310,14 +491,21 @@ def test_diagnostic_gate_accepts_legacy_trace_summary_without_review_flags(
 
 
 def test_diagnostic_gate_cli_writes_outputs(tmp_path: Path) -> None:
+    review_row = _review_row("accept-a")
     review_csv = _write_csv(
         tmp_path / "review.csv",
-        [_review_row("accept-a")],
-        packet.PACKET_COLUMNS,
+        [review_row],
+        packet.LEGACY_PACKET_COLUMNS,
     )
     oracle_csv = _write_csv(
         tmp_path / "oracle.csv",
-        [_oracle_row("accept-a", oracle_call="accept")],
+        [
+            _oracle_row(
+                review_row,
+                oracle_call="accept",
+                review_packet_sha256=file_sha256(review_csv),
+            )
+        ],
         promotion.PROMOTION_COLUMNS,
     )
 
@@ -378,14 +566,21 @@ def test_diagnostic_gate_cli_accepts_trace_summary_input(tmp_path: Path) -> None
 
 
 def test_diagnostic_gate_cli_can_fail_zero_fpfn_requirement(tmp_path: Path) -> None:
+    review_row = _review_row("false-positive")
     review_csv = _write_csv(
         tmp_path / "review.csv",
-        [_review_row("false-positive")],
-        packet.PACKET_COLUMNS,
+        [review_row],
+        packet.LEGACY_PACKET_COLUMNS,
     )
     oracle_csv = _write_csv(
         tmp_path / "oracle.csv",
-        [_oracle_row("false-positive", oracle_call="reject")],
+        [
+            _oracle_row(
+                review_row,
+                oracle_call="reject",
+                review_packet_sha256=file_sha256(review_csv),
+            )
+        ],
         promotion.PROMOTION_COLUMNS,
     )
 

@@ -62,6 +62,8 @@ DELTA_MASS_DISCOVERY_OVERRIDE_KEYS = frozenset(
 )
 
 _DELTA_MASS_PATTERN_ID = "pt"
+_DELTA_MASS_NEUTRAL_LOSS_TAG = "DNA_dR"
+_DELTA_MASS_NEUTRAL_LOSS_DA = 116.0474
 
 ALIGNMENT_RUNTIME_OVERRIDE_KEYS = frozenset(
     {
@@ -141,7 +143,7 @@ def _parse_toml(raw: bytes, *, source: str) -> Preset:
 
     has_delta_mass_tag = any(tag.strategy == "delta_mass" for tag in tags)
     if has_delta_mass_tag:
-        _validate_composite_delta_mass_tags(tags, combine_mode=combine_mode)
+        validate_delta_mass_preset_tags(tags, combine_mode=combine_mode)
 
     discovery_overrides = _parse_discovery_overrides(
         data.get("discovery"),
@@ -245,25 +247,51 @@ def _parse_tag_value(value: Any, *, tag_name: str) -> float:
     return numeric_value
 
 
-def _validate_composite_delta_mass_tags(
+def validate_delta_mass_preset_tags(
     tags: tuple[PresetTag, ...],
     *,
     combine_mode: str,
 ) -> None:
-    """Structural TOML-shape validation for the Pt-pattern composite preset.
+    """Accept only the two Delta Mass configurations implemented end-to-end.
 
-    This lives in the loader (not ``apply_to_delta_mass_discovery``) because it
-    is a property of the tag list's shape alone -- how many tags of which
-    strategy, and which ``combine_mode`` -- not of any semantic mapping onto
-    ``DeltaMassPatternSettings`` fields. Keeping it here means a malformed
-    composite preset TOML fails fast at load time, before any apply-layer
-    code runs, matching how ``combine_mode == "single"`` cardinality is
-    already checked in ``_parse_toml`` above.
+    The current pipeline supports Pt-only Discovery or the exact Pt + DNA_dR
+    intersection. Keeping this validator shared by loader/apply prevents a
+    syntactically valid preset from silently selecting the pipeline's hard-coded
+    DNA_dR join under a different neutral-loss name or mass.
     """
     delta_mass_tags = [tag for tag in tags if tag.strategy == "delta_mass"]
     neutral_loss_tags = [tag for tag in tags if tag.strategy == "neutral_loss"]
 
+    if len(delta_mass_tags) > 1:
+        raise PresetError(
+            "a delta_mass preset has more than one 'delta_mass' tag; "
+            "only one Pt pattern is supported"
+        )
+    if len(delta_mass_tags) != 1:
+        raise PresetError("a delta_mass preset requires exactly one 'delta_mass' tag")
+    delta_mass_tag = delta_mass_tags[0]
+    if delta_mass_tag.value is not None:
+        raise PresetError(
+            f"tag {delta_mass_tag.name!r} uses strategy 'delta_mass' and must not "
+            "set 'value'"
+        )
+    if delta_mass_tag.pattern_id != _DELTA_MASS_PATTERN_ID:
+        raise PresetError(
+            "a delta_mass preset currently supports only pattern_id='pt'"
+        )
+
+    for neutral_loss_tag in neutral_loss_tags:
+        if neutral_loss_tag.pattern_id is not None:
+            raise PresetError(
+                f"tag {neutral_loss_tag.name!r} uses strategy 'neutral_loss' and "
+                "must not set 'pattern_id'"
+            )
+
     if len(tags) == 1:
+        if combine_mode != "single":
+            raise PresetError(
+                "a Pt-only delta_mass preset requires combine_mode = \"single\""
+            )
         return
 
     if combine_mode != "intersection":
@@ -280,6 +308,21 @@ def _validate_composite_delta_mass_tags(
         raise PresetError(
             "a composite delta_mass preset supports exactly two tags: one "
             "'delta_mass' tag and one 'neutral_loss' tag"
+        )
+    neutral_loss_tag = neutral_loss_tags[0]
+    if (
+        neutral_loss_tag.name != _DELTA_MASS_NEUTRAL_LOSS_TAG
+        or neutral_loss_tag.value is None
+        or not math.isclose(
+            neutral_loss_tag.value,
+            _DELTA_MASS_NEUTRAL_LOSS_DA,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        )
+    ):
+        raise PresetError(
+            "a composite delta_mass preset currently requires exactly "
+            "neutral_loss name='DNA_dR' and value=116.0474"
         )
 
 
