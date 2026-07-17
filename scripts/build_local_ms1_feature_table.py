@@ -13,7 +13,7 @@ from xic_extractor.discovery.local_ms1_features import (
     build_local_ms1_feature_table,
     write_local_ms1_feature_outputs,
 )
-from xic_extractor.ms1_scan_index import build_ms1_scan_index
+from xic_extractor.ms1_scan_index import MS1ScanReadError, build_ms1_scan_index
 from xic_extractor.raw_reader import RawReaderError, open_raw
 
 _DEFAULT_SETTINGS = LocalMs1FeatureSettings()
@@ -357,7 +357,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         with open_raw(raw_path, dll_dir) as handle:
             index = build_ms1_scan_index(handle)
-    except RawReaderError as exc:
+    except (RawReaderError, MS1ScanReadError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     features, summary, diagnostics = build_local_ms1_feature_table(

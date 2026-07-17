@@ -1767,14 +1767,16 @@ are the current `trace_rule_call` proxy only. Raw trace-point CSVs remain raw
 vendor evidence and are not Matrix, counting, or quantitation authority. Legacy
 sealed-call output retains overlay schema v2; anchor-local packet or context
 inputs use overlay schema v3. Rendering, sealed-call projection, and artifact
-writing are maintained by separate package modules. The writer rejects missing
-or extra candidates and requires the complete `base` / `+1` / `+2` / `+4`
-trace-position set for every reviewed candidate. Its summary binds the review
-packet, primary/context traces, gallery HTML, and sealed machine-call CSV by
-SHA-256. For schema v3, trace ambiguity, anchor segmentation, and boundary
-review must all be explicitly `clear`; any other state routes the sealed review
-projection to `uncertain`. This is not a threshold reject or product
-non-detection.
+writing are maintained by separate package modules. Trace-point CSVs are sparse
+observation tables: a reviewed candidate or position may have zero rows when
+the XIC is empty or anchor segmentation fails. The writer renders those gaps as
+missing evidence while still rejecting candidates outside the review packet,
+unknown position labels, non-finite points, and sample mismatches. Its summary
+binds the review packet, primary/context traces, gallery HTML, and sealed
+machine-call CSV by SHA-256. For schema v3, trace ambiguity, anchor segmentation,
+and boundary review must all be explicitly `clear`; any other state routes the
+sealed review projection to `uncertain`. This is not a threshold reject or
+product non-detection.
 
 ---
 

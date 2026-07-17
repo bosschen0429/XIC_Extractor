@@ -263,11 +263,8 @@ def test_blind_overlay_accepts_legacy_packet_without_ambiguity_columns(
     assert "anchor_segmentation_common_end_owner_labels" not in machine_rows[0]
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    ["empty", "missing_position", "unknown_position", "extra_candidate"],
-)
-def test_blind_overlay_rejects_non_exact_local_trace_bundle(
+@pytest.mark.parametrize("mutation", ["unknown_position", "extra_candidate"])
+def test_blind_overlay_rejects_invalid_local_trace_bundle(
     tmp_path: Path,
     mutation: str,
 ) -> None:
@@ -275,11 +272,7 @@ def test_blind_overlay_rejects_non_exact_local_trace_bundle(
     trace_points = tmp_path / "trace_points.csv"
     write_delimited_rows(review_packet, [_packet_row()], packet.PACKET_COLUMNS)
     rows = _trace_points()
-    if mutation == "empty":
-        rows = []
-    elif mutation == "missing_position":
-        rows = [row for row in rows if row["position_label"] != "pt_plus_4"]
-    elif mutation == "unknown_position":
+    if mutation == "unknown_position":
         rows[-1]["position_label"] = "pt_plus_3"
     else:
         rows.extend(_trace_points("extra-candidate"))
@@ -287,7 +280,7 @@ def test_blind_overlay_rejects_non_exact_local_trace_bundle(
 
     with pytest.raises(
         ValueError,
-        match="must contain|must exactly match|must be exactly",
+        match="outside review packet|unsupported position_label",
     ):
         overlay.run_blind_overlay(
             review_packet_csv=review_packet,
@@ -295,6 +288,38 @@ def test_blind_overlay_rejects_non_exact_local_trace_bundle(
             output_dir=tmp_path / "overlay",
             title="Invalid trace bundle",
         )
+
+
+@pytest.mark.parametrize("missing_position", [None, "pt_plus_4"])
+def test_blind_overlay_renders_candidates_with_empty_position_traces(
+    tmp_path: Path,
+    missing_position: str | None,
+) -> None:
+    review_packet = tmp_path / "packet.csv"
+    trace_points = tmp_path / "trace_points.csv"
+    write_delimited_rows(review_packet, [_packet_row()], packet.PACKET_COLUMNS)
+    rows = (
+        []
+        if missing_position is None
+        else [
+            row
+            for row in _trace_points()
+            if row["position_label"] != missing_position
+        ]
+    )
+    write_delimited_rows(trace_points, rows, overlay.TRACE_POINT_REQUIRED_COLUMNS)
+
+    outputs = overlay.run_blind_overlay(
+        review_packet_csv=review_packet,
+        trace_points_csv=trace_points,
+        output_dir=tmp_path / "overlay",
+        title="Incomplete trace bundle",
+    )
+
+    html = outputs["gallery_html"].read_text(encoding="utf-8")
+    assert "cand-supported" in html
+    if missing_position is None:
+        assert "No trace points" in html
 
 
 def test_blind_overlay_rejects_trace_sample_mismatch(tmp_path: Path) -> None:
@@ -317,7 +342,9 @@ def test_blind_overlay_rejects_trace_sample_mismatch(tmp_path: Path) -> None:
         )
 
 
-def test_blind_overlay_rejects_non_exact_context_trace_bundle(tmp_path: Path) -> None:
+def test_blind_overlay_accepts_context_trace_bundle_with_missing_position(
+    tmp_path: Path,
+) -> None:
     review_packet = tmp_path / "packet.csv"
     local_trace_points = tmp_path / "local.csv"
     context_trace_points = tmp_path / "context.csv"
@@ -333,14 +360,46 @@ def test_blind_overlay_rejects_non_exact_context_trace_bundle(tmp_path: Path) ->
         overlay.TRACE_POINT_REQUIRED_COLUMNS,
     )
 
-    with pytest.raises(ValueError, match="context trace-points.*must be exactly"):
-        overlay.run_blind_overlay(
-            review_packet_csv=review_packet,
-            trace_points_csv=local_trace_points,
-            context_trace_points_csv=context_trace_points,
-            output_dir=tmp_path / "overlay",
-            title="Mismatched context",
-        )
+    outputs = overlay.run_blind_overlay(
+        review_packet_csv=review_packet,
+        trace_points_csv=local_trace_points,
+        context_trace_points_csv=context_trace_points,
+        output_dir=tmp_path / "overlay",
+        title="Incomplete context",
+    )
+
+    assert outputs["gallery_html"].is_file()
+
+
+def test_blind_overlay_accepts_empty_local_bundle_with_full_context(
+    tmp_path: Path,
+) -> None:
+    review_packet = tmp_path / "packet.csv"
+    local_trace_points = tmp_path / "local.csv"
+    context_trace_points = tmp_path / "context.csv"
+    write_delimited_rows(review_packet, [_packet_row()], packet.PACKET_COLUMNS)
+    write_delimited_rows(
+        local_trace_points,
+        [],
+        overlay.TRACE_POINT_REQUIRED_COLUMNS,
+    )
+    write_delimited_rows(
+        context_trace_points,
+        _trace_points(),
+        overlay.TRACE_POINT_REQUIRED_COLUMNS,
+    )
+
+    outputs = overlay.run_blind_overlay(
+        review_packet_csv=review_packet,
+        trace_points_csv=local_trace_points,
+        context_trace_points_csv=context_trace_points,
+        output_dir=tmp_path / "overlay",
+        title="Empty local trace bundle",
+    )
+
+    html = outputs["gallery_html"].read_text(encoding="utf-8")
+    assert html.count("No trace points") == 2
+    assert outputs["machine_calls_csv"].is_file()
 
 
 def test_blind_overlay_rejects_unknown_packet_schema(tmp_path: Path) -> None:

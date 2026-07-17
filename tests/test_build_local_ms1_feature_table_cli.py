@@ -9,6 +9,7 @@ from xic_extractor.discovery.local_ms1_features import (
     LocalMs1FeatureOutputs,
     LocalMs1FeatureSettings,
 )
+from xic_extractor.ms1_scan_index import MS1ScanReadError
 
 
 def test_cli_builds_local_ms1_feature_outputs(
@@ -203,6 +204,55 @@ def test_cli_rejects_missing_raw(
 
     assert code == 2
     assert "RAW file does not exist" in capsys.readouterr().err
+
+
+def test_cli_reports_ms1_scan_read_failure_without_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    raw = tmp_path / "Sample_1.raw"
+    dll_dir = tmp_path / "dll"
+    output_dir = tmp_path / "out"
+    raw.write_text("", encoding="utf-8")
+    dll_dir.mkdir()
+
+    class _Handle:
+        def __enter__(self) -> "_Handle":
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        build_local_ms1_feature_table,
+        "open_raw",
+        lambda *_args: _Handle(),
+    )
+
+    def _raise_scan_read_error(_handle: _Handle) -> tuple[object, ...]:
+        raise MS1ScanReadError("failed to read MS1 scan 42: synthetic failure")
+
+    monkeypatch.setattr(
+        build_local_ms1_feature_table,
+        "build_ms1_scan_index",
+        _raise_scan_read_error,
+    )
+
+    code = build_local_ms1_feature_table.main(
+        [
+            "--raw",
+            str(raw),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert code == 2
+    assert "failed to read MS1 scan 42" in capsys.readouterr().err
+    assert not output_dir.exists()
 
 
 def test_cli_rejects_invalid_float_before_settings_construction(

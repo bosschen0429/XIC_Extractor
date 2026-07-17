@@ -209,6 +209,67 @@ def test_diagnose_candidate_traces_supports_shifted_shape() -> None:
     assert diagnosis.summary_row["non_base_positions_supported"] == 3
 
 
+def test_diagnose_candidate_traces_requires_shifted_apex_within_tolerance() -> None:
+    traces = {
+        "base": _trace([0.0, 100.0, 0.0]),
+        "pt_plus_1": _trace([40.0, 0.0, 0.0]),
+        "pt_plus_2": _trace([0.0, 20.0, 0.0]),
+        "pt_plus_4": _trace([0.0, 10.0, 0.0]),
+    }
+
+    diagnosis = evidence.diagnose_candidate_traces(
+        _candidate_row(),
+        traces,
+        ppm=20.0,
+        rt_half_window_sec=30.0,
+        mz_source="expected",
+        active_fraction=0.1,
+        min_pearson_r=0.7,
+        max_apex_delta_sec=1.0,
+    )
+
+    plus_1_metric = next(
+        row for row in diagnosis.metric_rows if row["position_label"] == "pt_plus_1"
+    )
+    assert plus_1_metric["trace_support_status"] == "review"
+    assert plus_1_metric["reason"] == "apex_rt_outside_threshold"
+    assert diagnosis.summary_row["non_base_positions_supported"] == 2
+    assert diagnosis.summary_row["trace_support_status"] == "partial_support"
+    assert (
+        diagnosis.summary_row["combined_pt_pattern_status"]
+        == "pt_pattern_candidate_partial"
+    )
+
+
+@pytest.mark.parametrize(
+    ("pearson_r", "active_overlap_fraction", "shifted_pearson_r"),
+    [
+        (1.0, None, None),
+        (None, 1.0, None),
+        (None, None, 1.0),
+    ],
+)
+def test_position_support_requires_apex_within_tolerance_before_shape(
+    pearson_r: float | None,
+    active_overlap_fraction: float | None,
+    shifted_pearson_r: float | None,
+) -> None:
+    status, reason = evidence._position_support_status(
+        point_count=31,
+        max_intensity=40.0,
+        base_max_intensity=100.0,
+        apex_delta_sec=31.0,
+        pearson_r=pearson_r,
+        active_overlap_fraction=active_overlap_fraction,
+        shifted_pearson_r=shifted_pearson_r,
+        min_pearson_r=0.7,
+        max_apex_delta_sec=30.0,
+    )
+
+    assert status == "review"
+    assert reason == "apex_rt_outside_threshold"
+
+
 def test_diagnose_candidate_traces_flags_short_effective_smoothing_window() -> None:
     rt = [9.985 + index * 0.001 for index in range(31)]
     peak = [math.exp(-0.5 * ((index - 15) / 4.0) ** 2) * 100.0 for index in range(31)]

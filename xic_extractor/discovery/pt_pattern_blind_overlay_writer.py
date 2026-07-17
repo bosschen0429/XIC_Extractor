@@ -197,8 +197,6 @@ def _validate_trace_bundle_rows(
 ) -> None:
     if not packet_rows:
         raise ValueError("review packet must contain at least one row")
-    if not trace_rows:
-        raise ValueError(f"{label} must contain at least one row")
 
     sample_by_candidate: dict[str, str] = {}
     for packet_row in packet_rows:
@@ -242,32 +240,20 @@ def _validate_trace_bundle_rows(
 
     packet_candidate_ids = set(sample_by_candidate)
     trace_candidate_ids = set(positions_by_candidate)
-    if trace_candidate_ids != packet_candidate_ids:
-        missing = sorted(packet_candidate_ids - trace_candidate_ids)
-        unexpected = sorted(trace_candidate_ids - packet_candidate_ids)
-        details: list[str] = []
-        if missing:
-            details.append("missing=" + ",".join(missing[:5]))
-        if unexpected:
-            details.append("unexpected=" + ",".join(unexpected[:5]))
+    unexpected_candidates = sorted(trace_candidate_ids - packet_candidate_ids)
+    if unexpected_candidates:
         raise ValueError(
-            f"{label} candidate_id set must exactly match review packet: "
-            + "; ".join(details)
+            f"{label} candidate_id set contains rows outside review packet: "
+            + ",".join(unexpected_candidates[:5])
         )
 
     expected_positions = set(TRACE_POSITION_LABELS)
-    for candidate_id in sorted(packet_candidate_ids):
+    for candidate_id in sorted(trace_candidate_ids):
         positions = positions_by_candidate[candidate_id]
-        if positions == expected_positions:
-            continue
-        missing = sorted(expected_positions - positions)
         unexpected = sorted(positions - expected_positions)
-        details = []
-        if missing:
-            details.append("missing=" + ",".join(missing))
-        if unexpected:
-            details.append("unexpected=" + ",".join(unexpected))
+        if not unexpected:
+            continue
         raise ValueError(
-            f"{label} {candidate_id}: position_label set must be exactly "
-            f"{','.join(TRACE_POSITION_LABELS)}: " + "; ".join(details)
+            f"{label} {candidate_id}: unsupported position_label values: "
+            + ",".join(unexpected)
         )

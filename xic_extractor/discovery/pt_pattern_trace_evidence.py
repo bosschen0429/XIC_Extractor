@@ -1038,14 +1038,14 @@ def _position_support_status(
         return "base_missing_signal", "base_has_no_positive_signal"
     if apex_delta_sec is None:
         return "review", "missing_apex_delta"
+    if abs(apex_delta_sec) > max_apex_delta_sec:
+        return "review", "apex_rt_outside_threshold"
     if pearson_r is not None and pearson_r >= min_pearson_r:
         return "supported", "rt_and_shape_supported"
     if active_overlap_fraction is not None and active_overlap_fraction >= 0.80:
         return "supported", "rt_and_active_overlap_supported"
     if shifted_pearson_r is not None and shifted_pearson_r >= min_pearson_r:
         return "supported", "shifted_shape_supported"
-    if abs(apex_delta_sec) > max_apex_delta_sec:
-        return "review", "apex_rt_outside_threshold"
     return "review", "rt_supported_shape_review"
 
 
