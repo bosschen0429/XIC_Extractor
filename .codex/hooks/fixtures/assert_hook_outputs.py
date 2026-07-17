@@ -100,10 +100,62 @@ def main() -> int:
     assert_contains(raw_out, "xic-raw-validation")
     assert_absent(raw_out, "high-risk work detected")
 
+    # A mixed behavior edit plus RAW validation needs both preflights.
+    mixed_raw_edit_out = router_output(
+        "Change matrix extraction behavior, then run 85RAW validation."
+    )
+    assert_contains(mixed_raw_edit_out, "xic-raw-validation")
+    assert_contains(mixed_raw_edit_out, "xic-architecture-preflight")
+
+    mixed_perf_raw_edit_out = router_output(
+        "Optimize matrix extraction performance, then run 85RAW validation."
+    )
+    assert_contains(mixed_perf_raw_edit_out, "xic-performance-diagnosis")
+    assert_contains(mixed_perf_raw_edit_out, "xic-raw-validation")
+    assert_contains(mixed_perf_raw_edit_out, "xic-architecture-preflight")
+
+    # Existing RAW-backed artifact acceptance is explicit RAW validation intent.
+    raw_accept_out = router_output(
+        "Accept the existing RAW-backed validation artifacts for this gate."
+    )
+    assert_contains(raw_accept_out, "xic-raw-validation")
+
     # A bare RAW code edit still routes to architecture-preflight, not raw-validation.
     raw_code_out = router_output("改 85RAW 的 matrix 抽取邏輯")
     assert_contains(raw_code_out, "high-risk work detected")
     assert_absent(raw_code_out, "xic-raw-validation")
+
+    # Synthetic/no-RAW validation and generic heartbeat/schema work must not be
+    # turned into RAW/DLL launch preflight.
+    no_raw_alignment_out = router_output(
+        "Run alignment validation using synthetic fixtures; do not read RAW."
+    )
+    assert_absent(no_raw_alignment_out, "xic-raw-validation")
+    assert_absent(
+        router_output("Validate alignment with fixtures without reading RAW."),
+        "xic-raw-validation",
+    )
+
+    def router_stdout(prompt: str) -> str:
+        result = subprocess.run(
+            [sys.executable, str(HOOKS / "xic_prompt_router.py")],
+            input=json.dumps({"prompt": prompt}),
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.stdout
+
+    assert_absent(
+        router_stdout("Validate the benchmark schema using tracked TSV fixtures."),
+        "xic-raw-validation",
+    )
+    assert_absent(
+        router_stdout("Fix the heartbeat renderer unit test."),
+        "xic-raw-validation",
+    )
 
     # Stacked/superseded PR trouble routes to xic-pr-stack-repair, not large-pr-review.
     stack_out = router_output(

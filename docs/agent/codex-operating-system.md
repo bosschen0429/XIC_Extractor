@@ -51,8 +51,12 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 The hook set is intentionally small:
 
 - `UserPromptSubmit`: scans the prompt for XIC high-risk keywords and injects
-  workflow context for architecture preflight, PR review, or RAW validation. It
-  also blocks prompt text that looks like a pasted secret. Productization
+  workflow context for architecture preflight, performance diagnosis, RAW
+  validation, large-PR review, or stacked/superseded-PR repair. Mixed behavior
+  edits plus RAW validation retain both architecture and RAW preflights;
+  synthetic/no-RAW validation and generic heartbeat/schema work stay out of the
+  RAW-launch gate unless the prompt explicitly names RAW execution or acceptance.
+  The hook also blocks prompt text that looks like a pasted secret. Productization
   prompts inject the control-plane requirement so maturity tier claims point to
   `docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
   Handoff/closeout/compaction prompts remind the agent to first resolve the

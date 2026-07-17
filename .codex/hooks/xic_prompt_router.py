@@ -46,10 +46,21 @@ PERFORMANCE_PATTERNS = [
 RAW_VALIDATION_PATTERNS = [
     r"(8|85)\s*-?\s*RAW[^\n]{0,40}(valid|驗證|跑|run|rerun|launch|benchmark|accept|gate|heartbeat)",
     r"(valid|驗證|跑|run|rerun|launch|benchmark|accept|gate|heartbeat)[^\n]{0,40}(8|85)\s*-?\s*RAW",
-    r"production[\s-]?equivalent",
-    r"RAW[\s-]?backed\s+(validation|gate|evidence|run)",
-    r"heartbeat|timing\s+sidecar",
-    r"(alignment|benchmark)[^\n]{0,20}validation|validation[^\n]{0,20}(alignment|benchmark)",
+    r"\bRAW\b[^\n]{0,40}(valid|validation|驗證|跑|run|rerun|launch|benchmark|accept|gate|heartbeat|timing\s+sidecar)",
+    r"(valid|validation|驗證|跑|run|rerun|launch|benchmark|accept|gate|heartbeat|timing\s+sidecar)[^\n]{0,40}\bRAW\b",
+]
+
+NO_RAW_PATTERNS = [
+    r"\bno[\s-]?RAW\b",
+    r"\b(?:without|do\s+not|don't|must\s+not)\s+"
+    r"(?:read(?:ing)?|open(?:ing)?|us(?:e|ing)|run(?:ning)?|rerun(?:ning)?|launch(?:ing)?)?"
+    r"\s*(?:any\s+)?RAW\b",
+    r"不要[^\n]{0,12}(?:讀|開|跑|使用)[^\n]{0,6}\bRAW\b",
+]
+
+EDIT_INTENT_PATTERNS = [
+    r"\b(change|modify|edit|implement|fix|refactor|rewrite|add|remove)\b",
+    r"修改|改動|實作|修正|修復|重構|重寫|新增|移除",
 ]
 
 PR_REVIEW_PATTERNS = [
@@ -129,7 +140,8 @@ def main() -> int:
     contexts: list[str] = []
 
     perf = matches(PERFORMANCE_PATTERNS)
-    raw_validation = matches(RAW_VALIDATION_PATTERNS)
+    raw_validation = matches(RAW_VALIDATION_PATTERNS) and not matches(NO_RAW_PATTERNS)
+    edit_intent = matches(EDIT_INTENT_PATTERNS)
 
     if perf:
         contexts.append(
@@ -149,9 +161,12 @@ def main() -> int:
             "via background Start-Process from the Codex shell without explicit approval."
         )
 
-    # The broad architecture reminder only fires when a more specific perf/RAW
-    # skill has not already claimed the prompt, to avoid duplicate reminders.
-    if matches(ARCHITECTURE_PATTERNS) and not (perf or raw_validation):
+    # Pure performance/RAW execution prompts use their focused preflight. Any
+    # mixed behavior edit keeps architecture preflight as well; a run or
+    # performance gate must not hide the pre-edit contract.
+    if matches(ARCHITECTURE_PATTERNS) and (
+        edit_intent or not (perf or raw_validation)
+    ):
         contexts.append(
             "XIC high-risk work detected: before edits, use xic-architecture-preflight. "
             "Name existing owner/helper reuse, evidence-provider role, call-cost model, "
