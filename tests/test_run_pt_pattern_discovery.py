@@ -399,6 +399,28 @@ def test_cli_rejects_composite_preset_without_cid_nl_candidates_csv(
     assert "--cid-nl-candidates-csv" in capsys.readouterr().err
 
 
+def test_cli_rejects_missing_cid_nl_candidates_csv(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv)
+
+    code = run_pt_pattern_discovery.main(
+        [
+            "--detected-features-csv",
+            str(detected_features_csv),
+            "--preset",
+            "pt_pattern_cid_nl_dr",
+            "--cid-nl-candidates-csv",
+            str(tmp_path / "missing-cid-nl.csv"),
+        ]
+    )
+
+    assert code == 2
+    assert "CID-NL candidates csv does not exist" in capsys.readouterr().err
+
+
 def test_cli_does_not_declare_any_raw_or_dll_arguments() -> None:
     parser_help = run_pt_pattern_discovery._build_parser().format_help()
 

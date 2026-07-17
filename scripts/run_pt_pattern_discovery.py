@@ -174,6 +174,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.cid_nl_candidates_csv is not None
         else None
     )
+    if cid_nl_candidates_csv is not None and not cid_nl_candidates_csv.is_file():
+        print(
+            f"{cid_nl_candidates_csv}: CID-NL candidates csv does not exist",
+            file=sys.stderr,
+        )
+        return 2
     trace_summary_csv = (
         args.trace_summary_csv.resolve()
         if args.trace_summary_csv is not None
