@@ -4,6 +4,7 @@ import pytest
 from xic_extractor.peak_detection.chrom_peak_segments import (
     ChromPeakSegmentPolicy,
     enumerate_chrom_peak_segments,
+    segments_containing_rt,
     select_segment_by_apex_rt,
 )
 
@@ -36,9 +37,7 @@ def test_segment_enumeration_recovers_clean_full_peak_segment() -> None:
 
 
 def test_segment_enumeration_splits_baseline_separated_neighbor_peaks() -> None:
-    rt, intensity, baseline = _trace(
-        [0, 0, 10, 50, 10, 0, 0, 8, 40, 8, 0, 0]
-    )
+    rt, intensity, baseline = _trace([0, 0, 10, 50, 10, 0, 0, 8, 40, 8, 0, 0])
 
     result = enumerate_chrom_peak_segments(rt, intensity, baseline)
 
@@ -71,15 +70,12 @@ def test_segment_enumeration_marks_high_valley_shoulder_for_review() -> None:
         for segment in result.segments
     )
     assert all(
-        "shoulder_overlap" in segment.evidence_sources
-        for segment in result.segments
+        "shoulder_overlap" in segment.evidence_sources for segment in result.segments
     )
 
 
 def test_select_segment_by_apex_rt_keeps_targeted_choice_separate() -> None:
-    rt, intensity, baseline = _trace(
-        [0, 0, 8, 60, 8, 0, 0, 20, 80, 20, 0, 0]
-    )
+    rt, intensity, baseline = _trace([0, 0, 8, 60, 8, 0, 0, 20, 80, 20, 0, 0])
     result = enumerate_chrom_peak_segments(rt, intensity, baseline)
 
     selected = select_segment_by_apex_rt(result.segments, 3.0)
@@ -90,6 +86,18 @@ def test_select_segment_by_apex_rt_keeps_targeted_choice_separate() -> None:
     assert selected.apex_rt_min == pytest.approx(3.0)
     assert stronger_context.apex_rt_min == pytest.approx(8.0)
     assert selected.segment_id != stronger_context.segment_id
+
+
+def test_segments_containing_rt_does_not_fall_back_to_nearest_peak() -> None:
+    rt, intensity, baseline = _trace([0, 0, 8, 60, 8, 0, 0, 20, 80, 20, 0, 0])
+    result = enumerate_chrom_peak_segments(rt, intensity, baseline)
+
+    first_peak = segments_containing_rt(result.segments, 3.0)
+    between_peaks = segments_containing_rt(result.segments, 5.5)
+
+    assert len(first_peak) == 1
+    assert first_peak[0].apex_rt_min == pytest.approx(3.0)
+    assert between_peaks == ()
 
 
 def test_segment_area_uses_raw_trace_not_morphology_area() -> None:

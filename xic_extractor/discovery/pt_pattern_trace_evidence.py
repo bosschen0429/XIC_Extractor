@@ -54,6 +54,41 @@ REQUIRED_CANDIDATE_COLUMNS = (
     "pt_plus_4_expected_mz",
 )
 
+ANCHOR_SEGMENTATION_SUMMARY_COLUMNS = (
+    "anchor_segmentation_status",
+    "anchor_segmentation_reason",
+    "anchor_segmentation_common_rt_start_min",
+    "anchor_segmentation_common_rt_end_min",
+    "anchor_segmentation_common_duration_sec",
+    "anchor_segmentation_common_start_owner_labels",
+    "anchor_segmentation_common_end_owner_labels",
+    "anchor_segmentation_boundary_review_status",
+    "anchor_segmentation_boundary_review_position_labels",
+    "anchor_segmentation_max_left_clip_sec",
+    "anchor_segmentation_max_right_clip_sec",
+    "anchor_segmentation_min_common_retained_fraction",
+    "anchor_segmentation_max_common_left_residual_fraction",
+    "anchor_segmentation_max_common_right_residual_fraction",
+    "anchor_segmentation_descending_at_common_right_position_labels",
+)
+
+ANCHOR_SEGMENTATION_METRIC_COLUMNS = (
+    "anchor_segment_rt_start_min",
+    "anchor_segment_rt_end_min",
+    "anchor_segment_duration_sec",
+    "anchor_segment_class",
+    "anchor_segment_boundary_stop_reason",
+    "anchor_segment_owns_common_start",
+    "anchor_segment_owns_common_end",
+    "anchor_segment_left_clip_sec",
+    "anchor_segment_right_clip_sec",
+    "anchor_segment_common_retained_fraction",
+    "anchor_segment_common_left_residual_fraction",
+    "anchor_segment_common_right_residual_fraction",
+    "anchor_segment_common_left_trend",
+    "anchor_segment_common_right_trend",
+)
+
 SUMMARY_COLUMNS = (
     "schema_version",
     "sample_stem",
