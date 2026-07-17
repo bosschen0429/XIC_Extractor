@@ -179,6 +179,33 @@ def test_build_review_packet_rows_samples_per_status_and_keeps_pending_oracle() 
     assert rows[0]["pt_plus_4_raw_active_overlap_fraction"] == "0.70"
 
 
+def test_review_packet_rejects_summary_candidate_missing_from_candidates() -> None:
+    with pytest.raises(ValueError, match="summary candidate_id values missing"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand-present")],
+            summary_rows=[
+                _summary_row("cand-missing", "pt_pattern_detected_diagnostic")
+            ],
+            metric_rows=_metric_rows("cand-missing"),
+            packet_label="missing-candidate",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_duplicate_summary_candidate_id() -> None:
+    summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
+    with pytest.raises(ValueError, match="duplicate summary candidate_id values"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[summary, dict(summary)],
+            metric_rows=_metric_rows("cand"),
+            packet_label="duplicate-summary",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
 def test_review_packet_cli_writes_csv_and_sidecar(tmp_path: Path) -> None:
     candidates_csv = tmp_path / "pt_pattern_candidates.csv"
     summary_csv = tmp_path / "pt_pattern_trace_summary.csv"

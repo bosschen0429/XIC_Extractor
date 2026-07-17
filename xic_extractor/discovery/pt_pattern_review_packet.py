@@ -209,14 +209,19 @@ def build_review_packet_rows(
         raise ValueError("max_per_status must be > 0")
 
     candidates_by_id = _unique_by_candidate_id(candidate_rows, label="candidate")
+    summaries_by_id = _unique_by_candidate_id(summary_rows, label="summary")
+    missing_candidate_ids = sorted(summaries_by_id.keys() - candidates_by_id.keys())
+    if missing_candidate_ids:
+        joined = ", ".join(missing_candidate_ids[:5])
+        raise ValueError(
+            "summary candidate_id values missing from candidates: " + joined
+        )
     metrics_by_candidate = _metrics_by_candidate(metric_rows)
     grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
 
     for summary in summary_rows:
         candidate_id = _required_text(summary, "candidate_id")
-        candidate = candidates_by_id.get(candidate_id)
-        if candidate is None:
-            continue
+        candidate = candidates_by_id[candidate_id]
         combined_status = _required_text(summary, "combined_pt_pattern_status")
         row = _packet_row(
             candidate=candidate,
