@@ -127,7 +127,7 @@ def test_production_matrix_value_uses_asls_selected_integration_area_when_presen
     assert decisions.cell("FAM001", "s2").matrix_value == 95.0
 
 
-def test_single_sample_local_owner_creates_primary_identity():
+def test_single_sample_local_owner_does_not_create_primary_identity():
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="single_sample_local_owner"),),
         cells=(
@@ -139,10 +139,12 @@ def test_single_sample_local_owner_creates_primary_identity():
 
     decisions = build_production_decisions(matrix, AlignmentConfig())
 
-    assert decisions.cell("FAM001", "s1").write_matrix_value is True
-    assert decisions.cell("FAM001", "s2").write_matrix_value is True
-    assert decisions.row("FAM001").include_in_primary_matrix is True
-    assert decisions.row("FAM001").identity_decision == "production_family"
+    assert decisions.cell("FAM001", "s1").write_matrix_value is False
+    assert decisions.cell("FAM001", "s1").blank_reason == "missing_row_identity_support"
+    assert decisions.cell("FAM001", "s2").write_matrix_value is False
+    assert decisions.cell("FAM001", "s2").production_status == "review_rescue"
+    assert decisions.row("FAM001").include_in_primary_matrix is False
+    assert decisions.row("FAM001").identity_decision == "provisional_discovery"
     assert decisions.row("FAM001").identity_reason == "single_sample_local_owner"
     assert "single_sample_local_owner" in decisions.row("FAM001").row_flags
 
@@ -180,12 +182,15 @@ def test_targeted_metadata_does_not_authorize_untargeted_matrix_write() -> None:
 
     assert adversarial.row("FAM001") == base.row("FAM001")
     assert adversarial.cell("FAM001", "s1") == base.cell("FAM001", "s1")
-    assert adversarial.cell("FAM001", "s1").write_matrix_value is True
+    assert adversarial.cell("FAM001", "s1").write_matrix_value is False
+    assert adversarial.cell("FAM001", "s1").blank_reason == (
+        "missing_row_identity_support"
+    )
 
 
 def test_production_cell_decision_record_explains_missing_row_identity_blank() -> None:
     matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="", has_anchor=False),),
+        clusters=(_feature("FAM001", evidence="single_sample_local_owner"),),
         cells=(
             _cell("s1", "FAM001", "detected", 100.0),
             _cell("s2", "FAM001", "rescued", 90.0),

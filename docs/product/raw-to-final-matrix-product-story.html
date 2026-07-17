@@ -723,8 +723,8 @@
                 </td>
                 <td>
                   不是所有 family 都有足夠證據進入最終矩陣。
-                  但在 adductomics 情境下，<strong>單一樣本檢出</strong>也是合法的 production entry
-                  （以 review confidence 標記）。
+                  <strong>單一樣本檢出</strong>可以保留為 provisional discovery
+                  供 review，但本身不是 primary matrix authority。
                 </td>
               </tr>
               <tr>
@@ -830,10 +830,10 @@
           <div class="callout">
             <strong>Single-sample detection 政策：</strong>
             在 DNA adductomics 情境下，僅在單一樣本中檢出的特徵
-            （<code>single_sample_local_owner</code>）仍然以 <code>production_family</code>
-            身份進入 primary matrix，但標記為 <code>review</code> confidence。
-            這反映了低豐度加合物的真實檢出特性——如 N7-methylguanine
-            在某些研究中僅有 7.8% 的樣本檢出率。
+            （<code>single_sample_local_owner</code>）仍值得保留與人工 review，
+            但只標記為 <code>provisional_discovery</code>，不寫入 primary matrix。
+            後續必須取得額外 identity evidence，才能升為
+            <code>production_family</code>。
           </div>
 
           <h3 style="margin-top: 20px;">輸出檔案</h3>
@@ -916,12 +916,12 @@
               </p>
             </article>
             <article class="panel">
-              <h3>為什麼接受單一樣本檢出？</h3>
+              <h3>為什麼保留單一樣本檢出？</h3>
               <p>
                 DNA adductomics 的分析對象是低豐度加合物。
                 文獻建議 minFraction 低至 0.05–0.10（XCMS adductomics 參數推薦）。
-                強制多樣本檢出會系統性丟失真實但稀有的 adducts。
-                單樣本檢出以 review confidence 標記，由 reviewer 最終判斷。
+                在 discovery 階段直接丟棄會系統性失去真實但稀有的 adducts。
+                因此單樣本檢出會保留到 review surface，但不因此取得 Matrix 寫入權。
               </p>
             </article>
           </div>

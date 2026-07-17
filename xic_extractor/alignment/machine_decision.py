@@ -50,6 +50,7 @@ _ROW_BLOCKERS = {
     "insufficient_detected_identity_support",
     "insufficient_identity_support",
     "single_detected_seed",
+    "single_sample_local_owner",
     "skip_expensive_evidence",
     "weak_seed_backfill_dependency",
     "zero_quantifiable_detected",
@@ -60,7 +61,6 @@ _SUPPORT_PRIMARY_EVIDENCE = {
     "multi_sample_detected",
     "owner_complete_link",
     "owner_identity",
-    "single_sample_local_owner",
 }
 _NON_BLOCKING_IDENTITY_REASONS = {
     *_SUPPORT_PRIMARY_EVIDENCE,
