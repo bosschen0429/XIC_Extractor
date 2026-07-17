@@ -21,7 +21,7 @@ from xic_extractor.discovery.pt_pattern_same_scan_evidence import (
 from xic_extractor.discovery.pt_pattern_same_scan_report import (
     render_same_scan_replay_html,
 )
-from xic_extractor.ms1_scan_index import MS1Scan
+from xic_extractor.ms1_scan_index import MS1Scan, MS1ScanIndexProvenance
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
@@ -37,9 +37,16 @@ D3_CONTROL_NAME = "d3-dG-C8-MeIQx"
 REFERENCE_CP_NAME = "195CP-d(GpG)"
 
 _CANDIDATE_COLUMNS = (
+    "sample_stem",
     "candidate_id",
     "base_mz",
     "base_rt_apex_min",
+    "base_feature_id",
+    "pt_plus_1_feature_id",
+    "pt_plus_2_feature_id",
+    "pt_plus_4_feature_id",
+)
+_FEATURE_ID_COLUMNS = (
     "base_feature_id",
     "pt_plus_1_feature_id",
     "pt_plus_2_feature_id",
@@ -140,9 +147,12 @@ def run_same_scan_replay(
     known_diagnosis_csv: Path,
     output_dir: Path,
     report_id: str,
+    source_sample_stem: str,
+    index_input: Path,
     settings: SameScanSettings = SameScanSettings(),
     candidate_rt_half_window_sec: float = 45.0,
     index_source: str = "provided_index",
+    index_provenance: MS1ScanIndexProvenance | None = None,
 ) -> dict[str, Path]:
     """Compare feature-first and same-scan contracts on bounded seed sets."""
 
@@ -155,6 +165,7 @@ def run_same_scan_replay(
             candidates_csv,
             evidence_csv,
             rt_half_window_sec=candidate_rt_half_window_sec,
+            expected_sample_stem=source_sample_stem,
         ),
         *_known_contexts(known_diagnosis_csv),
     )
@@ -221,6 +232,9 @@ def run_same_scan_replay(
         index_source=index_source,
         candidate_rt_half_window_sec=candidate_rt_half_window_sec,
         inputs=(candidates_csv, evidence_csv, known_diagnosis_csv),
+        source_sample_stem=source_sample_stem,
+        index_input=index_input,
+        index_provenance=index_provenance,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -258,6 +272,7 @@ def _candidate_contexts(
     evidence_csv: Path,
     *,
     rt_half_window_sec: float,
+    expected_sample_stem: str | None = None,
 ) -> tuple[_SeedContext, ...]:
     candidates = read_delimited_rows(
         candidates_csv,
@@ -288,6 +303,22 @@ def _candidate_contexts(
             + ", ".join(duplicate_evidence_ids)
         )
     accepted_ids = set(accepted_id_rows)
+    if expected_sample_stem is not None:
+        expected = expected_sample_stem.strip()
+        if not expected:
+            raise ValueError("source sample stem must be non-empty")
+        accepted_sample_stems = sorted(
+            {
+                text_value(row["sample_stem"])
+                for row in candidates
+                if text_value(row["candidate_id"]) in accepted_ids
+            }
+        )
+        if accepted_sample_stems and accepted_sample_stems != [expected]:
+            raise ValueError(
+                f"candidate sample stems {accepted_sample_stems!r} do not match "
+                f"source sample {expected!r}"
+            )
     candidate_counts = Counter(
         text_value(row["candidate_id"])
         for row in candidates
@@ -322,7 +353,7 @@ def _candidate_contexts(
         )
         feature_ids = tuple(
             text_value(row[column])
-            for column in _CANDIDATE_COLUMNS[3:]
+            for column in _FEATURE_ID_COLUMNS
             if text_value(row[column])
         )
         contexts.append(
@@ -503,6 +534,9 @@ def _summary(
     index_source: str,
     candidate_rt_half_window_sec: float,
     inputs: Sequence[Path],
+    source_sample_stem: str = "",
+    index_input: Path | None = None,
+    index_provenance: MS1ScanIndexProvenance | None = None,
 ) -> dict[str, object]:
     current = [
         row
@@ -540,6 +574,24 @@ def _summary(
         "evidence_owner": EVIDENCE_OWNER,
         "report_id": report_id,
         "index_source": index_source,
+        "source_sample_stem": source_sample_stem,
+        "index_input": (
+            {
+                "path": str(index_input),
+                "sha256": file_sha256(index_input),
+                "source_provenance": (
+                    {
+                        "sample_stem": index_provenance.sample_stem,
+                        "source_path": index_provenance.source_path,
+                        "source_sha256": index_provenance.source_sha256,
+                    }
+                    if index_provenance is not None
+                    else None
+                ),
+            }
+            if index_input is not None
+            else None
+        ),
         "opens_raw": index_source == "raw",
         "changes_detector_rule": False,
         "changes_counted_detection": False,

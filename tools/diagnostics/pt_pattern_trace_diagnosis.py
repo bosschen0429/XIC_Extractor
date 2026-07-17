@@ -45,9 +45,10 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
     combined_pt_pattern_status,
     diagnose_candidate_traces,
     load_candidate_rows,
+    validate_candidate_sample_binding,
 )
 from xic_extractor.raw_reader import RawReaderError, open_raw
-from xic_extractor.tabular_io import write_delimited_rows
+from xic_extractor.tabular_io import file_sha256, write_delimited_rows
 from xic_extractor.xic_models import XICTrace
 
 __all__ = (
@@ -78,6 +79,12 @@ def run_trace_diagnosis(
     write_trace_points: bool,
 ) -> dict[str, Path]:
     candidate_rows = load_candidate_rows(candidates_csv, limit=limit, offset=offset)
+    source_sample_stem = raw.stem
+    validate_candidate_sample_binding(
+        candidate_rows,
+        expected_sample_stem=source_sample_stem,
+    )
+    raw_sha256 = file_sha256(raw)
     request_items = tuple(
         item
         for row in candidate_rows
@@ -165,6 +172,8 @@ def run_trace_diagnosis(
         "candidates_csv": str(candidates_csv),
         "raw": str(raw),
         "raw_file_name": raw.name,
+        "raw_sha256": raw_sha256,
+        "source_sample_stem": source_sample_stem,
         "output_dir": str(output_dir),
         "limit": limit,
         "offset": offset,
@@ -216,6 +225,8 @@ def run_trace_diagnosis(
         "candidates_csv": str(candidates_csv),
         "raw": str(raw),
         "raw_file_name": raw.name,
+        "raw_sha256": raw_sha256,
+        "source_sample_stem": source_sample_stem,
         "output_dir": str(output_dir),
         "limit": limit,
         "offset": offset,

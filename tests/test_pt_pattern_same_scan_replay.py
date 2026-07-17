@@ -68,6 +68,7 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
         candidates_csv,
         [
             {
+                "sample_stem": "SampleA",
                 "candidate_id": "candidate-a",
                 "base_mz": "500.0",
                 "base_rt_apex_min": "10.01",
@@ -77,6 +78,7 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
                 "pt_plus_4_feature_id": "f4",
             },
             {
+                "sample_stem": "SampleA",
                 "candidate_id": "candidate-b",
                 "base_mz": "520.0",
                 "base_rt_apex_min": "10.01",
@@ -119,6 +121,8 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
         report_id="synthetic",
         settings=SameScanSettings(noise_level=25_000.0, minimum_joint_scans=2),
         candidate_rt_half_window_sec=45.0,
+        source_sample_stem="SampleA",
+        index_input=_write_index_identity(tmp_path),
     )
 
     with outputs["summary_json"].open(encoding="utf-8") as handle:
@@ -137,6 +141,8 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
     assert summary["uniquely_resolved_conflict_component_count"] == 1
     assert summary["d3_core_contract_supported"] is True
     assert summary["d3_strict_contract_supported"] is False
+    assert summary["source_sample_stem"] == "SampleA"
+    assert summary["index_input"]["sha256"]
 
     by_seed = {row["seed_id"]: row for row in rows}
     assert by_seed["candidate-a"]["contract_b_strict_full_same_scan"] == "TRUE"
@@ -185,6 +191,7 @@ def test_candidate_contexts_fail_closed_on_missing_accepted_id(
         candidates_csv,
         [
             {
+                "sample_stem": "SampleA",
                 "candidate_id": "candidate-a",
                 "base_mz": "500.0",
                 "base_rt_apex_min": "10.0",
@@ -217,6 +224,7 @@ def test_candidate_contexts_fail_closed_on_duplicate_accepted_rows(
     candidates_csv = tmp_path / "candidates.csv"
     evidence_csv = tmp_path / "evidence.csv"
     candidate = {
+        "sample_stem": "SampleA",
         "candidate_id": "candidate-a",
         "base_mz": "500.0",
         "base_rt_apex_min": "10.0",
@@ -237,3 +245,37 @@ def test_candidate_contexts_fail_closed_on_duplicate_accepted_rows(
             evidence_csv,
             rt_half_window_sec=45.0,
         )
+
+
+def test_candidate_contexts_reject_source_sample_mismatch(tmp_path: Path) -> None:
+    candidates_csv = tmp_path / "candidates.csv"
+    evidence_csv = tmp_path / "evidence.csv"
+    candidate = {
+        "sample_stem": "SampleB",
+        "candidate_id": "candidate-a",
+        "base_mz": "500.0",
+        "base_rt_apex_min": "10.0",
+        "base_feature_id": "f1",
+        "pt_plus_1_feature_id": "f2",
+        "pt_plus_2_feature_id": "f3",
+        "pt_plus_4_feature_id": "f4",
+    }
+    _write_csv(candidates_csv, [candidate])
+    _write_csv(
+        evidence_csv,
+        [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
+    )
+
+    with pytest.raises(ValueError, match="source sample 'SampleA'"):
+        replay._candidate_contexts(
+            candidates_csv,
+            evidence_csv,
+            rt_half_window_sec=45.0,
+            expected_sample_stem="SampleA",
+        )
+
+
+def _write_index_identity(tmp_path: Path) -> Path:
+    path = tmp_path / "synthetic-index.npz"
+    path.write_bytes(b"synthetic-index")
+    return path

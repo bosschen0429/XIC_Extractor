@@ -31,11 +31,9 @@ This is explicitly **not** a product feature detector:
   available through the CLI, but the real gates are always re-applied later by
   ``xic_extractor.discovery.delta_mass_patterns.match_delta_mass_pattern``.
 
-Reuse notes: this module reuses ``xic_extractor.raw_reader.open_raw`` /
-``RawFileHandle`` for RAW access (the same low-level Thermo COM calls already
-used by ``RawFileHandle.iter_ms2_scans`` -- ``GetFilterForScanNumber``,
-``GetSimplifiedScan``, ``RetentionTimeFromScanNumber`` -- applied here to MS1
-scans instead of MS2 scans) and
+Reuse notes: this module reuses ``xic_extractor.raw_reader.open_raw`` and the
+shared ``xic_extractor.ms1_scan_index`` reader for RAW access, so scan errors
+fail closed instead of producing a partial proxy labeled as valid, and
 ``xic_extractor.discovery.delta_mass_patterns.PT_PATTERN`` /
 ``xic_extractor.discovery.delta_mass_csv.DETECTED_FEATURES_COLUMNS`` for the
 pattern deltas and output schema. It does not import
@@ -58,7 +56,11 @@ from numpy.typing import NDArray
 
 from xic_extractor.discovery.delta_mass_csv import DETECTED_FEATURES_COLUMNS
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN
-from xic_extractor.raw_reader import RawFileHandle, RawReaderError, open_raw
+from xic_extractor.ms1_scan_index import (
+    MS1ScanReadError,
+    build_ms1_scan_index_for_rt_window,
+)
+from xic_extractor.raw_reader import RawReaderError, open_raw
 from xic_extractor.tabular_io import write_delimited_rows
 
 PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
@@ -73,8 +75,6 @@ _TRACE_QUALITY_PLACEHOLDER = "OK"
 _SHAPE_SCORE_PLACEHOLDER = ""
 _DEFAULT_LOOKUP_PPM = 20.0
 _DEFAULT_MIN_SCANS_PER_GROUP = 2
-
-_MS1_ORDER_LABEL = "Ms"
 
 _NON_BASE_LABELS: tuple[str, ...] = tuple(
     position.label for position in PT_PATTERN.positions if position.label != "base"
@@ -122,53 +122,30 @@ class ProxyFeature:
 
 
 def iter_ms1_scans(
-    handle: RawFileHandle,
+    handle: Any,
     *,
     rt_min: float,
     rt_max: float,
 ) -> Iterator[Ms1ScanRecord]:
     """Iterate MS1 (``MSOrder == Ms``) scans in ``[rt_min, rt_max]``.
 
-    Mirrors ``RawFileHandle.iter_ms2_scans``'s per-scan Thermo COM call
-    sequence (``GetFilterForScanNumber`` -> filter check ->
-    ``GetSimplifiedScan`` -> masses/intensities), applied to MS1 scans
-    instead of MS2 scans. Malformed scans are skipped rather than raising,
-    since this is a best-effort diagnostic scan, not a product pipeline.
+    Reuses the shared MS1 index reader and fails closed on malformed or
+    unreadable scans. A partial index must not be mislabeled as an ``OK``
+    proxy feature source.
     """
 
-    raw_file = handle._raw_file  # noqa: SLF001 -- same access pattern as
-    # xic_extractor.alignment.ms1_index_source._raw_file(); RawFileHandle has
-    # no public MS1 scan iterator, only iter_ms2_scans and XIC extraction.
-    start_scan = int(raw_file.ScanNumberFromRetentionTime(rt_min))
-    end_scan = int(raw_file.ScanNumberFromRetentionTime(rt_max))
-    for scan_number in range(start_scan, end_scan + 1):
-        try:
-            filter_obj = raw_file.GetFilterForScanNumber(scan_number)
-            if str(getattr(filter_obj, "MSOrder", "")) != _MS1_ORDER_LABEL:
-                continue
-            scan_rt = float(raw_file.RetentionTimeFromScanNumber(scan_number))
-            scan_data = raw_file.GetSimplifiedScan(scan_number)
-            masses = np.asarray(getattr(scan_data, "Masses", []), dtype=float)
-            intensities = np.asarray(
-                getattr(scan_data, "Intensities", []), dtype=float
-            )
-            if masses.ndim != 1 or intensities.ndim != 1:
-                continue
-            if masses.shape != intensities.shape:
-                continue
-            if masses.size > 1 and not np.all(masses[:-1] <= masses[1:]):
-                order = np.argsort(masses)
-                masses = masses[order]
-                intensities = intensities[order]
-            yield Ms1ScanRecord(
-                scan_number=scan_number,
-                rt_min=scan_rt,
-                masses=masses,
-                intensities=intensities,
-            )
-        except Exception:  # noqa: BLE001 -- best-effort diagnostic scan;
-            # a single malformed scan must not abort the whole proxy run.
-            continue
+    for scan in build_ms1_scan_index_for_rt_window(
+        handle,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        fail_on_malformed=True,
+    ):
+        yield Ms1ScanRecord(
+            scan_number=scan.scan_number,
+            rt_min=scan.rt,
+            masses=scan.masses,
+            intensities=scan.intensities,
+        )
 
 
 def _find_best_peak(
@@ -631,7 +608,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             rt_gap_split_min=args.rt_gap_split_min,
             min_scans_per_group=args.min_scans_per_group,
         )
-    except RawReaderError as exc:
+    except (MS1ScanReadError, RawReaderError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 

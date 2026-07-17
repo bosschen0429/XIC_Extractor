@@ -3,12 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from xic_extractor.ms1_scan_index import (
     MS1Scan,
+    MS1ScanIndexProvenance,
     build_ms1_scan_index,
     extract_index_xic,
     read_ms1_scan_index_npz,
+    read_ms1_scan_index_provenance,
     write_ms1_scan_index_npz,
 )
 from xic_extractor.xic_models import XICRequest
@@ -43,6 +46,32 @@ def test_ms1_scan_index_npz_round_trip(tmp_path: Path) -> None:
     assert [scan.rt for scan in loaded] == [1.0, 1.1]
     np.testing.assert_allclose(loaded[0].masses, [100.0, 101.0])
     np.testing.assert_allclose(loaded[1].intensities, [30.0])
+
+
+def test_ms1_scan_index_npz_round_trips_source_provenance(tmp_path: Path) -> None:
+    path = tmp_path / "index.npz"
+    provenance = MS1ScanIndexProvenance(
+        sample_stem="SampleA",
+        source_path="C:/raw/SampleA.raw",
+        source_sha256="a" * 64,
+    )
+
+    write_ms1_scan_index_npz(path, (), provenance=provenance)
+
+    assert read_ms1_scan_index_provenance(path) == provenance
+
+
+def test_ms1_scan_index_npz_rejects_empty_provenance_array(tmp_path: Path) -> None:
+    path = tmp_path / "index.npz"
+    np.savez_compressed(
+        path,
+        provenance_sample_stem=np.asarray([], dtype=str),
+        provenance_source_path=np.asarray(["C:/raw/SampleA.raw"]),
+        provenance_source_sha256=np.asarray(["a" * 64]),
+    )
+
+    with pytest.raises(ValueError, match="source provenance is incomplete"):
+        read_ms1_scan_index_provenance(path)
 
 
 def test_extract_index_xic_uses_ppm_window_and_max_intensity() -> None:

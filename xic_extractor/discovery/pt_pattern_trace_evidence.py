@@ -8,7 +8,7 @@ diagnostic outputs, or grant final quant authority.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -248,6 +248,24 @@ def load_candidate_rows(
         encoding="utf-8-sig",
     )
     return tuple(rows[offset : offset + limit])
+
+
+def validate_candidate_sample_binding(
+    rows: Sequence[Mapping[str, str]],
+    *,
+    expected_sample_stem: str,
+) -> None:
+    """Fail closed when candidate rows do not belong to the evidence source."""
+
+    expected = expected_sample_stem.strip()
+    if not expected:
+        raise ValueError("source sample stem must be non-empty")
+    observed = sorted({_required_text(row, "sample_stem") for row in rows})
+    if observed and observed != [expected]:
+        raise ValueError(
+            f"candidate sample stems {observed!r} do not match source sample "
+            f"{expected!r}"
+        )
 
 
 def build_trace_requests_for_candidate(

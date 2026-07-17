@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
 import numpy as np
 
 from tools.diagnostics import pt_pattern_same_scan_replay
-from xic_extractor.ms1_scan_index import MS1Scan, write_ms1_scan_index_npz
+from xic_extractor.ms1_scan_index import (
+    MS1Scan,
+    MS1ScanIndexProvenance,
+    write_ms1_scan_index_npz,
+)
 
 
 def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
@@ -46,6 +51,11 @@ def test_same_scan_cli_runs_from_npz_without_raw(tmp_path: Path) -> None:
                 ),
             ),
         ),
+        provenance=MS1ScanIndexProvenance(
+            sample_stem="SampleA",
+            source_path="C:/raw/SampleA.raw",
+            source_sha256="a" * 64,
+        ),
     )
     candidates = tmp_path / "candidates.csv"
     evidence = tmp_path / "evidence.csv"
@@ -54,6 +64,7 @@ def test_same_scan_cli_runs_from_npz_without_raw(tmp_path: Path) -> None:
         candidates,
         [
             {
+                "sample_stem": "SampleA",
                 "candidate_id": "candidate-a",
                 "base_mz": "500.0",
                 "base_rt_apex_min": "10.01",
@@ -100,3 +111,71 @@ def test_same_scan_cli_runs_from_npz_without_raw(tmp_path: Path) -> None:
     assert code == 0
     assert (output_dir / "pt_pattern_same_scan_summary.json").is_file()
     assert (output_dir / "pt_pattern_same_scan_report.html").is_file()
+    summary = json.loads(
+        (output_dir / "pt_pattern_same_scan_summary.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert summary["source_sample_stem"] == "SampleA"
+    assert summary["index_input"]["path"] == str(index_path.resolve())
+    assert summary["index_input"]["sha256"]
+    assert summary["index_input"]["source_provenance"]["source_sha256"] == (
+        "a" * 64
+    )
+
+
+def test_same_scan_cli_rejects_npz_without_source_provenance(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    index_path = tmp_path / "unbound.ms1_index.npz"
+    write_ms1_scan_index_npz(index_path, ())
+    candidates = tmp_path / "candidates.csv"
+    evidence = tmp_path / "evidence.csv"
+    known = tmp_path / "known.csv"
+    _write_csv(
+        candidates,
+        [
+            {
+                "sample_stem": "SampleA",
+                "candidate_id": "candidate-a",
+                "base_mz": "500.0",
+                "base_rt_apex_min": "10.01",
+                "base_feature_id": "f1",
+                "pt_plus_1_feature_id": "f2",
+                "pt_plus_2_feature_id": "f3",
+                "pt_plus_4_feature_id": "f4",
+            }
+        ],
+    )
+    _write_csv(evidence, [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}])
+    _write_csv(
+        known,
+        [
+            {
+                "compound": "195CP-known",
+                "expected_base_mz": "500.0",
+                "diagnostic_status": "accepted_candidate",
+            }
+        ],
+    )
+
+    code = pt_pattern_same_scan_replay.main(
+        [
+            "--ms1-index-npz",
+            str(index_path),
+            "--candidates-csv",
+            str(candidates),
+            "--evidence-csv",
+            str(evidence),
+            "--known-diagnosis-csv",
+            str(known),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--report-id",
+            "unbound",
+        ]
+    )
+
+    assert code == 2
+    assert "source provenance" in capsys.readouterr().err

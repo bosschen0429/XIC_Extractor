@@ -10,8 +10,10 @@ from pathlib import Path
 from xic_extractor.discovery.pt_pattern_same_scan_evidence import SameScanSettings
 from xic_extractor.discovery.pt_pattern_same_scan_replay import run_same_scan_replay
 from xic_extractor.ms1_scan_index import (
+    MS1ScanReadError,
     build_ms1_scan_index,
     read_ms1_scan_index_npz,
+    read_ms1_scan_index_provenance,
 )
 from xic_extractor.raw_reader import RawReaderError, open_raw
 
@@ -61,11 +63,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"--ms1-index-npz does not exist: {args.ms1_index_npz}"
             )
         index_source = "npz"
+        index_input = args.ms1_index_npz.resolve()
         try:
-            index = read_ms1_scan_index_npz(args.ms1_index_npz.resolve())
+            index = read_ms1_scan_index_npz(index_input)
+            index_provenance = read_ms1_scan_index_provenance(index_input)
+            if index_provenance is None:
+                raise ValueError(
+                    "MS1 index source provenance is required for Pt evidence"
+                )
         except (OSError, ValueError) as exc:
             print(f"failed to read MS1 index: {exc}", file=sys.stderr)
             return 2
+        source_sample_stem = index_provenance.sample_stem
     else:
         if args.dll_dir is None:
             parser.error("--dll-dir is required with --raw")
@@ -74,10 +83,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.dll_dir.is_dir():
             parser.error(f"--dll-dir does not exist: {args.dll_dir}")
         index_source = "raw"
+        index_input = args.raw.resolve()
+        index_provenance = None
+        source_sample_stem = index_input.stem
         try:
-            with open_raw(args.raw.resolve(), args.dll_dir.resolve()) as handle:
+            with open_raw(index_input, args.dll_dir.resolve()) as handle:
                 index = build_ms1_scan_index(handle)
-        except RawReaderError as exc:
+        except (MS1ScanReadError, RawReaderError) as exc:
             print(f"failed to build MS1 index: {exc}", file=sys.stderr)
             return 2
     try:
@@ -88,6 +100,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             known_diagnosis_csv=args.known_diagnosis_csv.resolve(),
             output_dir=args.output_dir.resolve(),
             report_id=args.report_id,
+            source_sample_stem=source_sample_stem,
+            index_input=index_input,
             settings=SameScanSettings(
                 mass_tolerance_ppm=args.mass_tolerance_ppm,
                 noise_level=args.noise_level,
@@ -95,6 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             candidate_rt_half_window_sec=args.candidate_rt_half_window_sec,
             index_source=index_source,
+            index_provenance=index_provenance,
         )
     except (OSError, ValueError) as exc:
         print(f"pt_pattern_same_scan_replay failed: {exc}", file=sys.stderr)

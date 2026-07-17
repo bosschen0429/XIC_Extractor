@@ -7,6 +7,7 @@ import numpy as np
 
 from tools.diagnostics import ms1_index_backfill_audit as audit
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.ms1_scan_index import read_ms1_scan_index_provenance
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 
@@ -31,6 +32,8 @@ def test_audit_requests_compares_max_and_sum_against_vendor() -> None:
 
 
 def test_audit_requests_reports_warm_cache_economics(tmp_path: Path) -> None:
+    raw_path = tmp_path / "sample-a.raw"
+    raw_path.write_bytes(b"sample-a-raw")
     summary, _examples = audit.audit_requests_for_sample(
         sample_stem="sample-a",
         raw=FakeRawHandle(),
@@ -40,7 +43,7 @@ def test_audit_requests_reports_warm_cache_economics(tmp_path: Path) -> None:
         peak_config=_peak_config(),
         example_limit=0,
         index_cache_path=tmp_path / "sample-a.ms1_index.npz",
-        raw_path=tmp_path / "sample-a.raw",
+        raw_path=raw_path,
         cache_warm_repeats=2,
     )
 
@@ -52,6 +55,12 @@ def test_audit_requests_reports_warm_cache_economics(tmp_path: Path) -> None:
     assert summary["modes"]["sum"]["warm_cache_load_repeat_count"] == 2
     assert summary["modes"]["sum"]["warm_cache_matches_cold_index"] is True
     assert summary["modes"]["sum"]["warm_cache_total_sec"] >= 0.0
+    provenance = read_ms1_scan_index_provenance(
+        tmp_path / "sample-a.ms1_index.npz"
+    )
+    assert provenance is not None
+    assert provenance.sample_stem == "sample-a"
+    assert provenance.source_path == str(raw_path.resolve())
 
 
 def test_write_outputs_preserves_dynamic_tsv_contract(tmp_path: Path) -> None:

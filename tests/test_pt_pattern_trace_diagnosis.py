@@ -5,6 +5,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tools.diagnostics import pt_pattern_trace_diagnosis as diag
 from xic_extractor.discovery import (
@@ -307,10 +308,12 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
 
     fake_raw = FakeRaw()
     monkeypatch.setattr(diag, "open_raw", lambda raw, dll_dir: fake_raw)
+    raw_path = tmp_path / "SampleA.raw"
+    raw_path.write_bytes(b"sample-a-raw")
 
     outputs = diag.run_trace_diagnosis(
         candidates_csv=candidates_csv,
-        raw=tmp_path / "SampleA.raw",
+        raw=raw_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "trace_diagnosis",
         limit=1,
@@ -392,6 +395,8 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     assert sidecar["evidence_owner"] == evidence.EVIDENCE_OWNER
     assert sidecar["diagnostic_only"] is True
     assert sidecar["trace_request_count"] == 4
+    assert sidecar["source_sample_stem"] == "SampleA"
+    assert sidecar["raw_sha256"]
     assert sidecar["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
     assert sidecar["trace_smoothing_method"] == evidence.TRACE_SMOOTH_METHOD
     assert sidecar["combined_pt_pattern_status_counts"] == {
@@ -453,9 +458,11 @@ def test_run_trace_diagnosis_uses_local_hypothesis_and_preserves_context(
             return traces
 
     monkeypatch.setattr(diag, "open_raw", lambda raw, dll_dir: FakeRaw())
+    raw_path = tmp_path / "SampleA.raw"
+    raw_path.write_bytes(b"sample-a-raw")
     outputs = diag.run_trace_diagnosis(
         candidates_csv=candidates_csv,
-        raw=tmp_path / "SampleA.raw",
+        raw=raw_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "trace_diagnosis",
         limit=1,
@@ -497,6 +504,34 @@ def test_run_trace_diagnosis_uses_local_hypothesis_and_preserves_context(
     )[0]
     assert summary["trace_support_status"] == "supported"
     assert float(summary["max_abs_apex_delta_sec"]) == 0.0
+
+
+def test_run_trace_diagnosis_rejects_candidate_raw_sample_mismatch(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    write_delimited_rows(
+        candidates_csv,
+        [_candidate_row()],
+        evidence.REQUIRED_CANDIDATE_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="source sample 'SampleB'"):
+        diag.run_trace_diagnosis(
+            candidates_csv=candidates_csv,
+            raw=tmp_path / "SampleB.raw",
+            dll_dir=tmp_path,
+            output_dir=tmp_path / "trace_diagnosis",
+            limit=1,
+            offset=0,
+            ppm=20.0,
+            rt_half_window_sec=30.0,
+            mz_source="expected",
+            active_fraction=0.1,
+            min_pearson_r=0.7,
+            max_apex_delta_sec=30.0,
+            write_trace_points=False,
+        )
 
 
 def test_anchor_segmentation_fails_closed_on_ambiguous_segment(

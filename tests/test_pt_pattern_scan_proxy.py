@@ -13,6 +13,7 @@ import csv
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tools.diagnostics.pt_pattern_scan_proxy import (
     PROXY_SOURCE_LABEL,
@@ -21,6 +22,7 @@ from tools.diagnostics.pt_pattern_scan_proxy import (
     features_from_groups,
     filter_scan_hit_groups,
     group_scan_hits,
+    iter_ms1_scans,
     scan_pattern_hits,
     write_detected_features_csv,
 )
@@ -89,6 +91,18 @@ def test_scan_pattern_hits_requires_all_three_non_base_positions() -> None:
     assert hit.base_mz == _BASE_MZ
     assert set(hit.position_mz) == {"pt_plus_1", "pt_plus_2", "pt_plus_4"}
     assert partial_hits == []
+
+
+def test_iter_ms1_scans_fails_closed_on_scan_read_error() -> None:
+    class FailingRaw:
+        def ScanNumberFromRetentionTime(self, _rt_min: float) -> int:
+            return 100
+
+        def GetFilterForScanNumber(self, _scan_number: int):
+            raise RuntimeError("synthetic scan read failure")
+
+    with pytest.raises(RuntimeError, match="failed to read MS1 scan 100"):
+        list(iter_ms1_scans(FailingRaw(), rt_min=10.0, rt_max=10.1))
 
 
 def test_full_pipeline_emits_detected_features_columns_exactly(
