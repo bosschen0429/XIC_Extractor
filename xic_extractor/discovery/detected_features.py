@@ -38,6 +38,8 @@ DETECTED_FEATURES_COLUMNS = (
     "source",
 )
 
+DETECTED_FEATURES_SCHEMA_VERSION = "detected_features.v1"
+
 EXTERNAL_FEATURE_TABLE_REQUIRED_COLUMNS = (
     "external_tool",
     "external_run_id",
