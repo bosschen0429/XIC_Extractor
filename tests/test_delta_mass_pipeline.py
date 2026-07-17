@@ -353,6 +353,51 @@ def test_composite_mzmine_feature_source_uses_mz_rt_fallback(
     assert rows[0]["cid_nl_base_join_mode"] == "mz_rt_fallback"
 
 
+def test_composite_identity_less_external_source_uses_mz_rt_fallback(
+    tmp_path: Path,
+) -> None:
+    external_table = tmp_path / "external_features.tsv"
+    external_rows = [
+        {
+            "external_tool": "OpenMS",
+            "sample_id": row["sample_stem"],
+            "feature_id": row["feature_id"],
+            "source_feature_row_id": "",
+            "mz": row["mz"],
+            "rt": row["rt_apex_min"],
+            "rt_start_min": row.get("rt_start_min", ""),
+            "rt_end_min": row.get("rt_end_min", ""),
+            "area_or_intensity": row["height"],
+            "area": row.get("area", ""),
+            "trace_quality": row["trace_quality"],
+            "shape_score": row.get("shape_score", ""),
+        }
+        for row in _full_pattern_rows()
+    ]
+    _write_external_feature_table(external_table, external_rows)
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state,"
+        "precursor_mz,ms1_apex_rt,evidence_score\n"
+        "Sample_1|unrelated-detector-id,DNA_dR,ms1_feature_nl_supported,"
+        "500.0,10.0,90\n",
+        encoding="utf-8",
+    )
+
+    outputs = run_pt_pattern_discovery(
+        external_feature_table_tsv=external_table,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert rows[0]["candidate_state"] == "pt_pattern_cid_nl_supported"
+    assert rows[0]["cid_nl_base_join_mode"] == "mz_rt_fallback"
+
+
 def test_run_pt_pattern_discovery_requires_cid_nl_csv_for_composite_method(
     tmp_path: Path,
 ) -> None:

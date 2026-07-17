@@ -329,7 +329,10 @@ def _cid_nl_seed_base_feature_ids(
     identity_index: dict[tuple[str, str], set[str]] = {}
     fallback_features_by_sample: dict[str, list["DetectedFeature"]] = {}
     for feature in base_features:
-        if _allows_cid_nl_mz_rt_fallback(feature.source):
+        if not _has_comparable_cid_nl_identity(
+            source_feature_row_id=feature.source_feature_row_id,
+            source=feature.source,
+        ):
             fallback_features_by_sample.setdefault(feature.sample_stem, []).append(
                 feature
             )
@@ -382,10 +385,20 @@ def _is_seed_base_feature(feature: "DetectedFeature") -> bool:
     )
 
 
-def _allows_cid_nl_mz_rt_fallback(source: str) -> bool:
-    """Return whether source IDs are detector-local, not CID-NL identities."""
+def _has_comparable_cid_nl_identity(
+    *,
+    source_feature_row_id: str | None,
+    source: str,
+) -> bool:
+    """Return whether a feature has an ID comparable to CID-NL row identity.
 
-    return source.startswith(_MZMINE_FEATURE_SOURCE_PREFIX)
+    Missing source IDs cannot support an identity join regardless of detector.
+    MZmine row IDs are detector-local and remain eligible for m/z/RT fallback.
+    """
+
+    return bool(source_feature_row_id) and not source.startswith(
+        _MZMINE_FEATURE_SOURCE_PREFIX
+    )
 
 
 def _fallback_seed_base_feature_ids(
@@ -554,9 +567,10 @@ def _apply_cid_nl_composite_join(
         match: _CidNlCandidateRow | None = None
         join_mode = ""
         identity_values = {candidate.base_feature_id}
-        identity_comparable = bool(
-            base_source_feature_row_id
-        ) and not _allows_cid_nl_mz_rt_fallback(base_source)
+        identity_comparable = _has_comparable_cid_nl_identity(
+            source_feature_row_id=base_source_feature_row_id,
+            source=base_source,
+        )
         if base_source_feature_row_id:
             identity_values.add(base_source_feature_row_id)
         identity_matches = [
