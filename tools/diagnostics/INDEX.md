@@ -1794,6 +1794,10 @@ fresh human `accept` or `reject`, the SHA-256 of its review-packet CSV, and the
 SHA-256 of a supplied blind-overlay summary. The tool re-hashes every packet,
 trace CSV, gallery HTML, sealed machine-call CSV, and summary named by that
 bundle; legacy logical IDs without this exact artifact binding fail closed.
+Adjudicated base m/z and RT values, when present, must numerically match the
+review packet; the promotion output always uses the packet's canonical
+coordinates rather than treating the editable adjudication CSV as identity
+authority.
 Blank, duplicate, unmatched, or `uncertain` calls are excluded rather than
 coerced, and the output records `oracle_detection_status = not_asserted`. It
 does not open RAW, create

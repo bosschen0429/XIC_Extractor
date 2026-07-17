@@ -25,6 +25,7 @@ from xic_extractor.discovery.pt_pattern_review_packet import (
 )
 from xic_extractor.tabular_io import (
     file_sha256,
+    optional_float,
     read_delimited_rows,
     write_delimited_rows,
 )
@@ -302,11 +303,17 @@ def build_oracle_promotion_rows(
                 "case_index": _required_text(row, "case_index"),
                 "sample_stem": _required_text(review_row, "sample_stem"),
                 "candidate_id": candidate_id,
-                "base_mz": _preferred_value(row, review_row, "base_mz"),
-                "base_rt_apex_min": _preferred_value(
-                    row,
-                    review_row,
-                    "base_rt_apex_min",
+                "base_mz": _review_coordinate_value(
+                    adjudicated_row=row,
+                    review_row=review_row,
+                    field="base_mz",
+                    packet_row_id=packet_row_id,
+                ),
+                "base_rt_apex_min": _review_coordinate_value(
+                    adjudicated_row=row,
+                    review_row=review_row,
+                    field="base_rt_apex_min",
+                    packet_row_id=packet_row_id,
                 ),
                 "adjudication_basis": _required_text(row, "adjudication_basis"),
                 "human_review_call": _required_text(row, "user_call"),
@@ -710,12 +717,26 @@ def _required_text(row: Mapping[str, str], key: str) -> str:
     return value
 
 
-def _preferred_value(
-    primary: Mapping[str, str],
-    secondary: Mapping[str, str],
-    key: str,
+def _review_coordinate_value(
+    *,
+    adjudicated_row: Mapping[str, str],
+    review_row: Mapping[str, str],
+    field: str,
+    packet_row_id: str,
 ) -> str:
-    value = str(primary.get(key, "")).strip()
-    if value:
-        return value
-    return _required_text(secondary, key)
+    review_text = _required_text(review_row, field)
+    review_value = optional_float(review_text)
+    if review_value is None:
+        raise ValueError(
+            f"{packet_row_id}: exact review packet row has invalid {field}"
+        )
+    adjudicated_text = str(adjudicated_row.get(field, "")).strip()
+    if not adjudicated_text:
+        return review_text
+    adjudicated_value = optional_float(adjudicated_text)
+    if adjudicated_value is None or adjudicated_value != review_value:
+        raise ValueError(
+            f"{packet_row_id}: adjudicated {field} does not match the exact "
+            "review packet row"
+        )
+    return review_text

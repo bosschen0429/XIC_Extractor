@@ -372,6 +372,64 @@ def test_oracle_promotion_rejects_tampered_adjudicated_machine_provenance(
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "stale_value"),
+    (
+        ("base_mz", "500.1"),
+        ("base_rt_apex_min", "10.1"),
+    ),
+)
+def test_oracle_promotion_rejects_adjudicated_coordinate_mismatch(
+    field: str,
+    stale_value: str,
+) -> None:
+    adjudicated = _adjudicated_row("cand-coordinate-mismatch")
+    adjudicated[field] = stale_value
+
+    with pytest.raises(
+        ValueError,
+        match=rf"adjudicated {field}.*exact review packet row",
+    ):
+        _build_rows(
+            adjudicated_rows=[adjudicated],
+            review_packet_rows=[
+                _review_packet_row(
+                    "cand-coordinate-mismatch",
+                    status="pt_pattern_detected_diagnostic",
+                )
+            ],
+        )
+
+
+@pytest.mark.parametrize(
+    ("base_mz", "base_rt_apex_min"),
+    (
+        ("5e2", "10.000000"),
+        ("", ""),
+    ),
+)
+def test_oracle_promotion_canonicalizes_coordinates_from_review_packet(
+    base_mz: str,
+    base_rt_apex_min: str,
+) -> None:
+    adjudicated = _adjudicated_row("cand-coordinate-format")
+    adjudicated["base_mz"] = base_mz
+    adjudicated["base_rt_apex_min"] = base_rt_apex_min
+
+    rows = _build_rows(
+        adjudicated_rows=[adjudicated],
+        review_packet_rows=[
+            _review_packet_row(
+                "cand-coordinate-format",
+                status="pt_pattern_detected_diagnostic",
+            )
+        ],
+    )
+
+    assert rows[0]["base_mz"] == "500.0"
+    assert rows[0]["base_rt_apex_min"] == "10.0"
+
+
 @pytest.mark.parametrize("field", ("candidate_id", "packet_label", "source_label"))
 def test_oracle_promotion_rejects_sealed_machine_identity_mismatch(
     tmp_path: Path,
