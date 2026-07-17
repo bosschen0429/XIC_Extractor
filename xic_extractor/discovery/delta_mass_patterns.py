@@ -220,6 +220,11 @@ def match_delta_mass_pattern(
     from xic_extractor.discovery.detected_features import DeltaMassPatternSettings
 
     resolved_settings = settings if settings is not None else DeltaMassPatternSettings()
+    if resolved_settings.ratio_basis != "both":
+        raise ValueError(
+            "unsupported Pt delta-mass ratio_basis: "
+            f"{resolved_settings.ratio_basis!r}"
+        )
     resolved_pattern = pattern if pattern is not None else resolved_settings.pattern
 
     non_base_positions = [
@@ -513,7 +518,7 @@ def _rt_span_sec(base: "DetectedFeature", matches: dict[str, _PositionMatch]) ->
 
 
 def _ratio(numerator: float | None, denominator: float | None) -> float | None:
-    if numerator is None or denominator is None:
+    if numerator is None or denominator is None or denominator == 0.0:
         return None
     return numerator / denominator
 
@@ -575,10 +580,10 @@ def _build_candidate(
         position_count=4,
         required_position_count=4,
         rt_span_sec=rt_span_sec,
-        pattern_rt_status="within_30s",
+        pattern_rt_status=f"within_{settings.rt_tolerance_sec:g}s",
         local_signal_support_status=local_signal_support_status,
         cross_sample_support_status="not_evaluated",
-        ratio_basis="both",
+        ratio_basis=settings.ratio_basis,
         cid_nl_base_status="not_required",
         cid_nl_base_candidate_id="",
         cid_nl_base_join_mode="not_required",

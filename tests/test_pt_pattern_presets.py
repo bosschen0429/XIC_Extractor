@@ -98,3 +98,48 @@ def test_apply_to_delta_mass_discovery_rejects_stray_neutral_loss_tag() -> None:
 
     with pytest.raises(PresetError, match='combine_mode = "intersection"'):
         apply_to_delta_mass_discovery(preset)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("delta_mass_mz_tolerance_ppm", -1.0),
+        ("delta_mass_mz_tolerance_ppm", float("nan")),
+        ("delta_mass_rt_tolerance_sec", -1.0),
+        ("delta_mass_rt_tolerance_sec", float("nan")),
+    ],
+)
+def test_apply_to_delta_mass_discovery_rejects_invalid_positive_tolerances(
+    field: str,
+    value: float,
+) -> None:
+    preset = Preset(
+        name="Invalid Pt tolerance",
+        description="Invalid numeric gate",
+        tags=(PresetTag(strategy="delta_mass", name="pt", pattern_id="pt"),),
+        combine_mode="union",
+        discovery_overrides={"method_label": "pt_pattern", field: value},
+        alignment_overrides={},
+        source="test",
+    )
+
+    with pytest.raises(PresetError, match=field):
+        apply_to_delta_mass_discovery(preset)
+
+
+def test_apply_to_delta_mass_discovery_rejects_unsupported_ratio_basis() -> None:
+    preset = Preset(
+        name="Unsupported Pt ratio basis",
+        description="Only the implemented height-and-area basis is valid",
+        tags=(PresetTag(strategy="delta_mass", name="pt", pattern_id="pt"),),
+        combine_mode="union",
+        discovery_overrides={
+            "method_label": "pt_pattern",
+            "delta_mass_ratio_basis": "height_only",
+        },
+        alignment_overrides={},
+        source="test",
+    )
+
+    with pytest.raises(PresetError, match="delta_mass_ratio_basis"):
+        apply_to_delta_mass_discovery(preset)

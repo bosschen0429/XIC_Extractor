@@ -151,20 +151,21 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
     defaults = DeltaMassPatternSettings()
     return DeltaMassPatternSettings(
         method_label=method_label,
-        mz_tolerance_ppm=_float_setting(
+        mz_tolerance_ppm=_positive_float_setting(
             overrides,
             "delta_mass_mz_tolerance_ppm",
             defaults.mz_tolerance_ppm,
         ),
-        rt_tolerance_sec=_float_setting(
+        rt_tolerance_sec=_positive_float_setting(
             overrides,
             "delta_mass_rt_tolerance_sec",
             defaults.rt_tolerance_sec,
         ),
-        ratio_basis=_str_setting(
+        ratio_basis=_enum_str_setting(
             overrides,
             "delta_mass_ratio_basis",
             defaults.ratio_basis,
+            choices=frozenset({"both"}),
         ),
     )
 
@@ -311,6 +312,17 @@ def _float_setting(
     default: float,
 ) -> float:
     value = tuning.get(field, default)
+    return float(cast(int | float, value))
+
+
+def _positive_float_setting(
+    overrides: Mapping[str, object],
+    field: str,
+    default: float,
+) -> float:
+    value = overrides.get(field, default)
+    if not _is_positive_float(value):
+        raise PresetError(f"{field} must be finite and positive")
     return float(cast(int | float, value))
 
 

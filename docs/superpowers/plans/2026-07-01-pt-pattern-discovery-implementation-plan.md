@@ -445,10 +445,11 @@ Field values:
   `pt_pattern_trace_summary.csv` as `combined_pt_pattern_status`.
 - `required_position_count = 4`
 - `position_count = 4` for every first-version output row
-- `pattern_rt_status = within_30s`
+- `pattern_rt_status = within_<configured tolerance>s` (default:
+  `within_30s`)
 - `local_signal_support_status = supported`
 - `cross_sample_support_status = not_evaluated`
-- `ratio_basis = both`
+- `ratio_basis = both` (the only supported first-version basis)
 - `cid_nl_base_status`:
   - `not_required` for Pt-only
   - `matched` for composite output rows

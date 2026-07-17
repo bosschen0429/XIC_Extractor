@@ -702,6 +702,85 @@ def test_blank_area_yields_height_ratio_and_blank_area_ratio_without_failing() -
     assert candidate.pt_plus_2_area_ratio_to_base is None
 
 
+def test_zero_base_area_yields_blank_area_ratios_without_failing() -> None:
+    features = [
+        _feature(
+            feature_id="base",
+            mz=BASE_MZ,
+            rt_apex_min=10.000,
+            height=1000.0,
+            area=0.0,
+        ),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.000,
+            height=800.0,
+            area=400.0,
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.000,
+            height=200.0,
+            area=100.0,
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.000,
+            height=50.0,
+            area=25.0,
+        ),
+    ]
+
+    candidates = match_delta_mass_pattern(features)
+
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.pt_plus_1_height_ratio_to_base == 0.8
+    assert candidate.pt_plus_1_area_ratio_to_base is None
+    assert candidate.pt_plus_2_area_ratio_to_base is None
+    assert candidate.pt_plus_4_area_ratio_to_base is None
+
+
+def test_candidate_provenance_reflects_custom_rt_tolerance() -> None:
+    settings = DeltaMassPatternSettings(rt_tolerance_sec=45.0, ratio_basis="both")
+    features = [
+        _feature(feature_id="base", mz=BASE_MZ, rt_apex_min=10.000),
+        _feature(
+            feature_id="plus1",
+            mz=BASE_MZ + PT_PLUS_1_DELTA,
+            rt_apex_min=10.650,
+        ),
+        _feature(
+            feature_id="plus2",
+            mz=BASE_MZ + PT_PLUS_2_DELTA,
+            rt_apex_min=10.640,
+        ),
+        _feature(
+            feature_id="plus4",
+            mz=BASE_MZ + PT_PLUS_4_DELTA,
+            rt_apex_min=10.630,
+        ),
+    ]
+
+    candidates = match_delta_mass_pattern(features, settings=settings)
+
+    assert len(candidates) == 1
+    assert candidates[0].rt_span_sec == pytest.approx(39.0)
+    assert candidates[0].pattern_rt_status == "within_45s"
+    assert candidates[0].ratio_basis == "both"
+
+
+def test_matcher_rejects_unimplemented_direct_ratio_basis() -> None:
+    with pytest.raises(ValueError, match="ratio_basis"):
+        match_delta_mass_pattern(
+            _features_with_pt_plus_1(BASE_MZ + PT_PLUS_1_DELTA),
+            settings=DeltaMassPatternSettings(ratio_basis="height_only"),
+        )
+
+
 def test_pt_pattern_constant_defines_expected_positions_and_tolerances() -> None:
     assert PT_PATTERN.pattern_id == "pt"
     assert PT_PATTERN.charge == 1
