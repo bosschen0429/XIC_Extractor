@@ -119,6 +119,16 @@ co-elution evidence both support the same candidate. The scan-level RAW proxy
 remains a diagnostic bridge for the seed layer; it must not become Matrix
 authority or the whole product detector by itself.
 
+Pt identity and quantitation intentionally use different position roles. The
+`base` / 0 position remains the canonical hypothesis identity anchor so the
+pattern frame does not move to the more isotope-confounded `-1/0/+1/+3`
+alternative. If a later authority contract permits Pt quantitation, the `+1`
+(experimental 195) position is the quantitative channel. The base position is
+not the quantitative channel, and the four positions are not summed by
+default. This role assignment does not grant current selected-area or product
+authority: Pt pattern remains `diagnostic_only`, and its selected area stays
+unavailable until a separate quantitation/activation contract is validated.
+
 The science target for Pt pattern is a single Pt isotope envelope represented by
 the base/+1/+2/+4 positions. The current operational detector cannot prove that
 physical identity directly; it uses the observable proxy of a sample-local full

@@ -1,8 +1,8 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Last refreshed:** 2026-07-08
-**Total entry-points:** 117
-**Total files (incl. helpers):** 201 Python files under `tools/diagnostics/`
+**Last refreshed:** 2026-07-14
+**Total entry-points:** 121
+**Total files (incl. helpers):** 205 Python files under `tools/diagnostics/`
 **Governing spec:** `docs/architecture-contract.md`; the retired dated
 diagnostic lifecycle spec remains only as a same-path public stub.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
@@ -42,7 +42,7 @@ top-level `tools/diagnostics/*.py` files for total files.
 8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization) — 7 tools
 9. [Area / Region Audits](#area--region-audits) — 4 tools
 10. [One-off Fixtures](#one-off-fixtures) — 1 tool
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 10 tools
+11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 13 tools
 12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
 
 ---
@@ -1680,9 +1680,18 @@ candidates, but the provenance labels the output `diagnostic_only`; see
 +4 around each candidate's base RT using
 `xic_extractor.raw_reader.open_raw` / `RawFileHandle.extract_xic_many`, and
 writes candidate-level trace support summaries, position-level co-elution
-metrics, and optional trace points.
+metrics, and optional trace points. Existing schema v2 outputs keep their
+original full extraction-window semantics, including
+`pt_pattern_trace_points.csv`. Anchor-local segmentation is emitted separately
+as `pt_pattern_anchor_local_trace_*.csv` under
+`pt_pattern_anchor_local_trace_diagnosis.v1`. For the anchor-local output, each
+Pt position must yield exactly one chromatographic segment that contains the
+candidate anchor RT; its co-elution metrics use the common intersection of the
+four selected segments. Missing or ambiguous segments fail closed to review
+instead of choosing the nearest or strongest peak.
 **Topic group**: `pt_pattern_trace_diagnosis.py` +
-`xic_extractor.discovery.pt_pattern_trace_evidence`
+`xic_extractor.discovery.pt_pattern_trace_evidence` +
+`xic_extractor.discovery.pt_pattern_trace_batch`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
 **Status note**: Diagnostic-only evidence probe. It does not create Pt
 candidates, mutate Discovery outputs, read Alignment/Backfill state, or write
@@ -1692,8 +1701,11 @@ from `trace_support_status` and reports a diagnostic-only
 plus co-elution support in this ignored output only. Use it to evaluate whether
 scan-proxy or feature-level Pt candidates have RT-close, shape-supported
 chromatographic families before promoting any rule into the product lane. The
-diagnostic wrapper owns RAW opening and file writes only; reusable support
-semantics live in the Discovery package module. Schema v2 records
+diagnostic wrapper owns RAW opening and file writes only; batch diagnosis,
+segmentation, boundary facts, and support semantics live in Discovery package
+modules. One RAW extraction feeds one full-window diagnosis and one
+anchor-local diagnosis; context trace points are not produced by recomputing a
+third diagnosis. Schema v2 records
 `trace_decision_basis = gaussian15_smoothed_trace`: apex, shape similarity,
 active overlap, and support status use Gaussian15-smoothed XIC intensity, while
 raw vendor trace points and raw audit metrics are retained as reference
@@ -1705,8 +1717,9 @@ evidence. The JSON sidecar records `readiness_tier = diagnostic_only` and
 ### `pt_pattern_review_packet.py`
 
 **Purpose**: Build a bounded manual-review packet for Pt pattern candidates by
-joining `pt_pattern_candidates.csv`, `pt_pattern_trace_summary.csv`, and
-`pt_pattern_trace_metrics.csv`. The output is a small CSV with blank
+joining `pt_pattern_candidates.csv` with either the legacy full-window trace
+summary/metrics or the separate anchor-local summary/metrics. The output is a
+small CSV with blank
 `human_review_decision` / `human_review_note` columns for accepted/rejected/
 uncertain oracle work plus a JSON sidecar.
 **Topic group**: `pt_pattern_review_packet.py` +
@@ -1718,18 +1731,27 @@ write Matrix/workbook artifacts. The sidecar records
 `readiness_tier = diagnostic_only`, `oracle_status = pending_human_review`, and
 `evidence_owner = xic_extractor.discovery.pt_pattern_trace_evidence`; rows only
 become an oracle after human review fills and promotes them through a separate
-promotion packet.
+promotion packet. Legacy trace inputs retain packet schema v2 and its original
+columns; anchor-local inputs use packet schema v3 with explicit
+`anchor_segmentation_*` evidence fields.
 
 ---
 
 ### `pt_pattern_blind_overlay.py`
 
 **Purpose**: Build a blind MS1/XIC overlay gallery from a Pt pattern manual
-review packet and `pt_pattern_trace_points.csv`. The HTML intentionally hides
+review packet and a trace-point CSV. For anchor-local review, pass
+`pt_pattern_anchor_local_trace_points.csv` as the primary trace input and the
+legacy full-window `pt_pattern_trace_points.csv` through optional
+`--context-trace-points-csv`; the gallery then separates full-window background,
+anchor-local own-max shape, and anchor-local shared `+1 apex = 1` intensity
+views. The HTML intentionally hides
 machine calls and diagnostic status buckets so the user can make an independent
 visual call before opening the sealed machine-call CSV.
 **Topic group**: `pt_pattern_blind_overlay.py` +
-`xic_extractor.discovery.pt_pattern_blind_overlay`
+`xic_extractor.discovery.pt_pattern_blind_overlay` +
+`xic_extractor.discovery.pt_pattern_blind_overlay_call` +
+`xic_extractor.discovery.pt_pattern_blind_overlay_writer`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
 **Status note**: Diagnostic-only human-review surface. It reads existing
 review-packet and trace-points CSVs, writes an HTML gallery, a sealed machine
@@ -1739,7 +1761,10 @@ write Matrix/workbook artifacts. The sealed machine-call CSV is not an oracle;
 it is revealed only after the user records independent review decisions. The
 HTML plots Gaussian15-smoothed traces for review and sealed machine calls use
 the same Gaussian15 trace-decision metrics. Raw trace-point CSVs remain raw
-vendor evidence and are not Matrix, counting, or quantitation authority.
+vendor evidence and are not Matrix, counting, or quantitation authority. Legacy
+sealed-call output retains overlay schema v2; anchor-local packet or context
+inputs use overlay schema v3. Rendering, sealed-call projection, and artifact
+writing are maintained by separate package modules.
 
 ---
 
@@ -1813,6 +1838,78 @@ FeatureHunter-compatible `base/+N` ratios from derived `+1/base`, `+1/+2`, and
 `+1/+4` review ratios, and uses only data-driven distribution-tail flags. These
 flags are review aids, not detector activation, counted-detection authority,
 export authority, selected-area authority, or Matrix-writing authority.
+
+---
+
+### `pt_pattern_hypothesis_synthesis.py`
+
+**Purpose**: Synthesize existing Pt pattern ratio, overlap/interference, +1 seed,
+and inclusion-list assembly diagnostics into a compact no-RAW hypothesis report.
+**Topic group**: `pt_pattern_hypothesis_synthesis.py` +
+`xic_extractor.discovery.pt_pattern_hypothesis_synthesis`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only synthesis surface. It consumes already-produced
+CSV/JSON artifacts, writes summary JSON, Markdown, assembly-layer CSV, and known
+miss examples, and does not open RAW, create candidates, mutate Discovery
+outputs, read Alignment/Backfill state, decide ratios, change detector rules,
+or write Matrix/workbook artifacts.
+
+---
+
+### `pt_pattern_candidate_assembly_replay.py`
+
+**Purpose**: Replay inclusion-list rows whose four list-relative m/z pools exist
+against the canonical local MS1 feature table, then identify the first failed
+mass, quality, RT, or matcher-emission condition.
+**Topic group**: `pt_pattern_candidate_assembly_replay.py` +
+`xic_extractor.discovery.pt_pattern_candidate_assembly_replay`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only no-RAW replay. It reuses the production Pt
+matcher and shared mass-accuracy helpers, writes row-level CSV, summary JSON,
+and chart-first HTML, and does not change detector rules, counted detection,
+export, Alignment/Backfill, or Matrix authority.
+
+---
+
+### `pt_pattern_same_scan_replay.py`
+
+**Purpose**: Evaluate fixed base, +1, +2, and +4 m/z windows in the same
+Fullscan MS1 scans for currently accepted Pt hypotheses and known inclusion-list
+controls, then expose strict four-position and core-with-conditional-+4 evidence.
+**Topic group**: `pt_pattern_same_scan_replay.py` +
+`xic_extractor.discovery.pt_pattern_same_scan_evidence` +
+`xic_extractor.discovery.pt_pattern_same_scan_replay`
+**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Status note**: Diagnostic-only RAW-backed replay. It loads or builds one MS1
+index per run, never reopens RAW per candidate, preserves below-noise +4 as
+censored evidence, and reports shared-feature conflict components. Replay v2
+counts a component as resolved only when exactly one candidate has full
+base/+1/+2/+4 strict support; core-only support remains diagnostic and cannot
+nominate a preferred Discovery hypothesis. It does not
+change feature detection, candidate assembly, ratios, counted detections,
+Alignment/Backfill, export, or Matrix authority.
+
+---
+
+### `pt_pattern_conflict_graph_replay.py`
+
+**Purpose**: Build a provenance-bound pairwise shared-claim graph over frozen Pt
+hypotheses, then compare connected-component-wide `at_most_one` semantics with
+the actual pairwise incompatibility structure.
+**Topic group**: `pt_pattern_conflict_graph_replay.py` +
+`xic_extractor.discovery.pt_pattern_conflict_graph` +
+`xic_extractor.discovery.pt_pattern_conflict_graph_replay`
+**Originating plan**: `docs/superpowers/plans/2026-07-15-pt-pattern-event-component-contract.md`
+**Status note**: Diagnostic-only no-RAW replay. It verifies candidate and
+detected-feature provenance, rejects unknown source schema versions, validates
+legacy resolution/preferred-candidate consistency, and writes versioned vertex,
+edge, component, legacy comparison, and summary sidecars. The semantic summary
+contains hashes and graph identity but no path or report label; those
+presentation details live in a separate run-metadata JSON. It marks where
+component-wide `at_most_one` would overconstrain pairwise-compatible
+hypotheses. It does not select a
+hypothesis, instantiate or count an event, change current machine calls, read
+Alignment/Backfill state, or write Matrix/workbook/export artifacts.
 
 ---
 
