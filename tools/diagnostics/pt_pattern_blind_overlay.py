@@ -20,6 +20,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--review-packet-csv", type=Path, required=True)
     parser.add_argument("--trace-points-csv", type=Path, required=True)
+    parser.add_argument(
+        "--context-trace-points-csv",
+        type=Path,
+        help=(
+            "Optional full-window trace points. When provided, the primary "
+            "trace-points CSV is treated as the anchor-local hypothesis."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--title", default="Pt Pattern Blind Overlay Review")
     return parser
@@ -30,6 +38,13 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error(f"{args.review_packet_csv}: review packet CSV does not exist")
     if not args.trace_points_csv.is_file():
         parser.error(f"{args.trace_points_csv}: trace-points CSV does not exist")
+    if (
+        args.context_trace_points_csv is not None
+        and not args.context_trace_points_csv.is_file()
+    ):
+        parser.error(
+            f"{args.context_trace_points_csv}: context trace-points CSV does not exist"
+        )
     if not args.title.strip():
         parser.error("--title must be non-empty")
 
@@ -42,6 +57,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         outputs = run_blind_overlay(
             review_packet_csv=args.review_packet_csv.resolve(),
             trace_points_csv=args.trace_points_csv.resolve(),
+            context_trace_points_csv=(
+                args.context_trace_points_csv.resolve()
+                if args.context_trace_points_csv is not None
+                else None
+            ),
             output_dir=args.output_dir.resolve(),
             title=args.title,
         )

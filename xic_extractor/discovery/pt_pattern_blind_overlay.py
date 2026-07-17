@@ -3,96 +3,48 @@
 from __future__ import annotations
 
 import html
-import json
 import math
 import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from pathlib import Path
-from typing import Literal
+from typing import Literal, assert_never
 
-from xic_extractor.discovery.pt_pattern_evidence_rule import (
-    PtPatternEvidenceThresholds,
-    evaluate_pt_pattern_evidence,
+from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
+    ANCHOR_LOCAL_SCHEMA_VERSION,
+    LEGACY_MACHINE_CALL_COLUMNS,
+    MACHINE_CALL_COLUMNS,
+    PACKET_REQUIRED_COLUMNS,
+    SCHEMA_VERSION,
+    SMOOTH_METHOD,
+    SMOOTH_WINDOW_POINTS,
+    classify_machine_call,
+    machine_call_row,
 )
-from xic_extractor.discovery.pt_pattern_review_packet import (
-    EVIDENCE_OWNER,
-    READINESS_TIER,
-)
-from xic_extractor.discovery.pt_pattern_trace_evidence import (
-    TRACE_DECISION_BASIS,
-    TRACE_SMOOTH_METHOD,
-    TRACE_SMOOTH_WINDOW_POINTS,
+from xic_extractor.discovery.pt_pattern_blind_overlay_writer import (
+    TRACE_POINT_REQUIRED_COLUMNS,
+    run_blind_overlay,
 )
 from xic_extractor.peak_detection.ms1_shape_identity import (
     gaussian_smooth_values,
 )
-from xic_extractor.tabular_io import (
-    optional_float,
-    read_delimited_rows,
-    write_delimited_rows,
+from xic_extractor.tabular_io import optional_float
+
+__all__ = (
+    "ANCHOR_LOCAL_SCHEMA_VERSION",
+    "LEGACY_MACHINE_CALL_COLUMNS",
+    "MACHINE_CALL_COLUMNS",
+    "PACKET_REQUIRED_COLUMNS",
+    "SCHEMA_VERSION",
+    "SMOOTH_METHOD",
+    "SMOOTH_WINDOW_POINTS",
+    "TRACE_POINT_REQUIRED_COLUMNS",
+    "classify_machine_call",
+    "machine_call_row",
+    "run_blind_overlay",
 )
 
-SCHEMA_VERSION = "pt_pattern_blind_overlay.v2"
-SMOOTH_METHOD = TRACE_SMOOTH_METHOD
-SMOOTH_WINDOW_POINTS = TRACE_SMOOTH_WINDOW_POINTS
 VISUAL_TIME_SMOOTH_WINDOW_SEC = 20.0
-
-PACKET_REQUIRED_COLUMNS = (
-    "packet_label",
-    "source_label",
-    "packet_row_id",
-    "sample_stem",
-    "candidate_id",
-    "base_mz",
-    "base_rt_apex_min",
-    "trace_decision_basis",
-    "trace_smoothing_method",
-    "trace_smoothing_window_points",
-    "combined_pt_pattern_status",
-    "non_base_positions_supported",
-    "max_abs_apex_delta_sec",
-    "min_pearson_r_to_base",
-    "min_active_overlap_fraction",
-    "min_shifted_pearson_r_to_base",
-    "max_abs_shape_shift_sec_to_base",
-    "oracle_status",
-)
-
-TRACE_POINT_REQUIRED_COLUMNS = (
-    "candidate_id",
-    "position_label",
-    "rt_min",
-    "intensity",
-)
-
-MACHINE_CALL_COLUMNS = (
-    "schema_version",
-    "readiness_tier",
-    "evidence_owner",
-    "packet_label",
-    "source_label",
-    "packet_row_id",
-    "candidate_id",
-    "machine_call",
-    "machine_call_reason",
-    "trace_decision_basis",
-    "trace_smoothing_method",
-    "trace_smoothing_window_points",
-    "min_effective_smoothing_window_sec",
-    "max_trace_point_count",
-    "combined_pt_pattern_status",
-    "non_base_positions_supported",
-    "max_abs_apex_delta_sec",
-    "min_pearson_r_to_base",
-    "min_active_overlap_fraction",
-    "min_shifted_pearson_r_to_base",
-    "max_abs_shape_shift_sec_to_base",
-    "trace_ambiguity_status",
-    "trace_ambiguity_flags",
-    "shifted_only_position_labels",
-    "oracle_status",
-)
+OverlayNormalization = Literal["own_max", "plus1_apex"]
 
 POSITION_ORDER = ("base", "pt_plus_1", "pt_plus_2", "pt_plus_4")
 POSITION_COLORS = {
@@ -101,6 +53,12 @@ POSITION_COLORS = {
     "pt_plus_2": "#059669",
     "pt_plus_4": "#dc2626",
 }
+POSITION_LINE_STYLES = {
+    "base": "",
+    "pt_plus_1": "9 4",
+    "pt_plus_2": "3 3",
+    "pt_plus_4": "12 3 2 3",
+}
 POSITION_LABELS = {
     "base": "base",
     "pt_plus_1": "+1.002111",
@@ -108,167 +66,14 @@ POSITION_LABELS = {
     "pt_plus_4": "+4.005213",
 }
 
-MACHINE_CALL_THRESHOLDS = PtPatternEvidenceThresholds()
-
-
-def run_blind_overlay(
-    *,
-    review_packet_csv: Path,
-    trace_points_csv: Path,
-    output_dir: Path,
-    title: str,
-) -> dict[str, Path]:
-    packet_rows = read_delimited_rows(
-        review_packet_csv,
-        required_columns=PACKET_REQUIRED_COLUMNS,
-        delimiter=",",
-        encoding="utf-8-sig",
-    )
-    trace_points = read_delimited_rows(
-        trace_points_csv,
-        required_columns=TRACE_POINT_REQUIRED_COLUMNS,
-        delimiter=",",
-        encoding="utf-8-sig",
-    )
-    traces_by_candidate = _load_traces_by_candidate(trace_points)
-    machine_rows = tuple(machine_call_row(row) for row in packet_rows)
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    html_path = output_dir / "pt_pattern_blind_overlay_gallery.html"
-    machine_calls_csv = output_dir / "pt_pattern_machine_calls_sealed.csv"
-    summary_json = output_dir / "pt_pattern_blind_overlay_summary.json"
-
-    html_path.write_text(
-        render_blind_overlay_html(
-            packet_rows=packet_rows,
-            traces_by_candidate=traces_by_candidate,
-            title=title,
-        ),
-        encoding="utf-8",
-    )
-    write_delimited_rows(machine_calls_csv, machine_rows, MACHINE_CALL_COLUMNS)
-
-    summary = {
-        "schema_version": SCHEMA_VERSION,
-        "readiness_tier": READINESS_TIER,
-        "evidence_owner": EVIDENCE_OWNER,
-        "review_packet_csv": str(review_packet_csv),
-        "trace_points_csv": str(trace_points_csv),
-        "output_dir": str(output_dir),
-        "case_count": len(packet_rows),
-        "smooth_method": SMOOTH_METHOD,
-        "smooth_window_points": SMOOTH_WINDOW_POINTS,
-        "time_smooth_window_sec": VISUAL_TIME_SMOOTH_WINDOW_SEC,
-        "trace_decision_basis": TRACE_DECISION_BASIS,
-        "smooth_applies_to": (
-            "sealed_machine_calls_use_packet_decision_metrics;"
-            "gallery_html_shows_raw_point_smoothed_time_smoothed"
-        ),
-        "sealed_machine_calls_written": True,
-        "blind_to_machine_calls_in_html": True,
-        "oracle_status": "pending_human_review",
-        "diagnostic_only": True,
-        "outputs": {
-            "gallery_html": str(html_path),
-            "machine_calls_csv": str(machine_calls_csv),
-        },
-    }
-    summary_json.write_text(
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return {
-        "gallery_html": html_path,
-        "machine_calls_csv": machine_calls_csv,
-        "summary_json": summary_json,
-    }
-
-
-def machine_call_row(row: Mapping[str, str]) -> dict[str, object]:
-    machine_call, reason = classify_machine_call(row)
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "readiness_tier": READINESS_TIER,
-        "evidence_owner": EVIDENCE_OWNER,
-        "packet_label": row.get("packet_label", ""),
-        "source_label": row.get("source_label", ""),
-        "packet_row_id": row.get("packet_row_id", ""),
-        "candidate_id": row.get("candidate_id", ""),
-        "machine_call": machine_call,
-        "machine_call_reason": reason,
-        "trace_decision_basis": row.get("trace_decision_basis", ""),
-        "trace_smoothing_method": row.get("trace_smoothing_method", ""),
-        "trace_smoothing_window_points": row.get(
-            "trace_smoothing_window_points", ""
-        ),
-        "min_effective_smoothing_window_sec": row.get(
-            "min_effective_smoothing_window_sec", ""
-        ),
-        "max_trace_point_count": row.get("max_trace_point_count", ""),
-        "combined_pt_pattern_status": row.get("combined_pt_pattern_status", ""),
-        "non_base_positions_supported": row.get("non_base_positions_supported", ""),
-        "max_abs_apex_delta_sec": row.get("max_abs_apex_delta_sec", ""),
-        "min_pearson_r_to_base": row.get("min_pearson_r_to_base", ""),
-        "min_active_overlap_fraction": row.get("min_active_overlap_fraction", ""),
-        "min_shifted_pearson_r_to_base": row.get(
-            "min_shifted_pearson_r_to_base", ""
-        ),
-        "max_abs_shape_shift_sec_to_base": row.get(
-            "max_abs_shape_shift_sec_to_base", ""
-        ),
-        "trace_ambiguity_status": row.get("trace_ambiguity_status", ""),
-        "trace_ambiguity_flags": row.get("trace_ambiguity_flags", ""),
-        "shifted_only_position_labels": row.get(
-            "shifted_only_position_labels", ""
-        ),
-        "oracle_status": row.get("oracle_status", ""),
-    }
-
-
-def classify_machine_call(row: Mapping[str, str]) -> tuple[str, str]:
-    basis = str(row.get("trace_decision_basis", "")).strip()
-    smooth_method = str(row.get("trace_smoothing_method", "")).strip()
-    smooth_window = optional_float(row.get("trace_smoothing_window_points"))
-    if (
-        basis != TRACE_DECISION_BASIS
-        or smooth_method != SMOOTH_METHOD
-        or smooth_window != float(SMOOTH_WINDOW_POINTS)
-    ):
-        return "uncertain", "unsupported_or_stale_trace_decision_basis"
-
-    status = str(row.get("combined_pt_pattern_status", "")).strip()
-    supported = optional_float(row.get("non_base_positions_supported"))
-    min_pearson = optional_float(row.get("min_pearson_r_to_base"))
-
-    decision = evaluate_pt_pattern_evidence(
-        row,
-        thresholds=MACHINE_CALL_THRESHOLDS,
-    )
-    if decision.call == "accept":
-        return decision.call, decision.reason
-    if decision.reason in {
-        "shape_shift_above_threshold",
-        "shifted_shape_review_only",
-    }:
-        return "reject", decision.reason
-
-    if status in {
-        "pt_pattern_candidate_incomplete",
-        "pt_pattern_candidate_base_missing",
-    }:
-        return "reject", status
-    if supported is not None and supported <= 1:
-        return "reject", "one_or_fewer_non_base_positions_supported"
-    if min_pearson is not None and min_pearson < 0.30:
-        return "reject", "low_min_trace_shape_correlation"
-
-    return "uncertain", "requires_visual_or_human_review"
-
-
 def render_blind_overlay_html(
     *,
     packet_rows: Sequence[Mapping[str, str]],
     traces_by_candidate: Mapping[str, Mapping[str, Sequence[tuple[float, float]]]],
+    context_traces_by_candidate: Mapping[
+        str, Mapping[str, Sequence[tuple[float, float]]]
+    ],
+    has_separate_context: bool,
     title: str,
 ) -> str:
     cards = "\n".join(
@@ -276,21 +81,34 @@ def render_blind_overlay_html(
             index=index,
             row=row,
             traces=traces_by_candidate.get(str(row.get("candidate_id", "")), {}),
+            context_traces=context_traces_by_candidate.get(
+                str(row.get("candidate_id", "")), {}
+            ),
+            has_separate_context=has_separate_context,
         )
         for index, row in enumerate(packet_rows, start=1)
     )
     escaped_title = html.escape(title)
+    trace_explanation = _trace_explanation(has_separate_context)
     return f"""<!doctype html>
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escaped_title}</title>
   <style>
+    *, *::before, *::after {{
+      box-sizing: border-box;
+    }}
     body {{
       margin: 0;
+      max-width: 100%;
       font-family: Arial, "Microsoft JhengHei", sans-serif;
       background: #f8fafc;
       color: #111827;
+    }}
+    h1, .meta, .case-meta, .boundary-evidence, .note {{
+      overflow-wrap: anywhere;
     }}
     header {{
       padding: 24px 32px 12px;
@@ -311,14 +129,17 @@ def render_blind_overlay_html(
       line-height: 1.5;
     }}
     main {{
-      max-width: 1240px;
+      width: 100%;
+      min-width: 0;
+      max-width: 1480px;
       margin: 0 auto;
       padding: 20px;
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+      grid-template-columns: minmax(0, 1fr);
       gap: 16px;
     }}
     section {{
+      min-width: 0;
       background: #ffffff;
       border: 1px solid #d1d5db;
       border-radius: 8px;
@@ -337,11 +158,33 @@ def render_blind_overlay_html(
       font-size: 12px;
       margin-bottom: 10px;
     }}
+    .boundary-evidence {{
+      border: 1px solid #f59e0b;
+      border-radius: 6px;
+      background: #fffbeb;
+      color: #78350f;
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 10px;
+      padding: 8px 10px;
+    }}
+    .boundary-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 2px 12px;
+      margin-top: 4px;
+    }}
     .svg-wrap {{
       border: 1px solid #e5e7eb;
       border-radius: 6px;
       background: #ffffff;
       overflow: hidden;
+      aspect-ratio: 760 / 260;
+    }}
+    .svg-wrap svg {{
+      display: block;
+      width: 100%;
+      height: auto;
     }}
     .overlay-grid {{
       display: grid;
@@ -357,7 +200,8 @@ def render_blind_overlay_html(
       font-weight: 700;
       margin-bottom: 4px;
     }}
-    .legend {{
+    .legend,
+    .panel-legend {{
       display: flex;
       flex-wrap: wrap;
       gap: 12px;
@@ -379,8 +223,9 @@ def render_blind_overlay_html(
     }}
     @media (max-width: 640px) {{
       main {{ grid-template-columns: 1fr; padding: 12px; }}
-      header {{ padding: 18px 16px 10px; }}
+      header {{ position: static; padding: 18px 16px 10px; }}
       .case-meta {{ grid-template-columns: 1fr; }}
+      .boundary-grid {{ grid-template-columns: 1fr; }}
       .overlay-grid {{ grid-template-columns: 1fr; }}
     }}
   </style>
@@ -389,12 +234,10 @@ def render_blind_overlay_html(
   <header>
     <h1>{escaped_title}</h1>
     <div class="meta">
-      Blind review overlay. This HTML intentionally hides machine calls and
-      diagnostic status buckets. Use the packet row id to record your own call
-      in the review packet CSV before opening the sealed machine-call file.
-      The HTML shows raw vendor traces, Gaussian15 point-smoothed traces, and
-      20 sec time-smoothed review traces. Sealed machine calls use packet
-      decision metrics and stay out of this blind HTML.
+      盲測疊圖：本頁刻意隱藏 final machine call 與既有 trace support 判斷，
+      但顯示 anchor-local 選段的 diagnostic 邊界證據。請先依 packet row id
+      在 review packet CSV 記錄人工判斷，再開啟密封的 machine-call 檔案。
+      {trace_explanation}
     </div>
   </header>
   <main>
@@ -405,11 +248,27 @@ def render_blind_overlay_html(
 """
 
 
+def _trace_explanation(has_separate_context: bool) -> str:
+    if has_separate_context:
+        return (
+            "每個案例分開顯示全視窗背景、anchor 局部峰型，以及保留位置間"
+            "強度比例的局部圖。背景圖與峰型圖採各自最大值正規化；強度圖固定以"
+            "+1 apex 為共同分母。密封機器判斷仍使用 packet 內既有 metrics。"
+        )
+    return (
+        "每個案例依序顯示原始儀器 trace、Gaussian15 點數平滑 trace，以及"
+        "20 秒時間平滑 trace。每條 trace 均以自身最大值正規化；密封機器判斷"
+        "使用 packet 內既有 decision metrics，不會出現在本頁。"
+    )
+
+
 def _render_case_card(
     *,
     index: int,
     row: Mapping[str, str],
     traces: Mapping[str, Sequence[tuple[float, float]]],
+    context_traces: Mapping[str, Sequence[tuple[float, float]]],
+    has_separate_context: bool,
 ) -> str:
     candidate_id = str(row.get("candidate_id", ""))
     packet_row_id = html.escape(str(row.get("packet_row_id", "")))
@@ -422,32 +281,77 @@ def _render_case_card(
     )
     max_trace_point_count = html.escape(str(row.get("max_trace_point_count", "")))
     case_label = html.escape(_case_label(row=row, index=index))
-    overlay_panels = _render_overlay_panels(traces)
-    legend = "".join(
-        (
-            '<span><span class="swatch" '
-            f'style="background:{POSITION_COLORS[label]}"></span>'
-            f"{html.escape(POSITION_LABELS[label])}</span>"
-        )
-        for label in POSITION_ORDER
+    overlay_panels = _render_overlay_panels(
+        traces,
+        context_traces=context_traces,
+        has_separate_context=has_separate_context,
     )
+    boundary_evidence = _render_boundary_evidence(row)
     point_count = sum(len(points) for points in traces.values())
     return f"""<section>
-  <h2>{case_label}</h2>
+  <h2>案例 {case_label}</h2>
   <div class="case-meta">
-    <div><strong>packet row</strong>: {packet_row_id}</div>
-    <div><strong>source</strong>: {source_label}</div>
-    <div><strong>sample</strong>: {sample_stem}</div>
+    <div><strong>資料列</strong>: {packet_row_id}</div>
+    <div><strong>來源</strong>: {source_label}</div>
+    <div><strong>樣本</strong>: {sample_stem}</div>
     <div><strong>base m/z</strong>: {base_mz}</div>
     <div><strong>base RT</strong>: {base_rt} min</div>
-    <div><strong>trace points</strong>: {point_count}</div>
-    <div><strong>effective smoothing</strong>: {effective_smoothing} sec</div>
-    <div><strong>max trace points</strong>: {max_trace_point_count}</div>
+    <div><strong>trace 點數</strong>: {point_count}</div>
+    <div><strong>有效平滑窗</strong>: {effective_smoothing} sec</div>
+    <div><strong>單條 trace 最大點數</strong>: {max_trace_point_count}</div>
   </div>
+  {boundary_evidence}
   {overlay_panels}
-  <div class="legend">{legend}</div>
-  <div class="note">candidate: {html.escape(candidate_id)}</div>
+  <div class="note">候選 ID: {html.escape(candidate_id)}</div>
 </section>"""
+
+
+def _render_boundary_evidence(row: Mapping[str, str]) -> str:
+    status = str(row.get("anchor_segmentation_status", "")).strip()
+    if not status:
+        return ""
+    values = {
+        "selection": status,
+        "boundary": row.get("anchor_segmentation_boundary_review_status", ""),
+        "common_start": row.get("anchor_segmentation_common_rt_start_min", ""),
+        "common_end": row.get("anchor_segmentation_common_rt_end_min", ""),
+        "start_owner": row.get(
+            "anchor_segmentation_common_start_owner_labels", ""
+        ),
+        "end_owner": row.get("anchor_segmentation_common_end_owner_labels", ""),
+        "max_left_clip": row.get("anchor_segmentation_max_left_clip_sec", ""),
+        "max_right_clip": row.get("anchor_segmentation_max_right_clip_sec", ""),
+        "min_retained": row.get(
+            "anchor_segmentation_min_common_retained_fraction", ""
+        ),
+        "right_residual": row.get(
+            "anchor_segmentation_max_common_right_residual_fraction", ""
+        ),
+        "review_positions": row.get(
+            "anchor_segmentation_boundary_review_position_labels", ""
+        ),
+        "descending_right": row.get(
+            "anchor_segmentation_descending_at_common_right_position_labels", ""
+        ),
+    }
+    escaped = {key: html.escape(str(value)) for key, value in values.items()}
+    common_interval = f"{escaped['common_start']}–{escaped['common_end']} min"
+    return f"""<div class="boundary-evidence">
+    <strong>Anchor 局部邊界證據（diagnostic only；不參與 final machine call）</strong>
+    <div class="boundary-grid">
+      <div>選段狀態: {escaped['selection']}</div>
+      <div>邊界 review: {escaped['boundary']}</div>
+      <div>共同區間: {common_interval}</div>
+      <div>共同左界 owner: {escaped['start_owner']}</div>
+      <div>共同右界 owner: {escaped['end_owner']}</div>
+      <div>需 review 位置: {escaped['review_positions']}</div>
+      <div>最大左側截斷: {escaped['max_left_clip']} sec</div>
+      <div>最大右側截斷: {escaped['max_right_clip']} sec</div>
+      <div>最小保留比例: {escaped['min_retained']}</div>
+      <div>右界 residual/apex 最大值: {escaped['right_residual']}</div>
+      <div>共同右界仍下降: {escaped['descending_right']}</div>
+    </div>
+  </div>"""
 
 
 def _case_label(*, row: Mapping[str, str], index: int) -> str:
@@ -460,22 +364,77 @@ def _case_label(*, row: Mapping[str, str], index: int) -> str:
 
 def _render_overlay_panels(
     traces: Mapping[str, Sequence[tuple[float, float]]],
+    *,
+    context_traces: Mapping[str, Sequence[tuple[float, float]]],
+    has_separate_context: bool,
 ) -> str:
-    panels = (
-        ("Raw vendor trace", _prepare_traces(traces, mode="raw")),
-        ("Gaussian15 point-smoothed trace", _prepare_traces(traces, mode="point")),
-        (
-            f"{VISUAL_TIME_SMOOTH_WINDOW_SEC:g} sec time-smoothed trace",
-            _prepare_traces(traces, mode="time"),
-        ),
+    panels: tuple[
+        tuple[
+            str,
+            dict[str, tuple[tuple[float, float], ...]],
+            OverlayNormalization,
+        ],
+        ...,
+    ]
+    if has_separate_context:
+        panels = (
+            (
+                "全視窗背景（各自最大值 = 1）",
+                _prepare_traces(context_traces, mode="point"),
+                "own_max",
+            ),
+            (
+                "Anchor 局部峰型（各自最大值 = 1）",
+                _prepare_traces(traces, mode="point"),
+                "own_max",
+            ),
+            (
+                "Anchor 局部強度（+1 apex = 1）",
+                _prepare_traces(traces, mode="point"),
+                "plus1_apex",
+            ),
+        )
+    else:
+        panels = (
+            ("原始儀器 trace", _prepare_traces(traces, mode="raw"), "own_max"),
+            (
+                "Gaussian15 點數平滑 trace",
+                _prepare_traces(traces, mode="point"),
+                "own_max",
+            ),
+            (
+                f"{VISUAL_TIME_SMOOTH_WINDOW_SEC:g} 秒時間平滑 trace",
+                _prepare_traces(traces, mode="time"),
+                "own_max",
+            ),
+        )
+    panel_legend = _render_position_legend(css_class="panel-legend")
+    return (
+        '<div class="overlay-grid">'
+        + "".join(
+            '<div class="overlay-panel">'
+            f'<div class="overlay-title">{html.escape(title)}</div>'
+            '<div class="svg-wrap">'
+            f"{_render_overlay_svg(panel_traces, normalization=normalization)}"
+            "</div>"
+            f"{panel_legend}"
+            "</div>"
+            for title, panel_traces, normalization in panels
+        )
+        + "</div>"
     )
-    return '<div class="overlay-grid">' + "".join(
-        '<div class="overlay-panel">'
-        f'<div class="overlay-title">{html.escape(title)}</div>'
-        f'<div class="svg-wrap">{_render_overlay_svg(panel_traces)}</div>'
-        "</div>"
-        for title, panel_traces in panels
-    ) + "</div>"
+
+
+def _render_position_legend(*, css_class: str) -> str:
+    items = "".join(
+        (
+            '<span><span class="swatch" '
+            f'style="background:{POSITION_COLORS[label]}"></span>'
+            f"{html.escape(POSITION_LABELS[label])}</span>"
+        )
+        for label in POSITION_ORDER
+    )
+    return f'<div class="{html.escape(css_class)}">{items}</div>'
 
 
 def _prepare_traces(
@@ -505,6 +464,7 @@ def _prepare_traces(
 def _render_overlay_svg(
     traces: Mapping[str, Sequence[tuple[float, float]]],
     *,
+    normalization: OverlayNormalization = "own_max",
     width: int = 760,
     height: int = 260,
 ) -> str:
@@ -513,8 +473,7 @@ def _render_overlay_svg(
     top = 18
     bottom = 34
     plot_traces = {
-        label: _clean_trace_points(traces.get(label, ()))
-        for label in POSITION_ORDER
+        label: _clean_trace_points(traces.get(label, ())) for label in POSITION_ORDER
     }
     all_rt = [
         rt_value
@@ -525,7 +484,8 @@ def _render_overlay_svg(
     if not all_rt:
         return (
             f'<svg viewBox="0 0 {width} {height}" width="100%" '
-            f'height="{height}" role="img" aria-label="no trace points">'
+            'preserveAspectRatio="xMidYMid meet" role="img" '
+            'aria-label="no trace points">'
             '<text x="20" y="40" fill="#6b7280">No trace points</text></svg>'
         )
     rt_min = min(all_rt)
@@ -534,6 +494,45 @@ def _render_overlay_svg(
         rt_min -= 0.5
         rt_max += 0.5
 
+    match normalization:
+        case "own_max":
+            denominator_by_label = {
+                label: max((value for _rt, value in points), default=0.0)
+                for label, points in plot_traces.items()
+            }
+            y_axis_max = 1.0
+            scale_label = "each max = 1"
+            aria_label = "normalized Pt pattern traces"
+        case "plus1_apex":
+            plus1_apex = max(
+                (value for _rt, value in plot_traces.get("pt_plus_1", ())),
+                default=0.0,
+            )
+            if plus1_apex <= 0.0:
+                return _render_shared_scale_unavailable_svg(
+                    width=width,
+                    height=height,
+                )
+            shared_denominator = plus1_apex
+            denominator_by_label = {
+                label: shared_denominator for label in POSITION_ORDER
+            }
+            y_axis_max = max(
+                1.0,
+                max(
+                    (
+                        value / shared_denominator
+                        for points in plot_traces.values()
+                        for _rt, value in points
+                    ),
+                    default=1.0,
+                ),
+            )
+            scale_label = f"+1 apex = 1; y max = {y_axis_max:.2f}"
+            aria_label = "shared-scale Pt pattern traces"
+        case unreachable:
+            assert_never(unreachable)
+
     plot_width = width - left - right
     plot_height = height - top - bottom
 
@@ -541,26 +540,25 @@ def _render_overlay_svg(
         return left + ((rt_value - rt_min) / (rt_max - rt_min)) * plot_width
 
     def y(normalized: float) -> float:
-        return top + (1.0 - normalized) * plot_height
+        return top + (1.0 - normalized / y_axis_max) * plot_height
 
     paths: list[str] = []
     for label in POSITION_ORDER:
         points = list(plot_traces.get(label, ()))
-        if not points:
-            continue
-        max_intensity = max((value for _rt, value in points), default=0.0)
-        if max_intensity <= 0:
+        denominator = denominator_by_label[label]
+        if not points or denominator <= 0.0:
             continue
         d = " ".join(
-            (
-                "M" if index == 0 else "L"
-            )
-            + f"{x(rt_value):.2f},{y(max(0.0, intensity / max_intensity)):.2f}"
+            ("M" if index == 0 else "L")
+            + f"{x(rt_value):.2f},{y(max(0.0, intensity / denominator)):.2f}"
             for index, (rt_value, intensity) in enumerate(points)
         )
+        dash_array = POSITION_LINE_STYLES[label]
+        dash_attribute = f' stroke-dasharray="{dash_array}"' if dash_array else ""
         paths.append(
-            f'<path d="{d}" fill="none" stroke="{POSITION_COLORS[label]}" '
-            'stroke-width="2" vector-effect="non-scaling-stroke" />'
+            f'<path d="{d}" fill="none" stroke="{POSITION_COLORS[label]}"'
+            f'{dash_attribute} stroke-width="2.25" stroke-linecap="round" '
+            'opacity="0.88" vector-effect="non-scaling-stroke" />'
         )
 
     grid = "\n".join(
@@ -574,17 +572,29 @@ def _render_overlay_svg(
         f'y2="{height - bottom}" stroke="#9ca3af" />'
         f'<line x1="{left}" y1="{top}" x2="{left}" y2="{height - bottom}" '
         'stroke="#9ca3af" />'
-        f'<text x="{left}" y="{height - 10}" font-size="11" fill="#6b7280">'
-        f'{rt_min:.3f} min</text>'
-        f'<text x="{width - right - 70}" y="{height - 10}" font-size="11" '
+        f'<text x="{left}" y="{height - 10}" font-size="16" fill="#6b7280">'
+        f"{rt_min:.3f} min</text>"
+        f'<text x="{width - right - 70}" y="{height - 10}" font-size="16" '
         f'fill="#6b7280">{rt_max:.3f} min</text>'
-        f'<text x="10" y="{top + 12}" font-size="11" fill="#6b7280">'
-        'normalized</text>'
+        f'<text x="10" y="{top + 12}" font-size="16" fill="#6b7280">'
+        f"{html.escape(scale_label)}</text>"
     )
     return (
         f'<svg viewBox="0 0 {width} {height}" width="100%" '
-        f'height="{height}" role="img" aria-label="normalized Pt pattern traces">'
+        'preserveAspectRatio="xMidYMid meet" role="img" '
+        f'aria-label="{aria_label}">'
         f"{grid}{axis}{''.join(paths)}</svg>"
+    )
+
+
+def _render_shared_scale_unavailable_svg(*, width: int, height: int) -> str:
+    return (
+        f'<svg viewBox="0 0 {width} {height}" width="100%" '
+        'preserveAspectRatio="xMidYMid meet" role="img" '
+        'aria-label="shared-scale unavailable">'
+        '<rect width="100%" height="100%" fill="#ffffff" />'
+        '<text x="24" y="48" font-size="16" fill="#6b7280">'
+        "+1 apex is missing or zero; shared scale unavailable</text></svg>"
     )
 
 
@@ -672,8 +682,7 @@ def _load_traces_by_candidate(
         grouped[candidate_id][position_label].append((rt_value, intensity))
     return {
         candidate_id: {
-            label: tuple(sorted(points))
-            for label, points in by_position.items()
+            label: tuple(sorted(points)) for label, points in by_position.items()
         }
         for candidate_id, by_position in grouped.items()
     }

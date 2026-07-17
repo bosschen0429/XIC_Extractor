@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from xic_extractor.discovery import pt_pattern_review_packet as packet
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
 from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
@@ -29,8 +31,14 @@ def _candidate_row(
     }
 
 
-def _summary_row(candidate_id: str, status: str) -> dict[str, str]:
+def _summary_row(
+    candidate_id: str,
+    status: str,
+    *,
+    schema_version: str = "pt_pattern_anchor_local_trace_diagnosis.v1",
+) -> dict[str, str]:
     return {
+        "schema_version": schema_version,
         "sample_stem": "SampleA",
         "candidate_id": candidate_id,
         "scan_pattern_seed_status": "full_pattern_seeded",
@@ -53,15 +61,37 @@ def _summary_row(candidate_id: str, status: str) -> dict[str, str]:
         "trace_ambiguity_status": "review_required",
         "trace_ambiguity_flags": "shifted_only_support_present",
         "shifted_only_position_labels": "pt_plus_4",
+        "anchor_segmentation_status": "clear",
+        "anchor_segmentation_reason": "one_anchor_segment_per_position",
+        "anchor_segmentation_common_rt_start_min": "9.8",
+        "anchor_segmentation_common_rt_end_min": "10.2",
+        "anchor_segmentation_common_duration_sec": "24.0",
+        "anchor_segmentation_common_start_owner_labels": "base",
+        "anchor_segmentation_common_end_owner_labels": "pt_plus_4",
+        "anchor_segmentation_boundary_review_status": "review_required",
+        "anchor_segmentation_boundary_review_position_labels": "pt_plus_4",
+        "anchor_segmentation_max_left_clip_sec": "3.0",
+        "anchor_segmentation_max_right_clip_sec": "34.0",
+        "anchor_segmentation_min_common_retained_fraction": "0.48",
+        "anchor_segmentation_max_common_left_residual_fraction": "0.10",
+        "anchor_segmentation_max_common_right_residual_fraction": "0.49",
+        "anchor_segmentation_descending_at_common_right_position_labels": (
+            "base|pt_plus_1|pt_plus_2|pt_plus_4"
+        ),
         "trace_support_status": "supported",
         "combined_pt_pattern_status": status,
         "reason": "unit_fixture",
     }
 
 
-def _metric_rows(candidate_id: str) -> list[dict[str, str]]:
+def _metric_rows(
+    candidate_id: str,
+    *,
+    schema_version: str = "pt_pattern_anchor_local_trace_diagnosis.v1",
+) -> list[dict[str, str]]:
     return [
         {
+            "schema_version": schema_version,
             "candidate_id": candidate_id,
             "position_label": label,
             "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
@@ -80,6 +110,14 @@ def _metric_rows(candidate_id: str) -> list[dict[str, str]]:
             "raw_smoothed_apex_delta_sec": "0.5",
             "raw_pearson_r_to_base": "0.80",
             "raw_active_overlap_fraction": "0.70",
+            **(
+                {
+                    column: ""
+                    for column in evidence.ANCHOR_SEGMENTATION_METRIC_COLUMNS
+                }
+                if schema_version == "pt_pattern_anchor_local_trace_diagnosis.v1"
+                else {}
+            ),
             "trace_quality_flags": "shifted_only_support",
             "trace_support_status": "supported",
             "reason": "unit_fixture",
@@ -114,7 +152,7 @@ def test_build_review_packet_rows_samples_per_status_and_keeps_pending_oracle() 
         "cand-supported-a",
         "cand-partial",
     ]
-    assert rows[0]["schema_version"] == packet.SCHEMA_VERSION
+    assert rows[0]["schema_version"] == packet.ANCHOR_LOCAL_SCHEMA_VERSION
     assert rows[0]["readiness_tier"] == "diagnostic_only"
     assert rows[0]["evidence_owner"] == packet.EVIDENCE_OWNER
     assert rows[0]["review_bucket"] == "detected_diagnostic_review"
@@ -124,6 +162,9 @@ def test_build_review_packet_rows_samples_per_status_and_keeps_pending_oracle() 
     assert rows[0]["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
     assert rows[0]["min_shifted_pearson_r_to_base"] == "0.98"
     assert rows[0]["max_abs_shape_shift_sec_to_base"] == "1.0"
+    assert rows[0]["anchor_segmentation_boundary_review_status"] == "review_required"
+    assert rows[0]["anchor_segmentation_common_end_owner_labels"] == "pt_plus_4"
+    assert rows[0]["anchor_segmentation_max_right_clip_sec"] == "34.0"
     assert rows[0]["trace_ambiguity_status"] == "review_required"
     assert rows[0]["trace_ambiguity_flags"] == "shifted_only_support_present"
     assert rows[0]["shifted_only_position_labels"] == "pt_plus_4"
@@ -151,12 +192,20 @@ def test_review_packet_cli_writes_csv_and_sidecar(tmp_path: Path) -> None:
     write_delimited_rows(
         summary_csv,
         [_summary_row("cand-supported", "pt_pattern_detected_diagnostic")],
-        packet.SUMMARY_REQUIRED_COLUMNS,
+        (
+            "schema_version",
+            *packet.SUMMARY_REQUIRED_COLUMNS,
+            *evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
+        ),
     )
     write_delimited_rows(
         metrics_csv,
         _metric_rows("cand-supported"),
-        packet.METRIC_REQUIRED_COLUMNS,
+        (
+            "schema_version",
+            *packet.METRIC_REQUIRED_COLUMNS,
+            *evidence.ANCHOR_SEGMENTATION_METRIC_COLUMNS,
+        ),
     )
 
     from tools.diagnostics import pt_pattern_review_packet as cli
@@ -190,7 +239,7 @@ def test_review_packet_cli_writes_csv_and_sidecar(tmp_path: Path) -> None:
         (tmp_path / "review_packet" / "pt_pattern_manual_review_packet.json")
         .read_text(encoding="utf-8")
     )
-    assert sidecar["schema_version"] == packet.SCHEMA_VERSION
+    assert sidecar["schema_version"] == packet.ANCHOR_LOCAL_SCHEMA_VERSION
     assert sidecar["readiness_tier"] == "diagnostic_only"
     assert sidecar["packet_row_count"] == 1
     assert sidecar["human_review_decision_values"] == [
@@ -198,3 +247,96 @@ def test_review_packet_cli_writes_csv_and_sidecar(tmp_path: Path) -> None:
         "rejected",
         "uncertain",
     ]
+
+
+def test_review_packet_keeps_v2_columns_for_legacy_trace_summary(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    summary_csv = tmp_path / "pt_pattern_trace_summary.csv"
+    metrics_csv = tmp_path / "pt_pattern_trace_metrics.csv"
+    write_delimited_rows(
+        candidates_csv,
+        [_candidate_row("cand-supported")],
+        packet.CANDIDATE_REQUIRED_COLUMNS,
+    )
+    write_delimited_rows(
+        summary_csv,
+        [
+            _summary_row(
+                "cand-supported",
+                "pt_pattern_detected_diagnostic",
+                schema_version=evidence.SCHEMA_VERSION,
+            )
+        ],
+        packet.SUMMARY_REQUIRED_COLUMNS,
+    )
+    write_delimited_rows(
+        metrics_csv,
+        _metric_rows("cand-supported", schema_version=evidence.SCHEMA_VERSION),
+        packet.METRIC_REQUIRED_COLUMNS,
+    )
+
+    outputs = packet.run_review_packet(
+        candidates_csv=candidates_csv,
+        trace_summary_csv=summary_csv,
+        trace_metrics_csv=metrics_csv,
+        output_dir=tmp_path / "legacy_packet",
+        packet_label="legacy",
+        source_label="pt_only",
+        max_per_status=1,
+    )
+    rows = read_delimited_rows(
+        outputs["packet_csv"],
+        required_columns=packet.LEGACY_PACKET_COLUMNS,
+        delimiter=",",
+    )
+    assert rows[0]["schema_version"] == packet.SCHEMA_VERSION
+    assert "anchor_segmentation_status" not in rows[0]
+
+
+def test_review_packet_rejects_unknown_trace_schema() -> None:
+    summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
+    summary["schema_version"] = "pt_pattern_trace_diagnosis.v999"
+
+    with pytest.raises(ValueError, match="unsupported trace summary schema_version"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[summary],
+            metric_rows=_metric_rows("cand"),
+            packet_label="unknown",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_partial_anchor_summary_schema() -> None:
+    summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
+    summary.pop("anchor_segmentation_status")
+
+    with pytest.raises(ValueError, match="missing anchor segmentation columns"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[summary],
+            metric_rows=_metric_rows("cand"),
+            packet_label="partial-anchor-summary",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_partial_anchor_metric_schema() -> None:
+    metrics = _metric_rows("cand")
+    metrics[0].pop("anchor_segment_rt_start_min")
+
+    with pytest.raises(ValueError, match="missing anchor segmentation columns"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[
+                _summary_row("cand", "pt_pattern_detected_diagnostic")
+            ],
+            metric_rows=metrics,
+            packet_label="partial-anchor-metric",
+            source_label="pt_only",
+            max_per_status=1,
+        )

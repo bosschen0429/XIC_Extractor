@@ -7,6 +7,16 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from xic_extractor.discovery.pt_pattern_trace_batch import (
+    ANCHOR_LOCAL_SCHEMA_VERSION as ANCHOR_TRACE_SCHEMA_VERSION,
+)
+from xic_extractor.discovery.pt_pattern_trace_evidence import (
+    ANCHOR_SEGMENTATION_METRIC_COLUMNS,
+    ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
+)
+from xic_extractor.discovery.pt_pattern_trace_evidence import (
+    SCHEMA_VERSION as LEGACY_TRACE_SCHEMA_VERSION,
+)
 from xic_extractor.tabular_io import (
     optional_float,
     read_delimited_rows,
@@ -14,6 +24,7 @@ from xic_extractor.tabular_io import (
 )
 
 SCHEMA_VERSION = "pt_pattern_manual_review_packet.v2"
+ANCHOR_LOCAL_SCHEMA_VERSION = "pt_pattern_manual_review_packet.v3"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_trace_evidence"
 
@@ -125,6 +136,7 @@ PACKET_COLUMNS = (
     "trace_ambiguity_status",
     "trace_ambiguity_flags",
     "shifted_only_position_labels",
+    *ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
     "trace_reason",
     "pt_plus_1_trace_support_status",
     "pt_plus_1_trace_quality_flags",
@@ -169,6 +181,11 @@ PACKET_COLUMNS = (
     "human_review_note",
     "oracle_status",
 )
+LEGACY_PACKET_COLUMNS = tuple(
+    column
+    for column in PACKET_COLUMNS
+    if column not in ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
+)
 
 
 def build_review_packet_rows(
@@ -180,6 +197,10 @@ def build_review_packet_rows(
     source_label: str,
     max_per_status: int,
 ) -> tuple[dict[str, object], ...]:
+    packet_schema_version = _packet_schema_version(
+        summary_rows=summary_rows,
+        metric_rows=metric_rows,
+    )
     if not packet_label.strip():
         raise ValueError("packet_label must be non-empty")
     if not source_label.strip():
@@ -203,6 +224,7 @@ def build_review_packet_rows(
             metrics_by_position=metrics_by_candidate.get(candidate_id, {}),
             packet_label=packet_label,
             source_label=source_label,
+            schema_version=packet_schema_version,
         )
         grouped[combined_status].append(row)
 
@@ -257,13 +279,23 @@ def run_review_packet(
     output_dir.mkdir(parents=True, exist_ok=True)
     packet_csv = output_dir / "pt_pattern_manual_review_packet.csv"
     sidecar_json = output_dir / "pt_pattern_manual_review_packet.json"
-    write_delimited_rows(packet_csv, packet_rows, PACKET_COLUMNS)
+    packet_schema_version = (
+        str(packet_rows[0]["schema_version"])
+        if packet_rows
+        else SCHEMA_VERSION
+    )
+    packet_columns = (
+        PACKET_COLUMNS
+        if packet_schema_version == ANCHOR_LOCAL_SCHEMA_VERSION
+        else LEGACY_PACKET_COLUMNS
+    )
+    write_delimited_rows(packet_csv, packet_rows, packet_columns)
 
     status_counts = Counter(
         str(row["combined_pt_pattern_status"]) for row in packet_rows
     )
     sidecar = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": packet_schema_version,
         "readiness_tier": READINESS_TIER,
         "evidence_owner": EVIDENCE_OWNER,
         "packet_label": packet_label,
@@ -296,10 +328,11 @@ def _packet_row(
     metrics_by_position: Mapping[str, Mapping[str, str]],
     packet_label: str,
     source_label: str,
+    schema_version: str,
 ) -> dict[str, object]:
     candidate_id = _required_text(summary, "candidate_id")
     row: dict[str, object] = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "readiness_tier": READINESS_TIER,
         "evidence_owner": EVIDENCE_OWNER,
         "packet_label": packet_label,
@@ -357,6 +390,10 @@ def _packet_row(
         "shifted_only_position_labels": summary.get(
             "shifted_only_position_labels", ""
         ),
+        **{
+            column: summary.get(column, "")
+            for column in ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
+        },
         "trace_reason": summary.get("reason", ""),
         "human_review_decision": "",
         "human_review_note": "",
@@ -403,6 +440,83 @@ def _packet_row(
             "raw_apex_delta_sec_to_base", ""
         )
     return row
+
+
+def _packet_schema_version(
+    *,
+    summary_rows: Sequence[Mapping[str, str]],
+    metric_rows: Sequence[Mapping[str, str]],
+) -> str:
+    summary_versions = {
+        str(row.get("schema_version", "")).strip() for row in summary_rows
+    }
+    if not summary_versions:
+        return SCHEMA_VERSION
+    if len(summary_versions) != 1:
+        raise ValueError("trace summary rows must use one schema_version")
+    source_schema = next(iter(summary_versions))
+    expected_packet_schema: str
+    expects_anchor_columns: bool
+    if source_schema in {"", LEGACY_TRACE_SCHEMA_VERSION}:
+        expected_packet_schema = SCHEMA_VERSION
+        expects_anchor_columns = False
+    elif source_schema == ANCHOR_TRACE_SCHEMA_VERSION:
+        expected_packet_schema = ANCHOR_LOCAL_SCHEMA_VERSION
+        expects_anchor_columns = True
+    else:
+        raise ValueError(f"unsupported trace summary schema_version: {source_schema!r}")
+
+    _validate_anchor_columns(
+        summary_rows,
+        columns=ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
+        expects_anchor_columns=expects_anchor_columns,
+        label="trace summary",
+    )
+    metric_versions = {
+        str(row.get("schema_version", "")).strip() for row in metric_rows
+    }
+    if source_schema == ANCHOR_TRACE_SCHEMA_VERSION and metric_versions != {
+        source_schema
+    }:
+        raise ValueError("anchor-local trace metrics require the matching schema")
+    nonblank_metric_versions = metric_versions - {""}
+    if (
+        source_schema in {"", LEGACY_TRACE_SCHEMA_VERSION}
+        and nonblank_metric_versions
+        and nonblank_metric_versions != {LEGACY_TRACE_SCHEMA_VERSION}
+    ):
+        raise ValueError("trace metric schema_version must match trace summary")
+    _validate_anchor_columns(
+        metric_rows,
+        columns=ANCHOR_SEGMENTATION_METRIC_COLUMNS,
+        expects_anchor_columns=expects_anchor_columns,
+        label="trace metric",
+    )
+    return expected_packet_schema
+
+
+def _validate_anchor_columns(
+    rows: Sequence[Mapping[str, str]],
+    *,
+    columns: Sequence[str],
+    expects_anchor_columns: bool,
+    label: str,
+) -> None:
+    expected = set(columns)
+    for row_index, row in enumerate(rows, start=2):
+        present = expected.intersection(row)
+        if expects_anchor_columns and present != expected:
+            missing = sorted(expected - present)
+            raise ValueError(
+                f"{label} row {row_index} is missing anchor segmentation columns: "
+                + ", ".join(missing)
+            )
+        if not expects_anchor_columns and present:
+            unexpected = sorted(present)
+            raise ValueError(
+                f"{label} row {row_index} legacy schema must not contain anchor "
+                "segmentation columns: " + ", ".join(unexpected)
+            )
 
 
 def _unique_by_candidate_id(
