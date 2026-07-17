@@ -294,6 +294,12 @@ def _scan_arrays(
         scan = raw_file.GetSimplifiedScan(scan_number)
         masses = np.asarray(getattr(scan, "Masses", []), dtype=np.float64)
     intensities = np.asarray(getattr(scan, "Intensities", []), dtype=np.float64)
+    if (
+        masses.ndim != 1
+        or intensities.ndim != 1
+        or masses.shape != intensities.shape
+    ):
+        return masses, intensities
     order = np.argsort(masses)
     return masses[order], intensities[order]
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tools.diagnostics import pt_pattern_ddms2_support_replay as replay_cli
 from xic_extractor.discovery.pt_pattern_ddms2_support_replay import (
     SCHEMA_VERSION,
     run_ddms2_support_replay,
@@ -179,6 +180,74 @@ def test_ddms2_support_replay_rejects_unknown_requested_sample_stem(
         assert "not found" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+@pytest.mark.parametrize(
+    ("parameter", "value", "message"),
+    (
+        ("mz_tolerance_ppm", float("inf"), "mz_tolerance_ppm"),
+        ("rt_window_sec", float("nan"), "rt_window_sec"),
+    ),
+)
+def test_ddms2_support_replay_rejects_nonfinite_gate_values(
+    tmp_path: Path,
+    parameter: str,
+    value: float,
+    message: str,
+) -> None:
+    candidates_csv, evidence_csv, ddms2_features_csv = _single_seed_inputs(
+        tmp_path,
+        base_mz=500.0,
+        base_rt_apex_min=10.0,
+    )
+    kwargs: dict[str, object] = {
+        "fullscan_candidates_csv": candidates_csv,
+        "fullscan_evidence_csv": evidence_csv,
+        "ddms2_detected_features_csv": ddms2_features_csv,
+        "mz_tolerance_ppm": 20.0,
+        "rt_window_sec": 45.0,
+    }
+    kwargs[parameter] = value
+
+    with pytest.raises(ValueError, match=f"{message}.*finite"):
+        run_ddms2_support_replay(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    (("--mz-tolerance-ppm", "inf"), ("--rt-window-sec", "nan")),
+)
+def test_ddms2_support_cli_rejects_nonfinite_gate_values(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    flag: str,
+    value: str,
+) -> None:
+    candidates_csv, evidence_csv, ddms2_features_csv = _single_seed_inputs(
+        tmp_path,
+        base_mz=500.0,
+        base_rt_apex_min=10.0,
+    )
+    _write_detected_features(ddms2_features_csv, [])
+
+    with pytest.raises(SystemExit) as exc_info:
+        replay_cli.main(
+            [
+                "--fullscan-candidates-csv",
+                str(candidates_csv),
+                "--fullscan-evidence-csv",
+                str(evidence_csv),
+                "--ddms2-detected-features-csv",
+                str(ddms2_features_csv),
+                "--output-dir",
+                str(tmp_path / "output"),
+                flag,
+                value,
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "must be > 0 and finite" in capsys.readouterr().err
 
 
 def _single_seed_inputs(

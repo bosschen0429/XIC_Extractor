@@ -8,6 +8,7 @@ import pytest
 from xic_extractor.ms1_scan_index import (
     MS1Scan,
     MS1ScanIndexProvenance,
+    MS1ScanReadError,
     build_ms1_scan_index,
     extract_index_xic,
     read_ms1_scan_index_npz,
@@ -132,3 +133,33 @@ def test_build_ms1_scan_index_prefers_segmented_scan_api() -> None:
     assert index[0].rt == 2.5
     np.testing.assert_allclose(index[0].masses, [99.0, 100.0])
     np.testing.assert_allclose(index[0].intensities, [5.0, 10.0])
+
+
+def test_build_ms1_scan_index_can_fail_on_malformed_scan_arrays() -> None:
+    class _Header:
+        FirstSpectrum = 1
+        LastSpectrum = 1
+
+    class _Filter:
+        MSOrder = "Ms"
+
+    class _Malformed:
+        Positions = [100.0, 101.0]
+        Intensities = [10.0]
+
+    class _Raw:
+        RunHeaderEx = _Header()
+
+        def GetFilterForScanNumber(self, _scan_number: int) -> _Filter:
+            return _Filter()
+
+        def GetSegmentedScanFromScanNumber(self, _scan_number: int, _stats):
+            return _Malformed()
+
+        def RetentionTimeFromScanNumber(self, _scan_number: int) -> float:
+            return 2.5
+
+    assert build_ms1_scan_index(_Raw()) == ()
+
+    with pytest.raises(MS1ScanReadError, match="matching 1D arrays"):
+        build_ms1_scan_index(_Raw(), fail_on_malformed=True)

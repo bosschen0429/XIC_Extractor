@@ -36,8 +36,13 @@ def test_cli_builds_local_ms1_feature_outputs(
         captured["dll_dir"] = dll_path
         return _Handle()
 
-    def _fake_build_index(_handle: _Handle) -> tuple[object, ...]:
+    def _fake_build_index(
+        _handle: _Handle,
+        *,
+        fail_on_malformed: bool,
+    ) -> tuple[object, ...]:
         captured["build_index"] = True
+        captured["fail_on_malformed"] = fail_on_malformed
         return ()
 
     def _fake_build_table(
@@ -140,6 +145,7 @@ def test_cli_builds_local_ms1_feature_outputs(
 
     assert code == 0
     assert captured["sample_stem"] == "Sample_1"
+    assert captured["fail_on_malformed"] is True
     assert captured["raw_file_size_bytes"] == 0
     assert isinstance(captured["raw_file_mtime_ns"], int)
     assert captured["settings"] == LocalMs1FeatureSettings(
@@ -230,7 +236,12 @@ def test_cli_reports_ms1_scan_read_failure_without_traceback(
         lambda *_args: _Handle(),
     )
 
-    def _raise_scan_read_error(_handle: _Handle) -> tuple[object, ...]:
+    def _raise_scan_read_error(
+        _handle: _Handle,
+        *,
+        fail_on_malformed: bool,
+    ) -> tuple[object, ...]:
+        assert fail_on_malformed is True
         raise MS1ScanReadError("failed to read MS1 scan 42: synthetic failure")
 
     monkeypatch.setattr(

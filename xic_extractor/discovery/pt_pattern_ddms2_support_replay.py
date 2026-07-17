@@ -11,6 +11,7 @@ from __future__ import annotations
 import bisect
 import csv
 import json
+import math
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -163,10 +164,10 @@ def run_ddms2_support_replay(
 ) -> Ddms2SupportReplayResult:
     """Replay DDMS2 local MS1 support for Fullscan-accepted Pt seeds."""
 
-    if mz_tolerance_ppm <= 0:
-        raise ValueError("mz_tolerance_ppm must be > 0")
-    if rt_window_sec <= 0:
-        raise ValueError("rt_window_sec must be > 0")
+    if not math.isfinite(mz_tolerance_ppm) or mz_tolerance_ppm <= 0:
+        raise ValueError("mz_tolerance_ppm must be > 0 and finite")
+    if not math.isfinite(rt_window_sec) or rt_window_sec <= 0:
+        raise ValueError("rt_window_sec must be > 0 and finite")
 
     seeds = load_fullscan_pt_seeds(
         candidates_csv=fullscan_candidates_csv,

@@ -356,7 +356,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_stat = raw_path.stat()
     try:
         with open_raw(raw_path, dll_dir) as handle:
-            index = build_ms1_scan_index(handle)
+            index = build_ms1_scan_index(handle, fail_on_malformed=True)
     except (RawReaderError, MS1ScanReadError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

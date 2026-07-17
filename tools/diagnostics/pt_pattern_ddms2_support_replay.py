@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -58,10 +59,10 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         path = getattr(args, attribute)
         if not path.is_file():
             parser.error(f"{path}: input file does not exist")
-    if args.mz_tolerance_ppm <= 0:
-        parser.error("--mz-tolerance-ppm must be > 0")
-    if args.rt_window_sec <= 0:
-        parser.error("--rt-window-sec must be > 0")
+    if not math.isfinite(args.mz_tolerance_ppm) or args.mz_tolerance_ppm <= 0:
+        parser.error("--mz-tolerance-ppm must be > 0 and finite")
+    if not math.isfinite(args.rt_window_sec) or args.rt_window_sec <= 0:
+        parser.error("--rt-window-sec must be > 0 and finite")
     if not args.seed_trace_rule_call.strip():
         parser.error("--seed-trace-rule-call must be non-empty")
 

@@ -1965,7 +1965,8 @@ support near the Fullscan seed.
 **Status note**: Diagnostic-only support replay. It does not open RAW, create
 Fullscan seeds, recompute trace evidence, decide DDMS2 targeting opportunity,
 mutate Discovery outputs, read Alignment/Backfill state, or write
-Matrix/workbook artifacts. Without the historical target/inclusion list,
+Matrix/workbook artifacts. Its m/z tolerance and RT window must be positive
+finite values. Without the historical target/inclusion list,
 missing DDMS2 support is context only, not negative evidence against a Fullscan
 Discovery seed.
 
