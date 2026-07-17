@@ -1,7 +1,7 @@
 interface:
   display_name: "XIC Docs Compression"
-  short_description: "Digest XIC docs by lifecycle, route, owner, value, and Obsidian role"
-  default_prompt: "Use $xic-docs-compression for XIC documentation digestion: classify lifecycle, route, current information value, duplication, staleness, topic owner, support/stub role, product absorption status, Obsidian action, referrer action, and retirement action before moving, stubbing, deleting, or retargeting docs. Treat auto-retire as the normal completed-doc exit; use stubs only for active context or unresolved exact referrers."
+  short_description: "Digest XIC docs into one owner and a safe lifecycle action"
+  default_prompt: "Use $xic-docs-compression to audit the selected XIC document family, absorb its durable meaning into one canonical repo owner, route the remainder under the existing lifecycle/Obsidian contract, and verify referrer and retirement safety."
 compatibility:
   canonical_format: "agent-skills"
   adapter_targets:

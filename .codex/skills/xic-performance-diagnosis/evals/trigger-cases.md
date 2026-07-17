@@ -10,6 +10,10 @@ request.
   next exact-safe change."
 - "We need to compare 8RAW baseline and optimized outputs before accepting a
   worker-budget change."
+- "These two timing.json files look faster; prove whether their workloads and
+  stage coverage are actually comparable."
+- "Use paired per-sample timing and RAW-call counts to judge this optimization
+  without repeating the full 85RAW run seven times."
 - "I do not have current timing artifacts; decide the minimal baseline command
   and stop rule."
 - "Is ms1_index_hybrid ready as an opt-in fast-mode candidate?"
@@ -28,9 +32,13 @@ request.
 ## Borderline
 
 - If the request is a generic performance concept question, answer directly or
-  use the global `performance-optimization-discipline` skill.
+  use the available global `diagnose` workflow when a disciplined diagnosis is
+  actually needed.
 - If the request is implementation after a performance diagnosis already exists,
   use this skill only to restate the artifact-backed gate, then use
   `xic-architecture-preflight` before edits.
 - If timing artifacts are missing but the task is XIC preset/runtime work, this
   skill should still trigger and usually return `baseline_needed`.
+- If the user only wants to run a generic command benchmark with no XIC
+  artifact, locality, parity, or product surface, use an ordinary benchmark or
+  diagnosis workflow instead.

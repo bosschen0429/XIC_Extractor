@@ -1,116 +1,155 @@
 ---
 name: xic-performance-diagnosis
-description: Performance diagnosis before XIC preset/runtime optimization, timing analysis, RAW locality, worker-budget tuning, baseline triage, or fast-mode review.
+description: Diagnose XIC performance from timing and parity artifacts before optimization. Use for missing baselines, single-run bottlenecks, baseline/candidate proof, RAW/XIC locality, worker budgets, regressions, or fast-mode review.
 ---
 
 # XIC Performance Diagnosis
 
-Use this before planning or implementing non-trivial XIC performance work. This
-skill turns performance work into an artifact-driven gate instead of a general
-"make it faster" coding task.
+Treat each optimization as an artifact-driven, falsifiable claim. Produce one
+diagnosis packet before handing code edits to `xic-architecture-preflight` or
+RAW execution/acceptance to `xic-raw-validation`.
 
-Routing order:
+## 1. Bind The Decision And Evidence Branch
 
-1. Use this skill to decide whether baseline evidence exists, rank bottlenecks,
-   and choose `exact_safe`, `expected_diff`, `fast_mode_candidate`, or
-   `diagnostic_only`.
-2. Use `xic-architecture-preflight` before code edits.
-3. Use `xic-raw-validation` before launching or accepting RAW-backed validation.
-4. Read or update the productization control plane only when evidence could
-   change maturity tier, active lane, ProductWriter authority, or product gate
-   state.
+Name the decision, workload/sample universe, suspected surface, and one branch:
 
-## First Response Protocol
+- `baseline_needed`: no trustworthy timing covers the decision;
+- `single_run`: rank bottlenecks in one completed run;
+- `paired_comparison`: judge baseline and candidate artifacts.
 
-Before proposing code changes, produce this compact block:
+Locate the narrow artifact roots and record availability, completeness,
+freshness, producing code, config, input, and backend identity. For a pair,
+state the intended isolated change and every unrelated difference found. Search
+`tools/diagnostics/INDEX.md` and `docs/diagnostic-ledger.md` before proposing a
+new measurement path. Read `docs/agent/parameter-settings.md` for RAW/preset
+command and timing owners.
+
+Completion criterion: one branch is selected; every run has a workload,
+artifact state, timing coverage, and producing state or an explicit `unknown`.
+
+## 2. Prove The Timing Basis
+
+Read `references/xic-performance-artifact-contract.md` for timing-source
+priority and the XIC artifact inventory. A `single_run` must cover the suspected
+stage. When baseline and candidate artifacts are both present, read the
+reference's **Comparability Proof** before computing any delta.
+
+Classify paired evidence as `comparable` or `inconclusive`. Two `timing.json`
+files alone establish neither equivalent workload nor equivalent measurement.
+If the proof is missing, name the smallest provenance, parity, or bounded timing
+probe that would close it; this diagnosis does not widen into a RAW run by
+itself.
+
+Completion criterion: the timing basis is trustworthy for the selected branch,
+or exactly one smallest missing proof is named and the result is
+`baseline_needed`/`inconclusive`.
+
+## 3. Rank The Bottleneck And Cost Delta
+
+Use recorded summaries before recomputing metrics:
+
+- `summaries.stage_summary` for stage coverage and elapsed cost;
+- `summaries.raw_xic_locality_summary` for extraction, batching, RAW-call, and
+  point-count evidence.
+
+State the aggregation basis: external wall clock, non-overlapping stage total,
+stage maximum, or paired per-sample/per-stage observations. Never sum nested
+spans as if they were independent wall clock. Explain why the chosen metric
+answers the decision: a stage maximum can answer a worst-case-stage question,
+but not cumulative work or end-to-end wall clock.
+
+For `single_run`, rank the top bottleneck. For `paired_comparison`, report the
+target-stage and call-cost deltas only after comparability passes, then name
+which cost was removed, reduced, batched, cached, or parallelized.
+
+Completion criterion: the top bottleneck and every claimed delta name their
+timing source, covered stages, decision metric, aggregation semantics, and XIC
+call-cost evidence.
+
+For `baseline_needed` or a `single_run` whose only decision is bottleneck
+diagnosis, issue the Core Diagnosis Packet in Step 5 and stop. Continue when the
+task asks for paired proof, implementation readiness, or acceptance.
+
+## 4. Bind Correctness And Optimization Lane When Needed
+
+For `paired_comparison`, select a project-appropriate parity or expected-diff
+oracle before accepting a performance claim.
+
+When the task prepares implementation or product acceptance, also state whether
+public outputs, selected peak/area, counted detections, reasons/confidence,
+matrix identity, schema, or persisted IDs are unchanged or covered by an
+approved expected diff, then choose one lane:
+
+- `exact_safe`: output-preserving removal, batching, caching, locality, or
+  deterministic worker-budget change;
+- `expected_diff`: an intentional selected-value, identity, schema, or status
+  change with an expected-diff owner;
+- `fast_mode_candidate`: explicit opt-in alternate semantics that leave exact
+  defaults intact;
+- `diagnostic_only`: measurement or analysis without product behavior change.
+
+Keep performance proof and product validation status separate. A measured win
+can remain `diagnostic_only`; tests or speed alone do not grant activation,
+matrix, selected-value, workbook, or export authority.
+
+Completion criterion: paired proof has separate correctness and performance
+verdicts; implementation/acceptance work additionally has one lane, validation
+gate, authority ceiling, and rollback/stop condition.
+
+## 5. Issue One Diagnosis Packet
+
+Use one workflow verdict:
+
+- `baseline_needed`, `diagnosis_ready`, or `optimization_ready` before edits;
+- `optimized` only after comparable evidence beats observed noise and the
+  correctness gate passes;
+- `inconclusive` for missing comparability, unstable timing, or absent parity;
+- `rejected` for an attributable regression or failed correctness gate.
+
+Every branch returns this core:
 
 ```markdown
-Workload:
-Decision this diagnosis can close:
-Existing artifacts inspected:
-Baseline command/status:
-Timing source of truth:
-Top bottlenecks:
+Workflow/performance verdict:
+Product validation status:
+Workload / sample universe / decision:
+Evidence branch and artifact roots:
+Artifact availability / completeness / freshness:
+Timing source / covered stages / aggregation basis:
+Top bottleneck:
 Call-cost interpretation:
-Correctness oracle:
-Optimization lane:
-Validation gate:
-Stop rule:
-Next action:
+Next evidence / stop rule:
 ```
 
-If timing artifacts are missing, the next action is a baseline or targeted stage
-measurement, not implementation.
+Add for `paired_comparison`:
 
-## Hard Gate
+```markdown
+Producing state / intended isolated change / unrelated differences:
+Comparability verdict / blocker / smallest missing proof:
+Decision metric / why it answers the claim:
+Baseline/candidate timing and call-cost delta:
+Noise/repetition evidence:
+Correctness oracle / result:
+```
 
-Do not edit performance-sensitive code until these are named:
+Add when preparing implementation or acceptance:
 
-- timing source of truth: `timing.json`, `timing.live.json`, stage replay timing,
-  profiler output, or another explicit artifact;
-- top bottleneck by wall-clock or validated call-cost model;
-- workload class: 8RAW, 85RAW, targeted benchmark, no-RAW replay, stage replay,
-  one-time import, repeated modeling run, or interactive path;
-- correctness oracle: published matrix parity, review queue parity, identity
-  sidecar parity, manifest hashes, focused tests, expected-diff packet, or
-  declared `diagnostic_only`;
-- stop rule for noisy timing, output mismatch, artifact ambiguity, or
-  nondeterminism.
+```markdown
+Optimization lane / authority ceiling:
+Validation gate / rollback:
+Residual risk:
+```
 
-## Optimization Lanes
+Performance evidence alone leaves product validation status unchanged; use the
+canonical repo vocabulary for that separate field.
 
-- `exact_safe`: output-preserving changes such as removing repeated RAW I/O,
-  avoiding repeated TSV scans, reusing existing summaries, batching existing
-  requests, searchsorted/slice-view crops with fallback, or worker-budget tuning
-  with deterministic output.
-- `expected_diff`: changes that may alter selected peak, area, counted
-  detections, reason/confidence, matrix identity, workbook/report schema, or
-  persisted identifiers. Require an expected-diff contract before implementation.
-- `fast_mode_candidate`: explicit opt-in candidate using approximate/indexed
-  backends or changed extraction semantics. Must not overwrite exact preset
-  outputs or default behavior.
-- `diagnostic_only`: measurement, replay, report, or artifact analysis that
-  improves observability but does not change production behavior.
+Only `optimization_ready` opens the code-edit handoff to
+`xic-architecture-preflight`. Route actual RAW launch or artifact acceptance to
+`xic-raw-validation`. Consult the productization control plane only when the
+evidence could change a maturity tier, active lane, ProductWriter authority, or
+product gate state.
 
-## Required Artifact Search
+Completion criterion: every packet field has observed evidence, a reasoned
+`N/A`, or an explicit unknown for the selected branch; claims remain
+source-qualified and the handoff cannot exceed the stated authority ceiling.
 
-Search existing outputs and diagnostics before inventing a new measurement path:
-
-- `timing.json` and `timing.live.json`;
-- preset summary JSON and stage timing sidecars;
-- RAW locality summaries and extraction call-count diagnostics;
-- baseline vs optimized output folders;
-- published matrix, review queue, identity sidecars, manifests, and product
-  summary artifacts;
-- `tools/diagnostics/INDEX.md`;
-- `docs/diagnostic-ledger.md`.
-
-Keep the search targeted. Do not recursively scan large `output/` or RAW
-directories just to satisfy this checklist; first locate the candidate run folder
-or sidecar names with `rg --files`, documented output paths, timing filenames, or
-known preset labels.
-
-## Report Rules
-
-Lead with the verdict:
-
-- `baseline_needed`: no trustworthy timing source exists.
-- `diagnosis_ready`: bottleneck ranked; no code accepted yet.
-- `optimization_ready`: lane, correctness oracle, validation gate, and stop rule
-  are clear enough to edit.
-- `optimized`: before/after timing improved and correctness gate passed.
-- `inconclusive`: timing improved without parity, timing source is ambiguous, or
-  run conditions are not comparable.
-- `rejected`: optimization changed outputs unexpectedly or did not improve the
-  target bottleneck.
-
-State whether the conclusion is `diagnostic_only`, `production_candidate`, or
-`production_ready`. Tests passing alone is not production readiness.
-
-## References
-
-Read `references/xic-performance-artifact-contract.md` for the detailed XIC
-artifact, call-cost, validation, and stop-rule checklist.
-
-Read `evals/trigger-cases.md` when tuning routing or deciding whether this skill
-or a neighboring XIC skill should own a request.
+Read `evals/trigger-cases.md` only when tuning skill routing.
