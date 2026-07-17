@@ -131,63 +131,81 @@ def main(argv: Sequence[str] | None = None) -> int:
             "--external-feature-table-tsv, or --mzmine-feature-table-csv"
         )
 
-    detected_features_csv = (
-        args.detected_features_csv.resolve()
+    detected_features_csv = args.detected_features_csv
+    resolved_detected_features_csv = (
+        detected_features_csv.resolve()
         if args.detected_features_csv is not None
         else None
     )
-    external_feature_table_tsv = (
-        args.external_feature_table_tsv.resolve()
+    external_feature_table_tsv = args.external_feature_table_tsv
+    resolved_external_feature_table_tsv = (
+        external_feature_table_tsv.resolve()
         if args.external_feature_table_tsv is not None
         else None
     )
-    mzmine_feature_table_csv = (
-        args.mzmine_feature_table_csv.resolve()
+    mzmine_feature_table_csv = args.mzmine_feature_table_csv
+    resolved_mzmine_feature_table_csv = (
+        mzmine_feature_table_csv.resolve()
         if args.mzmine_feature_table_csv is not None
         else None
     )
-    if detected_features_csv is not None and not detected_features_csv.is_file():
+    if (
+        resolved_detected_features_csv is not None
+        and not resolved_detected_features_csv.is_file()
+    ):
         print(
-            f"{detected_features_csv}: detected features csv does not exist",
+            f"{resolved_detected_features_csv}: detected features csv does not exist",
             file=sys.stderr,
         )
         return 2
     if (
-        external_feature_table_tsv is not None
-        and not external_feature_table_tsv.is_file()
+        resolved_external_feature_table_tsv is not None
+        and not resolved_external_feature_table_tsv.is_file()
     ):
         print(
-            f"{external_feature_table_tsv}: external feature table does not exist",
+            f"{resolved_external_feature_table_tsv}: "
+            "external feature table does not exist",
             file=sys.stderr,
         )
         return 2
-    if mzmine_feature_table_csv is not None and not mzmine_feature_table_csv.is_file():
+    if (
+        resolved_mzmine_feature_table_csv is not None
+        and not resolved_mzmine_feature_table_csv.is_file()
+    ):
         print(
-            f"{mzmine_feature_table_csv}: MZmine feature table does not exist",
+            f"{resolved_mzmine_feature_table_csv}: MZmine feature table does not exist",
             file=sys.stderr,
         )
         return 2
 
     output_dir = args.output_dir.resolve()
-    cid_nl_candidates_csv = (
-        args.cid_nl_candidates_csv.resolve()
+    cid_nl_candidates_csv = args.cid_nl_candidates_csv
+    resolved_cid_nl_candidates_csv = (
+        cid_nl_candidates_csv.resolve()
         if args.cid_nl_candidates_csv is not None
         else None
     )
-    if cid_nl_candidates_csv is not None and not cid_nl_candidates_csv.is_file():
+    if (
+        resolved_cid_nl_candidates_csv is not None
+        and not resolved_cid_nl_candidates_csv.is_file()
+    ):
         print(
-            f"{cid_nl_candidates_csv}: CID-NL candidates csv does not exist",
+            f"{resolved_cid_nl_candidates_csv}: CID-NL candidates csv does not exist",
             file=sys.stderr,
         )
         return 2
-    trace_summary_csv = (
-        args.trace_summary_csv.resolve()
+    trace_summary_csv = args.trace_summary_csv
+    resolved_trace_summary_csv = (
+        trace_summary_csv.resolve()
         if args.trace_summary_csv is not None
         else None
     )
-    if trace_summary_csv is not None and not trace_summary_csv.is_file():
+    if (
+        resolved_trace_summary_csv is not None
+        and not resolved_trace_summary_csv.is_file()
+    ):
         print(
-            f"{trace_summary_csv}: trace summary csv does not exist",
+            f"{resolved_trace_summary_csv}: trace summary csv does not exist",
             file=sys.stderr,
         )
         return 2

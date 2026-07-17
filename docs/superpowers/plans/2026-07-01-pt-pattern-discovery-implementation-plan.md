@@ -791,6 +791,9 @@ def escape_excel_formula(value: str) -> str:
       stable, compact, no unnecessary trailing zeros.
 - [ ] Add writer tests proving unexpected fields fail loudly and formula-like
       text is escaped consistently.
+- [ ] Preserve machine identifier fields exactly in candidate/evidence CSVs;
+      apply formula escaping only to prose fields and the compact human-facing
+      review CSV. Spreadsheet-safe display encoding must not mutate join keys.
 - [ ] In sidecar JSON, record CLI input path strings exactly as provided, not
       resolved local absolute paths.
 

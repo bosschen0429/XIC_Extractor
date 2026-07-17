@@ -27,6 +27,10 @@ from xic_extractor.discovery.delta_mass_csv import (
 )
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, PtPatternCandidate
 from xic_extractor.discovery.detected_features import DetectedFeature
+from xic_extractor.discovery.pt_pattern_trace_evidence import (
+    load_candidate_rows,
+    validate_candidate_sample_binding,
+)
 
 DETECTED_FEATURES_COLUMNS = (
     "sample_stem",
@@ -692,24 +696,39 @@ def test_pt_evidence_csv_fails_loudly_on_unexpected_extra_field(
         write_pt_pattern_evidence_csv(output_path, [row])
 
 
-def test_pt_candidate_csv_escapes_formula_like_text_consistently(
+def test_pt_candidate_csv_preserves_machine_ids_and_escapes_prose(
     tmp_path: Path,
 ) -> None:
     output_path = tmp_path / "pt_pattern_candidates.csv"
     candidate = _pt_candidate(
         sample_stem="=cmd|'/c calc'!A1",
+        candidate_id="=cmd|'/c calc'!A1|pt|base:+base-1",
         base_feature_id="+base-1",
+        cid_nl_base_candidate_id="@cid-nl-1",
         reason="-suspicious reason",
         pt_plus_1_feature_id="@plus1-1",
+        pt_plus_2_feature_id="+plus2-1",
+        pt_plus_4_feature_id="=plus4-1",
     )
 
     write_pt_pattern_candidates_csv(output_path, [candidate])
 
     row = _read_csv(output_path)[0]
-    assert row["sample_stem"] == "'=cmd|'/c calc'!A1"
-    assert row["base_feature_id"] == "'+base-1"
+    assert row["sample_stem"] == "=cmd|'/c calc'!A1"
+    assert row["candidate_id"] == "=cmd|'/c calc'!A1|pt|base:+base-1"
+    assert row["base_feature_id"] == "+base-1"
+    assert row["cid_nl_base_candidate_id"] == "@cid-nl-1"
     assert row["reason"] == "'-suspicious reason"
-    assert row["pt_plus_1_feature_id"] == "'@plus1-1"
+    assert row["pt_plus_1_feature_id"] == "@plus1-1"
+    assert row["pt_plus_2_feature_id"] == "+plus2-1"
+    assert row["pt_plus_4_feature_id"] == "=plus4-1"
+
+    loaded = load_candidate_rows(output_path, limit=1)
+    validate_candidate_sample_binding(
+        loaded,
+        expected_sample_stem="=cmd|'/c calc'!A1",
+    )
+    assert loaded[0]["candidate_id"] == candidate.candidate_id
 
 
 def test_pt_review_csv_escapes_formula_like_text_consistently(
@@ -718,6 +737,7 @@ def test_pt_review_csv_escapes_formula_like_text_consistently(
     output_path = tmp_path / "pt_pattern_review.csv"
     candidate = _pt_candidate(
         sample_stem="=cmd|'/c calc'!A1",
+        candidate_id="+candidate-1",
         reason="+suspicious reason",
     )
 
@@ -725,6 +745,7 @@ def test_pt_review_csv_escapes_formula_like_text_consistently(
 
     row = _read_csv(output_path)[0]
     assert row["sample_stem"] == "'=cmd|'/c calc'!A1"
+    assert row["candidate_id"] == "'+candidate-1"
     assert row["reason"] == "'+suspicious reason"
 
 
@@ -745,6 +766,22 @@ def test_pt_evidence_csv_escapes_formula_like_text_consistently(
     )
 
     row = _read_csv(output_path)[0]
-    assert row["sample_stem"] == "'=cmd|'/c calc'!A1"
-    assert row["candidate_id"] == "'+candidate-1"
+    assert row["sample_stem"] == "=cmd|'/c calc'!A1"
+    assert row["candidate_id"] == "+candidate-1"
     assert row["trace_rule_reason"] == "'-suspicious reason"
+
+
+def test_pt_candidate_csv_preserves_literal_leading_apostrophe_identity(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_candidates.csv"
+    candidate = _pt_candidate(
+        sample_stem="'=literal-sample",
+        candidate_id="'=literal-candidate",
+    )
+
+    write_pt_pattern_candidates_csv(output_path, [candidate])
+
+    row = _read_csv(output_path)[0]
+    assert row["sample_stem"] == "'=literal-sample"
+    assert row["candidate_id"] == "'=literal-candidate"

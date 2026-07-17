@@ -7,6 +7,7 @@ directory) as input, so it has no RAW/DLL requirement.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -47,6 +48,153 @@ def _write_mzmine_feature_table(path: Path) -> None:
         "1,500.0,10.0,1000.0,\r\n",
         encoding="utf-8",
     )
+
+
+@pytest.mark.parametrize(
+    ("feature_flag", "feature_path", "writer"),
+    (
+        (
+            "--detected-features-csv",
+            Path("detected_features.csv"),
+            _write_detected_features_csv,
+        ),
+        (
+            "--external-feature-table-tsv",
+            Path("external_features.tsv"),
+            _write_external_feature_table,
+        ),
+        (
+            "--mzmine-feature-table-csv",
+            Path("mzmine_features.csv"),
+            _write_mzmine_feature_table,
+        ),
+    ),
+)
+def test_cli_preserves_relative_feature_source_paths(
+    feature_flag: str,
+    feature_path: Path,
+    writer,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    writer(feature_path)
+    captured: dict[str, object] = {}
+
+    def _fake_run_pt_pattern_discovery(**kwargs):
+        captured.update(kwargs)
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        outputs = DeltaMassDiscoveryOutputs(
+            candidates_csv=output_dir / "pt_pattern_candidates.csv",
+            review_csv=output_dir / "pt_pattern_review.csv",
+            evidence_csv=output_dir / "pt_pattern_evidence.csv",
+            sidecar_json=output_dir / "pt_pattern_sidecar.json",
+        )
+        for path in (
+            outputs.candidates_csv,
+            outputs.review_csv,
+            outputs.evidence_csv,
+            outputs.sidecar_json,
+        ):
+            path.write_text("{}", encoding="utf-8")
+        return outputs
+
+    monkeypatch.setattr(
+        run_pt_pattern_discovery,
+        "run_pt_pattern_discovery",
+        _fake_run_pt_pattern_discovery,
+    )
+
+    code = run_pt_pattern_discovery.main(
+        [feature_flag, str(feature_path), "--output-dir", "out"]
+    )
+
+    assert code == 0
+    argument_name = feature_flag.removeprefix("--").replace("-", "_")
+    assert captured[argument_name] == feature_path
+
+
+def test_cli_sidecar_records_relative_input_path_as_provided(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    detected_features_csv = Path("detected_features.csv")
+    _write_detected_features_csv(detected_features_csv)
+
+    code = run_pt_pattern_discovery.main(
+        [
+            "--detected-features-csv",
+            str(detected_features_csv),
+            "--output-dir",
+            "out",
+        ]
+    )
+
+    assert code == 0
+    sidecar = json.loads(
+        (tmp_path / "out" / "pt_pattern_sidecar.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert sidecar["inputs"]["detected_features_csv"] == "detected_features.csv"
+
+
+def test_cli_preserves_relative_composite_and_trace_paths(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    detected_features_csv = Path("detected_features.csv")
+    cid_nl_candidates_csv = Path("discovery_candidates.csv")
+    trace_summary_csv = Path("trace_summary.csv")
+    _write_detected_features_csv(detected_features_csv)
+    cid_nl_candidates_csv.write_text("ms1_feature_row_id\n", encoding="utf-8")
+    trace_summary_csv.write_text(
+        "candidate_id,combined_pt_pattern_status,non_base_positions_supported,"
+        "max_abs_apex_delta_sec,min_pearson_r_to_base,"
+        "min_active_overlap_fraction\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def _fake_run_pt_pattern_discovery(**kwargs):
+        captured.update(kwargs)
+        output_dir = kwargs["output_dir"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return DeltaMassDiscoveryOutputs(
+            candidates_csv=output_dir / "pt_pattern_candidates.csv",
+            review_csv=output_dir / "pt_pattern_review.csv",
+            evidence_csv=output_dir / "pt_pattern_evidence.csv",
+            sidecar_json=output_dir / "pt_pattern_sidecar.json",
+        )
+
+    monkeypatch.setattr(
+        run_pt_pattern_discovery,
+        "run_pt_pattern_discovery",
+        _fake_run_pt_pattern_discovery,
+    )
+
+    code = run_pt_pattern_discovery.main(
+        [
+            "--detected-features-csv",
+            str(detected_features_csv),
+            "--preset",
+            "pt_pattern_cid_nl_dr",
+            "--cid-nl-candidates-csv",
+            str(cid_nl_candidates_csv),
+            "--trace-summary-csv",
+            str(trace_summary_csv),
+            "--output-dir",
+            "out",
+        ]
+    )
+
+    assert code == 0
+    assert captured["detected_features_csv"] == detected_features_csv
+    assert captured["cid_nl_candidates_csv"] == cid_nl_candidates_csv
+    assert captured["trace_summary_csv"] == trace_summary_csv
 
 
 def test_cli_accepts_pt_pattern_preset_with_no_raw_or_dll_requirement(

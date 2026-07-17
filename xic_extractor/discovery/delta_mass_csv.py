@@ -141,21 +141,13 @@ PT_EVIDENCE_COLUMNS = (
 
 _SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar.v3"
 
-# Free-text / sample-derived fields that can plausibly start with a
-# formula-trigger character ("=", "+", "-", "@") and therefore need Excel
-# formula escaping when written to CSV. Controlled enums, schema/pattern
-# identifiers, and numeric fields are excluded because they cannot start
-# with those characters by construction.
+# Formula escaping is a presentation concern, so machine identifiers in the
+# candidate/evidence contracts must remain byte-for-byte joinable. The compact
+# review CSV is the spreadsheet-facing surface and keeps formula protection for
+# its displayed identifiers as well as prose.
 _CANDIDATE_ESCAPED_FIELDS = frozenset(
     {
-        "sample_stem",
-        "candidate_id",
-        "base_feature_id",
-        "cid_nl_base_candidate_id",
         "reason",
-        "pt_plus_1_feature_id",
-        "pt_plus_2_feature_id",
-        "pt_plus_4_feature_id",
     }
 )
 
@@ -168,15 +160,15 @@ _REVIEW_ESCAPED_FIELDS = frozenset(
     }
 )
 
+_EVIDENCE_ESCAPED_FIELDS = frozenset({"trace_rule_reason"})
+
 
 @dataclass(frozen=True)
 class DeltaMassDiscoveryResult:
     """A completed Pt pattern Discovery run, ready for sidecar JSON output.
 
-    ``detected_features_csv``, ``cid_nl_candidates_csv``, and
-    ``trace_summary_csv`` are recorded as the literal CLI-provided path
-    strings (not resolved local absolute paths), per the Pt Sidecar JSON v3
-    contract.
+    CLI-provided input path fields are recorded as the supplied path strings
+    (not resolved local absolute paths), per the Pt Sidecar JSON v3 contract.
     """
 
     method_label: str
@@ -202,13 +194,18 @@ def write_pt_pattern_candidates_csv(
     """
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [_candidate_row(candidate) for candidate in candidates]
+    rows = [
+        _format_pt_row(
+            _candidate_row(candidate),
+            escaped_fields=_CANDIDATE_ESCAPED_FIELDS,
+        )
+        for candidate in candidates
+    ]
     write_delimited_rows(
         path,
         rows,
         PT_CANDIDATE_COLUMNS,
         extrasaction="raise",
-        formatter=_format_pt_value,
     )
     return path
 
@@ -225,13 +222,18 @@ def write_pt_pattern_review_csv(
     """
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [_review_row(candidate) for candidate in candidates]
+    rows = [
+        _format_pt_row(
+            _review_row(candidate),
+            escaped_fields=_REVIEW_ESCAPED_FIELDS,
+        )
+        for candidate in candidates
+    ]
     write_delimited_rows(
         path,
         rows,
         PT_REVIEW_COLUMNS,
         extrasaction="raise",
-        formatter=_format_pt_value,
     )
     return path
 
@@ -243,12 +245,15 @@ def write_pt_pattern_evidence_csv(
     """Write the Pt Discovery Evidence CSV v1 contract."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        _format_pt_row(row, escaped_fields=_EVIDENCE_ESCAPED_FIELDS)
+        for row in evidence_rows
+    ]
     write_delimited_rows(
         path,
-        evidence_rows,
+        rows,
         PT_EVIDENCE_COLUMNS,
         extrasaction="raise",
-        formatter=_format_pt_value,
     )
     return path
 
@@ -380,7 +385,21 @@ def _build_review_note(candidate: PtPatternCandidate) -> str:
     )
 
 
-def _format_pt_value(value: object) -> str:
+def _format_pt_row(
+    row: Mapping[str, object],
+    *,
+    escaped_fields: frozenset[str],
+) -> dict[str, str]:
+    return {
+        column: _format_pt_value(
+            value,
+            escape_formula=column in escaped_fields,
+        )
+        for column, value in row.items()
+    }
+
+
+def _format_pt_value(value: object, *, escape_formula: bool) -> str:
     if value is None:
         return ""
     if isinstance(value, bool):
@@ -391,4 +410,5 @@ def _format_pt_value(value: object) -> str:
         return f"{value:.6g}"
     if isinstance(value, int):
         return str(value)
-    return escape_excel_formula(str(value))
+    text = str(value)
+    return escape_excel_formula(text) if escape_formula else text
