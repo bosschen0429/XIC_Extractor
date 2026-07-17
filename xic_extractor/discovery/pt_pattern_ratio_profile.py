@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import html
 import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
+from xic_extractor.discovery.pt_pattern_ratio_report import (
+    render_ratio_profile_html as _render_ratio_profile_html,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
-    format_diagnostic_value,
     optional_float,
     read_delimited_rows,
     text_value,
@@ -29,6 +30,9 @@ RATIO_NAMES = (
     "plus1_over_base_height_ratio",
     "plus2_over_base_height_ratio",
     "plus4_over_base_height_ratio",
+    "base_over_plus1_height_ratio",
+    "base_over_plus2_height_ratio",
+    "base_over_plus4_height_ratio",
     "fh_base_to_plus1_height_ratio",
     "fh_base_to_plus2_height_ratio",
     "fh_base_to_plus4_height_ratio",
@@ -37,6 +41,9 @@ RATIO_NAMES = (
     "plus1_over_base_area_ratio",
     "plus2_over_base_area_ratio",
     "plus4_over_base_area_ratio",
+    "base_over_plus1_area_ratio",
+    "base_over_plus2_area_ratio",
+    "base_over_plus4_area_ratio",
     "fh_base_to_plus1_area_ratio",
     "fh_base_to_plus2_area_ratio",
     "fh_base_to_plus4_area_ratio",
@@ -92,6 +99,20 @@ RATIO_SUMMARY_COLUMNS = (
     "outlier_low_count",
     "outlier_high_count",
     "outlier_count",
+)
+
+RATIO_FORMULA_COLUMNS = (
+    "schema_version",
+    "readiness_tier",
+    "evidence_owner",
+    "authority_scope",
+    "profile_id",
+    "ratio_name",
+    "formula_family",
+    "numerator",
+    "denominator",
+    "measurement_basis",
+    "interpretation_note",
 )
 
 _CANDIDATE_REQUIRED_COLUMNS = (
@@ -185,6 +206,7 @@ def run_ratio_profile(
     profile_csv = output_dir / "accepted_ratio_profile.csv"
     summary_csv = output_dir / "accepted_ratio_summary.csv"
     background_summary_csv = output_dir / "rejected_ratio_background_summary.csv"
+    formula_csv = output_dir / "ratio_formula_manifest.csv"
     html_path = output_dir / "pt_pattern_ratio_profile.html"
     summary_json = output_dir / "pt_pattern_ratio_profile_summary.json"
 
@@ -195,11 +217,17 @@ def run_ratio_profile(
         background_summary,
         RATIO_SUMMARY_COLUMNS,
     )
+    write_delimited_rows(
+        formula_csv,
+        ratio_formula_manifest_rows(profile_id=profile_id),
+        RATIO_FORMULA_COLUMNS,
+    )
     html_path.write_text(
         render_ratio_profile_html(
             primary_rows=primary_rows,
             primary_summary=primary_summary,
             background_summary=background_summary,
+            formula_rows=ratio_formula_manifest_rows(profile_id=profile_id),
             profile_id=profile_id,
         ),
         encoding="utf-8",
@@ -228,6 +256,7 @@ def run_ratio_profile(
             "accepted_ratio_profile_csv": str(profile_csv),
             "accepted_ratio_summary_csv": str(summary_csv),
             "rejected_ratio_background_summary_csv": str(background_summary_csv),
+            "ratio_formula_manifest_csv": str(formula_csv),
             "html": str(html_path),
         },
     }
@@ -239,8 +268,178 @@ def run_ratio_profile(
         "accepted_ratio_profile_csv": profile_csv,
         "accepted_ratio_summary_csv": summary_csv,
         "rejected_ratio_background_summary_csv": background_summary_csv,
+        "ratio_formula_manifest_csv": formula_csv,
         "html": html_path,
         "summary_json": summary_json,
+    }
+
+
+def ratio_formula_manifest_rows(*, profile_id: str) -> tuple[dict[str, object], ...]:
+    """Describe every emitted ratio formula without assigning detector authority."""
+
+    rows: list[dict[str, object]] = []
+    for measurement_basis in ("height", "area"):
+        rows.extend(
+            [
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"plus1_over_base_{measurement_basis}_ratio",
+                    formula_family="position_over_base",
+                    numerator="+1 position",
+                    denominator="base position",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Direct candidate CSV ratio; useful for observed "
+                        "position enrichment relative to base."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"plus2_over_base_{measurement_basis}_ratio",
+                    formula_family="position_over_base",
+                    numerator="+2 position",
+                    denominator="base position",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Direct candidate CSV ratio; useful for observed "
+                        "position enrichment relative to base."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"plus4_over_base_{measurement_basis}_ratio",
+                    formula_family="position_over_base",
+                    numerator="+4 position",
+                    denominator="base position",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Direct candidate CSV ratio; useful for observed "
+                        "position enrichment relative to base."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"base_over_plus1_{measurement_basis}_ratio",
+                    formula_family="base_over_position",
+                    numerator="base position",
+                    denominator="+1 position",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Base-as-numerator view; matches the historical "
+                        "positive delta pair direction."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"base_over_plus2_{measurement_basis}_ratio",
+                    formula_family="base_over_position",
+                    numerator="base position",
+                    denominator="+2 position",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Base-as-numerator view; matches the historical "
+                        "positive delta pair direction."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"base_over_plus4_{measurement_basis}_ratio",
+                    formula_family="base_over_position",
+                    numerator="base position",
+                    denominator="+4 position",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Base-as-numerator view; matches the historical "
+                        "positive delta pair direction."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"fh_base_to_plus1_{measurement_basis}_ratio",
+                    formula_family="historical_featurehunter_pair",
+                    numerator="lower-m/z precursor ion",
+                    denominator="higher-m/z precursor ion prime",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Alias for base/+1 retained as historical comparator, "
+                        "not Pt-pattern authority."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"fh_base_to_plus2_{measurement_basis}_ratio",
+                    formula_family="historical_featurehunter_pair",
+                    numerator="lower-m/z precursor ion",
+                    denominator="higher-m/z precursor ion prime",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Alias for base/+2 retained as historical comparator, "
+                        "not Pt-pattern authority."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"fh_base_to_plus4_{measurement_basis}_ratio",
+                    formula_family="historical_featurehunter_pair",
+                    numerator="lower-m/z precursor ion",
+                    denominator="higher-m/z precursor ion prime",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "Alias for base/+4 retained as historical comparator, "
+                        "not Pt-pattern authority."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"plus1_over_plus2_{measurement_basis}_ratio",
+                    formula_family="plus1_anchor",
+                    numerator="+1 position",
+                    denominator="+2 position",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "+1-normalized review view because +1 is expected to "
+                        "be a strong Pt position."
+                    ),
+                ),
+                _formula_row(
+                    profile_id=profile_id,
+                    ratio_name=f"plus1_over_plus4_{measurement_basis}_ratio",
+                    formula_family="plus1_anchor",
+                    numerator="+1 position",
+                    denominator="+4 position",
+                    measurement_basis=measurement_basis,
+                    interpretation_note=(
+                        "+1-normalized review view because +1 is expected to "
+                        "be a strong Pt position."
+                    ),
+                ),
+            ]
+        )
+    return tuple(rows)
+
+
+def _formula_row(
+    *,
+    profile_id: str,
+    ratio_name: str,
+    formula_family: str,
+    numerator: str,
+    denominator: str,
+    measurement_basis: str,
+    interpretation_note: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "readiness_tier": READINESS_TIER,
+        "evidence_owner": EVIDENCE_OWNER,
+        "authority_scope": AUTHORITY_SCOPE,
+        "profile_id": profile_id,
+        "ratio_name": ratio_name,
+        "formula_family": formula_family,
+        "numerator": numerator,
+        "denominator": denominator,
+        "measurement_basis": measurement_basis,
+        "interpretation_note": interpretation_note,
     }
 
 
@@ -249,56 +448,18 @@ def render_ratio_profile_html(
     primary_rows: Sequence[Mapping[str, object]],
     primary_summary: Sequence[Mapping[str, object]],
     background_summary: Sequence[Mapping[str, object]],
+    formula_rows: Sequence[Mapping[str, object]],
     profile_id: str,
 ) -> str:
-    """Render a static diagnostic-only ratio profile page."""
+    """Render the chart-first diagnostic-only ratio profile page."""
 
-    outlier_rows = [
-        row for row in primary_rows if text_value(row.get("ratio_outlier_count")) != "0"
-    ]
-    return "\n".join(
-        [
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '<meta charset="utf-8">',
-            "<title>Pt Pattern Ratio Profile</title>",
-            "<style>",
-            _html_css(),
-            "</style>",
-            "</head>",
-            "<body>",
-            "<main>",
-            "<header>",
-            "<h1>Pt Pattern Ratio Profile</h1>",
-            f"<p>{_e(profile_id)} · {READINESS_TIER} · ratio profile only</p>",
-            "</header>",
-            '<section class="summary-grid">',
-            _metric_card("primary population", len(primary_rows)),
-            _metric_card(
-                "background population",
-                _population_count(background_summary),
-            ),
-            _metric_card("tail review rows", len(outlier_rows)),
-            "</section>",
-            "<section>",
-            "<h2>Distribution Summary</h2>",
-            _summary_table(primary_summary, background_summary),
-            "</section>",
-            "<section>",
-            "<h2>RT / Ratio Scatter</h2>",
-            _scatter_svg(primary_rows),
-            "</section>",
-            "<section>",
-            "<h2>Tail Review Rows</h2>",
-            _outlier_table(outlier_rows),
-            "</section>",
-            "</main>",
-            "</body>",
-            "</html>",
-        ]
+    return _render_ratio_profile_html(
+        primary_rows=primary_rows,
+        primary_summary=primary_summary,
+        background_summary=background_summary,
+        formula_rows=formula_rows,
+        profile_id=profile_id,
     )
-
 
 def _profile_row(
     candidate: Mapping[str, str],
@@ -342,6 +503,9 @@ def _profile_row(
         "plus1_over_base_height_ratio": plus1_height,
         "plus2_over_base_height_ratio": plus2_height,
         "plus4_over_base_height_ratio": plus4_height,
+        "base_over_plus1_height_ratio": _reciprocal(plus1_height),
+        "base_over_plus2_height_ratio": _reciprocal(plus2_height),
+        "base_over_plus4_height_ratio": _reciprocal(plus4_height),
         "fh_base_to_plus1_height_ratio": _reciprocal(plus1_height),
         "fh_base_to_plus2_height_ratio": _reciprocal(plus2_height),
         "fh_base_to_plus4_height_ratio": _reciprocal(plus4_height),
@@ -350,6 +514,9 @@ def _profile_row(
         "plus1_over_base_area_ratio": plus1_area,
         "plus2_over_base_area_ratio": plus2_area,
         "plus4_over_base_area_ratio": plus4_area,
+        "base_over_plus1_area_ratio": _reciprocal(plus1_area),
+        "base_over_plus2_area_ratio": _reciprocal(plus2_area),
+        "base_over_plus4_area_ratio": _reciprocal(plus4_area),
         "fh_base_to_plus1_area_ratio": _reciprocal(plus1_area),
         "fh_base_to_plus2_area_ratio": _reciprocal(plus2_area),
         "fh_base_to_plus4_area_ratio": _reciprocal(plus4_area),
@@ -543,190 +710,3 @@ def _reciprocal(value: float | None) -> float | None:
     if value is None or value <= 0:
         return None
     return 1 / value
-
-
-def _population_count(rows: Sequence[Mapping[str, object]]) -> int:
-    if not rows:
-        return 0
-    return int(optional_float(rows[0].get("row_count")) or 0)
-
-
-def _summary_table(
-    primary_summary: Sequence[Mapping[str, object]],
-    background_summary: Sequence[Mapping[str, object]],
-) -> str:
-    rows = [
-        row
-        for row in (*primary_summary, *background_summary)
-        if text_value(row.get("ratio_name")).endswith("_height_ratio")
-    ]
-    header = (
-        "<tr><th>population</th><th>ratio</th><th>n</th><th>median</th>"
-        "<th>q25</th><th>q75</th><th>q95</th><th>tail rows</th></tr>"
-    )
-    body = "\n".join(
-        "<tr>"
-        f"<td>{_e(_display_population(row.get('population_label')))}</td>"
-        f"<td>{_e(row.get('ratio_name'))}</td>"
-        f"<td>{_e(row.get('row_count'))}</td>"
-        f"<td>{_e(row.get('median'))}</td>"
-        f"<td>{_e(row.get('q25'))}</td>"
-        f"<td>{_e(row.get('q75'))}</td>"
-        f"<td>{_e(row.get('q95'))}</td>"
-        f"<td>{_e(row.get('outlier_count'))}</td>"
-        "</tr>"
-        for row in rows
-    )
-    return f'<table class="data-table">{header}<tbody>{body}</tbody></table>'
-
-
-def _outlier_table(rows: Sequence[Mapping[str, object]]) -> str:
-    if not rows:
-        return "<p>No tail review rows in the primary population.</p>"
-    header = (
-        "<tr><th>candidate</th><th>m/z</th><th>RT min</th>"
-        "<th>tail count</th><th>ratio fields</th></tr>"
-    )
-    body = "\n".join(
-        "<tr>"
-        f"<td>{_e(row.get('candidate_id'))}</td>"
-        f"<td>{_e(row.get('base_mz'))}</td>"
-        f"<td>{_e(row.get('base_rt_apex_min'))}</td>"
-        f"<td>{_e(row.get('ratio_outlier_count'))}</td>"
-        f"<td>{_e(row.get('ratio_extreme_columns'))}</td>"
-        "</tr>"
-        for row in rows[:50]
-    )
-    return f'<table class="data-table">{header}<tbody>{body}</tbody></table>'
-
-
-def _scatter_svg(rows: Sequence[Mapping[str, object]]) -> str:
-    points = [
-        (
-            optional_float(row.get("base_rt_apex_min")),
-            optional_float(row.get("plus1_over_plus4_height_ratio")),
-        )
-        for row in rows
-    ]
-    points = [(x, y) for x, y in points if x is not None and y is not None]
-    if not points:
-        return "<p>No plottable ratio values.</p>"
-    xs = [point[0] for point in points]
-    ys = [math.log10(point[1]) if point[1] > 0 else 0 for point in points]
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    plot_width = 820
-    plot_height = 280
-    left_pad = 52
-    top_pad = 24
-    inner_width = plot_width - 84
-    inner_height = plot_height - 64
-    circles = []
-    for x_value, y_ratio in points:
-        y_value = math.log10(y_ratio) if y_ratio > 0 else 0
-        x = left_pad + _scale(x_value, x_min, x_max, inner_width)
-        y = top_pad + inner_height - _scale(y_value, y_min, y_max, inner_height)
-        circles.append(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="3.5" />')
-    return (
-        f'<svg viewBox="0 0 {plot_width} {plot_height}" '
-        'role="img" aria-label="RT by plus one over plus four height ratio">'
-        f'<rect x="0" y="0" width="{plot_width}" height="{plot_height}" />'
-        f'<line x1="{left_pad}" y1="{top_pad + inner_height}" '
-        f'x2="{left_pad + inner_width}" y2="{top_pad + inner_height}" />'
-        f'<line x1="{left_pad}" y1="{top_pad}" '
-        f'x2="{left_pad}" y2="{top_pad + inner_height}" />'
-        + "".join(circles)
-        + '<text x="52" y="268">RT min</text>'
-        + '<text x="52" y="18">log10(+1/+4 height)</text>'
-        + "</svg>"
-    )
-
-
-def _scale(value: float, minimum: float, maximum: float, size: float) -> float:
-    if math.isclose(minimum, maximum):
-        return size / 2
-    return (value - minimum) / (maximum - minimum) * size
-
-
-def _metric_card(label: str, value: int) -> str:
-    return (
-        '<article class="metric-card">'
-        f"<strong>{_e(value)}</strong><span>{_e(label)}</span>"
-        "</article>"
-    )
-
-
-def _display_population(value: object) -> str:
-    label = text_value(value)
-    if label == PRIMARY_POPULATION:
-        return "primary population"
-    if label == BACKGROUND_POPULATION:
-        return "background population"
-    return label
-
-
-def _e(value: object) -> str:
-    return html.escape(format_diagnostic_value(value))
-
-
-def _html_css() -> str:
-    return """
-:root {
-  color: #1f2933;
-  background: #f5f7f8;
-  font-family: Inter, Segoe UI, Arial, sans-serif;
-}
-body { margin: 0; }
-main { max-width: 1160px; margin: 0 auto; padding: 28px; }
-header { margin-bottom: 20px; }
-h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: 0; }
-h2 { margin-top: 30px; font-size: 20px; letter-spacing: 0; }
-p { color: #52606d; }
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-}
-.metric-card {
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 16px;
-}
-.metric-card strong {
-  display: block;
-  font-size: 28px;
-  line-height: 1.1;
-}
-.metric-card span {
-  display: block;
-  margin-top: 6px;
-  color: #52606d;
-}
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: #ffffff;
-  border: 1px solid #d9e2ec;
-}
-.data-table th,
-.data-table td {
-  padding: 8px 10px;
-  border-bottom: 1px solid #e4e7eb;
-  text-align: left;
-  font-size: 13px;
-}
-.data-table th { background: #eef2f4; color: #35424f; }
-svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  background: #ffffff;
-  border: 1px solid #d9e2ec;
-  border-radius: 8px;
-}
-svg rect { fill: #ffffff; }
-svg line { stroke: #9fb3c8; stroke-width: 1; }
-svg circle { fill: #1f7a8c; opacity: 0.72; }
-svg text { fill: #52606d; font-size: 13px; }
-"""

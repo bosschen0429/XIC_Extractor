@@ -7,8 +7,10 @@ from pathlib import Path
 from tools.diagnostics import pt_pattern_ratio_profile as ratio_profile_cli
 from xic_extractor.discovery import delta_mass_csv
 from xic_extractor.discovery.pt_pattern_ratio_profile import (
+    RATIO_FORMULA_COLUMNS,
     RATIO_PROFILE_COLUMNS,
     RATIO_SUMMARY_COLUMNS,
+    ratio_formula_manifest_rows,
     run_ratio_profile,
 )
 from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
@@ -50,6 +52,9 @@ def test_ratio_profile_writes_primary_rows_without_gate_language(
     assert first["fh_base_to_plus1_height_ratio"] == "1"
     assert first["fh_base_to_plus2_height_ratio"] == "2"
     assert first["fh_base_to_plus4_height_ratio"] == "5"
+    assert first["base_over_plus1_height_ratio"] == "1"
+    assert first["base_over_plus2_height_ratio"] == "2"
+    assert first["base_over_plus4_height_ratio"] == "5"
     assert first["plus1_over_base_height_ratio"] == "1"
     assert first["plus1_over_plus2_height_ratio"] == "2"
     assert first["plus1_over_plus4_height_ratio"] == "5"
@@ -105,6 +110,20 @@ def test_ratio_profile_summarizes_primary_and_background_populations(
     assert summary["changes_export"] is False
     assert summary["primary_row_count"] == 5
     assert summary["background_row_count"] == 2
+    formula_rows = read_delimited_rows(
+        outputs["ratio_formula_manifest_csv"],
+        required_columns=RATIO_FORMULA_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    base_plus1 = next(
+        row
+        for row in formula_rows
+        if row["ratio_name"] == "base_over_plus1_height_ratio"
+    )
+    assert base_plus1["formula_family"] == "base_over_position"
+    assert base_plus1["numerator"] == "base position"
+    assert base_plus1["denominator"] == "+1 position"
 
 
 def test_ratio_profile_cli_writes_static_html_without_call_words(
@@ -133,7 +152,33 @@ def test_ratio_profile_cli_writes_static_html_without_call_words(
     assert "diagnostic_only" in html
     assert "primary population" in html
     assert "background population" in html
+    assert "先看結論" in html
+    assert "Ratio 怎麼看" in html
+    assert "Formula 判讀" in html
+    assert "Debug: 完整 formula manifest" in html
+    assert "+1 / base height" in html
+    assert "base_over_plus1_height_ratio" in html
+    assert 'data-chart="ratio-intervals"' in html
+    assert 'data-chart="rt-ratio-small-multiples"' in html
+    assert "accepted 與 background" in html
+    assert "12.5-13.5 min" in html
     assert not re.search(r"\b(accept|reject|pass|fail)\b", html.lower())
+
+
+def test_ratio_formula_manifest_keeps_featurehunter_as_comparator_only() -> None:
+    rows = ratio_formula_manifest_rows(profile_id="fixture_ratio_profile")
+
+    assert len(rows) == 22
+    by_name = {row["ratio_name"]: row for row in rows}
+    assert by_name["fh_base_to_plus1_height_ratio"]["formula_family"] == (
+        "historical_featurehunter_pair"
+    )
+    assert by_name["fh_base_to_plus1_height_ratio"]["numerator"] == (
+        "lower-m/z precursor ion"
+    )
+    assert by_name["plus1_over_plus4_height_ratio"]["formula_family"] == (
+        "plus1_anchor"
+    )
 
 
 def _write_profile_inputs(tmp_path: Path) -> tuple[Path, Path]:

@@ -44,6 +44,7 @@ _SCAN_PROXY_LABELS = (_BASE_LABEL, *_NON_BASE_LABELS)
 _EXTERNAL_FEATURE_SOURCE_PREFIX = "external_feature_table:"
 _UNSPECIFIED_TRACE_QUALITY = "UNSPECIFIED"
 _LOCAL_MS1_FEATURE_SOURCE_LEVEL_STATUS = "feature_source_detected"
+PT_PATTERN_CANDIDATE_SCHEMA_VERSION = "pt_pattern_candidates.v1"
 
 
 @dataclass(frozen=True)
@@ -557,7 +558,7 @@ def _build_candidate(
     )
 
     return PtPatternCandidate(
-        schema_version="pt_pattern_candidates.v1",
+        schema_version=PT_PATTERN_CANDIDATE_SCHEMA_VERSION,
         sample_stem=sample_stem,
         method_label=settings.method_label,
         pattern_id="pt",
