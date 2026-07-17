@@ -1721,7 +1721,7 @@ joining `pt_pattern_candidates.csv` with either the legacy full-window trace
 summary/metrics or the separate anchor-local summary/metrics. The output is a
 small CSV with blank
 `human_review_decision` / `human_review_note` columns for accepted/rejected/
-uncertain oracle work plus a JSON sidecar.
+uncertain adjudication work plus a JSON sidecar.
 **Topic group**: `pt_pattern_review_packet.py` +
 `xic_extractor.discovery.pt_pattern_review_packet`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
@@ -1729,10 +1729,12 @@ uncertain oracle work plus a JSON sidecar.
 create candidates, mutate Discovery outputs, read Alignment/Backfill state, or
 write Matrix/workbook artifacts. The sidecar records
 `readiness_tier = diagnostic_only`, `oracle_status = pending_human_review`, and
-`evidence_owner = xic_extractor.discovery.pt_pattern_trace_evidence`; rows only
-become an oracle after human review fills and promotes them through a separate
-promotion packet. Legacy trace inputs retain packet schema v2 and its original
-columns; anchor-local inputs use packet schema v3 with explicit
+`evidence_owner = xic_extractor.discovery.pt_pattern_trace_evidence`. The
+historical `oracle_status` field names workflow state only: filled and promoted
+human labels remain bounded adjudication evidence, not independent ground truth.
+An `uncertain` label stays unresolved and must not be counted as a true reject.
+Legacy trace inputs retain packet schema v2 and its original columns;
+anchor-local inputs use packet schema v3 with explicit
 `anchor_segmentation_*` evidence fields.
 
 ---
@@ -1757,69 +1759,97 @@ visual call before opening the sealed machine-call CSV.
 review-packet and trace-points CSVs, writes an HTML gallery, a sealed machine
 call CSV, and a summary JSON with no call distribution. It does not open RAW,
 create candidates, mutate Discovery outputs, read Alignment/Backfill state, or
-write Matrix/workbook artifacts. The sealed machine-call CSV is not an oracle;
-it is revealed only after the user records independent review decisions. The
-HTML plots Gaussian15-smoothed traces for review and sealed machine calls use
-the same Gaussian15 trace-decision metrics. Raw trace-point CSVs remain raw
+write Matrix/workbook artifacts. The sealed machine-call CSV is not an oracle
+or final detector output; it is revealed only after the user records independent
+review decisions. The HTML plots Gaussian15-smoothed traces for review and
+sealed machine calls use the same Gaussian15 trace-decision metrics. Those calls
+are the current `trace_rule_call` proxy only. Raw trace-point CSVs remain raw
 vendor evidence and are not Matrix, counting, or quantitation authority. Legacy
 sealed-call output retains overlay schema v2; anchor-local packet or context
 inputs use overlay schema v3. Rendering, sealed-call projection, and artifact
-writing are maintained by separate package modules.
+writing are maintained by separate package modules. The writer rejects missing
+or extra candidates and requires the complete `base` / `+1` / `+2` / `+4`
+trace-position set for every reviewed candidate. Its summary binds the review
+packet, primary/context traces, gallery HTML, and sealed machine-call CSV by
+SHA-256. For schema v3, trace ambiguity, anchor segmentation, and boundary
+review must all be explicitly `clear`; any other state routes the sealed review
+projection to `uncertain`. This is not a threshold reject or product
+non-detection.
 
 ---
 
 ### `pt_pattern_oracle_promotion.py`
 
-**Purpose**: Validate adjudicated Pt pattern blind-review rows against their
-manual review packet provenance and write a bounded oracle promotion packet.
+**Purpose**: Validate adjudicated Pt pattern blind-review rows against the exact
+reviewed packet and blind-overlay artifact bundle, then write a historically
+named bounded adjudication packet.
 **Topic group**: `pt_pattern_oracle_promotion.py` +
 `xic_extractor.discovery.pt_pattern_oracle_promotion`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
-**Status note**: Production-candidate only for the bounded manual-oracle
-artifact. It consumes an adjudicated oracle CSV plus one or more manual-review
-packet CSVs, fails closed on blank, duplicate, unmatched, or `uncertain`
-adjudicated calls, and writes `pt_pattern_oracle_promotion_packet.csv` plus a
-summary JSON with input SHA-256 provenance. It does not open RAW, create
+**Status note**: Diagnostic-only despite the historical `oracle` names in its
+schema and paths. Promotion schema v2 requires each adjudicated row to carry a
+fresh human `accept` or `reject`, the SHA-256 of its review-packet CSV, and the
+SHA-256 of a supplied blind-overlay summary. The tool re-hashes every packet,
+trace CSV, gallery HTML, sealed machine-call CSV, and summary named by that
+bundle; legacy logical IDs without this exact artifact binding fail closed.
+Blank, duplicate, unmatched, or `uncertain` calls are excluded rather than
+coerced, and the output records `oracle_detection_status = not_asserted`. It
+does not open RAW, create
 candidates, recompute trace evidence, mutate Discovery outputs, read
-Alignment/Backfill state, or write Matrix/workbook artifacts.
+Alignment/Backfill state, or write Matrix/workbook artifacts. Excluding an
+`uncertain` row from a promotion packet does not turn it into a reject, and the
+packet does not establish detector accuracy or physical Pt identity.
 
 ---
 
 ### `pt_pattern_oracle_refresh.py`
 
-**Purpose**: Compare an older adjudicated Pt pattern oracle CSV with current
-manual-review packets and sealed machine-call CSVs, then write a v2 refresh
+**Purpose**: Compare an older, historically named Pt pattern adjudication CSV
+with current manual-review packets and sealed machine-call CSVs, then write a v2 refresh
 draft, a pending human-review worklist, stale old-oracle rows, and a summary
 JSON with input SHA-256 provenance.
 **Topic group**: `pt_pattern_oracle_refresh.py` +
 `xic_extractor.discovery.pt_pattern_oracle_refresh`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
-**Status note**: Diagnostic-only oracle maintenance surface. It does not open
-RAW, create candidates, recompute trace evidence, mutate Discovery outputs,
-read Alignment/Backfill state, or write Matrix/workbook artifacts. It carries
-old human labels forward only when the current packet row id and candidate id
-match, leaves new or conflicting rows as `pending_human_review`, and reports
-old oracle rows that no longer exist in the current packet as stale. A refresh
-draft is promotable only after every pending/conflicting row is resolved.
+**Status note**: Diagnostic-only adjudication-maintenance surface. It does not
+open RAW, create candidates, recompute trace evidence, mutate Discovery outputs,
+read Alignment/Backfill state, or write Matrix/workbook artifacts. It retains
+legacy columns for audit, but matching packet-row and candidate IDs prove only
+logical continuity: without exact reviewed-artifact identity, old labels remain
+`pending_human_review` instead of being carried forward. Candidate conflicts
+remain conflicts, and old rows absent from the current packet are reported as
+stale. A refresh draft can be packaged only after every pending/conflicting row
+is freshly resolved under the promotion v2 provenance contract. The
+historical repaired 32-row packet is now stale calibration context: its labels
+were reviewed against an older bounded slice, are not independent ground truth,
+and cannot be carried into a changed packet merely because a legacy row ID
+matches.
 
 ---
 
 ### `pt_pattern_oracle_thresholds.py`
 
-**Purpose**: Calibrate simple Pt pattern trace thresholds against the current
-bounded manual oracle promotion packet. It joins `pt_pattern_oracle_promotion`
+**Purpose**: Calibrate simple Pt pattern trace thresholds against a bounded
+reviewed-label packet. It joins `pt_pattern_oracle_promotion`
 rows with current manual-review packet metrics, sweeps full-pattern
 apex/Pearson/overlap threshold candidates, and writes a threshold-candidate CSV,
 a case-level audit CSV, and a summary JSON.
 **Topic group**: `pt_pattern_oracle_thresholds.py` +
-`xic_extractor.discovery.pt_pattern_oracle_thresholds`
+`xic_extractor.discovery.pt_pattern_oracle_thresholds` +
+`xic_extractor.discovery.pt_pattern_oracle_replay_contract`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
 **Status note**: Diagnostic-only threshold calibration surface. It does not
 open RAW, create candidates, recompute trace evidence, mutate Discovery
 outputs, read Alignment state, or write Matrix/workbook artifacts. The
-recommended rule is review evidence only; it must not be treated as detector
+calibration consumer validates packet schema v2/v3 and requires each promotion
+row's schema/status, candidate/sample identity, and review-packet SHA-256 to
+match the actual packet supplying the metrics. A stale label cannot be paired
+with another packet merely by reusing `packet_row_id`. The recommended rule is
+review evidence only; it must not be treated as detector
 activation, counted-detection authority, or export authority without a later
-explicit public-surface contract.
+explicit public-surface contract. The historical zero-error result is
+resubstitution against the same 32 reviewed rows used for calibration; it is not
+ground-truth accuracy, held-out validation, or evidence of generalization.
 
 ---
 
@@ -1864,8 +1894,8 @@ mass, quality, RT, or matcher-emission condition.
 **Topic group**: `pt_pattern_candidate_assembly_replay.py` +
 `xic_extractor.discovery.pt_pattern_candidate_assembly_replay`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
-**Status note**: Diagnostic-only no-RAW replay. It reuses the production Pt
-matcher and shared mass-accuracy helpers, writes row-level CSV, summary JSON,
+**Status note**: Diagnostic-only no-RAW replay. It reuses the current Pt
+candidate matcher and shared mass-accuracy helpers, writes row-level CSV, summary JSON,
 and chart-first HTML, and does not change detector rules, counted detection,
 export, Alignment/Backfill, or Matrix authority.
 
@@ -1873,9 +1903,10 @@ export, Alignment/Backfill, or Matrix authority.
 
 ### `pt_pattern_same_scan_replay.py`
 
-**Purpose**: Evaluate fixed base, +1, +2, and +4 m/z windows in the same
-Fullscan MS1 scans for currently accepted Pt hypotheses and known inclusion-list
-controls, then expose strict four-position and core-with-conditional-+4 evidence.
+**Purpose**: Evaluate fixed theoretical base, +1, +2, and +4 m/z windows in the
+same Fullscan MS1 scans for current positive diagnostic hypotheses and known
+inclusion-list controls, then expose strict four-position and
+core-with-conditional-+4 window-occupancy evidence.
 **Topic group**: `pt_pattern_same_scan_replay.py` +
 `xic_extractor.discovery.pt_pattern_same_scan_evidence` +
 `xic_extractor.discovery.pt_pattern_same_scan_replay`
@@ -1887,15 +1918,17 @@ counts a component as resolved only when exactly one candidate has full
 base/+1/+2/+4 strict support; core-only support remains diagnostic and cannot
 nominate a preferred Discovery hypothesis. It does not
 change feature detection, candidate assembly, ratios, counted detections,
-Alignment/Backfill, export, or Matrix authority.
+Alignment/Backfill, export, or Matrix authority. A populated theoretical m/z
+window does not identify which chemical species contributed its intensity and
+does not prove an exact centroid-to-envelope assignment.
 
 ---
 
 ### `pt_pattern_conflict_graph_replay.py`
 
 **Purpose**: Build a provenance-bound pairwise shared-claim graph over frozen Pt
-hypotheses, then compare connected-component-wide `at_most_one` semantics with
-the actual pairwise incompatibility structure.
+candidate rows, then compare connected-component-wide `at_most_one` semantics
+with the pairwise incompatibility structure represented by those rows.
 **Topic group**: `pt_pattern_conflict_graph_replay.py` +
 `xic_extractor.discovery.pt_pattern_conflict_graph` +
 `xic_extractor.discovery.pt_pattern_conflict_graph_replay`
@@ -1907,7 +1940,9 @@ edge, component, legacy comparison, and summary sidecars. The semantic summary
 contains hashes and graph identity but no path or report label; those
 presentation details live in a separate run-metadata JSON. It marks where
 component-wide `at_most_one` would overconstrain pairwise-compatible
-hypotheses. It does not select a
+hypotheses. Current vertices are serialized greedy matcher representatives, not
+complete enumeration of all compatible base/+1/+2/+4 assignments; the replay
+cannot recover alternatives pruned before candidate emission. It does not select a
 hypothesis, instantiate or count an event, change current machine calls, read
 Alignment/Backfill state, or write Matrix/workbook/export artifacts.
 
@@ -1932,13 +1967,14 @@ Discovery seed.
 
 ### `pt_pattern_diagnostic_gate.py`
 
-**Purpose**: Apply the calibrated Pt full-pattern diagnostic gate to one or
+**Purpose**: Apply the current Pt full-pattern diagnostic trace rule to one or
 more manual-review packet CSVs or full `pt_pattern_trace_summary.csv` inputs,
-optionally replaying against a bounded oracle promotion packet, and write
+optionally replaying against a bounded reviewed-label packet, and write
 row-level gate calls plus a summary JSON.
 **Topic group**: `pt_pattern_diagnostic_gate.py` +
 `xic_extractor.discovery.pt_pattern_diagnostic_gate` +
-`xic_extractor.discovery.pt_pattern_evidence_rule`
+`xic_extractor.discovery.pt_pattern_evidence_rule` +
+`xic_extractor.discovery.pt_pattern_oracle_replay_contract`
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
 **Status note**: Diagnostic-only replay surface. It does not open RAW, create
 candidates, recompute trace evidence, mutate Discovery outputs, read Alignment
@@ -1949,8 +1985,12 @@ packet or trace-summary rows into replay artifacts. `--trace-summary-input
 SOURCE_LABEL=PATH` lets the same calibrated rule run on full trace-diagnosed
 candidate slices instead of only bounded manual-review packets.
 `--require-zero-fpfn` makes the CLI fail if bounded-oracle replay has any false
-positive or false negative, but that pass/fail result is only a diagnostic gate
-and must not be treated as detector activation, counted-detection authority, or
+positive or false negative. Reviewed-label replay first requires an exact
+promotion-v2 row and actual review-packet SHA/candidate/sample match; synthetic
+trace-summary rows cannot stand in for that packet. The pass/fail result is
+still only a diagnostic gate against those reviewed labels. A zero-error result is resubstitution, not
+ground-truth accuracy or held-out validation, and must not be treated as final
+detector performance, detector activation, counted-detection authority, or
 export authority without a later public-surface contract.
 
 ---

@@ -16,8 +16,10 @@ path.
   cross-sample identity or matrix writes by themselves.
 - Discovery validation is method-specific. CID-NL 8RAW/85RAW fixtures are not
   universal Discovery gates; Pt pattern work should use Pt-method real samples,
-  trace/co-elution evidence, no-write authority checks, and manual oracle review
-  unless a later Pt owner explicitly names a different fixture.
+  trace/co-elution evidence, no-write authority checks, and independent human
+  adjudication unless a later Pt owner explicitly names a different fixture.
+  Reviewed Pt labels are method-development evidence, not ground truth or an
+  accuracy oracle by default.
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
   detail) and `discovery_review.csv` (compact human review).
 - Discovery `feature_family_id` remains a public output header and dataclass
@@ -98,7 +100,7 @@ afterward. For `pt_pattern + cid_nl(dR)`, CID-NL(dR) base candidates seed the
 base feature IDs, then Pt pattern evidence checks only those bases for
 `+1.002111`, `+2.002271`, and `+4.005213`.
 
-Delta Mass / Pt pattern evidence has two layers. The first layer is a
+Delta Mass / Pt pattern diagnostic evidence has two layers. The first layer is a
 scan-level delta-pattern seed: base / `+1.002111` / `+2.002271` / `+4.005213` are
 seen together in MS1 scans often enough to propose a sample-local candidate.
 The `+1.002111` position, experimentally referred to as the 195 position in the
@@ -113,11 +115,15 @@ structure from other elements such as `13C` and `15N` than the current
 `0/+1/+2/+4` evidence shape. The second layer is chromatographic co-elution
 confirmation: those four m/z positions, viewed as XIC traces or trace-like
 featurelets, have close RT/apex behavior and compatible peak shape. A
-scan-level hit by itself is a seed, not a complete Pt pattern detection. A Pt
-pattern candidate is detection-grade only when the delta-pattern seed and the
-co-elution evidence both support the same candidate. The scan-level RAW proxy
-remains a diagnostic bridge for the seed layer; it must not become Matrix
-authority or the whole product detector by itself.
+scan-level hit by itself is a seed, not a complete Pt pattern detection. When
+both layers support the same row, the result is a stronger diagnostic
+hypothesis, not a final detector call. The current v1 matcher greedily retains
+one compatible non-base feature per position for each base anchor. Its emitted
+rows therefore represent one serialized assignment per base, not enumeration
+of all compatible assignments; alternatives pruned during matching cannot be
+recovered by a later conflict-graph replay. The scan-level RAW proxy remains a
+diagnostic bridge for the seed layer; it must not become Matrix authority or
+the whole product detector by itself.
 
 Pt identity and quantitation intentionally use different position roles. The
 `base` / 0 position remains the canonical hypothesis identity anchor so the
@@ -130,22 +136,25 @@ authority: Pt pattern remains `diagnostic_only`, and its selected area stays
 unavailable until a separate quantitation/activation contract is validated.
 
 The science target for Pt pattern is a single Pt isotope envelope represented by
-the base/+1/+2/+4 positions. The current operational detector cannot prove that
+the base/+1/+2/+4 positions. The current diagnostic proxy cannot prove that
 physical identity directly; it uses the observable proxy of a sample-local full
 pattern plus close-apex co-elution support while ratio behavior and envelope
 overlap remain under review. Therefore, dense RT clusters, suspected isotope
 envelope collisions, and distorted position ratios are review evidence and
-oracle-building signals first. In V1, a candidate that passes the full-pattern
-seed and close-apex co-elution rule can still be called `detected` when ratios
-look unusual. Ratio and collision concerns may add ambiguity/review flags, but
-they must not be turned into a hard accept/reject gate until a bounded Pt oracle
-shows that they separate true and false patterns.
+label-development signals first. In V1, a candidate that passes the full-pattern
+seed and close-apex co-elution rule receives diagnostic
+`trace_rule_call = accept` even when ratios look unusual. That field must not be
+read as counted detection or human truth. Ratio and collision concerns may add
+ambiguity/review flags, but they must not become a hard accept/reject gate until
+an independent truth set shows that they separate physical Pt envelopes from
+false patterns. Current human `uncertain` labels are unresolved evidence, not
+true rejects.
 
 Pt pattern m/z arithmetic uses shared mass-accuracy primitives: expected m/z is
 the ppm denominator, exact Pt deltas are part of the built-in pattern contract,
 and local `_ppm()` helpers should not be added to the core matcher path.
 
-The product-facing Pt matcher consumes `DetectedFeature` rows, not centroid
+The Pt diagnostic candidate matcher consumes `DetectedFeature` rows, not centroid
 scan peaks. A detected-feature source must provide m/z, apex RT, positive
 height/intensity or area evidence. Area-only feature-detector tables are allowed
 as an intensity proxy for feature-level matching, but candidates from such rows
@@ -157,8 +166,9 @@ wide feature table CSV; for external source paths it writes a canonical
 `scripts/prepare_delta_mass_detected_features.py` keeps the same conversions
 available as a standalone preparation step.
 
-Local MS1 feature table generation is the product-facing replacement path for
-the scan-level Pt proxy. `scripts/build_local_ms1_feature_table.py` builds a
+Local MS1 feature table generation is the candidate-source replacement path for
+the scan-level Pt proxy. It does not by itself create product detections.
+`scripts/build_local_ms1_feature_table.py` builds a
 single-sample `detected_features.csv` from one RAW file using a MZmine-inspired
 seeded chromatogram builder: mass-detected MS1 points above
 `mass_detection_noise_level` are collected once, high-intensity points above
@@ -186,11 +196,11 @@ The reusable co-elution support semantics belong in
 RAW files and write CSV/JSON probes, but they should call this package owner
 instead of carrying their own Pt trace-support rules.
 
-Pt pattern trace decisions use Gaussian15-smoothed XIC intensity as the
+Pt pattern diagnostic trace assessments use Gaussian15-smoothed XIC intensity as the
 decision basis for apex, shape similarity, active overlap, and support status.
 Raw vendor trace points remain in the artifacts as audit/reference evidence;
 they are not the default machine decision basis and are not quantitation
-authority. The only Pt pattern machine `detected` path is close-apex
+authority. The current positive `trace_rule_call` proxy is close-apex
 co-elution: the full base/+1/+2/+4 pattern must pass the combined diagnostic
 status, have all three non-base positions supported, keep the maximum apex
 delta at or below the larger of 0.6 seconds and 1.25 acquisition intervals,
@@ -198,8 +208,23 @@ keep Pearson-to-base at least 0.90, and keep active overlap at least 0.50.
 Shift-aware shape metrics stay in the artifacts as review evidence only.
 A translated-shape match with shifted Pearson-to-base
 at least 0.85 and absolute shift at most 45 seconds is reported as
-`shifted_shape_review_only`, not as `detected`; larger shifted-only matches are
-hard rejected as `shape_shift_above_threshold`.
+`shifted_shape_review_only`, not as a positive trace-rule call; larger
+shifted-only matches receive diagnostic reason `shape_shift_above_threshold`.
+Neither reason is an adjudicated human reject or a product non-detection.
+The blind-overlay sealed `machine_call` is a trace-review projection only. For
+anchor-local schema v3, trace ambiguity, anchor segmentation, and boundary
+review must all be explicitly `clear`; any missing, unknown, or review-required
+state returns `uncertain` rather than becoming a threshold reject or final
+detector decision.
+
+Human adjudication is bound to the exact review bundle, not just a logical row
+ID. The blind-overlay summary hashes the review packet, primary/context traces,
+gallery, and sealed calls. The historically named promotion step re-reads those
+artifacts, requires the recorded machine call to equal the sealed row, and
+emits `oracle_detection_status = not_asserted`. Threshold calibration and
+reviewed-label gate replay must then match the promotion row back to the actual
+review-packet SHA and candidate/sample identity. Legacy labels without that
+chain stay pending/stale diagnostic context.
 
 Because Gaussian15 is point-based, its time width depends on scan density.
 Trace diagnosis therefore records `median_rt_step_sec` and
@@ -220,9 +245,9 @@ a 20-second time-smoothed trace side by side while sealed machine calls continue
 to use the packet's trace-decision metrics.
 
 Intensity ratios are useful Pt-pattern evidence but are not a machine gate yet.
-Treat base/+1/+2/+4 ratios as ambiguity and review-priority signals until a
-bounded manual oracle proves they separate accepted and rejected cases beyond
-the close-apex co-elution metrics. Ratio is a future hard-gate candidate and
+Treat base/+1/+2/+4 ratios as ambiguity and review-priority signals until an
+independent truth set shows they separate physical Pt envelopes from false
+patterns beyond the close-apex co-elution metrics. Ratio is a future hard-gate candidate and
 should be studied with explicit experiment design, starting from the current
 Fullscan close-apex accepted set. Until that evidence exists, ratio fields only
 support human review, hypothesis generation, and outlier explanation. The first
@@ -266,19 +291,21 @@ than the raw FeatureHunter pairwise formula. The FeatureHunter formula is a
 historical comparator and possible failure source, not a Pt-pattern authority:
 ratio profiling should test whether FH-compatible `base/+delta` thresholds,
 `+1`-normalized ratios, or some other bounded ratio family better explains the
-accepted and rejected Pt candidates.
+human-adjudicated Pt candidates. Those labels may remain `uncertain` and are not
+ground truth unless a later evidence contract establishes that status.
 Smoothed-trace ratios must be labelled as decision-trace ratios, not raw
 abundance ratios: smoothing stabilizes apex/shape decisions but can attenuate
 or redistribute signal, especially when the effective smoothing window is short
 or trace density is high. Raw trace ratios and raw bounded-area ratios may be
 recorded as audit context, but raw traces do not become the default shape
-decision basis unless a later oracle proves that they improve discrimination.
+decision basis unless a later independent truth set shows that they improve
+discrimination.
 
 Small RT/apex shifts just beyond the close-apex threshold may be review evidence
 when expressed with `median_rt_step_sec`, apex-delta scan steps, and effective
-smoothing-window context. They must not become `detected` without a later
-bounded oracle showing improved discrimination without nearby-coeluter or
-tail-following failures.
+smoothing-window context. They must not become a product detection without a
+later independent truth set showing improved discrimination without
+nearby-coeluter or tail-following failures.
 
 For the current 20251210 Pt validation pair, the Fullscan RAW is the Discovery
 authority because it was acquired as high-resolution MS1 specifically to find
@@ -316,13 +343,14 @@ or Matrix changes.
 | `xic_extractor/discovery/local_ms1_features.py` | Local MS1 feature-source generator; screening evidence only, not trace/co-elution or quantitation authority |
 | `xic_extractor/discovery/delta_mass_pipeline.py` | Pt pattern Discovery pipeline; writes feature-level candidate/review output plus Discovery evidence rows |
 | `xic_extractor/discovery/pt_pattern_discovery_evidence.py` | Bridges feature-level Pt candidates with optional trace-summary rows; emits `pt_pattern_evidence.csv` rows and never grants Matrix/export authority |
-| `xic_extractor/discovery/pt_pattern_evidence_rule.py` | Package-owned reusable Pt full-pattern accept/reject rule for trace-diagnosed rows; not detector activation |
+| `xic_extractor/discovery/pt_pattern_evidence_rule.py` | Package-owned reusable diagnostic trace-rule classifier for trace-diagnosed rows; its accept/reject vocabulary is not human truth, counted detection, or detector activation |
 | `xic_extractor/discovery/pt_pattern_trace_evidence.py` | Package-owned Pt trace/co-elution support semantics |
-| `xic_extractor/discovery/pt_pattern_review_packet.py` | Bounded Pt manual-review packet builder; not oracle authority until reviewed |
+| `xic_extractor/discovery/pt_pattern_review_packet.py` | Bounded Pt manual-review packet builder; reviewed labels remain adjudication evidence, not ground-truth oracle authority |
 | `xic_extractor/discovery/pt_pattern_blind_overlay.py` | Blind Pt MS1/XIC overlay review surface; visual traces and sealed machine calls share the Gaussian15 trace-decision basis, and sealed calls are not oracle authority |
-| `xic_extractor/discovery/pt_pattern_oracle_promotion.py` | Bounded Pt manual-oracle promotion packet builder; production-candidate only for reviewed oracle rows, not detector or Matrix authority |
-| `xic_extractor/discovery/pt_pattern_oracle_thresholds.py` | Diagnostic-only threshold calibration against a bounded Pt manual oracle using the reusable Pt evidence rule; not detector activation |
-| `xic_extractor/discovery/pt_pattern_diagnostic_gate.py` | Diagnostic-only replay wrapper for the reusable Pt evidence rule against review packets or full trace summary rows, with optional bounded-oracle replay; not detector activation |
+| `xic_extractor/discovery/pt_pattern_oracle_promotion.py` | Historical-named bounded adjudication-packet builder; exact packet/gallery/sealed-call provenance is required, and the result remains `diagnostic_only` rather than ground truth, detector, or Matrix authority |
+| `xic_extractor/discovery/pt_pattern_oracle_replay_contract.py` | Shared fail-closed loader/validator that binds promotion-v2 rows to the actual v2/v3 review-packet SHA and row identity before threshold calibration or reviewed-label replay |
+| `xic_extractor/discovery/pt_pattern_oracle_thresholds.py` | Diagnostic-only threshold calibration against an exact-SHA-bound reviewed-label packet using the reusable Pt evidence rule; resubstitution fit is not detector accuracy or activation |
+| `xic_extractor/discovery/pt_pattern_diagnostic_gate.py` | Diagnostic-only replay wrapper for the reusable Pt evidence rule against review packets or full trace summary rows; optional reviewed-label replay requires exact packet provenance and is not detector validation or activation |
 | `xic_extractor/discovery/pt_pattern_ddms2_support_replay.py` | Diagnostic-only Fullscan-seeded DDMS2 support replay; not a DDMS2 global discovery denominator and not detector activation |
 | `scripts/run_discovery.py` | Discovery CLI entry point |
 | `scripts/prepare_delta_mass_detected_features.py` | Converts a normalized external detected-feature TSV or MZmine wide feature table CSV into standard `detected_features.csv`; no RAW access and no Matrix/Backfill authority |
@@ -337,9 +365,11 @@ Pt pattern Discovery additionally writes `pt_pattern_evidence.csv`
 (`pt_pattern_sidecar.v3`). `pt_pattern_evidence.csv` separates feature-level
 full-pattern seed status from trace-level evidence. If no trace summary is
 provided, trace rule fields are `not_evaluated`; if a trace summary is provided,
-the shared Pt rule writes `accept`/`reject` and `detected`/`non_detected`
-without changing Matrix, Backfill, counted detection, workbook, or export
-authority. The sidecar summary records trace status/call/reason counts so
+the shared Pt rule writes diagnostic `accept`/`reject` and legacy
+`detected`/`non_detected` projections without changing Matrix, Backfill, counted
+detection, workbook, or export authority. These fields are proxy assessments,
+not final detector or human calls. The sidecar summary records trace
+status/call/reason counts so
 partial trace-summary coverage is visible without opening the full evidence CSV.
 Future ratio or small-shift fields must follow the same no-write authority
 contract: they can explain ambiguity or route manual review, but they do not

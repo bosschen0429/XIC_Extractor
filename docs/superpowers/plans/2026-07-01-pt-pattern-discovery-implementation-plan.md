@@ -76,8 +76,9 @@ mz_error_ppm = (observed_mz - expected_mz) / expected_mz * 1e6
 - No OR/union strategy, z=2, negative mode, neutral-mass inference, adduct
   inference, Matrix writer authority, workbook Matrix change, or Backfill as
   counted detection in this implementation.
-- Validation status after implementation is at most `diagnostic_only` until the
-  user manually reviews candidate output and promotes a manual oracle.
+- Validation status after implementation remains `diagnostic_only`. Manual
+  review can create bounded adjudication evidence, but does not by itself
+  promote an independent oracle or detector authority.
 
 ## Mass Accuracy Migration Follow-Up List
 
@@ -170,8 +171,9 @@ Validation gate:
 - CLI parse/write smoke with synthetic detected-feature CSV.
 - Preset load/apply tests for `pt_pattern` and `pt_pattern_cid_nl_dr`.
 - Existing neutral-loss discovery tests must still pass.
-- Real sample candidate generation is diagnostic-only until manual review
-  promotes a regression oracle.
+- Real-sample candidate generation and reviewed labels remain diagnostic-only;
+  a regression oracle would require independent truth and a separate explicit
+  validation contract.
 - 8RAW/85RAW are not Pt pattern science gates by default. They belong to lanes
   whose data strategy names those fixtures; Pt pattern validation uses
   method-relevant samples, trace/co-elution evidence, and manual oracle review.
@@ -555,7 +557,9 @@ Required top-level shape:
 
 For real runs, `inputs.*` should record only the path string passed to the CLI.
 Do not normalize to machine-specific absolute paths in committed fixtures.
-`method_label` must equal the selected preset method label. For
+`method_label` must equal the selected preset method label. The tolerance
+values under `pattern` must record the effective matcher settings selected by
+the preset; the values shown above are the built-in defaults. For
 `pt_pattern_cid_nl_dr`, `inputs.cid_nl_candidates_csv` must be the CLI-provided
 string and must not be `null`. Sidecar tests must cover both `pt_pattern` and
 `pt_pattern_cid_nl_dr`.
@@ -787,8 +791,10 @@ def escape_excel_formula(value: str) -> str:
 - [ ] Update existing discovery CSV writer to use the shared helper only if its
       tests remain identical. Do not import `xic_extractor.alignment` from
       Discovery.
-- [ ] Format floats with the same precision style as existing discovery CSVs:
-      stable, compact, no unnecessary trailing zeros.
+- [ ] Format machine-handoff floats with a shortest round-trip-safe decimal
+      representation. Display-oriented six-significant-digit formatting is not
+      sufficient for downstream m/z centers because it can introduce ppm-scale
+      drift at high mass.
 - [ ] Add writer tests proving unexpected fields fail loudly and formula-like
       text is escaped consistently.
 - [ ] Preserve machine identifier fields exactly in candidate/evidence CSVs;
@@ -954,10 +960,12 @@ Steps:
 - [ ] For `pt_pattern_cid_nl_dr`, require `--cid-nl-candidates-csv`.
 - [ ] Parse existing `discovery_candidates.csv` rows for CID-NL base evidence.
 - [ ] Use a typed CID-NL candidate parser for composite joins. Required columns
-      must be present; `precursor_mz`, `ms1_apex_rt`, and `evidence_score` must
-      be finite when used; `neutral_loss_tag` and `discovery_candidate_state`
-      must match allowed values exactly. Missing or malformed values must raise
-      a clear error instead of being skipped.
+      include `candidate_id`, `ms1_feature_row_id`, `neutral_loss_tag`, and
+      `discovery_candidate_state`; `precursor_mz`, `ms1_apex_rt`, and
+      `evidence_score` must be finite when used; tag and state values must match
+      allowed values exactly. Missing or malformed values must raise a clear
+      error instead of being skipped. Formula-escaped machine identifiers are
+      ambiguous and must fail closed rather than being guessed or unescaped.
 - [ ] CID-NL base join predicate:
 
 ```text
@@ -965,6 +973,7 @@ Steps:
    same sample_stem
    neutral_loss_tag == DNA_dR
    discovery_candidate_state in {"ms1_feature_nl_supported", "ms1_feature_nl_rescued"}
+   Pt base source identity is declared cross-provider comparable
    cid_row.ms1_feature_row_id equals pt_base.source_feature_row_id or pt_base.feature_id
 
 2. m/z/RT fallback, only when Pt feature identity cannot be compared:
@@ -978,11 +987,18 @@ Steps:
 - [ ] If a same-feature identity match exists, it wins over every fallback
       match. If multiple same-feature rows match one Pt base, select highest
       `evidence_score`, then smallest absolute RT delta.
+- [ ] Detector-local identities, including local-MS1 and MZmine row IDs, are
+      never cross-provider comparable even when their strings happen to match a
+      CID-NL row ID. They may participate only through the bounded m/z/RT
+      fallback.
 - [ ] If fallback mode is used, write `cid_nl_base_join_mode = mz_rt_fallback`
       and include fallback wording in `reason`.
 - [ ] If multiple fallback CID-NL rows match one Pt base, select smallest
       absolute RT delta, then smallest absolute m/z ppm, then highest
       `evidence_score`.
+- [ ] Persist the selected source CID-NL `candidate_id` in
+      `cid_nl_base_candidate_id`. Do not overload that field with a row number,
+      row hash, or another synthetic locator.
 - [ ] If no CID-NL row matches, exclude the candidate from composite output.
 - [ ] If required CID-NL columns are missing, fail closed with a clear error.
 - [ ] For composite mode, build CID-NL base seeds before Pt matching and pass
@@ -1354,7 +1370,7 @@ Rules:
 - Overlay review remains `diagnostic_only`; it does not promote an oracle,
   Matrix authority, or counted detection.
 
-### Task 13: Bounded Manual Oracle Promotion Packet
+### Task 13: Bounded Manual Adjudication Packet
 
 Files:
 
@@ -1365,15 +1381,18 @@ Files:
 
 Purpose:
 
-- Convert reviewed and adjudicated Pt blind-review rows into a bounded manual
-  oracle promotion packet.
+- Convert reviewed and adjudicated Pt blind-review rows into a bounded,
+  historically named adjudication packet. It remains `diagnostic_only` and is
+  not an independent oracle.
 - Fail closed unless every adjudicated row is `accept` or `reject`, has a
-  nonblank adjudication basis, and matches exactly one original manual-review
-  packet row by `packet_row_id` / `candidate_id`.
-- Record input SHA-256 provenance and make the scope explicit:
+  nonblank adjudication basis, and is bound to the exact reviewed packet,
+  traces, gallery, and sealed machine-call artifacts by SHA-256. Logical
+  `packet_row_id` / `candidate_id` continuity alone is insufficient.
+- Record input SHA-256 provenance while keeping the historical scope label:
   `bounded_manual_oracle_only`.
 
-Command outline:
+Historical command outline (not runnable under the current promotion v2
+fail-closed contract because those old adjudication rows lack artifact hashes):
 
 ```powershell
 .venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_oracle_promotion `
@@ -1404,9 +1423,11 @@ Current v2 status:
   adjudicated row ids, add 4 new row ids, and leave 8 old v1 oracle row ids
   outside the bounded packets.
 - `pt_pattern_oracle_refresh.v1` writes a no-RAW refresh worklist under
-  `output/pt_pattern_productization_v1/oracle_refresh/pt_detected_oracle_v2_refresh/`:
-  20 labels are carried forward with current packet provenance, 4 rows were
-  adjudicated by the user as `reject`, and 8 old oracle rows are marked stale.
+  `output/pt_pattern_productization_v1/oracle_refresh/pt_detected_oracle_v2_refresh/`.
+  Under the current contract, legacy rows can be retained for audit but cannot
+  be carried forward merely because row and candidate IDs match: without exact
+  reviewed-artifact identity they remain `pending_human_review`. Rows absent
+  from the current packet remain stale.
 - The initial 24-row v2 adjudicated oracle candidate is
   `output/pt_pattern_productization_v1/oracle_refresh/pt_detected_oracle_v2_refresh/pt_pattern_v2_adjudicated_oracle_candidate.csv`
   with 24 rows: 5 `accept`, 19 `reject`, 0 `uncertain`. This artifact is an
@@ -1417,12 +1438,14 @@ Current v2 status:
   `output/pt_pattern_productization_v1/oracle_repair/pt_detected_oracle_v2_repaired_32/`.
   The repaired adjudicated oracle has 32 rows: 10 `accept`, 22 `reject`, 0
   `uncertain`.
-- The current repaired v2 oracle promotion output is
+- The historical repaired v2 adjudication output is
   `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2_repaired_32/`.
-  Its summary records `readiness_tier = production_candidate`,
+  Its summary recorded `readiness_tier = production_candidate`,
   `authority_scope = bounded_manual_oracle_only`, 10 `detected`, 22
   `non_detected`, and explicit false flags for Matrix, counted-detection, and
-  export changes.
+  export changes. That tier and detection wording are superseded: the artifact
+  is stale `diagnostic_only` resubstitution context, not current oracle or
+  detection authority.
 - The current repaired v2 threshold calibration output is
   `output/pt_pattern_productization_v1/oracle_thresholds/pt_detected_oracle_v2_repaired_32/`.
   It historically recommended full-pattern status plus a 10-second apex-delta
@@ -1458,9 +1481,9 @@ Current v2 status:
 
 Rules:
 
-- A promotion packet can be production-candidate only for the exact bounded
-  manual oracle rows it validates. It does not make the Pt detector
-  production-candidate, does not change Matrix authority, and does not redefine
+- A historically named promotion packet remains `diagnostic_only`, even for an
+  exactly bound review bundle. It records bounded human adjudication; it does
+  not establish physical Pt truth, detector accuracy, Matrix authority, or
   counted detection.
 - A threshold calibration report is `diagnostic_only`. It can justify the next
   diagnostic gate, but it is not detector activation and must not become a
@@ -1553,8 +1576,9 @@ Select-String -Path $scanPaths `
 - [ ] Trace diagnosis outputs are diagnostic artifacts only.
 - [ ] No Matrix, workbook Matrix, ProductWriter, Backfill, or counted-detection
       authority changed.
-- [ ] Real-sample outputs are labeled `diagnostic_only` until manual review
-      promotes an oracle.
+- [ ] Real-sample outputs remain `diagnostic_only` after manual review; an
+      independent truth/validation and explicit product contract would be
+      required for any later promotion.
 - [ ] No committed doc or fixture contains local absolute RAW paths or secrets.
 - [ ] Ignored local handoff content is not copied into PR body or tracked docs
       when it contains machine-local RAW paths.
@@ -1566,11 +1590,13 @@ change. The product goal has now changed: this branch is the active
 `pt_pattern_discovery_productization_v1` lane in
 `docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
 
-Current tier remains `diagnostic_only`. The near-term target is
-`production_candidate`, not `production_ready`, and only after trace/co-elution
-evidence is package-owned, schema/provenance tests are locked, and a manual
-accepted/rejected oracle exists. `pt_pattern_trace_diagnosis.v2` is still a
-diagnostic output; even
+Current tier remains `diagnostic_only`. This branch does not target product
+promotion: its closeout target is a trustworthy diagnostic method-development
+surface with explicit proxies, stale historical labels, and deferred assignment
+and PeakHypothesis work. A later `production_candidate` decision would require
+independent validation plus an explicit selection/projection/rollback contract;
+bounded manual labels alone are insufficient. `pt_pattern_trace_diagnosis.v2`
+is still a diagnostic output; even
 `combined_pt_pattern_status = pt_pattern_detected_diagnostic` is not counted
 detection, ProductWriter authority, workbook, Matrix, or activation schema.
 
@@ -1582,7 +1608,7 @@ machine-detected gate. The next useful branch slice is Option B:
 
 - add trace-derived ratio fields and apex-delta scan-step fields;
 - summarize them into candidate/evidence-level ambiguity statuses;
-- surface them in review packets and manual oracle materials;
+- surface them in review packets and bounded adjudication materials;
 - keep the close-apex co-elution path as the only machine `detected` path;
 - keep all no-write authority fields false.
 

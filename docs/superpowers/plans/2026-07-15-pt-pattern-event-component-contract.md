@@ -40,16 +40,20 @@ diagnostic evidence but cannot emit a Discovery preferred candidate.
 
 ## Problem And Decision
 
-Current Pt rows are hypothesis enumeration units. They lack explicit pairwise
-conflict, duplicate-control, joint-selection, and non-counting semantics.
-Consequently, overlapping rows can look like independent detections even when
-they reuse the same observed features.
+Current Pt rows are greedy matcher representatives: for each base anchor, the
+v1 matcher serializes one compatible base/+1/+2/+4 assignment and prunes other
+compatible choices. They are not complete hypothesis enumeration units. They
+also lack explicit pairwise conflict, duplicate-control, joint-selection, and
+non-counting semantics. Consequently, overlapping rows can look like independent
+detections even when they reuse the same observed features, while un-emitted
+alternatives remain invisible.
 
 The immediate design unit is therefore a **versioned Pt hypothesis conflict
 graph**, not a physical event wrapper:
 
-- vertices are complete Pt assignments that may later map into canonical
-  `PeakHypothesis` alternatives; this phase does not instantiate that mapping;
+- the successor contract requires vertices to be complete enumerated Pt
+  assignments that may later map into canonical `PeakHypothesis` alternatives;
+  this phase does not instantiate that enumeration or mapping;
 - an edge means two hypotheses cannot both be selected under one explicit
   conflict rule;
 - connected components are computational partitions only;
@@ -65,7 +69,8 @@ another explicit identity anchor.
 
 ### Evidence for the problem
 
-- 386 current Fullscan rows are overlapping hypotheses, not detections;
+- 386 current Fullscan rows are overlapping greedy representatives, not
+  detections or a complete alternative universe;
 - 301/386 rows claim at least one feature claimed by another hypothesis;
 - 336 feature IDs are claimed by multiple hypotheses, with one feature used by
   as many as seven rows;
@@ -95,9 +100,12 @@ the frozen Fullscan inputs used:
 - graph rule `pt_conflict_graph.v1`, producing graph instance
   `pt_graph_e558731d26bfaee25ef0b2aaff0e08e237ccf5a41e4d1916281f6adbd762b31c`.
 
-It reproduced 386 vertices, 703 pairwise edges, 135 components, 50 multi-row
-components, 17 multi-row non-cliques, and maximum component size 36. This closes
-the graph-mechanics characterization loop only. A provenance-bound no-RAW
+It reproduced 386 representative-row vertices, 703 pairwise edges, 135
+components, 50 multi-row components, 17 multi-row non-cliques, and maximum
+component size 36. This closes graph mechanics over the serialized
+representative universe only. It does not show that all compatible assignments
+were enumerated, and the graph cannot recover alternatives already pruned by
+the matcher. A provenance-bound no-RAW
 diagnostic replay now emits versioned vertex, edge, component, legacy-comparison,
 and summary sidecars under
 `output/pt_pattern_productization_v1/two_raw_pt_only_scanaware_closeapex_20260703/conflict_graph_pairwise_v1_20260715/`.
@@ -106,16 +114,16 @@ and none has a preferred candidate. Twenty-eight induced subgraphs are cliques;
 four are non-cliques containing 52 pairwise-compatible hypothesis pairs. This
 does not show that the legacy replay emitted a wrong winner. It shows that its
 connected-component container cannot safely be promoted to a component-wide
-`at_most_one` constraint. The successor scaffold is not wired into the current
-machine call and does not implement compatible-set selection, event
-instantiation, or product projection.
+`at_most_one` constraint. The current scaffold is not wired into the current
+machine call and does not implement assignment enumeration, compatible-set
+selection, event instantiation, or product projection.
 
 ## Alternatives
 
 | Alternative | Decision |
 | --- | --- |
 | Keep row artifacts and add labels only | Reject: labels do not expose pairwise conflicts or prevent duplicate interpretation |
-| Add a versioned conflict graph/sidecar over existing rows | **Choose now:** smallest representation that closes the known overlap problem |
+| Add a versioned conflict graph/sidecar over existing rows | **Choose as scaffold:** exposes conflicts among emitted representatives, but does not close complete assignment generation or selection |
 | Treat each connected component as one event | Reject: transitive connectivity is not mutual exclusivity or physical identity |
 | Add `PtEnvelopeEvent` now | Defer until a physical-event grouping invariant and validation oracle exist |
 
@@ -132,7 +140,8 @@ instantiation, or product projection.
 
 Canonical `PeakHypothesis` remains the product-spine owner. This phase must not
 add a parallel Pt-specific event/hypothesis abstraction. `PtPatternCandidate`
-is an input adapter. Anchor-local segmentation is boundary evidence only: it
+is currently a greedy representative-row adapter, not a complete alternative
+enumerator. Anchor-local segmentation is boundary evidence only: it
 must not be named or treated as a `PeakHypothesis`. An explicit mapping from a
 complete Pt assignment into canonical `PeakHypothesis` remains future work.
 
@@ -166,7 +175,7 @@ Every claim key is the tuple:
 Empty claims, duplicate hypothesis IDs, unknown source versions, mixed-sample
 rows, or missing source hashes make the successor graph `invalid_input`. They
 must not be silently skipped or joined by bare `feature_id`.
-The current adapter accepts only `pt_pattern_candidates.v1` assignments and
+The current adapter accepts only `pt_pattern_candidates.v1` representative rows and
 `detected_features.v1` normalized claims; a new source version requires an
 explicit adapter change and tests.
 

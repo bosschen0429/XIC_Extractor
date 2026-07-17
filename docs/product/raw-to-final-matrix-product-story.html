@@ -379,16 +379,18 @@
         <h1>從 RAW 到 Final Matrix：一個 DNA adduct 如何被偵測、定量、寫入矩陣</h1>
         <p class="lead">
           這份文件用白話講完 XIC Extractor 的完整產品流程：
-          從一支 RAW 檔裡的 MS2 碎裂事件開始，經過 discovery、XIC 抽取、peak selection、
-          跨樣本 alignment，最後把定量值寫入 <code>alignment_matrix.tsv</code>。
+          Discovery 可從 MS2 neutral-loss 或 MS1 delta-pattern evidence 開始；候選證據必須先進入
+          <code>EvidenceVector</code> / <code>PeakHypothesis</code> 與 model selection，之後才可能經過
+          integration、跨樣本 alignment 與授權 projection 寫入 <code>alignment_matrix.tsv</code>。
         </p>
       </div>
       <aside class="status-card">
-        <strong>適用情境</strong>
-        <p>
-          本工具設計用於 DNA adductomics 分析。特徵通常為低豐度、
-          sparse detection（單一樣本檢出是常態而非例外），
-          並以 CID neutral-loss 作為主要辨識策略。
+          <strong>適用情境</strong>
+          <p>
+            本工具設計用於 DNA adductomics 分析。特徵通常為低豐度、
+            sparse detection（單一樣本檢出是常態而非例外），
+            release 路徑目前仍以 CID neutral-loss 為主要辨識策略；Pt MS1 pattern
+            仍是 <code>diagnostic_only</code> 方法開發，不是 Final Matrix intake。
         </p>
       </aside>
     </header>
@@ -419,45 +421,45 @@
           <div class="flow" aria-label="Raw to final matrix flow">
             <div class="flow-row wide">
               <div class="flow-node accent">
-                <strong>1. Discovery</strong>
-                <span>掃描 RAW 中的 MS2 事件，以 neutral-loss 策略找出 candidate precursors。</span>
+                <strong>1. Discovery evidence providers</strong>
+                <span>CID-NL 讀 MS2；Delta Mass / Pt 從 sample-local MS1 features 提出候選證據。</span>
               </div>
               <div class="flow-node">
-                <strong>2. XIC 抽取</strong>
-                <span>對每個 candidate 回 RAW 拉出局部色譜圖（XIC trace）。</span>
+                <strong>2. XIC / trace evidence</strong>
+                <span>對候選 m/z 回 RAW 拉局部 trace，保留 shape、boundary、RT 與 provenance facts。</span>
               </div>
               <div class="flow-node">
-                <strong>3. Peak 選擇</strong>
-                <span>在 trace 中偵測候選峰、評分、選出 selected peak 並積分。</span>
+                <strong>3. EvidenceVector + PeakHypothesis</strong>
+                <span>把候選 assignment 與相關證據組成可稽核的 alternatives；候選不等於已選峰。</span>
               </div>
               <div class="flow-node">
-                <strong>4. Owner 建構</strong>
-                <span>同一樣本中屬於同一 MS1 chromatographic peak 的 candidates 合併為一個 owner。</span>
+                <strong>4. Model selection + IntegrationResult</strong>
+                <span>選擇可支持的 hypothesis；只有 selected peak 才產生邊界與面積結果。</span>
               </div>
               <div class="flow-node">
-                <strong>→ 單樣本結束</strong>
-                <span>每支 RAW 產出 sample-local owners 及其 peak/area 結果。</span>
+                <strong>5. Workflow projection</strong>
+                <span>工作流把已選結果投影成 sample-local owner 或 review；未授權 evidence 停在這裡。</span>
               </div>
             </div>
             <div class="flow-row wide">
               <div class="flow-node accent">
-                <strong>5. Cross-sample 分群</strong>
+                <strong>6. Cross-sample 分群</strong>
                 <span>跨樣本比對 owner，以 m/z + RT + tag 閘門將相同特徵歸入同一 family。</span>
               </div>
               <div class="flow-node">
-                <strong>6. Backfill</strong>
+                <strong>7. Backfill</strong>
                 <span>對 family 中沒檢出的樣本回 RAW 搜尋，嘗試 rescue。</span>
               </div>
               <div class="flow-node">
-                <strong>7. Claim + 合併</strong>
+                <strong>8. Claim + 合併</strong>
                 <span>處理重複宣告（同一峰被多個 row 搶）、合併跨 tag 的同族 family。</span>
               </div>
               <div class="flow-node">
-                <strong>8. Production 決策</strong>
+                <strong>9. Production 決策</strong>
                 <span>逐 row/cell 決定是否寫入 primary matrix，留空或標記為 review。</span>
               </div>
               <div class="flow-node accent">
-                <strong>9. Final Matrix</strong>
+                <strong>10. Final Matrix</strong>
                 <span>輸出 <code>alignment_matrix.tsv</code> 供下游校正與統計。</span>
               </div>
             </div>
@@ -465,8 +467,17 @@
 
           <div class="callout">
             <strong>白話版：</strong>
-            不是「找到峰就填入矩陣」。每個值要先在樣本內通過 peak selection，
+            不是「找到 pattern 或峰就填入矩陣」。每個候選要先成為帶 provenance 的
+            evidence / hypothesis，再於樣本內通過 model selection 與 integration，
             再在跨樣本層通過 grouping、backfill、claim 與 identity 檢查，最後才由 production decision 放行。
+          </div>
+
+          <div class="callout warning">
+            <strong>Pt 方法目前停在哪裡：</strong>
+            Pt candidate generation、same-scan window support、anchor-local trace evidence、
+            <code>trace_rule_call</code> 與人工 review 都是 <code>diagnostic_only</code>。
+            它們尚未建立完整 assignment alternatives、canonical <code>PeakHypothesis</code>
+            selection、產品 <code>IntegrationResult</code> 或 workflow projection，因此不會進入下面的 Alignment / Matrix 路徑。
           </div>
         </section>
 
@@ -475,7 +486,7 @@
           <h2><span class="step-number">1</span>Discovery：找出 RAW 中的候選特徵</h2>
           <p class="section-intro">
             Discovery 的任務是從 RAW 中辨識出可能的 DNA adduct 候選特徵。
-            目前支援兩種策略，可獨立或組合使用：
+            CID-NL 是目前 release intake；Delta Mass / Pt 是並列的診斷方法實作，可獨立或與 CID-NL 組合產生 review evidence：
           </p>
 
           <div class="grid two">
@@ -509,10 +520,10 @@
           </div>
 
           <div class="callout">
-            <strong>Composite 策略：</strong>
+            <strong>Composite 診斷策略：</strong>
             兩種策略可以組合使用（如 <code>pt_pattern_cid_nl_dr</code> preset）：
             delta mass 負責 MS1 模式匹配，CID-NL 提供 MS2 碎裂證據作為 base evidence 支持。
-            Preset 系統（TOML 檔案）定義每個策略的 tag、容差與組合模式。
+            Preset 系統（TOML 檔案）定義每個策略的 tag、容差與組合模式；這個 preset 的存在不等於 detector activation。
           </div>
 
           <div class="callout warning">
@@ -520,7 +531,9 @@
             目前已 release / 預設的 alignment intake 仍以 CID-NL discovery 產出的
             <code>discovery_candidates.csv</code> 為主。Delta mass / Pt pattern candidates
             在沒有 activation 或 export contract 前不直接變成 alignment 或 Matrix authority——
-            它們先提供 MS1 pattern evidence；在 composite 模式下，CID-NL 可作為 base evidence 支持。
+            它們目前只提供 <code>diagnostic_only</code> MS1 pattern / trace / review evidence；
+            <code>trace_rule_call</code> 是診斷機器評估，不是 final detector call。
+            在 composite 模式下，CID-NL 可作為 base evidence 支持。
             Product ion（HCD-PI）策略已在型別系統中定義但尚未實作。
           </div>
 
@@ -625,6 +638,8 @@
             <strong>輸出：</strong>
             每個 candidate 得到一個 <code>IntegrationResult</code>，
             包含 RT 邊界、高度、raw area、AsLS-corrected area、morphology area。
+            這裡描述的是已授權的一般 peak-selection 路徑；目前 Pt diagnostic artifacts
+            尚未投影為產品 <code>IntegrationResult</code>。
           </div>
 
           <details>
@@ -892,8 +907,8 @@
             <article class="panel">
               <h3>為什麼 discovery 不直接寫 matrix？</h3>
               <p>
-                Discovery 定義的是 per-sample 的 "detected"——通過特徵檢查的候選者。
-                但一個特徵是否值得成為 matrix 的一行，需要跨樣本的 evidence
+                Discovery 提供的是 per-sample candidate 與 evidence，不是自動成立的 counted detection。
+                候選必須先通過 PeakHypothesis model selection / integration；是否值得成為 matrix 的一行，還需要跨樣本 evidence
                 （grouping coherence、backfill 結果、duplicate 檢查）才能決定。
                 兩者是不同層級的判斷。
               </p>
@@ -962,7 +977,12 @@
         <footer>
           Product story for the XIC Extractor pipeline: RAW → discovery → extraction →
           peak selection → alignment → final matrix.
-          If this story conflicts with the code, the code wins.
+          This page is an explainer, not an authority source. If it conflicts with
+          another surface, use the owner for that claim: <code>docs/product/</code>
+          for product behavior, the productization control plane for maturity, the
+          status index for artifact status, and the authority manifest plus
+          <code>docs/agent/product-validation-contract.md</code> for write/validation
+          authority. Executable code may itself be the behavior that needs correction.
         </footer>
       </div>
     </main>

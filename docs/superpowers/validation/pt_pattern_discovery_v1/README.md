@@ -17,8 +17,8 @@ against the real-sample Fullscan RAW file. A follow-up bug/performance pass
 fixed two proxy-path problems: scan-proxy rows now satisfy the diagnostic local
 support gate, and scan-proxy labels cannot be reused as shifted base anchors.
 See "Current Results" below. The run is `diagnostic_only`, never product
-validation or Matrix authority, and awaits manual user review before any oracle
-promotion.
+validation or Matrix authority. Later human review is recorded as bounded
+adjudication evidence; it did not create independent ground truth or an oracle.
 
 ## Purpose
 
@@ -126,8 +126,9 @@ delta-pattern candidate state, not the final Pt detection verdict.
 Runtime observed: proxy scan pass ~31.3 seconds over the full RAW file
 (2,726 MS1 scans); Pt pattern Discovery CLI pass over the resulting
 37,320-row detected-features CSV took ~2.8 seconds after the matcher
-anchor fix. This confirms the feature-level matcher is not the bottleneck;
-the scan-level proxy remains the expensive diagnostic bridge.
+anchor fix. In this single archived run, matcher time was small relative to the
+scan-proxy pass. This is a diagnostic timing observation, not a durable
+bottleneck conclusion or a production performance benchmark.
 
 ## Trace Co-Elution Diagnostic
 
@@ -166,21 +167,21 @@ Position-level support summary, 50-row sample:
 - `pt_plus_2`: 47 supported, 3 review
 - `pt_plus_4`: 39 supported, 10 review, 1 missing signal
 
-Interpretation: the scan-level proxy can find many same-scan Pt-like seeds, but
-trace co-elution is the confirmation layer that separates diagnostic detected
-patterns from partial/review candidates. The v2 rerun confirms that raw trace
-similarity was too sensitive for the machine gate; Gaussian15 smoothing is the
-current decision basis. The `+4` position remains the main weak point in this
-sample slice. This supports the current architecture conclusion: scan-level
-pattern finding should remain the seed layer, and product-grade Pt pattern
-detection should require chromatographic co-elution evidence as well.
+Interpretation: the scan-level proxy can find many same-scan Pt-like seeds, and
+trace co-elution adds a second diagnostic evidence layer. The v2 rerun showed
+that raw trace similarity changed proxy calls in this bounded slice;
+Gaussian15 smoothing became the historical decision basis. The `+4` position
+was the main weak point in this sample slice. These observations support keeping
+scan-level pattern finding as a seed and studying chromatographic evidence; they
+do not establish a product-grade detector or its precision/recall.
 
 ## Manual Review Packet
 
 A bounded manual-review packet was generated from the candidate CSV and
 trace-diagnosis outputs. This packet is the intended handoff for user review;
-it is not an oracle until the user fills `human_review_decision` and the
-reviewed rows are promoted by a separate oracle/promotion step.
+filled `human_review_decision` values remain human adjudications. Packaging them
+through the historical oracle/promotion utility does not make them independent
+ground truth, and `uncertain` must not be collapsed into reject.
 
 Command:
 
@@ -250,15 +251,32 @@ Blind-review outputs:
   until user calls are recorded.
 - `pt_pattern_blind_overlay_summary.json`, with no machine-call distribution.
 
-## Manual Oracle Promotion
+### First anchor-local nine-case adjudication
 
-The bounded blind review across Pt-only and Pt+CID-NL packets was adjudicated
-into:
+The first bounded anchor-local review batch has this frozen human-vs-machine
+comparison. Human calls are 6 `accept` (Cases 01-05 and 07), 2 `reject`
+(Cases 06 and 09), and 1 `uncertain` (Case 08). Machine comparison is six exact
+agreements, two direct mismatches (Case 06 machine accept / human reject; Case
+07 machine reject / human accept), and one unresolved row (Case 08 machine
+reject / human uncertain). Case 08 remains unresolved rather than becoming a
+negative label. This nine-case slice is diagnostic adjudication evidence, not
+ground truth, detector performance, threshold authority, or product promotion.
+
+A separate prepared next-nine replay must not be merged into those counts. Its
+human calls are 1 `accept` (Case 06) and 8 `uncertain` (Cases 01-05 and 07-09),
+while the diagnostic machine rule rejects all nine. That leaves one direct
+mismatch and eight unresolved rows; it does not add eight negative labels.
+
+## Historical Human-Label Packaging
+
+The bounded blind review across Pt-only and Pt+CID-NL packets was historically
+packaged under `oracle` filenames:
 
 - `output/pt_pattern_productization_v1/blind_overlay_review/pt_pattern_blind_review_adjudicated_oracle_candidate.csv`
 - `output/pt_pattern_productization_v1/blind_overlay_review/pt_pattern_blind_review_adjudicated_oracle_summary.json`
 
-Promotion command:
+Historical invocation recorded at the time (not runnable under the current
+fail-closed promotion v2 contract):
 
 ```powershell
 .venv\Scripts\python.exe -m tools.diagnostics.pt_pattern_oracle_promotion `
@@ -270,13 +288,22 @@ Promotion command:
   --oracle-packet-id pt_detected_oracle_v1
 ```
 
-Historical v1 output:
+Current promotion additionally requires `--blind-overlay-summary-json` for
+each reviewed packet and per-row `review_packet_csv_sha256` plus
+`blind_overlay_summary_json_sha256` fields. The historical adjudication CSVs do
+not contain those bindings, so they remain stale diagnostic context until the
+cases are freshly reviewed; matching only `packet_row_id` and `candidate_id` is
+not enough.
+
+Historical v1 diagnostic output:
 
 - `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v1/`
 - `pt_pattern_oracle_promotion_packet.csv`: 28 provenance-matched rows; 10
   `accept` / `detected`, 18 `reject` / `non_detected`.
-- `pt_pattern_oracle_promotion_summary.json`: `readiness_tier =
-  production_candidate`, scoped to `bounded_manual_oracle_only`.
+- `pt_pattern_oracle_promotion_summary.json`: historically recorded
+  `readiness_tier = production_candidate`, scoped to
+  `bounded_manual_oracle_only`; that tier attribution is superseded. The packet
+  is `diagnostic_only` reviewed-label evidence.
 
 This v1 packet is historical calibration context because v2 Gaussian-basis
 rebucketing changed the current review packet population. Its adjudications are
@@ -288,10 +315,11 @@ Intermediate 24-row v2 refresh output:
 - `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2/`
 - `pt_pattern_oracle_promotion_packet.csv`: 24 provenance-matched rows; 5
   `accept` / `detected`, 19 `reject` / `non_detected`.
-- `pt_pattern_oracle_promotion_summary.json`: `readiness_tier =
-  production_candidate`, scoped to `bounded_manual_oracle_only`.
+- `pt_pattern_oracle_promotion_summary.json`: historically recorded
+  `readiness_tier = production_candidate`, scoped to
+  `bounded_manual_oracle_only`; current interpretation is `diagnostic_only`.
 
-Current repaired v2 oracle output:
+Historical repaired v2 32-row reviewed-label output:
 
 - `output/pt_pattern_productization_v1/oracle_repair/pt_detected_oracle_v2_repaired_32/`
 - `output/pt_pattern_productization_v1/oracle_promotion/pt_detected_oracle_v2_repaired_32/`
@@ -300,21 +328,26 @@ Current repaired v2 oracle output:
 - `output/pt_pattern_productization_v1/diagnostic_gate/trace_summary_limit50_current/`
 - `pt_pattern_oracle_promotion_packet.csv`: 32 provenance-matched rows; 10
   `accept` / `detected`, 22 `reject` / `non_detected`.
-- The threshold calibration recommends full-pattern status plus apex <= 10 s,
-  Pearson >= 0.90, and overlap >= 0.50, giving 10 TP / 22 TN / 0 FP / 0 FN on
-  the repaired oracle.
+- The threshold calibration selected full-pattern status plus apex <= 10 s,
+  Pearson >= 0.90, and overlap >= 0.50, giving 10 label-positive / 22
+  label-negative agreements and zero disagreements when replayed on the same
+  32 rows used for calibration. This is resubstitution, not ground-truth
+  accuracy or held-out validation.
 - The diagnostic gate replay applies the same rule through schema
-  `pt_pattern_diagnostic_gate.v1`; with `--require-zero-fpfn`, it exits `0` and
-  reports 10 TP / 22 TN / 0 FP / 0 FN on the repaired oracle.
+  `pt_pattern_diagnostic_gate.v1`; with `--require-zero-fpfn`, it exits `0` for
+  exact agreement with those historical labels. The flag name and historical
+  TP/TN vocabulary do not establish detector accuracy.
 - The full trace-summary diagnostic gate replay applies the same rule directly
   to the current 50-row Pt-only Fullscan trace summary and current 50-row
   Pt+CID-NL DDMS2 trace summary. It reports 100 rows total: 45 `accept`, 55
   `reject`; Pt-only contributes 15 accept / 35 reject, and Pt+CID-NL contributes
   30 accept / 20 reject.
 
-The repaired v2 packet is current bounded manual-oracle evidence only. It still
-does not promote scan-proxy, detector/runtime behavior, Matrix authority,
-counted detection, Backfill, workbook, or export behavior.
+The repaired v2 packet is stale historical diagnostic context. It has no
+independent physical ground truth, cannot resolve current human `uncertain`
+cases as rejects, and does not validate generalization. It does not promote the
+scan proxy, detector/runtime behavior, Matrix authority, counted detection,
+Backfill, workbook, or export behavior.
 
 ## Superseded Initial Run
 
@@ -329,5 +362,6 @@ intended to exercise.
 8,722-row diagnostic review queue) is a first-look diagnostic result only. It
 does not validate peak-detection accuracy, does not promote any oracle, and
 does not change counted detection, Matrix authority, or production readiness.
-It awaits manual user review of sampled candidate rows before any candidate
-example from this or a future run can be accepted as an oracle.
+It awaits bounded human review of sampled candidate rows. Those adjudications
+may guide method development but do not become an independent oracle merely by
+being packaged.
