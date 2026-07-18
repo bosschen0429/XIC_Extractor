@@ -228,7 +228,12 @@ debugging the shard runner itself.
   directly improve the decision.
 - For large XIC PR review, use `xic-large-pr-review` and review by blast radius:
   shared helpers, public contracts, diagnostics boundaries, RAW locality,
-  product-vs-diagnostic claims, then parity evidence.
+  product-vs-diagnostic claims, then parity evidence. Treat an inline review
+  comment as one observed instance, not the full scope: when it implicates a
+  shared owner, default, invariant, provenance chain, writer/loader pair, or
+  fallback policy, sweep all callsites and sibling boundaries before
+  re-delivery or resolution. A second same-class comment on one PR stops
+  patch-by-patch handling and triggers a fresh whole-PR class sweep.
 - Repo-local execution subagents are opt-in. The main agent owns synthesis,
   edits, final judgment, and verification. Use
   `docs/agent/subagent-routing.md` when subagents are requested.

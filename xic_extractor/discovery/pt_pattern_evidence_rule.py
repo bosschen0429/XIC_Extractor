@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
+from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.tabular_io import optional_float
 
 REQUIRED_COMBINED_STATUS = "pt_pattern_detected_diagnostic"
@@ -39,19 +40,47 @@ class PtPatternEvidenceThresholds:
     def __post_init__(self) -> None:
         if not self.required_combined_status.strip():
             raise ValueError("required_combined_status must be non-empty")
-        if self.min_non_base_positions_supported <= 0:
+        min_supported = require_integer(
+            self.min_non_base_positions_supported,
+            name="min_non_base_positions_supported",
+        )
+        if min_supported <= 0:
             raise ValueError("min_non_base_positions_supported must be > 0")
-        if self.max_abs_apex_delta_sec <= 0:
+        max_apex_delta = require_finite_real(
+            self.max_abs_apex_delta_sec,
+            name="max_abs_apex_delta_sec",
+        )
+        if max_apex_delta <= 0:
             raise ValueError("max_abs_apex_delta_sec must be > 0")
-        if self.max_abs_apex_delta_scan_step_multiplier <= 0:
+        scan_step_multiplier = require_finite_real(
+            self.max_abs_apex_delta_scan_step_multiplier,
+            name="max_abs_apex_delta_scan_step_multiplier",
+        )
+        if scan_step_multiplier <= 0:
             raise ValueError("max_abs_apex_delta_scan_step_multiplier must be > 0")
-        if not 0 <= self.min_pearson_r_to_base <= 1:
+        pearson_min = require_finite_real(
+            self.min_pearson_r_to_base,
+            name="min_pearson_r_to_base",
+        )
+        if not 0 <= pearson_min <= 1:
             raise ValueError("min_pearson_r_to_base must be between 0 and 1")
-        if not 0 <= self.min_active_overlap_fraction <= 1:
+        overlap_min = require_finite_real(
+            self.min_active_overlap_fraction,
+            name="min_active_overlap_fraction",
+        )
+        if not 0 <= overlap_min <= 1:
             raise ValueError("min_active_overlap_fraction must be between 0 and 1")
-        if not 0 <= self.min_shifted_pearson_r_to_base <= 1:
+        shifted_pearson_min = require_finite_real(
+            self.min_shifted_pearson_r_to_base,
+            name="min_shifted_pearson_r_to_base",
+        )
+        if not 0 <= shifted_pearson_min <= 1:
             raise ValueError("min_shifted_pearson_r_to_base must be between 0 and 1")
-        if self.max_abs_shape_shift_sec_to_base <= 0:
+        shape_shift_max = require_finite_real(
+            self.max_abs_shape_shift_sec_to_base,
+            name="max_abs_shape_shift_sec_to_base",
+        )
+        if shape_shift_max <= 0:
             raise ValueError("max_abs_shape_shift_sec_to_base must be > 0")
 
 

@@ -36,13 +36,8 @@ def test_cli_builds_local_ms1_feature_outputs(
         captured["dll_dir"] = dll_path
         return _Handle()
 
-    def _fake_build_index(
-        _handle: _Handle,
-        *,
-        fail_on_malformed: bool,
-    ) -> tuple[object, ...]:
+    def _fake_build_index(_handle: _Handle) -> tuple[object, ...]:
         captured["build_index"] = True
-        captured["fail_on_malformed"] = fail_on_malformed
         return ()
 
     def _fake_build_table(
@@ -145,7 +140,6 @@ def test_cli_builds_local_ms1_feature_outputs(
 
     assert code == 0
     assert captured["sample_stem"] == "Sample_1"
-    assert captured["fail_on_malformed"] is True
     assert captured["raw_file_size_bytes"] == 0
     assert isinstance(captured["raw_file_mtime_ns"], int)
     assert captured["settings"] == LocalMs1FeatureSettings(
@@ -236,12 +230,7 @@ def test_cli_reports_ms1_scan_read_failure_without_traceback(
         lambda *_args: _Handle(),
     )
 
-    def _raise_scan_read_error(
-        _handle: _Handle,
-        *,
-        fail_on_malformed: bool,
-    ) -> tuple[object, ...]:
-        assert fail_on_malformed is True
+    def _raise_scan_read_error(_handle: _Handle) -> tuple[object, ...]:
         raise MS1ScanReadError("failed to read MS1 scan 42: synthetic failure")
 
     monkeypatch.setattr(
@@ -308,3 +297,45 @@ def test_cli_rejects_invalid_int_before_settings_construction(
 
     assert exc_info.value.code == 2
     assert "--optimal-component-max-edges must be > 0" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("flags", "message"),
+    [
+        (
+            ["--min-ok-prominence", "2", "--weak-support-prominence", "3"],
+            "--min-ok-prominence must be >= --weak-support-prominence",
+        ),
+        (
+            ["--max-ok-gap-fraction", "0.5", "--max-weak-gap-fraction", "0.4"],
+            "--max-ok-gap-fraction must be <= --max-weak-gap-fraction",
+        ),
+        (
+            ["--max-ok-mz-ppm-std", "20", "--max-weak-mz-ppm-std", "10"],
+            "--max-ok-mz-ppm-std must be <= --max-weak-mz-ppm-std",
+        ),
+    ],
+)
+def test_cli_rejects_inverted_quality_tiers_before_raw_io(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    flags: list[str],
+    message: str,
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        build_local_ms1_feature_table.main(
+            [
+                "--raw",
+                str(tmp_path / "missing.raw"),
+                "--dll-dir",
+                str(tmp_path),
+                "--output-dir",
+                str(tmp_path / "out"),
+                *flags,
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert message in captured.err
+    assert "Traceback" not in captured.err

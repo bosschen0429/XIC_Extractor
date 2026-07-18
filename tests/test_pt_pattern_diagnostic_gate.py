@@ -385,6 +385,42 @@ def test_diagnostic_gate_rejects_stale_review_identity_or_status(
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("base_mz", "501.0"), ("base_rt_apex_min", "11.0")],
+)
+def test_diagnostic_gate_rejects_stale_review_coordinates(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    review_row = _review_row("stale-coordinate")
+    review_csv = _write_csv(
+        tmp_path / "review.csv",
+        [review_row],
+        packet.LEGACY_PACKET_COLUMNS,
+    )
+    oracle_row = _oracle_row(
+        review_row,
+        oracle_call="accept",
+        review_packet_sha256=file_sha256(review_csv),
+    )
+    oracle_row[field] = value
+    oracle_csv = _write_csv(
+        tmp_path / "oracle.csv",
+        [oracle_row],
+        promotion.PROMOTION_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match=field):
+        gate.run_diagnostic_gate(
+            review_packet_csvs=[review_csv],
+            oracle_promotion_csv=oracle_csv,
+            output_dir=tmp_path / "gate_stale_coordinate",
+            gate_id="stale_coordinate",
+        )
+
+
 def test_diagnostic_gate_can_read_full_trace_summary_inputs(
     tmp_path: Path,
 ) -> None:

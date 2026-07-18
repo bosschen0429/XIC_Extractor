@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, DeltaMassPattern
+from xic_extractor.numeric_validation import require_finite_real
 from xic_extractor.tabular_io import (
     read_delimited_rows,
     read_tsv_with_header,
@@ -155,6 +156,24 @@ def validate_unique_detected_feature_identities(
         )
 
 
+def validate_detected_features(
+    features: Sequence[DetectedFeature],
+    *,
+    source_label: str,
+) -> None:
+    """Validate domain fields and sample-local identities before matching."""
+
+    for row_index, feature in enumerate(features):
+        _validate_detected_feature(
+            feature,
+            row_label=f"{source_label} row {row_index}",
+        )
+    validate_unique_detected_feature_identities(
+        features,
+        source_label=source_label,
+    )
+
+
 @dataclass(frozen=True)
 class DeltaMassPatternSettings:
     """Tunable parameters for ``match_delta_mass_pattern()``.
@@ -171,6 +190,24 @@ class DeltaMassPatternSettings:
     mz_tolerance_ppm: float = PT_PATTERN.mz_tolerance_ppm
     rt_tolerance_sec: float = PT_PATTERN.rt_tolerance_sec
     ratio_basis: str = "both"
+
+    def __post_init__(self) -> None:
+        if not self.pattern_id.strip():
+            raise ValueError("pattern_id must be non-empty")
+        if not self.method_label.strip():
+            raise ValueError("method_label must be non-empty")
+        mz_tolerance_ppm = require_finite_real(
+            self.mz_tolerance_ppm,
+            name="mz_tolerance_ppm",
+        )
+        if mz_tolerance_ppm <= 0:
+            raise ValueError("mz_tolerance_ppm must be finite and > 0")
+        rt_tolerance_sec = require_finite_real(
+            self.rt_tolerance_sec,
+            name="rt_tolerance_sec",
+        )
+        if rt_tolerance_sec <= 0:
+            raise ValueError("rt_tolerance_sec must be finite and > 0")
 
 
 def load_detected_features_csv(path: Path) -> tuple[DetectedFeature, ...]:
@@ -194,7 +231,7 @@ def load_detected_features_csv(path: Path) -> tuple[DetectedFeature, ...]:
         _parse_detected_feature(row, path=path, row_index=row_index)
         for row_index, row in enumerate(rows)
     )
-    validate_unique_detected_feature_identities(features, source_label=str(path))
+    validate_detected_features(features, source_label=str(path))
     return features
 
 
@@ -218,7 +255,7 @@ def load_external_feature_table_tsv(path: Path) -> tuple[DetectedFeature, ...]:
         _parse_external_feature_table_row(row, path=path, row_index=row_index)
         for row_index, row in enumerate(rows)
     )
-    validate_unique_detected_feature_identities(features, source_label=str(path))
+    validate_detected_features(features, source_label=str(path))
     return features
 
 
@@ -260,7 +297,7 @@ def load_mzmine_wide_feature_table_csv(
                 )
             )
     result = tuple(features)
-    validate_unique_detected_feature_identities(result, source_label=str(path))
+    validate_detected_features(result, source_label=str(path))
     return result
 
 
@@ -270,11 +307,11 @@ def write_detected_features_csv(
 ) -> Path:
     """Write the Detected Features CSV v1 handoff surface."""
 
-    validate_unique_detected_feature_identities(features, source_label=str(path))
     rows = tuple(
         _validated_detected_feature_row(feature, path=path, row_index=row_index)
         for row_index, feature in enumerate(features)
     )
+    validate_unique_detected_feature_identities(features, source_label=str(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     write_delimited_rows(
         path,
@@ -455,12 +492,67 @@ def _format_machine_csv_value(value: object) -> str:
 def _validated_detected_feature_row(
     feature: DetectedFeature, *, path: Path, row_index: int
 ) -> dict[str, object]:
-    _validate_trace_quality_for_source(
-        feature.trace_quality,
-        source=feature.source,
+    return _validate_detected_feature(
+        feature,
         row_label=_row_label(path, row_index),
     )
-    return _detected_feature_row(feature)
+
+
+def _validate_detected_feature(
+    feature: DetectedFeature,
+    *,
+    row_label: str,
+) -> dict[str, object]:
+    sample_stem = _required_feature_text(
+        feature.sample_stem,
+        "sample_stem",
+        row_label,
+    )
+    feature_id = _required_feature_text(feature.feature_id, "feature_id", row_label)
+    trace_quality = _required_feature_text(
+        feature.trace_quality,
+        "trace_quality",
+        row_label,
+    )
+    source = _required_feature_text(feature.source, "source", row_label)
+    _finite_feature_value(feature.mz, "mz", row_label)
+    _finite_feature_value(feature.rt_apex_min, "rt_apex_min", row_label)
+    for field_name, value in (
+        ("rt_start_min", feature.rt_start_min),
+        ("rt_end_min", feature.rt_end_min),
+        ("area", feature.area),
+        ("shape_score", feature.shape_score),
+    ):
+        if value is not None:
+            _finite_feature_value(value, field_name, row_label)
+    height = _finite_feature_value(feature.height, "height", row_label)
+    if height <= 0:
+        raise ValueError(
+            f"{row_label} has invalid height: must be > 0, got {height!r}"
+        )
+    _validate_trace_quality_for_source(
+        trace_quality,
+        source=source,
+        row_label=row_label,
+    )
+    row = _detected_feature_row(feature)
+    row.update(
+        sample_stem=sample_stem,
+        feature_id=feature_id,
+        trace_quality=trace_quality,
+        source=source,
+    )
+    return row
+
+
+def _required_feature_text(value: object, field: str, row_label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{row_label} is missing required field {field!r}")
+    return value.strip()
+
+
+def _finite_feature_value(value: float, field: str, row_label: str) -> float:
+    return require_finite_real(value, name=f"{row_label} field {field!r}")
 
 
 def _external_source_label(row: Mapping[str, str | None], row_label: str) -> str:

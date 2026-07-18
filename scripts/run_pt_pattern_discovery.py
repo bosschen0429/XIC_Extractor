@@ -210,15 +210,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 2
 
-    outputs = run_pt_pattern_discovery(
-        detected_features_csv=detected_features_csv,
-        external_feature_table_tsv=external_feature_table_tsv,
-        mzmine_feature_table_csv=mzmine_feature_table_csv,
-        output_dir=output_dir,
-        preset_name=args.preset,
-        cid_nl_candidates_csv=cid_nl_candidates_csv,
-        trace_summary_csv=trace_summary_csv,
-    )
+    try:
+        outputs = run_pt_pattern_discovery(
+            detected_features_csv=detected_features_csv,
+            external_feature_table_tsv=external_feature_table_tsv,
+            mzmine_feature_table_csv=mzmine_feature_table_csv,
+            output_dir=output_dir,
+            preset_name=args.preset,
+            cid_nl_candidates_csv=cid_nl_candidates_csv,
+            trace_summary_csv=trace_summary_csv,
+        )
+    except (OSError, PresetError, ValueError) as exc:
+        print(f"pt_pattern_discovery failed: {exc}", file=sys.stderr)
+        return 2
 
     print(f"Pt pattern candidates CSV: {outputs.candidates_csv}")
     print(f"Pt pattern review CSV: {outputs.review_csv}")

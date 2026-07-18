@@ -220,7 +220,7 @@ def match_delta_mass_pattern(
     from xic_extractor.discovery.detected_features import (
         DeltaMassPatternSettings,
         detected_feature_identity,
-        validate_unique_detected_feature_identities,
+        validate_detected_features,
     )
 
     resolved_settings = settings if settings is not None else DeltaMassPatternSettings()
@@ -246,7 +246,7 @@ def match_delta_mass_pattern(
     ]
 
     feature_rows = tuple(features)
-    validate_unique_detected_feature_identities(
+    validate_detected_features(
         feature_rows,
         source_label="match_delta_mass_pattern input",
     )

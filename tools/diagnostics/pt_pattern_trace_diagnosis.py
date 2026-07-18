@@ -48,6 +48,7 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
     validate_candidate_sample_binding,
 )
 from xic_extractor.raw_reader import RawReaderError, open_raw
+from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.tabular_io import file_sha256, write_delimited_rows
 from xic_extractor.xic_models import XICTrace
 
@@ -78,6 +79,16 @@ def run_trace_diagnosis(
     max_apex_delta_sec: float,
     write_trace_points: bool,
 ) -> dict[str, Path]:
+    _validate_trace_diagnosis_settings(
+        limit=limit,
+        offset=offset,
+        ppm=ppm,
+        rt_half_window_sec=rt_half_window_sec,
+        mz_source=mz_source,
+        active_fraction=active_fraction,
+        min_pearson_r=min_pearson_r,
+        max_apex_delta_sec=max_apex_delta_sec,
+    )
     candidate_rows = load_candidate_rows(candidates_csv, limit=limit, offset=offset)
     source_sample_stem = raw.stem
     validate_candidate_sample_binding(
@@ -280,6 +291,51 @@ def run_trace_diagnosis(
     }
 
 
+def _validate_trace_diagnosis_settings(
+    *,
+    limit: int,
+    offset: int,
+    ppm: float,
+    rt_half_window_sec: float,
+    mz_source: str,
+    active_fraction: float,
+    min_pearson_r: float,
+    max_apex_delta_sec: float,
+) -> None:
+    parsed_limit = require_integer(limit, name="limit")
+    if parsed_limit <= 0:
+        raise ValueError("limit must be an integer > 0")
+    parsed_offset = require_integer(offset, name="offset")
+    if parsed_offset < 0:
+        raise ValueError("offset must be an integer >= 0")
+    parsed_ppm = require_finite_real(ppm, name="ppm")
+    if parsed_ppm <= 0:
+        raise ValueError("ppm must be finite and > 0")
+    parsed_rt_window = require_finite_real(
+        rt_half_window_sec,
+        name="rt_half_window_sec",
+    )
+    if parsed_rt_window <= 0:
+        raise ValueError("rt_half_window_sec must be finite and > 0")
+    if mz_source not in {"expected", "observed"}:
+        raise ValueError("mz_source must be 'expected' or 'observed'")
+    parsed_active_fraction = require_finite_real(
+        active_fraction,
+        name="active_fraction",
+    )
+    if not 0 < parsed_active_fraction <= 1:
+        raise ValueError("active_fraction must be finite and in (0, 1]")
+    parsed_pearson = require_finite_real(min_pearson_r, name="min_pearson_r")
+    if not -1 <= parsed_pearson <= 1:
+        raise ValueError("min_pearson_r must be finite and in [-1, 1]")
+    parsed_apex_delta = require_finite_real(
+        max_apex_delta_sec,
+        name="max_apex_delta_sec",
+    )
+    if parsed_apex_delta < 0:
+        raise ValueError("max_apex_delta_sec must be finite and >= 0")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -334,20 +390,19 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error(f"{args.raw}: RAW file does not exist")
     if not args.dll_dir.is_dir():
         parser.error(f"{args.dll_dir}: DLL directory does not exist")
-    if args.limit <= 0:
-        parser.error("--limit must be > 0")
-    if args.offset < 0:
-        parser.error("--offset must be >= 0")
-    if args.ppm <= 0:
-        parser.error("--ppm must be > 0")
-    if args.rt_half_window_sec <= 0:
-        parser.error("--rt-half-window-sec must be > 0")
-    if not 0.0 < args.active_fraction <= 1.0:
-        parser.error("--active-fraction must be in (0, 1]")
-    if not -1.0 <= args.min_pearson_r <= 1.0:
-        parser.error("--min-pearson-r must be in [-1, 1]")
-    if args.max_apex_delta_sec < 0:
-        parser.error("--max-apex-delta-sec must be >= 0")
+    try:
+        _validate_trace_diagnosis_settings(
+            limit=args.limit,
+            offset=args.offset,
+            ppm=args.ppm,
+            rt_half_window_sec=args.rt_half_window_sec,
+            mz_source=args.mz_source,
+            active_fraction=args.active_fraction,
+            min_pearson_r=args.min_pearson_r,
+            max_apex_delta_sec=args.max_apex_delta_sec,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 def main(argv: Sequence[str] | None = None) -> int:

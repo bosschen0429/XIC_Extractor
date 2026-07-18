@@ -160,6 +160,25 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
     assert "Fullscan MS1 index" in html
 
 
+@pytest.mark.parametrize("window", [True, "45"])
+def test_same_scan_replay_rejects_invalid_outer_window(
+    tmp_path: Path,
+    window: object,
+) -> None:
+    with pytest.raises(ValueError, match="candidate_rt_half_window_sec"):
+        run_same_scan_replay(
+            index=_index(),
+            candidates_csv=tmp_path / "missing-candidates.csv",
+            evidence_csv=tmp_path / "missing-evidence.csv",
+            known_diagnosis_csv=tmp_path / "missing-known.csv",
+            output_dir=tmp_path / "report",
+            report_id="synthetic",
+            source_sample_stem="SampleA",
+            index_input=tmp_path / "missing-index.npz",
+            candidate_rt_half_window_sec=window,  # type: ignore[arg-type]
+        )
+
+
 def test_core_only_component_is_not_counted_as_discovery_resolution() -> None:
     summary = replay._summary(
         evidence_rows=(),

@@ -11,7 +11,8 @@ import numpy as np
 
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN
 from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
-from xic_extractor.ms1_scan_index import MS1Scan
+from xic_extractor.ms1_scan_index import MS1Scan, validate_ms1_scan_index
+from xic_extractor.numeric_validation import require_finite_real, require_integer
 
 Plus4SupportStatus = Literal[
     "not_evaluable",
@@ -133,6 +134,7 @@ def evaluate_same_scan_envelope(
     """Measure fixed-mass Pt positions on shared MS1 scan IDs."""
 
     _validate_inputs(seed, settings)
+    validate_ms1_scan_index(index, require_nonempty=True)
     observations = tuple(
         _observe_scan(scan, seed.base_mz, settings)
         for scan in index
@@ -453,24 +455,38 @@ def _median_ppm_spread(
 def _validate_inputs(seed: PtPatternSeed, settings: SameScanSettings) -> None:
     if not seed.seed_id.strip() or not seed.source_set.strip():
         raise ValueError("Pt pattern seed identifiers must be non-empty")
-    if not math.isfinite(seed.base_mz) or seed.base_mz <= 0:
+    base_mz = require_finite_real(seed.base_mz, name="Pt pattern base m/z")
+    if base_mz <= 0:
         raise ValueError("Pt pattern base m/z must be finite and positive")
     if seed.rt_center_min is not None and seed.rt_half_window_sec is None:
         raise ValueError("RT-bounded Pt pattern seed requires a half-window")
-    if seed.rt_center_min is not None and (
-        not math.isfinite(seed.rt_center_min) or seed.rt_center_min < 0
-    ):
-        raise ValueError("Pt pattern RT center must be finite and non-negative")
-    if seed.rt_half_window_sec is not None and (
-        not math.isfinite(seed.rt_half_window_sec) or seed.rt_half_window_sec <= 0
-    ):
-        raise ValueError("Pt pattern RT half-window must be finite and positive")
-    if (
-        not math.isfinite(settings.noise_level)
-        or not math.isfinite(settings.mass_tolerance_ppm)
-        or settings.noise_level < 0
-        or settings.mass_tolerance_ppm <= 0
-    ):
+    if seed.rt_center_min is not None:
+        rt_center = require_finite_real(
+            seed.rt_center_min,
+            name="Pt pattern RT center",
+        )
+        if rt_center < 0:
+            raise ValueError("Pt pattern RT center must be finite and non-negative")
+    if seed.rt_half_window_sec is not None:
+        rt_window = require_finite_real(
+            seed.rt_half_window_sec,
+            name="Pt pattern RT half-window",
+        )
+        if rt_window <= 0:
+            raise ValueError("Pt pattern RT half-window must be finite and positive")
+    noise_level = require_finite_real(
+        settings.noise_level,
+        name="same-scan noise_level",
+    )
+    mass_tolerance = require_finite_real(
+        settings.mass_tolerance_ppm,
+        name="same-scan mass_tolerance_ppm",
+    )
+    if noise_level < 0 or mass_tolerance <= 0:
         raise ValueError("same-scan thresholds must be finite and non-negative")
-    if settings.minimum_joint_scans < 1:
+    minimum_joint_scans = require_integer(
+        settings.minimum_joint_scans,
+        name="minimum_joint_scans",
+    )
+    if minimum_joint_scans < 1:
         raise ValueError("minimum_joint_scans must be at least one")

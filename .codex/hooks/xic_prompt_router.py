@@ -58,6 +58,20 @@ NO_RAW_PATTERNS = [
     r"不要[^\n]{0,12}(?:讀|開|跑|使用)[^\n]{0,6}\bRAW\b",
 ]
 
+# An explicit request to accept already-produced RAW-backed evidence still
+# needs the RAW validation acceptance branch even when the same prompt says not
+# to read or rerun RAW. This is narrower than generic "no RAW" validation.
+RAW_ACCEPTANCE_ACTION_PATTERNS = [r"\baccept(?:ance)?\b|驗收|接受"]
+RAW_ACCEPTANCE_EXISTING_PATTERNS = [
+    r"\b(?:existing|current|already[-\s]?(?:produced|exists?))\b|既有|現有"
+]
+RAW_BACKED_EVIDENCE_PATTERNS = [
+    r"\bRAW[-\s]?backed\b[^\n]{0,40}"
+    r"(?:artifact|evidence|validation|result|產物|證據|結果)",
+    r"(?:artifact|evidence|validation|result|產物|證據|結果)[^\n]{0,40}"
+    r"\bRAW[-\s]?backed\b",
+]
+
 EDIT_INTENT_PATTERNS = [
     r"\b(change|modify|edit|implement|fix|refactor|rewrite|add|remove)\b",
     r"修改|改動|實作|修正|修復|重構|重寫|新增|移除",
@@ -140,7 +154,14 @@ def main() -> int:
     contexts: list[str] = []
 
     perf = matches(PERFORMANCE_PATTERNS)
-    raw_validation = matches(RAW_VALIDATION_PATTERNS) and not matches(NO_RAW_PATTERNS)
+    explicit_raw_acceptance = (
+        matches(RAW_ACCEPTANCE_ACTION_PATTERNS)
+        and matches(RAW_ACCEPTANCE_EXISTING_PATTERNS)
+        and matches(RAW_BACKED_EVIDENCE_PATTERNS)
+    )
+    raw_validation = matches(RAW_VALIDATION_PATTERNS) and (
+        explicit_raw_acceptance or not matches(NO_RAW_PATTERNS)
+    )
     edit_intent = matches(EDIT_INTENT_PATTERNS)
 
     if perf:

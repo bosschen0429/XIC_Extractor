@@ -105,16 +105,26 @@ def test_same_scan_evidence_separates_missing_from_below_noise_plus4() -> None:
     (
         SameScanSettings(mass_tolerance_ppm=float("nan")),
         SameScanSettings(noise_level=float("inf")),
+        SameScanSettings(mass_tolerance_ppm=True),
     ),
 )
-def test_same_scan_evidence_rejects_non_finite_thresholds(
+def test_same_scan_evidence_rejects_invalid_thresholds(
     settings: SameScanSettings,
 ) -> None:
-    with pytest.raises(ValueError, match="finite"):
+    with pytest.raises(ValueError, match="finite|real number"):
         evaluate_same_scan_envelope(
             (),
             PtPatternSeed(seed_id="invalid", source_set="candidate", base_mz=500.0),
             settings,
+        )
+
+
+def test_same_scan_evidence_rejects_empty_index() -> None:
+    with pytest.raises(ValueError, match="at least one MS1 scan"):
+        evaluate_same_scan_envelope(
+            (),
+            PtPatternSeed(seed_id="empty", source_set="candidate", base_mz=500.0),
+            SameScanSettings(),
         )
 
 

@@ -18,7 +18,8 @@ from xic_extractor.discovery.detected_features import (
     DetectedFeature,
     write_detected_features_csv,
 )
-from xic_extractor.ms1_scan_index import MS1Scan
+from xic_extractor.ms1_scan_index import MS1Scan, validate_ms1_scan_index
+from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.peak_detection.ms1_morphology import (
     DEFAULT_GAUSSIAN15_WINDOW_POINTS,
     gaussian15_morphology_trace,
@@ -71,6 +72,63 @@ class LocalMs1FeatureSettings:
     optimal_component_max_edge_density: float = 0.35
     optimal_component_max_edges: int = 24
     split_valley_fraction_of_smaller_apex: float = 0.50
+
+    def __post_init__(self) -> None:
+        if self.trace_builder_mode not in {"mzmine_seeded", "scan_link"}:
+            raise ValueError(
+                "trace_builder_mode must be 'mzmine_seeded' or 'scan_link'"
+            )
+        for name in (
+            "mass_detection_noise_level",
+            "min_trace_seed_intensity",
+            "min_consecutive_trace_intensity",
+            "min_duration_min",
+            "min_ok_prominence",
+            "weak_support_prominence",
+            "max_ok_mz_ppm_std",
+            "max_weak_mz_ppm_std",
+        ):
+            value = require_finite_real(getattr(self, name), name=name)
+            if value < 0:
+                raise ValueError(f"{name} must be finite and >= 0")
+        for name in ("feature_link_ppm", "max_duration_min"):
+            value = require_finite_real(getattr(self, name), name=name)
+            if value <= 0:
+                raise ValueError(f"{name} must be finite and > 0")
+        for name in (
+            "max_ok_gap_fraction",
+            "max_weak_gap_fraction",
+            "optimal_component_max_edge_density",
+            "split_valley_fraction_of_smaller_apex",
+        ):
+            value = require_finite_real(getattr(self, name), name=name)
+            if not 0 <= value <= 1:
+                raise ValueError(f"{name} must be finite and between 0 and 1")
+        for name in ("max_missing_scans",):
+            value = require_integer(getattr(self, name), name=name)
+            if value < 0:
+                raise ValueError(f"{name} must be an integer >= 0")
+        for name in (
+            "min_observed_scans",
+            "gaussian_window_points",
+            "optimal_component_max_size",
+            "optimal_component_max_edges",
+        ):
+            value = require_integer(getattr(self, name), name=name)
+            if value <= 0:
+                raise ValueError(f"{name} must be an integer > 0")
+        if self.max_duration_min < self.min_duration_min:
+            raise ValueError("max_duration_min must be >= min_duration_min")
+        if self.min_ok_prominence < self.weak_support_prominence:
+            raise ValueError(
+                "min_ok_prominence must be >= weak_support_prominence"
+            )
+        if self.max_ok_gap_fraction > self.max_weak_gap_fraction:
+            raise ValueError(
+                "max_ok_gap_fraction must be <= max_weak_gap_fraction"
+            )
+        if self.max_ok_mz_ppm_std > self.max_weak_mz_ppm_std:
+            raise ValueError("max_ok_mz_ppm_std must be <= max_weak_mz_ppm_std")
 
 
 @dataclass(frozen=True)
@@ -219,6 +277,7 @@ def build_local_ms1_feature_table(
     tuple[LocalMs1FeatureDiagnosticRow, ...],
 ]:
     resolved = settings or LocalMs1FeatureSettings()
+    validate_ms1_scan_index(index, require_nonempty=True)
     start = time.perf_counter()
     if resolved.trace_builder_mode == "mzmine_seeded":
         traces, edge_count, component_count, degraded_count = _build_seeded_traces(

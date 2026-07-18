@@ -23,6 +23,7 @@ from tools.diagnostics.pt_pattern_scan_proxy import (
     filter_scan_hit_groups,
     group_scan_hits,
     iter_ms1_scans,
+    run_proxy,
     scan_pattern_hits,
     write_detected_features_csv,
 )
@@ -91,6 +92,37 @@ def test_scan_pattern_hits_requires_all_three_non_base_positions() -> None:
     assert hit.base_mz == _BASE_MZ
     assert set(hit.position_mz) == {"pt_plus_1", "pt_plus_2", "pt_plus_4"}
     assert partial_hits == []
+
+
+def test_scan_pattern_hits_treats_zero_candidate_cap_as_unlimited() -> None:
+    masses = np.asarray(
+        [
+            _BASE_MZ,
+            _PLUS_1_MZ,
+            _PLUS_2_MZ,
+            _PLUS_4_MZ,
+            _BASE_MZ + 100.0,
+            _PLUS_1_MZ + 100.0,
+            _PLUS_2_MZ + 100.0,
+            _PLUS_4_MZ + 100.0,
+        ]
+    )
+    scan = Ms1ScanRecord(
+        scan_number=100,
+        rt_min=10.0,
+        masses=masses,
+        intensities=np.arange(1.0, 9.0),
+    )
+
+    hits = scan_pattern_hits(
+        scan,
+        lookup_ppm=20.0,
+        min_base_intensity=0.0,
+        min_position_intensity=0.0,
+        max_candidates_per_scan=0,
+    )
+
+    assert [hit.base_mz for hit in hits] == [_BASE_MZ, _BASE_MZ + 100.0]
 
 
 def test_iter_ms1_scans_fails_closed_on_scan_read_error() -> None:
@@ -290,3 +322,39 @@ def test_write_detected_features_csv_header_only_when_no_rows(
 
     assert tuple(header) == DETECTED_FEATURES_COLUMNS
     assert remaining == []
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"sample_stem": ""},
+        {"rt_min": float("nan")},
+        {"rt_max": float("inf")},
+        {"rt_min": 2.0, "rt_max": 1.0},
+        {"lookup_ppm": float("inf")},
+        {"min_base_intensity": float("nan")},
+        {"min_position_intensity": -1.0},
+        {"max_candidates_per_scan": -1},
+        {"group_width_da": 0.0},
+        {"rt_gap_split_min": float("nan")},
+        {"min_scans_per_group": 0},
+        {"lookup_ppm": True},
+        {"group_width_da": "0.005"},
+    ],
+)
+def test_run_proxy_rejects_invalid_settings_before_raw_io(
+    tmp_path: Path,
+    overrides: dict[str, object],
+) -> None:
+    kwargs: dict[str, object] = {
+        "raw_path": tmp_path / "missing.raw",
+        "dll_dir": tmp_path / "missing-dll",
+        "output_dir": tmp_path / "out",
+        "sample_stem": "SampleA",
+    }
+    kwargs.update(overrides)
+
+    with pytest.raises(ValueError):
+        run_proxy(**kwargs)
+
+    assert not (tmp_path / "out").exists()

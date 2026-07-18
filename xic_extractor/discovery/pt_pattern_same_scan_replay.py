@@ -21,7 +21,12 @@ from xic_extractor.discovery.pt_pattern_same_scan_evidence import (
 from xic_extractor.discovery.pt_pattern_same_scan_report import (
     render_same_scan_replay_html,
 )
-from xic_extractor.ms1_scan_index import MS1Scan, MS1ScanIndexProvenance
+from xic_extractor.ms1_scan_index import (
+    MS1Scan,
+    MS1ScanIndexProvenance,
+    validate_ms1_scan_index,
+)
+from xic_extractor.numeric_validation import require_finite_real
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
@@ -158,8 +163,13 @@ def run_same_scan_replay(
 
     if not report_id.strip():
         raise ValueError("report_id must be non-empty")
-    if candidate_rt_half_window_sec <= 0:
-        raise ValueError("candidate_rt_half_window_sec must be positive")
+    candidate_window = require_finite_real(
+        candidate_rt_half_window_sec,
+        name="candidate_rt_half_window_sec",
+    )
+    if candidate_window <= 0:
+        raise ValueError("candidate_rt_half_window_sec must be finite and positive")
+    validate_ms1_scan_index(index, require_nonempty=True)
     contexts = (
         *_candidate_contexts(
             candidates_csv,

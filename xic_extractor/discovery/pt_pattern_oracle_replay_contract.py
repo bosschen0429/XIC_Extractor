@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -169,6 +170,14 @@ def validate_oracle_promotion_binding(
                 f"{packet_row_id}: oracle {oracle_field} does not match "
                 f"review packet {review_field}"
             )
+    for field in ("base_mz", "base_rt_apex_min"):
+        oracle_coordinate = _required_finite_float(oracle_row, field)
+        review_coordinate = _required_finite_float(review_row, field)
+        if oracle_coordinate != review_coordinate:
+            raise ValueError(
+                f"{packet_row_id}: oracle {field} does not match "
+                f"review packet {field}"
+            )
 
 
 def _normalized_sha256(value: object, *, label: str) -> str:
@@ -185,3 +194,14 @@ def _required_text(row: Mapping[str, str], key: str) -> str:
     if not value:
         raise ValueError(f"{key} must be non-empty")
     return value
+
+
+def _required_finite_float(row: Mapping[str, str], key: str) -> float:
+    value = _required_text(row, key)
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ValueError(f"{key} must be numeric") from exc
+    if not math.isfinite(parsed):
+        raise ValueError(f"{key} must be finite")
+    return parsed

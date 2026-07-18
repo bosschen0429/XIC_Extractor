@@ -160,6 +160,15 @@ def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
         {"min_shifted_pearson_r_to_base": -0.1},
         {"min_shifted_pearson_r_to_base": 1.1},
         {"max_abs_shape_shift_sec_to_base": 0.0},
+        {"max_abs_apex_delta_sec": float("nan")},
+        {"max_abs_apex_delta_scan_step_multiplier": float("inf")},
+        {"min_pearson_r_to_base": float("nan")},
+        {"min_active_overlap_fraction": float("inf")},
+        {"min_shifted_pearson_r_to_base": float("nan")},
+        {"max_abs_shape_shift_sec_to_base": float("inf")},
+        {"min_non_base_positions_supported": True},
+        {"max_abs_apex_delta_sec": True},
+        {"min_active_overlap_fraction": "0.5"},
     ],
 )
 def test_pt_pattern_evidence_thresholds_reject_invalid_values(

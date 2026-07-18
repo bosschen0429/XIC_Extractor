@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -279,6 +280,57 @@ def test_write_detected_features_csv_rejects_invalid_local_ms1_trace_quality(
     feature = _local_detected_feature(trace_quality=trace_quality)
 
     with pytest.raises(ValueError, match="local_ms1_feature trace_quality"):
+        write_detected_features_csv(output, [feature])
+
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"sample_stem": ""}, "sample_stem"),
+        ({"feature_id": ""}, "feature_id"),
+        ({"mz": float("nan")}, "mz"),
+        ({"rt_apex_min": float("inf")}, "rt_apex_min"),
+        ({"height": 0.0}, "height"),
+        ({"area": float("nan")}, "area"),
+        ({"source": ""}, "source"),
+    ],
+)
+def test_write_detected_features_csv_rejects_rows_loader_would_reject(
+    tmp_path: Path,
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    output = tmp_path / "detected_features.csv"
+    feature = _local_detected_feature(**overrides)
+
+    with pytest.raises(ValueError, match=message):
+        write_detected_features_csv(output, [feature])
+
+    assert not output.exists()
+
+
+def test_written_detected_features_round_trip_through_public_loader(
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "detected_features.csv"
+    feature = _local_detected_feature()
+
+    write_detected_features_csv(output, [feature])
+
+    assert load_detected_features_csv(output) == (feature,)
+
+
+@pytest.mark.parametrize("field", ["mz", "area", "shape_score"])
+def test_write_detected_features_csv_rejects_boolean_numeric_values(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    output = tmp_path / "detected_features.csv"
+    feature = replace(_local_detected_feature(), **{field: True})
+
+    with pytest.raises(ValueError, match=field):
         write_detected_features_csv(output, [feature])
 
     assert not output.exists()

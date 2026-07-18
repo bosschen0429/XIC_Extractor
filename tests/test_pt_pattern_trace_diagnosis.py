@@ -595,6 +595,46 @@ def test_run_trace_diagnosis_rejects_candidate_raw_sample_mismatch(
         )
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"limit": 0},
+        {"offset": -1},
+        {"ppm": float("inf")},
+        {"rt_half_window_sec": float("nan")},
+        {"mz_source": "unknown"},
+        {"active_fraction": float("nan")},
+        {"min_pearson_r": float("inf")},
+        {"max_apex_delta_sec": float("inf")},
+        {"ppm": True},
+        {"rt_half_window_sec": "30"},
+    ],
+)
+def test_run_trace_diagnosis_rejects_invalid_settings_before_io(
+    tmp_path: Path,
+    overrides: dict[str, object],
+) -> None:
+    kwargs: dict[str, object] = {
+        "candidates_csv": tmp_path / "missing.csv",
+        "raw": tmp_path / "missing.raw",
+        "dll_dir": tmp_path,
+        "output_dir": tmp_path / "trace_diagnosis",
+        "limit": 1,
+        "offset": 0,
+        "ppm": 20.0,
+        "rt_half_window_sec": 30.0,
+        "mz_source": "expected",
+        "active_fraction": 0.1,
+        "min_pearson_r": 0.7,
+        "max_apex_delta_sec": 30.0,
+        "write_trace_points": False,
+    }
+    kwargs.update(overrides)
+
+    with pytest.raises(ValueError):
+        diag.run_trace_diagnosis(**kwargs)
+
+
 def test_anchor_segmentation_fails_closed_on_ambiguous_segment(
     monkeypatch,
 ) -> None:

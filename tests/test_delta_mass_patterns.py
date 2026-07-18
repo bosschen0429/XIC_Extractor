@@ -534,7 +534,8 @@ def test_local_ms1_feature_unknown_quality_bypassing_loader_is_fail_closed() -> 
         ),
     ]
 
-    assert match_delta_mass_pattern(features) == ()
+    with pytest.raises(ValueError, match="trace_quality"):
+        match_delta_mass_pattern(features)
 
 
 def test_local_ms1_feature_shape_score_cannot_upgrade_tier() -> None:
@@ -834,3 +835,42 @@ def test_delta_mass_pattern_settings_default_to_pt_pattern() -> None:
     assert settings.pattern is PT_PATTERN
     assert settings.mz_tolerance_ppm == 20.0
     assert settings.rt_tolerance_sec == 30.0
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"pattern_id": ""},
+        {"method_label": ""},
+        {"mz_tolerance_ppm": 0.0},
+        {"mz_tolerance_ppm": float("nan")},
+        {"rt_tolerance_sec": float("inf")},
+        {"mz_tolerance_ppm": True},
+        {"rt_tolerance_sec": "30"},
+    ],
+)
+def test_delta_mass_pattern_settings_reject_invalid_domain_values(
+    overrides: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        DeltaMassPatternSettings(**overrides)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("mz", float("nan")),
+        ("rt_apex_min", float("inf")),
+        ("height", True),
+        ("area", float("nan")),
+    ],
+)
+def test_matcher_rejects_invalid_direct_detected_features(
+    field: str,
+    value: object,
+) -> None:
+    features = _features_with_pt_plus_1(BASE_MZ + PT_PLUS_1_DELTA)
+    features[0] = replace(features[0], **{field: value})
+
+    with pytest.raises(ValueError, match=field):
+        match_delta_mass_pattern(features)

@@ -119,6 +119,15 @@ def main() -> int:
         "Accept the existing RAW-backed validation artifacts for this gate."
     )
     assert_contains(raw_accept_out, "xic-raw-validation")
+    raw_accept_without_rerun_out = router_output(
+        "Accept the existing RAW-backed validation artifacts without reading "
+        "or rerunning RAW."
+    )
+    assert_contains(raw_accept_without_rerun_out, "xic-raw-validation")
+    reordered_raw_accept_out = router_output(
+        "Accept RAW-backed artifacts that already exist; do not rerun RAW."
+    )
+    assert_contains(reordered_raw_accept_out, "xic-raw-validation")
 
     # A bare RAW code edit still routes to architecture-preflight, not raw-validation.
     raw_code_out = router_output("改 85RAW 的 matrix 抽取邏輯")

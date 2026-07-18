@@ -323,6 +323,8 @@ def test_threshold_calibration_rejects_mixed_packet_schemas(
         ("blind_overlay_summary_json_sha256", "not-a-sha256"),
         ("candidate_id", "different-candidate"),
         ("sample_stem", "DifferentSample"),
+        ("base_mz", "501.0"),
+        ("base_rt_apex_min", "11.0"),
         ("review_packet_schema_version", packet.ANCHOR_LOCAL_SCHEMA_VERSION),
         ("review_packet_readiness_tier", "production_ready"),
         ("review_packet_oracle_status", "resolved"),

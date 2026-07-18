@@ -13,6 +13,7 @@ from xic_extractor.ms1_scan_index import (
     extract_index_xic,
     read_ms1_scan_index_npz,
     read_ms1_scan_index_provenance,
+    validate_ms1_scan_index,
     write_ms1_scan_index_npz,
 )
 from xic_extractor.xic_models import XICRequest
@@ -60,6 +61,7 @@ def test_ms1_scan_index_npz_round_trips_source_provenance(tmp_path: Path) -> Non
     write_ms1_scan_index_npz(path, (), provenance=provenance)
 
     assert read_ms1_scan_index_provenance(path) == provenance
+    assert read_ms1_scan_index_npz(path) == ()
 
 
 def test_ms1_scan_index_npz_rejects_empty_provenance_array(tmp_path: Path) -> None:
@@ -159,7 +161,188 @@ def test_build_ms1_scan_index_can_fail_on_malformed_scan_arrays() -> None:
         def RetentionTimeFromScanNumber(self, _scan_number: int) -> float:
             return 2.5
 
-    assert build_ms1_scan_index(_Raw()) == ()
-
     with pytest.raises(MS1ScanReadError, match="matching 1D arrays"):
-        build_ms1_scan_index(_Raw(), fail_on_malformed=True)
+        build_ms1_scan_index(_Raw())
+
+
+@pytest.mark.parametrize(
+    "index",
+    [
+        (
+            MS1Scan(
+                scan_number=1,
+                rt=float("nan"),
+                masses=np.asarray([100.0]),
+                intensities=np.asarray([10.0]),
+            ),
+        ),
+        (
+            MS1Scan(
+                scan_number=1,
+                rt=True,  # type: ignore[arg-type]
+                masses=np.asarray([100.0]),
+                intensities=np.asarray([10.0]),
+            ),
+        ),
+        (
+            MS1Scan(
+                scan_number=1,
+                rt=1.0,
+                masses=np.asarray([True]),
+                intensities=np.asarray([10.0]),
+            ),
+        ),
+        (
+            MS1Scan(
+                scan_number=1,
+                rt=1.0,
+                masses=np.asarray([101.0, 100.0]),
+                intensities=np.asarray([10.0, 20.0]),
+            ),
+        ),
+        (
+            MS1Scan(
+                scan_number=1,
+                rt=1.0,
+                masses=np.asarray([100.0, float("inf")]),
+                intensities=np.asarray([10.0, 20.0]),
+            ),
+        ),
+        (
+            MS1Scan(
+                scan_number=1,
+                rt=1.0,
+                masses=np.asarray([100.0]),
+                intensities=np.asarray([float("nan")]),
+            ),
+        ),
+    ],
+)
+def test_ms1_scan_index_writer_rejects_invalid_scan_payloads(
+    tmp_path: Path,
+    index: tuple[MS1Scan, ...],
+) -> None:
+    with pytest.raises(ValueError):
+        write_ms1_scan_index_npz(tmp_path / "invalid.npz", index)
+
+
+def test_ms1_scan_index_reader_rejects_missing_required_array(tmp_path: Path) -> None:
+    path = tmp_path / "missing.npz"
+    np.savez(
+        path,
+        schema_version=np.asarray(["ms1_scan_index_npz_v1"]),
+        scan_number=np.asarray([1]),
+        rt=np.asarray([1.0]),
+        offsets=np.asarray([0, 1]),
+        masses=np.asarray([100.0]),
+    )
+
+    with pytest.raises(ValueError, match="missing required field 'intensities'"):
+        read_ms1_scan_index_npz(path)
+
+
+def test_ms1_scan_index_reader_rejects_unordered_scan_metadata(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "unordered.npz"
+    np.savez(
+        path,
+        schema_version=np.asarray(["ms1_scan_index_npz_v1"]),
+        scan_number=np.asarray([2, 1]),
+        rt=np.asarray([1.1, 1.0]),
+        offsets=np.asarray([0, 1, 2]),
+        masses=np.asarray([100.0, 101.0]),
+        intensities=np.asarray([10.0, 20.0]),
+    )
+
+    with pytest.raises(ValueError, match="scan_number must be strictly increasing"):
+        read_ms1_scan_index_npz(path)
+
+
+@pytest.mark.parametrize("scan_number", [True, 1.5])
+def test_ms1_scan_index_writer_rejects_non_integer_scan_numbers(
+    tmp_path: Path,
+    scan_number: object,
+) -> None:
+    index = (
+        MS1Scan(
+            scan_number=scan_number,  # type: ignore[arg-type]
+            rt=1.0,
+            masses=np.asarray([100.0]),
+            intensities=np.asarray([10.0]),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="scan_number must be an integer"):
+        write_ms1_scan_index_npz(tmp_path / "invalid-scan.npz", index)
+
+
+@pytest.mark.parametrize(
+    "field_values",
+    [
+        {"scan_number": np.asarray([1.5]), "offsets": np.asarray([0, 1])},
+        {"scan_number": np.asarray([True]), "offsets": np.asarray([0, 1])},
+        {"scan_number": np.asarray([1]), "offsets": np.asarray([0.0, 1.5])},
+        {"scan_number": np.asarray([1]), "offsets": np.asarray([False, True])},
+    ],
+)
+def test_ms1_scan_index_reader_rejects_non_integer_structure_arrays(
+    tmp_path: Path,
+    field_values: dict[str, np.ndarray],
+) -> None:
+    path = tmp_path / "invalid-integers.npz"
+    np.savez(
+        path,
+        schema_version=np.asarray(["ms1_scan_index_npz_v1"]),
+        scan_number=field_values["scan_number"],
+        rt=np.asarray([1.0]),
+        offsets=field_values["offsets"],
+        masses=np.asarray([100.0]),
+        intensities=np.asarray([10.0]),
+    )
+
+    with pytest.raises(ValueError, match="integer array"):
+        read_ms1_scan_index_npz(path)
+
+
+@pytest.mark.parametrize("rt_values", [np.asarray([True]), np.asarray(["1.0"])])
+def test_ms1_scan_index_reader_rejects_non_real_rt_arrays(
+    tmp_path: Path,
+    rt_values: np.ndarray,
+) -> None:
+    path = tmp_path / "invalid-rt.npz"
+    np.savez(
+        path,
+        schema_version=np.asarray(["ms1_scan_index_npz_v1"]),
+        scan_number=np.asarray([1]),
+        rt=rt_values,
+        offsets=np.asarray([0, 1]),
+        masses=np.asarray([100.0]),
+        intensities=np.asarray([10.0]),
+    )
+
+    with pytest.raises(ValueError, match="rt must be a real numeric array"):
+        read_ms1_scan_index_npz(path)
+
+
+def test_ms1_scan_index_validator_can_require_nonempty() -> None:
+    with pytest.raises(ValueError, match="at least one MS1 scan"):
+        validate_ms1_scan_index((), require_nonempty=True)
+
+
+def test_build_ms1_scan_index_rejects_raw_without_ms1_scans() -> None:
+    class _Header:
+        FirstSpectrum = 1
+        LastSpectrum = 1
+
+    class _Filter:
+        MSOrder = "Ms2"
+
+    class _Raw:
+        RunHeaderEx = _Header()
+
+        def GetFilterForScanNumber(self, _scan_number: int) -> _Filter:
+            return _Filter()
+
+    with pytest.raises(MS1ScanReadError, match="at least one MS1 scan"):
+        build_ms1_scan_index(_Raw())

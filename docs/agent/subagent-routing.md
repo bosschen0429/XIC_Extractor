@@ -109,12 +109,14 @@ specific lesson into the local skill or explicitly switch the route.
   review angle and generic agent surface were used or why review was bypassed.
 - Subagents do not auto-spawn. Delegate explicitly and give each reviewer a
   bounded read-only task.
-- Use global agents by capability: `explorer` for local reconnaissance,
-  `reviewer` for a frozen diff, and a generic read-only agent for plan/spec or
-  evidence questions that are not fixed-diff reviews. Put the XIC-specific
-  review angle in the task packet; the repo does not maintain duplicate custom
-  reviewer identities for these lenses. If the runtime cannot select the named
-  global agent, use a generic agent with the complete lens packet and report the
+- Use global agents by capability: `explorer` for local reconnaissance and the
+  global `reviewer` for a frozen diff with an actual read-only sandbox. For
+  plan/spec or evidence questions that are not fixed-diff reviews, a generic
+  agent may be prompt-constrained to no writes, but that is not a technical
+  sandbox. Put the XIC-specific review angle in the task packet; the repo does
+  not maintain duplicate custom reviewer identities for these lenses. If the
+  runtime cannot select the named global agent, use a generic agent with the
+  complete lens packet, snapshot the worktree before and after, and report the
   capability downgrade.
 - The main agent owns synthesis, file edits, final judgment, and verification.
 - Reviewer subagents are read-only. Use the global `executor` for a bounded
@@ -217,17 +219,20 @@ closed by a task packet, canonical doc, global skill, or existing tool surface.
 ## Hard Triggers
 
 - Any 85RAW run, likely >30 minute RAW run, or production-equivalent validation
-  must use `xic-raw-validation` and document an independent generic read-only
+  must use `xic-raw-validation` and document an independent prompt-constrained
+  no-write generic
   `validation / science evidence` preflight before launch and acceptance review
   after completion, or state the bypass reason.
 - Any CI red or required-check uncertainty starts with the existing CI skill
   workflow, such as `$gh-fix-ci`, when available. If check metadata, branch
   protection, Windows runner behavior, or local reproduction is still unclear,
   use `docs/agent/parameter-settings.md` for runner/path/PowerShell facts and, if
-  a second pair of eyes is needed, paste a CI/ops focus into a generic read-only
+  a second pair of eyes is needed, paste a CI/ops focus into a prompt-constrained
+  no-write generic
   reviewer.
 - Any project-agent config, `docs/agent/subagent-routing.md`, or AGENTS
-  workflow-rule change gets an independent generic read-only `docs / handoff`
+  workflow-rule change gets an independent prompt-constrained no-write generic
+  `docs / handoff`
   review for capability duplication, trigger drift, and output-contract
   regression.
 - Any phase plan that could preserve a bad legacy path, overclaim evidence, or
@@ -246,6 +251,13 @@ closed by a task packet, canonical doc, global skill, or existing tool surface.
   public output contracts, matrix-writing authority, or validation acceptance
   adds the `test-coverage-quality` lens to the global reviewer task packet
   or an independent verification pass.
+- Any review finding that implicates a shared owner, default, invariant,
+  provenance chain, writer/loader pair, fallback policy, or interacting hook
+  predicate expands from the commented line to all live callsites and sibling
+  boundaries owned by that responsibility. A second same-class comment on one
+  PR pauses patch-by-patch resolution and requires the finding-expansion gate in
+  `xic-large-pr-review` on a refreshed head. Reviewer advice remains a lead; the
+  main agent must ground the accepted fix in repo and domain contracts.
 - Split work into a small self-contained slice (one reason to change, explicit
   write scope, related tests, no shared write surface) before handing it to the
   global `executor` or its generic fallback. Keep `qa-executor` or an equivalent
@@ -263,13 +275,13 @@ closed by a task packet, canonical doc, global skill, or existing tool surface.
 | --- | --- | --- |
 | New phase plan / spec | `critical-artifact-review` with `framing / strategy` lens | `research` skill / `WebSearch` only when local evidence cannot discriminate options |
 | Handoff productization planning | `critical-artifact-review` with `framing / strategy` lens | global reviewer with `implementation / public contract` lens if consumer migration touches code/public contract |
-| Code implementation review | global reviewer with `implementation / public contract` lens | generic read-only `docs / handoff` lens for public docs/output; `validation / science evidence` lens for RAW/science behavior |
+| Code implementation review | global reviewer with `implementation / public contract` lens | prompt-constrained no-write generic `docs / handoff` lens for public docs/output; `validation / science evidence` lens for RAW/science behavior |
 | Parallel implementation slice | global `executor`, or a generic agent with the same bounded write scope | independent `qa-executor` or generic verifier after the slice returns when behavior or tests changed |
-| Diagnostics / tool changes | global reviewer with `implementation / public contract` lens | generic read-only `docs / handoff` lens if `tools/diagnostics/INDEX.md` or lifecycle docs change |
-| Expensive RAW run preflight | `xic-raw-validation` plus generic read-only `validation / science evidence`, `mode=preflight` | `docs/agent/parameter-settings.md` if runner/path/PowerShell failure is suspected |
-| Validation result acceptance | generic read-only `validation / science evidence`, `mode=acceptance`; add `mode=science` or `mode=performance` only when needed | `docs / handoff` lens if the result changes downstream or human review surfaces |
+| Diagnostics / tool changes | global reviewer with `implementation / public contract` lens | prompt-constrained no-write generic `docs / handoff` lens if `tools/diagnostics/INDEX.md` or lifecycle docs change |
+| Expensive RAW run preflight | `xic-raw-validation` plus prompt-constrained no-write generic `validation / science evidence`, `mode=preflight` | `docs/agent/parameter-settings.md` if runner/path/PowerShell failure is suspected |
+| Validation result acceptance | prompt-constrained no-write generic `validation / science evidence`, `mode=acceptance`; add `mode=science` or `mode=performance` only when needed | `docs / handoff` lens if the result changes downstream or human review surfaces |
 | CI red / PR check failure | Existing CI skill first; `parameter-settings.md` + a generic ops-focused reviewer only for unclear check metadata, branch protection, Windows runner, or reproduction | global reviewer or QA verifier after the failure class is known |
-| Documentation / workflow rules | generic read-only `docs / handoff` lens | `critical-artifact-review` with `framing / strategy` lens if the rule changes phase planning or gate behavior |
+| Documentation / workflow rules | prompt-constrained no-write generic `docs / handoff` lens | `critical-artifact-review` with `framing / strategy` lens if the rule changes phase planning or gate behavior |
 | Performance optimization | `xic-performance-diagnosis` plus `validation / science evidence` lens | global reviewer with `implementation / public contract` lens if code changes public behavior |
 | Long-running goal execution | Main agent uses a goal-shaped contract and owns completion; register an active goal only with explicit user request or runtime permission | `critical-artifact-review` with `framing / strategy` lens before launch when scope could become a backlog; independent verification at the end when integrity matters |
 
@@ -347,9 +359,10 @@ Trigger phrases that must use this section for non-trivial durable artifacts
 include: `subagent review`, `用 subagent 審`, `審 spec`, `審 plan`,
 `挑戰這份 spec`, `critical-thinking review`, `review goal prompt`,
 `review workflow`, and `review handoff`. For typo-only or link-only docs
-changes, use a local self-review instead of a full review. Use a generic
-read-only agent with the `docs / handoff` lens when independence would change
-the decision.
+changes, use a local self-review instead of a full review. Use a
+prompt-constrained no-write generic agent with the `docs / handoff` lens when
+independence would change the decision, and snapshot the worktree before and
+after because the prompt is not a sandbox.
 
 ## Goal Contracts
 
@@ -398,7 +411,10 @@ Current recommended posture for this repo:
 
 - Main implementation sessions: `sandbox_mode = "workspace-write"` with
   `approval_policy = "on-request"`.
-- Reviewer agents: `sandbox_mode = "read-only"`.
+- The global `reviewer` uses `sandbox_mode = "read-only"`. A generic agent
+  inherits the caller's runtime capabilities; a no-write prompt does not make
+  it sandboxed. Snapshot `git status --short` before and after any generic
+  review and report unexpected mutations.
 - Verification runs (pytest, validation commands, local runners) need
   `sandbox_mode = "workspace-write"` only for caches, logs, and output sidecars;
   the run must forbid source/docs/config/test edits, staging, commits, reverts,
@@ -436,9 +452,10 @@ Candidate hooks, in order:
 
 Hook output must be short and auditable. It should point to the existing
 canonical document or runner; it must not embed another copy of the rules.
-Changes to hooks require an independent generic read-only `docs / handoff`
-review, because hook config affects future agent execution before the agent can
-reason about the repo.
+Changes to hooks require an independent prompt-constrained no-write generic
+`docs / handoff` review, with before/after worktree snapshots, because hook
+config affects future agent execution before the agent can reason about the
+repo.
 
 ## Change Size And Reviewability
 

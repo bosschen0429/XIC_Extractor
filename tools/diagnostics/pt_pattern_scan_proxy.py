@@ -60,6 +60,7 @@ from xic_extractor.ms1_scan_index import (
     MS1ScanReadError,
     build_ms1_scan_index_for_rt_window,
 )
+from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.raw_reader import RawReaderError, open_raw
 from xic_extractor.tabular_io import write_delimited_rows
 
@@ -134,11 +135,11 @@ def iter_ms1_scans(
     proxy feature source.
     """
 
+    _validate_rt_window(rt_min=rt_min, rt_max=rt_max)
     for scan in build_ms1_scan_index_for_rt_window(
         handle,
         rt_min=rt_min,
         rt_max=rt_max,
-        fail_on_malformed=True,
     ):
         yield Ms1ScanRecord(
             scan_number=scan.scan_number,
@@ -210,6 +211,12 @@ def scan_pattern_hits(
     """Find every base peak in ``scan`` with all three non-base Pt positions
     present within ``lookup_ppm`` in the same scan."""
 
+    _validate_scan_lookup_settings(
+        lookup_ppm=lookup_ppm,
+        min_base_intensity=min_base_intensity,
+        min_position_intensity=min_position_intensity,
+        max_candidates_per_scan=max_candidates_per_scan,
+    )
     candidate_indices = _base_candidate_indices(
         scan.masses,
         scan.intensities,
@@ -267,6 +274,8 @@ def group_scan_hits(
     """Bucket scan hits by base m/z, then split each bucket into contiguous
     RT groups (a scan-level proxy for "one chromatographic peak region")."""
 
+    _require_positive_finite(group_width_da, "group_width_da")
+    _require_positive_finite(rt_gap_split_min, "rt_gap_split_min")
     by_bucket: dict[float, list[ScanPatternHit]] = {}
     for hit in hits:
         key = _group_key(hit.base_mz, group_width_da=group_width_da)
@@ -482,6 +491,18 @@ def run_proxy(
     file at all.
     """
 
+    _validate_proxy_settings(
+        sample_stem=sample_stem,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        lookup_ppm=lookup_ppm,
+        min_base_intensity=min_base_intensity,
+        min_position_intensity=min_position_intensity,
+        max_candidates_per_scan=max_candidates_per_scan,
+        group_width_da=group_width_da,
+        rt_gap_split_min=rt_gap_split_min,
+        min_scans_per_group=min_scans_per_group,
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     with open_raw(raw_path, dll_dir) as handle:
         scans = list(iter_ms1_scans(handle, rt_min=rt_min, rt_max=rt_max))
@@ -537,6 +558,73 @@ def run_proxy(
         encoding="utf-8",
     )
     return features_csv, provenance_json
+
+
+def _validate_proxy_settings(
+    *,
+    sample_stem: str,
+    rt_min: float,
+    rt_max: float,
+    lookup_ppm: float,
+    min_base_intensity: float,
+    min_position_intensity: float,
+    max_candidates_per_scan: int,
+    group_width_da: float,
+    rt_gap_split_min: float,
+    min_scans_per_group: int,
+) -> None:
+    if not sample_stem.strip():
+        raise ValueError("sample_stem must be non-empty")
+    _validate_rt_window(rt_min=rt_min, rt_max=rt_max)
+    _validate_scan_lookup_settings(
+        lookup_ppm=lookup_ppm,
+        min_base_intensity=min_base_intensity,
+        min_position_intensity=min_position_intensity,
+        max_candidates_per_scan=max_candidates_per_scan,
+    )
+    _require_positive_finite(group_width_da, "group_width_da")
+    _require_positive_finite(rt_gap_split_min, "rt_gap_split_min")
+    _require_positive_int(min_scans_per_group, "min_scans_per_group")
+
+
+def _validate_rt_window(*, rt_min: float, rt_max: float) -> None:
+    parsed_rt_min = require_finite_real(rt_min, name="rt_min")
+    parsed_rt_max = require_finite_real(rt_max, name="rt_max")
+    if parsed_rt_min > parsed_rt_max:
+        raise ValueError("rt_min must be <= rt_max")
+
+
+def _validate_scan_lookup_settings(
+    *,
+    lookup_ppm: float,
+    min_base_intensity: float,
+    min_position_intensity: float,
+    max_candidates_per_scan: int,
+) -> None:
+    _require_positive_finite(lookup_ppm, "lookup_ppm")
+    _require_non_negative_finite(min_base_intensity, "min_base_intensity")
+    _require_non_negative_finite(min_position_intensity, "min_position_intensity")
+    _require_non_negative_int(max_candidates_per_scan, "max_candidates_per_scan")
+
+
+def _require_positive_finite(value: float, name: str) -> None:
+    if require_finite_real(value, name=name) <= 0:
+        raise ValueError(f"{name} must be finite and > 0")
+
+
+def _require_non_negative_finite(value: float, name: str) -> None:
+    if require_finite_real(value, name=name) < 0:
+        raise ValueError(f"{name} must be finite and >= 0")
+
+
+def _require_positive_int(value: int, name: str) -> None:
+    if require_integer(value, name=name) <= 0:
+        raise ValueError(f"{name} must be an integer > 0")
+
+
+def _require_non_negative_int(value: int, name: str) -> None:
+    if require_integer(value, name=name) < 0:
+        raise ValueError(f"{name} must be an integer >= 0")
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -608,7 +696,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             rt_gap_split_min=args.rt_gap_split_min,
             min_scans_per_group=args.min_scans_per_group,
         )
-    except (MS1ScanReadError, RawReaderError) as exc:
+    except (MS1ScanReadError, RawReaderError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
 

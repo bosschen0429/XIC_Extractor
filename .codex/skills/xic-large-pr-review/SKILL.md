@@ -47,6 +47,45 @@ formatter rather than reading every identical call site. Check whether custom
 formatters, line terminators, encodings, hidden schema fields, and row order are
 preserved.
 
+## Finding Expansion Gate
+
+Treat a review comment as evidence of one failure instance, not as the boundary
+of the fix. First classify the mechanism and its owner. Expand the review beyond
+the commented line when the finding involves any of these shared
+responsibilities:
+
+- a shared helper, default, cache, loader, writer, parser, settings object, or
+  domain invariant;
+- fail-open/fail-closed behavior, exception translation, fallback, optional
+  suppression, or missing-artifact handling;
+- identity, hash, provenance, mutation, or writer/reader symmetry;
+- a hook predicate or validation rule whose conditions can interact.
+
+For an expanded finding, inspect:
+
+1. the owning implementation and every changed or live callsite;
+2. sibling boundaries that express the same responsibility;
+3. illegal states and adversarial inputs, including `NaN`, `Inf`, malformed or
+   reordered data, missing keys, blank identity, and invalid cross-field
+   combinations where relevant;
+4. writer-to-loader round trips, cache reconstruction, and post-write mutation
+   resistance when artifacts cross a trust boundary;
+5. negative tests for the failure class, including crossed conditions such as
+   "accept existing evidence without launching a new run".
+
+If evidence shows the issue is truly local, state why the owner and siblings are
+not affected. Do not invent a repository-wide redesign for an isolated bug.
+
+One same-class finding triggers this bounded class sweep before re-delivery. A
+second same-class finding on the same PR is a stop signal: freeze comment-by-
+comment resolution, refresh the PR head snapshot, and rerun the relevant lenses
+across the whole blast radius. Resolve comments only after the root fix is on the
+remote head and the class-level negative tests and fresh review pass.
+
+Reviewer and subagent findings are leads, not authority. Reproduce or ground
+them in the domain contract, changed code, public surface, or test gap before
+accepting their proposed fix.
+
 ## XIC Evidence Labels
 
 State the strongest evidence actually reviewed:

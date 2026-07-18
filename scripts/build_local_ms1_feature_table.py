@@ -231,6 +231,48 @@ def _settings_from_args(
     )
     if max_duration_min < min_duration_min:
         parser.error("--max-duration-min must be >= --min-duration-min")
+    min_ok_prominence = _validate_non_negative_float(
+        parser,
+        args,
+        "min_ok_prominence",
+        "--min-ok-prominence",
+    )
+    weak_support_prominence = _validate_non_negative_float(
+        parser,
+        args,
+        "weak_support_prominence",
+        "--weak-support-prominence",
+    )
+    if min_ok_prominence < weak_support_prominence:
+        parser.error("--min-ok-prominence must be >= --weak-support-prominence")
+    max_ok_gap_fraction = _validate_fraction(
+        parser,
+        args,
+        "max_ok_gap_fraction",
+        "--max-ok-gap-fraction",
+    )
+    max_weak_gap_fraction = _validate_fraction(
+        parser,
+        args,
+        "max_weak_gap_fraction",
+        "--max-weak-gap-fraction",
+    )
+    if max_ok_gap_fraction > max_weak_gap_fraction:
+        parser.error("--max-ok-gap-fraction must be <= --max-weak-gap-fraction")
+    max_ok_mz_ppm_std = _validate_non_negative_float(
+        parser,
+        args,
+        "max_ok_mz_ppm_std",
+        "--max-ok-mz-ppm-std",
+    )
+    max_weak_mz_ppm_std = _validate_non_negative_float(
+        parser,
+        args,
+        "max_weak_mz_ppm_std",
+        "--max-weak-mz-ppm-std",
+    )
+    if max_ok_mz_ppm_std > max_weak_mz_ppm_std:
+        parser.error("--max-ok-mz-ppm-std must be <= --max-weak-mz-ppm-std")
     return LocalMs1FeatureSettings(
         mass_detection_noise_level=_validate_non_negative_float(
             parser,
@@ -276,42 +318,12 @@ def _settings_from_args(
             "gaussian_window_points",
             "--gaussian-window-points",
         ),
-        min_ok_prominence=_validate_non_negative_float(
-            parser,
-            args,
-            "min_ok_prominence",
-            "--min-ok-prominence",
-        ),
-        weak_support_prominence=_validate_non_negative_float(
-            parser,
-            args,
-            "weak_support_prominence",
-            "--weak-support-prominence",
-        ),
-        max_ok_gap_fraction=_validate_fraction(
-            parser,
-            args,
-            "max_ok_gap_fraction",
-            "--max-ok-gap-fraction",
-        ),
-        max_weak_gap_fraction=_validate_fraction(
-            parser,
-            args,
-            "max_weak_gap_fraction",
-            "--max-weak-gap-fraction",
-        ),
-        max_ok_mz_ppm_std=_validate_non_negative_float(
-            parser,
-            args,
-            "max_ok_mz_ppm_std",
-            "--max-ok-mz-ppm-std",
-        ),
-        max_weak_mz_ppm_std=_validate_non_negative_float(
-            parser,
-            args,
-            "max_weak_mz_ppm_std",
-            "--max-weak-mz-ppm-std",
-        ),
+        min_ok_prominence=min_ok_prominence,
+        weak_support_prominence=weak_support_prominence,
+        max_ok_gap_fraction=max_ok_gap_fraction,
+        max_weak_gap_fraction=max_weak_gap_fraction,
+        max_ok_mz_ppm_std=max_ok_mz_ppm_std,
+        max_weak_mz_ppm_std=max_weak_mz_ppm_std,
         optimal_component_max_size=_validate_positive_int(
             parser,
             args,
@@ -356,7 +368,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_stat = raw_path.stat()
     try:
         with open_raw(raw_path, dll_dir) as handle:
-            index = build_ms1_scan_index(handle, fail_on_malformed=True)
+            index = build_ms1_scan_index(handle)
     except (RawReaderError, MS1ScanReadError) as exc:
         print(str(exc), file=sys.stderr)
         return 2

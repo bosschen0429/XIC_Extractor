@@ -115,6 +115,49 @@ def test_cli_preserves_relative_feature_source_paths(
     assert captured[argument_name] == feature_path
 
 
+def test_cli_reports_unknown_preset_without_traceback(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv)
+
+    code = run_pt_pattern_discovery.main(
+        [
+            "--detected-features-csv",
+            str(detected_features_csv),
+            "--preset",
+            "missing-preset",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "pt_pattern_discovery failed" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_reports_malformed_detected_features_without_traceback(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    detected_features_csv.write_text(
+        DETECTED_FEATURES_HEADER
+        + "Sample_1,base-1,,,10.00,,,1000.0,500.0,GOOD,0.9,targeted\r\n",
+        encoding="utf-8",
+    )
+
+    code = run_pt_pattern_discovery.main(
+        ["--detected-features-csv", str(detected_features_csv)]
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert "pt_pattern_discovery failed" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_cli_sidecar_records_relative_input_path_as_provided(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
