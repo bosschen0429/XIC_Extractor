@@ -416,26 +416,33 @@ def _parse_external_feature_table_row(
     shape_score = _first_optional_finite_float(row, _SHAPE_SCORE_COLUMNS, row_label)
 
     semantics = _normalized_text(row.get("area_or_intensity_semantics"))
-    area_or_intensity = _required_finite_float(
-        row.get("area_or_intensity"), "area_or_intensity", row_label
-    )
-    height = _first_optional_finite_float(row, ("height", "ms1_height"), row_label)
-    if height is None:
-        if semantics in _HEIGHT_SEMANTICS:
-            height = area_or_intensity
-        elif semantics in _AREA_SEMANTICS:
-            height = area_or_intensity
-        else:
-            raise ValueError(
-                f"{row_label} has unsupported area_or_intensity_semantics: "
-                f"{row.get('area_or_intensity_semantics')!r}"
-            )
-    if height <= 0:
+    if semantics not in _HEIGHT_SEMANTICS and semantics not in _AREA_SEMANTICS:
         raise ValueError(
-            f"{row_label} has invalid height: must be > 0, got {height!r}"
+            f"{row_label} has unsupported area_or_intensity_semantics: "
+            f"{row.get('area_or_intensity_semantics')!r}"
         )
+    area_or_intensity = _positive_float(
+        _required_finite_float(
+            row.get("area_or_intensity"),
+            "area_or_intensity",
+            row_label,
+        ),
+        "area_or_intensity",
+        row_label,
+    )
+    height = _first_optional_positive_float(
+        row,
+        ("height", "ms1_height"),
+        row_label,
+    )
+    if height is None:
+        height = area_or_intensity
 
-    area = _first_optional_finite_float(row, ("area", "ms1_area"), row_label)
+    area = _first_optional_positive_float(
+        row,
+        ("area", "ms1_area"),
+        row_label,
+    )
     if area is None and semantics in _AREA_SEMANTICS:
         area = area_or_intensity
 
@@ -727,10 +734,26 @@ def _first_optional_finite_float(
     return None
 
 
+def _first_optional_positive_float(
+    row: Mapping[str, str | None],
+    columns: Sequence[str],
+    row_label: str,
+) -> float | None:
+    for column in columns:
+        value = _optional_finite_float(row.get(column), column, row_label)
+        if value is not None:
+            return _positive_float(value, column, row_label)
+    return None
+
+
+def _positive_float(value: float, field: str, row_label: str) -> float:
+    if value <= 0:
+        raise ValueError(
+            f"{row_label} has invalid {field}: must be > 0, got {value!r}"
+        )
+    return value
+
+
 def _positive_height(value: str | None, row_label: str) -> float:
     height = _required_finite_float(value, "height", row_label)
-    if height <= 0:
-        raise ValueError(
-            f"{row_label} has invalid height: must be > 0, got {height!r}"
-        )
-    return height
+    return _positive_float(height, "height", row_label)

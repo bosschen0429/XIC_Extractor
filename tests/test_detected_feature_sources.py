@@ -31,7 +31,10 @@ EXTERNAL_HEADER = (
     "rt_end_min",
     "area_or_intensity",
     "area_or_intensity_semantics",
+    "height",
+    "ms1_height",
     "area",
+    "ms1_area",
     "trace_quality",
     "shape_score",
     "mz_tolerance_unit",
@@ -216,6 +219,64 @@ def test_external_feature_table_accepts_area_only_as_intensity_proxy(
     assert feature.height == 5000.0
     assert feature.area == 5000.0
     assert feature.trace_quality == "GOOD"
+
+
+@pytest.mark.parametrize("area_or_intensity", ["0", "-1"])
+def test_external_feature_table_rejects_non_positive_required_signal_value(
+    tmp_path: Path,
+    area_or_intensity: str,
+) -> None:
+    table = tmp_path / "external_features.tsv"
+    _write_external_table(
+        table,
+        _external_row(
+            area_or_intensity=area_or_intensity,
+            area_or_intensity_semantics="area",
+            height="1000",
+            area="",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="area_or_intensity.*must be > 0"):
+        load_external_feature_table_tsv(table)
+
+
+def test_external_feature_table_rejects_unsupported_semantics_with_height(
+    tmp_path: Path,
+) -> None:
+    table = tmp_path / "external_features.tsv"
+    _write_external_table(
+        table,
+        _external_row(
+            area_or_intensity_semantics="unknown_signal",
+            height="1000",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="unsupported area_or_intensity_semantics"):
+        load_external_feature_table_tsv(table)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("area", "0"),
+        ("area", "-1"),
+        ("ms1_area", "0"),
+        ("ms1_area", "-1"),
+    ],
+)
+def test_external_feature_table_rejects_non_positive_optional_area(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    table = tmp_path / "external_features.tsv"
+    overrides = {"area": "", "ms1_area": "", field: value}
+    _write_external_table(table, _external_row(**overrides))
+
+    with pytest.raises(ValueError, match=rf"{field}.*must be > 0"):
+        load_external_feature_table_tsv(table)
 
 
 def test_external_feature_table_records_unspecified_when_signal_support_is_missing(
