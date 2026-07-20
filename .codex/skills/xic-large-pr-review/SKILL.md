@@ -66,12 +66,19 @@ For an expanded finding, inspect:
 1. the owning implementation and every changed or live callsite;
 2. sibling boundaries that express the same responsibility;
 3. illegal states and adversarial inputs, including `NaN`, `Inf`, malformed or
-   reordered data, missing keys, blank identity, and invalid cross-field
-   combinations where relevant;
+   reordered data, missing keys, blank identity, duplicate identity, and invalid
+   cross-field combinations where relevant;
 4. writer-to-loader round trips, cache reconstruction, and post-write mutation
    resistance when artifacts cross a trust boundary;
 5. negative tests for the failure class, including crossed conditions such as
    "accept existing evidence without launching a new run".
+
+For every input-to-map, input-to-group, or cross-artifact join, state the
+normalized key and expected cardinality (`one-to-one`, `one-to-many`, or
+`many-to-many`). A bare dict comprehension is not evidence that identity is
+unique. Test blank keys, duplicate keys with matching and conflicting payloads,
+and reversed row order; malformed inputs must not silently become last-row-wins
+or double-counted evidence.
 
 If evidence shows the issue is truly local, state why the owner and siblings are
 not affected. Do not invent a repository-wide redesign for an isolated bug.
