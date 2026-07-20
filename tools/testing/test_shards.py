@@ -152,6 +152,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_targeted_*.py",
         ),
         "diagnostics-tools": (
+            "tests/test_artifact_paths.py",
             "tests/test_auto_accept_policy.py",
             "tests/test_benchmark_parallel.py",
             "tests/test_build_targeted_ms1_shape_identity_supports.py",
