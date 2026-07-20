@@ -71,20 +71,24 @@ def test_ci_workflow_runs_sharded_tests() -> None:
     assert "uv run pytest -v --tb=short -x" not in workflow
 
 
-def test_pr_gate_docs_match_ci_commands() -> None:
-    gate_docs = (
-        Path("AGENTS.md").read_text(encoding="utf-8"),
-        Path("docs/agent/execution-gates.md").read_text(encoding="utf-8"),
+def test_pr_gate_owner_matches_ci_commands_and_root_points_to_it() -> None:
+    root_agent_contract = Path("AGENTS.md").read_text(encoding="utf-8")
+    execution_gate = Path("docs/agent/execution-gates.md").read_text(
+        encoding="utf-8"
     )
     shard_commands = tuple(
         f"uv run python -m tools.testing.test_shards {shard} -- -v --tb=short -x"
         for shard in SHARD_PATTERNS
     )
 
-    for doc in gate_docs:
-        for command in (*CORE_CI_COMMANDS, *shard_commands):
-            assert command in doc
-        assert "uv run pytest -v --tb=short -x" not in doc
+    assert (
+        "docs/agent/execution-gates.md#pr-verification-gate"
+        in root_agent_contract
+    )
+    for command in (*CORE_CI_COMMANDS, *shard_commands):
+        assert command in execution_gate
+        assert command not in root_agent_contract
+    assert "uv run pytest -v --tb=short -x" not in execution_gate
 
 
 def _matrix_shard_blocks(workflow: str) -> tuple[tuple[str, ...], ...]:

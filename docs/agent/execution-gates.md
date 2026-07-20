@@ -97,8 +97,9 @@ execpolicy, and subagent TOML as execution-affecting config. Changes need:
 
 ## PR Verification Gate
 
-Before opening, updating, or marking a PR ready, run the CI-equivalent commands
-from `.github/workflows/ci.yml` in the current worktree:
+Before opening a PR, changing its remote head, or marking it ready, run the
+CI-equivalent commands from `.github/workflows/ci.yml` in the current worktree.
+Root `AGENTS.md` links here instead of mirroring this command list:
 
 CI is layered: pull requests run the required Python 3.12 shard matrix, while
 pushes to `main` or `master` also run the Python 3.11 compatibility matrix. The
@@ -130,3 +131,11 @@ approval instead of substituting a narrower check. PR descriptions and closeout
 notes must list exact commands and observed results.
 Do not replace the shard gate with a monolithic full-suite pytest run unless
 debugging the shard runner itself.
+
+Review-thread replies or resolutions on an unchanged remote head may reuse that
+head's recorded verification after confirming the head SHA and live thread
+state. When an authorized fix reaches the remote head, reply with the commit and
+verification evidence before resolving the thread. For a rejected finding,
+reply with the disproving evidence first. Before claiming review closeout, query
+the live PR and require zero unresolved threads unless each remaining thread is
+explicitly deferred.
