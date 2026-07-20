@@ -138,7 +138,13 @@ def _load_selected_candidate_evidence(
 ) -> dict[tuple[str, str], _CandidateEvidence]:
     if path is None:
         return {}
-    rows = _read_required_tsv(path, _PEAK_CANDIDATE_COLUMNS)
+    rows = _read_required_tsv(
+        path,
+        _PEAK_CANDIDATE_COLUMNS,
+        allow_missing_trailing_columns=(
+            "diagnostic_product_absence_reason",
+        ),
+    )
     selected_by_key: dict[tuple[str, str], list[_CandidateEvidence]] = defaultdict(list)
     for row in rows:
         if _bool_value(row["selected"]) is not True:

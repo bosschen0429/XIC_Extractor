@@ -136,6 +136,43 @@ def test_subset_schema_still_rejects_ragged_rows(
         )
 
 
+def test_subset_schema_can_explicitly_pad_allowed_trailing_column(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "rows.tsv"
+    path.write_text(
+        "family_id\tsample\toptional_note\nFAM001\tS1\n",
+        encoding="utf-8",
+    )
+
+    rows = read_delimited_rows(
+        path,
+        required_columns=("family_id", "sample", "optional_note"),
+        allow_missing_trailing_columns=("optional_note",),
+    )
+
+    assert rows == [
+        {"family_id": "FAM001", "sample": "S1", "optional_note": ""}
+    ]
+
+
+def test_trailing_padding_still_rejects_missing_required_cell(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "rows.tsv"
+    path.write_text(
+        "family_id\tsample\toptional_note\nFAM001\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="fewer cells"):
+        read_delimited_rows(
+            path,
+            required_columns=("family_id", "sample", "optional_note"),
+            allow_missing_trailing_columns=("optional_note",),
+        )
+
+
 def test_write_tsv_preserves_field_order_and_formats_values(tmp_path: Path) -> None:
     path = tmp_path / "rows.tsv"
 

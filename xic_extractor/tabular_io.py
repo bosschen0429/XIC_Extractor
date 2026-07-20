@@ -22,6 +22,7 @@ def read_delimited_rows(
     *,
     required_columns: Sequence[str],
     exact_columns: Sequence[str] | None = None,
+    allow_missing_trailing_columns: Sequence[str] = (),
     delimiter: str = "\t",
     encoding: str = "utf-8",
 ) -> list[dict[str, str]]:
@@ -33,6 +34,7 @@ def read_delimited_rows(
             required_columns=required_columns,
             exact_columns=exact_columns,
         )
+        allowed_missing = set(allow_missing_trailing_columns)
         rows: list[dict[str, str]] = []
         for row_index, row in enumerate(reader, start=2):
             if None in row:
@@ -42,11 +44,16 @@ def read_delimited_rows(
             truncated = [
                 column for column, value in row.items() if value is None
             ]
-            if truncated:
+            disallowed_truncated = [
+                column for column in truncated if column not in allowed_missing
+            ]
+            if disallowed_truncated:
                 raise ValueError(
                     f"{path}:{row_index}: row has fewer cells than declared header; "
                     f"missing cells={truncated!r}"
                 )
+            for column in truncated:
+                row[column] = ""
             rows.append(dict(row))
         return rows
 
@@ -108,6 +115,8 @@ def validate_delimited_header(
 def read_tsv_required(
     path: Path,
     required_columns: Sequence[str],
+    *,
+    allow_missing_trailing_columns: Sequence[str] = (),
 ) -> tuple[dict[str, str], ...]:
     if not path.exists():
         raise FileNotFoundError(str(path))
@@ -115,6 +124,7 @@ def read_tsv_required(
         read_delimited_rows(
             path,
             required_columns=required_columns,
+            allow_missing_trailing_columns=allow_missing_trailing_columns,
             encoding="utf-8-sig",
         )
     )
