@@ -72,6 +72,7 @@ MACHINE_CALL_COLUMNS = (
     "trace_decision_basis",
     "trace_smoothing_method",
     "trace_smoothing_window_points",
+    "min_median_rt_step_sec",
     "min_effective_smoothing_window_sec",
     "max_trace_point_count",
     "combined_pt_pattern_status",
@@ -210,6 +211,7 @@ def machine_call_row(row: Mapping[str, str]) -> dict[str, object]:
         "trace_decision_basis": row.get("trace_decision_basis", ""),
         "trace_smoothing_method": row.get("trace_smoothing_method", ""),
         "trace_smoothing_window_points": row.get("trace_smoothing_window_points", ""),
+        "min_median_rt_step_sec": row.get("min_median_rt_step_sec", ""),
         "min_effective_smoothing_window_sec": row.get(
             "min_effective_smoothing_window_sec", ""
         ),

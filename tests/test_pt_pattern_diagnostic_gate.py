@@ -465,11 +465,14 @@ def test_diagnostic_gate_uses_scan_aware_apex_threshold(
         [
             _trace_summary_row(
                 "accept-one-scan",
-                apex_delta="1.30413",
+                apex_delta="1.0",
                 pearson="0.982299",
                 overlap="0.952381",
             )
-            | {"min_effective_smoothing_window_sec": "19.7353"}
+            | {
+                "min_effective_smoothing_window_sec": "6.0",
+                "min_median_rt_step_sec": "1.2",
+            }
         ],
         evidence.SUMMARY_COLUMNS,
     )
@@ -489,7 +492,7 @@ def test_diagnostic_gate_uses_scan_aware_apex_threshold(
         delimiter=",",
     )
     assert rows[0]["diagnostic_gate_call"] == "accept"
-    assert rows[0]["max_abs_apex_delta_sec_threshold"] == "1.64461"
+    assert rows[0]["max_abs_apex_delta_sec_threshold"] == "1.5"
 
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
     assert summary["row_count"] == 1

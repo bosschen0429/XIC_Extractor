@@ -114,6 +114,7 @@ def test_discovery_evidence_records_effective_scan_aware_apex_threshold() -> Non
         trace_summary_rows=[
             _trace_summary_row(
                 max_abs_apex_delta_sec=1.30413,
+                min_median_rt_step_sec=19.7353 / 15.0,
                 min_effective_smoothing_window_sec=19.7353,
                 trace_smoothing_window_points=15,
                 min_pearson_r_to_base=0.982299,

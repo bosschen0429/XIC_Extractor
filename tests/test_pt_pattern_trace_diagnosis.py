@@ -120,6 +120,7 @@ def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
         diagnosis.summary_row["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
     )
     assert diagnosis.summary_row["trace_smoothing_method"] == "gaussian15"
+    assert math.isclose(diagnosis.summary_row["min_median_rt_step_sec"], 1.2)
     assert diagnosis.summary_row["non_base_positions_supported"] == 3
     assert diagnosis.summary_row["max_abs_apex_delta_sec"] == 0.0
     assert math.isclose(

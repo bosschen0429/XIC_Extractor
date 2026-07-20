@@ -102,6 +102,7 @@ SUMMARY_COLUMNS = (
     "trace_decision_basis",
     "trace_smoothing_method",
     "trace_smoothing_window_points",
+    "min_median_rt_step_sec",
     "min_effective_smoothing_window_sec",
     "max_trace_point_count",
     "positions_requested",
@@ -375,6 +376,11 @@ def diagnose_candidate_traces(
         for metric in metrics
         if metric.effective_smoothing_window_sec is not None
     ]
+    median_rt_steps = [
+        metric.median_rt_step_sec
+        for metric in metrics
+        if metric.median_rt_step_sec is not None and metric.median_rt_step_sec > 0
+    ]
     positions_with_signal = sum(
         metric.max_intensity is not None and metric.max_intensity > 0
         for metric in metrics
@@ -459,6 +465,9 @@ def diagnose_candidate_traces(
             "trace_decision_basis": TRACE_DECISION_BASIS,
             "trace_smoothing_method": TRACE_SMOOTH_METHOD,
             "trace_smoothing_window_points": TRACE_SMOOTH_WINDOW_POINTS,
+            "min_median_rt_step_sec": (
+                min(median_rt_steps) if median_rt_steps else None
+            ),
             "min_effective_smoothing_window_sec": (
                 min(effective_smoothing_windows)
                 if effective_smoothing_windows

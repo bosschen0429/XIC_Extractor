@@ -402,6 +402,7 @@ def _trace_summary_gate_row(
         "max_abs_shape_shift_sec_to_base": row.get(
             "max_abs_shape_shift_sec_to_base", ""
         ),
+        "min_median_rt_step_sec": row.get("min_median_rt_step_sec", ""),
         "min_effective_smoothing_window_sec": row.get(
             "min_effective_smoothing_window_sec", ""
         ),

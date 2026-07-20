@@ -39,6 +39,7 @@ def test_pt_pattern_evidence_rule_accepts_full_supported_pattern() -> None:
 def test_pt_pattern_evidence_rule_accepts_one_scan_apex_jitter() -> None:
     row = _row(
         max_abs_apex_delta_sec="1.30413",
+        min_median_rt_step_sec="1.31568667",
         min_effective_smoothing_window_sec="19.7353",
         trace_smoothing_window_points="15",
         min_pearson_r_to_base="0.982299",
@@ -51,6 +52,35 @@ def test_pt_pattern_evidence_rule_accepts_one_scan_apex_jitter() -> None:
     assert decision.call == "accept"
     assert decision.detection_status == "detected"
     assert decision.reason == "full_pattern_close_apex_shape_overlap"
+
+
+def test_pt_pattern_evidence_rule_uses_observed_step_for_clipped_short_trace() -> None:
+    row = _row(
+        max_abs_apex_delta_sec="1.0",
+        min_effective_smoothing_window_sec="6.0",
+        trace_smoothing_window_points="15",
+        pt_plus_1_median_rt_step_sec="1.2",
+        pt_plus_2_median_rt_step_sec="1.2",
+        pt_plus_4_median_rt_step_sec="1.2",
+    )
+
+    decision = evaluate_pt_pattern_evidence(row)
+
+    assert effective_max_abs_apex_delta_sec(row) == pytest.approx(1.5)
+    assert decision.call == "accept"
+
+
+def test_pt_pattern_evidence_rule_does_not_infer_step_from_configured_window() -> None:
+    row = _row(
+        max_abs_apex_delta_sec="1.0",
+        min_effective_smoothing_window_sec="6.0",
+        trace_smoothing_window_points="15",
+    )
+
+    decision = evaluate_pt_pattern_evidence(row)
+
+    assert effective_max_abs_apex_delta_sec(row) == pytest.approx(0.6)
+    assert decision.call == "reject"
 
 
 def test_pt_pattern_evidence_rule_keeps_shifted_shape_review_only() -> None:

@@ -39,6 +39,7 @@ def _packet_row(
             "trace_smoothing_method": evidence.TRACE_SMOOTH_METHOD,
             "trace_smoothing_window_points": str(evidence.TRACE_SMOOTH_WINDOW_POINTS),
             "min_effective_smoothing_window_sec": "0.90",
+            "min_median_rt_step_sec": "0.06",
             "max_trace_point_count": "31",
             "combined_pt_pattern_status": status,
             "non_base_positions_supported": "3",
@@ -157,6 +158,7 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
     assert machine_rows[0]["min_shifted_pearson_r_to_base"] == "0.98"
     assert machine_rows[0]["max_abs_shape_shift_sec_to_base"] == "1.0"
     assert machine_rows[0]["min_effective_smoothing_window_sec"] == "0.90"
+    assert machine_rows[0]["min_median_rt_step_sec"] == "0.06"
     assert machine_rows[0]["max_trace_point_count"] == "31"
     assert machine_rows[0]["anchor_segmentation_boundary_review_status"] == "clear"
     assert machine_rows[0]["anchor_segmentation_common_end_owner_labels"] == (

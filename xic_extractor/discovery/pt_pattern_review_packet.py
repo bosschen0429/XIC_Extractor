@@ -121,6 +121,7 @@ PACKET_COLUMNS = (
     "trace_decision_basis",
     "trace_smoothing_method",
     "trace_smoothing_window_points",
+    "min_median_rt_step_sec",
     "min_effective_smoothing_window_sec",
     "max_trace_point_count",
     "trace_support_status",
@@ -368,6 +369,7 @@ def _packet_row(
         "trace_smoothing_window_points": summary.get(
             "trace_smoothing_window_points", ""
         ),
+        "min_median_rt_step_sec": summary.get("min_median_rt_step_sec", ""),
         "min_effective_smoothing_window_sec": summary.get(
             "min_effective_smoothing_window_sec", ""
         ),

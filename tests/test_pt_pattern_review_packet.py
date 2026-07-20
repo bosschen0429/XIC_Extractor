@@ -48,6 +48,7 @@ def _summary_row(
         "trace_smoothing_method": evidence.TRACE_SMOOTH_METHOD,
         "trace_smoothing_window_points": str(evidence.TRACE_SMOOTH_WINDOW_POINTS),
         "min_effective_smoothing_window_sec": "0.90",
+        "min_median_rt_step_sec": "0.06",
         "max_trace_point_count": "31",
         "non_base_positions_supported": "3",
         "max_abs_apex_delta_sec": "2.0",
@@ -170,6 +171,7 @@ def test_build_review_packet_rows_samples_per_status_and_keeps_pending_oracle() 
     assert rows[0]["trace_ambiguity_flags"] == "shifted_only_support_present"
     assert rows[0]["shifted_only_position_labels"] == "pt_plus_4"
     assert rows[0]["min_effective_smoothing_window_sec"] == "0.90"
+    assert rows[0]["min_median_rt_step_sec"] == "0.06"
     assert rows[0]["max_trace_point_count"] == "31"
     assert rows[0]["raw_min_pearson_r_to_base"] == "0.80"
     assert rows[0]["pt_plus_4_trace_quality_flags"] == "shifted_only_support"

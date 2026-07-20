@@ -216,16 +216,6 @@ def _scan_interval_sec(row: Mapping[str, object]) -> float | None:
         if value is not None and value > 0:
             return value
 
-    effective_window_sec = optional_float(row.get("min_effective_smoothing_window_sec"))
-    smoothing_window_points = optional_float(row.get("trace_smoothing_window_points"))
-    if (
-        effective_window_sec is not None
-        and effective_window_sec > 0
-        and smoothing_window_points is not None
-        and smoothing_window_points > 0
-    ):
-        return effective_window_sec / smoothing_window_points
-
     per_position_steps = [
         optional_float(row.get(f"{label}_median_rt_step_sec"))
         for label in ("pt_plus_1", "pt_plus_2", "pt_plus_4")

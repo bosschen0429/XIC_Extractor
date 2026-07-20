@@ -238,7 +238,11 @@ chain stay pending/stale diagnostic context.
 Because Gaussian15 is point-based, its time width depends on scan density.
 Trace diagnosis therefore records `median_rt_step_sec` and
 `effective_smoothing_window_sec` per position, plus
-`min_effective_smoothing_window_sec` and `max_trace_point_count` per candidate.
+`min_median_rt_step_sec`, `min_effective_smoothing_window_sec`, and
+`max_trace_point_count` per candidate. Scan-aware apex tolerance uses the direct
+observed RT step; it does not reconstruct scan spacing by dividing the effective
+window by the configured Gaussian15 point count because short traces use a
+smaller effective odd window.
 If the effective window is shorter than 8 seconds, the trace evidence adds
 `short_effective_smoothing_window` to the ambiguity flags. This is review
 context for dense or jagged traces; it does not by itself reject a Pt pattern
