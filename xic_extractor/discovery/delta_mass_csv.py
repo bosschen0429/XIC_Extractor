@@ -13,7 +13,6 @@ pinned by the approved contract tests in ``tests/test_delta_mass_csv.py``.
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -28,6 +27,9 @@ from xic_extractor.discovery.detected_features import (
 )
 from xic_extractor.discovery.detected_features import (
     load_detected_features_csv as _load_detected_features_csv,
+)
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    format_pt_machine_float,
 )
 from xic_extractor.tabular_io import escape_excel_formula, write_delimited_rows
 
@@ -424,14 +426,10 @@ def _format_pt_value(value: object, *, escape_formula: bool) -> str:
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
     if isinstance(value, float):
-        if not math.isfinite(value):
-            return ""
         # These CSVs are machine handoffs, not display-only reports. Python's
         # repr is the shortest decimal that round-trips to the same binary
         # float, avoiding ppm-scale center drift from the old ``.6g`` format.
-        if value.is_integer():
-            return str(int(value))
-        return repr(value)
+        return format_pt_machine_float(value)
     if isinstance(value, int):
         return str(value)
     text = str(value)

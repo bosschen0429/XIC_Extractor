@@ -10,6 +10,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_patterns import PtPatternCandidate
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    validate_pt_candidate_trace_summary_identity,
+)
 from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_THRESHOLDS,
     PtPatternEvidenceThresholds,
@@ -25,7 +28,10 @@ TRACE_EVIDENCE_NOT_EVALUATED = "not_evaluated"
 TRACE_EVIDENCE_EVALUATED = "evaluated"
 NO_WRITE_AUTHORITY = False
 TRACE_SUMMARY_EVIDENCE_REQUIRED_COLUMNS = (
+    "sample_stem",
     "candidate_id",
+    "base_mz",
+    "base_rt_apex_min",
     "combined_pt_pattern_status",
     "non_base_positions_supported",
     "max_abs_apex_delta_sec",
@@ -60,6 +66,7 @@ def build_pt_pattern_evidence_rows(
     summary row is supplied.
     """
 
+    normalized_candidate_ids = _normalized_candidate_ids(candidates)
     trace_by_candidate_id = (
         _trace_rows_by_candidate_id(trace_summary_rows)
         if trace_summary_rows is not None
@@ -69,12 +76,37 @@ def build_pt_pattern_evidence_rows(
     return tuple(
         _evidence_row(
             candidate,
-            trace_row=trace_by_candidate_id.get(candidate.candidate_id),
+            trace_row=trace_by_candidate_id.get(normalized_candidate_id),
             trace_summary_provided=trace_summary_provided,
             thresholds=thresholds,
         )
-        for candidate in candidates
+        for candidate, normalized_candidate_id in zip(
+            candidates,
+            normalized_candidate_ids,
+            strict=True,
+        )
     )
+
+
+def _normalized_candidate_ids(
+    candidates: Sequence[PtPatternCandidate],
+) -> tuple[str, ...]:
+    normalized_ids: list[str] = []
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for candidate in candidates:
+        candidate_id = _normalized_candidate_id(
+            candidate.candidate_id,
+            side="candidate",
+        )
+        if candidate_id in seen:
+            duplicates.add(candidate_id)
+        seen.add(candidate_id)
+        normalized_ids.append(candidate_id)
+    if duplicates:
+        joined = ", ".join(sorted(duplicates))
+        raise ValueError(f"duplicate candidate candidate_id values: {joined}")
+    return tuple(normalized_ids)
 
 
 def _trace_rows_by_candidate_id(
@@ -82,13 +114,23 @@ def _trace_rows_by_candidate_id(
 ) -> dict[str, Mapping[str, object]]:
     by_id: dict[str, Mapping[str, object]] = {}
     for row in rows:
-        candidate_id = str(row.get("candidate_id", "")).strip()
-        if not candidate_id:
-            raise ValueError("trace summary row is missing candidate_id")
+        candidate_id = _normalized_candidate_id(
+            row.get("candidate_id"),
+            side="trace summary row",
+        )
         if candidate_id in by_id:
             raise ValueError(f"duplicate trace summary candidate_id: {candidate_id}")
         by_id[candidate_id] = row
     return by_id
+
+
+def _normalized_candidate_id(value: object, *, side: str) -> str:
+    if value is None or isinstance(value, bool):
+        raise ValueError(f"{side} is missing candidate_id")
+    candidate_id = str(value).strip()
+    if not candidate_id:
+        raise ValueError(f"{side} is missing candidate_id")
+    return candidate_id
 
 
 def _evidence_row(
@@ -114,6 +156,15 @@ def _evidence_row(
         )
         return row
 
+    validate_pt_candidate_trace_summary_identity(
+        {
+            "candidate_id": candidate.candidate_id,
+            "sample_stem": candidate.sample_stem,
+            "base_mz": candidate.base_mz,
+            "base_rt_apex_min": candidate.base_rt_apex_min,
+        },
+        trace_row,
+    )
     decision = evaluate_pt_pattern_evidence(trace_row, thresholds=thresholds)
     row.update(
         {

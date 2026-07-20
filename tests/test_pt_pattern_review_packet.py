@@ -196,6 +196,62 @@ def test_review_packet_rejects_summary_candidate_missing_from_candidates() -> No
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "conflicting_value"),
+    [
+        ("sample_stem", "SampleB"),
+        ("base_mz", "501.0"),
+        ("base_rt_apex_min", "10.5"),
+    ],
+)
+def test_review_packet_rejects_candidate_summary_identity_mismatch(
+    field: str,
+    conflicting_value: str,
+) -> None:
+    summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
+    summary[field] = conflicting_value
+
+    with pytest.raises(ValueError, match=rf"{field}.*does not match"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[summary],
+            metric_rows=_metric_rows("cand"),
+            packet_label="identity-mismatch",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_join_is_independent_of_input_row_order() -> None:
+    candidate_a = _candidate_row("cand-a")
+    candidate_b = _candidate_row("cand-b")
+    candidate_b["base_mz"] = "600.0"
+    candidate_b["base_rt_apex_min"] = "11.0"
+    summary_a = _summary_row("cand-a", "pt_pattern_detected_diagnostic")
+    summary_b = _summary_row("cand-b", "pt_pattern_detected_diagnostic")
+    summary_b["base_mz"] = "600.0"
+    summary_b["base_rt_apex_min"] = "11.0"
+
+    forward = packet.build_review_packet_rows(
+        candidate_rows=[candidate_a, candidate_b],
+        summary_rows=[summary_a, summary_b],
+        metric_rows=[*_metric_rows("cand-a"), *_metric_rows("cand-b")],
+        packet_label="ordered",
+        source_label="pt_only",
+        max_per_status=2,
+    )
+    reversed_rows = packet.build_review_packet_rows(
+        candidate_rows=[candidate_b, candidate_a],
+        summary_rows=[summary_b, summary_a],
+        metric_rows=[*_metric_rows("cand-b"), *_metric_rows("cand-a")],
+        packet_label="ordered",
+        source_label="pt_only",
+        max_per_status=2,
+    )
+
+    assert forward == reversed_rows
+
+
 def test_review_packet_rejects_duplicate_summary_candidate_id() -> None:
     summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
     with pytest.raises(ValueError, match="duplicate summary candidate_id values"):

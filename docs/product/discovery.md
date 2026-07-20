@@ -235,6 +235,15 @@ reviewed-label gate replay must then match the promotion row back to the actual
 review-packet SHA and candidate/sample identity. Legacy labels without that
 chain stay pending/stale diagnostic context.
 
+Candidate-to-trace-summary joins are one-to-zero-or-one by normalized
+`candidate_id`. A matched row must also preserve `sample_stem`, `base_mz`, and
+`base_rt_apex_min`; blank, non-finite, or conflicting identity fields fail
+closed before Discovery evidence or a manual-review packet is built. Numeric
+serialization differences such as `500` versus `500.0` are equivalent. Trace
+summaries produced before round-trip identity serialization are stale when
+their stored coordinates no longer match the candidate and must be regenerated;
+the consumer does not infer precision that the old artifact discarded.
+
 Because Gaussian15 is point-based, its time width depends on scan density.
 Trace diagnosis therefore records `median_rt_step_sec` and
 `effective_smoothing_window_sec` per position, plus

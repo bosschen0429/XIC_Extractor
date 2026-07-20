@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from xic_extractor.discovery.delta_mass_patterns import PtPatternCandidate
 from xic_extractor.discovery.pt_pattern_discovery_evidence import (
     build_pt_pattern_evidence_rows,
@@ -67,6 +69,8 @@ def _trace_summary_row(**overrides: object) -> dict[str, object]:
     row: dict[str, object] = {
         "sample_stem": "Sample_1",
         "candidate_id": "Sample_1@pt@base-1",
+        "base_mz": 500.0,
+        "base_rt_apex_min": 10.0,
         "scan_pattern_seed_status": "full_pattern_seeded",
         "combined_pt_pattern_status": "pt_pattern_detected_diagnostic",
         "non_base_positions_supported": 3,
@@ -231,3 +235,73 @@ def test_discovery_evidence_rejects_duplicate_trace_summary_candidate_ids() -> N
         assert "duplicate trace summary candidate_id" in str(error)
     else:  # pragma: no cover - defensive assertion style keeps py3.10 simple
         raise AssertionError("expected duplicate candidate_id to raise ValueError")
+
+
+def test_discovery_evidence_joins_whitespace_equivalent_candidate_ids() -> None:
+    rows = build_pt_pattern_evidence_rows(
+        [_candidate(candidate_id=" candidate-a ")],
+        trace_summary_rows=[_trace_summary_row(candidate_id="candidate-a")],
+    )
+
+    assert rows[0]["trace_evidence_status"] == "evaluated"
+    assert rows[0]["trace_rule_call"] == "accept"
+
+
+def test_discovery_evidence_rejects_blank_candidate_id() -> None:
+    with pytest.raises(ValueError, match="candidate.*missing candidate_id"):
+        build_pt_pattern_evidence_rows([_candidate(candidate_id=" ")])
+
+
+def test_discovery_evidence_rejects_normalized_duplicate_candidate_ids() -> None:
+    with pytest.raises(ValueError, match="duplicate candidate candidate_id"):
+        build_pt_pattern_evidence_rows(
+            [
+                _candidate(candidate_id="candidate-a"),
+                _candidate(candidate_id=" candidate-a "),
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "conflicting_value"),
+    [
+        ("sample_stem", "Sample_2"),
+        ("base_mz", 501.0),
+        ("base_rt_apex_min", 10.5),
+    ],
+)
+def test_discovery_evidence_rejects_trace_summary_identity_mismatch(
+    field: str,
+    conflicting_value: object,
+) -> None:
+    with pytest.raises(ValueError, match=rf"{field}.*does not match"):
+        build_pt_pattern_evidence_rows(
+            [_candidate()],
+            trace_summary_rows=[_trace_summary_row(**{field: conflicting_value})],
+        )
+
+
+def test_discovery_evidence_join_is_independent_of_trace_summary_order() -> None:
+    candidate_a = _candidate(candidate_id="candidate-a")
+    candidate_b = _candidate(
+        candidate_id="candidate-b",
+        base_mz=600.0,
+        base_rt_apex_min=11.0,
+    )
+    summary_a = _trace_summary_row(candidate_id="candidate-a")
+    summary_b = _trace_summary_row(
+        candidate_id="candidate-b",
+        base_mz=600.0,
+        base_rt_apex_min=11.0,
+        min_pearson_r_to_base=0.84,
+    )
+
+    rows = build_pt_pattern_evidence_rows(
+        [candidate_a, candidate_b],
+        trace_summary_rows=[summary_b, summary_a],
+    )
+
+    assert [(row["candidate_id"], row["trace_rule_call"]) for row in rows] == [
+        ("candidate-a", "accept"),
+        ("candidate-b", "reject"),
+    ]

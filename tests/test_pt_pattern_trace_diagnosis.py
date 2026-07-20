@@ -11,6 +11,7 @@ from tools.diagnostics import pt_pattern_trace_diagnosis as diag
 from xic_extractor.discovery import (
     pt_pattern_anchor_segmentation as anchor_segmentation,
 )
+from xic_extractor.discovery import pt_pattern_review_packet as review_packet
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
 from xic_extractor.discovery.pt_pattern_anchor_segmentation import (
     select_anchor_local_segments,
@@ -493,6 +494,90 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     assert anchor_sidecar["anchor_boundary_review_status_counts"] == {
         anchor_summary_rows[0]["anchor_segmentation_boundary_review_status"]: 1,
     }
+
+
+def test_trace_summary_identity_round_trips_into_review_packet(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    base_mz = 500.123456789
+    base_rt = 10.123456789
+    candidate = _candidate_row()
+    candidate.update(
+        {
+            "candidate_id": f"SampleA|pt|{base_mz!r}|{base_rt!r}",
+            "method_label": "pt_pattern",
+            "candidate_state": "pt_pattern_candidate",
+            "review_priority": "HIGH",
+            "evidence_tier": "A",
+            "evidence_score": "90",
+            "base_mz": repr(base_mz),
+            "base_rt_apex_min": repr(base_rt),
+            "cid_nl_base_status": "not_required",
+            "cid_nl_base_join_mode": "not_required",
+        }
+    )
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    write_delimited_rows(
+        candidates_csv,
+        [candidate],
+        tuple(candidate),
+    )
+
+    class FakeRaw:
+        def __enter__(self) -> "FakeRaw":
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def extract_xic_many(self, requests):
+            rt = np.linspace(base_rt - 0.1, base_rt + 0.1, 31)
+            peak = np.exp(-0.5 * ((rt - base_rt) / 0.025) ** 2)
+            return tuple(
+                XICTrace.from_arrays(
+                    rt,
+                    peak * (100.0 if index == 0 else 25.0),
+                )
+                for index, _request in enumerate(requests)
+            )
+
+    monkeypatch.setattr(diag, "open_raw", lambda raw, dll_dir: FakeRaw())
+    raw_path = tmp_path / "SampleA.raw"
+    raw_path.write_bytes(b"sample-a-raw")
+    trace_outputs = diag.run_trace_diagnosis(
+        candidates_csv=candidates_csv,
+        raw=raw_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "trace_diagnosis",
+        limit=1,
+        offset=0,
+        ppm=20.0,
+        rt_half_window_sec=30.0,
+        mz_source="expected",
+        active_fraction=0.1,
+        min_pearson_r=0.7,
+        max_apex_delta_sec=30.0,
+        write_trace_points=False,
+    )
+
+    packet_outputs = review_packet.run_review_packet(
+        candidates_csv=candidates_csv,
+        trace_summary_csv=trace_outputs["anchor_summary_csv"],
+        trace_metrics_csv=trace_outputs["anchor_metrics_csv"],
+        output_dir=tmp_path / "review_packet",
+        packet_label="identity-round-trip",
+        source_label="pt_only",
+        max_per_status=1,
+    )
+    packet_rows = read_delimited_rows(
+        packet_outputs["packet_csv"],
+        required_columns=review_packet.PACKET_COLUMNS,
+        delimiter=",",
+    )
+
+    assert packet_rows[0]["base_mz"] == repr(base_mz)
+    assert packet_rows[0]["base_rt_apex_min"] == repr(base_rt)
 
 
 def test_run_trace_diagnosis_uses_local_hypothesis_and_preserves_context(

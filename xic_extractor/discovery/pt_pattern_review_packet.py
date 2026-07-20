@@ -7,6 +7,9 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    validate_pt_candidate_trace_summary_identity,
+)
 from xic_extractor.discovery.pt_pattern_trace_batch import (
     ANCHOR_LOCAL_SCHEMA_VERSION as ANCHOR_TRACE_SCHEMA_VERSION,
 )
@@ -228,6 +231,7 @@ def build_review_packet_rows(
     for summary in summary_rows:
         candidate_id = _required_text(summary, "candidate_id")
         candidate = candidates_by_id[candidate_id]
+        validate_pt_candidate_trace_summary_identity(candidate, summary)
         combined_status = _required_text(summary, "combined_pt_pattern_status")
         row = _packet_row(
             candidate=candidate,
@@ -359,8 +363,8 @@ def _packet_row(
         "review_priority": candidate.get("review_priority", ""),
         "evidence_tier": candidate.get("evidence_tier", ""),
         "evidence_score": candidate.get("evidence_score", ""),
-        "base_mz": _preferred_value(summary, candidate, "base_mz"),
-        "base_rt_apex_min": _preferred_value(summary, candidate, "base_rt_apex_min"),
+        "base_mz": _required_text(summary, "base_mz"),
+        "base_rt_apex_min": _required_text(summary, "base_rt_apex_min"),
         "cid_nl_base_status": candidate.get("cid_nl_base_status", ""),
         "cid_nl_base_join_mode": candidate.get("cid_nl_base_join_mode", ""),
         "scan_pattern_seed_status": summary.get("scan_pattern_seed_status", ""),
@@ -619,17 +623,6 @@ def _packet_sort_key(row: Mapping[str, object]) -> tuple[float, float, str]:
         optional_float(row.get("base_mz")) or float("inf"),
         str(row.get("candidate_id", "")),
     )
-
-
-def _preferred_value(
-    primary: Mapping[str, str],
-    fallback: Mapping[str, str],
-    field: str,
-) -> str:
-    value = str(primary.get(field, "")).strip()
-    if value:
-        return value
-    return str(fallback.get(field, "")).strip()
 
 
 def _required_text(row: Mapping[str, str], field: str) -> str:

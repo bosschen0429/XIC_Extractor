@@ -17,6 +17,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    prepare_pt_trace_summary_rows_for_csv,
+)
 from xic_extractor.discovery.pt_pattern_trace_batch import (
     ANCHOR_LOCAL_METRIC_COLUMNS,
     ANCHOR_LOCAL_SCHEMA_VERSION,
@@ -47,8 +50,8 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
     load_candidate_rows,
     validate_candidate_sample_binding,
 )
-from xic_extractor.raw_reader import RawReaderError, open_raw
 from xic_extractor.numeric_validation import require_finite_real, require_integer
+from xic_extractor.raw_reader import RawReaderError, open_raw
 from xic_extractor.tabular_io import file_sha256, write_delimited_rows
 from xic_extractor.xic_models import XICTrace
 
@@ -144,11 +147,17 @@ def run_trace_diagnosis(
         output_dir / "pt_pattern_anchor_local_trace_diagnosis.json"
     )
 
-    write_delimited_rows(summary_csv, diagnosis.legacy_summary_rows, SUMMARY_COLUMNS)
+    write_delimited_rows(
+        summary_csv,
+        prepare_pt_trace_summary_rows_for_csv(diagnosis.legacy_summary_rows),
+        SUMMARY_COLUMNS,
+    )
     write_delimited_rows(metrics_csv, diagnosis.legacy_metric_rows, METRIC_COLUMNS)
     write_delimited_rows(
         anchor_summary_csv,
-        diagnosis.anchor_local_summary_rows,
+        prepare_pt_trace_summary_rows_for_csv(
+            diagnosis.anchor_local_summary_rows,
+        ),
         ANCHOR_LOCAL_SUMMARY_COLUMNS,
     )
     write_delimited_rows(
