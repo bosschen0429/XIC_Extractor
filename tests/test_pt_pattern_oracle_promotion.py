@@ -279,6 +279,118 @@ def test_oracle_promotion_allows_resolved_subset_of_review_packet() -> None:
     assert [row["candidate_id"] for row in rows] == ["cand-resolved"]
 
 
+def test_oracle_promotion_normalizes_human_call_in_output() -> None:
+    rows = _build_rows(
+        adjudicated_rows=[
+            _adjudicated_row(
+                "cand-normalized",
+                adjudicated_call=" Accept ",
+                user_call=" ACCEPT ",
+            )
+        ],
+        review_packet_rows=[
+            _review_packet_row(
+                "cand-normalized",
+                status="pt_pattern_detected_diagnostic",
+            )
+        ],
+    )
+
+    assert rows[0]["oracle_call"] == "accept"
+    assert rows[0]["human_review_call"] == "accept"
+
+
+def test_oracle_promotion_rejects_unused_review_packet_source(
+    tmp_path: Path,
+) -> None:
+    primary_dir = tmp_path / "primary"
+    extra_dir = tmp_path / "extra"
+    primary_dir.mkdir()
+    extra_dir.mkdir()
+    review_packet_csv, overlay_summary_json = _write_review_bundle(
+        primary_dir,
+        [
+            _review_packet_row(
+                "cand-primary",
+                status="pt_pattern_detected_diagnostic",
+            )
+        ],
+    )
+    extra_review_packet_csv, extra_overlay_summary_json = _write_review_bundle(
+        extra_dir,
+        [
+            _review_packet_row(
+                "cand-extra",
+                status="pt_pattern_candidate_incomplete",
+            )
+        ],
+    )
+    adjudicated_csv = tmp_path / "adjudicated.csv"
+    write_delimited_rows(
+        adjudicated_csv,
+        _bind_rows_to_bundle(
+            [_adjudicated_row("cand-primary")],
+            review_packet_csv=review_packet_csv,
+            overlay_summary_json=overlay_summary_json,
+        ),
+        promotion.ADJUDICATED_REQUIRED_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="review packet source set.*extra"):
+        promotion.run_oracle_promotion(
+            adjudicated_oracle_csv=adjudicated_csv,
+            review_packet_csvs=[review_packet_csv, extra_review_packet_csv],
+            blind_overlay_summary_jsons=[
+                overlay_summary_json,
+                extra_overlay_summary_json,
+            ],
+            output_dir=tmp_path / "promotion",
+            oracle_packet_id="unit_oracle",
+        )
+
+
+def test_oracle_promotion_rejects_unused_blind_overlay_source(
+    tmp_path: Path,
+) -> None:
+    review_packet_csv, overlay_summary_json = _write_review_bundle(
+        tmp_path,
+        [
+            _review_packet_row(
+                "cand-primary",
+                status="pt_pattern_detected_diagnostic",
+            )
+        ],
+    )
+    extra_overlay_summary_json = overlay.run_blind_overlay(
+        review_packet_csv=review_packet_csv,
+        trace_points_csv=tmp_path / "trace_points.csv",
+        output_dir=tmp_path / "extra_overlay",
+        title="Unused promotion evidence bundle",
+    )["summary_json"]
+    adjudicated_csv = tmp_path / "adjudicated.csv"
+    write_delimited_rows(
+        adjudicated_csv,
+        _bind_rows_to_bundle(
+            [_adjudicated_row("cand-primary")],
+            review_packet_csv=review_packet_csv,
+            overlay_summary_json=overlay_summary_json,
+        ),
+        promotion.ADJUDICATED_REQUIRED_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="blind-overlay source set.*extra"):
+        promotion.run_oracle_promotion(
+            adjudicated_oracle_csv=adjudicated_csv,
+            review_packet_csvs=[review_packet_csv],
+            blind_overlay_summary_jsons=[
+                overlay_summary_json,
+                extra_overlay_summary_json,
+            ],
+            output_dir=tmp_path / "promotion",
+            oracle_packet_id="unit_oracle",
+        )
+
+
 def test_oracle_promotion_writes_provenance_locked_packet(tmp_path: Path) -> None:
     adjudicated_csv = tmp_path / "adjudicated.csv"
     adjudication_summary_json = tmp_path / "adjudicated_summary.json"
@@ -363,6 +475,33 @@ def test_oracle_promotion_writes_provenance_locked_packet(tmp_path: Path) -> Non
     )
     assert verified.oracle_packet_id == "unit_oracle"
     assert len(verified.rows) == 2
+
+
+def test_verified_promotion_rejects_packet_changed_during_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    outputs = _write_two_row_promotion_bundle(tmp_path)
+    original_revalidate = promotion._revalidate_promotion_sources
+
+    def mutate_packet_after_source_revalidation(**kwargs: object) -> None:
+        original_revalidate(**kwargs)  # type: ignore[arg-type]
+        with outputs["promotion_packet_csv"].open(
+            "a",
+            encoding="utf-8",
+        ) as handle:
+            handle.write("\n")
+
+    monkeypatch.setattr(
+        promotion,
+        "_revalidate_promotion_sources",
+        mutate_packet_after_source_revalidation,
+    )
+
+    with pytest.raises(ValueError, match="packet changed during verification"):
+        promotion.load_verified_oracle_promotion_bundle(
+            outputs["promotion_packet_csv"]
+        )
 
 
 def test_verified_promotion_rejects_paired_call_tamper(tmp_path: Path) -> None:
@@ -570,6 +709,78 @@ def test_oracle_promotion_publish_failure_removes_commit_marker_and_temps(
 
     assert not summary_path.exists()
     assert not list(summary_path.parent.glob(".*.tmp"))
+
+
+def test_oracle_promotion_self_check_interrupt_removes_commit_marker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    review_packet_csv, overlay_summary_json = _write_review_bundle(
+        tmp_path,
+        [
+            _review_packet_row(
+                "cand-interrupt",
+                status="pt_pattern_detected_diagnostic",
+            )
+        ],
+    )
+    adjudicated_csv = tmp_path / "adjudicated.csv"
+    write_delimited_rows(
+        adjudicated_csv,
+        _bind_rows_to_bundle(
+            [_adjudicated_row("cand-interrupt")],
+            review_packet_csv=review_packet_csv,
+            overlay_summary_json=overlay_summary_json,
+        ),
+        promotion.ADJUDICATED_REQUIRED_COLUMNS,
+    )
+    output_dir = tmp_path / "promotion"
+
+    def interrupt_self_check(_packet_csv: Path) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(
+        promotion,
+        "load_verified_oracle_promotion_bundle",
+        interrupt_self_check,
+    )
+
+    with pytest.raises(KeyboardInterrupt):
+        promotion.run_oracle_promotion(
+            adjudicated_oracle_csv=adjudicated_csv,
+            review_packet_csvs=[review_packet_csv],
+            blind_overlay_summary_jsons=[overlay_summary_json],
+            output_dir=output_dir,
+            oracle_packet_id="unit_oracle",
+        )
+
+    assert not (output_dir / promotion.PROMOTION_SUMMARY_FILE_NAME).exists()
+    assert not list(output_dir.glob(".*.tmp"))
+
+
+@pytest.mark.parametrize("invalid_count", [1.5, True, "1"])
+def test_oracle_promotion_rejects_non_integer_adjudication_summary_count(
+    tmp_path: Path,
+    invalid_count: object,
+) -> None:
+    summary_json = tmp_path / "adjudication_summary.json"
+    summary_json.write_text(
+        json.dumps(
+            {
+                "total_rows": invalid_count,
+                "accept_count": 1,
+                "reject_count": 0,
+                "uncertain_count": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="total_rows must be an integer"):
+        promotion._validate_adjudication_summary(
+            summary_json,
+            [_adjudicated_row("cand-summary-count")],
+        )
 
 
 def test_oracle_promotion_allows_human_call_to_differ_from_sealed_machine_call(

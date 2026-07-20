@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+from xic_extractor.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_review_bundle import (
     VerifiedReviewPacketCollection,
     load_verified_blind_overlay_bundle,
@@ -134,7 +135,7 @@ def run_oracle_promotion(
     temp_token = uuid4().hex
     packet_tmp = packet_csv.with_name(f".{packet_csv.name}.{temp_token}.tmp")
     summary_tmp = summary_json.with_name(f".{summary_json.name}.{temp_token}.tmp")
-    _validate_input_output_path_disjoint(
+    require_disjoint_artifact_paths(
         input_paths=(
             resolved_adjudicated,
             *(
@@ -146,6 +147,7 @@ def run_oracle_promotion(
             *resolved_overlay_summaries,
         ),
         output_paths=(packet_csv, summary_json, packet_tmp, summary_tmp),
+        label="oracle promotion",
     )
     adjudicated_rows = read_delimited_rows(
         resolved_adjudicated,
@@ -237,7 +239,7 @@ def run_oracle_promotion(
         summary_tmp.replace(summary_json)
         try:
             load_verified_oracle_promotion_bundle(packet_csv)
-        except Exception:
+        except BaseException:
             summary_json.unlink(missing_ok=True)
             raise
     finally:
@@ -402,7 +404,7 @@ def load_verified_oracle_promotion_bundle(
         manifest_path=summary_json,
         label="blind-overlay summary JSON",
     )
-    _validate_input_output_path_disjoint(
+    require_disjoint_artifact_paths(
         input_paths=(
             adjudicated_oracle_csv,
             *((adjudication_summary_json,) if adjudication_summary_json else ()),
@@ -410,6 +412,7 @@ def load_verified_oracle_promotion_bundle(
             *blind_overlay_summary_jsons,
         ),
         output_paths=(packet_csv, summary_json),
+        label="oracle promotion",
     )
 
     adjudicated_rows = read_delimited_rows(
@@ -497,6 +500,8 @@ def build_oracle_promotion_rows(
         review_hash_by_packet_row_id=review_hash_by_packet_row_id,
     )
     output_rows: list[dict[str, object]] = []
+    referenced_review_hashes: set[str] = set()
+    referenced_overlay_hashes: set[str] = set()
 
     for row in adjudicated_rows:
         packet_row_id = _required_text(row, "packet_row_id")
@@ -527,6 +532,7 @@ def build_oracle_promotion_rows(
                 f"{packet_row_id}: adjudicated review_packet_csv_sha256 does not "
                 "match the supplied review packet"
             )
+        referenced_review_hashes.add(review_packet_sha256)
         overlay_summary_sha256 = _normalized_sha256(
             row.get("blind_overlay_summary_json_sha256", ""),
             label=f"{packet_row_id}: blind_overlay_summary_json_sha256",
@@ -537,6 +543,7 @@ def build_oracle_promotion_rows(
                 f"{packet_row_id}: adjudicated blind-overlay summary hash was not "
                 "supplied"
             )
+        referenced_overlay_hashes.add(overlay_summary_sha256)
         if overlay_bundle.review_packet_csv_sha256 != review_packet_sha256:
             raise ValueError(
                 f"{packet_row_id}: blind-overlay summary does not bind the "
@@ -602,7 +609,7 @@ def build_oracle_promotion_rows(
                     packet_row_id=packet_row_id,
                 ),
                 "adjudication_basis": _required_text(row, "adjudication_basis"),
-                "human_review_call": _required_text(row, "user_call"),
+                "human_review_call": oracle_call,
                 "machine_call": sealed_machine_call,
                 "human_review_note": row.get("note_optional", ""),
                 "machine_call_reason": sealed_machine_reason,
@@ -625,6 +632,22 @@ def build_oracle_promotion_rows(
                 "provenance_status": "exact_review_evidence_bundle_matched",
             }
         )
+    _require_exact_source_hash_set(
+        referenced=referenced_review_hashes,
+        supplied={
+            _normalized_sha256(
+                digest,
+                label="supplied review packet SHA-256",
+            )
+            for digest in review_hash_by_packet_row_id.values()
+        },
+        label="review packet source set",
+    )
+    _require_exact_source_hash_set(
+        referenced=referenced_overlay_hashes,
+        supplied=set(overlay_bundles),
+        label="blind-overlay source set",
+    )
     return tuple(
         sorted(
             output_rows,
@@ -643,7 +666,7 @@ def _canonical_source_paths(
     resolved = tuple(path.resolve() for path in paths)
     if len(set(resolved)) != len(resolved):
         raise ValueError(f"duplicate {label} path")
-    return tuple(sorted(resolved, key=lambda path: str(path).casefold()))
+    return tuple(sorted(resolved, key=_canonical_path_sort_key))
 
 
 def _artifact_descriptor(path: Path, *, relative_to: Path) -> dict[str, str]:
@@ -712,9 +735,14 @@ def _load_artifact_descriptor_list(
     )
     if len(set(paths)) != len(paths):
         raise ValueError(f"oracle promotion contains duplicate {label} paths")
-    if paths != tuple(sorted(paths, key=lambda path: str(path).casefold())):
+    if paths != tuple(sorted(paths, key=_canonical_path_sort_key)):
         raise ValueError(f"oracle promotion {label} paths are not canonical")
     return paths
+
+
+def _canonical_path_sort_key(path: Path) -> tuple[str, str]:
+    text = str(path)
+    return text.casefold(), text
 
 
 def _revalidate_promotion_sources(
@@ -751,55 +779,6 @@ def _revalidate_promotion_sources(
         label="blind-overlay summary JSON",
     ) != blind_overlay_summary_jsons:
         raise ValueError("oracle promotion blind-overlay sources changed")
-
-
-def _validate_input_output_path_disjoint(
-    *,
-    input_paths: Sequence[Path],
-    output_paths: Sequence[Path],
-) -> None:
-    resolved_inputs = tuple(path.resolve() for path in input_paths)
-    if len(set(resolved_inputs)) != len(resolved_inputs):
-        raise ValueError("oracle promotion input artifact paths must be distinct")
-    for index, left in enumerate(resolved_inputs):
-        for right in resolved_inputs[index + 1 :]:
-            if _same_existing_file(left, right):
-                raise ValueError(
-                    "oracle promotion input artifact paths must not alias "
-                    "the same file"
-                )
-    resolved_output_paths = tuple(path.resolve() for path in output_paths)
-    resolved_outputs = set(resolved_output_paths)
-    if len(resolved_outputs) != len(resolved_output_paths):
-        raise ValueError("oracle promotion output artifact paths must be distinct")
-    collisions = sorted(
-        set(resolved_inputs) & resolved_outputs,
-        key=lambda path: str(path).casefold(),
-    )
-    for input_path in resolved_inputs:
-        for output_path in resolved_output_paths:
-            if _same_existing_file(input_path, output_path):
-                collisions.append(input_path)
-    if collisions:
-        raise ValueError(
-            "oracle promotion input/output paths must be disjoint: "
-            + ", ".join(
-                str(path)
-                for path in sorted(
-                    set(collisions),
-                    key=lambda path: str(path).casefold(),
-                )
-            )
-        )
-
-
-def _same_existing_file(left: Path, right: Path) -> bool:
-    if not left.exists() or not right.exists():
-        return False
-    try:
-        return os.path.samefile(left, right)
-    except OSError:
-        return False
 
 
 def _require_exact_keys(
@@ -899,6 +878,8 @@ def _validate_adjudication_summary(
     if path is None:
         return
     summary = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(summary, Mapping):
+        raise ValueError(f"{path}: adjudication summary must be a JSON object")
     call_counts = Counter(
         _normalize_call(row.get("adjudicated_call", "")) for row in rows
     )
@@ -909,9 +890,16 @@ def _validate_adjudication_summary(
         "uncertain_count": call_counts.get("uncertain", 0),
     }
     for key, value in expected.items():
-        if int(summary.get(key, -1)) != value:
+        observed = summary.get(key)
+        if (
+            isinstance(observed, bool)
+            or not isinstance(observed, int)
+            or observed < 0
+        ):
+            raise ValueError(f"{path}: {key} must be an integer >= 0")
+        if observed != value:
             raise ValueError(
-                f"{path}: {key}={summary.get(key)!r} does not match {value}",
+                f"{path}: {key}={observed!r} does not match {value}",
             )
     if expected["uncertain_count"] != 0:
         raise ValueError(f"{path}: promotion requires zero uncertain rows")
@@ -954,6 +942,22 @@ def _require_exact_packet_row_id_set(
     raise ValueError(
         f"{label} must exactly match the review packet candidate set; "
         f"missing packet_row_id={missing!r}; extra packet_row_id={extra!r}"
+    )
+
+
+def _require_exact_source_hash_set(
+    *,
+    referenced: set[str],
+    supplied: set[str],
+    label: str,
+) -> None:
+    missing = sorted(referenced - supplied)
+    extra = sorted(supplied - referenced)
+    if not missing and not extra:
+        return
+    raise ValueError(
+        f"{label} must exactly match adjudicated dependencies; "
+        f"missing SHA-256={missing!r}; extra SHA-256={extra!r}"
     )
 
 
