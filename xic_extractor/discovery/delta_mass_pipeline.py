@@ -43,10 +43,10 @@ from xic_extractor.discovery.detected_features import (
 )
 from xic_extractor.discovery.pt_pattern_discovery_evidence import (
     build_pt_pattern_evidence_rows,
-    load_pt_trace_summary_rows,
+    load_pt_discovery_trace_bundle,
 )
 from xic_extractor.presets import apply_to_delta_mass_discovery, load_preset
-from xic_extractor.tabular_io import read_delimited_rows
+from xic_extractor.tabular_io import file_sha256, read_delimited_rows
 
 if TYPE_CHECKING:
     from xic_extractor.diagnostics.timing import TimingRecorder
@@ -117,6 +117,8 @@ def run_pt_pattern_discovery(
     preset_name: str = "pt_pattern",
     cid_nl_candidates_csv: Path | None = None,
     trace_summary_csv: Path | None = None,
+    trace_metrics_csv: Path | None = None,
+    trace_manifest_json: Path | None = None,
     timing_recorder: "TimingRecorder | None" = None,
 ) -> DeltaMassDiscoveryOutputs:
     """Run the Pt pattern Discovery pipeline end-to-end.
@@ -184,14 +186,31 @@ def run_pt_pattern_discovery(
             metrics={"candidate_count": len(candidates)},
         )
 
-    trace_summary_rows = (
-        load_pt_trace_summary_rows(trace_summary_csv)
+    if trace_summary_csv is None and (
+        trace_metrics_csv is not None or trace_manifest_json is not None
+    ):
+        raise ValueError(
+            "trace metrics/manifest overrides require trace_summary_csv"
+        )
+    trace_bundle = (
+        load_pt_discovery_trace_bundle(
+            trace_summary_csv,
+            metrics_csv=trace_metrics_csv,
+            manifest_json=trace_manifest_json,
+        )
         if trace_summary_csv is not None
         else None
     )
     evidence_rows = build_pt_pattern_evidence_rows(
         candidates,
-        trace_summary_rows=trace_summary_rows,
+        trace_summary_rows=(
+            trace_bundle.summary_rows if trace_bundle is not None else None
+        ),
+        trace_manifest_sha256=(
+            file_sha256(trace_bundle.manifest_json).lower()
+            if trace_bundle is not None
+            else None
+        ),
     )
 
     candidates_path = output_dir / "pt_pattern_candidates.csv"
@@ -227,7 +246,41 @@ def run_pt_pattern_discovery(
             effective_mz_tolerance_ppm=settings.mz_tolerance_ppm,
             effective_rt_tolerance_sec=settings.rt_tolerance_sec,
             trace_summary_csv=(
-                str(trace_summary_csv) if trace_summary_csv is not None else None
+                str(trace_bundle.summary_csv) if trace_bundle is not None else None
+            ),
+            trace_metrics_csv=(
+                str(trace_bundle.metrics_csv) if trace_bundle is not None else None
+            ),
+            trace_manifest_json=(
+                str(trace_bundle.manifest_json) if trace_bundle is not None else None
+            ),
+            trace_summary_csv_sha256=(
+                file_sha256(trace_bundle.summary_csv).lower()
+                if trace_bundle is not None
+                else None
+            ),
+            trace_metrics_csv_sha256=(
+                file_sha256(trace_bundle.metrics_csv).lower()
+                if trace_bundle is not None
+                else None
+            ),
+            trace_manifest_json_sha256=(
+                file_sha256(trace_bundle.manifest_json).lower()
+                if trace_bundle is not None
+                else None
+            ),
+            trace_schema_version=(
+                trace_bundle.schema_version if trace_bundle is not None else None
+            ),
+            trace_artifact_role=(
+                trace_bundle.trace_artifact_role
+                if trace_bundle is not None
+                else None
+            ),
+            trace_extraction_sha256=(
+                trace_bundle.trace_extraction_sha256
+                if trace_bundle is not None
+                else None
             ),
             evidence_rows=evidence_rows,
         ),

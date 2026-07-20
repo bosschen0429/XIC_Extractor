@@ -75,6 +75,67 @@ def test_read_delimited_rows_rejects_duplicate_or_blank_headers(
         read_delimited_rows(path, required_columns=("family_id", "sample"))
 
 
+@pytest.mark.parametrize(
+    ("header", "message"),
+    (
+        ("family_id\tsample\textra\n", "unexpected"),
+        ("sample\tfamily_id\n", "column order differs"),
+    ),
+)
+def test_read_delimited_rows_can_require_an_exact_versioned_schema(
+    tmp_path: Path,
+    header: str,
+    message: str,
+) -> None:
+    path = tmp_path / "sealed.tsv"
+    path.write_text(header + "FAM001\tS1\tvalue\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        read_delimited_rows(
+            path,
+            required_columns=("family_id", "sample"),
+            exact_columns=("family_id", "sample"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("data_row", "message"),
+    (
+        ("FAM001\n", "fewer cells"),
+        ("FAM001\tS1\textra\n", "more cells"),
+    ),
+)
+def test_exact_schema_rejects_truncated_or_overlong_rows(
+    tmp_path: Path,
+    data_row: str,
+    message: str,
+) -> None:
+    path = tmp_path / "sealed.tsv"
+    path.write_text("family_id\tsample\n" + data_row, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        read_delimited_rows(
+            path,
+            required_columns=("family_id", "sample"),
+            exact_columns=("family_id", "sample"),
+        )
+
+
+@pytest.mark.parametrize("data_row", ("FAM001\n", "FAM001\tS1\textra\n"))
+def test_subset_schema_still_rejects_ragged_rows(
+    tmp_path: Path,
+    data_row: str,
+) -> None:
+    path = tmp_path / "rows.tsv"
+    path.write_text("family_id\tsample\n" + data_row, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="declared header"):
+        read_delimited_rows(
+            path,
+            required_columns=("family_id",),
+        )
+
+
 def test_write_tsv_preserves_field_order_and_formats_values(tmp_path: Path) -> None:
     path = tmp_path / "rows.tsv"
 

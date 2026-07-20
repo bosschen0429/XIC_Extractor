@@ -101,22 +101,28 @@ def test_same_scan_evidence_separates_missing_from_below_noise_plus4() -> None:
 
 
 @pytest.mark.parametrize(
-    "settings",
+    "kwargs",
     (
-        SameScanSettings(mass_tolerance_ppm=float("nan")),
-        SameScanSettings(noise_level=float("inf")),
-        SameScanSettings(mass_tolerance_ppm=True),
+        {"mass_tolerance_ppm": float("nan")},
+        {"mass_tolerance_ppm": float("inf")},
+        {"mass_tolerance_ppm": 0.0},
+        {"mass_tolerance_ppm": -1.0},
+        {"mass_tolerance_ppm": True},
+        {"noise_level": float("nan")},
+        {"noise_level": float("inf")},
+        {"noise_level": -1.0},
+        {"noise_level": True},
+        {"minimum_joint_scans": 0},
+        {"minimum_joint_scans": -1},
+        {"minimum_joint_scans": 1.5},
+        {"minimum_joint_scans": True},
     ),
 )
-def test_same_scan_evidence_rejects_invalid_thresholds(
-    settings: SameScanSettings,
+def test_same_scan_settings_reject_invalid_values_at_construction(
+    kwargs: dict[str, object],
 ) -> None:
-    with pytest.raises(ValueError, match="finite|real number"):
-        evaluate_same_scan_envelope(
-            (),
-            PtPatternSeed(seed_id="invalid", source_set="candidate", base_mz=500.0),
-            settings,
-        )
+    with pytest.raises(ValueError):
+        SameScanSettings(**kwargs)
 
 
 def test_same_scan_evidence_rejects_empty_index() -> None:

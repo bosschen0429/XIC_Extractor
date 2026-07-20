@@ -5,9 +5,11 @@ from __future__ import annotations
 import bisect
 import hashlib
 import json
+import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_patterns import (
@@ -27,6 +29,7 @@ from xic_extractor.discovery.pt_pattern_candidate_assembly_report import (
 )
 from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
 from xic_extractor.tabular_io import (
+    bool_value,
     file_sha256,
     optional_float,
     read_delimited_rows,
@@ -41,6 +44,11 @@ AUTHORITY_SCOPE = "candidate_assembly_diagnosis_only"
 RT_THRESHOLDS_SEC = (30, 45, 60, 90, 180, 300)
 _NON_BASE_POSITIONS = tuple(
     position for position in PT_PATTERN.positions if position.label != "base"
+)
+_PT_PLUS1_DELTA_DA = next(
+    position.delta_da
+    for position in PT_PATTERN.positions
+    if position.label == "pt_plus_1"
 )
 _TOP102_REQUIRED_COLUMNS = (
     "query_set",
@@ -289,16 +297,35 @@ def _load_targets(top102_path: Path, known_path: Path) -> list[dict[str, object]
         encoding="utf-8-sig",
     )
     targets: list[dict[str, object]] = []
-    for row in top102_rows:
-        all_four_exist = all(
-            _required_float(row[f"feature_{position}_count_20ppm"]) > 0
+    for row_index, row in enumerate(top102_rows, start=2):
+        row_label = f"{top102_path} row {row_index}"
+        _required_text(row, "query_set", label=row_label)
+        _validate_target_identity(row, label=row_label)
+        position_counts = tuple(
+            _required_nonnegative_int(
+                row,
+                f"feature_{position}_count_20ppm",
+                label=row_label,
+            )
             for position in ("base", "plus1", "plus2", "plus4")
         )
-        if all_four_exist and not _truthy(row["coherent_full_pattern_exists"]):
+        all_four_exist = all(count > 0 for count in position_counts)
+        coherent = _required_boolean(
+            row,
+            "coherent_full_pattern_exists",
+            label=row_label,
+        )
+        if all_four_exist and not coherent:
             targets.append(_target_row(row, source_set=text_value(row["query_set"])))
-    for row in known_rows:
+    for row_index, row in enumerate(known_rows, start=2):
+        row_label = f"{known_path} row {row_index}"
+        _validate_target_identity(row, label=row_label)
         nearest_ppm = [
-            optional_float(row[f"feature_{position}_nearest_abs_ppm"])
+            _optional_nonnegative_number(
+                row,
+                f"feature_{position}_nearest_abs_ppm",
+                label=row_label,
+            )
             for position in ("base", "plus1", "plus2", "plus4")
         ]
         all_four_exist = all(
@@ -313,9 +340,17 @@ def _load_targets(top102_path: Path, known_path: Path) -> list[dict[str, object]
 def _target_row(row: Mapping[str, object], *, source_set: str) -> dict[str, object]:
     return {
         "source_set": source_set,
-        "compound": text_value(row["compound"]),
-        "list_plus1_mz": _required_float(row["list_plus1_mz"]),
-        "expected_base_mz": _required_float(row["expected_base_mz"]),
+        "compound": _required_text(row, "compound", label="target row"),
+        "list_plus1_mz": _required_positive_number(
+            row,
+            "list_plus1_mz",
+            label="target row",
+        ),
+        "expected_base_mz": _required_positive_number(
+            row,
+            "expected_base_mz",
+            label="target row",
+        ),
     }
 
 
@@ -668,8 +703,130 @@ def _required_float(value: object) -> float:
     return parsed
 
 
-def _truthy(value: object) -> bool:
-    return text_value(value).strip().lower() in {"1", "true", "yes"}
+def _validate_target_identity(
+    row: Mapping[str, object],
+    *,
+    label: str,
+) -> None:
+    _required_text(row, "compound", label=label)
+    list_plus1_mz = _required_positive_number(
+        row,
+        "list_plus1_mz",
+        label=label,
+    )
+    expected_base_mz = _required_positive_number(
+        row,
+        "expected_base_mz",
+        label=label,
+    )
+    observed_delta = list_plus1_mz - expected_base_mz
+    serialization_tolerance_da = _target_identity_serialization_tolerance_da(
+        row.get("list_plus1_mz"),
+        row.get("expected_base_mz"),
+        magnitude=max(list_plus1_mz, expected_base_mz),
+    )
+    if not math.isclose(
+        observed_delta,
+        _PT_PLUS1_DELTA_DA,
+        rel_tol=0.0,
+        abs_tol=serialization_tolerance_da,
+    ):
+        raise ValueError(
+            f"{label} list_plus1_mz must differ from expected_base_mz by the "
+            f"Pt +1 delta ({_PT_PLUS1_DELTA_DA:g} Da); observed "
+            f"{observed_delta:g} Da"
+        )
+
+
+def _target_identity_serialization_tolerance_da(
+    *raw_values: object,
+    magnitude: float,
+) -> float:
+    """Bound identity tolerance to the precision present in current artifacts."""
+
+    represented_half_ulps = sum(
+        _serialized_decimal_half_ulp(value) for value in raw_values
+    )
+    # Existing diagnosis CSVs use ``.6g``. Never infer more tolerance than the
+    # combined worst-case rounding error of two six-significant-digit values.
+    six_sig_combined_ulp = 10.0 ** (math.floor(math.log10(magnitude)) - 5)
+    return min(represented_half_ulps, six_sig_combined_ulp) + 1e-12
+
+
+def _serialized_decimal_half_ulp(value: object) -> float:
+    try:
+        normalized = Decimal(str(value).strip()).normalize()
+    except InvalidOperation:
+        return 0.0
+    exponent = normalized.as_tuple().exponent
+    if not isinstance(exponent, int):
+        return 0.0
+    if exponent >= 0:
+        return 0.0
+    return 0.5 * (10.0**exponent)
+
+
+def _required_text(
+    row: Mapping[str, object],
+    field: str,
+    *,
+    label: str,
+) -> str:
+    value = text_value(row.get(field))
+    if not value:
+        raise ValueError(f"{label} {field} must be non-empty")
+    return value
+
+
+def _required_positive_number(
+    row: Mapping[str, object],
+    field: str,
+    *,
+    label: str,
+) -> float:
+    value = optional_float(row.get(field))
+    if value is None or value <= 0:
+        raise ValueError(f"{label} {field} must be a finite positive number")
+    return value
+
+
+def _optional_nonnegative_number(
+    row: Mapping[str, object],
+    field: str,
+    *,
+    label: str,
+) -> float | None:
+    raw_value = row.get(field)
+    if raw_value is None or not text_value(raw_value):
+        return None
+    value = optional_float(raw_value)
+    if value is None or value < 0:
+        raise ValueError(f"{label} {field} must be a finite non-negative number")
+    return value
+
+
+def _required_nonnegative_int(
+    row: Mapping[str, object],
+    field: str,
+    *,
+    label: str,
+) -> int:
+    value = optional_float(row.get(field))
+    if value is None or not value.is_integer() or value < 0:
+        raise ValueError(f"{label} {field} must be a non-negative integer")
+    return int(value)
+
+
+def _required_boolean(
+    row: Mapping[str, object],
+    field: str,
+    *,
+    label: str,
+) -> bool:
+    value = bool_value(row.get(field))
+    if value is None:
+        raise ValueError(f"{label} {field} must be a boolean")
+    return value
 
 
 def _provenance(path: Path) -> dict[str, str]:

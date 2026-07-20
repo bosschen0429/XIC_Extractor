@@ -22,6 +22,11 @@ from xic_extractor.discovery.detected_features import (
     DetectedFeature,
     load_detected_features_csv,
 )
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
+    validate_pt_candidate_evidence_envelope,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
     read_delimited_rows,
@@ -46,17 +51,10 @@ _REQUIRED_FULL_PATTERN_NON_BASE_POSITION_COUNT = (
 )
 
 FULLSCAN_CANDIDATE_REQUIRED_COLUMNS = (
-    "sample_stem",
-    "candidate_id",
-    "base_feature_id",
-    "base_mz",
-    "base_rt_apex_min",
+    *PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    "candidate_state",
 )
-FULLSCAN_EVIDENCE_REQUIRED_COLUMNS = (
-    "candidate_id",
-    "trace_rule_call",
-    "trace_detection_status",
-)
+FULLSCAN_EVIDENCE_REQUIRED_COLUMNS = PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS
 
 REPLAY_COLUMNS = (
     "schema_version",
@@ -249,7 +247,7 @@ def load_fullscan_pt_seeds(
         evidence_csv,
         required_columns=FULLSCAN_EVIDENCE_REQUIRED_COLUMNS,
     )
-    _unique_rows_by_candidate_id(
+    candidate_by_id = _unique_rows_by_candidate_id(
         candidate_rows,
         path=candidates_csv,
         label="candidate",
@@ -258,6 +256,11 @@ def load_fullscan_pt_seeds(
         evidence_rows,
         path=evidence_csv,
         label="evidence",
+    )
+    validate_pt_candidate_evidence_envelope(
+        candidate_by_id,
+        evidence_by_candidate_id,
+        evidence_rows=evidence_rows,
     )
 
     seeds: list[FullscanPtSeed] = []

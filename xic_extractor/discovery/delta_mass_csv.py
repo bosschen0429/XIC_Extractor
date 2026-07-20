@@ -2,7 +2,7 @@
 
 Re-exports the Detected Features CSV v1 loader owned by
 ``xic_extractor.discovery.detected_features`` and implements the Pt Candidate /
-Pt Review CSV v1, Pt Discovery Evidence CSV v1, and Pt Sidecar JSON v3 writers
+Pt Review CSV v1, Pt Discovery Evidence CSV v2, and Pt Sidecar JSON v3 writers
 described in the Public Contract Details section of
 ``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``.
 
@@ -29,7 +29,9 @@ from xic_extractor.discovery.detected_features import (
     load_detected_features_csv as _load_detected_features_csv,
 )
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
     format_pt_machine_float,
+    validate_pt_pattern_evidence_row_contract,
 )
 from xic_extractor.tabular_io import escape_excel_formula, write_delimited_rows
 
@@ -105,43 +107,9 @@ PT_REVIEW_COLUMNS = (
     "review_note",
 )
 
-PT_EVIDENCE_COLUMNS = (
-    "schema_version",
-    "sample_stem",
-    "method_label",
-    "pattern_id",
-    "candidate_id",
-    "candidate_state",
-    "scan_pattern_seed_status",
-    "trace_evidence_status",
-    "trace_rule_call",
-    "trace_detection_status",
-    "trace_rule_reason",
-    "evidence_rule_id",
-    "evidence_rule_owner",
-    "required_combined_status",
-    "min_non_base_positions_supported",
-    "max_abs_apex_delta_threshold_sec",
-    "min_pearson_r_to_base_threshold",
-    "min_active_overlap_fraction_threshold",
-    "min_shifted_pearson_r_to_base_threshold",
-    "max_abs_shape_shift_sec_to_base_threshold",
-    "combined_pt_pattern_status",
-    "non_base_positions_supported",
-    "max_abs_apex_delta_sec",
-    "min_pearson_r_to_base",
-    "min_active_overlap_fraction",
-    "min_shifted_pearson_r_to_base",
-    "max_abs_shape_shift_sec_to_base",
-    "trace_ambiguity_status",
-    "trace_ambiguity_flags",
-    "shifted_only_position_labels",
-    "matrix_write_authority",
-    "counted_detection_authority",
-    "export_activation_authority",
-)
+PT_EVIDENCE_COLUMNS = PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS
 
-_SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar.v3"
+_SIDECAR_SCHEMA_VERSION = "pt_pattern_sidecar.v4"
 
 # Formula escaping is a presentation concern, so machine identifiers in the
 # candidate/evidence contracts must remain byte-for-byte joinable. The compact
@@ -181,6 +149,14 @@ class DeltaMassDiscoveryResult:
     cid_nl_candidates_csv: str | None
     candidates: Sequence[PtPatternCandidate]
     trace_summary_csv: str | None = None
+    trace_metrics_csv: str | None = None
+    trace_manifest_json: str | None = None
+    trace_summary_csv_sha256: str | None = None
+    trace_metrics_csv_sha256: str | None = None
+    trace_manifest_json_sha256: str | None = None
+    trace_schema_version: str | None = None
+    trace_artifact_role: str | None = None
+    trace_extraction_sha256: str | None = None
     evidence_rows: Sequence[Mapping[str, object]] = ()
     effective_mz_tolerance_ppm: float | None = None
     effective_rt_tolerance_sec: float | None = None
@@ -246,7 +222,28 @@ def write_pt_pattern_evidence_csv(
     path: Path,
     evidence_rows: Sequence[Mapping[str, object]],
 ) -> Path:
-    """Write the Pt Discovery Evidence CSV v1 contract."""
+    """Write the complete, fail-closed Pt Discovery Evidence CSV v2 contract."""
+
+    for row_index, row in enumerate(evidence_rows, start=2):
+        missing = [column for column in PT_EVIDENCE_COLUMNS if column not in row]
+        if missing:
+            raise ValueError(
+                f"evidence row {row_index} is missing required fields: "
+                + ", ".join(missing)
+            )
+        validate_pt_pattern_evidence_row_contract(
+            row,
+            side=f"evidence row {row_index}",
+        )
+        for authority_field in (
+            "matrix_write_authority",
+            "counted_detection_authority",
+            "export_activation_authority",
+        ):
+            if row[authority_field] is not False:
+                raise ValueError(
+                    f"evidence row {row_index} {authority_field} must be False"
+                )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = [
@@ -284,6 +281,14 @@ def write_pt_pattern_sidecar_json(
             "mzmine_feature_table_csv": result.mzmine_feature_table_csv,
             "cid_nl_candidates_csv": result.cid_nl_candidates_csv,
             "trace_summary_csv": result.trace_summary_csv,
+            "trace_metrics_csv": result.trace_metrics_csv,
+            "trace_manifest_json": result.trace_manifest_json,
+            "trace_summary_csv_sha256": result.trace_summary_csv_sha256,
+            "trace_metrics_csv_sha256": result.trace_metrics_csv_sha256,
+            "trace_manifest_json_sha256": result.trace_manifest_json_sha256,
+            "trace_schema_version": result.trace_schema_version,
+            "trace_artifact_role": result.trace_artifact_role,
+            "trace_extraction_sha256": result.trace_extraction_sha256,
         },
         "summary": _summary_payload(
             result.candidates,

@@ -21,6 +21,7 @@ def read_delimited_rows(
     path: Path,
     *,
     required_columns: Sequence[str],
+    exact_columns: Sequence[str] | None = None,
     delimiter: str = "\t",
     encoding: str = "utf-8",
 ) -> list[dict[str, str]]:
@@ -30,8 +31,24 @@ def read_delimited_rows(
             reader.fieldnames,
             path=path,
             required_columns=required_columns,
+            exact_columns=exact_columns,
         )
-        return [dict(row) for row in reader]
+        rows: list[dict[str, str]] = []
+        for row_index, row in enumerate(reader, start=2):
+            if None in row:
+                raise ValueError(
+                    f"{path}:{row_index}: row has more cells than declared header"
+                )
+            truncated = [
+                column for column, value in row.items() if value is None
+            ]
+            if truncated:
+                raise ValueError(
+                    f"{path}:{row_index}: row has fewer cells than declared header; "
+                    f"missing cells={truncated!r}"
+                )
+            rows.append(dict(row))
+        return rows
 
 
 def validate_delimited_header(
@@ -39,13 +56,16 @@ def validate_delimited_header(
     *,
     path: Path,
     required_columns: Sequence[str] = (),
+    exact_columns: Sequence[str] | None = None,
 ) -> tuple[str, ...]:
-    """Validate an exact CSV/TSV header before ``DictReader`` can overwrite it.
+    """Validate a CSV/TSV header before ``DictReader`` can overwrite it.
 
     Header names are case-sensitive public schema values, so this helper keeps
     their original spelling and order. It rejects blank and duplicate names
-    before checking required columns; otherwise ``csv.DictReader`` silently
-    turns duplicate columns into row-order-dependent last-value-wins mappings.
+    before checking required columns. ``exact_columns`` additionally seals a
+    versioned artifact to one complete header and column order. Otherwise
+    ``csv.DictReader`` silently turns duplicate columns into row-order-dependent
+    last-value-wins mappings, while subset-only validation can hide schema drift.
     """
 
     header = tuple(fieldnames or ())
@@ -65,6 +85,23 @@ def validate_delimited_header(
     missing = [column for column in required_columns if column not in header]
     if missing:
         raise ValueError(f"{path}: missing required columns: {', '.join(missing)}")
+    if exact_columns is not None:
+        expected = tuple(exact_columns)
+        if header != expected:
+            expected_set = set(expected)
+            header_set = set(header)
+            exact_missing = [column for column in expected if column not in header_set]
+            unexpected = [column for column in header if column not in expected_set]
+            details = []
+            if exact_missing:
+                details.append(f"missing={exact_missing!r}")
+            if unexpected:
+                details.append(f"unexpected={unexpected!r}")
+            if not exact_missing and not unexpected:
+                details.append("column order differs")
+            raise ValueError(
+                f"{path}: header does not match exact schema; " + "; ".join(details)
+            )
     return header
 
 

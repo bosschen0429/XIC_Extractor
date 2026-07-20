@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
+    validate_pt_candidate_evidence_envelope,
+)
 from xic_extractor.discovery.pt_pattern_ratio_report import (
     render_ratio_profile_html as _render_ratio_profile_html,
 )
@@ -25,6 +31,7 @@ AUTHORITY_SCOPE = "ratio_profile_only"
 PRIMARY_POPULATION = "primary_population"
 BACKGROUND_POPULATION = "background_population"
 DEFAULT_PRIMARY_TRACE_RULE_CALL = "accept"
+BACKGROUND_TRACE_RULE_CALL = "reject"
 
 RATIO_NAMES = (
     "plus1_over_base_height_ratio",
@@ -116,12 +123,8 @@ RATIO_FORMULA_COLUMNS = (
 )
 
 _CANDIDATE_REQUIRED_COLUMNS = (
-    "sample_stem",
-    "method_label",
-    "pattern_id",
-    "candidate_id",
-    "base_mz",
-    "base_rt_apex_min",
+    *PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    "candidate_state",
     "base_height",
     "base_area",
     "pt_plus_1_height_ratio_to_base",
@@ -133,11 +136,7 @@ _CANDIDATE_REQUIRED_COLUMNS = (
 )
 
 _EVIDENCE_REQUIRED_COLUMNS = (
-    "sample_stem",
-    "method_label",
-    "pattern_id",
-    "candidate_id",
-    "trace_rule_call",
+    *PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
     "max_abs_apex_delta_sec",
     "min_pearson_r_to_base",
     "min_active_overlap_fraction",
@@ -157,13 +156,18 @@ def run_ratio_profile(
 
     if not profile_id.strip():
         raise ValueError("profile_id must be non-empty")
+    if primary_trace_rule_call != DEFAULT_PRIMARY_TRACE_RULE_CALL:
+        raise ValueError(
+            "primary_trace_rule_call must be 'accept' because the persisted "
+            "primary artifacts are explicitly the accepted population"
+        )
     candidates = read_delimited_rows(
         candidates_csv,
         required_columns=_CANDIDATE_REQUIRED_COLUMNS,
         delimiter=",",
         encoding="utf-8-sig",
     )
-    _unique_rows_by_key(candidates, candidates_csv)
+    candidate_by_key = _unique_rows_by_key(candidates, candidates_csv)
     evidence_rows = read_delimited_rows(
         evidence_csv,
         required_columns=_EVIDENCE_REQUIRED_COLUMNS,
@@ -171,22 +175,27 @@ def run_ratio_profile(
         encoding="utf-8-sig",
     )
     evidence_by_key = _unique_rows_by_key(evidence_rows, evidence_csv)
+    validate_pt_candidate_evidence_envelope(
+        candidate_by_key,
+        evidence_by_key,
+        evidence_rows=evidence_rows,
+    )
     primary_rows: list[dict[str, object]] = []
     background_rows: list[dict[str, object]] = []
-    missing_evidence_count = 0
+    unprofiled_trace_rule_calls: list[str] = []
     for candidate in candidates:
         key = _row_key(candidate)
-        evidence = evidence_by_key.get(key)
-        if evidence is None:
-            missing_evidence_count += 1
-            continue
+        evidence = evidence_by_key[key]
         row = _profile_row(candidate, evidence, profile_id=profile_id)
-        if text_value(evidence.get("trace_rule_call")) == primary_trace_rule_call:
+        trace_rule_call = text_value(evidence.get("trace_rule_call"))
+        if trace_rule_call == primary_trace_rule_call:
             row["population_label"] = PRIMARY_POPULATION
             primary_rows.append(row)
-        else:
+        elif trace_rule_call == BACKGROUND_TRACE_RULE_CALL:
             row["population_label"] = BACKGROUND_POPULATION
             background_rows.append(row)
+        else:
+            unprofiled_trace_rule_calls.append(trace_rule_call)
 
     primary_summary = _summary_rows(
         primary_rows,
@@ -248,7 +257,11 @@ def run_ratio_profile(
         "primary_trace_rule_call": primary_trace_rule_call,
         "primary_row_count": len(primary_rows),
         "background_row_count": len(background_rows),
-        "missing_evidence_count": missing_evidence_count,
+        "unprofiled_row_count": len(unprofiled_trace_rule_calls),
+        "unprofiled_trace_rule_call_counts": dict(
+            sorted(Counter(unprofiled_trace_rule_calls).items())
+        ),
+        "missing_evidence_count": 0,
         "opens_raw": False,
         "changes_matrix": False,
         "changes_counted_detection": False,
@@ -468,12 +481,36 @@ def _profile_row(
     *,
     profile_id: str,
 ) -> dict[str, object]:
-    plus1_height = optional_float(candidate.get("pt_plus_1_height_ratio_to_base"))
-    plus2_height = optional_float(candidate.get("pt_plus_2_height_ratio_to_base"))
-    plus4_height = optional_float(candidate.get("pt_plus_4_height_ratio_to_base"))
-    plus1_area = optional_float(candidate.get("pt_plus_1_area_ratio_to_base"))
-    plus2_area = optional_float(candidate.get("pt_plus_2_area_ratio_to_base"))
-    plus4_area = optional_float(candidate.get("pt_plus_4_area_ratio_to_base"))
+    plus1_height = _optional_bounded_float(
+        candidate,
+        "pt_plus_1_height_ratio_to_base",
+        minimum=0.0,
+    )
+    plus2_height = _optional_bounded_float(
+        candidate,
+        "pt_plus_2_height_ratio_to_base",
+        minimum=0.0,
+    )
+    plus4_height = _optional_bounded_float(
+        candidate,
+        "pt_plus_4_height_ratio_to_base",
+        minimum=0.0,
+    )
+    plus1_area = _optional_bounded_float(
+        candidate,
+        "pt_plus_1_area_ratio_to_base",
+        minimum=0.0,
+    )
+    plus2_area = _optional_bounded_float(
+        candidate,
+        "pt_plus_2_area_ratio_to_base",
+        minimum=0.0,
+    )
+    plus4_area = _optional_bounded_float(
+        candidate,
+        "pt_plus_4_area_ratio_to_base",
+        minimum=0.0,
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "readiness_tier": READINESS_TIER,
@@ -487,20 +524,38 @@ def _profile_row(
         "candidate_id": text_value(candidate.get("candidate_id")),
         "base_mz": optional_float(candidate.get("base_mz")),
         "base_rt_apex_min": optional_float(candidate.get("base_rt_apex_min")),
-        "max_abs_apex_delta_sec": optional_float(
-            evidence.get("max_abs_apex_delta_sec")
+        "max_abs_apex_delta_sec": _optional_bounded_float(
+            evidence,
+            "max_abs_apex_delta_sec",
+            minimum=0.0,
         ),
-        "max_abs_shape_shift_sec_to_base": optional_float(
-            evidence.get("max_abs_shape_shift_sec_to_base")
+        "max_abs_shape_shift_sec_to_base": _optional_bounded_float(
+            evidence,
+            "max_abs_shape_shift_sec_to_base",
+            minimum=0.0,
         ),
-        "min_pearson_r_to_base": optional_float(
-            evidence.get("min_pearson_r_to_base")
+        "min_pearson_r_to_base": _optional_bounded_float(
+            evidence,
+            "min_pearson_r_to_base",
+            minimum=-1.0,
+            maximum=1.0,
         ),
-        "min_active_overlap_fraction": optional_float(
-            evidence.get("min_active_overlap_fraction")
+        "min_active_overlap_fraction": _optional_bounded_float(
+            evidence,
+            "min_active_overlap_fraction",
+            minimum=0.0,
+            maximum=1.0,
         ),
-        "base_height": optional_float(candidate.get("base_height")),
-        "base_area": optional_float(candidate.get("base_area")),
+        "base_height": _optional_bounded_float(
+            candidate,
+            "base_height",
+            minimum=0.0,
+        ),
+        "base_area": _optional_bounded_float(
+            candidate,
+            "base_area",
+            minimum=0.0,
+        ),
         "plus1_over_base_height_ratio": plus1_height,
         "plus2_over_base_height_ratio": plus2_height,
         "plus4_over_base_height_ratio": plus4_height,
@@ -527,6 +582,28 @@ def _profile_row(
         "ratio_extreme_columns": "",
         "ratio_review_note": "",
     }
+
+
+def _optional_bounded_float(
+    row: Mapping[str, object],
+    field: str,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float | None:
+    raw_value = row.get(field)
+    if raw_value is None or (
+        isinstance(raw_value, str) and not raw_value.strip()
+    ):
+        return None
+    value = optional_float(raw_value)
+    if value is None:
+        raise ValueError(f"{field} must be a finite number or blank")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{field} must be >= {minimum:g}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{field} must be <= {maximum:g}")
+    return value
 
 
 def _summary_rows(

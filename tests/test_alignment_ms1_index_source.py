@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from xic_extractor.alignment.ms1_index_source import (
     MS1IndexedRawSource,
@@ -11,6 +12,7 @@ from xic_extractor.alignment.ms1_index_source import (
     source_for_owner_build_backend,
     write_ms1_scan_index_npz,
 )
+from xic_extractor.ms1_scan_index import MS1ScanReadError
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 
@@ -34,6 +36,41 @@ def test_ms1_indexed_raw_source_delegates_scan_window_lookup() -> None:
     assert source.scan_window_for_request(
         XICRequest(mz=100.0, rt_min=1.0, rt_max=3.0, ppm_tol=10000.0)
     ) == (1, 3)
+
+
+def test_alignment_ms1_index_source_fails_closed_on_malformed_ms1_scan() -> None:
+    class _MalformedRaw(FakeRawHandle):
+        def GetSegmentedScanFromScanNumber(
+            self,
+            scan_number: int,
+            _scan_filter,
+        ) -> SimpleNamespace:
+            if scan_number == 1:
+                return SimpleNamespace(
+                    Positions=np.asarray([99.0, 100.0], dtype=float),
+                    Intensities=np.asarray([10.0], dtype=float),
+                )
+            return super().GetSegmentedScanFromScanNumber(scan_number, _scan_filter)
+
+    source = MS1IndexedRawSource(_MalformedRaw())
+
+    with pytest.raises(MS1ScanReadError, match="scan 1.*matching 1D arrays"):
+        source.extract_xic_many(
+            (XICRequest(mz=100.0, rt_min=1.0, rt_max=3.0, ppm_tol=10.0),)
+        )
+
+
+def test_alignment_ms1_index_source_rejects_raw_without_ms1_scans() -> None:
+    class _NoMs1Raw(FakeRawHandle):
+        def GetFilterForScanNumber(self, scan_number: int) -> SimpleNamespace:
+            return SimpleNamespace(MSOrder="Ms2")
+
+    source = MS1IndexedRawSource(_NoMs1Raw())
+
+    with pytest.raises(MS1ScanReadError, match="at least one MS1 scan"):
+        source.extract_xic_many(
+            (XICRequest(mz=100.0, rt_min=1.0, rt_max=3.0, ppm_tol=10.0),)
+        )
 
 
 def test_extract_index_xic_can_sum_mass_window_intensities() -> None:

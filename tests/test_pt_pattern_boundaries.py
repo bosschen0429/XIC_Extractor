@@ -1,35 +1,4 @@
-"""AST boundary tests for Pt pattern Discovery modules (Task 1 RED phase).
-
-The Pt pattern (Delta Mass) Discovery lane must sit beside the existing
-neutral-loss Discovery lane without touching Alignment, Backfill,
-ProductWriter, or the workbook Matrix. This file proves (via static AST
-parsing, not import) that the Pt pattern modules never import
-``xic_extractor.alignment``, ``xic_extractor.output``, ``scripts.csv_to_excel``,
-or ``scripts.run_alignment``.
-
-These tests read source files directly with ``Path.read_text`` rather than
-importing the modules, so they fail with ``FileNotFoundError`` (not
-``ImportError``) until Tasks 2, 3, and 5 create the real module files. That is
-the expected RED-phase failure for this file.
-
-Task 6 adds, alongside the Task 1 tests above (not duplicating them):
-
-- a static ``.xlsx``/``openpyxl`` write-boundary check (still AST/text based,
-  no code execution);
-- a ProductWriter / quant-matrix builder import boundary check. There is no
-  literal ``class ProductWriter`` or ``ProductWriter`` module anywhere in this
-  repo (confirmed by repo-wide search) -- "ProductWriter" is used only as a
-  documentation/comment term for the workbook write-authority boundary. The
-  real xlsx-writing code lives in ``xic_extractor.output.excel_pipeline`` /
-  ``xic_extractor.output.workbook_builder``, and the real quant-matrix
-  builders live in ``xic_extractor.alignment.quant_matrix_*``, both already
-  covered by the existing ``xic_extractor.output`` / ``xic_extractor.alignment``
-  forbidden roots. No new forbidden root was needed.
-- a Backfill-terminology-as-detection content scan over the Pt Candidate / Pt
-  Review CSV schemas and the fixed enum values used by the matcher/pipeline;
-- two matcher regression tests (base-only input, and partial pattern plus a
-  synthetic Backfill-flavored row) proving zero candidates are produced.
-"""
+"""Static authority-boundary tests for the Pt pattern Discovery lane."""
 
 from __future__ import annotations
 
@@ -45,22 +14,32 @@ FORBIDDEN_IMPORT_ROOTS = (
     "scripts.run_alignment",
 )
 
-PT_PATTERN_MODULE_PATHS = (
-    REPO_ROOT / "xic_extractor" / "discovery" / "detected_features.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_patterns.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_csv.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "delta_mass_pipeline.py",
+DISCOVERY_PACKAGE = REPO_ROOT / "xic_extractor" / "discovery"
+PT_PATTERN_FOUNDATION_PATHS = (
+    DISCOVERY_PACKAGE / "detected_features.py",
+    DISCOVERY_PACKAGE / "local_ms1_features.py",
+    *tuple(sorted(DISCOVERY_PACKAGE.glob("delta_mass_*.py"))),
+)
+PT_PATTERN_PACKAGE_PATHS = tuple(
+    sorted(DISCOVERY_PACKAGE.glob("pt_pattern_*.py"))
+)
+PT_PATTERN_ENTRYPOINT_PATHS = (
+    REPO_ROOT / "scripts" / "run_pt_pattern_discovery.py",
+)
+PT_PATTERN_MODULE_PATHS = tuple(
+    dict.fromkeys(
+        (
+            *PT_PATTERN_FOUNDATION_PATHS,
+            *PT_PATTERN_PACKAGE_PATHS,
+            *PT_PATTERN_ENTRYPOINT_PATHS,
+        )
+    )
+)
+PT_PATTERN_DETECTION_CONTRACT_PATHS = (
+    *PT_PATTERN_FOUNDATION_PATHS,
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_discovery_evidence.py",
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_evidence_rule.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_trace_evidence.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_review_packet.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_blind_overlay.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_promotion.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_refresh.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_thresholds.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_diagnostic_gate.py",
-    REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_ddms2_support_replay.py",
-    REPO_ROOT / "scripts" / "run_pt_pattern_discovery.py",
+    *PT_PATTERN_ENTRYPOINT_PATHS,
 )
 
 
@@ -212,6 +191,16 @@ def test_all_pt_pattern_modules_are_free_of_forbidden_imports() -> None:
     )
 
 
+def test_pt_pattern_boundary_scope_covers_all_discovery_owner_modules() -> None:
+    covered = set(PT_PATTERN_MODULE_PATHS)
+    assert {
+        DISCOVERY_PACKAGE / "detected_features.py",
+        DISCOVERY_PACKAGE / "local_ms1_features.py",
+    } <= covered
+    assert set(DISCOVERY_PACKAGE.glob("delta_mass_*.py")) <= covered
+    assert set(DISCOVERY_PACKAGE.glob("pt_pattern_*.py")) <= covered
+
+
 # ---------------------------------------------------------------------------
 # Task 6: no .xlsx writing anywhere in the Pt pattern lane.
 # ---------------------------------------------------------------------------
@@ -303,7 +292,7 @@ def test_no_pt_pattern_module_source_contains_backfill_terminology() -> None:
 
     all_hits = {
         str(path): "backfill" in path.read_text(encoding="utf-8").lower()
-        for path in PT_PATTERN_MODULE_PATHS
+        for path in PT_PATTERN_DETECTION_CONTRACT_PATHS
     }
     assert not any(all_hits.values()), all_hits
 

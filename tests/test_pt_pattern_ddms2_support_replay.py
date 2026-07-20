@@ -5,8 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from tests.pt_pattern_evidence_fixtures import pt_evidence_row
 from tools.diagnostics import pt_pattern_ddms2_support_replay as replay_cli
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
+)
 from xic_extractor.discovery.pt_pattern_ddms2_support_replay import (
+    FULLSCAN_CANDIDATE_REQUIRED_COLUMNS,
     SCHEMA_VERSION,
     load_fullscan_pt_seeds,
     run_ddms2_support_replay,
@@ -21,44 +26,48 @@ def test_ddms2_support_replay_requires_fullscan_accept_and_reports_support_only(
     ddms2_features_csv = tmp_path / "detected_features.csv"
     _write_csv(
         candidates_csv,
-        (
-            "sample_stem",
-            "candidate_id",
-            "base_feature_id",
-            "base_mz",
-            "base_rt_apex_min",
-        ),
+        FULLSCAN_CANDIDATE_REQUIRED_COLUMNS,
         [
-            {
-                "sample_stem": "CT-DNA+100uMCP_Fullscan",
-                "candidate_id": "accepted_seed",
-                "base_feature_id": "fullscan_base_1",
-                "base_mz": "500.0000",
-                "base_rt_apex_min": "10.0",
-            },
-            {
-                "sample_stem": "CT-DNA+100uMCP_Fullscan",
-                "candidate_id": "rejected_seed",
-                "base_feature_id": "fullscan_base_2",
-                "base_mz": "600.0000",
-                "base_rt_apex_min": "12.0",
-            },
+            _candidate_row(
+                "accepted_seed",
+                sample_stem="CT-DNA+100uMCP_Fullscan",
+                base_feature_id="fullscan_base_1",
+                base_mz=500.0,
+                base_rt_apex_min=10.0,
+            ),
+            _candidate_row(
+                "rejected_seed",
+                sample_stem="CT-DNA+100uMCP_Fullscan",
+                base_feature_id="fullscan_base_2",
+                base_mz=600.0,
+                base_rt_apex_min=12.0,
+            ),
         ],
     )
     _write_csv(
         evidence_csv,
-        ("candidate_id", "trace_rule_call", "trace_detection_status"),
+        PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
         [
-            {
-                "candidate_id": "accepted_seed",
-                "trace_rule_call": "accept",
-                "trace_detection_status": "detected",
-            },
-            {
-                "candidate_id": "rejected_seed",
-                "trace_rule_call": "reject",
-                "trace_detection_status": "non_detected",
-            },
+            _evidence_row(
+                _candidate_row(
+                    "accepted_seed",
+                    sample_stem="CT-DNA+100uMCP_Fullscan",
+                    base_feature_id="fullscan_base_1",
+                    base_mz=500.0,
+                    base_rt_apex_min=10.0,
+                ),
+                trace_rule_call="accept",
+            ),
+            _evidence_row(
+                _candidate_row(
+                    "rejected_seed",
+                    sample_stem="CT-DNA+100uMCP_Fullscan",
+                    base_feature_id="fullscan_base_2",
+                    base_mz=600.0,
+                    base_rt_apex_min=12.0,
+                ),
+                trace_rule_call="reject",
+            ),
         ],
     )
     _write_detected_features(
@@ -219,6 +228,30 @@ def test_ddms2_support_replay_rejects_unknown_requested_sample_stem(
         raise AssertionError("expected ValueError")
 
 
+def test_ddms2_support_replay_rejects_stale_evidence_pattern(
+    tmp_path: Path,
+) -> None:
+    candidates_csv, evidence_csv, _ddms2_features_csv = _single_seed_inputs(
+        tmp_path,
+        base_mz=500.0,
+        base_rt_apex_min=10.0,
+    )
+    with evidence_csv.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        rows = list(reader)
+        fieldnames = tuple(reader.fieldnames or ())
+    rows[0]["pattern_id"] = "stale-pattern"
+    rows[0]["trace_rule_call"] = "reject"
+    rows[0]["trace_detection_status"] = "non_detected"
+    _write_csv(evidence_csv, fieldnames, rows)
+
+    with pytest.raises(ValueError, match="pattern_id.*must be 'pt'"):
+        load_fullscan_pt_seeds(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+        )
+
+
 def test_ddms2_support_replay_rejects_duplicate_evidence_candidate_ids(
     tmp_path: Path,
 ) -> None:
@@ -229,18 +262,16 @@ def test_ddms2_support_replay_rejects_duplicate_evidence_candidate_ids(
     )
     _write_csv(
         evidence_csv,
-        ("candidate_id", "trace_rule_call", "trace_detection_status"),
+        PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
         [
-            {
-                "candidate_id": "seed",
-                "trace_rule_call": "accept",
-                "trace_detection_status": "detected",
-            },
-            {
-                "candidate_id": "seed",
-                "trace_rule_call": "reject",
-                "trace_detection_status": "non_detected",
-            },
+            _evidence_row(
+                _candidate_row("seed", base_mz=500.0, base_rt_apex_min=10.0),
+                trace_rule_call="accept",
+            ),
+            _evidence_row(
+                _candidate_row("seed", base_mz=500.0, base_rt_apex_min=10.0),
+                trace_rule_call="reject",
+            ),
         ],
     )
 
@@ -259,22 +290,15 @@ def test_ddms2_support_replay_rejects_duplicate_candidate_rows(
         base_mz=500.0,
         base_rt_apex_min=10.0,
     )
-    candidate_row = {
-        "sample_stem": "fullscan",
-        "candidate_id": "seed",
-        "base_feature_id": "fullscan_base",
-        "base_mz": "500.0",
-        "base_rt_apex_min": "10.0",
-    }
+    candidate_row = _candidate_row(
+        "seed",
+        base_feature_id="fullscan_base",
+        base_mz=500.0,
+        base_rt_apex_min=10.0,
+    )
     _write_csv(
         candidates_csv,
-        (
-            "sample_stem",
-            "candidate_id",
-            "base_feature_id",
-            "base_mz",
-            "base_rt_apex_min",
-        ),
+        FULLSCAN_CANDIDATE_REQUIRED_COLUMNS,
         [candidate_row, candidate_row],
     )
 
@@ -379,37 +403,66 @@ def _single_seed_inputs(
     candidates_csv = tmp_path / "pt_pattern_candidates.csv"
     evidence_csv = tmp_path / "pt_pattern_evidence.csv"
     ddms2_features_csv = tmp_path / "detected_features.csv"
+    candidate = _candidate_row(
+        "seed",
+        base_feature_id="fullscan_base",
+        base_mz=base_mz,
+        base_rt_apex_min=base_rt_apex_min,
+    )
     _write_csv(
         candidates_csv,
-        (
-            "sample_stem",
-            "candidate_id",
-            "base_feature_id",
-            "base_mz",
-            "base_rt_apex_min",
-        ),
-        [
-            {
-                "sample_stem": "fullscan",
-                "candidate_id": "seed",
-                "base_feature_id": "fullscan_base",
-                "base_mz": str(base_mz),
-                "base_rt_apex_min": str(base_rt_apex_min),
-            },
-        ],
+        FULLSCAN_CANDIDATE_REQUIRED_COLUMNS,
+        [candidate],
     )
     _write_csv(
         evidence_csv,
-        ("candidate_id", "trace_rule_call", "trace_detection_status"),
-        [
-            {
-                "candidate_id": "seed",
-                "trace_rule_call": "accept",
-                "trace_detection_status": "detected",
-            },
-        ],
+        PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
+        [_evidence_row(candidate, trace_rule_call="accept")],
     )
     return candidates_csv, evidence_csv, ddms2_features_csv
+
+
+def _candidate_row(
+    candidate_id: str,
+    *,
+    sample_stem: str = "fullscan",
+    base_feature_id: str = "fullscan_base",
+    base_mz: float,
+    base_rt_apex_min: float,
+) -> dict[str, str]:
+    return {
+        "sample_stem": sample_stem,
+        "method_label": "pt_pattern",
+        "pattern_id": "pt",
+        "candidate_id": candidate_id,
+        "candidate_state": "pt_pattern_candidate",
+        "base_feature_id": base_feature_id,
+        "base_mz": str(base_mz),
+        "base_rt_apex_min": str(base_rt_apex_min),
+        "pt_plus_1_feature_id": f"{candidate_id}-plus1",
+        "pt_plus_1_mz": str(base_mz + 1.002111),
+        "pt_plus_1_expected_mz": str(base_mz + 1.002111),
+        "pt_plus_2_feature_id": f"{candidate_id}-plus2",
+        "pt_plus_2_mz": str(base_mz + 2.002271),
+        "pt_plus_2_expected_mz": str(base_mz + 2.002271),
+        "pt_plus_4_feature_id": f"{candidate_id}-plus4",
+        "pt_plus_4_mz": str(base_mz + 4.005213),
+        "pt_plus_4_expected_mz": str(base_mz + 4.005213),
+    }
+
+
+def _evidence_row(
+    candidate: dict[str, str],
+    *,
+    trace_rule_call: str,
+) -> dict[str, str]:
+    return {
+        field: str(value)
+        for field, value in pt_evidence_row(
+            candidate,
+            trace_rule_call=trace_rule_call,
+        ).items()
+    }
 
 
 def _feature_row(

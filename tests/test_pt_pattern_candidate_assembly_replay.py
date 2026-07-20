@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics import pt_pattern_candidate_assembly_replay as replay_cli
 from xic_extractor.discovery.detected_features import (
     DetectedFeature,
@@ -102,6 +104,171 @@ def test_candidate_assembly_replay_cli_writes_outputs(tmp_path: Path) -> None:
     assert (output_dir / "pt_pattern_candidate_assembly_replay.csv").is_file()
     assert (output_dir / "pt_pattern_candidate_assembly_replay_summary.json").is_file()
     assert (output_dir / "pt_pattern_candidate_assembly_replay.html").is_file()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("coherent_full_pattern_exists", "garbage"),
+        ("coherent_full_pattern_exists", ""),
+        ("feature_base_count_20ppm", "1.5"),
+        ("feature_base_count_20ppm", "-1"),
+        ("compound", "   "),
+        ("query_set", "   "),
+        ("list_plus1_mz", "0"),
+        ("expected_base_mz", "-1"),
+    ],
+)
+def test_candidate_assembly_replay_rejects_invalid_top102_domain_values(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    inputs = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        inputs["top102"],
+        required_columns=(field,),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0][field] = value
+    write_delimited_rows(inputs["top102"], rows, tuple(rows[0]))
+
+    with pytest.raises(ValueError, match=field):
+        run_candidate_assembly_replay(
+            detected_features_csv=inputs["features"],
+            top102_diagnosis_csv=inputs["top102"],
+            known_diagnosis_csv=inputs["known"],
+            output_dir=tmp_path / "replay",
+            report_id="invalid_top102_domain",
+        )
+
+
+@pytest.mark.parametrize(
+    ("invalid_field", "zero_fields"),
+    [
+        ("feature_plus1_count_20ppm", ("feature_base_count_20ppm",)),
+        (
+            "feature_plus2_count_20ppm",
+            ("feature_base_count_20ppm", "feature_plus1_count_20ppm"),
+        ),
+        (
+            "feature_plus4_count_20ppm",
+            (
+                "feature_base_count_20ppm",
+                "feature_plus1_count_20ppm",
+                "feature_plus2_count_20ppm",
+            ),
+        ),
+    ],
+)
+def test_candidate_assembly_replay_validates_all_counts_before_filtering(
+    tmp_path: Path,
+    invalid_field: str,
+    zero_fields: tuple[str, ...],
+) -> None:
+    inputs = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        inputs["top102"],
+        required_columns=(invalid_field, *zero_fields),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    for field in zero_fields:
+        rows[0][field] = "0"
+    rows[0][invalid_field] = "garbage"
+    write_delimited_rows(inputs["top102"], rows, tuple(rows[0]))
+
+    with pytest.raises(ValueError, match=invalid_field):
+        run_candidate_assembly_replay(
+            detected_features_csv=inputs["features"],
+            top102_diagnosis_csv=inputs["top102"],
+            known_diagnosis_csv=inputs["known"],
+            output_dir=tmp_path / "replay",
+            report_id="all_counts_validated",
+        )
+
+
+@pytest.mark.parametrize("source", ["top102", "known"])
+def test_candidate_assembly_replay_rejects_inconsistent_target_identity(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    inputs = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        inputs[source],
+        required_columns=("list_plus1_mz", "expected_base_mz"),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    if source == "known":
+        rows = [
+            {
+                "compound": "known-a",
+                "list_plus1_mz": "501.002111",
+                "expected_base_mz": "500.0",
+                "chosen_candidate_id": "",
+                "feature_base_nearest_abs_ppm": "1.0",
+                "feature_plus1_nearest_abs_ppm": "1.0",
+                "feature_plus2_nearest_abs_ppm": "1.0",
+                "feature_plus4_nearest_abs_ppm": "1.0",
+            }
+        ]
+    rows[0]["list_plus1_mz"] = "501.002111"
+    rows[0]["expected_base_mz"] = "900"
+    write_delimited_rows(inputs[source], rows, tuple(rows[0]))
+
+    with pytest.raises(ValueError, match=r"list_plus1_mz.*Pt \+1 delta"):
+        run_candidate_assembly_replay(
+            detected_features_csv=inputs["features"],
+            top102_diagnosis_csv=inputs["top102"],
+            known_diagnosis_csv=inputs["known"],
+            output_dir=tmp_path / "replay",
+            report_id="inconsistent_target_identity",
+        )
+
+
+@pytest.mark.parametrize("value", ["garbage", "-0.1"])
+def test_candidate_assembly_replay_rejects_invalid_known_nearest_ppm(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    inputs = _write_inputs(tmp_path)
+    columns = (
+        "compound",
+        "list_plus1_mz",
+        "expected_base_mz",
+        "chosen_candidate_id",
+        "feature_base_nearest_abs_ppm",
+        "feature_plus1_nearest_abs_ppm",
+        "feature_plus2_nearest_abs_ppm",
+        "feature_plus4_nearest_abs_ppm",
+    )
+    write_delimited_rows(
+        inputs["known"],
+        [
+            {
+                "compound": "known-a",
+                "list_plus1_mz": "501.002111",
+                "expected_base_mz": "500.0",
+                "chosen_candidate_id": "",
+                "feature_base_nearest_abs_ppm": value,
+                "feature_plus1_nearest_abs_ppm": "1.0",
+                "feature_plus2_nearest_abs_ppm": "1.0",
+                "feature_plus4_nearest_abs_ppm": "1.0",
+            }
+        ],
+        columns,
+    )
+
+    with pytest.raises(ValueError, match="feature_base_nearest_abs_ppm"):
+        run_candidate_assembly_replay(
+            detected_features_csv=inputs["features"],
+            top102_diagnosis_csv=inputs["top102"],
+            known_diagnosis_csv=inputs["known"],
+            output_dir=tmp_path / "replay",
+            report_id="invalid_known_nearest_ppm",
+        )
 
 
 def _write_inputs(tmp_path: Path) -> dict[str, Path]:

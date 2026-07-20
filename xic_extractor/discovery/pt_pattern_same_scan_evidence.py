@@ -52,6 +52,26 @@ class SameScanSettings:
     noise_level: float = 25_000.0
     minimum_joint_scans: int = 2
 
+    def __post_init__(self) -> None:
+        mass_tolerance = require_finite_real(
+            self.mass_tolerance_ppm,
+            name="same-scan mass_tolerance_ppm",
+        )
+        if mass_tolerance <= 0:
+            raise ValueError("same-scan mass_tolerance_ppm must be > 0")
+        noise_level = require_finite_real(
+            self.noise_level,
+            name="same-scan noise_level",
+        )
+        if noise_level < 0:
+            raise ValueError("same-scan noise_level must be >= 0")
+        minimum_joint_scans = require_integer(
+            self.minimum_joint_scans,
+            name="minimum_joint_scans",
+        )
+        if minimum_joint_scans < 1:
+            raise ValueError("minimum_joint_scans must be at least one")
+
 
 @dataclass(frozen=True, slots=True)
 class ObservedPeak:
@@ -133,7 +153,7 @@ def evaluate_same_scan_envelope(
 ) -> SameScanEnvelopeEvidence:
     """Measure fixed-mass Pt positions on shared MS1 scan IDs."""
 
-    _validate_inputs(seed, settings)
+    _validate_seed(seed)
     validate_ms1_scan_index(index, require_nonempty=True)
     observations = tuple(
         _observe_scan(scan, seed.base_mz, settings)
@@ -470,7 +490,7 @@ def _median_ppm_spread(
     return float(np.median(spreads)) if spreads else None
 
 
-def _validate_inputs(seed: PtPatternSeed, settings: SameScanSettings) -> None:
+def _validate_seed(seed: PtPatternSeed) -> None:
     if not seed.seed_id.strip() or not seed.source_set.strip():
         raise ValueError("Pt pattern seed identifiers must be non-empty")
     base_mz = require_finite_real(seed.base_mz, name="Pt pattern base m/z")
@@ -492,19 +512,3 @@ def _validate_inputs(seed: PtPatternSeed, settings: SameScanSettings) -> None:
         )
         if rt_window <= 0:
             raise ValueError("Pt pattern RT half-window must be finite and positive")
-    noise_level = require_finite_real(
-        settings.noise_level,
-        name="same-scan noise_level",
-    )
-    mass_tolerance = require_finite_real(
-        settings.mass_tolerance_ppm,
-        name="same-scan mass_tolerance_ppm",
-    )
-    if noise_level < 0 or mass_tolerance <= 0:
-        raise ValueError("same-scan thresholds must be finite and non-negative")
-    minimum_joint_scans = require_integer(
-        settings.minimum_joint_scans,
-        name="minimum_joint_scans",
-    )
-    if minimum_joint_scans < 1:
-        raise ValueError("minimum_joint_scans must be at least one")

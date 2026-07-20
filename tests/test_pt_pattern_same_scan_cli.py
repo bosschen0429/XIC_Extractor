@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
+from tests.pt_pattern_evidence_fixtures import pt_evidence_row
 from tools.diagnostics import pt_pattern_same_scan_replay
 from xic_extractor.ms1_scan_index import (
     MS1Scan,
@@ -19,6 +20,41 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=tuple(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _candidate_row(*, duplicate_feature_claim: bool = False) -> dict[str, str]:
+    return {
+        "sample_stem": "SampleA",
+        "method_label": "pt_pattern",
+        "pattern_id": "pt",
+        "candidate_id": "candidate-a",
+        "candidate_state": "pt_pattern_candidate",
+        "base_mz": "500.0",
+        "base_rt_apex_min": "10.01",
+        "base_feature_id": "f1",
+        "pt_plus_1_feature_id": "f2",
+        "pt_plus_2_feature_id": "f3",
+        "pt_plus_4_feature_id": "f3" if duplicate_feature_claim else "f4",
+        "pt_plus_1_mz": "501.002111",
+        "pt_plus_1_expected_mz": "501.002111",
+        "pt_plus_2_mz": "502.002271",
+        "pt_plus_2_expected_mz": "502.002271",
+        "pt_plus_4_mz": "504.005213",
+        "pt_plus_4_expected_mz": "504.005213",
+    }
+
+
+def _evidence_row(candidate: dict[str, str]) -> dict[str, str]:
+    assignment_candidate = dict(candidate)
+    if (
+        assignment_candidate["pt_plus_4_feature_id"]
+        == assignment_candidate["pt_plus_2_feature_id"]
+    ):
+        assignment_candidate["pt_plus_4_feature_id"] = "f4"
+    return {
+        field: str(value)
+        for field, value in pt_evidence_row(assignment_candidate).items()
+    }
 
 
 def test_same_scan_cli_runs_from_npz_without_raw(tmp_path: Path) -> None:
@@ -60,25 +96,9 @@ def test_same_scan_cli_runs_from_npz_without_raw(tmp_path: Path) -> None:
     candidates = tmp_path / "candidates.csv"
     evidence = tmp_path / "evidence.csv"
     known = tmp_path / "known.csv"
-    _write_csv(
-        candidates,
-        [
-            {
-                "sample_stem": "SampleA",
-                "candidate_id": "candidate-a",
-                "base_mz": "500.0",
-                "base_rt_apex_min": "10.01",
-                "base_feature_id": "f1",
-                "pt_plus_1_feature_id": "f2",
-                "pt_plus_2_feature_id": "f3",
-                "pt_plus_4_feature_id": "f4",
-            }
-        ],
-    )
-    _write_csv(
-        evidence,
-        [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
-    )
+    candidate = _candidate_row()
+    _write_csv(candidates, [candidate])
+    _write_csv(evidence, [_evidence_row(candidate)])
     _write_csv(
         known,
         [
@@ -211,25 +231,9 @@ def test_same_scan_cli_translates_invalid_feature_claims_to_exit_2(
     candidates = tmp_path / "candidates.csv"
     evidence = tmp_path / "evidence.csv"
     known = tmp_path / "known.csv"
-    _write_csv(
-        candidates,
-        [
-            {
-                "sample_stem": "SampleA",
-                "candidate_id": "candidate-a",
-                "base_mz": "500.0",
-                "base_rt_apex_min": "10.0",
-                "base_feature_id": "f1",
-                "pt_plus_1_feature_id": "f2",
-                "pt_plus_2_feature_id": "f3",
-                "pt_plus_4_feature_id": "f3",
-            }
-        ],
-    )
-    _write_csv(
-        evidence,
-        [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
-    )
+    candidate = _candidate_row(duplicate_feature_claim=True)
+    _write_csv(candidates, [candidate])
+    _write_csv(evidence, [_evidence_row(candidate)])
     _write_csv(
         known,
         [
@@ -260,5 +264,5 @@ def test_same_scan_cli_translates_invalid_feature_claims_to_exit_2(
     )
 
     assert code == 2
-    assert "four distinct feature claims" in capsys.readouterr().err
+    assert "feature assignment IDs must be distinct" in capsys.readouterr().err
     assert not output_dir.exists()

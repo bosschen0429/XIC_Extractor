@@ -16,6 +16,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.pt_pattern_trace_fixtures import (
+    full_context_trace_summary_row,
+    write_trace_summary_lineage_bundle,
+)
 from xic_extractor.discovery.csv_writer import format_discovery_csv_value
 from xic_extractor.discovery.delta_mass_patterns import (
     match_delta_mass_pattern as real_match_delta_mass_pattern,
@@ -28,7 +32,9 @@ from xic_extractor.discovery.detected_features import (
     CID_NL_SHARED_IDENTITY_SOURCE,
     DeltaMassPatternSettings,
 )
-from xic_extractor.discovery.pt_pattern_trace_evidence import SUMMARY_COLUMNS
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    pt_pattern_candidate_assignment_fingerprint,
+)
 
 DETECTED_FEATURES_COLUMNS = (
     "sample_stem",
@@ -113,14 +119,6 @@ def _write_mzmine_wide_feature_table(path: Path, rows: list[dict[str, object]]) 
         writer.writeheader()
         for row in rows:
             writer.writerow({column: row.get(column, "") for column in fieldnames})
-
-
-def _write_trace_summary_csv(path: Path, rows: list[dict[str, object]]) -> None:
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=SUMMARY_COLUMNS)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({column: row.get(column, "") for column in SUMMARY_COLUMNS})
 
 
 def _full_pattern_rows(sample_stem: str = "Sample_1") -> list[dict[str, object]]:
@@ -953,32 +951,40 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
     detected_features_csv = tmp_path / "detected_features.csv"
     _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
     trace_summary_csv = tmp_path / "trace_summary.csv"
-    _write_trace_summary_csv(
-        trace_summary_csv,
-        [
-            {
-                "schema_version": "pt_pattern_trace_diagnosis.v2",
-                "sample_stem": "Sample_1",
-                "candidate_id": (
-                    "Sample_1|pt|base:base-1|mz:500.000000|rt:10.000000"
-                ),
-                "scan_pattern_seed_status": "full_pattern_seeded",
-                "base_mz": 500.0,
-                "base_rt_apex_min": 10.0,
-                "non_base_positions_supported": 3,
-                "max_abs_apex_delta_sec": 0.4,
-                "min_pearson_r_to_base": 0.95,
-                "min_active_overlap_fraction": 0.70,
-                "min_shifted_pearson_r_to_base": 0.96,
-                "max_abs_shape_shift_sec_to_base": 2.0,
-                "trace_ambiguity_status": "review_required",
-                "trace_ambiguity_flags": "shifted_only_support_present",
-                "shifted_only_position_labels": "pt_plus_4",
-                "trace_support_status": "supported",
-                "combined_pt_pattern_status": "pt_pattern_detected_diagnostic",
-                "reason": "supported",
-            }
+    candidate_id = "Sample_1|pt|base:base-1|mz:500.000000|rt:10.000000"
+    trace_candidate_row = {
+        "sample_stem": "Sample_1",
+        "method_label": "pt_pattern",
+        "pattern_id": "pt",
+        "candidate_id": candidate_id,
+        "base_feature_id": "base-1",
+        "pt_plus_1_feature_id": "plus1-1",
+        "pt_plus_2_feature_id": "plus2-1",
+        "pt_plus_4_feature_id": "plus4-1",
+        "base_mz": 500.0,
+        "base_rt_apex_min": 10.0,
+        "pt_plus_1_mz": 501.002111,
+        "pt_plus_1_expected_mz": 501.002111,
+        "pt_plus_2_mz": 502.002271,
+        "pt_plus_2_expected_mz": 502.002271,
+        "pt_plus_4_mz": 504.005213,
+        "pt_plus_4_expected_mz": 504.005213,
+    }
+    assignment_sha256 = pt_pattern_candidate_assignment_fingerprint(
+        trace_candidate_row
+    )
+    trace_bundle = write_trace_summary_lineage_bundle(
+        trace_summary_csv=trace_summary_csv,
+        summary_rows=[
+            full_context_trace_summary_row(
+                candidate_id=candidate_id,
+                candidate_assignment_sha256=assignment_sha256,
+                    sample_stem="Sample_1",
+                    trace_ambiguity_status="review_required",
+                    trace_ambiguity_flags="position_shift_direction_mixed",
+            )
         ],
+        candidate_rows=[trace_candidate_row],
     )
 
     outputs = run_pt_pattern_discovery(
@@ -1000,12 +1006,25 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
     )
     assert evidence_rows[0]["trace_ambiguity_status"] == "review_required"
     assert evidence_rows[0]["trace_ambiguity_flags"] == (
-        "shifted_only_support_present"
+        "position_shift_direction_mixed"
     )
-    assert evidence_rows[0]["shifted_only_position_labels"] == "pt_plus_4"
+    assert evidence_rows[0]["shifted_only_position_labels"] == "none"
+    assert evidence_rows[0]["trace_schema_version"] == (
+        "pt_pattern_trace_diagnosis.v4"
+    )
+    assert evidence_rows[0]["trace_artifact_role"] == "full_context"
+    assert evidence_rows[0]["trace_extraction_sha256"]
+    assert evidence_rows[0]["trace_manifest_sha256"]
 
     payload = json.loads(outputs.sidecar_json.read_text(encoding="utf-8"))
     assert payload["inputs"]["trace_summary_csv"] == str(trace_summary_csv)
+    assert payload["inputs"]["trace_metrics_csv"] == str(
+        trace_bundle["trace_metrics_csv"]
+    )
+    assert payload["inputs"]["trace_manifest_json"] == str(
+        trace_bundle["trace_manifest_json"]
+    )
+    assert payload["inputs"]["trace_artifact_role"] == "full_context"
     assert payload["summary"]["trace_rule_call_counts"] == {"accept": 1}
 
 

@@ -8,6 +8,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
+    validate_pt_candidate_evidence_envelope,
+)
 from xic_extractor.discovery.pt_pattern_same_scan_evidence import (
     CandidateFeatureClaims,
     PtPatternSeed,
@@ -42,14 +47,8 @@ D3_CONTROL_NAME = "d3-dG-C8-MeIQx"
 REFERENCE_CP_NAME = "195CP-d(GpG)"
 
 _CANDIDATE_COLUMNS = (
-    "sample_stem",
-    "candidate_id",
-    "base_mz",
-    "base_rt_apex_min",
-    "base_feature_id",
-    "pt_plus_1_feature_id",
-    "pt_plus_2_feature_id",
-    "pt_plus_4_feature_id",
+    *PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    "candidate_state",
 )
 _FEATURE_ID_COLUMNS = (
     "base_feature_id",
@@ -57,7 +56,7 @@ _FEATURE_ID_COLUMNS = (
     "pt_plus_2_feature_id",
     "pt_plus_4_feature_id",
 )
-_EVIDENCE_INPUT_COLUMNS = ("candidate_id", "trace_rule_call")
+_EVIDENCE_INPUT_COLUMNS = PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS
 _KNOWN_COLUMNS = ("compound", "expected_base_mz", "diagnostic_status")
 EVIDENCE_COLUMNS = (
     "schema_version",
@@ -242,7 +241,11 @@ def run_same_scan_replay(
         report_id=report_id,
         index_source=index_source,
         candidate_rt_half_window_sec=candidate_rt_half_window_sec,
-        inputs=(candidates_csv, evidence_csv, known_diagnosis_csv),
+        inputs={
+            "candidates_csv": candidates_csv,
+            "evidence_csv": evidence_csv,
+            "known_diagnosis_csv": known_diagnosis_csv,
+        },
         source_sample_stem=source_sample_stem,
         index_input=index_input,
         index_provenance=index_provenance,
@@ -299,6 +302,11 @@ def _candidate_contexts(
     )
     candidate_by_id = _unique_candidate_rows(candidates, label="candidate")
     evidence_by_id = _unique_candidate_rows(evidence, label="evidence")
+    validate_pt_candidate_evidence_envelope(
+        candidate_by_id,
+        evidence_by_id,
+        evidence_rows=evidence,
+    )
     accepted_ids = {
         candidate_id
         for candidate_id, row in evidence_by_id.items()
@@ -570,7 +578,7 @@ def _summary(
     report_id: str,
     index_source: str,
     candidate_rt_half_window_sec: float,
-    inputs: Sequence[Path],
+    inputs: Mapping[str, Path],
     source_sample_stem: str = "",
     index_input: Path | None = None,
     index_provenance: MS1ScanIndexProvenance | None = None,
@@ -684,8 +692,8 @@ def _summary(
             if status in discovery_resolved_statuses
         ),
         "inputs": {
-            path.name: {"path": str(path), "sha256": file_sha256(path)}
-            for path in inputs
+            role: {"path": str(path), "sha256": file_sha256(path)}
+            for role, path in inputs.items()
         },
     }
 

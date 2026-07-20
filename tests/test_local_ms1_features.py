@@ -651,6 +651,92 @@ def test_summary_invariant_failure_raises() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("sample_stem", "raw_path", "message"),
+    [
+        ("   ", "Sample_1.raw", "sample_stem"),
+        ("Sample_1", "   ", "raw_path"),
+    ],
+)
+def test_build_local_ms1_feature_table_rejects_blank_identity_before_scan_io(
+    sample_stem: str,
+    raw_path: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        build_local_ms1_feature_table(
+            (),
+            sample_stem=sample_stem,
+            raw_path=raw_path,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("raw_file_size_bytes", True),
+        ("raw_file_size_bytes", -1),
+        ("raw_file_size_bytes", 1.5),
+        ("raw_file_mtime_ns", True),
+        ("raw_file_mtime_ns", -1),
+        ("raw_file_mtime_ns", 1.5),
+    ],
+)
+def test_build_local_ms1_feature_table_rejects_invalid_raw_provenance_before_scan_io(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValueError, match=field):
+        build_local_ms1_feature_table(
+            (),
+            sample_stem="Sample_1",
+            raw_path="Sample_1.raw",
+            **{field: value},
+        )
+
+
+def test_build_local_ms1_feature_table_normalizes_identity_whitespace() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0)]),
+        _scan(2, 1.05, [(500.0001, 50.0)]),
+        _scan(3, 1.10, [(500.0000, 10.0)]),
+    )
+
+    features, summary, _diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="  Sample_1  ",
+        raw_path="  Sample_1.raw  ",
+        settings=_settings(min_ok_prominence=5.0),
+    )
+
+    assert summary.sample_stem == "Sample_1"
+    assert summary.raw_path == "Sample_1.raw"
+    assert all(feature.sample_stem == "Sample_1" for feature in features)
+    assert all(feature.feature_id.startswith("Sample_1|") for feature in features)
+
+
+def test_build_local_ms1_feature_table_normalizes_integer_raw_provenance() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0)]),
+        _scan(2, 1.05, [(500.0001, 50.0)]),
+        _scan(3, 1.10, [(500.0000, 10.0)]),
+    )
+
+    _features, summary, _diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="Sample_1",
+        raw_path="Sample_1.raw",
+        raw_file_size_bytes=np.int64(123),
+        raw_file_mtime_ns=np.int64(456),
+        settings=_settings(min_ok_prominence=5.0),
+    )
+
+    assert summary.raw_file_size_bytes == 123
+    assert type(summary.raw_file_size_bytes) is int
+    assert summary.raw_file_mtime_ns == 456
+    assert type(summary.raw_file_mtime_ns) is int
+
+
 def test_write_local_ms1_feature_outputs_writes_contract_files(tmp_path: Path) -> None:
     index = (
         _scan(1, 1.00, [(500.0000, 10.0)]),
