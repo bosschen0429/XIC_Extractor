@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+    PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
+    PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+    PT_PATTERN_TRACE_SCHEMA_ROLE,
     validate_pt_candidate_trace_summary_identity,
 )
 from xic_extractor.discovery.pt_pattern_trace_batch import (
@@ -20,20 +28,36 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
     SCHEMA_VERSION as LEGACY_TRACE_SCHEMA_VERSION,
 )
+from xic_extractor.discovery.pt_pattern_trace_manifest import (
+    load_trace_bundle_manifest,
+    load_verified_trace_summary_bundle,
+    validate_trace_manifest_identity,
+    validate_trace_row_bundle,
+)
 from xic_extractor.tabular_io import (
+    file_sha256,
     optional_float,
     read_delimited_rows,
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_manual_review_packet.v2"
-ANCHOR_LOCAL_SCHEMA_VERSION = "pt_pattern_manual_review_packet.v3"
+SCHEMA_VERSION = "pt_pattern_manual_review_packet.v4"
+ANCHOR_LOCAL_SCHEMA_VERSION = "pt_pattern_manual_review_packet.v5"
+PACKET_MANIFEST_VERSION = "pt_pattern_manual_review_packet_manifest.v1"
+PACKET_SCHEMA_ROLE = {
+    SCHEMA_VERSION: PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+    ANCHOR_LOCAL_SCHEMA_VERSION: PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+}
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_trace_evidence"
 
 SUMMARY_REQUIRED_COLUMNS = (
+    "schema_version",
     "sample_stem",
     "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
     "scan_pattern_seed_status",
     "base_mz",
     "base_rt_apex_min",
@@ -58,21 +82,22 @@ SUMMARY_REQUIRED_COLUMNS = (
 )
 
 CANDIDATE_REQUIRED_COLUMNS = (
-    "sample_stem",
-    "method_label",
-    "candidate_id",
+    *PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
     "candidate_state",
     "review_priority",
     "evidence_tier",
     "evidence_score",
-    "base_mz",
-    "base_rt_apex_min",
     "cid_nl_base_status",
     "cid_nl_base_join_mode",
 )
 
 METRIC_REQUIRED_COLUMNS = (
+    "schema_version",
+    "sample_stem",
     "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
     "position_label",
     "trace_decision_basis",
     "trace_smoothing_method",
@@ -111,6 +136,9 @@ PACKET_COLUMNS = (
     "review_bucket",
     "sample_stem",
     "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
     "method_label",
     "candidate_state",
     "review_priority",
@@ -191,6 +219,12 @@ LEGACY_PACKET_COLUMNS = tuple(
     for column in PACKET_COLUMNS
     if column not in ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
 )
+ANCHOR_LOCAL_PACKET_COLUMNS = PACKET_COLUMNS
+FULL_CONTEXT_PACKET_COLUMNS = LEGACY_PACKET_COLUMNS
+PACKET_SCHEMA_COLUMNS = {
+    SCHEMA_VERSION: FULL_CONTEXT_PACKET_COLUMNS,
+    ANCHOR_LOCAL_SCHEMA_VERSION: ANCHOR_LOCAL_PACKET_COLUMNS,
+}
 
 
 def build_review_packet_rows(
@@ -206,6 +240,8 @@ def build_review_packet_rows(
         summary_rows=summary_rows,
         metric_rows=metric_rows,
     )
+    source_schema_version = _required_text(summary_rows[0], "schema_version")
+    trace_artifact_role = PT_PATTERN_TRACE_SCHEMA_ROLE[source_schema_version]
     if not packet_label.strip():
         raise ValueError("packet_label must be non-empty")
     if not source_label.strip():
@@ -226,12 +262,22 @@ def build_review_packet_rows(
         metrics_by_candidate=metrics_by_candidate,
         summary_candidate_ids=set(summaries_by_id),
     )
+    for candidate_id, summary in summaries_by_id.items():
+        validate_pt_candidate_trace_summary_identity(
+            candidates_by_id[candidate_id],
+            summary,
+        )
+    validate_trace_row_bundle(
+        summary_rows=summary_rows,
+        metric_rows=metric_rows,
+        schema_version=source_schema_version,
+        artifact_role=trace_artifact_role,
+    )
     grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
 
     for summary in summary_rows:
         candidate_id = _required_text(summary, "candidate_id")
         candidate = candidates_by_id[candidate_id]
-        validate_pt_candidate_trace_summary_identity(candidate, summary)
         combined_status = _required_text(summary, "combined_pt_pattern_status")
         row = _packet_row(
             candidate=candidate,
@@ -262,6 +308,7 @@ def run_review_packet(
     packet_label: str,
     source_label: str,
     max_per_status: int,
+    trace_manifest_json: Path | None = None,
 ) -> dict[str, Path]:
     candidate_rows = read_delimited_rows(
         candidates_csv,
@@ -269,18 +316,17 @@ def run_review_packet(
         delimiter=",",
         encoding="utf-8-sig",
     )
-    summary_rows = read_delimited_rows(
+    trace_bundle = load_verified_trace_summary_bundle(
         trace_summary_csv,
-        required_columns=SUMMARY_REQUIRED_COLUMNS,
-        delimiter=",",
-        encoding="utf-8-sig",
+        metrics_csv=trace_metrics_csv,
+        manifest_json=trace_manifest_json,
+        candidates_csv=candidates_csv,
     )
-    metric_rows = read_delimited_rows(
-        trace_metrics_csv,
-        required_columns=METRIC_REQUIRED_COLUMNS,
-        delimiter=",",
-        encoding="utf-8-sig",
-    )
+    summary_rows = trace_bundle.summary_rows
+    metric_rows = trace_bundle.metric_rows
+    trace_artifact_role = trace_bundle.trace_artifact_role
+    resolved_trace_manifest = trace_bundle.manifest_json
+    trace_extraction_sha256 = trace_bundle.trace_extraction_sha256
 
     packet_rows = build_review_packet_rows(
         candidate_rows=candidate_rows,
@@ -294,17 +340,14 @@ def run_review_packet(
     output_dir.mkdir(parents=True, exist_ok=True)
     packet_csv = output_dir / "pt_pattern_manual_review_packet.csv"
     sidecar_json = output_dir / "pt_pattern_manual_review_packet.json"
-    packet_schema_version = (
-        str(packet_rows[0]["schema_version"])
-        if packet_rows
-        else SCHEMA_VERSION
-    )
+    packet_schema_version = str(packet_rows[0]["schema_version"])
     packet_columns = (
         PACKET_COLUMNS
         if packet_schema_version == ANCHOR_LOCAL_SCHEMA_VERSION
         else LEGACY_PACKET_COLUMNS
     )
     write_delimited_rows(packet_csv, packet_rows, packet_columns)
+    packet_csv_sha256 = file_sha256(packet_csv).lower()
 
     status_counts = Counter(
         str(row["combined_pt_pattern_status"]) for row in packet_rows
@@ -313,11 +356,21 @@ def run_review_packet(
         "schema_version": packet_schema_version,
         "readiness_tier": READINESS_TIER,
         "evidence_owner": EVIDENCE_OWNER,
+        "packet_manifest_version": PACKET_MANIFEST_VERSION,
+        "trace_artifact_role": trace_artifact_role,
+        "trace_extraction_sha256": trace_extraction_sha256,
         "packet_label": packet_label,
         "source_label": source_label,
         "candidates_csv": str(candidates_csv),
         "trace_summary_csv": str(trace_summary_csv),
         "trace_metrics_csv": str(trace_metrics_csv),
+        "trace_manifest_json": str(resolved_trace_manifest),
+        "input_sha256": {
+            "candidates_csv": file_sha256(candidates_csv).lower(),
+            "trace_summary_csv": file_sha256(trace_summary_csv).lower(),
+            "trace_metrics_csv": file_sha256(trace_metrics_csv).lower(),
+            "trace_manifest_json": file_sha256(resolved_trace_manifest).lower(),
+        },
         "output_dir": str(output_dir),
         "max_per_status": max_per_status,
         "packet_row_count": len(packet_rows),
@@ -327,6 +380,7 @@ def run_review_packet(
         "diagnostic_only": True,
         "outputs": {
             "packet_csv": str(packet_csv),
+            "packet_csv_sha256": packet_csv_sha256,
         },
     }
     sidecar_json.write_text(
@@ -334,6 +388,150 @@ def run_review_packet(
         encoding="utf-8",
     )
     return {"packet_csv": packet_csv, "sidecar_json": sidecar_json}
+
+
+def default_review_packet_manifest_path(review_packet_csv: Path) -> Path:
+    return review_packet_csv.parent / "pt_pattern_manual_review_packet.json"
+
+
+def validate_review_packet_manifest(
+    *,
+    manifest: Mapping[str, object],
+    review_packet_csv: Path,
+    packet_rows: Sequence[Mapping[str, str]],
+    trace_manifest_json: Path | None = None,
+) -> tuple[str, str, Path]:
+    """Validate the packet sidecar and return verified extraction SHA and role."""
+
+    if not packet_rows:
+        raise ValueError("review packet must contain at least one row")
+    if str(manifest.get("packet_manifest_version", "")).strip() != (
+        PACKET_MANIFEST_VERSION
+    ):
+        raise ValueError("unsupported review packet manifest version")
+    if manifest.get("diagnostic_only") is not True:
+        raise ValueError("review packet manifest diagnostic_only must be true")
+    if str(manifest.get("readiness_tier", "")).strip() != READINESS_TIER:
+        raise ValueError("review packet manifest readiness_tier mismatch")
+    if str(manifest.get("evidence_owner", "")).strip() != EVIDENCE_OWNER:
+        raise ValueError("review packet manifest evidence_owner mismatch")
+    if str(manifest.get("oracle_status", "")).strip() != "pending_human_review":
+        raise ValueError("review packet manifest oracle_status mismatch")
+    schemas = {str(row.get("schema_version", "")).strip() for row in packet_rows}
+    if len(schemas) != 1 or "" in schemas:
+        raise ValueError("review packet rows must use one non-empty schema_version")
+    schema_version = next(iter(schemas))
+    expected_role = PACKET_SCHEMA_ROLE.get(schema_version)
+    if expected_role is None:
+        raise ValueError(
+            f"unsupported review packet schema_version: {schema_version!r}"
+        )
+    if str(manifest.get("schema_version", "")).strip() != schema_version:
+        raise ValueError("review packet manifest schema_version mismatch")
+    artifact_role = str(manifest.get("trace_artifact_role", "")).strip()
+    if artifact_role != expected_role:
+        raise ValueError("review packet manifest trace_artifact_role mismatch")
+    extraction_sha256 = _required_lower_sha256(
+        manifest.get("trace_extraction_sha256"),
+        label="review packet manifest trace_extraction_sha256",
+    )
+    for row_index, row in enumerate(packet_rows, start=2):
+        if str(row.get("trace_artifact_role", "")).strip() != artifact_role:
+            raise ValueError(
+                f"review packet row {row_index}: trace_artifact_role mismatch"
+            )
+        if str(row.get("trace_extraction_sha256", "")).strip() != extraction_sha256:
+            raise ValueError(
+                f"review packet row {row_index}: trace_extraction_sha256 mismatch"
+            )
+        _required_lower_sha256(
+            row.get("candidate_assignment_sha256"),
+            label=(f"review packet row {row_index} candidate_assignment_sha256"),
+        )
+    outputs = manifest.get("outputs")
+    if not isinstance(outputs, Mapping):
+        raise ValueError("review packet manifest outputs must be an object")
+    expected_packet_sha256 = _required_lower_sha256(
+        outputs.get("packet_csv_sha256"),
+        label="review packet manifest packet_csv_sha256",
+    )
+    if file_sha256(review_packet_csv).lower() != expected_packet_sha256:
+        raise ValueError("review packet manifest packet_csv_sha256 mismatch")
+    input_sha256 = manifest.get("input_sha256")
+    if not isinstance(input_sha256, Mapping):
+        raise ValueError("review packet manifest input_sha256 must be an object")
+    expected_trace_manifest_sha256 = _required_lower_sha256(
+        input_sha256.get("trace_manifest_json"),
+        label="review packet manifest trace_manifest_json sha256",
+    )
+    recorded_trace_manifest = str(manifest.get("trace_manifest_json", "")).strip()
+    if trace_manifest_json is None:
+        if not recorded_trace_manifest:
+            raise ValueError(
+                "review packet manifest trace_manifest_json must be non-empty"
+            )
+        resolved_trace_manifest = Path(recorded_trace_manifest)
+    else:
+        resolved_trace_manifest = trace_manifest_json
+    if file_sha256(resolved_trace_manifest).lower() != (expected_trace_manifest_sha256):
+        raise ValueError("review packet manifest trace_manifest_json sha256 mismatch")
+    trace_manifest = load_trace_bundle_manifest(resolved_trace_manifest)
+    trace_identity = validate_trace_manifest_identity(
+        trace_manifest,
+        expected_artifact_role=artifact_role,
+    )
+    if trace_identity.trace_extraction_sha256 != extraction_sha256:
+        raise ValueError("review packet trace manifest extraction mismatch")
+    trace_outputs = trace_manifest.get("output_sha256")
+    if not isinstance(trace_outputs, Mapping):
+        raise ValueError("trace manifest output_sha256 must be an object")
+    expected_input_sha256 = {
+        "candidates_csv": trace_identity.candidates_csv_sha256,
+        "trace_summary_csv": _required_lower_sha256(
+            trace_outputs.get("summary_csv"),
+            label="trace manifest summary_csv sha256",
+        ),
+        "trace_metrics_csv": _required_lower_sha256(
+            trace_outputs.get("metrics_csv"),
+            label="trace manifest metrics_csv sha256",
+        ),
+    }
+    for field, expected_sha256 in expected_input_sha256.items():
+        observed_sha256 = _required_lower_sha256(
+            input_sha256.get(field),
+            label=f"review packet manifest {field} sha256",
+        )
+        if observed_sha256 != expected_sha256:
+            raise ValueError(
+                f"review packet manifest {field} sha256 differs from trace manifest"
+            )
+    trace_assignments = dict(trace_identity.candidate_assignments)
+    for row_index, row in enumerate(packet_rows, start=2):
+        candidate_id = str(row.get("candidate_id", "")).strip()
+        if (
+            trace_assignments.get(candidate_id)
+            != str(row.get("candidate_assignment_sha256", "")).strip()
+        ):
+            raise ValueError(
+                f"review packet row {row_index}: assignment is outside trace manifest"
+            )
+        if str(row.get("sample_stem", "")).strip() != (
+            trace_identity.source_sample_stem
+        ):
+            raise ValueError(
+                f"review packet row {row_index}: sample_stem differs from "
+                "trace manifest"
+            )
+
+    packet_labels = {str(row.get("packet_label", "")).strip() for row in packet_rows}
+    source_labels = {str(row.get("source_label", "")).strip() for row in packet_rows}
+    if packet_labels != {str(manifest.get("packet_label", "")).strip()}:
+        raise ValueError("review packet manifest packet_label mismatch")
+    if source_labels != {str(manifest.get("source_label", "")).strip()}:
+        raise ValueError("review packet manifest source_label mismatch")
+    if manifest.get("packet_row_count") != len(packet_rows):
+        raise ValueError("review packet manifest packet_row_count mismatch")
+    return extraction_sha256, artifact_role, resolved_trace_manifest
 
 
 def _packet_row(
@@ -358,6 +556,18 @@ def _packet_row(
         ),
         "sample_stem": _required_text(summary, "sample_stem"),
         "candidate_id": candidate_id,
+        "candidate_assignment_sha256": summary.get(
+            PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
+            "",
+        ),
+        "trace_extraction_sha256": summary.get(
+            PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
+            "",
+        ),
+        "trace_artifact_role": summary.get(
+            PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
+            "",
+        ),
         "method_label": candidate.get("method_label", ""),
         "candidate_state": candidate.get("candidate_state", ""),
         "review_priority": candidate.get("review_priority", ""),
@@ -380,32 +590,24 @@ def _packet_row(
         "max_trace_point_count": summary.get("max_trace_point_count", ""),
         "trace_support_status": summary.get("trace_support_status", ""),
         "combined_pt_pattern_status": summary.get("combined_pt_pattern_status", ""),
-        "non_base_positions_supported": summary.get(
-            "non_base_positions_supported", ""
-        ),
+        "non_base_positions_supported": summary.get("non_base_positions_supported", ""),
         "max_abs_apex_delta_sec": summary.get("max_abs_apex_delta_sec", ""),
         "min_pearson_r_to_base": summary.get("min_pearson_r_to_base", ""),
-        "min_active_overlap_fraction": summary.get(
-            "min_active_overlap_fraction", ""
-        ),
+        "min_active_overlap_fraction": summary.get("min_active_overlap_fraction", ""),
         "min_shifted_pearson_r_to_base": summary.get(
             "min_shifted_pearson_r_to_base", ""
         ),
         "max_abs_shape_shift_sec_to_base": summary.get(
             "max_abs_shape_shift_sec_to_base", ""
         ),
-        "raw_max_abs_apex_delta_sec": summary.get(
-            "raw_max_abs_apex_delta_sec", ""
-        ),
+        "raw_max_abs_apex_delta_sec": summary.get("raw_max_abs_apex_delta_sec", ""),
         "raw_min_pearson_r_to_base": summary.get("raw_min_pearson_r_to_base", ""),
         "raw_min_active_overlap_fraction": summary.get(
             "raw_min_active_overlap_fraction", ""
         ),
         "trace_ambiguity_status": summary.get("trace_ambiguity_status", ""),
         "trace_ambiguity_flags": summary.get("trace_ambiguity_flags", ""),
-        "shifted_only_position_labels": summary.get(
-            "shifted_only_position_labels", ""
-        ),
+        "shifted_only_position_labels": summary.get("shifted_only_position_labels", ""),
         **{
             column: summary.get(column, "")
             for column in ANCHOR_SEGMENTATION_SUMMARY_COLUMNS
@@ -418,15 +620,9 @@ def _packet_row(
     for position_label in POSITION_LABELS:
         metric = metrics_by_position.get(position_label, {})
         prefix = position_label
-        row[f"{prefix}_trace_support_status"] = metric.get(
-            "trace_support_status", ""
-        )
-        row[f"{prefix}_trace_quality_flags"] = metric.get(
-            "trace_quality_flags", ""
-        )
-        row[f"{prefix}_median_rt_step_sec"] = metric.get(
-            "median_rt_step_sec", ""
-        )
+        row[f"{prefix}_trace_support_status"] = metric.get("trace_support_status", "")
+        row[f"{prefix}_trace_quality_flags"] = metric.get("trace_quality_flags", "")
+        row[f"{prefix}_median_rt_step_sec"] = metric.get("median_rt_step_sec", "")
         row[f"{prefix}_effective_smoothing_window_sec"] = metric.get(
             "effective_smoothing_window_sec", ""
         )
@@ -446,9 +642,7 @@ def _packet_row(
         row[f"{prefix}_raw_smoothed_apex_delta_sec"] = metric.get(
             "raw_smoothed_apex_delta_sec", ""
         )
-        row[f"{prefix}_raw_pearson_r_to_base"] = metric.get(
-            "raw_pearson_r_to_base", ""
-        )
+        row[f"{prefix}_raw_pearson_r_to_base"] = metric.get("raw_pearson_r_to_base", "")
         row[f"{prefix}_raw_active_overlap_fraction"] = metric.get(
             "raw_active_overlap_fraction", ""
         )
@@ -467,13 +661,13 @@ def _packet_schema_version(
         str(row.get("schema_version", "")).strip() for row in summary_rows
     }
     if not summary_versions:
-        return SCHEMA_VERSION
+        raise ValueError("trace summary must contain at least one candidate row")
     if len(summary_versions) != 1:
         raise ValueError("trace summary rows must use one schema_version")
     source_schema = next(iter(summary_versions))
     expected_packet_schema: str
     expects_anchor_columns: bool
-    if source_schema in {"", LEGACY_TRACE_SCHEMA_VERSION}:
+    if source_schema == LEGACY_TRACE_SCHEMA_VERSION:
         expected_packet_schema = SCHEMA_VERSION
         expects_anchor_columns = False
     elif source_schema == ANCHOR_TRACE_SCHEMA_VERSION:
@@ -491,16 +685,7 @@ def _packet_schema_version(
     metric_versions = {
         str(row.get("schema_version", "")).strip() for row in metric_rows
     }
-    if source_schema == ANCHOR_TRACE_SCHEMA_VERSION and metric_versions != {
-        source_schema
-    }:
-        raise ValueError("anchor-local trace metrics require the matching schema")
-    nonblank_metric_versions = metric_versions - {""}
-    if (
-        source_schema in {"", LEGACY_TRACE_SCHEMA_VERSION}
-        and nonblank_metric_versions
-        and nonblank_metric_versions != {LEGACY_TRACE_SCHEMA_VERSION}
-    ):
+    if metric_versions != {source_schema}:
         raise ValueError("trace metric schema_version must match trace summary")
     _validate_anchor_columns(
         metric_rows,
@@ -619,10 +804,15 @@ def _review_bucket(combined_status: str) -> str:
 
 def _packet_sort_key(row: Mapping[str, object]) -> tuple[float, float, str]:
     return (
-        optional_float(row.get("base_rt_apex_min")) or float("inf"),
-        optional_float(row.get("base_mz")) or float("inf"),
+        _optional_float_sort_value(row.get("base_rt_apex_min")),
+        _optional_float_sort_value(row.get("base_mz")),
         str(row.get("candidate_id", "")),
     )
+
+
+def _optional_float_sort_value(value: object) -> float:
+    parsed = optional_float(value)
+    return float("inf") if parsed is None else parsed
 
 
 def _required_text(row: Mapping[str, str], field: str) -> str:
@@ -630,3 +820,10 @@ def _required_text(row: Mapping[str, str], field: str) -> str:
     if not value:
         raise ValueError(f"missing required field {field!r}")
     return value
+
+
+def _required_lower_sha256(value: object, *, label: str) -> str:
+    normalized = str(value or "").strip()
+    if re.fullmatch(r"[0-9a-f]{64}", normalized) is None:
+        raise ValueError(f"{label} must be a lowercase SHA-256 digest")
+    return normalized

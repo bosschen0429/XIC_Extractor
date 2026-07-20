@@ -16,6 +16,11 @@ from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
 from xic_extractor.discovery.pt_pattern_anchor_segmentation import (
     select_anchor_local_segments,
 )
+from xic_extractor.discovery.pt_pattern_trace_manifest import (
+    load_trace_bundle_manifest,
+    load_verified_trace_summary_bundle,
+    validate_trace_points_manifest,
+)
 from xic_extractor.peak_detection.chrom_peak_segments import (
     ChromPeakSegment,
     ChromPeakSegmentEnumeration,
@@ -24,17 +29,25 @@ from xic_extractor.peak_detection.selected_envelope import TraceInterval
 from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
 from xic_extractor.xic_models import XICTrace
 
+UNIT_TRACE_EXTRACTION_SHA256 = "a" * 64
+
 
 def _candidate_row() -> dict[str, str]:
     return {
         "sample_stem": "SampleA",
+        "method_label": "pt_pattern",
+        "pattern_id": "pt",
         "candidate_id": "SampleA|pt|500.0000|10.0000",
+        "base_feature_id": "base-1",
         "base_mz": "500.0",
         "base_rt_apex_min": "10.0",
+        "pt_plus_1_feature_id": "plus1-1",
         "pt_plus_1_mz": "501.0020",
         "pt_plus_1_expected_mz": "501.0021",
+        "pt_plus_2_feature_id": "plus2-1",
         "pt_plus_2_mz": "502.0021",
         "pt_plus_2_expected_mz": "502.0023",
+        "pt_plus_4_feature_id": "plus4-1",
         "pt_plus_4_mz": "504.0050",
         "pt_plus_4_expected_mz": "504.0052",
     }
@@ -75,6 +88,19 @@ def test_build_trace_requests_uses_expected_mz_and_base_rt_window() -> None:
     assert all(item.request.ppm_tol == 20.0 for item in requests)
 
 
+def test_build_trace_requests_rejects_non_pt_assignment_before_extraction() -> None:
+    candidate = _candidate_row()
+    candidate["pt_plus_4_expected_mz"] = "900"
+
+    with pytest.raises(ValueError, match="pt_plus_4_expected_mz must equal base_mz"):
+        evidence.build_trace_requests_for_candidate(
+            candidate,
+            ppm=20.0,
+            rt_half_window_sec=30.0,
+            mz_source="expected",
+        )
+
+
 def test_load_candidate_rows_rejects_duplicate_candidate_ids_before_slicing(
     tmp_path: Path,
 ) -> None:
@@ -91,6 +117,22 @@ def test_load_candidate_rows_rejects_duplicate_candidate_ids_before_slicing(
         evidence.load_candidate_rows(candidates_csv, limit=1)
 
 
+def test_load_candidate_rows_rejects_distinct_ids_for_same_canonical_base(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    duplicate_base = _candidate_row()
+    duplicate_base["candidate_id"] = "SampleA|pt|500.0000|10.0000|duplicate"
+    write_delimited_rows(
+        candidates_csv,
+        [_candidate_row(), duplicate_base],
+        evidence.REQUIRED_CANDIDATE_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="duplicate canonical Pt base assignment"):
+        evidence.load_candidate_rows(candidates_csv, limit=1)
+
+
 def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
     traces = {
         "base": _trace([0.0, 100.0, 0.0]),
@@ -102,6 +144,8 @@ def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
     diagnosis = evidence.diagnose_candidate_traces(
         _candidate_row(),
         traces,
+        trace_extraction_sha256=UNIT_TRACE_EXTRACTION_SHA256,
+        trace_artifact_role="full_context",
         ppm=20.0,
         rt_half_window_sec=30.0,
         mz_source="expected",
@@ -117,6 +161,7 @@ def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
         == "pt_pattern_detected_diagnostic"
     )
     assert diagnosis.summary_row["scan_pattern_seed_status"] == "full_pattern_seeded"
+    assert diagnosis.summary_row["candidate_assignment_sha256"]
     assert (
         diagnosis.summary_row["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
     )
@@ -161,6 +206,8 @@ def test_diagnose_candidate_traces_flags_plus4_window_tail_dominance() -> None:
     diagnosis = evidence.diagnose_candidate_traces(
         _candidate_row(),
         traces,
+        trace_extraction_sha256=UNIT_TRACE_EXTRACTION_SHA256,
+        trace_artifact_role="full_context",
         ppm=20.0,
         rt_half_window_sec=30.0,
         mz_source="expected",
@@ -197,6 +244,8 @@ def test_diagnose_candidate_traces_supports_shifted_shape() -> None:
     diagnosis = evidence.diagnose_candidate_traces(
         _candidate_row(),
         traces,
+        trace_extraction_sha256=UNIT_TRACE_EXTRACTION_SHA256,
+        trace_artifact_role="full_context",
         ppm=20.0,
         rt_half_window_sec=30.0,
         mz_source="expected",
@@ -238,6 +287,8 @@ def test_diagnose_candidate_traces_requires_shifted_apex_within_tolerance() -> N
     diagnosis = evidence.diagnose_candidate_traces(
         _candidate_row(),
         traces,
+        trace_extraction_sha256=UNIT_TRACE_EXTRACTION_SHA256,
+        trace_artifact_role="full_context",
         ppm=20.0,
         rt_half_window_sec=30.0,
         mz_source="expected",
@@ -301,6 +352,8 @@ def test_diagnose_candidate_traces_flags_short_effective_smoothing_window() -> N
     diagnosis = evidence.diagnose_candidate_traces(
         _candidate_row(),
         traces,
+        trace_extraction_sha256=UNIT_TRACE_EXTRACTION_SHA256,
+        trace_artifact_role="full_context",
         ppm=20.0,
         rt_half_window_sec=30.0,
         mz_source="expected",
@@ -462,9 +515,8 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     assert trace_point_rows[0]["intensity_basis"] == evidence.RAW_TRACE_BASIS
     assert summary_rows[0]["schema_version"] == evidence.SCHEMA_VERSION
     assert "anchor_segmentation_status" not in summary_rows[0]
-    assert (
-        anchor_summary_rows[0]["schema_version"]
-        == "pt_pattern_anchor_local_trace_diagnosis.v1"
+    assert anchor_summary_rows[0]["schema_version"] == (
+        diag.ANCHOR_LOCAL_SCHEMA_VERSION
     )
     assert outputs["sidecar_json"].is_file()
 
@@ -476,6 +528,11 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     assert sidecar["trace_request_count"] == 4
     assert sidecar["source_sample_stem"] == "SampleA"
     assert sidecar["raw_sha256"]
+    assert sidecar["trace_extraction_sha256"]
+    assert sidecar["trace_artifact_role"] == "full_context"
+    assert sidecar["trace_bundle_manifest_version"] == (
+        "pt_pattern_trace_bundle_manifest.v1"
+    )
     assert sidecar["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
     assert sidecar["trace_smoothing_method"] == evidence.TRACE_SMOOTH_METHOD
     assert sidecar["combined_pt_pattern_status_counts"] == {
@@ -484,9 +541,11 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     anchor_sidecar = json.loads(
         outputs["anchor_sidecar_json"].read_text(encoding="utf-8")
     )
-    assert anchor_sidecar["schema_version"] == (
-        "pt_pattern_anchor_local_trace_diagnosis.v1"
+    assert anchor_sidecar["schema_version"] == diag.ANCHOR_LOCAL_SCHEMA_VERSION
+    assert anchor_sidecar["trace_extraction_sha256"] == (
+        sidecar["trace_extraction_sha256"]
     )
+    assert anchor_sidecar["trace_artifact_role"] == "anchor_local"
     assert anchor_sidecar["anchor_interval_semantics"] == (
         "coelution_comparison_not_integration"
     )
@@ -494,6 +553,51 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
     assert anchor_sidecar["anchor_boundary_review_status_counts"] == {
         anchor_summary_rows[0]["anchor_segmentation_boundary_review_status"]: 1,
     }
+
+    for artifact_role, summary_key, metrics_key, points_key, manifest_key in (
+        (
+            "full_context",
+            "summary_csv",
+            "metrics_csv",
+            "trace_points_csv",
+            "sidecar_json",
+        ),
+        (
+            "anchor_local",
+            "anchor_summary_csv",
+            "anchor_metrics_csv",
+            "anchor_trace_points_csv",
+            "anchor_sidecar_json",
+        ),
+    ):
+        verified_summary = load_verified_trace_summary_bundle(
+            outputs[summary_key],
+            expected_artifact_role=artifact_role,
+            metrics_csv=outputs[metrics_key],
+            manifest_json=outputs[manifest_key],
+            candidates_csv=candidates_csv,
+        )
+        persisted_points = read_delimited_rows(
+            outputs[points_key],
+            required_columns=evidence.TRACE_POINT_COLUMNS,
+            exact_columns=evidence.TRACE_POINT_COLUMNS,
+            delimiter=",",
+        )
+        point_identities = {
+            str(row["candidate_id"]): (
+                str(row["candidate_assignment_sha256"]),
+                str(row["sample_stem"]),
+            )
+            for row in verified_summary.summary_rows
+        }
+        validate_trace_points_manifest(
+            manifest=load_trace_bundle_manifest(outputs[manifest_key]),
+            trace_points_csv=outputs[points_key],
+            trace_point_rows=persisted_points,
+            expected_artifact_role=artifact_role,
+            expected_packet_identities=point_identities,
+            expected_metric_rows=verified_summary.metric_rows,
+        )
 
 
 def test_trace_summary_identity_round_trips_into_review_packet(
@@ -513,6 +617,12 @@ def test_trace_summary_identity_round_trips_into_review_packet(
             "evidence_score": "90",
             "base_mz": repr(base_mz),
             "base_rt_apex_min": repr(base_rt),
+            "pt_plus_1_mz": repr(base_mz + 1.002111),
+            "pt_plus_1_expected_mz": repr(base_mz + 1.002111),
+            "pt_plus_2_mz": repr(base_mz + 2.002271),
+            "pt_plus_2_expected_mz": repr(base_mz + 2.002271),
+            "pt_plus_4_mz": repr(base_mz + 4.005213),
+            "pt_plus_4_expected_mz": repr(base_mz + 4.005213),
             "cid_nl_base_status": "not_required",
             "cid_nl_base_join_mode": "not_required",
         }
@@ -789,6 +899,8 @@ def test_anchor_segmentation_excludes_later_stronger_base_peak() -> None:
     diagnosis = evidence.diagnose_candidate_traces(
         _candidate_row(),
         segmentation.trace_by_position,
+        trace_extraction_sha256=UNIT_TRACE_EXTRACTION_SHA256,
+        trace_artifact_role="anchor_local",
         ppm=20.0,
         rt_half_window_sec=90.0,
         mz_source="expected",

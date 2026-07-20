@@ -20,6 +20,14 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--candidates-csv", type=Path, required=True)
     parser.add_argument("--trace-summary-csv", type=Path, required=True)
     parser.add_argument("--trace-metrics-csv", type=Path, required=True)
+    parser.add_argument(
+        "--trace-manifest-json",
+        type=Path,
+        help=(
+            "Optional explicit trace bundle manifest. Defaults to the canonical "
+            "sidecar next to --trace-summary-csv."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--packet-label", required=True)
     parser.add_argument("--source-label", required=True)
@@ -34,6 +42,11 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error(f"{args.trace_summary_csv}: trace summary CSV does not exist")
     if not args.trace_metrics_csv.is_file():
         parser.error(f"{args.trace_metrics_csv}: trace metrics CSV does not exist")
+    if (
+        args.trace_manifest_json is not None
+        and not args.trace_manifest_json.is_file()
+    ):
+        parser.error(f"{args.trace_manifest_json}: trace manifest does not exist")
     if args.max_per_status <= 0:
         parser.error("--max-per-status must be > 0")
     if not args.packet_label.strip():
@@ -55,6 +68,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             packet_label=args.packet_label,
             source_label=args.source_label,
             max_per_status=args.max_per_status,
+            trace_manifest_json=(
+                args.trace_manifest_json.resolve()
+                if args.trace_manifest_json is not None
+                else None
+            ),
         )
     except (OSError, ValueError) as exc:
         print(f"pt_pattern_review_packet failed: {exc}", file=sys.stderr)

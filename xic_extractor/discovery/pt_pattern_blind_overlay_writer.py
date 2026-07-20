@@ -3,20 +3,26 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+)
 from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
     ANCHOR_LOCAL_SCHEMA_VERSION,
     LEGACY_MACHINE_CALL_COLUMNS,
-    LEGACY_PACKET_REQUIRED_COLUMNS,
     MACHINE_CALL_COLUMNS,
-    SCHEMA_VERSION,
     SMOOTH_METHOD,
     SMOOTH_WINDOW_POINTS,
+    machine_accept_candidate_ids,
     machine_call_row,
-    validate_packet_rows,
+    validate_machine_call_rows,
+)
+from xic_extractor.discovery.pt_pattern_review_bundle import (
+    BLIND_OVERLAY_SUMMARY_FILE_NAME,
+    load_verified_review_packet_bundle,
 )
 from xic_extractor.discovery.pt_pattern_review_packet import (
     EVIDENCE_OWNER,
@@ -25,20 +31,25 @@ from xic_extractor.discovery.pt_pattern_review_packet import (
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
     POSITION_LABELS as TRACE_POSITION_LABELS,
 )
-from xic_extractor.discovery.pt_pattern_trace_evidence import TRACE_DECISION_BASIS
+from xic_extractor.discovery.pt_pattern_trace_evidence import (
+    TRACE_DECISION_BASIS,
+    TRACE_POINT_COLUMNS,
+)
+from xic_extractor.discovery.pt_pattern_trace_manifest import (
+    default_trace_manifest_path,
+    default_trace_summary_path,
+    load_trace_bundle_manifest,
+    load_verified_trace_summary_bundle,
+    validate_cross_role_trace_request_identity,
+    validate_trace_points_manifest,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
-    optional_float,
     read_delimited_rows,
     write_delimited_rows,
 )
 
-TRACE_POINT_REQUIRED_COLUMNS = (
-    "candidate_id",
-    "position_label",
-    "rt_min",
-    "intensity",
-)
+TRACE_POINT_REQUIRED_COLUMNS = TRACE_POINT_COLUMNS
 
 
 def run_blind_overlay(
@@ -48,6 +59,9 @@ def run_blind_overlay(
     output_dir: Path,
     title: str,
     context_trace_points_csv: Path | None = None,
+    review_packet_manifest_json: Path | None = None,
+    trace_manifest_json: Path | None = None,
+    context_trace_manifest_json: Path | None = None,
 ) -> dict[str, Path]:
     # Lazy import keeps the renderer independent from file-system ownership.
     from xic_extractor.discovery.pt_pattern_blind_overlay import (
@@ -56,19 +70,55 @@ def run_blind_overlay(
         render_blind_overlay_html,
     )
 
-    packet_rows = read_delimited_rows(
+    review_bundle = load_verified_review_packet_bundle(
         review_packet_csv,
-        required_columns=LEGACY_PACKET_REQUIRED_COLUMNS,
-        delimiter=",",
-        encoding="utf-8-sig",
+        review_packet_manifest_json=review_packet_manifest_json,
+        trace_manifest_json=trace_manifest_json,
     )
-    validate_packet_rows(packet_rows)
+    packet_rows = review_bundle.rows
+    resolved_packet_manifest = review_bundle.review_packet_manifest_json
+    packet_trace_extraction_sha256 = review_bundle.trace_extraction_sha256
+    packet_artifact_role = review_bundle.trace_artifact_role
+    resolved_trace_manifest = review_bundle.trace_manifest_json
+    if packet_artifact_role == PT_PATTERN_TRACE_FULL_CONTEXT_ROLE:
+        if (
+            context_trace_points_csv is not None
+            or context_trace_manifest_json is not None
+        ):
+            raise ValueError("full review packet must not provide context trace points")
+    elif packet_artifact_role != PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE:
+        raise ValueError(
+            f"unsupported packet trace artifact role: {packet_artifact_role!r}"
+        )
+    if context_trace_manifest_json is not None and context_trace_points_csv is None:
+        raise ValueError("context trace manifest requires context trace-points CSV")
+
     trace_points = read_delimited_rows(
         trace_points_csv,
         required_columns=TRACE_POINT_REQUIRED_COLUMNS,
+        exact_columns=TRACE_POINT_REQUIRED_COLUMNS,
         delimiter=",",
         encoding="utf-8-sig",
     )
+    packet_identities = {
+        str(row["candidate_id"]): (
+            str(row["candidate_assignment_sha256"]),
+            str(row["sample_stem"]),
+        )
+        for row in packet_rows
+    }
+    primary_trace_manifest = load_trace_bundle_manifest(resolved_trace_manifest)
+    primary_trace_extraction_sha256 = validate_trace_points_manifest(
+        manifest=primary_trace_manifest,
+        trace_points_csv=trace_points_csv,
+        trace_point_rows=trace_points,
+        expected_artifact_role=packet_artifact_role,
+        expected_packet_identities=packet_identities,
+        required_complete_candidate_ids=machine_accept_candidate_ids(packet_rows),
+        expected_metric_rows=review_bundle.trace_summary_bundle.metric_rows,
+    )
+    if primary_trace_extraction_sha256 != packet_trace_extraction_sha256:
+        raise ValueError("review packet and primary trace extraction mismatch")
     _validate_trace_bundle_rows(
         packet_rows=packet_rows,
         trace_rows=trace_points,
@@ -76,13 +126,49 @@ def run_blind_overlay(
     )
     traces_by_candidate = _load_traces_by_candidate(trace_points)
     context_traces_by_candidate = traces_by_candidate
+    resolved_context_trace_manifest: Path | None = None
     if context_trace_points_csv is not None:
+        if packet_artifact_role != PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE:
+            raise ValueError("context trace points require an anchor-local packet")
+        resolved_context_trace_manifest = (
+            context_trace_manifest_json
+            or default_trace_manifest_path(
+                context_trace_points_csv,
+                artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+            )
+        )
         context_trace_points = read_delimited_rows(
             context_trace_points_csv,
             required_columns=TRACE_POINT_REQUIRED_COLUMNS,
+            exact_columns=TRACE_POINT_REQUIRED_COLUMNS,
             delimiter=",",
             encoding="utf-8-sig",
         )
+        context_trace_manifest = load_trace_bundle_manifest(
+            resolved_context_trace_manifest
+        )
+        context_trace_bundle = load_verified_trace_summary_bundle(
+            default_trace_summary_path(
+                context_trace_points_csv,
+                artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+            ),
+            expected_artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+            manifest_json=resolved_context_trace_manifest,
+        )
+        validate_cross_role_trace_request_identity(
+            review_bundle.trace_summary_bundle.metric_rows,
+            context_trace_bundle.metric_rows,
+        )
+        context_trace_extraction_sha256 = validate_trace_points_manifest(
+            manifest=context_trace_manifest,
+            trace_points_csv=context_trace_points_csv,
+            trace_point_rows=context_trace_points,
+            expected_artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+            expected_packet_identities=packet_identities,
+            expected_metric_rows=context_trace_bundle.metric_rows,
+        )
+        if context_trace_extraction_sha256 != packet_trace_extraction_sha256:
+            raise ValueError("context and anchor trace extraction mismatch")
         _validate_trace_bundle_rows(
             packet_rows=packet_rows,
             trace_rows=context_trace_points,
@@ -90,11 +176,12 @@ def run_blind_overlay(
         )
         context_traces_by_candidate = _load_traces_by_candidate(context_trace_points)
     machine_rows = tuple(machine_call_row(row) for row in packet_rows)
+    validate_machine_call_rows(machine_rows)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     html_path = output_dir / "pt_pattern_blind_overlay_gallery.html"
     machine_calls_csv = output_dir / "pt_pattern_machine_calls_sealed.csv"
-    summary_json = output_dir / "pt_pattern_blind_overlay_summary.json"
+    summary_json = output_dir / BLIND_OVERLAY_SUMMARY_FILE_NAME
 
     html_path.write_text(
         render_blind_overlay_html(
@@ -106,11 +193,7 @@ def run_blind_overlay(
         ),
         encoding="utf-8",
     )
-    machine_schema_version = (
-        str(machine_rows[0]["schema_version"])
-        if machine_rows
-        else SCHEMA_VERSION
-    )
+    machine_schema_version = str(machine_rows[0]["schema_version"])
     machine_columns = (
         MACHINE_CALL_COLUMNS
         if machine_schema_version == ANCHOR_LOCAL_SCHEMA_VERSION
@@ -129,18 +212,21 @@ def run_blind_overlay(
     machine_calls_sha256 = file_sha256(machine_calls_csv)
 
     summary = {
-        "schema_version": (
-            ANCHOR_LOCAL_SCHEMA_VERSION
-            if context_trace_points_csv is not None
-            or machine_schema_version == ANCHOR_LOCAL_SCHEMA_VERSION
-            else SCHEMA_VERSION
-        ),
+        "schema_version": machine_schema_version,
         "readiness_tier": READINESS_TIER,
         "evidence_owner": EVIDENCE_OWNER,
+        "trace_artifact_role": packet_artifact_role,
+        "trace_extraction_sha256": packet_trace_extraction_sha256,
         "review_packet_csv": str(review_packet_csv),
         "review_packet_csv_sha256": review_packet_sha256,
+        "review_packet_manifest_json": str(resolved_packet_manifest),
+        "review_packet_manifest_json_sha256": file_sha256(
+            resolved_packet_manifest
+        ).lower(),
         "trace_points_csv": str(trace_points_csv),
         "trace_points_csv_sha256": trace_points_sha256,
+        "trace_manifest_json": str(resolved_trace_manifest),
+        "trace_manifest_json_sha256": file_sha256(resolved_trace_manifest).lower(),
         "output_dir": str(output_dir),
         "case_count": len(packet_rows),
         "context_trace_points_csv": (
@@ -149,14 +235,28 @@ def run_blind_overlay(
             else None
         ),
         "context_trace_points_csv_sha256": context_trace_points_sha256,
+        "context_trace_manifest_json": (
+            str(resolved_context_trace_manifest)
+            if resolved_context_trace_manifest is not None
+            else None
+        ),
+        "context_trace_manifest_json_sha256": (
+            file_sha256(resolved_context_trace_manifest).lower()
+            if resolved_context_trace_manifest is not None
+            else ""
+        ),
         "smooth_method": SMOOTH_METHOD,
         "smooth_window_points": SMOOTH_WINDOW_POINTS,
         "time_smooth_window_sec": VISUAL_TIME_SMOOTH_WINDOW_SEC,
         "trace_decision_basis": TRACE_DECISION_BASIS,
         "gallery_mode": (
-            "anchor_local_semantic"
+            "anchor_local_with_full_context"
             if context_trace_points_csv is not None
-            else "legacy_trace_modes"
+            else (
+                "anchor_local_only"
+                if packet_artifact_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
+                else "full_context_only"
+            )
         ),
         "smooth_applies_to": (
             "sealed_machine_calls_use_packet_decision_metrics;"
@@ -217,21 +317,10 @@ def _validate_trace_bundle_rows(
                 f"{label} row {row_index}: "
                 "candidate_id/position_label must be non-empty"
             )
-        rt_value = optional_float(trace_row.get("rt_min"))
-        intensity = optional_float(trace_row.get("intensity"))
-        if (
-            rt_value is None
-            or intensity is None
-            or not math.isfinite(rt_value)
-            or not math.isfinite(intensity)
-        ):
-            raise ValueError(
-                f"{label} row {row_index}: rt_min/intensity must be finite numbers"
-            )
         expected_sample = sample_by_candidate.get(candidate_id)
         if "sample_stem" in trace_row:
             observed_sample = str(trace_row.get("sample_stem", "")).strip()
-            if observed_sample != expected_sample:
+            if expected_sample is not None and observed_sample != expected_sample:
                 raise ValueError(
                     f"{label} row {row_index}: sample_stem does not match review "
                     f"packet for {candidate_id}"
