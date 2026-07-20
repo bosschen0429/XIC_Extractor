@@ -13,7 +13,7 @@ import re
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
@@ -387,7 +387,7 @@ def validate_trace_manifest_identity(
         candidate_assignments=manifest_assignments,
         ppm=_required_number(manifest, "ppm"),
         rt_half_window_sec=_required_number(manifest, "rt_half_window_sec"),
-        mz_source=_required_text(manifest, "mz_source", label="trace manifest"),
+        mz_source=_required_mz_source(manifest),
         active_fraction=_required_number(manifest, "active_fraction"),
         min_pearson_r=_required_number(manifest, "min_pearson_r"),
         max_apex_delta_sec=_required_number(manifest, "max_apex_delta_sec"),
@@ -635,7 +635,7 @@ def _validate_candidate_trace_projection(
 
     ppm = _required_number(manifest, "ppm")
     rt_half_window_sec = _required_number(manifest, "rt_half_window_sec")
-    mz_source = _required_text(manifest, "mz_source", label="trace manifest")
+    mz_source = _required_mz_source(manifest)
     for candidate_id, candidate_row in candidates_by_id.items():
         validate_pt_candidate_trace_summary_identity(
             candidate_row,
@@ -1104,15 +1104,21 @@ def _validate_trace_point_metric_projection(
         min_pearson_r=_required_number(manifest, "min_pearson_r"),
         max_apex_delta_sec=_required_number(manifest, "max_apex_delta_sec"),
     )
-    for observed, projected in zip(metric_rows, projected_rows, strict=True):
+    for observed_row, projected in zip(
+        metric_rows,
+        projected_rows,
+        strict=True,
+    ):
         mismatches = [
             field
             for field in TRACE_POINT_PROJECTED_METRIC_COLUMNS
-            if str(observed.get(field, "")).strip() != projected[field]
+            if str(observed_row.get(field, "")).strip() != projected[field]
         ]
         if mismatches:
-            candidate_id = str(observed.get("candidate_id", "")).strip()
-            position_label = str(observed.get("position_label", "")).strip()
+            candidate_id = str(observed_row.get("candidate_id", "")).strip()
+            position_label = str(
+                observed_row.get("position_label", "")
+            ).strip()
             raise ValueError(
                 f"trace metrics {candidate_id}:{position_label} are not the "
                 "deterministic projection of trace points: "
@@ -1136,7 +1142,7 @@ def _validate_metric_numeric_domains(
     *,
     artifact_role: str,
 ) -> None:
-    numeric_columns = _TRACE_METRIC_NUMERIC_COLUMNS
+    numeric_columns: tuple[str, ...] = _TRACE_METRIC_NUMERIC_COLUMNS
     non_negative_columns = _TRACE_METRIC_NON_NEGATIVE_COLUMNS
     if artifact_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE:
         numeric_columns += _ANCHOR_METRIC_NUMERIC_COLUMNS
@@ -1290,11 +1296,7 @@ def _validate_summary_rows_against_manifest_semantics(
         "rt_half_window_sec": format_diagnostic_value(
             _required_number(manifest, "rt_half_window_sec")
         ),
-        "mz_source": _required_text(
-            manifest,
-            "mz_source",
-            label="trace manifest",
-        ),
+        "mz_source": _required_mz_source(manifest),
     }
     for row_index, row in enumerate(rows, start=2):
         for field, expected in expected_values.items():
@@ -1624,11 +1626,13 @@ def _validate_anchor_segmentation_projection(
         "base_rt_apex_min",
         label="trace summary",
     )
-    common_start = float(
-        projected_summary["anchor_segmentation_common_rt_start_min"]
+    common_start = _required_projected_number(
+        projected_summary,
+        "anchor_segmentation_common_rt_start_min",
     )
-    common_end = float(
-        projected_summary["anchor_segmentation_common_rt_end_min"]
+    common_end = _required_projected_number(
+        projected_summary,
+        "anchor_segmentation_common_rt_end_min",
     )
     if (
         anchor_rt_min < common_start
@@ -1678,6 +1682,16 @@ def _required_finite_row_number(
     value = _optional_finite_row_number(row, field, label=label)
     if value is None:
         raise ValueError(f"{label} {field} must be supplied")
+    return value
+
+
+def _required_projected_number(
+    row: Mapping[str, object],
+    field: str,
+) -> float:
+    value = optional_float(row.get(field))
+    if value is None:
+        raise ValueError(f"anchor projection {field} must be finite")
     return value
 
 
@@ -1869,6 +1883,19 @@ def _required_number(row: Mapping[str, object], field: str) -> float:
     if not (float("-inf") < parsed < float("inf")):
         raise ValueError(f"trace manifest {field} must be a finite number")
     return parsed
+
+
+def _required_mz_source(
+    manifest: Mapping[str, object],
+) -> Literal["expected", "observed"]:
+    value = _required_text(manifest, "mz_source", label="trace manifest")
+    if value == "expected":
+        return "expected"
+    if value == "observed":
+        return "observed"
+    raise ValueError(
+        "trace manifest mz_source must be 'expected' or 'observed'"
+    )
 
 
 def _validate_trace_setting_domains(manifest: Mapping[str, object]) -> None:

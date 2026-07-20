@@ -1488,12 +1488,13 @@ def test_verified_trace_bundle_recomputes_position_call_from_scalar_evidence(
         ("active_fraction", 1.1, "active_fraction must be in"),
         ("min_pearson_r", 1.1, "min_pearson_r must be in"),
         ("max_apex_delta_sec", -1.0, "max_apex_delta_sec must be >= 0"),
+        ("mz_source", "unknown", "mz_source must be 'expected' or 'observed'"),
     ],
 )
 def test_verified_trace_bundle_rejects_out_of_domain_manifest_settings(
     tmp_path: Path,
     field: str,
-    value: float,
+    value: object,
     expected_error: str,
 ) -> None:
     candidate_id = "cand-invalid-setting"

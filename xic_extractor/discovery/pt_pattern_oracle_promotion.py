@@ -309,16 +309,16 @@ def load_verified_oracle_promotion_bundle(
             raise ValueError(
                 f"oracle promotion summary {field} must be {expected!r}"
             )
-    for field, expected in {
+    for field, expected_bool in {
         "manual_oracle_only": True,
         "changes_matrix": False,
         "changes_counted_detection": False,
         "changes_export": False,
     }.items():
-        if payload.get(field) is not expected:
+        if payload.get(field) is not expected_bool:
             raise ValueError(
                 f"oracle promotion summary {field} must be "
-                f"{str(expected).lower()}"
+                f"{str(expected_bool).lower()}"
             )
 
     oracle_packet_id = _required_text(payload, "oracle_packet_id")
@@ -782,7 +782,7 @@ def _revalidate_promotion_sources(
 
 
 def _require_exact_keys(
-    value: Mapping[object, object],
+    value: Mapping[str, object],
     *,
     expected: set[str],
     label: str,

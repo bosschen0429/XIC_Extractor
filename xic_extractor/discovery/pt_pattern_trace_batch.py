@@ -292,8 +292,20 @@ def project_anchor_segmentation_summary_fields(
         str(row.get("position_label", "")).strip(): row for row in projected
     }
     ordered_rows = [by_position[position] for position in POSITION_LABELS]
-    starts = [float(row["anchor_segment_rt_start_min"]) for row in ordered_rows]
-    ends = [float(row["anchor_segment_rt_end_min"]) for row in ordered_rows]
+    starts = [
+        _csv_precision_float(
+            row["anchor_segment_rt_start_min"],
+            field="anchor_segment_rt_start_min",
+        )
+        for row in ordered_rows
+    ]
+    ends = [
+        _csv_precision_float(
+            row["anchor_segment_rt_end_min"],
+            field="anchor_segment_rt_end_min",
+        )
+        for row in ordered_rows
+    ]
     common_start = max(starts)
     common_end = min(ends)
     start_owners = [
@@ -343,13 +355,24 @@ def project_anchor_segmentation_summary_fields(
             boundary_review_labels
         ),
         "anchor_segmentation_max_left_clip_sec": max(
-            float(row["anchor_segment_left_clip_sec"]) for row in ordered_rows
+            _csv_precision_float(
+                row["anchor_segment_left_clip_sec"],
+                field="anchor_segment_left_clip_sec",
+            )
+            for row in ordered_rows
         ),
         "anchor_segmentation_max_right_clip_sec": max(
-            float(row["anchor_segment_right_clip_sec"]) for row in ordered_rows
+            _csv_precision_float(
+                row["anchor_segment_right_clip_sec"],
+                field="anchor_segment_right_clip_sec",
+            )
+            for row in ordered_rows
         ),
         "anchor_segmentation_min_common_retained_fraction": min(
-            float(row["anchor_segment_common_retained_fraction"])
+            _csv_precision_float(
+                row["anchor_segment_common_retained_fraction"],
+                field="anchor_segment_common_retained_fraction",
+            )
             for row in ordered_rows
         ),
         "anchor_segmentation_max_common_left_residual_fraction": (
@@ -372,8 +395,8 @@ def project_anchor_segmentation_summary_fields(
 
 def _csv_precision_float(value: object, *, field: str) -> float:
     try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
+        parsed = float(str(value))
+    except ValueError as exc:
         raise ValueError(f"{field} must be numeric") from exc
     if not math.isfinite(parsed):
         raise ValueError(f"{field} must be finite")
