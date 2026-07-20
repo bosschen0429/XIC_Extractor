@@ -200,6 +200,12 @@ in `mzmine_seeded` mode, `candidate_edge_count` means mass-detected point count,
 `conflict_component_count` means m/z seed range count, and degraded-assignment
 counts are not applicable because bipartite assignment is not used.
 
+The local generator and Alignment's opt-in `MS1IndexedRawSource` share
+`xic_extractor.ms1_scan_index`. That owner fails closed when an MS1 scan has
+malformed mass/intensity arrays or when a RAW source contains no MS1 scans;
+Alignment no longer silently skips those inputs when the indexed backend is
+selected. Alignment consumer tests preserve this shared failure contract.
+
 The reusable co-elution support semantics belong in
 `xic_extractor.discovery.pt_pattern_trace_evidence`. Diagnostic tools may open
 RAW files and write CSV/JSON probes, but they should call this package owner
@@ -221,10 +227,22 @@ at least 0.85 and absolute shift at most 45 seconds is reported as
 shifted-only matches receive diagnostic reason `shape_shift_above_threshold`.
 Neither reason is an adjudicated human reject or a product non-detection.
 The blind-overlay sealed `machine_call` is a trace-review projection only. For
-anchor-local schema v3, trace ambiguity, anchor segmentation, and boundary
+the current anchor-local schema, trace ambiguity, anchor segmentation, and boundary
 review must all be explicitly `clear`; any missing, unknown, or review-required
 state returns `uncertain` rather than becoming a threshold reject or final
 detector decision.
+
+Current Pt trace/review artifacts are sealed as a lineage chain. Full-context
+trace summary/metrics/points use `pt_pattern_trace_diagnosis.v4`; anchor-local
+trace artifacts use `pt_pattern_anchor_local_trace_diagnosis.v3`. Every row
+carries a candidate-assignment SHA-256, a shared extraction SHA-256, and an
+exact `full_context` or `anchor_local` role. The trace manifest binds those
+identities to the candidate CSV, RAW hash, candidate slice, extraction
+settings, decision/smoothing contracts, and every emitted trace artifact.
+Current review packets use full v4 or anchor-local v5; blind-overlay summaries
+and sealed machine rows use full v4 or anchor-local v5. Current consumers fail
+closed on blank/historical schemas, missing manifests, stale fingerprints,
+artifact swaps, role/schema conflicts, or full/anchor mixtures across files.
 
 Human adjudication is bound to the exact review bundle, not just a logical row
 ID. The blind-overlay summary hashes the review packet, primary/context traces,
@@ -243,6 +261,27 @@ serialization differences such as `500` versus `500.0` are equivalent. Trace
 summaries produced before round-trip identity serialization are stale when
 their stored coordinates no longer match the candidate and must be regenerated;
 the consumer does not infer precision that the old artifact discarded.
+
+Candidate-to-Discovery-evidence joins use the same fail-closed principle across
+ratio profiling, same-scan replay, and DDMS2 support replay. The evidence CSV
+therefore carries `sample_stem`, `method_label`, `pattern_id`, `candidate_id`,
+`base_mz`, and `base_rt_apex_min`. A reused ID is not sufficient: all six fields
+must identify the same candidate payload. Version 2 consumers require an exact
+one-to-one candidate/evidence key set and validate every pair before filtering
+on `trace_rule_call`; rejected or otherwise non-selected rows cannot hide stale
+identity. Evidence produced before those identity coordinates were written is
+stale for these consumers and must be regenerated from the matching candidate
+CSV.
+
+Diagnostic synthesis treats an omitted optional artifact as unavailable, but it
+does not treat malformed values inside a supplied artifact as missing evidence.
+Counts must be exact non-negative integers, recall fractions must stay within
+`0..1`, booleans must use recognized true/false values, identity m/z values must
+be finite and positive, and subset counts cannot exceed their parent
+population. An empty ratio population cannot carry non-empty quantiles.
+JSON/CSV structures used by the synthesis must satisfy these input contracts;
+invalid supplied evidence fails closed instead of being truncated or silently
+replaced with zero/false.
 
 Because Gaussian15 is point-based, its time width depends on scan density.
 Trace diagnosis therefore records `median_rt_step_sec` and
@@ -370,9 +409,10 @@ or Matrix changes.
 | `xic_extractor/discovery/pt_pattern_review_packet.py` | Bounded Pt manual-review packet builder; reviewed labels remain adjudication evidence, not ground-truth oracle authority |
 | `xic_extractor/discovery/pt_pattern_blind_overlay.py` | Blind Pt MS1/XIC overlay review surface; visual traces and sealed machine calls share the Gaussian15 trace-decision basis, and sealed calls are not oracle authority |
 | `xic_extractor/discovery/pt_pattern_oracle_promotion.py` | Historical-named bounded adjudication-packet builder; exact packet/gallery/sealed-call provenance is required, and the result remains `diagnostic_only` rather than ground truth, detector, or Matrix authority |
-| `xic_extractor/discovery/pt_pattern_oracle_replay_contract.py` | Shared fail-closed loader/validator that binds promotion-v2 rows to the actual v2/v3 review-packet SHA and row identity before threshold calibration or reviewed-label replay |
+| `xic_extractor/discovery/pt_pattern_review_bundle.py` | Canonical sealed loaders for trace manifests, review-packet collections, blind-overlay bundles, and machine-call identity/role checks |
+| `xic_extractor/discovery/pt_pattern_oracle_replay_contract.py` | Shared fail-closed replay binding from promotion-v2 rows to current manifest-verified review packets before threshold calibration or reviewed-label replay |
 | `xic_extractor/discovery/pt_pattern_oracle_thresholds.py` | Diagnostic-only threshold calibration against an exact-SHA-bound reviewed-label packet using the reusable Pt evidence rule; resubstitution fit is not detector accuracy or activation |
-| `xic_extractor/discovery/pt_pattern_diagnostic_gate.py` | Diagnostic-only replay wrapper for the reusable Pt evidence rule against review packets or full trace summary rows; optional reviewed-label replay requires exact packet provenance and is not detector validation or activation |
+| `xic_extractor/discovery/pt_pattern_diagnostic_gate.py` | Diagnostic-only replay wrapper for the reusable Pt evidence rule against manifest-verified review packets or full trace bundles; optional reviewed-label replay requires exact packet provenance and is not detector validation or activation |
 | `xic_extractor/discovery/pt_pattern_ddms2_support_replay.py` | Diagnostic-only Fullscan-seeded DDMS2 support replay; not a DDMS2 global discovery denominator and not detector activation |
 | `scripts/run_discovery.py` | Discovery CLI entry point |
 | `scripts/prepare_delta_mass_detected_features.py` | Converts a normalized external detected-feature TSV or MZmine wide feature table CSV into standard `detected_features.csv`; no RAW access and no Matrix/Backfill authority |
@@ -383,7 +423,7 @@ or Matrix changes.
 | `discovery_batch_index.csv` | Batch handoff index for downstream alignment |
 
 Pt pattern Discovery additionally writes `pt_pattern_evidence.csv`
-(`pt_pattern_discovery_evidence.v1`) and `pt_pattern_sidecar.json`
+(`pt_pattern_discovery_evidence.v2`) and `pt_pattern_sidecar.json`
 (`pt_pattern_sidecar.v3`). `pt_pattern_evidence.csv` separates feature-level
 full-pattern seed status from trace-level evidence. If no trace summary is
 provided, trace rule fields are `not_evaluated`; if a trace summary is provided,

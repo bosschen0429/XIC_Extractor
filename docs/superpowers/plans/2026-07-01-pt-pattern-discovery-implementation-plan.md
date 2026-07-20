@@ -494,13 +494,16 @@ review_note
 The review CSV is a human queue. It must use the same candidate ordering as
 `pt_pattern_candidates.csv`.
 
-### Pt Discovery Evidence CSV v1
+### Pt Discovery Evidence CSV v2
 
 Output path: `pt_pattern_evidence.csv`.
 
 Required semantics:
 
-- `schema_version = pt_pattern_discovery_evidence.v1`
+- `schema_version = pt_pattern_discovery_evidence.v2`
+- v2 binds each evidence row to candidate `sample_stem`, `method_label`,
+  `pattern_id`, `base_mz`, and `base_rt_apex_min`; v1 artifacts must be
+  regenerated rather than silently joined
 - one row per `pt_pattern_candidates.csv` row
 - feature-level full-pattern candidates write
   `scan_pattern_seed_status = full_pattern_seeded`
@@ -1487,6 +1490,30 @@ Current v2 status:
   current v2 authority.
 
 Rules:
+
+Current sealed artifact contract (2026-07-20):
+
+- Full-context trace summary/metrics/points use
+  `pt_pattern_trace_diagnosis.v4`; anchor-local trace artifacts use
+  `pt_pattern_anchor_local_trace_diagnosis.v3`.
+- Trace rows and manifests bind candidate-assignment SHA, one extraction SHA,
+  exact artifact role, candidate/RAW hashes, candidate slice, extraction
+  settings, decision/smoothing contracts, and output hashes. Consumers
+  recompute the manifest fingerprint rather than trusting copied lineage text.
+- Current manual-review packets use full v4 or anchor-local v5. Current
+  blind-overlay summaries and sealed machine calls use full v4 or anchor-local
+  v5. Blank/historical schemas, missing manifests, cross-file full/anchor
+  mixtures, artifact swaps, and role/mode conflicts fail closed.
+- Promotion, refresh, threshold calibration, and reviewed-label gate replay use
+  the canonical verified packet/bundle loaders. Refresh accepts a machine-call
+  CSV only through its sibling sealed blind-overlay summary. Direct trace gate
+  input requires the canonical sibling metrics CSV and trace manifest.
+- `pt_pattern_diagnostic_gate.v2` carries the input schema, candidate assignment,
+  extraction fingerprint, and artifact role forward into its row-level output.
+- This sealing improves provenance and stale-artifact detection only. It does
+  not change `diagnostic_only`, machine thresholds, scientific truth status, or
+  any Matrix, Backfill, counted-detection, selected-area, workbook, activation,
+  or export authority.
 
 - A historically named promotion packet remains `diagnostic_only`, even for an
   exactly bound review bundle. It records bounded human adjudication; it does
