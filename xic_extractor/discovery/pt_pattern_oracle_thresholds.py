@@ -10,7 +10,9 @@ from pathlib import Path
 
 from xic_extractor.discovery import pt_pattern_evidence_rule as evidence_rule
 from xic_extractor.discovery.pt_pattern_blind_overlay import classify_machine_call
-from xic_extractor.discovery.pt_pattern_oracle_promotion import PROMOTION_COLUMNS
+from xic_extractor.discovery.pt_pattern_oracle_promotion import (
+    load_verified_oracle_promotion_bundle,
+)
 from xic_extractor.discovery.pt_pattern_oracle_replay_contract import (
     load_review_packets,
     validate_oracle_promotion_binding,
@@ -18,7 +20,6 @@ from xic_extractor.discovery.pt_pattern_oracle_replay_contract import (
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
-    read_delimited_rows,
     write_delimited_rows,
 )
 
@@ -136,12 +137,10 @@ def run_threshold_calibration(
 ) -> dict[str, Path]:
     if not review_packet_csvs:
         raise ValueError("at least one review packet CSV is required")
-    oracle_rows = read_delimited_rows(
-        oracle_promotion_csv,
-        required_columns=PROMOTION_COLUMNS,
-        delimiter=",",
-        encoding="utf-8-sig",
+    oracle_bundle = load_verified_oracle_promotion_bundle(
+        oracle_promotion_csv
     )
+    oracle_rows = oracle_bundle.rows
     loaded_review_packets = load_review_packets(review_packet_csvs)
     cases = build_calibration_cases(
         oracle_rows=oracle_rows,
@@ -175,8 +174,14 @@ def run_threshold_calibration(
         "evidence_owner": EVIDENCE_OWNER,
         "authority_scope": AUTHORITY_SCOPE,
         "calibration_id": calibration_id,
-        "oracle_promotion_csv": str(oracle_promotion_csv),
-        "oracle_promotion_csv_sha256": file_sha256(oracle_promotion_csv),
+        "oracle_promotion_csv": str(oracle_bundle.packet_csv.resolve()),
+        "oracle_promotion_csv_sha256": oracle_bundle.packet_csv_sha256,
+        "oracle_promotion_summary_json": str(oracle_bundle.summary_json),
+        "oracle_promotion_summary_json_sha256": (
+            oracle_bundle.summary_json_sha256
+        ),
+        "oracle_packet_id": oracle_bundle.oracle_packet_id,
+        "oracle_bundle_row_count": len(oracle_bundle.rows),
         "review_packet_csvs": [str(path) for path in review_packet_csvs],
         "review_packet_csv_sha256s": {
             str(path): file_sha256(path) for path in review_packet_csvs

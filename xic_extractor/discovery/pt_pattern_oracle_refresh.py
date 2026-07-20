@@ -8,13 +8,17 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
-    LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
-    LEGACY_PACKET_REQUIRED_COLUMNS,
-    validate_machine_call_rows,
     validate_packet_rows,
 )
 from xic_extractor.discovery.pt_pattern_oracle_promotion import (
+    ADJUDICATED_REQUIRED_COLUMNS,
     LEGACY_ADJUDICATED_REQUIRED_COLUMNS,
+)
+from xic_extractor.discovery.pt_pattern_review_bundle import (
+    load_verified_machine_call_collection,
+    load_verified_review_packet_collection,
+    machine_row_identity_mismatches,
+    validate_machine_rows_against_packet,
 )
 from xic_extractor.tabular_io import (
     file_sha256,
@@ -32,7 +36,7 @@ PENDING_STATUS = "pending_human_review"
 CONFLICT_STATUS = "provenance_conflict"
 STALE_STATUS = "stale_old_oracle_row"
 
-REFRESH_DRAFT_COLUMNS = LEGACY_ADJUDICATED_REQUIRED_COLUMNS + (
+REFRESH_DRAFT_COLUMNS = ADJUDICATED_REQUIRED_COLUMNS + (
     "schema_version",
     "readiness_tier",
     "evidence_owner",
@@ -118,12 +122,25 @@ def run_oracle_refresh(
         delimiter=",",
         encoding="utf-8-sig",
     )
-    review_packet_rows = _read_review_packets(review_packet_csvs)
-    machine_call_rows = _read_machine_calls(machine_call_csvs)
+    review_packet_collection = load_verified_review_packet_collection(
+        review_packet_csvs,
+        require_nonempty=True,
+    )
+    review_packet_rows = list(review_packet_collection.rows)
+    machine_call_collection = load_verified_machine_call_collection(machine_call_csvs)
     refresh = build_oracle_refresh_rows(
         adjudicated_rows=adjudicated_rows,
         review_packet_rows=review_packet_rows,
-        machine_call_rows=machine_call_rows,
+        machine_call_rows=machine_call_collection.rows,
+        review_hash_by_packet_row_id=(
+            review_packet_collection.sha256_by_packet_row_id
+        ),
+        machine_review_hash_by_packet_row_id=(
+            machine_call_collection.review_packet_sha256_by_packet_row_id
+        ),
+        machine_summary_hash_by_packet_row_id=(
+            machine_call_collection.summary_json_sha256_by_packet_row_id
+        ),
         refresh_packet_id=refresh_packet_id,
     )
 
@@ -141,9 +158,7 @@ def run_oracle_refresh(
     )
     write_delimited_rows(stale_csv, refresh["stale_rows"], STALE_ORACLE_COLUMNS)
 
-    status_counts = Counter(
-        str(row["refresh_status"]) for row in refresh["draft_rows"]
-    )
+    status_counts = Counter(str(row["refresh_status"]) for row in refresh["draft_rows"])
     machine_call_counts = Counter(
         str(row["machine_call_status"]) for row in refresh["draft_rows"]
     )
@@ -173,6 +188,13 @@ def run_oracle_refresh(
         "machine_call_csvs": [str(path) for path in machine_call_csvs],
         "machine_call_csv_sha256s": {
             str(path): file_sha256(path) for path in machine_call_csvs
+        },
+        "blind_overlay_summary_jsons": [
+            str(path) for path in machine_call_collection.summary_jsons
+        ],
+        "blind_overlay_summary_json_sha256s": {
+            str(path): file_sha256(path)
+            for path in machine_call_collection.summary_jsons
         },
         "current_review_row_count": len(refresh["draft_rows"]),
         "old_oracle_row_count": len(adjudicated_rows),
@@ -213,12 +235,23 @@ def build_oracle_refresh_rows(
     adjudicated_rows: Sequence[Mapping[str, str]],
     review_packet_rows: Sequence[Mapping[str, str]],
     machine_call_rows: Sequence[Mapping[str, str]],
+    review_hash_by_packet_row_id: Mapping[str, str] | None = None,
+    machine_review_hash_by_packet_row_id: Mapping[str, str] | None = None,
+    machine_summary_hash_by_packet_row_id: Mapping[str, str] | None = None,
     refresh_packet_id: str,
 ) -> dict[str, tuple[dict[str, object], ...]]:
     if not refresh_packet_id.strip():
         raise ValueError("refresh_packet_id must be non-empty")
     if not review_packet_rows:
         raise ValueError("review packet rows must be non-empty")
+    validate_packet_rows(review_packet_rows)
+    validate_machine_rows_against_packet(
+        packet_rows=review_packet_rows,
+        machine_rows=machine_call_rows,
+        require_exact_set=False,
+        allow_identity_mismatch=True,
+        require_exact_projection=False,
+    )
 
     adjudicated_by_id = _unique_by_packet_row_id(adjudicated_rows, "adjudicated")
     machine_by_id = _unique_by_packet_row_id(machine_call_rows, "machine call")
@@ -233,10 +266,31 @@ def build_oracle_refresh_rows(
         seen_current_ids.add(packet_row_id)
         source_row = adjudicated_by_id.get(packet_row_id)
         machine_row = machine_by_id.get(packet_row_id)
+        packet_sha256_mismatch = False
+        if machine_row is not None and review_hash_by_packet_row_id is not None:
+            current_sha256 = review_hash_by_packet_row_id.get(packet_row_id, "")
+            machine_sha256 = (
+                machine_review_hash_by_packet_row_id or {}
+            ).get(packet_row_id, "")
+            packet_sha256_mismatch = (
+                not current_sha256
+                or not machine_sha256
+                or current_sha256.lower() != machine_sha256.lower()
+            )
         draft_row = _build_draft_row(
             review_row=review_row,
             source_row=source_row,
             machine_row=machine_row,
+            machine_packet_sha256_mismatch=packet_sha256_mismatch,
+            review_packet_csv_sha256=(
+                (review_hash_by_packet_row_id or {}).get(packet_row_id, "")
+            ),
+            blind_overlay_summary_json_sha256=(
+                (machine_summary_hash_by_packet_row_id or {}).get(
+                    packet_row_id,
+                    "",
+                )
+            ),
             refresh_packet_id=refresh_packet_id,
             case_index=f"v2-{index:03d}",
         )
@@ -266,6 +320,9 @@ def _build_draft_row(
     review_row: Mapping[str, str],
     source_row: Mapping[str, str] | None,
     machine_row: Mapping[str, str] | None,
+    machine_packet_sha256_mismatch: bool = False,
+    review_packet_csv_sha256: str = "",
+    blind_overlay_summary_json_sha256: str = "",
     refresh_packet_id: str,
     case_index: str,
 ) -> dict[str, object]:
@@ -274,13 +331,16 @@ def _build_draft_row(
     packet_label = _required_text(review_row, "packet_label")
     source_label = _required_text(review_row, "source_label")
     dataset = source_label
-    machine_identity_mismatches = _machine_identity_mismatches(
+    machine_identity_mismatches = machine_row_identity_mismatches(
         machine_row=machine_row,
         review_row=review_row,
     )
+    machine_provenance_conflict = bool(machine_identity_mismatches) or (
+        machine_packet_sha256_mismatch
+    )
     trusted_machine_row = (
         machine_row
-        if machine_row is not None and not machine_identity_mismatches
+        if machine_row is not None and not machine_provenance_conflict
         else None
     )
     base_row: dict[str, object] = {
@@ -299,61 +359,57 @@ def _build_draft_row(
         "base_rt_apex_min": _required_text(review_row, "base_rt_apex_min"),
         "candidate_id": candidate_id,
         "packet_row_id": packet_row_id,
+        "review_packet_csv_sha256": review_packet_csv_sha256,
+        "blind_overlay_summary_json_sha256": (
+            blind_overlay_summary_json_sha256
+            if trusted_machine_row is not None
+            else ""
+        ),
         "schema_version": SCHEMA_VERSION,
         "readiness_tier": READINESS_TIER,
         "evidence_owner": EVIDENCE_OWNER,
         "authority_scope": AUTHORITY_SCOPE,
         "refresh_packet_id": refresh_packet_id,
         "refresh_status": (
-            CONFLICT_STATUS if machine_identity_mismatches else PENDING_STATUS
+            CONFLICT_STATUS if machine_provenance_conflict else PENDING_STATUS
         ),
         "provenance_status": (
-            "current_machine_call_identity_mismatch"
-            if machine_identity_mismatches
-            else "new_current_packet_row"
+            "current_machine_call_packet_sha256_mismatch"
+            if machine_packet_sha256_mismatch
+            else (
+                "current_machine_call_identity_mismatch"
+                if machine_identity_mismatches
+                else "new_current_packet_row"
+            )
         ),
         "machine_call_status": (
             "current_machine_call_matched"
             if trusted_machine_row is not None
             else (
                 "current_machine_call_provenance_conflict"
-                if machine_identity_mismatches
+                if machine_provenance_conflict
                 else "missing_current_machine_call"
             )
         ),
         "current_packet_label": packet_label,
         "current_source_label": source_label,
         "current_sample_stem": review_row.get("sample_stem", ""),
-        "current_review_packet_schema_version": review_row.get(
-            "schema_version", ""
-        ),
-        "current_review_packet_readiness_tier": review_row.get(
-            "readiness_tier", ""
-        ),
-        "current_review_packet_oracle_status": review_row.get(
-            "oracle_status", ""
-        ),
+        "current_review_packet_schema_version": review_row.get("schema_version", ""),
+        "current_review_packet_readiness_tier": review_row.get("readiness_tier", ""),
+        "current_review_packet_oracle_status": review_row.get("oracle_status", ""),
         "current_combined_pt_pattern_status": review_row.get(
             "combined_pt_pattern_status", ""
         ),
-        "current_trace_decision_basis": review_row.get(
-            "trace_decision_basis", ""
-        ),
-        "current_trace_smoothing_method": review_row.get(
-            "trace_smoothing_method", ""
-        ),
+        "current_trace_decision_basis": review_row.get("trace_decision_basis", ""),
+        "current_trace_smoothing_method": review_row.get("trace_smoothing_method", ""),
         "current_trace_smoothing_window_points": review_row.get(
             "trace_smoothing_window_points", ""
         ),
         "current_non_base_positions_supported": review_row.get(
             "non_base_positions_supported", ""
         ),
-        "current_max_abs_apex_delta_sec": review_row.get(
-            "max_abs_apex_delta_sec", ""
-        ),
-        "current_min_pearson_r_to_base": review_row.get(
-            "min_pearson_r_to_base", ""
-        ),
+        "current_max_abs_apex_delta_sec": review_row.get("max_abs_apex_delta_sec", ""),
+        "current_min_pearson_r_to_base": review_row.get("min_pearson_r_to_base", ""),
         "current_min_active_overlap_fraction": review_row.get(
             "min_active_overlap_fraction", ""
         ),
@@ -366,7 +422,7 @@ def _build_draft_row(
         "source_note_optional": "",
         "source_adjudication_basis": "",
     }
-    if machine_identity_mismatches:
+    if machine_provenance_conflict:
         return base_row
     if source_row is None:
         return base_row
@@ -378,13 +434,9 @@ def _build_draft_row(
             "source_adjudicated_call": source_row.get("adjudicated_call", ""),
             "source_user_call": source_row.get("user_call", ""),
             "source_machine_call": source_row.get("machine_call", ""),
-            "source_machine_call_reason": source_row.get(
-                "machine_call_reason", ""
-            ),
+            "source_machine_call_reason": source_row.get("machine_call_reason", ""),
             "source_note_optional": source_row.get("note_optional", ""),
-            "source_adjudication_basis": source_row.get(
-                "adjudication_basis", ""
-            ),
+            "source_adjudication_basis": source_row.get("adjudication_basis", ""),
         }
     )
     if _required_text(source_row, "candidate_id") != candidate_id:
@@ -441,38 +493,6 @@ def _stale_row(
     return row
 
 
-def _read_review_packets(paths: Sequence[Path]) -> list[dict[str, str]]:
-    if not paths:
-        raise ValueError("at least one review packet CSV is required")
-    rows: list[dict[str, str]] = []
-    for path in paths:
-        packet_rows = read_delimited_rows(
-            path,
-            required_columns=LEGACY_PACKET_REQUIRED_COLUMNS,
-            delimiter=",",
-            encoding="utf-8-sig",
-        )
-        validate_packet_rows(packet_rows)
-        rows.extend(packet_rows)
-    return rows
-
-
-def _read_machine_calls(paths: Sequence[Path]) -> list[dict[str, str]]:
-    if not paths:
-        return []
-    rows: list[dict[str, str]] = []
-    for path in paths:
-        machine_rows = read_delimited_rows(
-            path,
-            required_columns=LEGACY_MACHINE_CALL_REQUIRED_COLUMNS,
-            delimiter=",",
-            encoding="utf-8-sig",
-        )
-        validate_machine_call_rows(machine_rows)
-        rows.extend(machine_rows)
-    return rows
-
-
 def _unique_by_packet_row_id(
     rows: Sequence[Mapping[str, str]],
     label: str,
@@ -490,22 +510,6 @@ def _machine_text(row: Mapping[str, str] | None, key: str) -> str:
     if row is None:
         return ""
     return str(row.get(key, "")).strip()
-
-
-def _machine_identity_mismatches(
-    *,
-    machine_row: Mapping[str, str] | None,
-    review_row: Mapping[str, str],
-) -> tuple[str, ...]:
-    if machine_row is None:
-        return ()
-    mismatches: list[str] = []
-    for field in ("candidate_id", "packet_label", "source_label"):
-        machine_value = str(machine_row.get(field, "")).strip()
-        review_value = _required_text(review_row, field)
-        if machine_value != review_value:
-            mismatches.append(field)
-    return tuple(mismatches)
 
 
 def _normalize_call(value: object) -> str:

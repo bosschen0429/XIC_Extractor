@@ -41,8 +41,9 @@ def _build_parser() -> argparse.ArgumentParser:
         default=[],
         metavar="SOURCE_LABEL=PATH",
         help=(
-            "Full Pt trace summary CSV with its source label. Repeat for "
-            "multi-source full-candidate gate replay."
+            "Current full-context Pt trace summary CSV with its source label. "
+            "Its canonical sibling metrics CSV and trace manifest are required. "
+            "Repeat for multi-source full-candidate gate replay."
         ),
     )
     parser.add_argument("--output-dir", type=Path, required=True)
