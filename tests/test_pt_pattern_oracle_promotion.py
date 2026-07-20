@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.pt_pattern_trace_fixtures import write_overlay_lineage_bundle
 from xic_extractor.discovery import pt_pattern_blind_overlay as overlay
 from xic_extractor.discovery import pt_pattern_oracle_promotion as promotion
 from xic_extractor.discovery import pt_pattern_review_packet as packet
@@ -31,13 +32,14 @@ def _review_packet_row(candidate_id: str, *, status: str) -> dict[str, str]:
             "packet_row_id": f"pt_only|{candidate_id}",
             "sample_stem": "SampleA",
             "candidate_id": candidate_id,
+            "candidate_assignment_sha256": "a" * 64,
+            "trace_extraction_sha256": "b" * 64,
+            "trace_artifact_role": "anchor_local",
             "base_mz": "500.0",
             "base_rt_apex_min": "10.0",
             "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
             "trace_smoothing_method": evidence.TRACE_SMOOTH_METHOD,
-            "trace_smoothing_window_points": str(
-                evidence.TRACE_SMOOTH_WINDOW_POINTS
-            ),
+            "trace_smoothing_window_points": str(evidence.TRACE_SMOOTH_WINDOW_POINTS),
             "combined_pt_pattern_status": status,
             "non_base_positions_supported": "3",
             "max_abs_apex_delta_sec": "0.5",
@@ -97,11 +99,11 @@ def _write_review_bundle(
 ) -> tuple[Path, Path]:
     review_packet_csv = tmp_path / "review_packet.csv"
     trace_points_csv = tmp_path / "trace_points.csv"
-    write_delimited_rows(review_packet_csv, review_rows, packet.PACKET_COLUMNS)
-    write_delimited_rows(
-        trace_points_csv,
-        _trace_points([row["candidate_id"] for row in review_rows]),
-        overlay.TRACE_POINT_REQUIRED_COLUMNS,
+    write_overlay_lineage_bundle(
+        review_packet_csv=review_packet_csv,
+        packet_rows=review_rows,
+        trace_points_csv=trace_points_csv,
+        trace_point_rows=_trace_points([row["candidate_id"] for row in review_rows]),
     )
     outputs = overlay.run_blind_overlay(
         review_packet_csv=review_packet_csv,
@@ -128,9 +130,7 @@ def _rewrite_sealed_machine_rows(
     summary = json.loads(overlay_summary_json.read_text(encoding="utf-8"))
     machine_calls_csv = Path(summary["outputs"]["machine_calls_csv"])
     write_delimited_rows(machine_calls_csv, rows, overlay.MACHINE_CALL_COLUMNS)
-    summary["outputs"]["machine_calls_csv_sha256"] = file_sha256(
-        machine_calls_csv
-    )
+    summary["outputs"]["machine_calls_csv_sha256"] = file_sha256(machine_calls_csv)
     overlay_summary_json.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -144,22 +144,18 @@ def _bind_rows_to_bundle(
     overlay_summary_json: Path,
 ) -> list[dict[str, str]]:
     machine_rows = _sealed_machine_rows(overlay_summary_json)
-    machine_by_packet_row_id = {
-        row["packet_row_id"]: row for row in machine_rows
-    }
+    machine_by_packet_row_id = {row["packet_row_id"]: row for row in machine_rows}
     return [
         dict(row)
         | {
             "machine_call": machine_by_packet_row_id[row["packet_row_id"]][
                 "machine_call"
             ],
-            "machine_call_reason": machine_by_packet_row_id[
-                row["packet_row_id"]
-            ]["machine_call_reason"],
+            "machine_call_reason": machine_by_packet_row_id[row["packet_row_id"]][
+                "machine_call_reason"
+            ],
             "review_packet_csv_sha256": file_sha256(review_packet_csv),
-            "blind_overlay_summary_json_sha256": file_sha256(
-                overlay_summary_json
-            ),
+            "blind_overlay_summary_json_sha256": file_sha256(overlay_summary_json),
         }
         for row in rows
     ]
@@ -190,6 +186,76 @@ def _build_rows(
             )
         },
         oracle_packet_id="unit_oracle",
+    )
+
+
+def _write_two_row_promotion_bundle(tmp_path: Path) -> dict[str, Path]:
+    review_packet_csv, overlay_summary_json = _write_review_bundle(
+        tmp_path,
+        [
+            _review_packet_row(
+                "cand-a",
+                status="pt_pattern_detected_diagnostic",
+            ),
+            _review_packet_row(
+                "cand-b",
+                status="pt_pattern_candidate_incomplete",
+            ),
+        ],
+    )
+    adjudicated_csv = tmp_path / "adjudicated.csv"
+    write_delimited_rows(
+        adjudicated_csv,
+        _bind_rows_to_bundle(
+            [
+                _adjudicated_row("cand-a"),
+                _adjudicated_row(
+                    "cand-b",
+                    adjudicated_call="reject",
+                    user_call="reject",
+                ),
+            ],
+            review_packet_csv=review_packet_csv,
+            overlay_summary_json=overlay_summary_json,
+        ),
+        promotion.ADJUDICATED_REQUIRED_COLUMNS,
+    )
+    return promotion.run_oracle_promotion(
+        adjudicated_oracle_csv=adjudicated_csv,
+        review_packet_csvs=[review_packet_csv],
+        blind_overlay_summary_jsons=[overlay_summary_json],
+        output_dir=tmp_path / "promotion",
+        oracle_packet_id="unit_oracle",
+    )
+
+
+def _refresh_promotion_packet_summary(outputs: dict[str, Path]) -> None:
+    packet_rows = read_delimited_rows(
+        outputs["promotion_packet_csv"],
+        required_columns=promotion.PROMOTION_COLUMNS,
+        exact_columns=promotion.PROMOTION_COLUMNS,
+        delimiter=",",
+    )
+    summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
+    summary["outputs"]["promotion_packet_csv_sha256"] = file_sha256(
+        outputs["promotion_packet_csv"]
+    )
+    summary["packet_row_count"] = len(packet_rows)
+    summary["oracle_call_counts"] = {
+        call: sum(row["oracle_call"] == call for row in packet_rows)
+        for call in sorted({row["oracle_call"] for row in packet_rows})
+    }
+    summary["oracle_detection_status_counts"] = {
+        status: sum(
+            row["oracle_detection_status"] == status for row in packet_rows
+        )
+        for status in sorted(
+            {row["oracle_detection_status"] for row in packet_rows}
+        )
+    }
+    outputs["summary_json"].write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -292,6 +358,218 @@ def test_oracle_promotion_writes_provenance_locked_packet(tmp_path: Path) -> Non
     assert sidecar["oracle_call_counts"] == {"accept": 1, "reject": 1}
     assert sidecar["changes_matrix"] is False
     assert sidecar["changes_counted_detection"] is False
+    verified = promotion.load_verified_oracle_promotion_bundle(
+        outputs["promotion_packet_csv"]
+    )
+    assert verified.oracle_packet_id == "unit_oracle"
+    assert len(verified.rows) == 2
+
+
+def test_verified_promotion_rejects_paired_call_tamper(tmp_path: Path) -> None:
+    outputs = _write_two_row_promotion_bundle(tmp_path)
+    rows = read_delimited_rows(
+        outputs["promotion_packet_csv"],
+        required_columns=promotion.PROMOTION_COLUMNS,
+        exact_columns=promotion.PROMOTION_COLUMNS,
+        delimiter=",",
+    )
+    rows[0]["oracle_call"] = "reject"
+    rows[0]["human_review_call"] = "reject"
+    write_delimited_rows(
+        outputs["promotion_packet_csv"],
+        rows,
+        promotion.PROMOTION_COLUMNS,
+    )
+    _refresh_promotion_packet_summary(outputs)
+
+    with pytest.raises(ValueError, match="deterministic projection"):
+        promotion.load_verified_oracle_promotion_bundle(
+            outputs["promotion_packet_csv"]
+        )
+
+
+@pytest.mark.parametrize("mutation", ["delete", "reverse"])
+def test_verified_promotion_rejects_row_set_or_order_tamper(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    outputs = _write_two_row_promotion_bundle(tmp_path)
+    rows = read_delimited_rows(
+        outputs["promotion_packet_csv"],
+        required_columns=promotion.PROMOTION_COLUMNS,
+        exact_columns=promotion.PROMOTION_COLUMNS,
+        delimiter=",",
+    )
+    mutated = rows[:1] if mutation == "delete" else list(reversed(rows))
+    write_delimited_rows(
+        outputs["promotion_packet_csv"],
+        mutated,
+        promotion.PROMOTION_COLUMNS,
+    )
+    _refresh_promotion_packet_summary(outputs)
+
+    with pytest.raises(ValueError, match="deterministic projection"):
+        promotion.load_verified_oracle_promotion_bundle(
+            outputs["promotion_packet_csv"]
+        )
+
+
+def test_verified_promotion_rejects_extra_packet_column(tmp_path: Path) -> None:
+    outputs = _write_two_row_promotion_bundle(tmp_path)
+    rows = read_delimited_rows(
+        outputs["promotion_packet_csv"],
+        required_columns=promotion.PROMOTION_COLUMNS,
+        exact_columns=promotion.PROMOTION_COLUMNS,
+        delimiter=",",
+    )
+    rows[0]["unexpected"] = "value"
+    write_delimited_rows(
+        outputs["promotion_packet_csv"],
+        rows,
+        (*promotion.PROMOTION_COLUMNS, "unexpected"),
+    )
+
+    with pytest.raises(ValueError, match="does not match exact schema"):
+        promotion.load_verified_oracle_promotion_bundle(
+            outputs["promotion_packet_csv"]
+        )
+
+
+def test_verified_promotion_rejects_missing_commit_summary(
+    tmp_path: Path,
+) -> None:
+    outputs = _write_two_row_promotion_bundle(tmp_path)
+    outputs["summary_json"].unlink()
+
+    with pytest.raises(FileNotFoundError):
+        promotion.load_verified_oracle_promotion_bundle(
+            outputs["promotion_packet_csv"]
+        )
+
+
+def test_verified_promotion_rejects_non_sibling_output_binding(
+    tmp_path: Path,
+) -> None:
+    outputs = _write_two_row_promotion_bundle(tmp_path)
+    summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
+    summary["outputs"]["promotion_packet_csv"] = str(
+        outputs["promotion_packet_csv"].resolve()
+    )
+    outputs["summary_json"].write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="fixed sibling"):
+        promotion.load_verified_oracle_promotion_bundle(
+            outputs["promotion_packet_csv"]
+        )
+
+
+def test_verified_promotion_rejects_non_integer_call_counts(
+    tmp_path: Path,
+) -> None:
+    outputs = _write_two_row_promotion_bundle(tmp_path)
+    summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
+    summary["oracle_call_counts"] = {"accept": True, "reject": True}
+    outputs["summary_json"].write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="oracle_call_counts.*integer"):
+        promotion.load_verified_oracle_promotion_bundle(
+            outputs["promotion_packet_csv"]
+        )
+
+
+def test_oracle_promotion_rejects_input_at_final_output_path(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "sources").mkdir()
+    review_packet_csv, overlay_summary_json = _write_review_bundle(
+        tmp_path / "sources",
+        [
+            _review_packet_row(
+                "cand-collision",
+                status="pt_pattern_detected_diagnostic",
+            )
+        ],
+    )
+    output_dir = tmp_path / "promotion"
+    output_dir.mkdir()
+    adjudicated_csv = output_dir / promotion.PROMOTION_PACKET_FILE_NAME
+    write_delimited_rows(
+        adjudicated_csv,
+        _bind_rows_to_bundle(
+            [_adjudicated_row("cand-collision")],
+            review_packet_csv=review_packet_csv,
+            overlay_summary_json=overlay_summary_json,
+        ),
+        promotion.ADJUDICATED_REQUIRED_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="input/output paths must be disjoint"):
+        promotion.run_oracle_promotion(
+            adjudicated_oracle_csv=adjudicated_csv,
+            review_packet_csvs=[review_packet_csv],
+            blind_overlay_summary_jsons=[overlay_summary_json],
+            output_dir=output_dir,
+            oracle_packet_id="unit_collision",
+        )
+
+    assert adjudicated_csv.is_file()
+    assert not (output_dir / promotion.PROMOTION_SUMMARY_FILE_NAME).exists()
+
+
+@pytest.mark.parametrize("failed_target", ["packet", "summary"])
+def test_oracle_promotion_publish_failure_removes_commit_marker_and_temps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failed_target: str,
+) -> None:
+    outputs = _write_two_row_promotion_bundle(tmp_path)
+    summary_path = outputs["summary_json"]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    inputs = summary["inputs"]
+
+    def source_path(descriptor: dict[str, str]) -> Path:
+        path = Path(descriptor["path"])
+        return path if path.is_absolute() else (summary_path.parent / path).resolve()
+
+    adjudicated_csv = source_path(inputs["adjudicated_oracle_csv"])
+    review_packet_csvs = [
+        source_path(descriptor) for descriptor in inputs["review_packet_csvs"]
+    ]
+    overlay_summary_jsons = [
+        source_path(descriptor)
+        for descriptor in inputs["blind_overlay_summary_jsons"]
+    ]
+    original_replace = Path.replace
+    failed_name = (
+        promotion.PROMOTION_PACKET_FILE_NAME
+        if failed_target == "packet"
+        else promotion.PROMOTION_SUMMARY_FILE_NAME
+    )
+
+    def fail_selected_replace(self: Path, target: Path) -> Path:
+        if Path(target).name == failed_name:
+            raise OSError(f"injected {failed_target} publish failure")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_selected_replace)
+
+    with pytest.raises(OSError, match=f"injected {failed_target}"):
+        promotion.run_oracle_promotion(
+            adjudicated_oracle_csv=adjudicated_csv,
+            review_packet_csvs=review_packet_csvs,
+            blind_overlay_summary_jsons=overlay_summary_jsons,
+            output_dir=summary_path.parent,
+            oracle_packet_id=summary["oracle_packet_id"],
+        )
+
+    assert not summary_path.exists()
+    assert not list(summary_path.parent.glob(".*.tmp"))
 
 
 def test_oracle_promotion_allows_human_call_to_differ_from_sealed_machine_call(
@@ -332,7 +610,7 @@ def test_oracle_promotion_allows_human_call_to_differ_from_sealed_machine_call(
     )
     assert rows[0]["oracle_call"] == "accept"
     assert rows[0]["human_review_call"] == "accept"
-    assert rows[0]["machine_call"] == "reject"
+    assert rows[0]["machine_call"] == "uncertain"
 
 
 @pytest.mark.parametrize("field", ("machine_call", "machine_call_reason"))
@@ -430,7 +708,16 @@ def test_oracle_promotion_canonicalizes_coordinates_from_review_packet(
     assert rows[0]["base_rt_apex_min"] == "10.0"
 
 
-@pytest.mark.parametrize("field", ("candidate_id", "packet_label", "source_label"))
+@pytest.mark.parametrize(
+    "field",
+    (
+        "candidate_id",
+        "packet_label",
+        "source_label",
+        "candidate_assignment_sha256",
+        "trace_extraction_sha256",
+    ),
+)
 def test_oracle_promotion_rejects_sealed_machine_identity_mismatch(
     tmp_path: Path,
     field: str,
@@ -445,7 +732,11 @@ def test_oracle_promotion_rejects_sealed_machine_identity_mismatch(
         ],
     )
     machine_rows = _sealed_machine_rows(overlay_summary_json)
-    machine_rows[0][field] = f"wrong-{field}"
+    machine_rows[0][field] = (
+        "c" * 64
+        if field in {"candidate_assignment_sha256", "trace_extraction_sha256"}
+        else f"wrong-{field}"
+    )
     _rewrite_sealed_machine_rows(overlay_summary_json, machine_rows)
     adjudicated_csv = tmp_path / "adjudicated.csv"
     write_delimited_rows(
@@ -459,6 +750,103 @@ def test_oracle_promotion_rejects_sealed_machine_identity_mismatch(
     )
 
     with pytest.raises(ValueError, match=rf"{field}.*exact review packet"):
+        promotion.run_oracle_promotion(
+            adjudicated_oracle_csv=adjudicated_csv,
+            review_packet_csvs=[review_packet_csv],
+            blind_overlay_summary_jsons=[overlay_summary_json],
+            output_dir=tmp_path / "promotion",
+            oracle_packet_id="unit_oracle",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("machine_call", "reject"),
+        ("machine_call_reason", "tampered_reason"),
+        ("min_pearson_r_to_base", "0.10"),
+        ("readiness_tier", "production_ready"),
+    ),
+)
+def test_oracle_promotion_rejects_non_deterministic_sealed_machine_projection(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    review_packet_csv, overlay_summary_json = _write_review_bundle(
+        tmp_path,
+        [
+            _review_packet_row(
+                "cand-projection",
+                status="pt_pattern_detected_diagnostic",
+            )
+        ],
+    )
+    machine_rows = _sealed_machine_rows(overlay_summary_json)
+    machine_rows[0][field] = value
+    _rewrite_sealed_machine_rows(overlay_summary_json, machine_rows)
+    adjudicated_csv = tmp_path / "adjudicated.csv"
+    write_delimited_rows(
+        adjudicated_csv,
+        _bind_rows_to_bundle(
+            [_adjudicated_row("cand-projection")],
+            review_packet_csv=review_packet_csv,
+            overlay_summary_json=overlay_summary_json,
+        ),
+        promotion.ADJUDICATED_REQUIRED_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="deterministic projection"):
+        promotion.run_oracle_promotion(
+            adjudicated_oracle_csv=adjudicated_csv,
+            review_packet_csvs=[review_packet_csv],
+            blind_overlay_summary_jsons=[overlay_summary_json],
+            output_dir=tmp_path / "promotion",
+            oracle_packet_id="unit_oracle",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    (
+        ("schema_version", overlay.SCHEMA_VERSION, "summary schema"),
+        ("trace_artifact_role", "full_context", "trace_artifact_role"),
+        ("gallery_mode", "full_context_only", "gallery_mode"),
+    ),
+)
+def test_oracle_promotion_rejects_overlay_summary_role_matrix_conflict(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    review_packet_csv, overlay_summary_json = _write_review_bundle(
+        tmp_path,
+        [
+            _review_packet_row(
+                "cand-summary-role",
+                status="pt_pattern_detected_diagnostic",
+            )
+        ],
+    )
+    summary = json.loads(overlay_summary_json.read_text(encoding="utf-8"))
+    summary[field] = value
+    overlay_summary_json.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    adjudicated_csv = tmp_path / "adjudicated.csv"
+    write_delimited_rows(
+        adjudicated_csv,
+        _bind_rows_to_bundle(
+            [_adjudicated_row("cand-summary-role")],
+            review_packet_csv=review_packet_csv,
+            overlay_summary_json=overlay_summary_json,
+        ),
+        promotion.ADJUDICATED_REQUIRED_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match=message):
         promotion.run_oracle_promotion(
             adjudicated_oracle_csv=adjudicated_csv,
             review_packet_csvs=[review_packet_csv],
@@ -709,20 +1097,23 @@ def test_oracle_promotion_cli_writes_packet(tmp_path: Path) -> None:
 
     from tools.diagnostics import pt_pattern_oracle_promotion as cli
 
-    assert cli.main(
-        [
-            "--adjudicated-oracle-csv",
-            str(adjudicated_csv),
-            "--review-packet-csv",
-            str(review_packet_csv),
-            "--blind-overlay-summary-json",
-            str(overlay_summary_json),
-            "--output-dir",
-            str(tmp_path / "promotion"),
-            "--oracle-packet-id",
-            "unit_oracle",
-        ]
-    ) == 0
+    assert (
+        cli.main(
+            [
+                "--adjudicated-oracle-csv",
+                str(adjudicated_csv),
+                "--review-packet-csv",
+                str(review_packet_csv),
+                "--blind-overlay-summary-json",
+                str(overlay_summary_json),
+                "--output-dir",
+                str(tmp_path / "promotion"),
+                "--oracle-packet-id",
+                "unit_oracle",
+            ]
+        )
+        == 0
+    )
 
     rows = read_delimited_rows(
         tmp_path / "promotion" / "pt_pattern_oracle_promotion_packet.csv",
