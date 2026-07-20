@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery import pt_pattern_evidence_rule as evidence_rule
 from xic_extractor.discovery.pt_pattern_blind_overlay import classify_machine_call
 from xic_extractor.discovery.pt_pattern_oracle_promotion import (
@@ -137,6 +138,14 @@ def run_threshold_calibration(
 ) -> dict[str, Path]:
     if not review_packet_csvs:
         raise ValueError("at least one review packet CSV is required")
+    threshold_csv = output_dir / "pt_pattern_oracle_threshold_candidates.csv"
+    case_audit_csv = output_dir / "pt_pattern_oracle_threshold_case_audit.csv"
+    summary_json = output_dir / "pt_pattern_oracle_threshold_summary.json"
+    require_disjoint_artifact_paths(
+        input_paths=(oracle_promotion_csv, *review_packet_csvs),
+        output_paths=(threshold_csv, case_audit_csv, summary_json),
+        label="oracle threshold calibration",
+    )
     oracle_bundle = load_verified_oracle_promotion_bundle(
         oracle_promotion_csv
     )
@@ -161,9 +170,6 @@ def run_threshold_calibration(
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    threshold_csv = output_dir / "pt_pattern_oracle_threshold_candidates.csv"
-    case_audit_csv = output_dir / "pt_pattern_oracle_threshold_case_audit.csv"
-    summary_json = output_dir / "pt_pattern_oracle_threshold_summary.json"
     write_delimited_rows(threshold_csv, threshold_rows, THRESHOLD_COLUMNS)
     write_delimited_rows(case_audit_csv, case_rows, CASE_AUDIT_COLUMNS)
 

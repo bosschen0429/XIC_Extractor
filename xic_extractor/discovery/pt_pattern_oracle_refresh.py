@@ -7,6 +7,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from xic_extractor.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
     validate_packet_rows,
 )
@@ -116,6 +117,19 @@ def run_oracle_refresh(
     output_dir: Path,
     refresh_packet_id: str,
 ) -> dict[str, Path]:
+    draft_csv = output_dir / "pt_pattern_oracle_refresh_draft.csv"
+    pending_csv = output_dir / "pt_pattern_oracle_refresh_pending_review.csv"
+    stale_csv = output_dir / "pt_pattern_oracle_refresh_stale_v1_rows.csv"
+    summary_json = output_dir / "pt_pattern_oracle_refresh_summary.json"
+    require_disjoint_artifact_paths(
+        input_paths=(
+            adjudicated_oracle_csv,
+            *review_packet_csvs,
+            *machine_call_csvs,
+        ),
+        output_paths=(draft_csv, pending_csv, stale_csv, summary_json),
+        label="oracle refresh",
+    )
     adjudicated_rows = read_delimited_rows(
         adjudicated_oracle_csv,
         required_columns=LEGACY_ADJUDICATED_REQUIRED_COLUMNS,
@@ -145,10 +159,6 @@ def run_oracle_refresh(
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    draft_csv = output_dir / "pt_pattern_oracle_refresh_draft.csv"
-    pending_csv = output_dir / "pt_pattern_oracle_refresh_pending_review.csv"
-    stale_csv = output_dir / "pt_pattern_oracle_refresh_stale_v1_rows.csv"
-    summary_json = output_dir / "pt_pattern_oracle_refresh_summary.json"
 
     write_delimited_rows(draft_csv, refresh["draft_rows"], REFRESH_DRAFT_COLUMNS)
     write_delimited_rows(

@@ -6,6 +6,7 @@ import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from xic_extractor.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
     PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
@@ -68,6 +69,24 @@ def run_blind_overlay(
         VISUAL_TIME_SMOOTH_WINDOW_SEC,
         _load_traces_by_candidate,
         render_blind_overlay_html,
+    )
+
+    html_path = output_dir / "pt_pattern_blind_overlay_gallery.html"
+    machine_calls_csv = output_dir / "pt_pattern_machine_calls_sealed.csv"
+    summary_json = output_dir / BLIND_OVERLAY_SUMMARY_FILE_NAME
+    input_paths = [review_packet_csv, trace_points_csv]
+    for optional_input in (
+        context_trace_points_csv,
+        review_packet_manifest_json,
+        trace_manifest_json,
+        context_trace_manifest_json,
+    ):
+        if optional_input is not None:
+            input_paths.append(optional_input)
+    require_disjoint_artifact_paths(
+        input_paths=input_paths,
+        output_paths=(html_path, machine_calls_csv, summary_json),
+        label="Pt pattern blind overlay",
     )
 
     review_bundle = load_verified_review_packet_bundle(
@@ -179,9 +198,6 @@ def run_blind_overlay(
     validate_machine_call_rows(machine_rows)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    html_path = output_dir / "pt_pattern_blind_overlay_gallery.html"
-    machine_calls_csv = output_dir / "pt_pattern_machine_calls_sealed.csv"
-    summary_json = output_dir / BLIND_OVERLAY_SUMMARY_FILE_NAME
 
     html_path.write_text(
         render_blind_overlay_html(

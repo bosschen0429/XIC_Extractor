@@ -303,6 +303,56 @@ def test_oracle_refresh_draft_can_be_human_completed_and_promoted(
     assert [row["oracle_call"] for row in verified.rows] == ["reject"]
 
 
+def test_oracle_refresh_rejects_completed_draft_as_same_output_input(
+    tmp_path: Path,
+) -> None:
+    adjudicated_csv = tmp_path / "adjudicated.csv"
+    review_packet_csv = tmp_path / "review_packet.csv"
+    write_delimited_rows(
+        adjudicated_csv,
+        [],
+        promotion.LEGACY_ADJUDICATED_REQUIRED_COLUMNS,
+    )
+    machine_calls_csv = _write_packet_bundle(
+        review_packet_csv,
+        [_review_packet_row("new")],
+    )
+    output_dir = tmp_path / "refresh"
+    outputs = refresh.run_oracle_refresh(
+        adjudicated_oracle_csv=adjudicated_csv,
+        review_packet_csvs=[review_packet_csv],
+        machine_call_csvs=[machine_calls_csv],
+        output_dir=output_dir,
+        refresh_packet_id="unit_refresh",
+    )
+    draft_rows = read_delimited_rows(
+        outputs["refresh_draft_csv"],
+        required_columns=refresh.REFRESH_DRAFT_COLUMNS,
+        exact_columns=refresh.REFRESH_DRAFT_COLUMNS,
+        delimiter=",",
+    )
+    draft_rows[0]["adjudicated_call"] = "reject"
+    draft_rows[0]["user_call"] = "reject"
+    draft_rows[0]["adjudication_basis"] = "fresh_human_review"
+    write_delimited_rows(
+        outputs["refresh_draft_csv"],
+        draft_rows,
+        refresh.REFRESH_DRAFT_COLUMNS,
+    )
+    completed_bytes = outputs["refresh_draft_csv"].read_bytes()
+
+    with pytest.raises(ValueError, match="input/output paths must be disjoint"):
+        refresh.run_oracle_refresh(
+            adjudicated_oracle_csv=outputs["refresh_draft_csv"],
+            review_packet_csvs=[review_packet_csv],
+            machine_call_csvs=[machine_calls_csv],
+            output_dir=output_dir,
+            refresh_packet_id="unit_refresh_rerun",
+        )
+
+    assert outputs["refresh_draft_csv"].read_bytes() == completed_bytes
+
+
 def test_oracle_refresh_marks_candidate_mismatch_as_conflict() -> None:
     current_row = _review_packet_row("current")
     old_row = _adjudicated_row("old")

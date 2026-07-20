@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
     PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
@@ -130,6 +131,19 @@ def run_diagnostic_gate(
     shifted_pearson_min: float | None = None,
     shape_shift_max_sec: float | None = None,
 ) -> dict[str, Path]:
+    gate_rows_csv = output_dir / "pt_pattern_diagnostic_gate_rows.csv"
+    summary_json = output_dir / "pt_pattern_diagnostic_gate_summary.json"
+    input_paths = [
+        *review_packet_csvs,
+        *(item.path for item in trace_summary_csvs),
+    ]
+    if oracle_promotion_csv is not None:
+        input_paths.append(oracle_promotion_csv)
+    require_disjoint_artifact_paths(
+        input_paths=input_paths,
+        output_paths=(gate_rows_csv, summary_json),
+        label="Pt pattern diagnostic gate",
+    )
     thresholds = _thresholds(
         apex_delta_max_sec=apex_delta_max_sec,
         pearson_min=pearson_min,
@@ -162,8 +176,6 @@ def run_diagnostic_gate(
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    gate_rows_csv = output_dir / "pt_pattern_diagnostic_gate_rows.csv"
-    summary_json = output_dir / "pt_pattern_diagnostic_gate_summary.json"
     write_delimited_rows(gate_rows_csv, gate_rows, GATE_COLUMNS)
 
     call_counts = Counter(str(row["diagnostic_gate_call"]) for row in gate_rows)

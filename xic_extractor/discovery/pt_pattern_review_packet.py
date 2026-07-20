@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from xic_extractor.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
     PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
@@ -310,6 +311,16 @@ def run_review_packet(
     max_per_status: int,
     trace_manifest_json: Path | None = None,
 ) -> dict[str, Path]:
+    packet_csv = output_dir / "pt_pattern_manual_review_packet.csv"
+    sidecar_json = output_dir / "pt_pattern_manual_review_packet.json"
+    input_paths = [candidates_csv, trace_summary_csv, trace_metrics_csv]
+    if trace_manifest_json is not None:
+        input_paths.append(trace_manifest_json)
+    require_disjoint_artifact_paths(
+        input_paths=input_paths,
+        output_paths=(packet_csv, sidecar_json),
+        label="Pt pattern review packet",
+    )
     candidate_rows = read_delimited_rows(
         candidates_csv,
         required_columns=CANDIDATE_REQUIRED_COLUMNS,
@@ -338,8 +349,6 @@ def run_review_packet(
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    packet_csv = output_dir / "pt_pattern_manual_review_packet.csv"
-    sidecar_json = output_dir / "pt_pattern_manual_review_packet.json"
     packet_schema_version = str(packet_rows[0]["schema_version"])
     packet_columns = (
         PACKET_COLUMNS
