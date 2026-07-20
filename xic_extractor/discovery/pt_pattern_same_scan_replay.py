@@ -35,7 +35,7 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_same_scan_replay.v2"
+SCHEMA_VERSION = "pt_pattern_same_scan_replay.v3"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_same_scan_evidence"
 D3_CONTROL_NAME = "d3-dG-C8-MeIQx"
@@ -179,14 +179,19 @@ def run_same_scan_replay(
         ),
         *_known_contexts(known_diagnosis_csv),
     )
+    _require_unique_context_keys(contexts)
     evaluations = tuple(
         evaluate_same_scan_envelope(index, context.seed, settings)
         for context in contexts
     )
-    evaluation_by_seed = {
-        evaluation.seed.seed_id: evaluation for evaluation in evaluations
+    evaluation_by_context_key = {
+        _seed_context_key(evaluation.seed): evaluation for evaluation in evaluations
     }
     candidate_contexts = tuple(context for context in contexts if context.candidate_id)
+    candidate_evaluation_by_id = {
+        context.candidate_id: evaluation_by_context_key[_context_key(context)]
+        for context in candidate_contexts
+    }
     components = build_conflict_components(
         tuple(
             CandidateFeatureClaims(context.candidate_id, context.feature_ids)
@@ -196,16 +201,12 @@ def run_same_scan_replay(
     resolved = resolve_conflict_components(
         components,
         strict_support_by_candidate={
-            context.candidate_id: evaluation_by_seed[
-                context.seed.seed_id
-            ].strict_full_supported
-            for context in candidate_contexts
+            candidate_id: evaluation.strict_full_supported
+            for candidate_id, evaluation in candidate_evaluation_by_id.items()
         },
         core_support_by_candidate={
-            context.candidate_id: evaluation_by_seed[
-                context.seed.seed_id
-            ].core_plus4_conditional_supported
-            for context in candidate_contexts
+            candidate_id: evaluation.core_plus4_conditional_supported
+            for candidate_id, evaluation in candidate_evaluation_by_id.items()
         },
     )
     conflict_by_candidate = {
@@ -214,7 +215,7 @@ def run_same_scan_replay(
     evidence_rows = [
         _evidence_row(
             context,
-            evaluation_by_seed[context.seed.seed_id],
+            evaluation_by_context_key[_context_key(context)],
             conflict_by_candidate.get(context.candidate_id),
             report_id=report_id,
         )
@@ -228,7 +229,7 @@ def run_same_scan_replay(
     conflict_rows = [
         _conflict_row(
             item,
-            evaluation_by_seed=evaluation_by_seed,
+            evaluation_by_seed=candidate_evaluation_by_id,
             report_id=report_id,
         )
         for item in resolved
@@ -296,32 +297,21 @@ def _candidate_contexts(
         delimiter=",",
         encoding="utf-8-sig",
     )
-    accepted_id_rows = [
-        text_value(row["candidate_id"])
-        for row in evidence
+    candidate_by_id = _unique_candidate_rows(candidates, label="candidate")
+    evidence_by_id = _unique_candidate_rows(evidence, label="evidence")
+    accepted_ids = {
+        candidate_id
+        for candidate_id, row in evidence_by_id.items()
         if text_value(row["trace_rule_call"]).lower() == "accept"
-    ]
-    if any(not candidate_id for candidate_id in accepted_id_rows):
-        raise ValueError("accepted evidence candidate_id must be non-empty")
-    accepted_counts = Counter(accepted_id_rows)
-    duplicate_evidence_ids = sorted(
-        candidate_id for candidate_id, count in accepted_counts.items() if count > 1
-    )
-    if duplicate_evidence_ids:
-        raise ValueError(
-            "duplicate accepted candidate_id values in evidence CSV: "
-            + ", ".join(duplicate_evidence_ids)
-        )
-    accepted_ids = set(accepted_id_rows)
+    }
     if expected_sample_stem is not None:
         expected = expected_sample_stem.strip()
         if not expected:
             raise ValueError("source sample stem must be non-empty")
         accepted_sample_stems = sorted(
             {
-                text_value(row["sample_stem"])
-                for row in candidates
-                if text_value(row["candidate_id"]) in accepted_ids
+                text_value(candidate_by_id[candidate_id]["sample_stem"])
+                for candidate_id in accepted_ids & candidate_by_id.keys()
             }
         )
         if accepted_sample_stems and accepted_sample_stems != [expected]:
@@ -329,25 +319,11 @@ def _candidate_contexts(
                 f"candidate sample stems {accepted_sample_stems!r} do not match "
                 f"source sample {expected!r}"
             )
-    candidate_counts = Counter(
-        text_value(row["candidate_id"])
-        for row in candidates
-        if text_value(row["candidate_id"]) in accepted_ids
-    )
-    missing_ids = sorted(accepted_ids - candidate_counts.keys())
-    duplicate_candidate_ids = sorted(
-        candidate_id for candidate_id, count in candidate_counts.items() if count > 1
-    )
-    if missing_ids or duplicate_candidate_ids:
-        problems = []
-        if missing_ids:
-            problems.append("missing accepted ids: " + ", ".join(missing_ids))
-        if duplicate_candidate_ids:
-            problems.append(
-                "duplicate accepted ids: " + ", ".join(duplicate_candidate_ids)
-            )
+    missing_ids = sorted(accepted_ids - candidate_by_id.keys())
+    if missing_ids:
         raise ValueError(
-            "accepted candidate join must be exactly one-to-one; " + "; ".join(problems)
+            "accepted candidate join must be exactly one-to-one; missing accepted "
+            "ids: " + ", ".join(missing_ids)
         )
 
     contexts = []
@@ -361,11 +337,17 @@ def _candidate_contexts(
             "base_rt_apex_min",
             candidate_id,
         )
-        feature_ids = tuple(
-            text_value(row[column])
-            for column in _FEATURE_ID_COLUMNS
-            if text_value(row[column])
-        )
+        feature_ids = tuple(text_value(row[column]) for column in _FEATURE_ID_COLUMNS)
+        if any(not feature_id for feature_id in feature_ids):
+            raise ValueError(
+                f"accepted candidate {candidate_id!r} must have four non-empty "
+                "feature claims"
+            )
+        if len(set(feature_ids)) != len(feature_ids):
+            raise ValueError(
+                f"accepted candidate {candidate_id!r} must have four distinct "
+                "feature claims"
+            )
         contexts.append(
             _SeedContext(
                 seed=PtPatternSeed(
@@ -385,6 +367,22 @@ def _candidate_contexts(
     return tuple(contexts)
 
 
+def _unique_candidate_rows(
+    rows: Sequence[Mapping[str, str]],
+    *,
+    label: str,
+) -> dict[str, Mapping[str, str]]:
+    by_candidate_id: dict[str, Mapping[str, str]] = {}
+    for row_index, row in enumerate(rows, start=2):
+        candidate_id = text_value(row.get("candidate_id"))
+        if not candidate_id:
+            raise ValueError(f"{label} row {row_index}: candidate_id must be non-empty")
+        if candidate_id in by_candidate_id:
+            raise ValueError(f"duplicate {label} candidate_id: {candidate_id}")
+        by_candidate_id[candidate_id] = row
+    return by_candidate_id
+
+
 def _known_contexts(path: Path) -> tuple[_SeedContext, ...]:
     rows = read_delimited_rows(
         path,
@@ -393,8 +391,20 @@ def _known_contexts(path: Path) -> tuple[_SeedContext, ...]:
         encoding="utf-8-sig",
     )
     contexts = []
+    seen_seed_ids: set[str] = set()
     for row in rows:
         compound = text_value(row["compound"])
+        if not compound:
+            raise ValueError("known compound must be non-empty")
+        base_mz = _required_float(
+            row["expected_base_mz"],
+            "expected_base_mz",
+            compound,
+        )
+        seed_id = f"known:base_mz={_format_identity_mz(base_mz)}"
+        if seed_id in seen_seed_ids:
+            raise ValueError(f"duplicate known hypothesis seed_id: {seed_id}")
+        seen_seed_ids.add(seed_id)
         if compound == D3_CONTROL_NAME:
             expected_class = "non_pt_control"
         elif "CP" in compound:
@@ -404,13 +414,9 @@ def _known_contexts(path: Path) -> tuple[_SeedContext, ...]:
         contexts.append(
             _SeedContext(
                 seed=PtPatternSeed(
-                    seed_id=f"known:{compound}",
+                    seed_id=seed_id,
                     source_set="known_named",
-                    base_mz=_required_float(
-                        row["expected_base_mz"],
-                        "expected_base_mz",
-                        compound,
-                    ),
+                    base_mz=base_mz,
                 ),
                 expected_class=expected_class,
                 compound=compound,
@@ -423,6 +429,27 @@ def _known_contexts(path: Path) -> tuple[_SeedContext, ...]:
             )
         )
     return tuple(contexts)
+
+
+def _require_unique_context_keys(contexts: Sequence[_SeedContext]) -> None:
+    seen: set[tuple[str, str]] = set()
+    for context in contexts:
+        key = _context_key(context)
+        if key in seen:
+            raise ValueError(f"duplicate same-scan context identity: {key!r}")
+        seen.add(key)
+
+
+def _context_key(context: _SeedContext) -> tuple[str, str]:
+    return _seed_context_key(context.seed)
+
+
+def _seed_context_key(seed: PtPatternSeed) -> tuple[str, str]:
+    return (seed.source_set, seed.seed_id)
+
+
+def _format_identity_mz(value: float) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 def _evidence_row(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -179,6 +180,19 @@ def run_hypothesis_synthesis(
     top102_rows = _read_optional_assembly(top102_diagnosis_csv)
     known_rows = _read_optional_known(known_diagnosis_csv)
     assembly_rows = [*top102_rows, *known_rows]
+
+    _require_unique_text_key(
+        ratio_summary,
+        column="ratio_name",
+        label="primary ratio_name",
+    )
+    _require_unique_text_key(
+        background_ratio_summary,
+        column="ratio_name",
+        label="background ratio_name",
+    )
+    _require_unique_plus1_thresholds(plus1_summary)
+    _require_unique_inclusion_keys(inclusion_summary)
 
     ratio_payload = _ratio_payload(ratio_summary, background_ratio_summary)
     plus1_payload = _plus1_payload(plus1_summary)
@@ -447,7 +461,7 @@ def _interference_payload(interference: Mapping[str, object]) -> dict[str, objec
 
 def _plus1_payload(rows: Sequence[Mapping[str, str]]) -> dict[str, object]:
     by_threshold = {
-        int(optional_float(row.get("threshold_plus1_height")) or 0): row
+        _plus1_threshold_key(row): row
         for row in rows
     }
     return {
@@ -503,6 +517,59 @@ def _inclusion_payload(
             int(value) if value is not None else 0
         )
     return grouped
+
+
+def _require_unique_text_key(
+    rows: Sequence[Mapping[str, str]],
+    *,
+    column: str,
+    label: str,
+) -> None:
+    seen: set[str] = set()
+    for row_index, row in enumerate(rows, start=2):
+        value = text_value(row.get(column))
+        if not value:
+            raise ValueError(f"{label} row {row_index} must be non-empty")
+        if value in seen:
+            raise ValueError(f"duplicate {label}: {value}")
+        seen.add(value)
+
+
+def _plus1_threshold_key(row: Mapping[str, str]) -> int:
+    value = optional_float(row.get("threshold_plus1_height"))
+    if value is None or not math.isfinite(value) or not value.is_integer():
+        raise ValueError(
+            "threshold_plus1_height must be a finite integer identity key"
+        )
+    return int(value)
+
+
+def _require_unique_plus1_thresholds(
+    rows: Sequence[Mapping[str, str]],
+) -> None:
+    seen: set[int] = set()
+    for row in rows:
+        threshold = _plus1_threshold_key(row)
+        if threshold in seen:
+            raise ValueError(
+                f"duplicate plus1 threshold_plus1_height: {threshold}"
+            )
+        seen.add(threshold)
+
+
+def _require_unique_inclusion_keys(
+    rows: Sequence[Mapping[str, str]],
+) -> None:
+    seen: set[tuple[str, str]] = set()
+    for row_index, row in enumerate(rows, start=2):
+        key = (text_value(row.get("set")), text_value(row.get("metric")))
+        if not all(key):
+            raise ValueError(
+                f"inclusion set/metric row {row_index} must be non-empty"
+            )
+        if key in seen:
+            raise ValueError(f"duplicate inclusion set/metric: {key!r}")
+        seen.add(key)
 
 
 def _assembly_layer_rows(

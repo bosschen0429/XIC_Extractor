@@ -1919,8 +1919,11 @@ core-with-conditional-+4 window-occupancy evidence.
 **Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
 **Status note**: Diagnostic-only RAW-backed replay. It loads or builds one MS1
 index per run, never reopens RAW per candidate, preserves below-noise +4 as
-censored evidence, and reports shared-feature conflict components. Replay v2
-counts a component as resolved only when exactly one candidate has full
+censored evidence, and reports shared-feature conflict components. Replay v3
+keeps the v2 strict component rule and treats `(source_set, seed_id)` as the
+structured seed identity. Known-list seed IDs derive from normalized base-m/z
+assignments; compound names remain review metadata and do not define identity.
+A component counts as resolved only when exactly one candidate has full
 base/+1/+2/+4 strict support; core-only support remains diagnostic and cannot
 nominate a preferred Discovery hypothesis. It does not
 change feature detection, candidate assembly, ratios, counted detections,

@@ -179,3 +179,86 @@ def test_same_scan_cli_rejects_npz_without_source_provenance(
 
     assert code == 2
     assert "source provenance" in capsys.readouterr().err
+
+
+def test_same_scan_cli_translates_invalid_feature_claims_to_exit_2(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    index_path = tmp_path / "sample.ms1_index.npz"
+    write_ms1_scan_index_npz(
+        index_path,
+        (
+            MS1Scan(
+                scan_number=100,
+                rt=10.0,
+                masses=np.asarray(
+                    [500.0, 501.002111, 502.002271, 504.005213],
+                    dtype=np.float64,
+                ),
+                intensities=np.asarray(
+                    [90_000.0, 120_000.0, 80_000.0, 40_000.0],
+                    dtype=np.float64,
+                ),
+            ),
+        ),
+        provenance=MS1ScanIndexProvenance(
+            sample_stem="SampleA",
+            source_path="C:/raw/SampleA.raw",
+            source_sha256="a" * 64,
+        ),
+    )
+    candidates = tmp_path / "candidates.csv"
+    evidence = tmp_path / "evidence.csv"
+    known = tmp_path / "known.csv"
+    _write_csv(
+        candidates,
+        [
+            {
+                "sample_stem": "SampleA",
+                "candidate_id": "candidate-a",
+                "base_mz": "500.0",
+                "base_rt_apex_min": "10.0",
+                "base_feature_id": "f1",
+                "pt_plus_1_feature_id": "f2",
+                "pt_plus_2_feature_id": "f3",
+                "pt_plus_4_feature_id": "f3",
+            }
+        ],
+    )
+    _write_csv(
+        evidence,
+        [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
+    )
+    _write_csv(
+        known,
+        [
+            {
+                "compound": "195CP-known",
+                "expected_base_mz": "500.0",
+                "diagnostic_status": "accepted_candidate",
+            }
+        ],
+    )
+    output_dir = tmp_path / "output"
+
+    code = pt_pattern_same_scan_replay.main(
+        [
+            "--ms1-index-npz",
+            str(index_path),
+            "--candidates-csv",
+            str(candidates),
+            "--evidence-csv",
+            str(evidence),
+            "--known-diagnosis-csv",
+            str(known),
+            "--output-dir",
+            str(output_dir),
+            "--report-id",
+            "invalid-claims",
+        ]
+    )
+
+    assert code == 2
+    assert "four distinct feature claims" in capsys.readouterr().err
+    assert not output_dir.exists()

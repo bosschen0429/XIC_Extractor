@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics import pt_pattern_hypothesis_synthesis as synthesis_cli
 from xic_extractor.discovery.pt_pattern_hypothesis_synthesis import (
     ASSEMBLY_LAYER_COLUMNS,
@@ -127,6 +129,100 @@ def test_hypothesis_synthesis_cli(tmp_path: Path) -> None:
         )
     )
     assert summary["report_id"] == "fixture_hypothesis"
+
+
+def test_hypothesis_synthesis_rejects_duplicate_ratio_name(tmp_path: Path) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["ratio_summary"],
+        required_columns=("ratio_name",),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    write_delimited_rows(
+        paths["ratio_summary"],
+        [*rows, rows[0]],
+        RATIO_SUMMARY_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="duplicate primary ratio_name"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="duplicate_ratio",
+        )
+
+
+def test_hypothesis_synthesis_rejects_duplicate_plus1_threshold(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["plus1_summary"],
+        required_columns=("threshold_plus1_height",),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    write_delimited_rows(
+        paths["plus1_summary"],
+        [*rows, rows[0]],
+        tuple(rows[0]),
+    )
+
+    with pytest.raises(ValueError, match="duplicate plus1 threshold_plus1_height"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            plus1_seed_summary_csv=paths["plus1_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="duplicate_plus1",
+        )
+
+
+def test_hypothesis_synthesis_rejects_duplicate_inclusion_key(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["inclusion_summary"],
+        required_columns=("set", "metric"),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    write_delimited_rows(
+        paths["inclusion_summary"],
+        [*rows, rows[0]],
+        tuple(rows[0]),
+    )
+
+    with pytest.raises(ValueError, match="duplicate inclusion set/metric"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            inclusion_summary_csv=paths["inclusion_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="duplicate_inclusion",
+        )
+
+
+def test_hypothesis_synthesis_rejects_fractional_plus1_threshold_identity(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["plus1_summary"],
+        required_columns=("threshold_plus1_height",),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0]["threshold_plus1_height"] = "25000.5"
+    write_delimited_rows(paths["plus1_summary"], rows, tuple(rows[0]))
+
+    with pytest.raises(ValueError, match="finite integer identity key"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            plus1_seed_summary_csv=paths["plus1_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="fractional_plus1",
+        )
 
 
 def _write_inputs(tmp_path: Path) -> dict[str, Path]:

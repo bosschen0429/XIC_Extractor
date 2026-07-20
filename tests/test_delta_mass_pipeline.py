@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -23,7 +24,10 @@ from xic_extractor.discovery.delta_mass_pipeline import (
     DeltaMassDiscoveryOutputs,
     run_pt_pattern_discovery,
 )
-from xic_extractor.discovery.detected_features import DeltaMassPatternSettings
+from xic_extractor.discovery.detected_features import (
+    CID_NL_SHARED_IDENTITY_SOURCE,
+    DeltaMassPatternSettings,
+)
 from xic_extractor.discovery.pt_pattern_trace_evidence import SUMMARY_COLUMNS
 
 DETECTED_FEATURES_COLUMNS = (
@@ -324,11 +328,11 @@ def test_composite_mzmine_feature_source_uses_mz_rt_fallback(
     mzmine_table = tmp_path / "mzmine_features.csv"
     base_mz = 500.0
     mzmine_table.write_text(
-        "row ID,row m/z,row retention time,Sample_1.raw Peak area,\n"
-        f"1,{base_mz},10.000,1000.0,\n"
-        f"2,{base_mz + 1.002111},10.001,800.0,\n"
-        f"3,{base_mz + 2.002271},10.002,200.0,\n"
-        f"4,{base_mz + 4.005213},10.003,50.0,\n",
+        "row ID,row m/z,row retention time,Sample_1.raw Peak area\n"
+        f"1,{base_mz},10.000,1000.0\n"
+        f"2,{base_mz + 1.002111},10.001,800.0\n"
+        f"3,{base_mz + 2.002271},10.002,200.0\n"
+        f"4,{base_mz + 4.005213},10.003,50.0\n",
         encoding="utf-8",
     )
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
@@ -403,6 +407,71 @@ def test_composite_identity_less_external_source_uses_mz_rt_fallback(
     assert rows[0]["cid_nl_base_candidate_id"] == "cid-openms"
 
 
+def test_composite_external_detector_local_id_uses_mz_rt_fallback(
+    tmp_path: Path,
+) -> None:
+    external_table = tmp_path / "external_features.tsv"
+    external_rows = [
+        {
+            "external_tool": "OpenMS",
+            "sample_id": row["sample_stem"],
+            "feature_id": row["feature_id"],
+            "source_feature_row_id": f"openms-local-{index}",
+            "mz": row["mz"],
+            "rt": row["rt_apex_min"],
+            "rt_start_min": row.get("rt_start_min", ""),
+            "rt_end_min": row.get("rt_end_min", ""),
+            "area_or_intensity": row["height"],
+            "area": row.get("area", ""),
+            "trace_quality": row["trace_quality"],
+            "shape_score": row.get("shape_score", ""),
+        }
+        for index, row in enumerate(_full_pattern_rows(), start=1)
+    ]
+    _write_external_feature_table(external_table, external_rows)
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,discovery_candidate_state,"
+        "precursor_mz,ms1_apex_rt,evidence_score\n"
+        "cid-openms,Sample_1|unrelated-detector-id,DNA_dR,"
+        "ms1_feature_nl_supported,500.0,10.0,90\n",
+        encoding="utf-8",
+    )
+
+    outputs = run_pt_pattern_discovery(
+        external_feature_table_tsv=external_table,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 1
+    assert rows[0]["cid_nl_base_join_mode"] == "mz_rt_fallback"
+    assert rows[0]["cid_nl_base_candidate_id"] == "cid-openms"
+
+
+def test_composite_rejects_duplicate_cid_nl_headers(tmp_path: Path) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "candidate_id,candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state,precursor_mz,ms1_apex_rt,evidence_score\n"
+        "first,last,Sample_1|base,DNA_dR,ms1_feature_nl_supported,500,10,90\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate columns: candidate_id"):
+        run_pt_pattern_discovery(
+            detected_features_csv=detected_features_csv,
+            output_dir=tmp_path / "out",
+            preset_name="pt_pattern_cid_nl_dr",
+            cid_nl_candidates_csv=cid_nl_candidates_csv,
+        )
+
+
 def test_composite_local_detector_identity_uses_sample_local_mz_rt_fallback(
     tmp_path: Path,
 ) -> None:
@@ -447,6 +516,7 @@ def test_composite_local_detector_identity_uses_sample_local_mz_rt_fallback(
     (
         "local_ms1_feature",
         "external_feature_table:MZmine:mzmine_wide_area_proxy_v1",
+        "external_feature_table:OpenMS:contract_v1",
     ),
 )
 def test_composite_detector_local_matching_string_cannot_bypass_mz_rt_fallback(
@@ -640,6 +710,7 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
     detected_features_csv = tmp_path / "detected_features.csv"
     rows = _full_pattern_rows()
     rows[0]["source_feature_row_id"] = "Sample_1|DNA_dR|258.108512|7.841234"
+    rows[0]["source"] = CID_NL_SHARED_IDENTITY_SOURCE
     _write_detected_features_csv(detected_features_csv, rows)
 
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
@@ -675,6 +746,99 @@ def test_run_pt_pattern_discovery_composite_marks_matched_base_as_supported(
     assert evidence_rows[0]["trace_rule_call"] == "not_evaluated"
 
 
+def test_composite_declared_identity_mismatch_does_not_fall_back(
+    tmp_path: Path,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    rows = _full_pattern_rows()
+    rows[0]["source"] = CID_NL_SHARED_IDENTITY_SOURCE
+    rows[0]["source_feature_row_id"] = "cid-shared-a"
+    _write_detected_features_csv(detected_features_csv, rows)
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state,precursor_mz,ms1_apex_rt,evidence_score\n"
+        "cid-row,cid-shared-b,DNA_dR,ms1_feature_nl_supported,500.0,10.0,90\n",
+        encoding="utf-8",
+    )
+
+    outputs = run_pt_pattern_discovery(
+        detected_features_csv=detected_features_csv,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        assert list(csv.DictReader(handle)) == []
+
+
+def test_composite_rejects_candidate_without_detected_feature_owner(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    _write_detected_features_csv(detected_features_csv, _full_pattern_rows())
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "candidate_id,ms1_feature_row_id,neutral_loss_tag,"
+        "discovery_candidate_state,precursor_mz,ms1_apex_rt,evidence_score\n"
+        "cid-row,Sample_1|unrelated,DNA_dR,ms1_feature_nl_supported,"
+        "500.0,10.0,90\n",
+        encoding="utf-8",
+    )
+
+    def _unowned_match(*args: object, **kwargs: object) -> object:
+        candidates = real_match_delta_mass_pattern(*args, **kwargs)  # type: ignore[arg-type]
+        return tuple(
+            replace(candidate, base_feature_id="missing-feature-owner")
+            for candidate in candidates
+        )
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.delta_mass_pipeline.match_delta_mass_pattern",
+        _unowned_match,
+    )
+
+    with pytest.raises(ValueError, match="no DetectedFeature identity owner"):
+        run_pt_pattern_discovery(
+            detected_features_csv=detected_features_csv,
+            output_dir=tmp_path / "out",
+            preset_name="pt_pattern_cid_nl_dr",
+            cid_nl_candidates_csv=cid_nl_candidates_csv,
+        )
+
+
+def test_composite_declared_feature_id_can_join_without_source_row_id(
+    tmp_path: Path,
+) -> None:
+    detected_features_csv = tmp_path / "detected_features.csv"
+    rows = _full_pattern_rows()
+    rows[0]["feature_id"] = "Sample_1|cid-shared-feature"
+    rows[0]["source"] = CID_NL_SHARED_IDENTITY_SOURCE
+    _write_detected_features_csv(detected_features_csv, rows)
+    cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"
+    cid_nl_candidates_csv.write_text(
+        "candidate_id,ms1_feature_row_id,sample_stem,neutral_loss_tag,"
+        "discovery_candidate_state,evidence_score\n"
+        "cid-row,Sample_1|cid-shared-feature,Sample_1,DNA_dR,"
+        "ms1_feature_nl_supported,90\n",
+        encoding="utf-8",
+    )
+
+    outputs = run_pt_pattern_discovery(
+        detected_features_csv=detected_features_csv,
+        output_dir=tmp_path / "out",
+        preset_name="pt_pattern_cid_nl_dr",
+        cid_nl_candidates_csv=cid_nl_candidates_csv,
+    )
+
+    with outputs.candidates_csv.open(newline="", encoding="utf-8") as handle:
+        output_rows = list(csv.DictReader(handle))
+    assert len(output_rows) == 1
+    assert output_rows[0]["cid_nl_base_join_mode"] == "same_feature_id"
+
+
 def test_composite_uses_cid_nl_base_seeds_before_matching(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -682,6 +846,7 @@ def test_composite_uses_cid_nl_base_seeds_before_matching(
     detected_features_csv = tmp_path / "detected_features.csv"
     rows = _full_pattern_rows()
     rows[0]["source_feature_row_id"] = "Sample_1|DNA_dR|258.108512|7.841234"
+    rows[0]["source"] = CID_NL_SHARED_IDENTITY_SOURCE
     # Decoy full pattern: Pt-only would match it, but composite seed-first must
     # not even offer this base to the matcher because CID-NL does not seed it.
     decoy_rows = _full_pattern_rows()
@@ -859,6 +1024,7 @@ def test_run_pt_pattern_discovery_ignores_review_only_orphan_nl_rows(
     detected_features_csv = tmp_path / "detected_features.csv"
     rows = _full_pattern_rows()
     rows[0]["source_feature_row_id"] = "Sample_1|DNA_dR|258.108512|7.841234"
+    rows[0]["source"] = CID_NL_SHARED_IDENTITY_SOURCE
     _write_detected_features_csv(detected_features_csv, rows)
 
     cid_nl_candidates_csv = tmp_path / "discovery_candidates.csv"

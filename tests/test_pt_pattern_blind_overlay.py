@@ -459,9 +459,20 @@ def test_blind_overlay_rejects_mixed_packet_schema_rows() -> None:
         if column in packet.LEGACY_PACKET_COLUMNS
     }
     legacy_row["schema_version"] = packet.SCHEMA_VERSION
+    legacy_row["candidate_id"] = "legacy-candidate"
+    legacy_row["packet_row_id"] = "pt_only|legacy-candidate"
 
     with pytest.raises(ValueError, match="must use one schema_version"):
         overlay_call.validate_packet_rows((anchor_row, legacy_row))
+
+
+def test_blind_overlay_rejects_duplicate_packet_row_id() -> None:
+    first = _packet_row("candidate-a")
+    second = _packet_row("candidate-b")
+    second["packet_row_id"] = first["packet_row_id"]
+
+    with pytest.raises(ValueError, match="duplicate review packet packet_row_id"):
+        overlay_call.validate_packet_rows((first, second))
 
 
 def test_machine_call_marks_weak_partial_cases_uncertain_or_reject() -> None:

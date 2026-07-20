@@ -303,10 +303,12 @@ Rules:
   `trace_quality`, and `source` are required non-empty values.
 - `source_feature_row_id`, `rt_start_min`, `rt_end_min`, `area`, and
   `shape_score` may be blank.
-- `feature_id` is the detected-feature source identity. When the detected
-  feature source can preserve the existing CID-NL `ms1_feature_row_id`, it must
-  also write that value to `source_feature_row_id` so composite joins can use a
-  same-feature identity match before falling back to m/z/RT.
+- `feature_id` is the detected-feature source identity, while
+  `source_feature_row_id` is a provenance locator. Neither value alone grants
+  cross-provider comparability. A source that preserves the CID-NL
+  `ms1_feature_row_id` namespace must use the reserved
+  `source = cid_nl_ms1_feature_handoff_v1`; only that positive capability may
+  use same-feature identity matching before the bounded m/z/RT fallback.
 - `mz`, `rt_apex_min`, `height`, and nonblank numeric optional fields must be
   finite.
 - `height` must be `> 0`.
@@ -358,8 +360,10 @@ Rules:
 
 - `sample_id` maps to `sample_stem`; `feature_id` remains the detected-feature
   source identity.
-- Optional `source_feature_row_id` or `ms1_feature_row_id` is preserved for
-  composite joins when present.
+- Optional `source_feature_row_id` or `ms1_feature_row_id` is preserved as a
+  provenance locator when present. External-table v1 adapters remain
+  detector-local and cannot declare the shared CID-NL identity namespace; they
+  participate in composite matching only through bounded m/z/RT fallback.
 - `mz` and `rt` must be finite; `rt` is interpreted as apex RT in minutes.
 - The source must provide positive intensity evidence through `height` /
   `ms1_height`, through `area_or_intensity_semantics` in `{height, peak_height,
@@ -457,10 +461,11 @@ Field values:
   - `matched` for composite output rows
 - `cid_nl_base_join_mode`:
   - `not_required` for Pt-only
-  - `same_feature_id` when `source_feature_row_id` or `feature_id` matches the
-    CID-NL `ms1_feature_row_id`
-  - `mz_rt_fallback` only when same-feature identity is unavailable and the
-    fallback m/z/RT predicate passes
+  - `same_feature_id` when the source declares the shared CID-NL identity
+    namespace and `source_feature_row_id` or `feature_id` matches the CID-NL
+    `ms1_feature_row_id`
+  - `mz_rt_fallback` only when the shared identity capability is unavailable
+    and the fallback m/z/RT predicate passes
 - `review_priority in {"HIGH", "MEDIUM", "LOW"}`
 
 ### Pt Review CSV v1
@@ -987,10 +992,11 @@ Steps:
 - [ ] If a same-feature identity match exists, it wins over every fallback
       match. If multiple same-feature rows match one Pt base, select highest
       `evidence_score`, then smallest absolute RT delta.
-- [ ] Detector-local identities, including local-MS1 and MZmine row IDs, are
-      never cross-provider comparable even when their strings happen to match a
-      CID-NL row ID. They may participate only through the bounded m/z/RT
-      fallback.
+- [ ] Detector-local identities, including local-MS1, MZmine, OpenMS, and
+      unknown external row IDs, are never cross-provider comparable even when
+      their strings happen to match a CID-NL row ID. They may participate only
+      through the bounded m/z/RT fallback. The only v1 positive declaration is
+      the exact reserved `source = cid_nl_ms1_feature_handoff_v1` value.
 - [ ] If fallback mode is used, write `cid_nl_base_join_mode = mz_rt_fallback`
       and include fallback wording in `reason`.
 - [ ] If multiple fallback CID-NL rows match one Pt base, select smallest
@@ -1004,8 +1010,9 @@ Steps:
 - [ ] For composite mode, build CID-NL base seeds before Pt matching and pass
       only those base feature IDs to `match_delta_mass_pattern()`. Fallback
       seeds may use m/z/RT only when same-feature identity cannot be compared.
-      If a detected feature has `source_feature_row_id`, identity mismatch must
-      not silently fall back to m/z/RT.
+      If a detected feature declares the shared CID-NL identity capability,
+      identity mismatch must not silently fall back to m/z/RT. A nonblank
+      detector-local provenance locator does not disable fallback.
 - [ ] Keep scan-proxy labels source-specific: `raw_scan_proxy_v1` rows ending
       in `|pt_plus_1`, `|pt_plus_2`, or `|pt_plus_4` must never become shifted
       base anchors.

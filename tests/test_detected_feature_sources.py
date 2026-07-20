@@ -7,8 +7,10 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.discovery.detected_features import (
+    CID_NL_SHARED_IDENTITY_SOURCE,
     DETECTED_FEATURES_COLUMNS,
     DetectedFeature,
+    comparable_cid_nl_identity,
     load_detected_features_csv,
     load_external_feature_table_tsv,
     load_mzmine_wide_feature_table_csv,
@@ -165,6 +167,7 @@ def test_external_feature_table_maps_to_detected_features(tmp_path: Path) -> Non
     assert feature.trace_quality == "GOOD"
     assert feature.shape_score == 0.91
     assert feature.source == "external_feature_table:MZmine:contract_v1"
+    assert comparable_cid_nl_identity(feature) is None
 
 
 def test_external_feature_table_accepts_shape_score_without_trace_quality(
@@ -177,6 +180,22 @@ def test_external_feature_table_accepts_shape_score_without_trace_quality(
 
     assert feature.trace_quality == "UNSPECIFIED"
     assert feature.shape_score == 0.93
+
+
+def test_external_feature_table_rejects_duplicate_optional_header(
+    tmp_path: Path,
+) -> None:
+    table = tmp_path / "external.tsv"
+    row = _external_row()
+    header = (*EXTERNAL_HEADER, "shape_score")
+    values = [str(row.get(column, "")) for column in EXTERNAL_HEADER]
+    table.write_text(
+        "\t".join(header) + "\n" + "\t".join([*values, "0.5"]) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate columns: shape_score"):
+        load_external_feature_table_tsv(table)
 
 
 def test_external_feature_table_accepts_area_only_as_intensity_proxy(
@@ -217,9 +236,9 @@ def test_mzmine_wide_feature_table_maps_positive_peak_area_rows(
     table = tmp_path / "mzmine.csv"
     table.write_text(
         "row ID,row m/z,row retention time,"
-        "Sample_A.mzML Peak area,Sample_B.mzML Peak area,\n"
-        "7,504.1234,3.25,1200.5,0,\n"
-        "8,505.1255,3.26,,300.0,\n",
+        "Sample_A.mzML Peak area,Sample_B.mzML Peak area\n"
+        "7,504.1234,3.25,1200.5,0\n"
+        "8,505.1255,3.26,,300.0\n",
         encoding="utf-8",
     )
 
@@ -234,6 +253,7 @@ def test_mzmine_wide_feature_table_maps_positive_peak_area_rows(
     assert features[0].height == 1200.5
     assert features[0].area == 1200.5
     assert features[0].trace_quality == "UNSPECIFIED"
+    assert comparable_cid_nl_identity(features[0]) is None
     assert (
         features[0].source
         == "external_feature_table:MZmine:mzmine_wide_area_proxy_v1"
@@ -242,13 +262,60 @@ def test_mzmine_wide_feature_table_maps_positive_peak_area_rows(
     assert features[1].feature_id == "Sample_B|mzmine_row|8"
 
 
+def test_mzmine_wide_feature_table_rejects_duplicate_headers(
+    tmp_path: Path,
+) -> None:
+    table = tmp_path / "mzmine.csv"
+    table.write_text(
+        "row ID,row m/z,row m/z,row retention time,Sample_A Peak area\n"
+        "7,504.1,999.9,3.25,1200.5\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate columns: row m/z"):
+        load_mzmine_wide_feature_table_csv(table)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_comparable"),
+    (
+        (CID_NL_SHARED_IDENTITY_SOURCE, True),
+        ("external_feature_table:OpenMS:contract_v1", False),
+        ("external_feature_table:MZmine:contract_v1", False),
+        ("local_ms1_feature", False),
+        ("unknown_legacy_source", False),
+    ),
+)
+def test_cid_nl_identity_capability_survives_detected_feature_round_trip(
+    tmp_path: Path,
+    source: str,
+    expected_comparable: bool,
+) -> None:
+    feature = _local_detected_feature(
+        source=source,
+        trace_quality="OK" if source == "local_ms1_feature" else "GOOD",
+        feature_id="feature-local-id",
+        source_feature_row_id="cid-shared-id",
+    )
+
+    path = write_detected_features_csv(tmp_path / "detected.csv", (feature,))
+    reloaded = load_detected_features_csv(path)[0]
+
+    comparable = comparable_cid_nl_identity(reloaded)
+    assert (comparable is not None) is expected_comparable
+    if comparable is not None:
+        assert comparable.values == frozenset(
+            {"feature-local-id", "cid-shared-id"}
+        )
+
+
 def test_mzmine_wide_feature_table_strips_raw_suffix_from_sample_stem(
     tmp_path: Path,
 ) -> None:
     table = tmp_path / "mzmine_raw.csv"
     table.write_text(
-        "row ID,row m/z,row retention time,Sample_A.raw Peak area,\n"
-        "7,504.1234,3.25,1200.5,\n",
+        "row ID,row m/z,row retention time,Sample_A.raw Peak area\n"
+        "7,504.1234,3.25,1200.5\n",
         encoding="utf-8",
     )
 

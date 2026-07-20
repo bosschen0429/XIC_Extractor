@@ -163,6 +163,7 @@ def run_ratio_profile(
         delimiter=",",
         encoding="utf-8-sig",
     )
+    _unique_rows_by_key(candidates, candidates_csv)
     evidence_rows = read_delimited_rows(
         evidence_csv,
         required_columns=_EVIDENCE_REQUIRED_COLUMNS,
@@ -674,6 +675,10 @@ def _unique_rows_by_key(
     grouped: dict[tuple[str, str], Mapping[str, str]] = {}
     for row in rows:
         key = _row_key(row)
+        if not all(key):
+            raise ValueError(
+                f"{path}: sample_stem/candidate_id key must be non-empty: {key!r}"
+            )
         if key in grouped:
             raise ValueError(
                 f"{path}: duplicate sample_stem/candidate_id key: {key!r}"

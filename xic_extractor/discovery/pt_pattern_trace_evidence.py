@@ -247,6 +247,14 @@ def load_candidate_rows(
         delimiter=",",
         encoding="utf-8-sig",
     )
+    seen_candidate_ids: set[str] = set()
+    for row_index, row in enumerate(rows, start=2):
+        candidate_id = _required_text(row, "candidate_id")
+        if candidate_id in seen_candidate_ids:
+            raise ValueError(
+                f"{path}:{row_index}: duplicate candidate_id: {candidate_id}"
+            )
+        seen_candidate_ids.add(candidate_id)
     return tuple(rows[offset : offset + limit])
 
 

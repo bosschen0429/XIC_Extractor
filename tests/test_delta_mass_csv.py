@@ -28,6 +28,7 @@ from xic_extractor.discovery.delta_mass_csv import (
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, PtPatternCandidate
 from xic_extractor.discovery.detected_features import (
     DetectedFeature,
+    comparable_cid_nl_identity,
     write_detected_features_csv,
 )
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
@@ -405,7 +406,7 @@ def test_load_detected_features_csv_requires_positive_height(tmp_path: Path) -> 
         load_detected_features_csv(csv_path)
 
 
-def test_load_detected_features_csv_preserves_source_feature_row_id_for_joins(
+def test_load_detected_features_csv_preserves_source_feature_row_id_provenance(
     tmp_path: Path,
 ) -> None:
     csv_path = tmp_path / "detected_features.csv"
@@ -421,6 +422,7 @@ def test_load_detected_features_csv_preserves_source_feature_row_id_for_joins(
     assert features[0].source_feature_row_id == (
         "Sample_1|DNA_dR|258.108512|7.841234"
     )
+    assert comparable_cid_nl_identity(features[0]) is None
 
 
 def test_pt_candidate_csv_header_order_matches_public_contract(

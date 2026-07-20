@@ -9,7 +9,6 @@ Fullscan Discovery seed.
 from __future__ import annotations
 
 import bisect
-import csv
 import json
 import math
 from collections import Counter
@@ -23,7 +22,11 @@ from xic_extractor.discovery.detected_features import (
     DetectedFeature,
     load_detected_features_csv,
 )
-from xic_extractor.tabular_io import file_sha256, write_delimited_rows
+from xic_extractor.tabular_io import (
+    file_sha256,
+    read_delimited_rows,
+    write_delimited_rows,
+)
 
 SCHEMA_VERSION = "pt_pattern_ddms2_support_replay.v1"
 READINESS_TIER = "diagnostic_only"
@@ -168,11 +171,14 @@ def run_ddms2_support_replay(
         raise ValueError("mz_tolerance_ppm must be > 0 and finite")
     if not math.isfinite(rt_window_sec) or rt_window_sec <= 0:
         raise ValueError("rt_window_sec must be > 0 and finite")
+    normalized_seed_trace_rule_call = _normalize_seed_trace_rule_call(
+        seed_trace_rule_call
+    )
 
     seeds = load_fullscan_pt_seeds(
         candidates_csv=fullscan_candidates_csv,
         evidence_csv=fullscan_evidence_csv,
-        seed_trace_rule_call=seed_trace_rule_call,
+        seed_trace_rule_call=normalized_seed_trace_rule_call,
     )
     ddms2_features = load_detected_features_csv(ddms2_detected_features_csv)
     selected_sample_stem = _resolve_ddms2_sample_stem(
@@ -205,7 +211,7 @@ def run_ddms2_support_replay(
         ddms2_sample_stem=selected_sample_stem,
         mz_tolerance_ppm=mz_tolerance_ppm,
         rt_window_sec=rt_window_sec,
-        seed_trace_rule_call=seed_trace_rule_call,
+        seed_trace_rule_call=normalized_seed_trace_rule_call,
     )
     return Ddms2SupportReplayResult(rows=rows, summary=summary)
 
@@ -232,6 +238,9 @@ def load_fullscan_pt_seeds(
     evidence_csv: Path,
     seed_trace_rule_call: str = DEFAULT_SEED_TRACE_RULE_CALL,
 ) -> tuple[FullscanPtSeed, ...]:
+    normalized_seed_trace_rule_call = _normalize_seed_trace_rule_call(
+        seed_trace_rule_call
+    )
     candidate_rows = _read_csv_required(
         candidates_csv,
         required_columns=FULLSCAN_CANDIDATE_REQUIRED_COLUMNS,
@@ -240,9 +249,16 @@ def load_fullscan_pt_seeds(
         evidence_csv,
         required_columns=FULLSCAN_EVIDENCE_REQUIRED_COLUMNS,
     )
-    evidence_by_candidate_id = {
-        row["candidate_id"]: row for row in evidence_rows
-    }
+    _unique_rows_by_candidate_id(
+        candidate_rows,
+        path=candidates_csv,
+        label="candidate",
+    )
+    evidence_by_candidate_id = _unique_rows_by_candidate_id(
+        evidence_rows,
+        path=evidence_csv,
+        label="evidence",
+    )
 
     seeds: list[FullscanPtSeed] = []
     for row_index, candidate_row in enumerate(candidate_rows, start=2):
@@ -254,7 +270,7 @@ def load_fullscan_pt_seeds(
                 f"candidate_id={candidate_id!r}"
             )
         trace_rule_call = evidence_row["trace_rule_call"].strip()
-        if trace_rule_call != seed_trace_rule_call:
+        if trace_rule_call != normalized_seed_trace_rule_call:
             continue
         seeds.append(
             FullscanPtSeed(
@@ -553,15 +569,40 @@ def _read_csv_required(
     *,
     required_columns: Sequence[str],
 ) -> list[dict[str, str]]:
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle)
-        header = tuple(reader.fieldnames or ())
-        missing = [column for column in required_columns if column not in header]
-        if missing:
+    return read_delimited_rows(
+        path,
+        required_columns=required_columns,
+        delimiter=",",
+        encoding="utf-8-sig",
+    )
+
+
+def _unique_rows_by_candidate_id(
+    rows: Sequence[Mapping[str, str]],
+    *,
+    path: Path,
+    label: str,
+) -> dict[str, Mapping[str, str]]:
+    by_candidate_id: dict[str, Mapping[str, str]] = {}
+    for row_index, row in enumerate(rows, start=2):
+        candidate_id = str(row.get("candidate_id", "")).strip()
+        if not candidate_id:
             raise ValueError(
-                f"{path}: missing required column(s): {', '.join(missing)}"
+                f"{path}:{row_index}: {label} candidate_id must be non-empty"
             )
-        return [dict(row) for row in reader]
+        if candidate_id in by_candidate_id:
+            raise ValueError(
+                f"{path}:{row_index}: duplicate {label} candidate_id: "
+                f"{candidate_id}"
+            )
+        by_candidate_id[candidate_id] = row
+    return by_candidate_id
+
+
+def _normalize_seed_trace_rule_call(value: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("seed_trace_rule_call must be non-empty")
+    return value.strip()
 
 
 def _parse_float(

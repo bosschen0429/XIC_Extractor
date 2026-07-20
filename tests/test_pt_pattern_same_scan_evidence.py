@@ -176,6 +176,44 @@ def test_conflict_components_keep_shared_feature_hypotheses_dependent() -> None:
     assert resolved[0].preferred_candidate_id == "candidate-a"
 
 
+@pytest.mark.parametrize(
+    "claims",
+    (
+        (
+            CandidateFeatureClaims("candidate-a", ("f1", "f2")),
+            CandidateFeatureClaims("candidate-a", ("f1", "f2")),
+        ),
+        (
+            CandidateFeatureClaims("candidate-a", ("f1", "f2")),
+            CandidateFeatureClaims("candidate-a", ("f3", "f4")),
+        ),
+        (
+            CandidateFeatureClaims("candidate-a", ("f3", "f4")),
+            CandidateFeatureClaims("candidate-a", ("f1", "f2")),
+        ),
+    ),
+)
+def test_conflict_components_reject_duplicate_candidate_identity(
+    claims: tuple[CandidateFeatureClaims, ...],
+) -> None:
+    with pytest.raises(ValueError, match="duplicate candidate_id: candidate-a"):
+        build_conflict_components(claims)
+
+
+def test_conflict_components_reject_blank_candidate_identity() -> None:
+    with pytest.raises(ValueError, match="candidate_id"):
+        build_conflict_components((CandidateFeatureClaims("", ("f1", "f2")),))
+
+
+def test_conflict_components_keep_feature_claims_set_like() -> None:
+    assert (
+        build_conflict_components(
+            (CandidateFeatureClaims("candidate-a", ("f1", "f1")),)
+        )
+        == ()
+    )
+
+
 def test_conflict_resolution_keeps_multiple_supported_hypotheses_ambiguous() -> None:
     components = build_conflict_components(
         (

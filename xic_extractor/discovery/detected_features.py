@@ -18,6 +18,7 @@ import csv
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_patterns import PT_PATTERN, DeltaMassPattern
@@ -25,6 +26,7 @@ from xic_extractor.numeric_validation import require_finite_real
 from xic_extractor.tabular_io import (
     read_delimited_rows,
     read_tsv_with_header,
+    validate_delimited_header,
     write_delimited_rows,
 )
 
@@ -78,6 +80,7 @@ _SHAPE_SCORE_COLUMNS = ("shape_score", "ms1_shape_score")
 _SOURCE_FEATURE_ROW_ID_COLUMNS = ("source_feature_row_id", "ms1_feature_row_id")
 _UNSPECIFIED_TRACE_QUALITY = "UNSPECIFIED"
 LOCAL_MS1_FEATURE_SOURCE = "local_ms1_feature"
+CID_NL_SHARED_IDENTITY_SOURCE = "cid_nl_ms1_feature_handoff_v1"
 LOCAL_MS1_FEATURE_TRACE_QUALITY_OK = "OK"
 LOCAL_MS1_FEATURE_TRACE_QUALITY_WEAK_SUPPORT = "WEAK_SUPPORT"
 LOCAL_MS1_FEATURE_TRACE_QUALITIES = frozenset(
@@ -120,10 +123,51 @@ class DetectedFeature:
 DetectedFeatureIdentity = tuple[str, str]
 
 
+class DetectedFeatureIdentityNamespace(str, Enum):
+    """Namespaces whose identifiers are explicitly comparable across providers."""
+
+    CID_NL_MS1_FEATURE_ROW_ID = "cid_nl_ms1_feature_row_id"
+
+
+@dataclass(frozen=True, slots=True)
+class ComparableDetectedFeatureIdentity:
+    """A positive capability to compare one feature in a named namespace."""
+
+    namespace: DetectedFeatureIdentityNamespace
+    values: frozenset[str]
+
+
 def detected_feature_identity(feature: DetectedFeature) -> DetectedFeatureIdentity:
     """Return the canonical sample-local identity for one detected feature."""
 
     return (feature.sample_stem, feature.feature_id)
+
+
+def comparable_cid_nl_identity(
+    feature: DetectedFeature,
+) -> ComparableDetectedFeatureIdentity | None:
+    """Return CID-NL-comparable identity only for the explicit handoff source.
+
+    ``source_feature_row_id`` is otherwise only a provenance locator. A
+    non-empty detector-local ID must not silently grant cross-provider join
+    authority, so unknown, local-MS1, MZmine, OpenMS, and scan-proxy sources all
+    return ``None`` and remain eligible only for the bounded m/z/RT fallback.
+    """
+
+    if feature.source != CID_NL_SHARED_IDENTITY_SOURCE:
+        return None
+    feature_id = feature.feature_id.strip()
+    if not feature_id:
+        raise ValueError("CID-NL-comparable feature_id must be non-empty")
+    values = {feature_id}
+    if feature.source_feature_row_id is not None:
+        source_feature_row_id = feature.source_feature_row_id.strip()
+        if source_feature_row_id:
+            values.add(source_feature_row_id)
+    return ComparableDetectedFeatureIdentity(
+        namespace=DetectedFeatureIdentityNamespace.CID_NL_MS1_FEATURE_ROW_ID,
+        values=frozenset(values),
+    )
 
 
 def validate_unique_detected_feature_identities(
@@ -244,6 +288,8 @@ def load_external_feature_table_tsv(path: Path) -> tuple[DetectedFeature, ...]:
     intensity proxy while the ``area`` field preserves the original semantics.
     Missing trace/shape support is recorded as ``UNSPECIFIED`` and must be
     tightened later by trace-level evidence when that evidence is available.
+    External-table v1 row IDs are preserved as provenance only; this adapter
+    does not declare them comparable to CID-NL ``ms1_feature_row_id`` values.
     """
 
     _header, rows = read_tsv_with_header(
@@ -276,14 +322,11 @@ def load_mzmine_wide_feature_table_csv(
     run_id = external_run_id or path.stem
     with path.open(newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
-        header = tuple(reader.fieldnames or ())
-        missing = [
-            column for column in _MZMINE_REQUIRED_COLUMNS if column not in header
-        ]
-        if missing:
-            raise ValueError(
-                f"{path}: missing required MZmine column(s): {', '.join(missing)}"
-            )
+        header = validate_delimited_header(
+            reader.fieldnames,
+            path=path,
+            required_columns=_MZMINE_REQUIRED_COLUMNS,
+        )
         sample_area_columns = _mzmine_sample_area_columns(header, path)
         features: list[DetectedFeature] = []
         for row_index, row in enumerate(reader):

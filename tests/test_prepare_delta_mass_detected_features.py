@@ -53,8 +53,8 @@ def _write_external_table(path: Path, *, semantics: str = "height") -> None:
 
 def _write_mzmine_table(path: Path) -> None:
     path.write_text(
-        "row ID,row m/z,row retention time,Sample_A.mzML Peak area,\n"
-        "10,500.0,10.0,1234.5,\n",
+        "row ID,row m/z,row retention time,Sample_A.mzML Peak area\n"
+        "10,500.0,10.0,1234.5\n",
         encoding="utf-8",
     )
 

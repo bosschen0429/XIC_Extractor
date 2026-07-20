@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics import pt_pattern_ratio_profile as ratio_profile_cli
 from xic_extractor.discovery import delta_mass_csv
 from xic_extractor.discovery.pt_pattern_ratio_profile import (
@@ -179,6 +181,33 @@ def test_ratio_formula_manifest_keeps_featurehunter_as_comparator_only() -> None
     assert by_name["plus1_over_plus4_height_ratio"]["formula_family"] == (
         "plus1_anchor"
     )
+
+
+def test_ratio_profile_rejects_duplicate_candidate_population_keys(
+    tmp_path: Path,
+) -> None:
+    candidates_csv, evidence_csv = _write_profile_inputs(tmp_path)
+    candidates = read_delimited_rows(
+        candidates_csv,
+        required_columns=("sample_stem", "candidate_id"),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    write_delimited_rows(
+        candidates_csv,
+        [*candidates, candidates[0]],
+        delta_mass_csv.PT_CANDIDATE_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate sample_stem/candidate_id key"):
+        run_ratio_profile(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+            output_dir=tmp_path / "ratio_profile",
+            profile_id="duplicate_candidate",
+        )
 
 
 def _write_profile_inputs(tmp_path: Path) -> tuple[Path, Path]:

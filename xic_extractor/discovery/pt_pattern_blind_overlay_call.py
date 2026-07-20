@@ -117,6 +117,7 @@ MACHINE_CALL_THRESHOLDS = PtPatternEvidenceThresholds()
 
 
 def validate_packet_rows(rows: Sequence[Mapping[str, str]]) -> None:
+    _validate_unique_row_identity(rows, label="review packet")
     effective_versions: set[str] = set()
     anchor_columns = set(ANCHOR_SEGMENTATION_SUMMARY_COLUMNS)
     for row_index, row in enumerate(rows, start=2):
@@ -144,6 +145,7 @@ def validate_packet_rows(rows: Sequence[Mapping[str, str]]) -> None:
 
 
 def validate_machine_call_rows(rows: Sequence[Mapping[str, str]]) -> None:
+    _validate_unique_row_identity(rows, label="machine-call")
     effective_versions: set[str] = set()
     anchor_columns = set(ANCHOR_SEGMENTATION_SUMMARY_COLUMNS)
     for row_index, row in enumerate(rows, start=2):
@@ -170,6 +172,22 @@ def validate_machine_call_rows(rows: Sequence[Mapping[str, str]]) -> None:
             )
     if len(effective_versions) > 1:
         raise ValueError("machine-call rows must use one schema_version")
+
+
+def _validate_unique_row_identity(
+    rows: Sequence[Mapping[str, str]],
+    *,
+    label: str,
+) -> None:
+    for column in ("packet_row_id", "candidate_id"):
+        seen: set[str] = set()
+        for row_index, row in enumerate(rows, start=2):
+            value = str(row.get(column, "")).strip()
+            if not value:
+                raise ValueError(f"{label} row {row_index}: {column} must be non-empty")
+            if value in seen:
+                raise ValueError(f"duplicate {label} {column}: {value}")
+            seen.add(value)
 
 
 def machine_call_row(row: Mapping[str, str]) -> dict[str, object]:

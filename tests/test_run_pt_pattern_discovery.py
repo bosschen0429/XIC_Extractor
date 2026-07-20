@@ -44,8 +44,8 @@ def _write_external_feature_table(path: Path) -> None:
 
 def _write_mzmine_feature_table(path: Path) -> None:
     path.write_text(
-        "row ID,row m/z,row retention time,Sample_1.mzML Peak area,\r\n"
-        "1,500.0,10.0,1000.0,\r\n",
+        "row ID,row m/z,row retention time,Sample_1.mzML Peak area\r\n"
+        "1,500.0,10.0,1000.0\r\n",
         encoding="utf-8",
     )
 

@@ -166,6 +166,15 @@ wide feature table CSV; for external source paths it writes a canonical
 `scripts/prepare_delta_mass_detected_features.py` keeps the same conversions
 available as a standalone preparation step.
 
+`source_feature_row_id` is provenance, not automatic cross-provider identity
+authority. Pt + CID-NL composite matching may compare `feature_id` or
+`source_feature_row_id` directly with CID-NL `ms1_feature_row_id` only when the
+detected feature declares the exact shared-namespace capability
+`source = cid_nl_ms1_feature_handoff_v1`. Local-MS1, MZmine, OpenMS, scan-proxy,
+and unknown source IDs remain detector-local even when their strings happen to
+match; they may participate only through the bounded same-sample m/z/RT
+fallback. A declared shared-namespace mismatch must not fall back.
+
 Local MS1 feature table generation is the candidate-source replacement path for
 the scan-level Pt proxy. It does not by itself create product detections.
 `scripts/build_local_ms1_feature_table.py` builds a

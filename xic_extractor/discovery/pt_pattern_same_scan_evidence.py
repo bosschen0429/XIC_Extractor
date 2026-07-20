@@ -186,9 +186,21 @@ def build_conflict_components(
 ) -> tuple[ConflictComponent, ...]:
     """Group candidate hypotheses connected by shared feature claims."""
 
-    claims_by_id = {claim.candidate_id: claim for claim in claims}
-    feature_to_candidates: dict[str, set[str]] = {}
+    claims_by_id: dict[str, CandidateFeatureClaims] = {}
     for claim in claims:
+        candidate_id = _required_claim_identity(
+            claim.candidate_id,
+            field="candidate_id",
+        )
+        if candidate_id in claims_by_id:
+            raise ValueError(f"duplicate candidate_id: {candidate_id}")
+        claims_by_id[candidate_id] = CandidateFeatureClaims(
+            candidate_id=candidate_id,
+            feature_ids=claim.feature_ids,
+        )
+
+    feature_to_candidates: dict[str, set[str]] = {}
+    for claim in claims_by_id.values():
         for feature_id in set(claim.feature_ids):
             feature_to_candidates.setdefault(feature_id, set()).add(claim.candidate_id)
     graph: dict[str, set[str]] = {candidate_id: set() for candidate_id in claims_by_id}
@@ -233,6 +245,12 @@ def build_conflict_components(
             )
         )
     return tuple(components)
+
+
+def _required_claim_identity(value: str, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be non-empty")
+    return value.strip()
 
 
 def resolve_conflict_components(

@@ -8,6 +8,7 @@ import pytest
 from tools.diagnostics import pt_pattern_ddms2_support_replay as replay_cli
 from xic_extractor.discovery.pt_pattern_ddms2_support_replay import (
     SCHEMA_VERSION,
+    load_fullscan_pt_seeds,
     run_ddms2_support_replay,
 )
 
@@ -96,6 +97,42 @@ def test_ddms2_support_replay_requires_fullscan_accept_and_reports_support_only(
     }
 
 
+def test_ddms2_support_replay_rejects_duplicate_headers(tmp_path: Path) -> None:
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    evidence_csv = tmp_path / "pt_pattern_evidence.csv"
+    ddms2_features_csv = tmp_path / "detected_features.csv"
+    candidates_csv.write_text(
+        "sample_stem,candidate_id,candidate_id,base_feature_id,base_mz,"
+        "base_rt_apex_min\n"
+        "SampleA,first,last,base,500,10\n",
+        encoding="utf-8",
+    )
+    _write_csv(
+        evidence_csv,
+        ("candidate_id", "trace_rule_call", "trace_detection_status"),
+        [
+            {
+                "candidate_id": "last",
+                "trace_rule_call": "accept",
+                "trace_detection_status": "detected",
+            }
+        ],
+    )
+    _write_detected_features(
+        ddms2_features_csv,
+        [_feature_row("base", 500.0, 10.0, 1000.0)],
+    )
+
+    with pytest.raises(ValueError, match="duplicate columns: candidate_id"):
+        run_ddms2_support_replay(
+            fullscan_candidates_csv=candidates_csv,
+            fullscan_evidence_csv=evidence_csv,
+            ddms2_detected_features_csv=ddms2_features_csv,
+            mz_tolerance_ppm=20,
+            rt_window_sec=45,
+        )
+
+
 def test_ddms2_support_replay_uses_expected_mz_as_ppm_denominator(
     tmp_path: Path,
 ) -> None:
@@ -180,6 +217,89 @@ def test_ddms2_support_replay_rejects_unknown_requested_sample_stem(
         assert "not found" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_ddms2_support_replay_rejects_duplicate_evidence_candidate_ids(
+    tmp_path: Path,
+) -> None:
+    candidates_csv, evidence_csv, _ddms2_features_csv = _single_seed_inputs(
+        tmp_path,
+        base_mz=500.0,
+        base_rt_apex_min=10.0,
+    )
+    _write_csv(
+        evidence_csv,
+        ("candidate_id", "trace_rule_call", "trace_detection_status"),
+        [
+            {
+                "candidate_id": "seed",
+                "trace_rule_call": "accept",
+                "trace_detection_status": "detected",
+            },
+            {
+                "candidate_id": "seed",
+                "trace_rule_call": "reject",
+                "trace_detection_status": "non_detected",
+            },
+        ],
+    )
+
+    with pytest.raises(ValueError, match="duplicate evidence candidate_id.*seed"):
+        load_fullscan_pt_seeds(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+        )
+
+
+def test_ddms2_support_replay_rejects_duplicate_candidate_rows(
+    tmp_path: Path,
+) -> None:
+    candidates_csv, evidence_csv, _ddms2_features_csv = _single_seed_inputs(
+        tmp_path,
+        base_mz=500.0,
+        base_rt_apex_min=10.0,
+    )
+    candidate_row = {
+        "sample_stem": "fullscan",
+        "candidate_id": "seed",
+        "base_feature_id": "fullscan_base",
+        "base_mz": "500.0",
+        "base_rt_apex_min": "10.0",
+    }
+    _write_csv(
+        candidates_csv,
+        (
+            "sample_stem",
+            "candidate_id",
+            "base_feature_id",
+            "base_mz",
+            "base_rt_apex_min",
+        ),
+        [candidate_row, candidate_row],
+    )
+
+    with pytest.raises(ValueError, match="duplicate candidate candidate_id.*seed"):
+        load_fullscan_pt_seeds(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+        )
+
+
+def test_ddms2_support_replay_rejects_blank_seed_trace_rule_call(
+    tmp_path: Path,
+) -> None:
+    candidates_csv, evidence_csv, _ddms2_features_csv = _single_seed_inputs(
+        tmp_path,
+        base_mz=500.0,
+        base_rt_apex_min=10.0,
+    )
+
+    with pytest.raises(ValueError, match="seed_trace_rule_call must be non-empty"):
+        load_fullscan_pt_seeds(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+            seed_trace_rule_call=" ",
+        )
 
 
 @pytest.mark.parametrize(

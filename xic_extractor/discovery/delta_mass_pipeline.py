@@ -15,8 +15,8 @@ this module implements.
 from __future__ import annotations
 
 import bisect
-import csv
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -34,7 +34,8 @@ from xic_extractor.discovery.delta_mass_patterns import (
     match_delta_mass_pattern,
 )
 from xic_extractor.discovery.detected_features import (
-    LOCAL_MS1_FEATURE_SOURCE,
+    ComparableDetectedFeatureIdentity,
+    comparable_cid_nl_identity,
     detected_feature_identity,
     load_external_feature_table_tsv,
     load_mzmine_wide_feature_table_csv,
@@ -45,6 +46,7 @@ from xic_extractor.discovery.pt_pattern_discovery_evidence import (
     load_pt_trace_summary_rows,
 )
 from xic_extractor.presets import apply_to_delta_mass_discovery, load_preset
+from xic_extractor.tabular_io import read_delimited_rows
 
 if TYPE_CHECKING:
     from xic_extractor.diagnostics.timing import TimingRecorder
@@ -64,7 +66,6 @@ _CID_NL_MZ_TOLERANCE_PPM = 20.0
 _CID_NL_RT_TOLERANCE_SEC = 30.0
 _SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy_v1"
 _SCAN_PROXY_MARKER = "|scan_proxy|"
-_MZMINE_FEATURE_SOURCE_PREFIX = "external_feature_table:MZmine:"
 
 
 @dataclass(frozen=True)
@@ -162,20 +163,16 @@ def run_pt_pattern_discovery(
             if base_feature_ids
             else ()
         )
-        source_feature_row_id_by_feature_identity = {
-            detected_feature_identity(feature): feature.source_feature_row_id
+        comparable_identity_by_feature_identity = {
+            detected_feature_identity(feature): comparable_cid_nl_identity(feature)
             for feature in features
-        }
-        source_by_feature_identity = {
-            detected_feature_identity(feature): feature.source for feature in features
         }
         candidates = _apply_cid_nl_composite_join(
             candidates,
             cid_nl_rows=cid_nl_rows,
-            source_feature_row_id_by_feature_identity=(
-                source_feature_row_id_by_feature_identity
+            comparable_identity_by_feature_identity=(
+                comparable_identity_by_feature_identity
             ),
-            source_by_feature_identity=source_by_feature_identity,
         )
     else:
         candidates = match_delta_mass_pattern(features, settings=settings)
@@ -298,18 +295,12 @@ def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
     join candidates to begin with.
     """
 
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        fieldnames = reader.fieldnames or ()
-        missing_columns = [
-            column for column in _CID_NL_REQUIRED_COLUMNS if column not in fieldnames
-        ]
-        if missing_columns:
-            raise ValueError(
-                f"{path}: CID-NL candidates CSV is missing required column(s): "
-                f"{', '.join(missing_columns)}"
-            )
-        rows = list(reader)
+    rows = read_delimited_rows(
+        path,
+        required_columns=_CID_NL_REQUIRED_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
 
     parsed: list[_CidNlCandidateRow] = []
     for row_index, row in enumerate(rows):
@@ -351,24 +342,18 @@ def _cid_nl_seed_base_feature_ids(
     identity_index: dict[tuple[str, str], set[tuple[str, str]]] = {}
     fallback_features_by_sample: dict[str, list["DetectedFeature"]] = {}
     for feature in base_features:
-        identity_comparable = _has_comparable_cid_nl_identity(
-            source_feature_row_id=feature.source_feature_row_id,
-            source=feature.source,
-        )
-        if not identity_comparable:
+        comparable_identity = comparable_cid_nl_identity(feature)
+        if comparable_identity is None:
             fallback_features_by_sample.setdefault(feature.sample_stem, []).append(
                 feature
             )
             continue
 
-        if feature.source_feature_row_id:
+        for identity_value in comparable_identity.values:
             identity_index.setdefault(
-                (feature.sample_stem, feature.source_feature_row_id),
+                (feature.sample_stem, identity_value),
                 set(),
             ).add(detected_feature_identity(feature))
-        identity_index.setdefault((feature.sample_stem, feature.feature_id), set()).add(
-            detected_feature_identity(feature)
-        )
 
     sorted_fallback_by_sample: dict[
         str, tuple[list[float], list["DetectedFeature"]]
@@ -410,25 +395,6 @@ def _is_seed_base_feature(feature: "DetectedFeature") -> bool:
     )
 
 
-def _has_comparable_cid_nl_identity(
-    *,
-    source_feature_row_id: str | None,
-    source: str,
-) -> bool:
-    """Return whether a feature has an ID comparable to CID-NL row identity.
-
-    Missing source IDs cannot support an identity join regardless of detector.
-    MZmine and local-MS1 IDs are detector-local and remain eligible for m/z/RT
-    fallback even when legacy artifacts populated ``source_feature_row_id``.
-    """
-
-    return (
-        bool(source_feature_row_id)
-        and source != LOCAL_MS1_FEATURE_SOURCE
-        and not source.startswith(_MZMINE_FEATURE_SOURCE_PREFIX)
-    )
-
-
 def _fallback_seed_base_feature_ids(
     row: _CidNlCandidateRow,
     sorted_by_sample: dict[str, tuple[list[float], list["DetectedFeature"]]],
@@ -452,7 +418,7 @@ def _fallback_seed_base_feature_ids(
 
 
 def _parse_cid_nl_row_state(
-    row: dict[str, str | None], *, path: Path, row_index: int
+    row: Mapping[str, str | None], *, path: Path, row_index: int
 ) -> str:
     """Parse the fields required on EVERY row regardless of join eligibility.
 
@@ -484,7 +450,7 @@ def _parse_cid_nl_row_state(
 
 
 def _parse_cid_nl_row(
-    row: dict[str, str | None], *, path: Path, row_index: int
+    row: Mapping[str, str | None], *, path: Path, row_index: int
 ) -> _CidNlCandidateRow:
     """Parse a row already known to be eligible for the CID-NL base join.
 
@@ -622,10 +588,9 @@ def _apply_cid_nl_composite_join(
     candidates: tuple[PtPatternCandidate, ...],
     *,
     cid_nl_rows: tuple[_CidNlCandidateRow, ...],
-    source_feature_row_id_by_feature_identity: dict[
-        tuple[str, str], str | None
+    comparable_identity_by_feature_identity: dict[
+        tuple[str, str], ComparableDetectedFeatureIdentity | None
     ],
-    source_by_feature_identity: dict[tuple[str, str], str],
 ) -> tuple[PtPatternCandidate, ...]:
     """Join each Pt base candidate against CID-NL(dR) base evidence.
 
@@ -645,31 +610,27 @@ def _apply_cid_nl_composite_join(
             row for row in eligible_rows if row.sample_stem == candidate.sample_stem
         ]
         base_identity = (candidate.sample_stem, candidate.base_feature_id)
-        base_source_feature_row_id = source_feature_row_id_by_feature_identity.get(
-            base_identity
-        )
-        base_source = source_by_feature_identity.get(base_identity, "")
+        try:
+            comparable_identity = comparable_identity_by_feature_identity[base_identity]
+        except KeyError as error:
+            raise ValueError(
+                "Pt candidate base feature has no DetectedFeature identity owner: "
+                f"{base_identity!r}"
+            ) from error
 
         match: _CidNlCandidateRow | None = None
         join_mode = ""
-        identity_comparable = _has_comparable_cid_nl_identity(
-            source_feature_row_id=base_source_feature_row_id,
-            source=base_source,
-        )
-        if identity_comparable:
-            identity_values = {candidate.base_feature_id}
-            if base_source_feature_row_id:
-                identity_values.add(base_source_feature_row_id)
+        if comparable_identity is not None:
             identity_matches = [
                 row
                 for row in sample_rows
-                if row.ms1_feature_row_id in identity_values
+                if row.ms1_feature_row_id in comparable_identity.values
             ]
             if identity_matches:
                 match = _best_identity_match(candidate, identity_matches)
                 join_mode = "same_feature_id"
 
-        if match is None and not identity_comparable:
+        if match is None and comparable_identity is None:
             fallback_matches = [
                 row
                 for row in sample_rows

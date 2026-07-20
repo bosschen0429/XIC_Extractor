@@ -74,6 +74,22 @@ def test_build_trace_requests_uses_expected_mz_and_base_rt_window() -> None:
     assert all(item.request.ppm_tol == 20.0 for item in requests)
 
 
+def test_load_candidate_rows_rejects_duplicate_candidate_ids_before_slicing(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    duplicate = _candidate_row()
+    duplicate["base_mz"] = "600.0"
+    write_delimited_rows(
+        candidates_csv,
+        [_candidate_row(), duplicate],
+        evidence.REQUIRED_CANDIDATE_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="duplicate candidate_id"):
+        evidence.load_candidate_rows(candidates_csv, limit=1)
+
+
 def test_diagnose_candidate_traces_marks_coeluting_family_supported() -> None:
     traces = {
         "base": _trace([0.0, 100.0, 0.0]),

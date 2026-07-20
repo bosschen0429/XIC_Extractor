@@ -144,12 +144,22 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
     assert summary["source_sample_stem"] == "SampleA"
     assert summary["index_input"]["sha256"]
 
-    by_seed = {row["seed_id"]: row for row in rows}
-    assert by_seed["candidate-a"]["contract_b_strict_full_same_scan"] == "TRUE"
-    assert by_seed["candidate-b"]["contract_b_strict_full_same_scan"] == "FALSE"
-    assert by_seed["known:195CP-known"]["expected_class"] == "expected_positive"
-    assert by_seed["known:195CP-known"]["contract_a_current_feature_accept"] == "TRUE"
-    assert by_seed["known:d3-dG-C8-MeIQx"]["expected_class"] == "non_pt_control"
+    by_seed = {(row["source_set"], row["seed_id"]): row for row in rows}
+    assert by_seed[("current_feature_hypothesis", "candidate-a")][
+        "contract_b_strict_full_same_scan"
+    ] == "TRUE"
+    assert by_seed[("current_feature_hypothesis", "candidate-b")][
+        "contract_b_strict_full_same_scan"
+    ] == "FALSE"
+    assert by_seed[("known_named", "known:base_mz=500")]["expected_class"] == (
+        "expected_positive"
+    )
+    assert by_seed[("known_named", "known:base_mz=500")][
+        "contract_a_current_feature_accept"
+    ] == "TRUE"
+    assert by_seed[("known_named", "known:base_mz=600")]["expected_class"] == (
+        "non_pt_control"
+    )
     assert conflict_rows[0]["resolution_status"] == "unique_strict_support"
     assert conflict_rows[0]["preferred_candidate_id"] == "candidate-a"
 
@@ -196,7 +206,7 @@ def test_core_only_component_is_not_counted_as_discovery_resolution() -> None:
         inputs=(),
     )
 
-    assert summary["schema_version"] == "pt_pattern_same_scan_replay.v2"
+    assert summary["schema_version"] == "pt_pattern_same_scan_replay.v3"
     assert summary["conflict_resolution_counts"] == {"unique_core_support": 1}
     assert summary["uniquely_resolved_conflict_component_count"] == 0
 
@@ -258,7 +268,131 @@ def test_candidate_contexts_fail_closed_on_duplicate_accepted_rows(
         [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
     )
 
-    with pytest.raises(ValueError, match="duplicate accepted ids: candidate-a"):
+    with pytest.raises(
+        ValueError,
+        match="duplicate candidate candidate_id: candidate-a",
+    ):
+        replay._candidate_contexts(
+            candidates_csv,
+            evidence_csv,
+            rt_half_window_sec=45.0,
+        )
+
+
+@pytest.mark.parametrize(
+    "evidence_rows",
+    (
+        (
+            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
+            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
+        ),
+        (
+            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
+            {"candidate_id": "candidate-a", "trace_rule_call": "reject"},
+        ),
+        (
+            {"candidate_id": "candidate-a", "trace_rule_call": "reject"},
+            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
+        ),
+    ),
+)
+def test_candidate_contexts_reject_duplicate_evidence_identity_before_filtering(
+    tmp_path: Path,
+    evidence_rows: tuple[dict[str, str], ...],
+) -> None:
+    candidates_csv = tmp_path / "candidates.csv"
+    evidence_csv = tmp_path / "evidence.csv"
+    _write_csv(
+        candidates_csv,
+        [
+            {
+                "sample_stem": "SampleA",
+                "candidate_id": "candidate-a",
+                "base_mz": "500.0",
+                "base_rt_apex_min": "10.0",
+                "base_feature_id": "f1",
+                "pt_plus_1_feature_id": "f2",
+                "pt_plus_2_feature_id": "f3",
+                "pt_plus_4_feature_id": "f4",
+            }
+        ],
+    )
+    _write_csv(evidence_csv, list(evidence_rows))
+
+    with pytest.raises(ValueError, match="duplicate evidence candidate_id"):
+        replay._candidate_contexts(
+            candidates_csv,
+            evidence_csv,
+            rt_half_window_sec=45.0,
+        )
+
+
+def test_candidate_contexts_reject_blank_candidate_identity_before_filtering(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "candidates.csv"
+    evidence_csv = tmp_path / "evidence.csv"
+    _write_csv(
+        candidates_csv,
+        [
+            {
+                "sample_stem": "SampleA",
+                "candidate_id": " ",
+                "base_mz": "500.0",
+                "base_rt_apex_min": "10.0",
+                "base_feature_id": "f1",
+                "pt_plus_1_feature_id": "f2",
+                "pt_plus_2_feature_id": "f3",
+                "pt_plus_4_feature_id": "f4",
+            }
+        ],
+    )
+    _write_csv(
+        evidence_csv,
+        [{"candidate_id": "candidate-a", "trace_rule_call": "reject"}],
+    )
+
+    with pytest.raises(ValueError, match="candidate_id must be non-empty"):
+        replay._candidate_contexts(
+            candidates_csv,
+            evidence_csv,
+            rt_half_window_sec=45.0,
+        )
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    (
+        ({"pt_plus_4_feature_id": ""}, "non-empty feature claims"),
+        ({"pt_plus_4_feature_id": "f3"}, "distinct feature claims"),
+        ({"pt_plus_4_feature_id": " f3 "}, "distinct feature claims"),
+    ),
+)
+def test_candidate_contexts_reject_incomplete_or_duplicate_feature_claims(
+    tmp_path: Path,
+    overrides: dict[str, str],
+    message: str,
+) -> None:
+    candidates_csv = tmp_path / "candidates.csv"
+    evidence_csv = tmp_path / "evidence.csv"
+    candidate = {
+        "sample_stem": "SampleA",
+        "candidate_id": "candidate-a",
+        "base_mz": "500.0",
+        "base_rt_apex_min": "10.0",
+        "base_feature_id": "f1",
+        "pt_plus_1_feature_id": "f2",
+        "pt_plus_2_feature_id": "f3",
+        "pt_plus_4_feature_id": "f4",
+        **overrides,
+    }
+    _write_csv(candidates_csv, [candidate])
+    _write_csv(
+        evidence_csv,
+        [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
+    )
+
+    with pytest.raises(ValueError, match=message):
         replay._candidate_contexts(
             candidates_csv,
             evidence_csv,
@@ -292,6 +426,115 @@ def test_candidate_contexts_reject_source_sample_mismatch(tmp_path: Path) -> Non
             rt_half_window_sec=45.0,
             expected_sample_stem="SampleA",
         )
+
+
+def test_same_scan_replay_rejects_duplicate_known_seed_identity(
+    tmp_path: Path,
+) -> None:
+    known_csv = tmp_path / "known.csv"
+    known_row = {
+        "compound": "195CP-known",
+        "expected_base_mz": "500.0",
+        "diagnostic_status": "accepted_candidate",
+    }
+    _write_csv(known_csv, [known_row, known_row])
+
+    with pytest.raises(
+        ValueError,
+        match="duplicate known hypothesis seed_id.*known:base_mz=500",
+    ):
+        replay._known_contexts(known_csv)
+
+
+def test_same_scan_replay_accepts_same_compound_with_different_assignments(
+    tmp_path: Path,
+) -> None:
+    known_csv = tmp_path / "known.csv"
+    _write_csv(
+        known_csv,
+        [
+            {
+                "compound": "195CP-known",
+                "expected_base_mz": "500.0",
+                "diagnostic_status": "accepted_candidate",
+            },
+            {
+                "compound": "195CP-known",
+                "expected_base_mz": "600.0",
+                "diagnostic_status": "no_candidate_within20",
+            },
+        ],
+    )
+
+    contexts = replay._known_contexts(known_csv)
+
+    assert [context.seed.seed_id for context in contexts] == [
+        "known:base_mz=500",
+        "known:base_mz=600",
+    ]
+    assert [context.compound for context in contexts] == [
+        "195CP-known",
+        "195CP-known",
+    ]
+
+
+def test_same_scan_replay_namespaces_candidate_and_known_seed_identity(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "candidates.csv"
+    evidence_csv = tmp_path / "evidence.csv"
+    known_csv = tmp_path / "known.csv"
+    _write_csv(
+        candidates_csv,
+        [
+            {
+                "sample_stem": "SampleA",
+                "candidate_id": "known:base_mz=500",
+                "base_mz": "500.0",
+                "base_rt_apex_min": "10.0",
+                "base_feature_id": "f1",
+                "pt_plus_1_feature_id": "f2",
+                "pt_plus_2_feature_id": "f3",
+                "pt_plus_4_feature_id": "f4",
+            }
+        ],
+    )
+    _write_csv(
+        evidence_csv,
+        [{"candidate_id": "known:base_mz=500", "trace_rule_call": "accept"}],
+    )
+    _write_csv(
+        known_csv,
+        [
+            {
+                "compound": "195CP-known",
+                "expected_base_mz": "500.0",
+                "diagnostic_status": "accepted_candidate",
+            }
+        ],
+    )
+
+    outputs = run_same_scan_replay(
+        index=_index(),
+        candidates_csv=candidates_csv,
+        evidence_csv=evidence_csv,
+        known_diagnosis_csv=known_csv,
+        output_dir=tmp_path / "report",
+        report_id="identity_namespace",
+        source_sample_stem="SampleA",
+        index_input=_write_index_identity(tmp_path),
+    )
+
+    with outputs["evidence_csv"].open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert {
+        (row["source_set"], row["seed_id"])
+        for row in rows
+        if row["seed_id"] == "known:base_mz=500"
+    } == {
+        ("current_feature_hypothesis", "known:base_mz=500"),
+        ("known_named", "known:base_mz=500"),
+    }
 
 
 def _write_index_identity(tmp_path: Path) -> Path:
