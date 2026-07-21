@@ -16,11 +16,9 @@
       --accent-2: #7a4b16;
       --accent-3: #5d4c9c;
       --good: #146c43;
-      --bridge: #7a4b16;
       --watch: #8a3ffc;
       --risk: #b3261e;
       --soft-good: #e9f6ef;
-      --soft-bridge: #fff4df;
       --soft-watch: #f0edff;
       --soft-risk: #fbeceb;
       --soft-accent: #e5f4f3;
@@ -32,13 +30,8 @@
         sans-serif;
     }
 
-    * {
-      box-sizing: border-box;
-    }
-
-    html {
-      scroll-behavior: smooth;
-    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
 
     body {
       margin: 0;
@@ -49,14 +42,8 @@
       line-height: 1.65;
     }
 
-    a {
-      color: var(--accent);
-      text-decoration: none;
-    }
-
-    a:hover {
-      text-decoration: underline;
-    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
 
     code {
       padding: 1px 5px;
@@ -93,8 +80,8 @@
     h1 {
       max-width: 850px;
       margin: 8px 0 12px;
-      font-size: 48px;
-      line-height: 1.08;
+      font-size: 44px;
+      line-height: 1.12;
       letter-spacing: 0;
     }
 
@@ -118,9 +105,7 @@
       line-height: 1.3;
     }
 
-    p {
-      margin: 0 0 14px;
-    }
+    p { margin: 0 0 14px; }
 
     .lead {
       max-width: 810px;
@@ -128,12 +113,7 @@
       font-size: 18px;
     }
 
-    .status-card,
-    .panel,
-    .flow,
-    .callout,
-    details,
-    table {
+    .panel, .flow, .callout, details, table {
       border: 1px solid var(--line);
       border-radius: 8px;
       background: var(--panel);
@@ -141,6 +121,9 @@
 
     .status-card {
       padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
     }
 
     .status-card strong {
@@ -152,51 +135,6 @@
     .status-card p {
       color: var(--muted);
       font-size: 14px;
-    }
-
-    .badges {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 7px;
-      margin-top: 10px;
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      min-height: 26px;
-      padding: 4px 8px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      background: #fff;
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--muted);
-      white-space: nowrap;
-    }
-
-    .badge.good {
-      border-color: #b9dfc9;
-      background: var(--soft-good);
-      color: var(--good);
-    }
-
-    .badge.bridge {
-      border-color: #edd3a1;
-      background: var(--soft-bridge);
-      color: var(--bridge);
-    }
-
-    .badge.watch {
-      border-color: #d5ccff;
-      background: var(--soft-watch);
-      color: var(--watch);
-    }
-
-    .badge.risk {
-      border-color: #efbeb9;
-      background: var(--soft-risk);
-      color: var(--risk);
     }
 
     main {
@@ -241,9 +179,7 @@
       border-bottom: 1px solid var(--line);
     }
 
-    section:first-child {
-      padding-top: 0;
-    }
+    section:first-child { padding-top: 0; }
 
     .section-intro {
       max-width: 870px;
@@ -259,14 +195,14 @@
 
     .flow-row {
       display: grid;
-      grid-template-columns: repeat(5, minmax(160px, 1fr));
+      grid-template-columns: repeat(4, minmax(170px, 1fr));
       gap: 10px;
-      min-width: 860px;
+      min-width: 740px;
     }
 
-    .flow-row.compact {
-      grid-template-columns: repeat(4, minmax(160px, 1fr));
-      min-width: 700px;
+    .flow-row.wide {
+      grid-template-columns: repeat(5, minmax(155px, 1fr));
+      min-width: 830px;
     }
 
     .flow-node {
@@ -288,9 +224,7 @@
       background: var(--line);
     }
 
-    .flow-node:last-child::after {
-      display: none;
-    }
+    .flow-node:last-child::after { display: none; }
 
     .flow-node strong {
       display: block;
@@ -303,24 +237,9 @@
       font-size: 13px;
     }
 
-    .flow-node.ready {
-      border-color: #b9dfc9;
-      background: var(--soft-good);
-    }
-
-    .flow-node.bridge {
-      border-color: #edd3a1;
-      background: var(--soft-bridge);
-    }
-
-    .flow-node.watch {
-      border-color: #d5ccff;
-      background: var(--soft-watch);
-    }
-
-    .flow-node.risk {
-      border-color: #efbeb9;
-      background: var(--soft-risk);
+    .flow-node.accent {
+      border-color: #a3d5d3;
+      background: var(--soft-accent);
     }
 
     .grid {
@@ -338,8 +257,7 @@
       padding: 16px;
     }
 
-    .panel p,
-    .panel li {
+    .panel p, .panel li {
       color: var(--muted);
       font-size: 14px;
     }
@@ -356,13 +274,8 @@
     }
 
     .callout.warning {
-      border-left-color: var(--bridge);
+      border-left-color: var(--accent-2);
       background: #fffaf0;
-    }
-
-    .callout.risk {
-      border-left-color: var(--risk);
-      background: #fff7f6;
     }
 
     details {
@@ -393,8 +306,7 @@
       font-size: 14px;
     }
 
-    th,
-    td {
+    th, td {
       padding: 11px 12px;
       border-bottom: 1px solid var(--line);
       vertical-align: top;
@@ -407,37 +319,11 @@
       font-size: 13px;
     }
 
-    tr:last-child td {
-      border-bottom: 0;
-    }
+    tr:last-child td { border-bottom: 0; }
 
     .decision-table td:first-child {
       width: 170px;
       font-weight: 800;
-    }
-
-    .roadmap {
-      display: grid;
-      gap: 12px;
-      margin-top: 16px;
-    }
-
-    .roadmap-item {
-      display: grid;
-      grid-template-columns: 120px minmax(0, 1fr) 150px;
-      gap: 14px;
-      align-items: start;
-      padding: 14px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-    }
-
-    .rank {
-      color: var(--accent);
-      font-size: 22px;
-      font-weight: 900;
-      line-height: 1;
     }
 
     .small {
@@ -460,26 +346,28 @@
       font-size: 13px;
     }
 
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 800;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
     @media (max-width: 900px) {
-      header,
-      main,
-      .grid,
-      .grid.two,
-      .roadmap-item {
+      header, main, .grid, .grid.two {
         grid-template-columns: 1fr;
       }
-
-      h1 {
-        font-size: 36px;
-      }
-
-      nav {
-        position: static;
-      }
-
-      .source-list {
-        columns: 1;
-      }
+      h1 { font-size: 32px; }
+      nav { position: static; }
+      .source-list { columns: 1; }
     }
   </style>
 </head>
@@ -488,366 +376,293 @@
     <header>
       <div>
         <div class="eyebrow">XIC Extractor product story</div>
-        <h1>從 RAW data 到 final matrix：目前產品主線與下一步優化地圖</h1>
+        <h1>從 RAW 到 Final Matrix：一個 DNA adduct 如何被偵測、定量、寫入矩陣</h1>
         <p class="lead">
-          這份 report 用白話說明目前 XIC Extractor 如何把 RAW / discovery candidates
-          變成下游使用的 <code>alignment_matrix.tsv</code>。它同時標出 C4、C6、Region / AsLS
-          這幾條近期 cleanup 主線已經收斂到哪裡，哪些地方仍然是 bridge、adapter 或 diagnostic。
+          這份文件用白話講完 XIC Extractor 的完整產品流程：
+          Discovery 可從 MS2 neutral-loss 或 MS1 delta-pattern evidence 開始；候選證據必須先進入
+          <code>EvidenceVector</code> / <code>PeakHypothesis</code> 與 model selection，之後才可能經過
+          integration、跨樣本 alignment 與授權 projection 寫入 <code>alignment_matrix.tsv</code>。
         </p>
-        <div class="badges">
-          <span class="badge good">matrix handoff production-ready</span>
-          <span class="badge good">AsLS baseline active</span>
-          <span class="badge bridge">C4 evidence bridge</span>
-          <span class="badge bridge">C6 successor constructor</span>
-          <span class="badge watch">region model-selection diagnostic</span>
-        </div>
       </div>
       <aside class="status-card">
-        <strong>目前結論</strong>
-        <p>
-          主產品路徑已經不是單一 resolver 或單一 score 決定一切，而是逐步走向
-          trace、hypothesis、evidence、integration、cross-sample grouping、production decision
-          的分層架構。
-        </p>
-        <p>
-          但 C4 舊 scorer、C6 <code>OwnerAlignedFeature</code> delivery adapter、
-          以及 Region shadow decision 還沒有完全退休或產品化。
+          <strong>適用情境</strong>
+          <p>
+            本工具設計用於 DNA adductomics 分析。特徵通常為低豐度、
+            sparse detection（單一樣本檢出是常態而非例外），
+            release 路徑目前仍以 CID neutral-loss 為主要辨識策略；Pt MS1 pattern
+            仍是 <code>diagnostic_only</code> 方法開發，不是 Final Matrix intake。
         </p>
       </aside>
     </header>
 
     <main>
       <nav aria-label="Report navigation">
-        <strong>Review index</strong>
-        <a href="#overview">總覽</a>
-        <a href="#single-sample">單樣本 peak</a>
-        <a href="#evidence">C4 evidence</a>
-        <a href="#region">Region / baseline</a>
-        <a href="#cross-sample">C6 cross-sample</a>
-        <a href="#matrix">Final matrix</a>
-        <a href="#radar">優化雷達</a>
-        <a href="#next">下一步</a>
+        <strong>故事線</strong>
+        <a href="#overview">總覽流程</a>
+        <a href="#discovery">1. Discovery</a>
+        <a href="#xic">2. XIC 抽取</a>
+        <a href="#peak">3. Peak 選擇與積分</a>
+        <a href="#alignment">4. 跨樣本 Alignment</a>
+        <a href="#matrix">5. Final Matrix</a>
+        <a href="#design">設計決策</a>
+        <a href="#sources">參考模組</a>
       </nav>
 
       <div>
+        <!-- ─── 總覽 ─── -->
         <section id="overview">
-          <h2>一張圖看完主流程</h2>
+          <h2>一張圖看完整條路</h2>
           <p class="section-intro">
-            產品主線可以拆成兩層：單樣本層負責從 trace 選出可積分的 peak；
-            cross-sample 層負責判斷哪些 sample-local observations 可以成為同一個 matrix row，
-            並決定哪些 cell area 可以進 primary matrix。
+            產品流程分成兩層：<strong>單樣本層</strong>負責從 RAW 中找出候選特徵、抽取色譜圖、選峰、
+            積分面積；<strong>跨樣本層</strong>負責把多支樣本的觀察對齊成同一個 matrix row，
+            補缺值、處理重複宣告，最後決定哪些定量值可以進 primary matrix。
           </p>
 
           <div class="flow" aria-label="Raw to final matrix flow">
-            <div class="flow-row">
-              <div class="flow-node ready">
-                <strong>1. RAW + discovery inputs</strong>
-                <span>讀取 batch index、candidate CSV、RAW paths，建立每個 sample 的輸入集合。</span>
+            <div class="flow-row wide">
+              <div class="flow-node accent">
+                <strong>1. Discovery evidence providers</strong>
+                <span>CID-NL 讀 MS2；Delta Mass / Pt 從 sample-local MS1 features 提出候選證據。</span>
               </div>
-              <div class="flow-node ready">
-                <strong>2. XIC trace extraction</strong>
-                <span>對 candidate / backfill seed 回 RAW 拉局部 XIC trace。</span>
+              <div class="flow-node">
+                <strong>2. XIC / trace evidence</strong>
+                <span>對候選 m/z 回 RAW 拉局部 trace，保留 shape、boundary、RT 與 provenance facts。</span>
               </div>
-              <div class="flow-node bridge">
-                <strong>3. Peak selection</strong>
-                <span><code>find_peak_and_area</code> 產生 candidates、recovery、scorer selection 與 selected result。</span>
+              <div class="flow-node">
+                <strong>3. EvidenceVector + PeakHypothesis</strong>
+                <span>把候選 assignment 與相關證據組成可稽核的 alternatives；候選不等於已選峰。</span>
               </div>
-              <div class="flow-node bridge">
-                <strong>4. Evidence spine</strong>
-                <span>把 selected/candidate facts 投影成 <code>PeakHypothesis</code>、<code>EvidenceVector</code>、<code>IntegrationResult</code>。</span>
+              <div class="flow-node">
+                <strong>4. Model selection + IntegrationResult</strong>
+                <span>選擇可支持的 hypothesis；只有 selected peak 才產生邊界與面積結果。</span>
               </div>
-              <div class="flow-node bridge">
-                <strong>5. Cross-sample grouping</strong>
-                <span>C6 以 <code>CrossSamplePeakGroupHypothesis</code> 建構，再轉回 delivery DTO。</span>
-              </div>
-            </div>
-            <div class="flow-row compact">
-              <div class="flow-node bridge">
-                <strong>6. Owner backfill</strong>
-                <span>對缺 sample 的 row 用 group seed 回 RAW 查詢缺失觀察。</span>
-              </div>
-              <div class="flow-node ready">
-                <strong>7. Cell matrix</strong>
-                <span>建立 detected、rescued、absent、ambiguous、duplicate cells。</span>
-              </div>
-              <div class="flow-node ready">
-                <strong>8. Production decisions</strong>
-                <span>用 identity、cell quality、claim/consolidation 規則決定 row/cell 是否寫入。</span>
-              </div>
-              <div class="flow-node ready">
-                <strong>9. Final matrix</strong>
-                <span>輸出 <code>alignment_matrix.tsv</code> 作為 downstream correction/statistics contract。</span>
+              <div class="flow-node">
+                <strong>5. Workflow projection</strong>
+                <span>工作流把已選結果投影成 sample-local owner 或 review；未授權 evidence 停在這裡。</span>
               </div>
             </div>
-          </div>
-
-          <div class="callout">
-            <strong>白話版總結：</strong>
-            現在的產品不是「找到一個峰就直接填 matrix」。它會先在 sample 內選 peak，
-            再跨 sample 判斷這些 peak 是否屬於同一個 group，接著補缺值、處理重複 claim，
-            最後才由 production decision 決定哪些值能進 primary matrix。
-          </div>
-        </section>
-
-        <section id="single-sample">
-          <h2>單樣本層：從 XIC trace 到 selected peak</h2>
-          <p class="section-intro">
-            這一層的產品問題是：在一段 m/z + RT window 裡，到底哪個局部峰應該被積分？
-            目前答案仍由 <code>find_peak_and_area(...)</code> 管理。它會先列出 candidates，
-            再用 RT prior、recovery、scoring context 與可選的 safe merge 決定 selected peak。
-          </p>
-
-          <div class="grid">
-            <article class="panel">
-              <h3>現在怎麼做</h3>
-              <ul>
-                <li>用 resolver 產生候選 peak。</li>
-                <li>必要時用 preferred RT recovery 補候選。</li>
-                <li>有 scoring context 時，使用 legacy scorer 做 candidate selection。</li>
-                <li><code>region_first_safe_merge</code> 只在明確 resolver mode 下做窄範圍 safe merge。</li>
-              </ul>
-            </article>
-            <article class="panel">
-              <h3>目前成熟度</h3>
-              <p>
-                產品行為穩定，但語意仍是 bridge：selected peak 的結果已經可以投影到
-                <code>PeakHypothesis</code> / <code>EvidenceVector</code>，但 successor model
-                還沒有完全取代 scorer selection。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>最重要的風險</h3>
-              <p>
-                如果未來直接刪 scorer 或 region logic，會失去目前仍在保護 selection、
-                confidence、cap、reason text、boundary behavior 的 active policy。
-              </p>
-            </article>
-          </div>
-
-          <details>
-            <summary>工程細節</summary>
-            <div class="details-body">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Surface</th>
-                    <th>角色</th>
-                    <th>目前狀態</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>xic_extractor/peak_detection/facade.py::find_peak_and_area</code></td>
-                    <td>public production extraction facade，負責 selected peak result。</td>
-                    <td><span class="badge bridge">active policy + bridge</span></td>
-                  </tr>
-                  <tr>
-                    <td><code>find_peak_candidates(...)</code></td>
-                    <td>依 <code>resolver_mode</code> 進入 <code>legacy_savgol</code> 或 <code>local_minimum</code> candidate path。</td>
-                    <td><span class="badge bridge">resolver compatibility</span></td>
-                  </tr>
-                  <tr>
-                    <td><code>select_candidate_with_confidence(...)</code></td>
-                    <td>目前仍是 scored candidate selection authority。</td>
-                    <td><span class="badge bridge">C4 active policy</span></td>
-                  </tr>
-                  <tr>
-                    <td><code>build_peak_hypotheses(...)</code></td>
-                    <td>把 peak result / MS2 evidence / trace facts 投影到 successor audit spine。</td>
-                    <td><span class="badge bridge">successor projection</span></td>
-                  </tr>
-                </tbody>
-              </table>
+            <div class="flow-row wide">
+              <div class="flow-node accent">
+                <strong>6. Cross-sample 分群</strong>
+                <span>跨樣本比對 owner，以 m/z + RT + tag 閘門將相同特徵歸入同一 family。</span>
+              </div>
+              <div class="flow-node">
+                <strong>7. Backfill</strong>
+                <span>對 family 中沒檢出的樣本回 RAW 搜尋，嘗試 rescue。</span>
+              </div>
+              <div class="flow-node">
+                <strong>8. Claim + 合併</strong>
+                <span>處理重複宣告（同一峰被多個 row 搶）、合併跨 tag 的同族 family。</span>
+              </div>
+              <div class="flow-node">
+                <strong>9. Production 決策</strong>
+                <span>逐 row/cell 決定是否寫入 primary matrix，留空或標記為 review。</span>
+              </div>
+              <div class="flow-node accent">
+                <strong>10. Final Matrix</strong>
+                <span>輸出 <code>alignment_matrix.tsv</code> 供下游校正與統計。</span>
+              </div>
             </div>
-          </details>
-        </section>
-
-        <section id="evidence">
-          <h2>C4：score 不再是未來語意中心，但 scorer 還沒退休</h2>
-          <p class="section-intro">
-            C4 的方向已經很清楚：未來產品要靠多證據支持或挑戰 peak interpretation，
-            不是靠單一 raw score 或 cap label 代表真相。這一輪已經建立
-            <code>EvidenceDecisionSemantics</code>，但 active selection policy 還在 legacy scorer。
-          </p>
-
-          <div class="callout warning">
-            <strong>重要邊界：</strong>
-            <code>EvidenceVector.decision_semantics</code> 現在是 typed projection。
-            它讓我們可以用 <code>accepted</code>、<code>review</code>、<code>not_counted</code>、
-            <code>excluded</code>、<code>ambiguous</code> 講同一套語言，但它還不是新的 model-selection engine。
-          </div>
-
-          <table class="decision-table">
-            <thead>
-              <tr>
-                <th>證據家族</th>
-                <th>目前進 evidence chain 的方式</th>
-                <th>下一步</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>MS1 local quality</td>
-                <td>local S/N、trace morphology、shape/width/continuity 目前多半來自 scorer context，再投影成 typed reasons。</td>
-                <td>把 AsLS baseline provenance、local S/N、shape vector 變成更完整的 trace evidence component。</td>
-              </tr>
-              <tr>
-                <td>MS2 / NL</td>
-                <td>candidate-aligned MS2 / neutral loss 會成為 support 或 conflict；missing MS2 預設不是硬負證據。</td>
-                <td>持續要求 acquisition opportunity / trigger context，避免 missing evidence 被誤用。</td>
-              </tr>
-              <tr>
-                <td>RT / ISTD / STD</td>
-                <td>RT 是 contextual evidence。ISTD / STD 配對可提供 role-aware RT support 或 review reason。</td>
-                <td>把 ISTD real-matrix transfer evidence 與 clean standard context 分清楚。</td>
-              </tr>
-              <tr>
-                <td>CWT / boundary morphology</td>
-                <td>CWT 可提供 morphology / boundary-hypothesis context；不是單獨決定 identity。</td>
-                <td>不要說成只能 support。正確說法是任何單一證據都不能單獨定奪。</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <details>
-            <summary>工程細節</summary>
-            <div class="details-body">
-              <ul>
-                <li><code>xic_extractor/evidence_semantics.py</code> 定義 <code>CommonEvidence</code>、<code>EvidenceSignalSet</code>、<code>EvidenceDecisionSemantics</code>。</li>
-                <li><code>decision_semantics_from_signal_set(...)</code> 把 support / concern / cap / quality labels 轉成 typed decision classes and reasons。</li>
-                <li><code>xic_extractor/peak_detection/hypotheses.py::EvidenceVector</code> 已加入 <code>confidence</code>、<code>cap_labels</code>、<code>reason</code>、<code>decision_semantics</code>。</li>
-                <li><code>score_candidate(...)</code>、<code>select_candidate_with_confidence(...)</code>、confidence thresholds、caps、reason text 仍是 active product policy。</li>
-              </ul>
-            </div>
-          </details>
-        </section>
-
-        <section id="region">
-          <h2>Region / baseline：AsLS 是定量基礎，boundary 還是下一個可優化點</h2>
-          <p class="section-intro">
-            定量問題的核心已經先從 baseline 開始修正：<code>linear_edge</code> 不再是產品 baseline integration method，
-            <code>asls</code> 是目前唯一允許的 baseline method。Region boundary 則是另一個問題：
-            它不是死碼，但也還不是完整產品 selector。
-          </p>
-
-          <div class="grid two">
-            <article class="panel">
-              <h3>Baseline 現況</h3>
-              <p>
-                <code>integrate_with_baseline(...)</code> 只接受 <code>asls</code>。
-                如果傳入 <code>linear_edge</code> 會丟出退休訊息。這代表後續不應再比較
-                linear edge 是否能回到產品路徑，而是要驗證 AsLS area、uncertainty、baseline residual
-                如何投影到 matrix 與 audit。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>Boundary 現況</h3>
-              <p>
-                <code>RegionSelectionDecision</code> 已經有產品/影子共用的 decision language。
-                但 shadow region model-selection 仍主要是 diagnostic/review；只有
-                <code>region_first_safe_merge</code> 的窄 gate 會影響產品 selected interval。
-              </p>
-            </article>
           </div>
 
           <div class="callout">
             <strong>白話版：</strong>
-            baseline 是「面積怎麼算才不低估」；boundary 是「哪一段 trace 應該被拿去積分」。
-            AsLS 已經先解決 baseline 方向，但 boundary/model-selection 還有精進空間。
-          </div>
-
-          <details>
-            <summary>工程細節</summary>
-            <div class="details-body">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Surface</th>
-                    <th>角色</th>
-                    <th>狀態</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><code>peak_detection/baseline.py</code></td>
-                    <td>AsLS baseline、baseline-corrected area、uncertainty/residual MAD。</td>
-                    <td><span class="badge good">AsLS active</span></td>
-                  </tr>
-                  <tr>
-                    <td><code>LINEAR_EDGE_RETIRED_MESSAGE</code></td>
-                    <td>防止 retired baseline 被重新接回產品或 audit path。</td>
-                    <td><span class="badge good">retirement guard</span></td>
-                  </tr>
-                  <tr>
-                    <td><code>peak_detection/region_model_selection.py</code></td>
-                    <td>把 boundary / WIS / CWT 等 evidence 變成 region decision。</td>
-                    <td><span class="badge watch">diagnostic owner</span></td>
-                  </tr>
-                  <tr>
-                    <td><code>peak_detection/region_safe_merge.py</code></td>
-                    <td>只在 safe adjacent-WIS merge gate 成立時影響產品 interval。</td>
-                    <td><span class="badge bridge">narrow product gate</span></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </details>
-        </section>
-
-        <section id="cross-sample">
-          <h2>C6：family 被降級，cross-sample group hypothesis 成為 constructor</h2>
-          <p class="section-intro">
-            C6 的核心不是「刪掉 family」而是停止把 family 當成真相。
-            現在比較正確的語意是：多個 sample-local peak observations 可能代表同一個
-            cross-sample peak group，這個 claim 可以被支持、挑戰、split、demote。
-          </p>
-
-          <div class="flow">
-            <div class="flow-row compact">
-              <div class="flow-node bridge">
-                <strong>Sample-local owners</strong>
-                <span>每個 sample 裡由 MS1/MS2 candidate 形成 owner observation。</span>
-              </div>
-              <div class="flow-node bridge">
-                <strong>CrossSamplePeakGroupHypothesis</strong>
-                <span>新的 constructor 語意，承載 group membership claim。</span>
-              </div>
-              <div class="flow-node bridge">
-                <strong>OwnerAlignedFeature</strong>
-                <span>舊 public delivery DTO，仍餵給 backfill/matrix/writers。</span>
-              </div>
-              <div class="flow-node ready">
-                <strong>AlignmentMatrix</strong>
-                <span>下游仍用 family-compatible row ID 寫出 matrix。</span>
-              </div>
-            </div>
+            不是「找到 pattern 或峰就填入矩陣」。每個候選要先成為帶 provenance 的
+            evidence / hypothesis，再於樣本內通過 model selection 與 integration，
+            再在跨樣本層通過 grouping、backfill、claim 與 identity 檢查，最後才由 production decision 放行。
           </div>
 
           <div class="callout warning">
-            <strong>目前定位：</strong>
-            C6 已經不是 event-first 老系統；也不是完全完成 successor migration。
-            它現在是「successor constructor + legacy delivery adapter」。
+            <strong>Pt 方法目前停在哪裡：</strong>
+            Pt candidate generation、same-scan window support、anchor-local trace evidence、
+            <code>trace_rule_call</code> 與人工 review 都是 <code>diagnostic_only</code>。
+            它們尚未建立完整 assignment alternatives、canonical <code>PeakHypothesis</code>
+            selection、產品 <code>IntegrationResult</code> 或 workflow projection，因此不會進入下面的 Alignment / Matrix 路徑。
+          </div>
+        </section>
+
+        <!-- ─── Discovery ─── -->
+        <section id="discovery">
+          <h2><span class="step-number">1</span>Discovery：找出 RAW 中的候選特徵</h2>
+          <p class="section-intro">
+            Discovery 的任務是從 RAW 中辨識出可能的 DNA adduct 候選特徵。
+            CID-NL 是目前 release intake；Delta Mass / Pt 是並列的診斷方法實作，可獨立或與 CID-NL 組合產生 review evidence：
+          </p>
+
+          <div class="grid two">
+            <article class="panel">
+              <h3>策略一：CID Neutral-Loss（MS2 層級）</h3>
+              <p>
+                掃描 RAW 中所有 MS2 光譜，計算碎裂離子與前驅離子的質量差。
+                若差值符合已知 neutral-loss tag（如 dR = 116.047 Da），
+                則該前驅離子被記錄為 seed。
+              </p>
+              <ul>
+                <li>多個 seed 若來自同一前驅離子（不同 scan 重複觸發），以 m/z 容差分群。</li>
+                <li>每組回 MS1 查詢同位素分布，確認精確 m/z 並鎖定峰位。</li>
+                <li>產出 <code>discovery_candidates.csv</code>。</li>
+              </ul>
+            </article>
+            <article class="panel">
+              <h3>策略二：Delta Mass Pattern（MS1 層級）</h3>
+              <p>
+                在 MS1 已偵測特徵中搜尋特定 m/z 間距模式。
+                目前實作的是 Pt pattern：
+                base / +1 / +2 / +4 Da 四個位置必須同時存在，
+                符合鉑類藥物的同位素分布特徵。
+              </p>
+              <ul>
+                <li>輸入：sample-local 已偵測 MS1 features（可來自內部或外部工具如 MZmine）。</li>
+                <li>硬閘門：m/z ppm 容差 + RT 秒容差 + 訊號品質門檻。</li>
+                <li>不接受部分匹配——四個位置全到才算 candidate。</li>
+              </ul>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>Composite 診斷策略：</strong>
+            兩種策略可以組合使用（如 <code>pt_pattern_cid_nl_dr</code> preset）：
+            delta mass 負責 MS1 模式匹配，CID-NL 提供 MS2 碎裂證據作為 base evidence 支持。
+            Preset 系統（TOML 檔案）定義每個策略的 tag、容差與組合模式；這個 preset 的存在不等於 detector activation。
+          </div>
+
+          <div class="callout warning">
+            <strong>Discovery 策略與 Alignment 的關係：</strong>
+            目前已 release / 預設的 alignment intake 仍以 CID-NL discovery 產出的
+            <code>discovery_candidates.csv</code> 為主。Delta mass / Pt pattern candidates
+            在沒有 activation 或 export contract 前不直接變成 alignment 或 Matrix authority——
+            它們目前只提供 <code>diagnostic_only</code> MS1 pattern / trace / review evidence；
+            <code>trace_rule_call</code> 是診斷機器評估，不是 final detector call。
+            在 composite 模式下，CID-NL 可作為 base evidence 支持。
+            Product ion（HCD-PI）策略已在型別系統中定義但尚未實作。
+          </div>
+
+          <div class="callout">
+            <strong>輸入 → 輸出：</strong>
+            CID-NL：RAW 檔 → <code>discovery_candidates.csv</code>
+            + <code>discovery_batch_index.csv</code>。
+            Delta Mass：Detected Features CSV（內部或外部 MS1 feature table）
+            → Pt candidate CSV + evidence CSV。
           </div>
 
           <details>
-            <summary>工程細節</summary>
+            <summary>工程模組</summary>
             <div class="details-body">
+              <h4>CID Neutral-Loss</h4>
               <ul>
-                <li><code>alignment/cross_sample_peak_groups.py::CrossSamplePeakGroupHypothesis</code> 是目前 C6 successor constructor model。</li>
-                <li><code>alignment/owner_clustering.py::cluster_sample_local_owners</code> 會先建 hypothesis，再轉成 <code>OwnerAlignedFeature</code>。</li>
-                <li><code>OwnerAlignedFeature</code> 仍是 backfill、matrix、claim registry、primary consolidation、writer、process payload 的 public delivery language。</li>
-                <li><code>FAM######</code> 仍是 output compatibility row ID，不是 domain truth。</li>
+                <li><code>xic_extractor/discovery/pipeline.py</code> — 單檔/批次 discovery 入口</li>
+                <li><code>xic_extractor/discovery/ms2_seeds.py</code> — strict neutral-loss seed 採集</li>
+                <li><code>xic_extractor/discovery/grouping.py</code> — seed → group 分群</li>
+                <li><code>xic_extractor/discovery/ms1_backfill.py</code> — MS1 同位素查詢與 m/z 精確化</li>
+                <li><code>xic_extractor/discovery/peak_anchor.py</code> — 鎖定 canonical m/z</li>
+              </ul>
+              <h4>Delta Mass (Pt pattern)</h4>
+              <ul>
+                <li><code>xic_extractor/discovery/delta_mass_pipeline.py</code> — Pt pattern discovery 入口</li>
+                <li><code>xic_extractor/discovery/delta_mass_patterns.py</code> — pattern 定義與 matcher</li>
+                <li><code>xic_extractor/discovery/detected_features.py</code> — sample-local MS1 feature 模型</li>
+                <li><code>xic_extractor/discovery/delta_mass_csv.py</code> — 候選結果 CSV/JSON IO</li>
+                <li><code>xic_extractor/discovery/pt_pattern_discovery_evidence.py</code> — evidence 建構</li>
+              </ul>
+              <h4>Preset 系統</h4>
+              <ul>
+                <li><code>xic_extractor/presets/</code> — TOML preset 載入、策略組合驗證、參數套用</li>
               </ul>
             </div>
           </details>
         </section>
 
-        <section id="matrix">
-          <h2>Final matrix：不是所有 cell 都會寫入 primary matrix</h2>
+        <!-- ─── XIC 抽取 ─── -->
+        <section id="xic">
+          <h2><span class="step-number">2</span>XIC 抽取：回 RAW 拉色譜圖</h2>
           <p class="section-intro">
-            final matrix 的重點是 <code>alignment_matrix.tsv</code>。它是 downstream correction/statistics
-            delivery surface。現在 writer 不會把所有 <code>AlignedCell.area</code> 直接倒進去，
-            而是先建立 production decision set。
+            對每個 discovery candidate，用其 m/z ± 容差視窗回 RAW 抽取
+            extracted ion chromatogram (XIC)。產出的 trace 是一組 (RT, intensity) 陣列，
+            代表該 m/z 在層析維度上的訊號分布。
+          </p>
+
+          <div class="grid two">
+            <article class="panel">
+              <h3>抽取方式</h3>
+              <p>
+                從 RAW 讀取 MS1 光譜，對目標 m/z ± ppm window 做 chromatogram extraction。
+                支援批次化處理（多目標共享同一次 RAW 存取）以提升 I/O 效率。
+              </p>
+            </article>
+            <article class="panel">
+              <h3>Alignment 中的抽取</h3>
+              <p>
+                Alignment pipeline 內建 XIC 抽取（owner build 與 backfill 各一次），
+                不需要另外跑 extraction script。每個 sample-local owner 的 trace
+                就是在這一步產生的。
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <!-- ─── Peak Selection ─── -->
+        <section id="peak">
+          <h2><span class="step-number">3</span>Peak 選擇與積分：從 trace 到面積</h2>
+          <p class="section-intro">
+            這一步解決的問題是：在一段 XIC trace 裡可能有多個局部峰，
+            到底哪一個是我們的目標峰？選出後如何正確計算面積？
+          </p>
+
+          <div class="grid">
+            <article class="panel">
+              <h3>候選峰偵測</h3>
+              <p>
+                從 XIC trace 中用 local-minimum 方法找出所有可能的候選峰邊界，
+                每個候選峰由 (left, apex, right) RT 三元組定義。
+              </p>
+            </article>
+            <article class="panel">
+              <h3>評分與選擇</h3>
+              <p>
+                對候選峰評分（S/N、峰形、對稱性），
+                結合 RT prior（來自 discovery 或 library）選出最佳 selected peak。
+              </p>
+            </article>
+            <article class="panel">
+              <h3>AsLS 積分</h3>
+              <p>
+                用 Asymmetric Least Squares (AsLS) 基線校正後積分，
+                產生 baseline-corrected area。Morphology area 則是對 AsLS 殘差做
+                Gaussian smoothing（15 點窗）後只取正值積分，
+                是 primary matrix 的面積來源。
+              </p>
+            </article>
+          </div>
+
+          <div class="callout">
+            <strong>輸出：</strong>
+            每個 candidate 得到一個 <code>IntegrationResult</code>，
+            包含 RT 邊界、高度、raw area、AsLS-corrected area、morphology area。
+            這裡描述的是已授權的一般 peak-selection 路徑；目前 Pt diagnostic artifacts
+            尚未投影為產品 <code>IntegrationResult</code>。
+          </div>
+
+          <details>
+            <summary>工程模組</summary>
+            <div class="details-body">
+              <ul>
+                <li><code>xic_extractor/peak_detection/facade.py</code> — <code>find_peak_and_area()</code> 公開入口</li>
+                <li><code>xic_extractor/peak_detection/engine_candidates.py</code> — 候選峰偵測</li>
+                <li><code>xic_extractor/peak_detection/candidate_scoring.py</code> — 候選峰評分</li>
+                <li><code>xic_extractor/peak_detection/candidate_selection.py</code> — 選擇最佳 candidate</li>
+                <li><code>xic_extractor/peak_detection/baseline.py</code> — AsLS 基線校正與積分</li>
+                <li><code>xic_extractor/peak_detection/hypotheses.py</code> — <code>IntegrationResult</code> 定義</li>
+              </ul>
+            </div>
+          </details>
+        </section>
+
+        <!-- ─── Alignment ─── -->
+        <section id="alignment">
+          <h2><span class="step-number">4</span>跨樣本 Alignment：Owner → Family → Matrix Row</h2>
+          <p class="section-intro">
+            Alignment 的核心問題是：不同樣本中看到的 peak observations，
+            哪些其實是同一個化合物？這一層用漏斗式規則逐步收斂。
           </p>
 
           <table class="decision-table">
@@ -855,220 +670,319 @@
               <tr>
                 <th>步驟</th>
                 <th>做什麼</th>
-                <th>產品意義</th>
+                <th>為什麼要這步</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Owner backfill</td>
-                <td>用 group seed 回 RAW 查缺 sample 的 XIC，產生 <code>rescued</code> cell。</td>
-                <td>補上「有可能存在但 discovery 沒抓到」的觀察，但不代表一定可進 matrix。</td>
+                <td><span class="step-number">a</span>Owner 建構</td>
+                <td>
+                  同一樣本中，屬於同一個 MS1 chromatographic peak 但被多次 MS2 觸發的
+                  candidates 合併為一個 owner。
+                </td>
+                <td>
+                  解決「重複觸發」問題：同一個前驅離子在不同 scan 被碎裂多次，
+                  本質上只算一個觀察事件。
+                </td>
               </tr>
               <tr>
-                <td>Claim registry</td>
-                <td>處理同一 sample 裡多個 row claim 到同一 MS1 peak 的情況。</td>
-                <td>避免同一個實際 peak 被多個 row 重複定量。</td>
+                <td><span class="step-number">b</span>Cross-sample 分群</td>
+                <td>
+                  用 complete-link clustering 比對不同樣本的 owners。
+                  閘門：m/z 50 ppm、product m/z 20 ppm、相同 neutral-loss tag、RT scoring。
+                </td>
+                <td>
+                  把跨樣本的「同一個化合物」歸入同一個 feature family，作為 matrix 的一行。
+                  Tag 閘門保證每個 NL transition 獨立處理。
+                </td>
               </tr>
               <tr>
-                <td>Primary consolidation</td>
-                <td>合併或降級 near-duplicate family competitors。</td>
-                <td>把 row-level identity 壓回較一致的 primary matrix surface。</td>
+                <td><span class="step-number">c</span>Backfill</td>
+                <td>
+                  對 family 中沒有 detected 的樣本，用 family 的 seed（m/z, RT）
+                  回 RAW 重新抽取 XIC、嘗試找峰。
+                </td>
+                <td>
+                  Discovery 不一定抓到所有樣本中的弱訊號。Backfill 讓 matrix 能填補
+                  「有可能存在但 MS2 沒觸發」的觀察。成功找到的 cell 標記為 rescued。
+                </td>
               </tr>
               <tr>
-                <td>Production decision</td>
-                <td>用 cell quality + matrix identity 決定 row/cell 是否寫值。</td>
-                <td>final matrix 只寫 accepted production values，review/ambiguous/duplicate/absent 會留空或轉 review surface。</td>
+                <td><span class="step-number">d</span>Claim Registry</td>
+                <td>
+                  檢查同一樣本中是否有多個 family row 搶同一個 MS1 peak（5 ppm fuzzy match）。
+                  若有，指定 winner 並把 loser 標記為 duplicate。
+                </td>
+                <td>
+                  Backfill 後可能出現「兩個 family 其實共用同一個 MS1 峰」的情況。
+                  不處理會導致同一個峰的面積被重複計算。
+                </td>
+              </tr>
+              <tr>
+                <td><span class="step-number">e</span>Primary 合併</td>
+                <td>
+                  跨 neutral-loss tag 的 family，若 precursor m/z 與 RT 高度接近，
+                  合併為同一個 primary family（一個化合物掉多種碎片）。
+                </td>
+                <td>
+                  Step b 的 tag 閘門會把同一化合物的不同 NL transition 分成不同 cluster。
+                  Backfill 完成後才能安全合併，因為每個 NL 需要獨立 backfill（tag-specific product m/z）。
+                </td>
+              </tr>
+              <tr>
+                <td><span class="step-number">f</span>Matrix Identity</td>
+                <td>
+                  評估每個 family 的 identity evidence 強度，決定是否進 primary matrix。
+                  產出 <code>identity_decision</code>（production / provisional / audit）
+                  與 <code>identity_confidence</code>（high / medium / review）。
+                </td>
+                <td>
+                  不是所有 family 都有足夠證據進入最終矩陣。
+                  <strong>單一樣本檢出</strong>可以保留為 provisional discovery
+                  供 review，但本身不是 primary matrix authority。
+                </td>
+              </tr>
+              <tr>
+                <td><span class="step-number">g</span>Production 決策</td>
+                <td>
+                  對 matrix 中每個 cell 做最終判定：寫入面積、留空（blank）、
+                  或標記為 duplicate/ambiguous/absent。
+                </td>
+                <td>
+                  Cell-level 的品質控制。即使 row 被納入 primary matrix，
+                  個別 cell 仍可能因為品質問題被留空。
+                </td>
               </tr>
             </tbody>
           </table>
 
-          <div class="grid two">
-            <article class="panel">
-              <h3>Matrix value source</h3>
-              <p>
-                <code>AlignedCell.matrix_area</code> 會優先使用 <code>selected_integration.area_raw_counts_seconds</code>，
-                沒有 selected integration 才走 legacy fallback。這是 handoff spine 已經 production-ready 的部分。
-              </p>
-            </article>
-            <article class="panel">
-              <h3>仍要注意</h3>
-              <p>
-                linear edge 已退休，所以 final matrix 不應再維持 linear-edge 或 legacy-baseline
-                主值語意。下一步要定義的是 AsLS baseline-corrected area 如何成為 primary matrix
-                value，以及 uncertainty / rollback audit 如何被清楚命名。
-              </p>
-            </article>
+          <div class="callout">
+            <strong>漏斗規則的關鍵設計：</strong>
+            tag 閘門在 Step b 刻意分開不同 NL transition → 各自獨立 backfill →
+            Step d 發現共享 MS1 peak → Step e 合併回同一個 family。
+            這個順序反映 LC-MS/MS 的物理事實：一個化合物可以碎出多種 fragments，
+            每種 fragment 的 product m/z 不同，必須分別回 RAW 搜尋。
           </div>
 
           <details>
-            <summary>工程細節</summary>
+            <summary>工程模組</summary>
             <div class="details-body">
               <ul>
-                <li><code>alignment/owner_matrix.py::build_owner_alignment_matrix</code> 建立 detected/rescued/absent/ambiguous cells。</li>
-                <li><code>alignment/claim_registry.py::apply_ms1_peak_claim_registry</code> 處理 duplicate MS1 peak claim。</li>
-                <li><code>alignment/primary_consolidation.py::consolidate_primary_family_rows</code> 處理 primary row consolidation。</li>
-                <li><code>alignment/production_decisions.py::build_production_decisions</code> 是 matrix writer 前的 row/cell decision layer。</li>
-                <li><code>alignment/tsv_writer.py::write_alignment_matrix_tsv</code> 寫出 <code>production_matrix_area(decision)</code>。</li>
+                <li><code>xic_extractor/alignment/pipeline.py</code> — alignment 完整 pipeline 入口</li>
+                <li><code>xic_extractor/alignment/ownership.py</code> — sample-local owner 建構</li>
+                <li><code>xic_extractor/alignment/owner_clustering.py</code> — complete-link cross-sample clustering</li>
+                <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code> — group hypothesis 模型</li>
+                <li><code>xic_extractor/alignment/edge_scoring.py</code> — 跨樣本 RT/m/z 評分</li>
+                <li><code>xic_extractor/alignment/owner_backfill.py</code> — 缺值 rescue 抽取</li>
+                <li><code>xic_extractor/alignment/claim_registry.py</code> — MS1 peak duplicate 處理</li>
+                <li><code>xic_extractor/alignment/primary_consolidation.py</code> — 跨 NL-tag family 合併</li>
+                <li><code>xic_extractor/alignment/matrix_identity.py</code> — row identity decision</li>
+                <li><code>xic_extractor/alignment/production_decisions.py</code> — cell production decision</li>
               </ul>
             </div>
           </details>
         </section>
 
-        <section id="radar">
-          <h2>優化雷達：目前最像雙軌維護的地方</h2>
+        <!-- ─── Final Matrix ─── -->
+        <section id="matrix">
+          <h2><span class="step-number">5</span>Final Matrix：誰能寫入、誰被留空</h2>
           <p class="section-intro">
-            這裡不是說每一項都要馬上刪，而是標出「舊語意已被新語意吸收一部分，
-            但產品行為或 delivery surface 還沒有完全遷移」的位置。
+            最終產出的 <code>alignment_matrix.tsv</code> 是一個 feature × sample 矩陣，
+            每個 cell 放的是 production-accepted area（或空值）。
+            這不是 raw detection dump，而是經過完整品質控制後的定量結果。
           </p>
 
-          <table>
+          <div class="grid two">
+            <article class="panel">
+              <h3>面積值來源</h3>
+              <p>
+                Primary matrix 面積使用 morphology area：
+                對 AsLS baseline residual 做 Gaussian smoothing（15 點窗）後，
+                只取正值部分積分。如果 morphology area 不可用，該 cell 留空——
+                不回退到 AsLS corrected area 或 raw area。
+                每個 cell 記錄面積來源（<code>primary_matrix_area_source</code>）。
+              </p>
+            </article>
+            <article class="panel">
+              <h3>留空原因</h3>
+              <p>
+                Cell 可能因為 absent（backfill 找不到）、
+                duplicate（另一個 family 已宣告該峰）、
+                ambiguous（多個候選峰無法區分）等原因被留空。
+                每個留空 cell 都帶有 <code>blank_reason</code>。
+              </p>
+            </article>
+          </div>
+
+          <h3 style="margin-top: 20px;">Identity Decision 分級</h3>
+          <table class="decision-table">
             <thead>
               <tr>
-                <th>熱區</th>
-                <th>現在狀態</th>
-                <th>為什麼還不能直接刪</th>
-                <th>合理 exit rule</th>
+                <th>Decision</th>
+                <th>意義</th>
+                <th>進入 primary matrix？</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>C4 scorer policy</td>
-                <td><span class="badge bridge">bridge</span> evidence semantics 已建立，但 scorer 還是 selection/confidence/caps authority。</td>
-                <td>直接刪會改 selected candidate、reason text、public projection。</td>
-                <td>建立 successor model-selection parity，再把 scorer 縮成 compatibility projection 或退休。</td>
+                <td>production_family</td>
+                <td>有足夠 identity evidence 支持，是正式的 matrix row。</td>
+                <td>是</td>
               </tr>
               <tr>
-                <td>Region boundary</td>
-                <td><span class="badge watch">diagnostic + narrow gate</span> shadow decision 可解釋問題，safe merge 只接窄路徑。</td>
-                <td>boundary model-selection 還沒成為完整 product selector。</td>
-                <td>定義 promotion/kill/externalize 規則，把 region facts 融入 hypothesis/integration/audit spine。</td>
+                <td>provisional_discovery</td>
+                <td>Evidence 不足以納入 primary matrix（如零檢出、extreme backfill dependency）。</td>
+                <td>否（進 review surface）</td>
               </tr>
               <tr>
-                <td>C6 owner delivery</td>
-                <td><span class="badge bridge">successor constructor + delivery adapter</span> group hypothesis 已建構，但下游還吃 DTO。</td>
-                <td>backfill/matrix/claim/writer/process payload 還依賴 <code>OwnerAlignedFeature</code> shape。</td>
-                <td>把 downstream contract 改吃 owner-group delivery protocol 或 successor projection，再評估 DTO 退休。</td>
-              </tr>
-              <tr>
-                <td>Matrix area semantics</td>
-                <td><span class="badge good">product decision</span> linear edge 已退休；final matrix 主值必須收斂到 AsLS corrected area policy。</td>
-                <td>直接換 matrix value 會影響所有下游定量結果，但不能因此保留 retired baseline 主值。</td>
-                <td>寫 AsLS primary matrix policy：AsLS 作主值，歷史值只能是明確命名的 audit/rollback。</td>
+                <td>audit_family</td>
+                <td>有特殊旗標需要人工審查。</td>
+                <td>否（進 audit surface）</td>
               </tr>
             </tbody>
           </table>
-        </section>
-
-        <section id="next">
-          <h2>下一輪方向建議</h2>
-          <p class="section-intro">
-            如果目標是「用一條主線把產品語意收乾淨」，我建議不要先追所有死碼。
-            先處理會改變產品理解與維護成本的三個 decision。
-          </p>
-
-          <div class="roadmap">
-            <div class="roadmap-item">
-              <div>
-                <div class="rank">1</div>
-                <div class="small">最高優先</div>
-              </div>
-              <div>
-                <h3>定量 area policy：AsLS corrected area 在 final matrix 的角色</h3>
-                <p class="small">
-                  baseline 已經改成 AsLS，final matrix 不應再沿用 retired baseline 主值。
-                  這一步要定義 AsLS-corrected area 作為 primary value，以及 uncertainty / audit projection。
-                </p>
-              </div>
-              <span class="badge good">product decision</span>
-            </div>
-
-            <div class="roadmap-item">
-              <div>
-                <div class="rank">2</div>
-                <div class="small">接著做</div>
-              </div>
-              <div>
-                <h3>Region boundary model-selection：從 diagnostic 走到可驗證 promotion</h3>
-                <p class="small">
-                  OpenMS-style thinking 的重點不是選某個 resolver 名稱，而是把 peak 選對、boundary 選對、
-                  evidence 給足。下一步應該設計最小 promotion gate，而不是再讓 region shadow 永久旁觀。
-                </p>
-              </div>
-              <span class="badge watch">needs gate</span>
-            </div>
-
-            <div class="roadmap-item">
-              <div>
-                <div class="rank">3</div>
-                <div class="small">結構收斂</div>
-              </div>
-              <div>
-                <h3>C6 downstream migration：讓 hypothesis/group contract 真正餵 matrix</h3>
-                <p class="small">
-                  C6 已經把 successor constructor 放進來，下一步不是再討論 family 叫什麼，
-                  而是讓 backfill、claim、matrix、writer 逐步依賴 successor contract 或 protocol。
-                </p>
-              </div>
-              <span class="badge bridge">adapter cleanup</span>
-            </div>
-
-            <div class="roadmap-item">
-              <div>
-                <div class="rank">4</div>
-                <div class="small">後續</div>
-              </div>
-              <div>
-                <h3>C4 successor selection：把 scorer 從 active policy 降級</h3>
-                <p class="small">
-                  這會比 C6 adapter cleanup 更容易碰到行為改變，應該在 typed evidence parity
-                  和 selected hypothesis oracle 足夠後再動。
-                </p>
-              </div>
-              <span class="badge bridge">later migration</span>
-            </div>
-          </div>
 
           <div class="callout">
-            <strong>建議故事線：</strong>
-            先把定量主值講清楚，因為 final matrix 最終是定量產品；
-            再處理 boundary，因為 boundary 會影響 area 是否可信；
-            接著把 C6 downstream adapter 收斂，降低維護兩套 cross-sample 語意的成本；
-            最後再碰 C4 model selection，因為它最容易牽動 public reason/confidence/selection 行為。
+            <strong>Single-sample detection 政策：</strong>
+            在 DNA adductomics 情境下，僅在單一樣本中檢出的特徵
+            （<code>single_sample_local_owner</code>）仍值得保留與人工 review，
+            但只標記為 <code>provisional_discovery</code>，不寫入 primary matrix。
+            後續必須取得額外 identity evidence，才能升為
+            <code>production_family</code>。
+          </div>
+
+          <h3 style="margin-top: 20px;">輸出檔案</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>檔案</th>
+                <th>用途</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>alignment_matrix.tsv</code></td>
+                <td>Primary 定量矩陣，供下游校正/統計。只含 production-accepted 面積值。</td>
+              </tr>
+              <tr>
+                <td><code>alignment_review.tsv</code></td>
+                <td>每個 family 的 identity decision、confidence、flags、evidence 摘要。</td>
+              </tr>
+              <tr>
+                <td><code>alignment_matrix_identity.tsv</code></td>
+                <td>Matrix 每一行的 identity sidecar：peak hypothesis ID、source families、split 狀態。</td>
+              </tr>
+              <tr>
+                <td><code>alignment_results.xlsx</code></td>
+                <td>多 sheet 工作簿：Matrix / Review / Audit / Cells。</td>
+              </tr>
+              <tr>
+                <td><code>run_metadata.json</code></td>
+                <td>Pipeline 參數、timing、版本資訊。</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <details>
+            <summary>工程模組</summary>
+            <div class="details-body">
+              <ul>
+                <li><code>xic_extractor/alignment/owner_matrix.py</code> — 建立 detected/rescued/absent/ambiguous cells</li>
+                <li><code>xic_extractor/alignment/production_decisions.py</code> — row/cell production decision</li>
+                <li><code>xic_extractor/alignment/tsv_writer.py</code> — TSV 輸出</li>
+                <li><code>xic_extractor/alignment/xlsx_writer.py</code> — XLSX 多 sheet 輸出</li>
+              </ul>
+            </div>
+          </details>
+        </section>
+
+        <!-- ─── 設計決策 ─── -->
+        <section id="design">
+          <h2>關鍵設計決策</h2>
+          <p class="section-intro">
+            這些決策不是偶然——它們反映了 LC-MS/MS adductomics 的物理事實與分析需求。
+          </p>
+
+          <div class="grid two">
+            <article class="panel">
+              <h3>為什麼 discovery 不直接寫 matrix？</h3>
+              <p>
+                Discovery 提供的是 per-sample candidate 與 evidence，不是自動成立的 counted detection。
+                候選必須先通過 PeakHypothesis model selection / integration；是否值得成為 matrix 的一行，還需要跨樣本 evidence
+                （grouping coherence、backfill 結果、duplicate 檢查）才能決定。
+                兩者是不同層級的判斷。
+              </p>
+            </article>
+            <article class="panel">
+              <h3>為什麼 backfill 要在 clustering 之後？</h3>
+              <p>
+                必須先知道「跨樣本的同一個 family 長什麼樣」（m/z, RT seed），
+                才能用正確的參數去缺失樣本的 RAW 搜尋。
+                先 backfill 再 cluster 會用錯 seed。
+              </p>
+            </article>
+            <article class="panel">
+              <h3>為什麼 NL tag 是硬閘門？</h3>
+              <p>
+                不同 neutral-loss 代表不同碎裂途徑，product m/z 不同，
+                backfill 需要 tag-specific 的 product m/z 做搜尋。
+                clustering 時不能混在一起，否則 backfill 結果語意不對。
+                合併在 backfill 之後（Step e）才安全。
+              </p>
+            </article>
+            <article class="panel">
+              <h3>為什麼保留單一樣本檢出？</h3>
+              <p>
+                DNA adductomics 的分析對象是低豐度加合物。
+                文獻建議 minFraction 低至 0.05–0.10（XCMS adductomics 參數推薦）。
+                在 discovery 階段直接丟棄會系統性失去真實但稀有的 adducts。
+                因此單樣本檢出會保留到 review surface，但不因此取得 Matrix 寫入權。
+              </p>
+            </article>
           </div>
         </section>
 
+        <!-- ─── Sources ─── -->
         <section id="sources">
-          <h2>本 report 對準的 repo surfaces</h2>
+          <h2>本文件對準的模組</h2>
           <p class="section-intro">
-            這份 HTML 是根據目前分支程式碼與近期 specs / plans 整理，不是外部產品假設。
+            這份文件根據目前程式碼整理，不是外部產品假設。
           </p>
           <ul class="source-list">
-            <li><code>xic_extractor/alignment/pipeline.py</code></li>
+            <li><code>xic_extractor/discovery/pipeline.py</code></li>
+            <li><code>xic_extractor/discovery/ms2_seeds.py</code></li>
+            <li><code>xic_extractor/discovery/grouping.py</code></li>
+            <li><code>xic_extractor/discovery/ms1_backfill.py</code></li>
+            <li><code>xic_extractor/discovery/delta_mass_pipeline.py</code></li>
+            <li><code>xic_extractor/discovery/delta_mass_patterns.py</code></li>
+            <li><code>xic_extractor/discovery/detected_features.py</code></li>
+            <li><code>xic_extractor/presets/</code></li>
             <li><code>xic_extractor/peak_detection/facade.py</code></li>
-            <li><code>xic_extractor/peak_detection/hypotheses.py</code></li>
-            <li><code>xic_extractor/evidence_semantics.py</code></li>
             <li><code>xic_extractor/peak_detection/baseline.py</code></li>
-            <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code></li>
+            <li><code>xic_extractor/peak_detection/hypotheses.py</code></li>
+            <li><code>xic_extractor/alignment/pipeline.py</code></li>
+            <li><code>xic_extractor/alignment/ownership.py</code></li>
             <li><code>xic_extractor/alignment/owner_clustering.py</code></li>
+            <li><code>xic_extractor/alignment/cross_sample_peak_groups.py</code></li>
             <li><code>xic_extractor/alignment/owner_backfill.py</code></li>
-            <li><code>xic_extractor/alignment/owner_matrix.py</code></li>
             <li><code>xic_extractor/alignment/claim_registry.py</code></li>
             <li><code>xic_extractor/alignment/primary_consolidation.py</code></li>
+            <li><code>xic_extractor/alignment/matrix_identity.py</code></li>
             <li><code>xic_extractor/alignment/production_decisions.py</code></li>
             <li><code>xic_extractor/alignment/tsv_writer.py</code></li>
-            <li><code>docs/product/quant-matrix.md</code></li>
-            <li><code>docs/product/targeted-selection.md</code></li>
-            <li><code>docs/product/quantitation-context.md</code></li>
-            <li><code>docs/product/evidence-spine.md</code></li>
-            <li><code>docs/product/alignment.md</code></li>
+            <li><code>xic_extractor/alignment/xlsx_writer.py</code></li>
           </ul>
         </section>
 
         <footer>
-          Product explainer for the RAW / discovery / alignment / matrix handoff.
-          It does not claim new product behavior. If this story conflicts with
-          the product topic pages, control plane, status index, or authority manifest,
-          those owners win.
+          Product story for the XIC Extractor pipeline: RAW → discovery → extraction →
+          peak selection → alignment → final matrix.
+          This page is an explainer, not an authority source. If it conflicts with
+          another surface, use the owner for that claim: <code>docs/product/</code>
+          for product behavior, the productization control plane for maturity, the
+          status index for artifact status, and the authority manifest plus
+          <code>docs/agent/product-validation-contract.md</code> for write/validation
+          authority. Executable code may itself be the behavior that needs correction.
         </footer>
       </div>
     </main>

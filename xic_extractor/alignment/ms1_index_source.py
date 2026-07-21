@@ -1,28 +1,34 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from xic_extractor.ms1_scan_index import (
+    MS1_INDEX_CACHE_SCHEMA_VERSION as MS1_INDEX_CACHE_SCHEMA_VERSION,
+)
+from xic_extractor.ms1_scan_index import (
+    MS1IndexIntensityMode as MS1IndexIntensityMode,
+)
+from xic_extractor.ms1_scan_index import (
+    MS1Scan,
+    _raw_file,
+    build_ms1_scan_index,
+    extract_index_xic,
+)
+from xic_extractor.ms1_scan_index import (
+    read_ms1_scan_index_npz as read_ms1_scan_index_npz,
+)
+from xic_extractor.ms1_scan_index import (
+    write_ms1_scan_index_npz as write_ms1_scan_index_npz,
+)
 from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 OwnerBuildXicBackend = Literal["raw", "raw_superwindow", "ms1_index"]
 OwnerBackfillXicBackend = Literal["raw", "ms1_index", "ms1_index_hybrid"]
-MS1IndexIntensityMode = Literal["max", "sum"]
 
 _WindowedRequest = tuple[int, XICRequest, tuple[int, int]]
-MS1_INDEX_CACHE_SCHEMA_VERSION = "ms1_scan_index_npz_v1"
-
-
-@dataclass(frozen=True)
-class MS1Scan:
-    scan_number: int
-    rt: float
-    masses: NDArray[np.float64]
-    intensities: NDArray[np.float64]
 
 
 class MS1IndexedRawSource:
@@ -202,143 +208,6 @@ def source_for_owner_build_backend(
     raise ValueError(f"unsupported owner build XIC backend: {backend}")
 
 
-def build_ms1_scan_index(source: Any) -> tuple[MS1Scan, ...]:
-    raw_file = _raw_file(source)
-    header = raw_file.RunHeaderEx
-    scans: list[MS1Scan] = []
-    for scan_number in range(int(header.FirstSpectrum), int(header.LastSpectrum) + 1):
-        filter_obj = raw_file.GetFilterForScanNumber(scan_number)
-        if str(getattr(filter_obj, "MSOrder", "")) != "Ms":
-            continue
-        masses, intensities = _scan_arrays(raw_file, scan_number)
-        if (
-            masses.ndim != 1
-            or intensities.ndim != 1
-            or masses.shape != intensities.shape
-        ):
-            continue
-        scans.append(
-            MS1Scan(
-                scan_number=scan_number,
-                rt=float(raw_file.RetentionTimeFromScanNumber(scan_number)),
-                masses=masses,
-                intensities=intensities,
-            )
-        )
-    return tuple(scans)
-
-
-def write_ms1_scan_index_npz(
-    path: Path,
-    index: tuple[MS1Scan, ...],
-) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    offsets: NDArray[np.int64] = np.zeros(len(index) + 1, dtype=np.int64)
-    scan_numbers: NDArray[np.int64] = np.empty(len(index), dtype=np.int64)
-    rts: NDArray[np.float64] = np.empty(len(index), dtype=np.float64)
-    mass_arrays: list[NDArray[np.float64]] = []
-    intensity_arrays: list[NDArray[np.float64]] = []
-    position = 0
-    for scan_index, scan in enumerate(index):
-        scan_numbers[scan_index] = scan.scan_number
-        rts[scan_index] = scan.rt
-        masses = np.asarray(scan.masses, dtype=np.float64)
-        intensities = np.asarray(scan.intensities, dtype=np.float64)
-        if (
-            masses.ndim != 1
-            or intensities.ndim != 1
-            or masses.shape != intensities.shape
-        ):
-            raise ValueError("MS1 scan cache arrays must be matching 1D arrays")
-        mass_arrays.append(masses)
-        intensity_arrays.append(intensities)
-        position += int(masses.size)
-        offsets[scan_index + 1] = position
-    masses_concat = (
-        np.concatenate(mass_arrays)
-        if mass_arrays
-        else np.asarray([], dtype=np.float64)
-    )
-    intensities_concat = (
-        np.concatenate(intensity_arrays)
-        if intensity_arrays
-        else np.asarray([], dtype=np.float64)
-    )
-    np.savez(
-        path,
-        schema_version=np.asarray([MS1_INDEX_CACHE_SCHEMA_VERSION]),
-        scan_number=scan_numbers,
-        rt=rts,
-        offsets=offsets,
-        masses=masses_concat,
-        intensities=intensities_concat,
-    )
-    return path
-
-
-def read_ms1_scan_index_npz(path: Path) -> tuple[MS1Scan, ...]:
-    with np.load(path, allow_pickle=False) as payload:
-        schema_version = str(payload["schema_version"][0])
-        if schema_version != MS1_INDEX_CACHE_SCHEMA_VERSION:
-            raise ValueError(
-                "unsupported MS1 index cache schema version: "
-                f"{schema_version}",
-            )
-        scan_numbers = np.asarray(payload["scan_number"], dtype=np.int64)
-        rts = np.asarray(payload["rt"], dtype=np.float64)
-        offsets = np.asarray(payload["offsets"], dtype=np.int64)
-        masses = np.asarray(payload["masses"], dtype=np.float64)
-        intensities = np.asarray(payload["intensities"], dtype=np.float64)
-    if scan_numbers.ndim != 1 or rts.ndim != 1 or scan_numbers.shape != rts.shape:
-        raise ValueError("MS1 index cache scan metadata is malformed")
-    if offsets.ndim != 1 or len(offsets) != len(scan_numbers) + 1:
-        raise ValueError("MS1 index cache offsets are malformed")
-    if masses.ndim != 1 or intensities.ndim != 1 or masses.shape != intensities.shape:
-        raise ValueError("MS1 index cache intensity arrays are malformed")
-    if len(offsets) and (offsets[0] != 0 or offsets[-1] != len(masses)):
-        raise ValueError("MS1 index cache offsets do not match payload length")
-    scans: list[MS1Scan] = []
-    for index, scan_number in enumerate(scan_numbers):
-        start = int(offsets[index])
-        end = int(offsets[index + 1])
-        if start > end:
-            raise ValueError("MS1 index cache offsets are not monotonic")
-        scans.append(
-            MS1Scan(
-                scan_number=int(scan_number),
-                rt=float(rts[index]),
-                masses=masses[start:end],
-                intensities=intensities[start:end],
-            ),
-        )
-    return tuple(scans)
-
-
-def extract_index_xic(
-    source: Any,
-    index: tuple[MS1Scan, ...],
-    request: XICRequest,
-    *,
-    intensity_mode: MS1IndexIntensityMode = "max",
-) -> XICTrace:
-    start_scan, end_scan = _scan_window(source, request)
-    tolerance = request.mz * request.ppm_tol / 1e6
-    rt_values: list[float] = []
-    intensity_values: list[float] = []
-    for scan in index:
-        if scan.scan_number < start_scan or scan.scan_number > end_scan:
-            continue
-        left = int(np.searchsorted(scan.masses, request.mz - tolerance, side="left"))
-        right = int(np.searchsorted(scan.masses, request.mz + tolerance, side="right"))
-        intensity = _window_intensity(
-            scan.intensities[left:right],
-            intensity_mode=intensity_mode,
-        )
-        rt_values.append(scan.rt)
-        intensity_values.append(intensity)
-    return XICTrace.from_arrays(rt_values, intensity_values)
-
-
 def _extract_source_many(
     source: Any,
     requests: tuple[XICRequest, ...],
@@ -435,49 +304,3 @@ def _crop_trace_to_scan_window(
 
 def _scan_span(start_scan: int, end_scan: int) -> int:
     return max(1, abs(end_scan - start_scan) + 1)
-
-
-def _window_intensity(
-    intensities: NDArray[np.float64],
-    *,
-    intensity_mode: MS1IndexIntensityMode,
-) -> float:
-    if len(intensities) == 0:
-        return 0.0
-    if intensity_mode == "max":
-        return float(np.max(intensities))
-    if intensity_mode == "sum":
-        return float(np.sum(intensities))
-    raise ValueError(f"unsupported MS1 index intensity mode: {intensity_mode}")
-
-
-def _scan_window(source: Any, request: XICRequest) -> tuple[int, int]:
-    resolver = getattr(source, "scan_window_for_request", None)
-    if callable(resolver):
-        start_scan, end_scan = resolver(request)
-        return int(start_scan), int(end_scan)
-    raw_file = _raw_file(source)
-    return (
-        int(raw_file.ScanNumberFromRetentionTime(request.rt_min)),
-        int(raw_file.ScanNumberFromRetentionTime(request.rt_max)),
-    )
-
-
-def _scan_arrays(
-    raw_file: Any,
-    scan_number: int,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    if hasattr(raw_file, "GetSegmentedScanFromScanNumber"):
-        scan = raw_file.GetSegmentedScanFromScanNumber(scan_number, None)
-        masses = getattr(scan, "Positions", [])
-    else:
-        scan = raw_file.GetSimplifiedScan(scan_number)
-        masses = getattr(scan, "Masses", [])
-    return (
-        np.asarray(masses, dtype=float),
-        np.asarray(getattr(scan, "Intensities", []), dtype=float),
-    )
-
-
-def _raw_file(source: Any) -> Any:
-    return getattr(source, "_raw_file", source)

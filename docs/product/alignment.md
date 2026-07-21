@@ -9,6 +9,10 @@ contracts for review and downstream product decisions.
 - Alignment inputs must be explicit: accepted target input, discovery batch
   index, or documented local validation input. Do not rely on old worktree
   output paths as durable inputs.
+- Alignment consumes discovered or accepted feature candidates and resolves
+  cross-sample owner/group hypotheses based on evidence. It does not create the
+  first sample-local Discovery hit and does not treat a single method match as
+  cross-sample identity proof by itself.
 - `validation-minimal` is the standard fast public validation profile unless a
   stronger gate is explicitly requested.
 - Alignment may write matrix, review, identity, evidence, and conditional

@@ -1,0 +1,490 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from xic_extractor.discovery import pt_pattern_review_packet as packet
+from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
+from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
+
+
+def _candidate_row(
+    candidate_id: str,
+    *,
+    method_label: str = "pt_pattern",
+    state: str = "pt_pattern_candidate",
+) -> dict[str, str]:
+    return {
+        "sample_stem": "SampleA",
+        "method_label": method_label,
+        "candidate_id": candidate_id,
+        "candidate_state": state,
+        "review_priority": "HIGH",
+        "evidence_tier": "A",
+        "evidence_score": "90",
+        "base_mz": "500.0",
+        "base_rt_apex_min": "10.0",
+        "cid_nl_base_status": "not_required",
+        "cid_nl_base_join_mode": "not_required",
+    }
+
+
+def _summary_row(
+    candidate_id: str,
+    status: str,
+    *,
+    schema_version: str = "pt_pattern_anchor_local_trace_diagnosis.v1",
+) -> dict[str, str]:
+    return {
+        "schema_version": schema_version,
+        "sample_stem": "SampleA",
+        "candidate_id": candidate_id,
+        "scan_pattern_seed_status": "full_pattern_seeded",
+        "base_mz": "500.0",
+        "base_rt_apex_min": "10.0",
+        "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
+        "trace_smoothing_method": evidence.TRACE_SMOOTH_METHOD,
+        "trace_smoothing_window_points": str(evidence.TRACE_SMOOTH_WINDOW_POINTS),
+        "min_effective_smoothing_window_sec": "0.90",
+        "min_median_rt_step_sec": "0.06",
+        "max_trace_point_count": "31",
+        "non_base_positions_supported": "3",
+        "max_abs_apex_delta_sec": "2.0",
+        "min_pearson_r_to_base": "0.95",
+        "min_active_overlap_fraction": "0.90",
+        "min_shifted_pearson_r_to_base": "0.98",
+        "max_abs_shape_shift_sec_to_base": "1.0",
+        "raw_max_abs_apex_delta_sec": "2.0",
+        "raw_min_pearson_r_to_base": "0.80",
+        "raw_min_active_overlap_fraction": "0.70",
+        "trace_ambiguity_status": "review_required",
+        "trace_ambiguity_flags": "shifted_only_support_present",
+        "shifted_only_position_labels": "pt_plus_4",
+        "anchor_segmentation_status": "clear",
+        "anchor_segmentation_reason": "one_anchor_segment_per_position",
+        "anchor_segmentation_common_rt_start_min": "9.8",
+        "anchor_segmentation_common_rt_end_min": "10.2",
+        "anchor_segmentation_common_duration_sec": "24.0",
+        "anchor_segmentation_common_start_owner_labels": "base",
+        "anchor_segmentation_common_end_owner_labels": "pt_plus_4",
+        "anchor_segmentation_boundary_review_status": "review_required",
+        "anchor_segmentation_boundary_review_position_labels": "pt_plus_4",
+        "anchor_segmentation_max_left_clip_sec": "3.0",
+        "anchor_segmentation_max_right_clip_sec": "34.0",
+        "anchor_segmentation_min_common_retained_fraction": "0.48",
+        "anchor_segmentation_max_common_left_residual_fraction": "0.10",
+        "anchor_segmentation_max_common_right_residual_fraction": "0.49",
+        "anchor_segmentation_descending_at_common_right_position_labels": (
+            "base|pt_plus_1|pt_plus_2|pt_plus_4"
+        ),
+        "trace_support_status": "supported",
+        "combined_pt_pattern_status": status,
+        "reason": "unit_fixture",
+    }
+
+
+def _metric_rows(
+    candidate_id: str,
+    *,
+    schema_version: str = "pt_pattern_anchor_local_trace_diagnosis.v1",
+) -> list[dict[str, str]]:
+    return [
+        {
+            "schema_version": schema_version,
+            "candidate_id": candidate_id,
+            "position_label": label,
+            "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
+            "trace_smoothing_method": evidence.TRACE_SMOOTH_METHOD,
+            "trace_smoothing_window_points": str(
+                evidence.TRACE_SMOOTH_WINDOW_POINTS
+            ),
+            "median_rt_step_sec": "0.06",
+            "effective_smoothing_window_sec": "0.90",
+            "apex_delta_sec_to_base": "1.0",
+            "pearson_r_to_base": "0.95",
+            "active_overlap_fraction": "0.90",
+            "shifted_pearson_r_to_base": "0.98",
+            "shape_shift_sec_to_base": "1.0",
+            "raw_apex_delta_sec_to_base": "1.0",
+            "raw_smoothed_apex_delta_sec": "0.5",
+            "raw_pearson_r_to_base": "0.80",
+            "raw_active_overlap_fraction": "0.70",
+            **(
+                {
+                    column: ""
+                    for column in evidence.ANCHOR_SEGMENTATION_METRIC_COLUMNS
+                }
+                if schema_version == "pt_pattern_anchor_local_trace_diagnosis.v1"
+                else {}
+            ),
+            "trace_quality_flags": "shifted_only_support",
+            "trace_support_status": "supported",
+            "reason": "unit_fixture",
+        }
+        for label in evidence.POSITION_LABELS
+    ]
+
+
+def test_build_review_packet_rows_samples_per_status_and_keeps_pending_oracle() -> None:
+    rows = packet.build_review_packet_rows(
+        candidate_rows=[
+            _candidate_row("cand-supported-a"),
+            _candidate_row("cand-supported-b"),
+            _candidate_row("cand-partial"),
+        ],
+        summary_rows=[
+            _summary_row("cand-supported-a", "pt_pattern_detected_diagnostic"),
+            _summary_row("cand-supported-b", "pt_pattern_detected_diagnostic"),
+            _summary_row("cand-partial", "pt_pattern_candidate_partial"),
+        ],
+        metric_rows=[
+            *_metric_rows("cand-supported-a"),
+            *_metric_rows("cand-supported-b"),
+            *_metric_rows("cand-partial"),
+        ],
+        packet_label="unit_packet",
+        source_label="pt_only",
+        max_per_status=1,
+    )
+
+    assert [row["candidate_id"] for row in rows] == [
+        "cand-supported-a",
+        "cand-partial",
+    ]
+    assert rows[0]["schema_version"] == packet.ANCHOR_LOCAL_SCHEMA_VERSION
+    assert rows[0]["readiness_tier"] == "diagnostic_only"
+    assert rows[0]["evidence_owner"] == packet.EVIDENCE_OWNER
+    assert rows[0]["review_bucket"] == "detected_diagnostic_review"
+    assert rows[0]["human_review_decision"] == ""
+    assert rows[0]["oracle_status"] == "pending_human_review"
+    assert rows[0]["pt_plus_4_trace_support_status"] == "supported"
+    assert "base_trace_support_status" not in rows[0]
+    assert rows[0]["trace_decision_basis"] == evidence.TRACE_DECISION_BASIS
+    assert rows[0]["min_shifted_pearson_r_to_base"] == "0.98"
+    assert rows[0]["max_abs_shape_shift_sec_to_base"] == "1.0"
+    assert rows[0]["anchor_segmentation_boundary_review_status"] == "review_required"
+    assert rows[0]["anchor_segmentation_common_end_owner_labels"] == "pt_plus_4"
+    assert rows[0]["anchor_segmentation_max_right_clip_sec"] == "34.0"
+    assert rows[0]["trace_ambiguity_status"] == "review_required"
+    assert rows[0]["trace_ambiguity_flags"] == "shifted_only_support_present"
+    assert rows[0]["shifted_only_position_labels"] == "pt_plus_4"
+    assert rows[0]["min_effective_smoothing_window_sec"] == "0.90"
+    assert rows[0]["min_median_rt_step_sec"] == "0.06"
+    assert rows[0]["max_trace_point_count"] == "31"
+    assert rows[0]["raw_min_pearson_r_to_base"] == "0.80"
+    assert rows[0]["pt_plus_4_trace_quality_flags"] == "shifted_only_support"
+    assert rows[0]["pt_plus_4_effective_smoothing_window_sec"] == "0.90"
+    assert rows[0]["pt_plus_4_raw_smoothed_apex_delta_sec"] == "0.5"
+    assert rows[0]["pt_plus_4_shifted_pearson_r_to_base"] == "0.98"
+    assert rows[0]["pt_plus_4_shape_shift_sec_to_base"] == "1.0"
+    assert rows[0]["pt_plus_4_raw_active_overlap_fraction"] == "0.70"
+
+
+def test_review_packet_rejects_summary_candidate_missing_from_candidates() -> None:
+    with pytest.raises(ValueError, match="summary candidate_id values missing"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand-present")],
+            summary_rows=[
+                _summary_row("cand-missing", "pt_pattern_detected_diagnostic")
+            ],
+            metric_rows=_metric_rows("cand-missing"),
+            packet_label="missing-candidate",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "conflicting_value"),
+    [
+        ("sample_stem", "SampleB"),
+        ("base_mz", "501.0"),
+        ("base_rt_apex_min", "10.5"),
+    ],
+)
+def test_review_packet_rejects_candidate_summary_identity_mismatch(
+    field: str,
+    conflicting_value: str,
+) -> None:
+    summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
+    summary[field] = conflicting_value
+
+    with pytest.raises(ValueError, match=rf"{field}.*does not match"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[summary],
+            metric_rows=_metric_rows("cand"),
+            packet_label="identity-mismatch",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_join_is_independent_of_input_row_order() -> None:
+    candidate_a = _candidate_row("cand-a")
+    candidate_b = _candidate_row("cand-b")
+    candidate_b["base_mz"] = "600.0"
+    candidate_b["base_rt_apex_min"] = "11.0"
+    summary_a = _summary_row("cand-a", "pt_pattern_detected_diagnostic")
+    summary_b = _summary_row("cand-b", "pt_pattern_detected_diagnostic")
+    summary_b["base_mz"] = "600.0"
+    summary_b["base_rt_apex_min"] = "11.0"
+
+    forward = packet.build_review_packet_rows(
+        candidate_rows=[candidate_a, candidate_b],
+        summary_rows=[summary_a, summary_b],
+        metric_rows=[*_metric_rows("cand-a"), *_metric_rows("cand-b")],
+        packet_label="ordered",
+        source_label="pt_only",
+        max_per_status=2,
+    )
+    reversed_rows = packet.build_review_packet_rows(
+        candidate_rows=[candidate_b, candidate_a],
+        summary_rows=[summary_b, summary_a],
+        metric_rows=[*_metric_rows("cand-b"), *_metric_rows("cand-a")],
+        packet_label="ordered",
+        source_label="pt_only",
+        max_per_status=2,
+    )
+
+    assert forward == reversed_rows
+
+
+def test_review_packet_rejects_duplicate_summary_candidate_id() -> None:
+    summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
+    with pytest.raises(ValueError, match="duplicate summary candidate_id values"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[summary, dict(summary)],
+            metric_rows=_metric_rows("cand"),
+            packet_label="duplicate-summary",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_missing_metric_candidate() -> None:
+    with pytest.raises(ValueError, match="metric candidate_id set must exactly"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand-a"), _candidate_row("cand-b")],
+            summary_rows=[
+                _summary_row("cand-a", "pt_pattern_detected_diagnostic"),
+                _summary_row("cand-b", "pt_pattern_candidate_partial"),
+            ],
+            metric_rows=_metric_rows("cand-a"),
+            packet_label="missing-metric-candidate",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_unexpected_metric_candidate() -> None:
+    with pytest.raises(ValueError, match="metric candidate_id set must exactly"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[
+                _summary_row("cand", "pt_pattern_detected_diagnostic")
+            ],
+            metric_rows=[*_metric_rows("cand"), *_metric_rows("unexpected")],
+            packet_label="unexpected-metric-candidate",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_error"),
+    [
+        ("missing", "metric position_label set must be exactly"),
+        ("unknown", "metric position_label set must be exactly"),
+        ("duplicate", "duplicate metric candidate/position values"),
+    ],
+)
+def test_review_packet_rejects_invalid_metric_position_set(
+    mutate: str,
+    expected_error: str,
+) -> None:
+    metrics = _metric_rows("cand")
+    if mutate == "missing":
+        metrics.pop()
+    elif mutate == "unknown":
+        metrics[-1]["position_label"] = "pt_plus_3"
+    else:
+        metrics.append(dict(metrics[-1]))
+
+    with pytest.raises(ValueError, match=expected_error):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[
+                _summary_row("cand", "pt_pattern_detected_diagnostic")
+            ],
+            metric_rows=metrics,
+            packet_label="invalid-metric-position-set",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_cli_writes_csv_and_sidecar(tmp_path: Path) -> None:
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    summary_csv = tmp_path / "pt_pattern_trace_summary.csv"
+    metrics_csv = tmp_path / "pt_pattern_trace_metrics.csv"
+
+    write_delimited_rows(
+        candidates_csv,
+        [_candidate_row("cand-supported")],
+        packet.CANDIDATE_REQUIRED_COLUMNS,
+    )
+    write_delimited_rows(
+        summary_csv,
+        [_summary_row("cand-supported", "pt_pattern_detected_diagnostic")],
+        (
+            "schema_version",
+            *packet.SUMMARY_REQUIRED_COLUMNS,
+            *evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS,
+        ),
+    )
+    write_delimited_rows(
+        metrics_csv,
+        _metric_rows("cand-supported"),
+        (
+            "schema_version",
+            *packet.METRIC_REQUIRED_COLUMNS,
+            *evidence.ANCHOR_SEGMENTATION_METRIC_COLUMNS,
+        ),
+    )
+
+    from tools.diagnostics import pt_pattern_review_packet as cli
+
+    assert cli.main(
+        [
+            "--candidates-csv",
+            str(candidates_csv),
+            "--trace-summary-csv",
+            str(summary_csv),
+            "--trace-metrics-csv",
+            str(metrics_csv),
+            "--output-dir",
+            str(tmp_path / "review_packet"),
+            "--packet-label",
+            "unit_packet",
+            "--source-label",
+            "pt_only",
+        ]
+    ) == 0
+
+    rows = read_delimited_rows(
+        tmp_path / "review_packet" / "pt_pattern_manual_review_packet.csv",
+        required_columns=packet.PACKET_COLUMNS,
+        delimiter=",",
+    )
+    assert rows[0]["human_review_decision"] == ""
+    assert rows[0]["oracle_status"] == "pending_human_review"
+
+    sidecar = json.loads(
+        (tmp_path / "review_packet" / "pt_pattern_manual_review_packet.json")
+        .read_text(encoding="utf-8")
+    )
+    assert sidecar["schema_version"] == packet.ANCHOR_LOCAL_SCHEMA_VERSION
+    assert sidecar["readiness_tier"] == "diagnostic_only"
+    assert sidecar["packet_row_count"] == 1
+    assert sidecar["human_review_decision_values"] == [
+        "accepted",
+        "rejected",
+        "uncertain",
+    ]
+
+
+def test_review_packet_keeps_v2_columns_for_legacy_trace_summary(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "pt_pattern_candidates.csv"
+    summary_csv = tmp_path / "pt_pattern_trace_summary.csv"
+    metrics_csv = tmp_path / "pt_pattern_trace_metrics.csv"
+    write_delimited_rows(
+        candidates_csv,
+        [_candidate_row("cand-supported")],
+        packet.CANDIDATE_REQUIRED_COLUMNS,
+    )
+    write_delimited_rows(
+        summary_csv,
+        [
+            _summary_row(
+                "cand-supported",
+                "pt_pattern_detected_diagnostic",
+                schema_version=evidence.SCHEMA_VERSION,
+            )
+        ],
+        packet.SUMMARY_REQUIRED_COLUMNS,
+    )
+    write_delimited_rows(
+        metrics_csv,
+        _metric_rows("cand-supported", schema_version=evidence.SCHEMA_VERSION),
+        packet.METRIC_REQUIRED_COLUMNS,
+    )
+
+    outputs = packet.run_review_packet(
+        candidates_csv=candidates_csv,
+        trace_summary_csv=summary_csv,
+        trace_metrics_csv=metrics_csv,
+        output_dir=tmp_path / "legacy_packet",
+        packet_label="legacy",
+        source_label="pt_only",
+        max_per_status=1,
+    )
+    rows = read_delimited_rows(
+        outputs["packet_csv"],
+        required_columns=packet.LEGACY_PACKET_COLUMNS,
+        delimiter=",",
+    )
+    assert rows[0]["schema_version"] == packet.SCHEMA_VERSION
+    assert "anchor_segmentation_status" not in rows[0]
+
+
+def test_review_packet_rejects_unknown_trace_schema() -> None:
+    summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
+    summary["schema_version"] = "pt_pattern_trace_diagnosis.v999"
+
+    with pytest.raises(ValueError, match="unsupported trace summary schema_version"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[summary],
+            metric_rows=_metric_rows("cand"),
+            packet_label="unknown",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_partial_anchor_summary_schema() -> None:
+    summary = _summary_row("cand", "pt_pattern_detected_diagnostic")
+    summary.pop("anchor_segmentation_status")
+
+    with pytest.raises(ValueError, match="missing anchor segmentation columns"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[summary],
+            metric_rows=_metric_rows("cand"),
+            packet_label="partial-anchor-summary",
+            source_label="pt_only",
+            max_per_status=1,
+        )
+
+
+def test_review_packet_rejects_partial_anchor_metric_schema() -> None:
+    metrics = _metric_rows("cand")
+    metrics[0].pop("anchor_segment_rt_start_min")
+
+    with pytest.raises(ValueError, match="missing anchor segmentation columns"):
+        packet.build_review_packet_rows(
+            candidate_rows=[_candidate_row("cand")],
+            summary_rows=[
+                _summary_row("cand", "pt_pattern_detected_diagnostic")
+            ],
+            metric_rows=metrics,
+            packet_label="partial-anchor-metric",
+            source_label="pt_only",
+            max_per_status=1,
+        )

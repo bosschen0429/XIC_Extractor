@@ -28,6 +28,7 @@ local_validation_raw/
 local_validation_artifacts/
 
 # Superpowers / Claude dev artefacts
+.claude/
 .agents/
 .superpowers/
 .remember/

@@ -1,0 +1,14 @@
+name = "Pt pattern"
+description = "Delta-mass Pt pattern discovery."
+combine_mode = "single"
+
+[[tag]]
+strategy = "delta_mass"
+name = "Pt pattern"
+pattern_id = "pt"
+
+[discovery]
+method_label = "pt_pattern"
+delta_mass_mz_tolerance_ppm = 20.0
+delta_mass_rt_tolerance_sec = 30.0
+delta_mass_ratio_basis = "both"

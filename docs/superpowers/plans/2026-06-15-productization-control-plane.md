@@ -461,10 +461,11 @@ value-changing behavior，不可直接改 quant、counted detection、normalized
 
 | Slot | Lane | Owner | Allowed work | Stop rule |
 |---|---|---|---|---|
-| Primary | `backfill_standard_seed_guard_scope_v1` | none; 72-row high-signal, 42-row low-scan, 57-row low-height, 69-row low-height-low-scan, and 220-row low-height reintegration-stable narrow writer ready slices done; generated policy replay is now ready for current approved evidence classes plus 72 row-specific observed-oracle rows, with 511/511 expected-diff pass and 0 remaining `detected_flagged`; broad Backfill auto-write is parked by `backfill_broad_autowrite_feasibility_gate_v1`; apex-delta, width-only, and shape-margin probes are candidate only; all-stability remains blocked by 19/20 formal oracle; shape-clean reintegration-stable is `production_candidate` evidence only because its oracle passed but the writer probe found 0 new writes / 104 unchanged pre-existing values | maintain existing explicit scoped writer contracts and current 511-cell authority only; route blocked rows through authority/adjudication, structured review, truth, or evidence-recovery assets; no more broad Backfill sidecars/diagnostics unless a new independent truth source is named | stop if the next step would silently broaden matrix writes, derive predicates from `quality_blockers`, use round-trip reintegration as peak-choice truth, revive all-stability/apex-delta/width-only/shape-margin under a new name, include `missing_overlay_path` rows without trace evidence, or create another broad diagnostic backlog |
+| Primary | `pt_pattern_discovery_diagnostic_v1_closeout` | active on branch `codex/pt-pattern-discovery`; `xic_extractor.discovery` owns matcher/evidence contracts and diagnostic CLIs only orchestrate | close a trustworthy `diagnostic_only` v1: preserve candidate, same-scan, trace, review, conflict, and provenance observability while stating which surfaces are proxies/scaffolds; defer complete assignment generation, canonical `PeakHypothesis`, selection, quantitation, and product projection | stop if work promotes historical reviewed labels or threshold resubstitution, treats machine calls as detections, launches new RAW, tunes thresholds, or grants Alignment/Backfill/Matrix/count/export authority |
+| Maintenance | `backfill_standard_seed_guard_scope_v1` | none; 72-row high-signal, 42-row low-scan, 57-row low-height, 69-row low-height-low-scan, and 220-row low-height reintegration-stable narrow writer ready slices done; generated policy replay is now ready for current approved evidence classes plus 72 row-specific observed-oracle rows, with 511/511 expected-diff pass and 0 remaining `detected_flagged`; broad Backfill auto-write is parked by `backfill_broad_autowrite_feasibility_gate_v1`; apex-delta, width-only, and shape-margin probes are candidate only; all-stability remains blocked by 19/20 formal oracle; shape-clean reintegration-stable is `production_candidate` evidence only because its oracle passed but the writer probe found 0 new writes / 104 unchanged pre-existing values | maintain existing explicit scoped writer contracts and current 511-cell authority only; route blocked rows through authority/adjudication, structured review, truth, or evidence-recovery assets; no more broad Backfill sidecars/diagnostics unless a new independent truth source is named | stop if the next step would silently broaden matrix writes, derive predicates from `quality_blockers`, use round-trip reintegration as peak-choice truth, revive all-stability/apex-delta/width-only/shape-margin under a new name, include `missing_overlay_path` rows without trace evidence, or create another broad diagnostic backlog |
 | Supporting | `sample_metadata_cross_module_parity_v1` | none; no-output order projection is `production_ready`; role/value behavior remains `blocked` | release smoke/docs only; no further role/value behavior without expected-diff | stop if sample role changes extraction output, counted detection, normalized value, or matrix value |
 | Parked | `review_action_reintegration_v1` | parked for this release claim; candidate-sidecar verifier is now `production_candidate` | selected-candidate writer and manual boundary area recompute remain blocked until expected-diff/product apply contracts exist; long-term product direction is low-manual-intervention automation with audit/review sampling | stop if a manual action changes selected peak/area/counting without expected-diff |
-| Diagnostic-only | none | none | no new diagnostic sidecars in this window | stop any diagnostic request unless it directly closes Backfill scope acceptance |
+| Diagnostic-only | `pt_pattern_scan_proxy_v1` only as supporting evidence for the primary Pt lane | current diagnostic bridge under `tools/diagnostics/pt_pattern_scan_proxy.py` | may produce candidate inputs and review packets for manual inspection, but cannot become the product detector by itself | stop if proxy-derived rows are used as production readiness, ground truth, or Matrix authority without independent validation and an explicit product contract |
 | Frozen queue | calibration/normalization activation | none | classification and planning only | unfreeze only after active lanes are promoted, killed, or explicitly parked |
 
 Hard gate: a lane without a `WIP owner`, productization intake packet, and stop
@@ -509,6 +510,7 @@ scope.
 | `AuditTrail` | `partial_internal` | `PeakHypothesis.audit` | 不是 user-visible operation history | `review_roundtrip_v1` | unassigned |
 | `Review Queue` | `production_surface` as worklist | workbook `Review Queue` sheet | 不能讀回 decision；不能 reintegrate | `review_roundtrip_v1` | unassigned |
 | ReviewAction audited apply copy | `production_surface` for audited targeted-long copy; `production_candidate` for candidate-sidecar verification | `xic_extractor.review_actions`, `scripts/apply_review_action_changesets.py`, `scripts/plan_review_action_candidate_sidecars.py`, `review_action_apply_audit_v1`, `review_action_candidate_sidecar_v1` | accept/mark/reject 可寫 audited output copy；`select_candidate` candidate_id 現在可對 `peak_candidates.tsv` 做唯一性/SHA 驗證；selected candidate switch/manual boundary 仍 deferred | selected-candidate writer + manual boundary recompute writer only after expected-diff/product decision | none; audited apply and candidate-sidecar verifier slices done |
+| Pt pattern Discovery: `delta_mass(pattern_id=pt)` | `diagnostic_only` for candidate generation, same-scan support, trace/anchor-local evidence, review labels, historically named oracle packets, threshold replay, conflict replay, and diagnostic machine calls | `xic_extractor.discovery.delta_mass_*`, `xic_extractor.discovery.pt_pattern_*`, `scripts/run_pt_pattern_discovery.py`, Pt diagnostics, `docs/product/discovery.md`, and the Pt validation note | The v1 matcher emits one greedy assignment representative per base rather than all compatible assignments. Same-scan evidence is theoretical-window occupancy, not chemical intensity attribution; anchor-local segments are boundary evidence; `trace_rule_call` is a diagnostic proxy, not a final detector call. The first bounded nine-case human slice has 6 accepts, rejects at Cases 06 and 09, and unresolved Case 08; the historical repaired 32-row packet and zero-error threshold fit are stale resubstitution context, not ground truth. No canonical `PeakHypothesis`, selected area, `IntegrationResult`, Alignment/Backfill intake, counted detection, Matrix, workbook, activation, or export authority exists. | Define complete or bounded Top-K assignment generation and bind same-scan/trace evidence to each assignment, then repeat bounded independent review. Product promotion requires a later explicit selection, validation, projection, and rollback contract; historical DDMS2 target-list absence remains a separate evidence limitation. | `codex/pt-pattern-discovery` |
 | Manual boundary / reintegration | `parked`; `production_candidate` for deferred changeset and candidate-sidecar verification only | candidate sidecar verifier + action schema + changeset rows | 沒有 area recompute writer；沒有 selected candidate switch writer；candidate sidecar 只驗證 id，不授權改 selected peak/area；需要產品決策確認是否可改 selected peak/area | `review_action_reintegration_v1` product decision | parked |
 | `Run Metadata` | `production_surface` as workbook metadata | workbook sheet + manifest/schema reverse reference | 不是 full replay manifest；只反向記錄 targeted output schema 與 manifest schema/path/hash | workbook hash capture / release metadata docs | unassigned |
 | `method_manifest.json` | `production_ready` for targeted CLI replay parity | `xic_extractor.output.method_manifest`, `output/method_manifest.json` | 8RAW/85RAW CSV + normalized workbook replay parity passed；artifact policy says CSV exact, workbook normalized compare, manifest provenance-only | full byte-exact workbook replay only if a future release needs it | unassigned |
@@ -519,6 +521,154 @@ scope.
 | Instrument-QC trend sidecar | `production_surface` sidecar | `run_instrument_qc.py`, instrument_qc package, `instrument_qc_sample_metadata.tsv` | 不改 main matrix；sample metadata sidecar 只做 metadata projection | release smoke / downstream docs | none; projection slice done |
 | Calibration preview | `shadow_ready` / `diagnostic_only` | instrument-QC calibration preview | 不可寫 main matrix；response transfer blocked | `normalization_calibration_activation_v1` | unassigned |
 | Alignment workbook Matrix/Review/Audit | `production_surface` | `alignment_results.xlsx`, `xlsx_writer.py`, `alignment-results-v3` | output-level wording now matches runtime; keep release tests guarding sheet/schema shape | alignment release gate | unassigned |
+
+Pt pattern feature-source update (2026-07-02): the Pt Discovery CLI and
+preparation CLI now accept normalized external feature TSVs and MZmine wide
+feature table CSVs. Area-only feature-detector rows may seed feature-level Pt
+candidate matching by using positive area as the intensity proxy, but those
+candidates are labelled `feature_source_detected` with `MEDIUM` / tier `B`
+review priority until trace/co-elution evidence evaluates them. A no-RAW smoke
+against `output/mature_tools/mzmine_ctdna_probe/ctdna_probe_quant_mzmine.csv`
+wrote 227,698 canonical detected-feature rows and 7,557 Pt candidates under
+`output/pt_pattern_productization_v1/feature_source_real_smoke/mzmine_ctdna_probe/`;
+all trace rule fields remained `not_evaluated`. A follow-up smoke on the
+20251210 Fullscan/DDMS2 local RAW pair used MZmine only as the external feature
+detector source, then ran Pt matching in this repo. The Fullscan MZmine feature
+table produced 31,547 canonical detected features and 951 Pt-only seeds; the
+first 50 traced seeds produced 36 shared-rule `accept` / `detected`, 14
+`reject` / `non_detected`, and 901 not-evaluated rows when the 50-row trace
+summary was joined back to the full candidate set. The DDMS2 MZmine table
+produced 24,074 canonical detected features; Pt+CID-NL(dR) composite matching
+produced 5 candidates, and RAW trace evidence called 4 `accept` / `detected`
+and 1 `reject` / `non_detected`. Blind overlay HTML packets exist under
+ignored `output/pt_pattern_productization_v1/feature_source_real_smoke/`.
+This does not change the Pt pattern maturity tier and does not grant Matrix,
+Backfill, counted-detection, selected-area, workbook, or export authority.
+Local MS1 feature table generator outputs are `diagnostic_only` / feature-source
+screening evidence. The initial all-centroid adjacent scan-linking path timed
+out beyond 1000 seconds on the 20251210 Fullscan RAW. A first seeded redesign
+was also rejected after review because intensity-order point assignment could
+split one chromatographic trace before lower-intensity bridge points arrived.
+The repaired default now uses high-intensity points only to define m/z seed
+ranges, then segments each seed range in scan order. With the current lab
+default `mass_detection_noise_level=25,000`, the Fullscan smoke under
+`output/local_ms1_feature_table_v1/fullscan_seeded_mzmine_like_noise25000/`
+completed with `wall_time_sec=11.1932`, 10,779 local feature rows, 386 Pt-only
+candidates, and 19 manual-review packet rows. Full trace diagnosis over all 386
+candidates produced 340 `pt_pattern_detected_diagnostic`, 43 partial, and 3
+review rows; shared-rule replay recorded 211 `accept` / `detected` and 175
+`reject` / `non_detected`, with zero `not_evaluated` rows. A blind overlay
+gallery for the 19-row manual-review packet now exists under
+`blind_overlay_manual_review_packet/`; it hides machine calls in HTML, seals the
+machine calls separately, and provides minimal human fill-in XLSX/CSV files.
+The 19-row human review was filled with 16 `accepted`, 3 `uncertain`, and 0
+`rejected` rows; sealed machine calls were 7 `accept`, 8 `uncertain`, and 4
+`reject`. The comparison has 8 exact agreements, 9 rows involving an uncertain
+call, and 2 direct disagreements where the human accepted a machine reject. This
+showed the previous trace rule was too strict about RT drift. Shift-aware trace
+evidence now adds translated-shape metrics while retaining absolute apex/RT
+metrics as diagnostics. Re-running all 386 candidates under
+`trace_diagnosis_limit386_shiftaware/` produced 384
+`pt_pattern_detected_diagnostic`, 1 partial, and 1 review row; replay under
+`pt_pattern_with_trace_shiftaware/` produced 358 `accept` / `detected` and 28
+`reject` / `non_detected` rows, including 147 shifted-shape accepts. On the same
+19 human-reviewed cases, shift-aware replay produced 18 machine `accept` and 1
+`reject`: all 16 human-accepted rows are now accepted, while 2 of 3 human
+`uncertain` rows are also accepted. Current interpretation: shift-aware shape
+fixes the over-strict RT drift failure, but the rule is not product-ready until
+deliberately selected false-positive / borderline rejected cases validate that
+shifted-shape accepts are not too broad. A 24-row stress packet under
+`shiftaware_false_positive_stress_review/` now samples high-shift, low
+shifted-similarity, low unshifted-similarity, near-boundary, and close-apex
+controls while keeping the HTML/XLSX blind to sealed machine calls. After fixing
+the packet schema so shifted summary metrics reach the overlay, sealed machine
+calls are 24 `accept`: 18 shifted-shape and 6 close-apex. Human labels were
+filled for all 24 rows: 19 `accepted`, 5 `uncertain`, and 0 `rejected`; the five
+uncertain rows are window-limited notes rather than explicit false-positive
+calls. A follow-up 90-second half-window overlay under
+`shiftaware_false_positive_stress_review/uncertain_wide90_review/` now isolates
+those five uncertain rows, with sealed machine calls still 5 `accept`, all
+shifted-shape; the wide-window HTML preserves the original 24-row case ids
+(`Case 02`, `Case 03`, `Case 04`, `Case 07`, `Case 11`) instead of renumbering
+the subset 1-5. Human labels for the wide-window follow-up are 3 `accepted`, 2
+`uncertain`, and 0 `rejected`; resolved across the full 24-row stress set this
+is 22 `accepted`, 2 `uncertain` (`Case 04`, `Case 11`), and 0 `rejected`. This
+was historical support for keeping shifted-shape metrics visible, but the later
+Pt-isotope semantics update supersedes using shifted shape as an accept path.
+All local-generator candidates remained
+tier `B` / score `70` feature-source evidence. The summary now exposes
+top-level `trace_builder_mode` so seeded-mode metrics are not mistaken for
+scan-link bipartite assignment metrics. This does not change Matrix, Backfill,
+counted-detection, workbook, export, active lane, maturity tier, or production
+readiness authority.
+Post-review ambiguity observability adds raw-vs-smoothed and shifted-only review
+flags to trace metrics, trace summaries, review packets, sealed machine calls,
+and `pt_pattern_evidence.csv`. A 24-row stress refresh under
+`shiftaware_false_positive_stress_review/ambiguity_flags_refresh/` produced 16
+`review_required` and 8 `clear` rows; the flags catch both remaining uncertain
+rows but also many human-accepted shifted-only rows, especially `pt_plus_4`.
+Current interpretation: these columns are review-sorting diagnostics for
+low-scan-density, raw/smoothed apex mismatch, shifted-only support, and isolated
+or mixed position shift. They are not hard accept/reject gates and do not change
+the Pt pattern tier, active lane, Matrix, Backfill, counted-detection, workbook,
+export, or production-readiness authority.
+A focused wide-window recheck then used a 90-second half-window for `Case 04`,
+`Case 11`, `Case 22`, `Case 14`, `Case 07`, and `Case 01` under
+`shiftaware_false_positive_stress_review/ambiguity_flags_refresh/focused_recheck_case04_11_22_14_07_01_wide90/`.
+Human review plus follow-up correction recorded 3 `accepted`, 1 `rejected`, and
+2 `uncertain`, but the later isotope interpretation tightened the Pt pattern
+diagnostic trace rule: shifted-shape evidence is review-only. The only positive
+`trace_rule_call` proxy path is close-apex co-elution for the full
+base/+1/+2/+4 pattern:
+full diagnostic status, all three non-base positions supported,
+`max_abs_apex_delta_sec <= max(0.6 sec, 1.25 * scan_interval_sec)`,
+`min_pearson_r_to_base >= 0.90`, and `min_active_overlap_fraction >= 0.50`.
+A shifted match with
+`min_shifted_pearson_r_to_base >= 0.85` and
+`max_abs_shape_shift_sec_to_base <= 45` is reported as
+`shifted_shape_review_only`; larger shifted-only matches retain diagnostic
+reason `shape_shift_above_threshold`. Neither result is an adjudicated human
+reject or product non-detection.
+The formal Discovery evidence replay with this scan-aware active rule lives at
+`output/pt_pattern_productization_v1/two_raw_pt_only_scanaware_closeapex_20260703/`.
+It changes no candidate universe and recovers one-scan Fullscan apex jitter
+while keeping high-frequency DDMS2 unchanged:
+Fullscan stays 386 evaluated candidates but moves from 39 accept / 347 reject
+to 146 accept / 240 reject.
+DDMS2 MZmine stays 400 evaluated candidates at 25 accept / 375 reject.
+DDMS2 local stays 3249 evaluated candidates at 64 accept / 3185 reject. The
+comparison CSV is
+`output/pt_pattern_productization_v1/two_raw_pt_only_scanaware_closeapex_20260703/scanaware_closeapex_replay_summary.csv`.
+No Pt pattern maturity tier, active lane, Matrix, Backfill, counted-detection,
+workbook, export, selected-area, or production readiness authority changes.
+A 12-case detected spotcheck then exposed that fixed-point Gaussian15 smoothing
+is not time-equivalent across acquisition density: Fullscan replay has
+`min_effective_smoothing_window_sec` around 19.7 seconds, while the DDMS2 replay
+has only about 3.5-4.6 seconds. Trace metrics, trace summaries, review packets,
+blind overlay HTML, and sealed machine-call sidecars now expose median RT step,
+effective smoothing seconds, max trace point count, and
+`short_effective_smoothing_window` review flags. The replay lives under
+`output/pt_detected_stability_spotcheck_20260703/trace_density_replay/`. This
+is a diagnostic/review observability update only. A follow-up visual replay now
+renders each case as three side-by-side review panels: raw vendor trace,
+Gaussian15 point-smoothed trace, and 20-second time-smoothed trace. The new HTML
+lives under
+`output/pt_detected_stability_spotcheck_20260703/trace_density_replay/combined_blind_overlay_visual_modes/`;
+its sealed machine-call CSV is unchanged from the previous replay for the 12
+cases. User adjudication on the visual replay keeps 10 accepted and 2 rejected
+labels: visual Case 10 and Case 11 remain reject because +4 behaves like a
+tail/window-dominant trace rather than a credible co-eluting peak; visual Case
+12 remains accepted because the +4 difference is interpreted as a broader
+co-eluting peak, not a tail-dominant artifact. Follow-up replay under
+`output/pt_detected_stability_spotcheck_20260703/trace_density_replay/plus4_window_tail_dominance/`
+adds `plus4_window_tail_dominance` review flags for `mzmine_row|18622` and
+`mzmine_row|18908`, but not `mzmine_row|21440`. The visual replay
+manual-vs-machine artifact lives at
+`output/pt_detected_stability_spotcheck_20260703/trace_density_replay/combined_blind_overlay_visual_modes/visual_modes_manual_vs_machine.csv`
+and records 2 machine-accept / human-reject disagreements. This does not change
+the current accept/reject rule, maturity tier, active lane, Matrix, Backfill,
+counted-detection, workbook, export, or production-readiness authority.
+
 | Alignment output-level contract | `production_surface` | `output_levels.py`, `--output-level`, output contract spec | `alignment_matrix.tsv` is machine/validation, not production default；`alignment_matrix_identity.tsv` is production-level identity handoff | keep production/machine/debug tests in release gate | none; contract slice done |
 | `ProductionDecisionSet` | `production_surface` for alignment matrix decisions | `alignment/production_decisions.py` | release gate 尚未集中檢查 all writers use it | matrix writer gate | unassigned |
 | Backfill product-authority sidecars | `production_ready` for generated policy replay of current approved evidence classes plus 72 row-specific observed-oracle rows, explicit 72-row high-signal-clean scoped writer, explicit 42-row low-scan-clean scoped writer, explicit 57-row low-height-clean scoped writer, explicit 69-row low-height-low-scan-clean scoped writer, and explicit 220-row low-height reintegration-stable scoped writer; `production_candidate` for apex-delta diagnostic probe, width-only diagnostic probe, shape-margin diagnostic probe, all-stability 299-row pool, and shape-clean reintegration-stable 104-row evidence class; `parked` for broad 4613-row auto-write | `standard_peak_backfill_policy.tsv`, `--backfill-policy-source-audit-tsv`, paired `--policy-observed-oracle-tsv` / `--policy-observed-oracle-summary-json`, `standard_peak_backfill_productization.py`, `standard_peak_policy_observed_oracle.py`, `standard_peak_activation_scope_audit.py`, `standard_peak_heldout_trace_oracle.py`, `standard_peak_reintegration_stability_audit.py`, `seed_guard_decisions.tsv`, no-RAW 85RAW artifact bridge, heldout trace oracle, activation scope audit, reintegration-stability audit, and scoped writer outputs under `output/productization_realdata_seed_guard_85raw_20260617/` | standard-path activation 先經 N-band seed guard 且 join `activation_value_delta.tsv`；generated policy path classifies every supplied source-audit row as `write_ready` / `detected_flagged` / `blocked` and replays only generated `write_ready` rows with `expected_scope=backfill_policy_write_ready_rows`; hand-authored policy TSV is not a public product input；latest real generated policy replay under `generated_policy_policy_observed_oracle_no_raw_productization/` classified all 4613 consolidated source-audit rows as 511 `write_ready`, 0 `detected_flagged`, and 4102 `blocked`, wrote exactly 511 matrix cells, passed writer expected-diff 511/511 with zero duplicate/missing/unexpected/non-eligible/non-written/unchanged/blank blockers, and records 72 accepted `policy_observed_full_trace_reintegration` rows from the SHA-bound `policy_observed_oracle_detected_flagged_full_trace/` packet; policy next-evidence counts are 511 already approved, 1087 needing trace overlay or reintegration evidence, and 3015 needing a new approved evidence class or passing oracle；既有 85RAW chunk `r1_120` no-RAW bridge passed with 2540 candidates, 1160 eligible writes, 1380 low-seed no-writes；既有 85RAW consolidated no-RAW bridge passed with 7307 candidates, 4613 eligible writes, 2694 low-seed no-writes；high-signal heldout trace oracle 有 20 個 originally detected、sample-local cases，20/20 pass、最大 boundary error 0.0820502 min、最大 area relative error 0.0762325；low-scan heldout trace oracle `heldout_trace_reintegration_oracle_low_scan_clean_probe/` 有 56 eligible candidates / 11 selected family cases，11/11 pass、最大 boundary error 4.86717e-05 min、最大 area relative error 0.038786；combined activation scope audit 證明目前 4613 writes 中 72 個 high-signal clean eligible、42 個 low-scan clean eligible、57 個 low-height clean eligible、69 個 low-height-low-scan clean eligible、1087 個 missing overlay path，broad scope 仍 not_ready；high-signal `narrow_product_writer_expected_diff_acceptance.json` 72/72 pass 且 `readiness_tier=production_ready`；low-scan `narrow_low_scan_clean_no_raw_productization/narrow_product_writer_expected_diff_acceptance.json` 42/42 pass、duplicate/missing/unexpected/non-eligible/non-written/unchanged/blank 都是 0，`expected_scope=low_scan_clean_eligible_activation_rows`、`product_surface_changed=TRUE`、`readiness_tier=production_ready`；low-height bounded oracle `heldout_trace_reintegration_oracle_low_height_bounded_probe_pad050/summary.json` 是 `status=pass`、20/20 pass、max boundary error `0.0857986 min`、max area relative error `0.0564106`，且 `narrow_low_height_clean_no_raw_productization/narrow_product_writer_expected_diff_acceptance.json` 57/57 pass、duplicate/missing/unexpected/non-eligible/non-written/unchanged/blank 都是 0，`expected_scope=low_height_clean_eligible_activation_rows`、`product_surface_changed=TRUE`、`readiness_tier=production_ready`；low-height-low-scan bounded oracle `heldout_trace_reintegration_oracle_low_height_low_scan_clean_probe/summary.json` 是 `status=pass`、210 eligible rows / 51 families、selected 20/20 pass、max boundary error `4.80376e-05 min`、max area relative error `0.00881912`，且 `narrow_low_height_low_scan_clean_no_raw_productization/narrow_product_writer_expected_diff_acceptance.json` 69/69 pass、duplicate/missing/unexpected/non-eligible/non-written/unchanged/blank 都是 0，`expected_scope=low_height_low_scan_clean_eligible_activation_rows`、`product_surface_changed=TRUE`、`readiness_tier=production_ready`；low-height reintegration-stable family oracle `heldout_trace_reintegration_oracle_low_height_reintegration_stable_family/summary.json` is `status=pass`; it records 220 audit-intersection rows / 66 families, `candidate_family_scope_match_level=family_id`, `candidate_family_scope_oracle_basis=detected_trace_rows_from_candidate_families`, 1520 available detected trace candidates from those families, selected 20/20 pass, max boundary error `0.0830019 min`, and max area relative error `0.0725986`; the matching writer `narrow_low_height_reintegration_stable_no_raw_productization/narrow_product_writer_expected_diff_acceptance.json` passes 220/220 with `expected_scope=low_height_reintegration_stable_eligible_activation_rows`, `product_surface_changed=TRUE`, `readiness_tier=production_ready`, and zero duplicate/missing/unexpected/non-eligible/non-written/unchanged/blank blockers；this fifth writer adds 199 cells outside the previous four ready scopes, making the five-scope cell-level union 439 cells before the policy-observed oracle adds 72 additional writer-approved rows；all-stability direct promotion remains blocked by formal target `standard_reintegration_stable_candidate_family_trace`: `heldout_trace_reintegration_oracle_all_stability_family/summary.json` records 299 audit-intersection rows / 77 families, 1694 available detected trace candidates, selected 20 family cases, and failed 19/20 because `FAM000949/NormalBC2261_DNA` has area relative error `0.19621` above the accepted 10% ceiling；shape-clean reintegration-stable oracle `heldout_trace_reintegration_oracle_shape_clean_reintegration_stable_family/summary.json` records 104 audit-intersection rows / 33 families, 334 available detected trace candidates / 31 families, selected 20/20 pass, max boundary error `0.0830019 min`, and max area relative error `0.0725986`, but a temporary writer probe found `matrix_cells_written=0` and `unchanged_delta_row_count=104`, so no public writer flag was retained；apex-delta probe `heldout_trace_reintegration_oracle_apex_delta_clean_probe/summary.json` 是 `status=fail`、17/20 pass、max boundary error `2.19621 min`、max area relative error `0.424518`，所以沒有 writer approval；width-only probe `heldout_trace_reintegration_oracle_width_clean_probe/summary.json` 是 `status=fail`、1/3 pass、max boundary error `1.86561 min`、max area relative error `0.599229`，所以沒有 writer approval；shape-margin probe `heldout_trace_reintegration_oracle_shape_margin_clean_probe/summary.json` 是 `status=fail`、6/8 pass、max boundary error `0.0625542 min`、summary max area relative error `0.198393`，所以沒有 writer approval；observed provenance contract 禁止 oracle/manual/review row 自抄；非標準 peak 仍不可自動 promotion | release docs must say generated policy is the current production-ready writer surface for approved evidence classes plus accepted observed-oracle rows; 72-row, 42-row, 57-row, 69-row, and 220-row scoped writers are historical safe demonstrators; apex-delta/width-only/shape-margin/all-stability/shape-clean-stability are only candidate or explanatory probes; broad 4613 auto-write is parked | none for generated policy replay over current approved evidence classes plus the 72 observed-oracle rows and the five scoped writers; apex-delta/width-only/shape-margin/all-stability need narrower rules or passing oracles before writer work; shape-clean stability needs a missing-cell product scope or policy-explanation-only contract before writer work; broad 4613 can reopen only with a new independent truth source plus observed/masked/product-writer oracle and expected-diff approval |
@@ -867,6 +1017,76 @@ at that older checkpoint, not the latest release claim.
 - Validation:
 - Remaining blocker:
 ```
+
+### 2026-07-17 - pt_pattern_discovery_diagnostic_v1_closeout
+
+- Previous tier: the repaired 32-row reviewed-label packet was described as
+  `production_candidate`; other Pt detector/runtime artifacts were
+  `diagnostic_only`.
+- New tier: all current Pt pattern candidate, same-scan, trace, anchor-local,
+  review, historically named oracle, threshold, conflict, and machine-call
+  surfaces are `diagnostic_only`.
+- Evidence: the 32-row threshold result is resubstitution against stale reviewed
+  labels, not independent ground truth or held-out detector performance. The
+  first bounded anchor-local nine-case human slice is 6 accept, 2 reject (Cases
+  06 and 09), and 1 unresolved uncertain (Case 08). Current matcher rows are one
+  greedy assignment representative per base; same-scan support is theoretical
+  window occupancy; `trace_rule_call` is a diagnostic proxy.
+- Product surface changed: none. No Pt selected area, canonical
+  `PeakHypothesis`, `IntegrationResult`, Alignment/Backfill intake, counted
+  detection, Matrix, workbook, activation, or export authority was granted.
+- Validation: focused schema/behavior tests and repo docs gates are required for
+  this branch closeout; no new RAW replay or threshold tuning is part of this
+  tier correction.
+- Remaining blocker: complete or bounded Top-K assignment generation,
+  assignment-bound evidence, independent validation, canonical model selection,
+  and an explicit projection/rollback contract.
+
+### 2026-07-02 - pt_pattern_discovery_productization_v1
+
+- Previous tier: `diagnostic_only` implementation pass with no active
+  productization lane.
+- New tier: `diagnostic_only` active primary lane, aiming for
+  `production_candidate` only after package-owned trace evidence, stable
+  replay/provenance, and manual-review oracle exist.
+- Evidence: Pt candidate/review/sidecar schemas and real-sample diagnostic
+  slices exist; scan-proxy Pt-only limit-50 trace diagnosis found 12 supported,
+  32 partial, 5 review, and 1 incomplete cases, while Pt+CID-NL(dR) limit-50
+  trace diagnosis found 34 supported, 14 partial, and 2 incomplete cases.
+  Trace/co-elution support semantics are package-owned in
+  `xic_extractor.discovery.pt_pattern_trace_evidence`, with the diagnostic JSON
+  sidecar recording `readiness_tier=diagnostic_only` and evidence owner. The
+  bounded manual-review packet builder is package-owned in
+  `xic_extractor.discovery.pt_pattern_review_packet`, with generated rows
+  remaining `oracle_status=pending_human_review`. Two bounded packets were
+  generated under ignored output; after v2 rebucketing the current packet set is
+  24 rows total. Blind overlay HTML and sealed machine-call CSVs were
+  regenerated for both packets. Trace evidence schema v2 records
+  `trace_decision_basis = gaussian15_smoothed_trace`; Gaussian15-smoothed
+  intensity is the basis for apex/shape/overlap support and sealed machine
+  calls, while raw vendor trace points remain audit/reference evidence only.
+  Blind HTML hides machine calls and diagnostic status buckets, and sealed
+  machine calls are not oracle authority. The earlier v1 user blind review
+  completed 28/28 calls and yielded 10 accept / 18 reject rows. The first v2
+  refresh carried forward only the 20 overlapping old row ids plus 4 new
+  user-adjudicated rejects, so that 24-row artifact is an intermediate refresh
+  output rather than the calibration baseline. The repaired v2 oracle rechecks
+  all 8 stale old row ids against current Gaussian15 metrics and combines them
+  with the 24-row refresh output, yielding 32 rows total: 10 accept / 22 reject.
+  The repaired threshold calibration keeps the same candidate rule
+  (`full pattern`, apex <= 10 s, Pearson >= 0.90, overlap >= 0.50) and gives
+  10 TP / 22 TN / 0 FP / 0 FN on the repaired oracle. The smoothing and review
+  artifacts do not change detector/runtime tier, Matrix authority, counted
+  detection, workbook output, or quantitation authority.
+- Product surface changed: none in the sense of Matrix, workbook, counted
+  detection, selected area, Backfill, ProductWriter, or activation authority.
+  The active lane and review-artifact scope changed in this control plane.
+- Validation: focused Pt pattern tests, oracle-promotion tests, docs checks, and
+  no-RAW real artifact replay passed locally. This entry itself is not a new RAW
+  validation.
+- Remaining blocker: derive and test detector thresholds against the bounded
+  manual oracle before any detector/runtime tier promotion or downstream write
+  authority.
 
 ### 2026-06-26 - docs-cleanup routing
 
@@ -5329,3 +5549,43 @@ the later low-height writer entry above as the current tier source.
 - Evidence: focused cache regression tests cover direct index hits and manifest
   fallback after RAW replacement; related standard-peak/cache tests and docs
   gates should pass before PR update.
+
+### 2026-07-02 - Pt Pattern Diagnostic Gate Replay v1
+
+- Lane: Pt pattern Discovery `delta_mass(pattern_id=pt)`.
+- Previous tier: `production_candidate` only for the repaired v2 bounded manual
+  oracle packet; `diagnostic_only` for detector/runtime, trace/review/overlay,
+  refresh, and threshold artifacts.
+- New tier: unchanged. The repaired v2 bounded manual oracle remains the only
+  `production_candidate` Pt artifact. The new gate replay is
+  `diagnostic_only`.
+- Product/public surface changed: additive diagnostic CLI/schema/replay
+  behavior only. `tools/diagnostics/pt_pattern_diagnostic_gate.py` and
+  `xic_extractor.discovery.pt_pattern_diagnostic_gate` write
+  `pt_pattern_diagnostic_gate.v1` row/summary artifacts and support
+  `--require-zero-fpfn` for bounded-oracle replay. The CLI now also accepts
+  `--trace-summary-input SOURCE_LABEL=PATH` so the same rule can run against
+  full trace-diagnosed candidate slices, not only bounded manual-review packets.
+  The reusable row-level accept/reject rule now lives in
+  `xic_extractor.discovery.pt_pattern_evidence_rule`; threshold calibration and
+  diagnostic gate replay call that rule instead of owning duplicate rule logic.
+  No default preset, Matrix, workbook, selected peak/area, counted detection,
+  Backfill authority, ProductWriter authority, export behavior, or detector
+  activation changed.
+- Evidence: the older no-RAW replay under
+  `output/pt_pattern_productization_v1/diagnostic_gate/pt_detected_oracle_v2_repaired_32/`
+  applied the historical 10-second calibrated rule to the repaired 32-row v2
+  oracle and reported 10 TP, 22 TN, 0 FP, 0 FN with
+  `changes_matrix=false`, `changes_counted_detection=false`, and
+  `changes_export=false`. That 10-second gate is superseded for active Pt
+  machine calls by the scan-aware isotope-constrained
+  `max_abs_apex_delta_sec <= max(0.6 sec, 1.25 * scan_interval_sec)` rule.
+  The older full trace-summary diagnostic replay under
+  `output/pt_pattern_productization_v1/diagnostic_gate/trace_summary_limit50_current/`
+  ran the historical diagnostic rule on a 100-row real-data trace-diagnosis slice
+  (50 Pt-only Fullscan + 50 Pt+CID-NL DDMS2 rows): 45 accept, 55 reject;
+  source-level calls are 15/35 accept/reject for Pt-only and 30/20 for
+  Pt+CID-NL.
+- Next checkpoint: do not use the diagnostic gate as product authority until a
+  real feature-detector source or explicit activation/export contract is
+  reviewed with expected-diff evidence.

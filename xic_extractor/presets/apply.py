@@ -5,9 +5,13 @@ from collections.abc import Mapping
 from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.discovery.detected_features import DeltaMassPatternSettings
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.presets.loader import DISCOVERY_TUNING_OVERRIDE_KEYS
-from xic_extractor.presets.models import Preset, PresetError
+from xic_extractor.presets.loader import (
+    DISCOVERY_TUNING_OVERRIDE_KEYS,
+    validate_delta_mass_preset_tags,
+)
+from xic_extractor.presets.models import Preset, PresetError, PresetTag
 from xic_extractor.settings_schema import RESOLVER_MODES
 
 _POSITIVE_FLOAT_FIELDS = frozenset(
@@ -50,8 +54,14 @@ def apply_to_discovery(
     *,
     explicit_tuning_overrides: Mapping[str, object] | None = None,
 ) -> DiscoverySettings:
+    if any(tag.strategy == "delta_mass" for tag in preset.tags):
+        raise PresetError(
+            f"preset {preset.name!r} contains a 'delta_mass' tag and is not a "
+            "neutral-loss preset; use apply_to_delta_mass_discovery() instead"
+        )
+
     neutral_loss_profiles = tuple(
-        NeutralLossProfile(tag=tag.name, neutral_loss_da=tag.value)
+        NeutralLossProfile(tag=tag.name, neutral_loss_da=_neutral_loss_value(tag))
         for tag in preset.tags
     )
     baseline = DiscoverySettings(
@@ -113,6 +123,56 @@ def apply_to_discovery(
         rt_min=_float_setting(tuning, "rt_min", baseline.rt_min),
         rt_max=_float_setting(tuning, "rt_max", baseline.rt_max),
         resolver_mode=_str_setting(tuning, "resolver_mode", baseline.resolver_mode),
+    )
+
+
+def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
+    """Map a delta_mass (Pt pattern) preset onto ``DeltaMassPatternSettings``.
+
+    This is the delta_mass counterpart to ``apply_to_discovery()``. It never
+    constructs a ``NeutralLossProfile`` -- presets handled here are Pt-pattern
+    presets (``pt_pattern``) or Pt-pattern-plus-neutral-loss composites
+    (``pt_pattern_cid_nl_dr``); the neutral-loss tag on a composite preset is
+    intersection evidence handled downstream (Task 5's pipeline), not a
+    ``NeutralLossProfile`` to build here.
+    """
+    if not any(tag.strategy == "delta_mass" for tag in preset.tags):
+        raise PresetError(
+            f"preset {preset.name!r} has no 'delta_mass' tag; "
+            "use apply_to_discovery() for neutral-loss presets"
+        )
+    validate_delta_mass_preset_tags(
+        preset.tags,
+        combine_mode=preset.combine_mode,
+    )
+
+    overrides = dict(preset.discovery_overrides)
+    method_label = overrides.get("method_label")
+    if not isinstance(method_label, str) or not method_label.strip():
+        raise PresetError(
+            f"preset {preset.name!r} must set [discovery] method_label for "
+            "delta_mass presets"
+        )
+
+    defaults = DeltaMassPatternSettings()
+    return DeltaMassPatternSettings(
+        method_label=method_label,
+        mz_tolerance_ppm=_positive_float_setting(
+            overrides,
+            "delta_mass_mz_tolerance_ppm",
+            defaults.mz_tolerance_ppm,
+        ),
+        rt_tolerance_sec=_positive_float_setting(
+            overrides,
+            "delta_mass_rt_tolerance_sec",
+            defaults.rt_tolerance_sec,
+        ),
+        ratio_basis=_enum_str_setting(
+            overrides,
+            "delta_mass_ratio_basis",
+            defaults.ratio_basis,
+            choices=frozenset({"both"}),
+        ),
     )
 
 
@@ -209,6 +269,19 @@ def apply_to_alignment(preset: Preset) -> tuple[AlignmentConfig, dict[str, objec
     }
 
 
+def _neutral_loss_value(tag: PresetTag) -> float:
+    """Return a neutral-loss tag's numeric value.
+
+    Only reachable from ``apply_to_discovery()`` after it has already
+    rejected any ``delta_mass`` tag, so every remaining tag is
+    ``strategy == "neutral_loss"``, for which the loader (``_parse_neutral_loss_tag``)
+    guarantees ``value`` is a finite float, never ``None``.
+    """
+    if tag.value is None:
+        raise PresetError(f"tag {tag.name!r} is missing a neutral-loss value")
+    return tag.value
+
+
 def _reject_unknown_explicit_tuning(overrides: Mapping[str, object]) -> None:
     unknown = sorted(set(overrides) - DISCOVERY_TUNING_OVERRIDE_KEYS)
     if unknown:
@@ -221,6 +294,17 @@ def _float_setting(
     default: float,
 ) -> float:
     value = tuning.get(field, default)
+    return float(cast(int | float, value))
+
+
+def _positive_float_setting(
+    overrides: Mapping[str, object],
+    field: str,
+    default: float,
+) -> float:
+    value = overrides.get(field, default)
+    if not _is_positive_float(value):
+        raise PresetError(f"{field} must be finite and positive")
     return float(cast(int | float, value))
 
 

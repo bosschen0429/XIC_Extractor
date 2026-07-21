@@ -1053,7 +1053,6 @@ def test_cli_writes_projection_from_alignment_artifacts(tmp_path: Path) -> None:
             "rt_delta_sec",
             "primary_matrix_area",
             "primary_matrix_area_source",
-            "height",
             "gap_fill_state",
             "gap_fill_reason",
             "group_claim_state",

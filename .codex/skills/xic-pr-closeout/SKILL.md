@@ -1,6 +1,6 @@
 ---
 name: xic-pr-closeout
-description: Manual XIC overlay for pr-closeout: readiness labels, validation tier, RAW artifacts, downstream handoff, and merge/history expectations.
+description: Manual XIC overlay for the pr-closeout workflow — readiness labels, validation tier, RAW artifacts, downstream handoff, and merge/history expectations.
 disable-model-invocation: true
 ---
 

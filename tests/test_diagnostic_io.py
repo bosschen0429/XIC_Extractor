@@ -55,6 +55,26 @@ def test_read_delimited_rows_fails_with_clear_missing_columns(
         read_delimited_rows(path, required_columns=("family_id", "sample"))
 
 
+@pytest.mark.parametrize(
+    "header",
+    (
+        "family_id\tfamily_id\tsample\n",
+        "family_id\tsample\tsample\n",
+        "family_id\t\tsample\n",
+        "family_id\t   \tsample\n",
+    ),
+)
+def test_read_delimited_rows_rejects_duplicate_or_blank_headers(
+    tmp_path: Path,
+    header: str,
+) -> None:
+    path = tmp_path / "rows.tsv"
+    path.write_text(header + "FAM001\tS1\tS1\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="duplicate|blank"):
+        read_delimited_rows(path, required_columns=("family_id", "sample"))
+
+
 def test_write_tsv_preserves_field_order_and_formats_values(tmp_path: Path) -> None:
     path = tmp_path / "rows.tsv"
 
@@ -218,6 +238,22 @@ def test_read_tsv_with_header_validates_required_columns_and_utf8_sig(
             path,
             required_columns=("schema_version", "missing"),
             encoding="utf-8-sig",
+        )
+
+
+def test_read_tsv_with_header_rejects_duplicate_optional_column(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "evidence.tsv"
+    path.write_text(
+        "schema_version\trow_id\tnote\tnote\nv1\tR1\tfirst\tsecond\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate columns: note"):
+        read_tsv_with_header(
+            path,
+            required_columns=("schema_version", "row_id"),
         )
 
 

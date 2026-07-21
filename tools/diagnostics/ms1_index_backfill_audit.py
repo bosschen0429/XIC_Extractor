@@ -22,10 +22,11 @@ from xic_extractor.alignment.ms1_index_source import (
     write_ms1_scan_index_npz,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.ms1_scan_index import MS1ScanIndexProvenance
 from xic_extractor.raw_reader import open_raw
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_extractor.signal_processing import find_peak_and_area
-from xic_extractor.tabular_io import write_tsv
+from xic_extractor.tabular_io import file_sha256, write_tsv
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 _MODES: tuple[MS1IndexIntensityMode, ...] = ("max", "sum")
@@ -201,7 +202,20 @@ def audit_requests_for_sample(
     cache_manifest: dict[str, Any] | None = None
     if index_cache_path is not None:
         write_started = time.perf_counter()
-        write_ms1_scan_index_npz(index_cache_path, index)
+        provenance = (
+            MS1ScanIndexProvenance(
+                sample_stem=sample_stem,
+                source_path=str(raw_path.resolve()),
+                source_sha256=file_sha256(raw_path),
+            )
+            if raw_path is not None and raw_path.is_file()
+            else None
+        )
+        write_ms1_scan_index_npz(
+            index_cache_path,
+            index,
+            provenance=provenance,
+        )
         cache_write_sec = time.perf_counter() - write_started
         cache_manifest = _write_index_cache_manifest(
             index_cache_path,

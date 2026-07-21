@@ -69,6 +69,7 @@ class ChromPeakSegmentEnumeration:
     morphology_trace_method: str
     morphology_trace_window_points: int
     morphology_trace_effective_points: int
+    morphology_trace_values: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -138,6 +139,7 @@ def enumerate_chrom_peak_segments(
                 active_policy.morphology_trace_window_points
             ),
             morphology_trace_effective_points=morphology_effective_points,
+            morphology_trace_values=tuple(float(value) for value in morphology_trace),
         )
 
     relations = _adjacent_relations(morphology_trace, seeds, active_policy)
@@ -163,6 +165,7 @@ def enumerate_chrom_peak_segments(
         morphology_trace_method=active_policy.morphology_trace_method,
         morphology_trace_window_points=active_policy.morphology_trace_window_points,
         morphology_trace_effective_points=morphology_effective_points,
+        morphology_trace_values=tuple(float(value) for value in morphology_trace),
     )
 
 
@@ -174,6 +177,19 @@ def select_segment_by_apex_rt(
         return None
     target = float(apex_rt_min)
     return min(segments, key=lambda segment: abs(segment.apex_rt_min - target))
+
+
+def segments_containing_rt(
+    segments: Sequence[ChromPeakSegment],
+    rt_min: float,
+) -> tuple[ChromPeakSegment, ...]:
+    """Return only segments whose recorded interval contains the target RT."""
+    target = float(rt_min)
+    return tuple(
+        segment
+        for segment in segments
+        if segment.interval.rt_start_min <= target <= segment.interval.rt_end_min
+    )
 
 
 def _coerce_trace(

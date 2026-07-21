@@ -20,6 +20,7 @@ For definitions of domain-specific terms used in these pages, see the
 | Decision Policy | [`decision-policy.md`](decision-policy.md) | Typed evidence, workflow gates, score boundaries, and projection authority |
 | Peak Model Selection | [`peak-model-selection.md`](peak-model-selection.md) | Model-selection invariants, parity requirements, expected-diff gates |
 | Quantitation Context | [`quantitation-context.md`](quantitation-context.md) | Bounded trace context, morphology evidence, area-impacting gates |
+| Signal Processing Rationale | [`signal-processing-rationale.md`](signal-processing-rationale.md) | Why smoothed-everywhere: noise regime, stability vs precision trade-off, design exceptions |
 
 ### Data Products
 
@@ -27,6 +28,7 @@ For definitions of domain-specific terms used in these pages, see the
 | --- | --- | --- |
 | Quant Matrix | [`quant-matrix.md`](quant-matrix.md) | Product-facing matrix values, Backfill activation boundaries, authority routing |
 | Evidence Spine | [`evidence-spine.md`](evidence-spine.md) | Shared evidence carriers, peak hypotheses, projection boundaries |
+| Vendor RAW Evidence Model | [`vendor-raw-evidence-model.md`](vendor-raw-evidence-model.md) | Qual Browser-derived RAW evidence-query concepts, scan-filter lineage, trace-type boundaries |
 | Peak Anchor And Group Boundary | [`family-hypothesis-boundary.md`](family-hypothesis-boundary.md) | Discovery peak anchors, cross-sample groups, PeakHypothesis, and projection authority |
 | Backfill | [`backfill.md`](backfill.md) | ProductWriter authority, accepted quant values, expansion gates |
 | Run Provenance | [`run-provenance.md`](run-provenance.md) | Method manifests, run metadata, replay context |

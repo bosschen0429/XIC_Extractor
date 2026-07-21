@@ -1,7 +1,7 @@
 interface:
   display_name: "XIC Performance Diagnosis"
-  short_description: "Rank XIC runtime bottlenecks from artifacts before optimization"
-  default_prompt: "Use $xic-performance-diagnosis for XIC preset/runtime optimization: inspect timing artifacts, rank bottlenecks, classify call cost and workload, choose exact-safe/expected-diff/fast-mode lane, and define correctness gates before code edits."
+  short_description: "Prove XIC bottlenecks and baseline/candidate comparability"
+  default_prompt: "Use $xic-performance-diagnosis to bind the XIC workload and timing source, prove baseline/candidate comparability when paired artifacts exist, explain stage and RAW/XIC call-cost deltas, and keep correctness and product authority separate before any optimization handoff."
 compatibility:
   canonical_format: "agent-skills"
   adapter_targets:

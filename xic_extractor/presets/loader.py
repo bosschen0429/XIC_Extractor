@@ -17,7 +17,12 @@ from xic_extractor.presets.models import (
 )
 
 _BUILTIN_PACKAGE = "xic_extractor.presets.data"
-_BUILTIN_PRESETS = ("dna_dr", "dna_dr_product_ready")
+_BUILTIN_PRESETS = (
+    "dna_dr",
+    "dna_dr_product_ready",
+    "pt_pattern",
+    "pt_pattern_cid_nl_dr",
+)
 
 _TOP_LEVEL_KEYS = frozenset(
     {
@@ -29,7 +34,7 @@ _TOP_LEVEL_KEYS = frozenset(
         "alignment",
     }
 )
-_TAG_KEYS = frozenset({"strategy", "name", "value"})
+_TAG_KEYS = frozenset({"strategy", "name", "value", "pattern_id"})
 
 DISCOVERY_TUNING_OVERRIDE_KEYS = frozenset(
     {
@@ -46,6 +51,19 @@ DISCOVERY_TUNING_OVERRIDE_KEYS = frozenset(
         "resolver_mode",
     }
 )
+
+DELTA_MASS_DISCOVERY_OVERRIDE_KEYS = frozenset(
+    {
+        "method_label",
+        "delta_mass_mz_tolerance_ppm",
+        "delta_mass_rt_tolerance_sec",
+        "delta_mass_ratio_basis",
+    }
+)
+
+_DELTA_MASS_PATTERN_ID = "pt"
+_DELTA_MASS_NEUTRAL_LOSS_TAG = "DNA_dR"
+_DELTA_MASS_NEUTRAL_LOSS_DA = 116.0474
 
 ALIGNMENT_RUNTIME_OVERRIDE_KEYS = frozenset(
     {
@@ -123,7 +141,14 @@ def _parse_toml(raw: bytes, *, source: str) -> Preset:
     if combine_mode == "single" and len(tags) != 1:
         raise PresetError('combine_mode "single" requires exactly one tag')
 
-    discovery_overrides = _parse_discovery_overrides(data.get("discovery"))
+    has_delta_mass_tag = any(tag.strategy == "delta_mass" for tag in tags)
+    if has_delta_mass_tag:
+        validate_delta_mass_preset_tags(tags, combine_mode=combine_mode)
+
+    discovery_overrides = _parse_discovery_overrides(
+        data.get("discovery"),
+        has_delta_mass_tag=has_delta_mass_tag,
+    )
     alignment_overrides = _parse_alignment_overrides(data.get("alignment"))
 
     return Preset(
@@ -167,7 +192,6 @@ def _parse_tags(value: Any) -> tuple[PresetTag, ...]:
         _reject_unknown_keys(tag_table, _TAG_KEYS, label=f"tag #{index}")
         strategy = _required_string(tag_table, "strategy")
         tag_name = _required_string(tag_table, "name")
-        tag_value = _parse_tag_value(tag_table.get("value"), tag_name=tag_name)
 
         if strategy not in SUPPORTED_STRATEGIES:
             supported = ", ".join(sorted(SUPPORTED_STRATEGIES))
@@ -176,9 +200,41 @@ def _parse_tags(value: Any) -> tuple[PresetTag, ...]:
                 f"supported strategies: {supported}"
             )
 
-        tags.append(PresetTag(strategy=strategy, name=tag_name, value=tag_value))
+        if strategy == "neutral_loss":
+            tag_value = _parse_neutral_loss_tag(tag_table, tag_name=tag_name)
+            tags.append(
+                PresetTag(strategy=strategy, name=tag_name, value=tag_value)
+            )
+        else:
+            pattern_id = _parse_delta_mass_tag(tag_table, tag_name=tag_name)
+            tags.append(
+                PresetTag(strategy=strategy, name=tag_name, pattern_id=pattern_id)
+            )
 
     return tuple(tags)
+
+
+def _parse_neutral_loss_tag(tag_table: Mapping[str, Any], *, tag_name: str) -> float:
+    if "pattern_id" in tag_table:
+        raise PresetError(
+            f"tag {tag_name!r} uses strategy 'neutral_loss' and must not set "
+            "'pattern_id'"
+        )
+    return _parse_tag_value(tag_table.get("value"), tag_name=tag_name)
+
+
+def _parse_delta_mass_tag(tag_table: Mapping[str, Any], *, tag_name: str) -> str:
+    if "value" in tag_table:
+        raise PresetError(
+            f"tag {tag_name!r} uses strategy 'delta_mass' and must not set 'value'"
+        )
+    pattern_id = tag_table.get("pattern_id")
+    if pattern_id != _DELTA_MASS_PATTERN_ID:
+        raise PresetError(
+            f"tag {tag_name!r} uses strategy 'delta_mass' and requires "
+            f"pattern_id={_DELTA_MASS_PATTERN_ID!r}"
+        )
+    return pattern_id
 
 
 def _parse_tag_value(value: Any, *, tag_name: str) -> float:
@@ -191,16 +247,104 @@ def _parse_tag_value(value: Any, *, tag_name: str) -> float:
     return numeric_value
 
 
-def _parse_discovery_overrides(value: Any) -> dict[str, object]:
+def validate_delta_mass_preset_tags(
+    tags: tuple[PresetTag, ...],
+    *,
+    combine_mode: str,
+) -> None:
+    """Accept only the two Delta Mass configurations implemented end-to-end.
+
+    The current pipeline supports Pt-only Discovery or the exact Pt + DNA_dR
+    intersection. Keeping this validator shared by loader/apply prevents a
+    syntactically valid preset from silently selecting the pipeline's hard-coded
+    DNA_dR join under a different neutral-loss name or mass.
+    """
+    delta_mass_tags = [tag for tag in tags if tag.strategy == "delta_mass"]
+    neutral_loss_tags = [tag for tag in tags if tag.strategy == "neutral_loss"]
+
+    if len(delta_mass_tags) > 1:
+        raise PresetError(
+            "a delta_mass preset has more than one 'delta_mass' tag; "
+            "only one Pt pattern is supported"
+        )
+    if len(delta_mass_tags) != 1:
+        raise PresetError("a delta_mass preset requires exactly one 'delta_mass' tag")
+    delta_mass_tag = delta_mass_tags[0]
+    if delta_mass_tag.value is not None:
+        raise PresetError(
+            f"tag {delta_mass_tag.name!r} uses strategy 'delta_mass' and must not "
+            "set 'value'"
+        )
+    if delta_mass_tag.pattern_id != _DELTA_MASS_PATTERN_ID:
+        raise PresetError(
+            "a delta_mass preset currently supports only pattern_id='pt'"
+        )
+
+    for neutral_loss_tag in neutral_loss_tags:
+        if neutral_loss_tag.pattern_id is not None:
+            raise PresetError(
+                f"tag {neutral_loss_tag.name!r} uses strategy 'neutral_loss' and "
+                "must not set 'pattern_id'"
+            )
+
+    if len(tags) == 1:
+        if combine_mode != "single":
+            raise PresetError(
+                "a Pt-only delta_mass preset requires combine_mode = \"single\""
+            )
+        return
+
+    if combine_mode != "intersection":
+        raise PresetError(
+            "a preset combining 'delta_mass' with other tags requires "
+            'combine_mode = "intersection"'
+        )
+    if len(delta_mass_tags) != 1 or len(neutral_loss_tags) != 1:
+        raise PresetError(
+            "a composite delta_mass preset requires exactly one 'delta_mass' "
+            "tag and exactly one 'neutral_loss' tag"
+        )
+    if len(tags) != 2:
+        raise PresetError(
+            "a composite delta_mass preset supports exactly two tags: one "
+            "'delta_mass' tag and one 'neutral_loss' tag"
+        )
+    neutral_loss_tag = neutral_loss_tags[0]
+    if (
+        neutral_loss_tag.name != _DELTA_MASS_NEUTRAL_LOSS_TAG
+        or neutral_loss_tag.value is None
+        or not math.isclose(
+            neutral_loss_tag.value,
+            _DELTA_MASS_NEUTRAL_LOSS_DA,
+            rel_tol=0.0,
+            abs_tol=1e-9,
+        )
+    ):
+        raise PresetError(
+            "a composite delta_mass preset currently requires exactly "
+            "neutral_loss name='DNA_dR' and value=116.0474"
+        )
+
+
+def _parse_discovery_overrides(
+    value: Any,
+    *,
+    has_delta_mass_tag: bool,
+) -> dict[str, object]:
     if value is None:
         return {}
     if not isinstance(value, Mapping):
         raise PresetError("[discovery] must be a table")
 
     table = cast(Mapping[str, Any], value)
+    allowed_keys = (
+        DELTA_MASS_DISCOVERY_OVERRIDE_KEYS
+        if has_delta_mass_tag
+        else DISCOVERY_TUNING_OVERRIDE_KEYS
+    )
     _reject_unknown_keys(
         table,
-        DISCOVERY_TUNING_OVERRIDE_KEYS,
+        allowed_keys,
         label="[discovery]",
     )
     return dict(table)

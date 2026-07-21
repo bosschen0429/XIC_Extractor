@@ -1,170 +1,176 @@
 # XIC Performance Artifact Contract
 
-This checklist is the repo-local companion to the global
-`performance-optimization-discipline` skill. It exists because XIC performance
-work is controlled by concrete artifacts, RAW I/O cost, and product parity.
+This is the XIC-specific artifact, comparability, call-cost, and parity reference
+for `xic-performance-diagnosis`. It does not define product authority or a
+universal benchmark threshold.
 
 ## Timing Source Priority
 
 Prefer timing sources in this order:
 
 1. Fresh stage timing from the exact command under discussion.
-2. `timing.live.json` / heartbeat timing for long-running foreground RAW runs.
+2. `timing.live.json` / heartbeat timing for a long foreground RAW run.
 3. `timing.json` / preset summary timing.
-4. Stage replay timing when it uses matching input artifact hashes.
-5. RAW locality or call-count summaries that explain the timing.
-6. `cProfile` only for the covered code region. Do not treat base-profile output
-   as full preset timing when the command does not wrap the tail stage.
+4. Stage replay timing with matching input-artifact identity.
+5. RAW locality or call-count summaries that explain elapsed time.
+6. A profiler for the code region it actually covers.
 
-If the top bottleneck changes depending on timing source, report
-`inconclusive` and collect a narrower measurement.
+When sources disagree on the top bottleneck, classify the result as
+`inconclusive` and choose a narrower measurement.
 
-## Artifact Inventory
+## Narrow Artifact Inventory
 
-For 8RAW or 85RAW performance work, inspect or name the absence of:
+Inspect or name the absence of only the artifacts needed for the decision:
 
-- output directory and command;
-- `timing.json`;
-- `timing.live.json` or heartbeat log when available;
-- preset summary JSON;
-- RAW locality summary;
-- profiler sidecars and the code region they cover;
-- published matrix TSV/workbook;
-- review queue TSV;
-- matrix identity sidecars;
-- manifests and artifact hashes;
-- standard-peak summary/status artifacts when relevant;
-- replay manifests for stage-only diagnosis.
+- output root, exact command, completion evidence, and producing code state;
+- `timing.json`, `timing.live.json`, preset summary, or stage replay timing;
+- method manifest, run metadata, input hashes, config/preset, runtime/backend,
+  worker budget, output level, and cache state when retained;
+- RAW locality and extraction call-count summaries;
+- profiler sidecars and their covered region;
+- correctness evidence: public output hashes, matrix/review/identity parity,
+  expected-diff packet, or focused test result.
 
-Do not call diagnostic sidecars product evidence unless the active contract says
-they are part of delivery.
+Use filename-driven discovery and targeted readers. A diagnostic sidecar is a
+measurement input unless an active product contract gives it delivery authority.
 
-Inventory should be narrow and filename-driven. Prefer `rg --files` patterns,
-known output roots, preset labels, and sidecar names before opening large TSVs or
-walking run directories. If only a few fields are needed from a large artifact,
-use a schema-aware or targeted reader instead of loading the entire table.
+## Comparability Proof
+
+Before computing a baseline/candidate delta, compare these axes:
+
+| Axis | Required decision |
+| --- | --- |
+| Workload | Same method/preset, sample universe, input scale, and user-visible timed scope. |
+| Inputs | Matching artifact/RAW identities and hashes, or a documented reason the difference is irrelevant. |
+| Producing state | Baseline and candidate code refs, dirty state, config, runtime, backend/DLL, and dependencies are known. |
+| Intended change | The relevant code/config difference is isolated; unrelated differences are accounted for. |
+| Execution | Same output level, enabled stages, worker budget, timeout, and completion condition unless that field is the measured change. |
+| Cache | Cold and warm states are identified and compared within the same state. |
+| Coverage | Timing sources cover the same stages with the same record semantics. |
+| Aggregation | Both sides use the same external wall clock, non-overlapping total, maximum, or paired observation rule. |
+| Decision metric | The selected metric and aggregation can answer the claimed end-to-end, cumulative-work, worst-case, tail, stage, or per-sample question. |
+| Correctness | The same parity oracle is evaluated, or both sides are covered by one approved expected-diff contract. |
+
+Return `comparable` only when every decision-relevant axis is supported or its
+difference is the isolated optimization. Otherwise return `inconclusive` with
+the smallest missing proof. A matching pipeline name or two complete timing
+files is not enough. Matching metrics that do not answer the decision are still
+`inconclusive`.
+
+Timing records may contain nested stages such as a stage plus its
+`.extract_xic` children. Record the aggregation rule and avoid presenting the
+sum of nested spans as wall clock.
+
+## Repetition And Noise
+
+For short bounded stages or commands:
+
+- isolate fixture/setup time unless it is user-visible work;
+- separate cold-cache and warm-cache observations;
+- use warmups when the measured production path is normally warm;
+- collect repeated samples, report median and dispersion, and treat p95 from a
+  small sample only as descriptive;
+- interleave baseline/candidate observations when thermal or background drift
+  could bias sequential runs.
+
+For expensive 8RAW/85RAW work, choose a design that can still falsify the claim:
+
+- prefer paired per-sample or per-stage observations from the same sample set;
+- use whole-run wall clock as context, not the only proof when one run per side
+  cannot characterize noise;
+- document why the available repetition is representative and what variability
+  remains unknown;
+- reduce to a representative bounded stage before repeating a full RAW run.
+
+Do not adopt one fixed repetition count, CV cutoff, or minimum percentage as an
+XIC-wide product rule. `optimized` requires an effect that clears the observed
+noise for the chosen design; otherwise report the measured delta as
+`inconclusive` or diagnostic evidence.
 
 ## Call-Cost Model
 
-Classify bottlenecks by dominant cost:
+Classify the dominant cost and name what changes:
 
 - RAW opens and Thermo DLL setup;
-- XIC extraction request count;
+- XIC extraction requests, batches, and vendor chromatogram calls;
 - repeated extraction over the same sample/window;
 - per-chunk replay of matrix-only evidence;
-- repeated large TSV/CSV scans for small lookups;
-- sorting/grouping/joining large tables;
-- peak finding, crop, smoothing, correlation, or audit loops;
-- matrix/write/report rendering;
-- overlay/PDF generation;
-- cache/index build time versus reuse benefit;
-- worker budget, process startup, scheduling, and nondeterministic ordering;
-- memory pressure from full-table loads or unbounded caches.
-
-The recommendation must name which cost is removed, reduced, batched, cached, or
-parallelized.
+- repeated large TSV/CSV scans;
+- sorting, grouping, joining, and full-table memory pressure;
+- peak finding, cropping, smoothing, correlation, or audit loops;
+- matrix/report/overlay rendering;
+- cache/index build cost versus reuse benefit;
+- worker startup, scheduling, IPC, and deterministic ordering.
 
 ## Workload Class
 
-State the workload because it changes the best optimization:
+- `8RAW`: lane-owned feedback/parity fixture before a named larger gate.
+- `85RAW`: lane-owned stress oracle for wall clock and locality.
+- `stage_replay`: targeted diagnosis, not readiness evidence by itself.
+- `one_time_import`: simple batching/streaming often dominates index reuse.
+- `repeated_modeling`: reusable indexes, manifests, and caches may repay setup.
+- `production_preset`: requires public-output parity or an approved expected diff.
+- `fast_mode_candidate`: opt-in alternate semantics; exact outputs remain default.
 
-- `8RAW`: fast feedback and parity gate. Use before 85RAW when changing exact
-  paths.
-- `85RAW`: stress oracle for wall-clock cost and locality. Do not launch via
-  background `Start-Process` from Codex shell without explicit approval.
-- `stage_replay`: targeted diagnosis filter, not readiness evidence.
-- `one_time_import`: prefer simple batching/streaming; persistent indexes may
-  not pay back.
-- `repeated_modeling`: indexes, replay manifests, reusable intermediates, and
-  cacheable locality summaries can pay back quickly.
-- `production_preset`: requires public-output parity or approved expected diff.
-- `fast_mode_candidate`: opt-in only; exact outputs remain default.
-
-If the workload is `baseline_needed`, stop at command shape, expected artifacts,
-and decision this run can close. Do not turn missing evidence into speculative
-implementation.
+Missing baseline evidence closes at command shape, required artifacts, and the
+decision the measurement can change.
 
 ## Correctness Oracles
 
-Choose the oracle before editing:
+Choose the oracle before an edit or an accepted paired-performance claim:
 
-- byte-identical public TSVs or stable normalized hash comparison;
-- published matrix parity;
-- review queue row-count/order/status parity;
-- matrix identity sidecar parity;
+- byte-identical public artifacts or stable normalized hashes;
+- published matrix, review queue, and matrix-identity parity;
 - manifest/input SHA parity;
 - workbook/report schema and public sheet parity;
-- focused unit tests for crop boundaries, fallback behavior, worker ordering,
-  replay reuse, and output writers;
-- expected-diff packet for fast mode or intentionally changed behavior.
+- focused tests for crop boundaries, fallbacks, worker ordering, replay reuse,
+  cache invalidation, and writers;
+- an expected-diff packet for intentional semantic change.
 
-If selected peak, selected area, counted detections, confidence/reason, active
-lane, schema, or matrix identity changes without an approved expected diff,
-reject the optimization.
+A failed or missing correctness oracle blocks `optimized`, regardless of elapsed
+time or call-count improvement.
 
 ## Exact-Safe Opportunities
 
-Prefer these before semantic changes:
+Common candidates include:
 
-- global summary reuse instead of per-chunk repeated RAW/XIC evidence generation;
-- sample-local caches for scan-to-RT and RT-window lookups;
-- monotonic `searchsorted` slice views with fallback for non-monotonic, NaN, or
-  reversed traces;
-- replacing repeated full-table reads with keyed indexes or targeted loads;
-- batching extraction requests by sample/window locality;
-- stable worker-budget tuning with fixed output ordering;
-- reuse of existing replay manifests and artifact hashes;
-- moving reusable mechanics from `tools/diagnostics/` orchestration into package
-  helpers only when the third repeated implementation appears.
+- reuse of global summaries instead of per-chunk evidence regeneration;
+- sample-local scan/RT/window caches with explicit lifetime;
+- monotonic slice/search operations with defined fallbacks;
+- keyed or targeted loads instead of repeated full-table reads;
+- extraction batching by sample/window locality;
+- deterministic worker-budget tuning;
+- reuse of replay manifests and artifact hashes.
 
-## Expected-Diff And Fast-Mode Packet
+Shared mechanics move into a package owner only when the architecture contract
+justifies reuse; method policy remains with its lane owner.
 
-For non-exact paths, produce an expected-diff packet before accepting results:
+## Expected-Diff And Fast-Mode Evidence
 
-- feature/family/sample key coverage;
-- missing/extra cell counts;
-- status delta;
-- apex drift;
-- boundary drift;
-- area drift and correlation;
-- counted-detection delta;
-- identity/confidence/reason delta;
-- held/failed bucket;
-- runtime and call-count delta;
-- rollback path and opt-in profile name.
+For non-exact paths, bind the existing expected-diff owner and inspect:
 
-The result can be `diagnostic_only` or `fast_mode_candidate`; it is not default
-production behavior without a separate activation decision.
+- feature/family/sample coverage;
+- missing/extra cells and status deltas;
+- apex, boundary, and area drift;
+- counted-detection, identity, confidence, and reason deltas;
+- held/failed buckets;
+- runtime and call-cost deltas;
+- opt-in profile and rollback path.
 
-## Stop Rules
+Performance evidence does not make an alternate backend the default or activate
+product writes.
 
-Stop or report `inconclusive` when:
+## Stop Conditions
 
-- baseline timing is stale, missing, or does not cover the suspected stage;
-- warm/cold cache state differs and explains the improvement;
-- output folders or chunks are dirty/reused ambiguously;
-- artifact hashes do not match replay inputs;
-- public TSV/workbook/matrix/identity outputs differ unexpectedly;
-- worker parallelism changes row order, nondeterminism, or status values;
-- the change improves total runtime but not the target bottleneck;
-- 8RAW exact path fails before 85RAW validation;
-- artifact discovery requires broad, expensive directory scans before a concrete
-  run folder or sidecar target is identified.
+Return `baseline_needed`, `inconclusive`, or `rejected` when the relevant
+condition occurs:
 
-## Minimal Final Report
-
-Use this shape:
-
-```markdown
-Verdict:
-Workload:
-Timing source:
-Top bottleneck:
-Optimization lane:
-Expected call-cost change:
-Correctness gate:
-Validation run:
-Result:
-Residual risk:
-Next bottleneck/action:
-```
+- timing is stale, incomplete, or excludes the suspected stage;
+- comparability proof is missing or cache/run conditions differ ambiguously;
+- inputs, output roots, or artifact hashes drift unexpectedly;
+- public outputs, ordering, identity, or statuses differ without an expected
+  diff;
+- the target bottleneck is unchanged even if another stage becomes faster;
+- worker changes introduce nondeterminism;
+- an exact-path smaller gate fails before a larger RAW gate;
+- artifact discovery would require an unbounded output/RAW scan.

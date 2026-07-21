@@ -43,7 +43,10 @@ Treat these as public unless an approved plan explicitly changes them:
 - `xic_extractor.signal_processing.find_peak_and_area`
 - `scripts.csv_to_excel.run`
 - config keys and example/default settings
-- CSV schemas
+- TSV/CSV schemas
 - workbook sheet names, order, hidden states, and columns
 - HTML report path naming
 - run metadata keys
+- persisted identifiers and matrix row/cell identity
+- domain-selected peaks, areas, values, and counted detections
+- cross-repo handoff schemas and contracts

@@ -1,123 +1,83 @@
 ---
 name: xic-architecture-preflight
-description: Architecture preflight before non-trivial XIC implementation touching diagnostics, RAW-backed evidence, preset performance, matrix/activation/value-delta, model selection, or evidence providers; requires owner reuse, call-cost, public-contract risk, validation gate, and stop rule.
+description: Preflight XIC architecture before non-trivial changes to diagnostics or RAW evidence, PeakHypothesis/EvidenceVector/model selection, matrix/activation/value-delta paths, or new evidence providers.
 ---
 
 # XIC Architecture Preflight
 
-Use this before writing code for non-trivial XIC features. The goal is to stop
-architecture debt at the source, not clean it up after a diagnostic path already
-became sticky.
+Produce one pre-edit contract. Current repo architecture and product-validation
+owners remain authoritative.
 
-This skill is a preflight, not a review closeout. It should produce a short
-implementation contract before edits begin.
+## 1. Falsify The Gap
 
-## North Star
+Name the affected consumer, observable loss, and unresolved XIC evidence-spine
+handoff: `Trace` / `TraceGroup`, `PeakHypothesis`, `EvidenceVector`, model
+selection, `IntegrationResult`, `AuditTrail`, or an authorized writer.
 
-XIC Extractor is not a single-dataset tool and not a CID-NL-only pipeline.
+Read `docs/architecture-contract.md` and
+`docs/agent/product-validation-contract.md`. For diagnostics, search
+`tools/diagnostics/INDEX.md`; for existing evidence or a proposed rerun, search
+`docs/diagnostic-ledger.md` and the current artifact owner. Choose the cheapest
+probe of the exact handoff, preferring no-RAW replay before bounded RAW evidence.
 
-- 8RAW and 85RAW are validation fixtures and cost/stress oracles, not product
-  boundaries.
-- CID-NL, HCD-PI, Delta Mass, MS1 isotope/adduct pattern, RT/iRT, shape,
-  library matches, standards, and future models are evidence providers.
-- Evidence providers feed `EvidenceVector` / model selection. They must not
-  directly become permanent matrix-writing authority without an explicit product
-  contract.
+Completion criterion: one precise handoff, one falsifiable probe, and its
+decision consequence are named. If existing evidence closes the gap, return a
+reuse/no-code verdict and stop.
 
-## Preflight Questions
+## 2. Bind Owner And Cost
 
-Answer these before implementation:
+Select exactly one behavior owner. List every existing helper it reuses, or
+record `none`. Package code computes domain evidence; diagnostics orchestrate;
+writers render typed results. Record the before/after or `unchanged` cost for:
 
-1. What product spine layer does the change advance?
-   - `Trace` / `TraceGroup`
-   - `PeakHypothesis`
-   - `EvidenceVector`
-   - `IntegrationResult`
-   - model selection
-   - `AuditTrail`
-   - cleanup-only
-2. Which existing owner should absorb the behavior?
-   - Domain behavior belongs in `xic_extractor/...`.
-   - `tools/diagnostics/...` should orchestrate, not own reusable logic.
-   - Writers render; they do not recompute evidence or re-read RAW.
-3. What existing helper can be reused?
-   - Search `tools/diagnostics/INDEX.md`, `docs/architecture-contract.md`, and
-     existing package modules before adding a local helper.
-   - Prefer `xic_extractor/tabular_io.py` before new TSV/parser/scalar helpers.
-   - Prefer shared overlay/evidence selectors before one-off row selection.
-4. What is the simplest human-explainable product rule?
-   - If the rule needs nested dataset-specific qualifiers, treat it as a
-     temporary validation slice, not product policy.
-   - Name the simple gate it is trying to approximate or prove.
-5. What call-cost model changes?
-   - RAW opens;
-   - XIC extraction calls;
-   - batch size and locality;
-   - repeated TSV scans;
-   - repeated smoothing/curve normalization;
-   - per-row vs per-family/per-sample cache boundaries.
-6. What public contract could drift?
-   - CLI flags;
-   - config keys;
-   - TSV/CSV/workbook schema;
-   - matrix identity;
-   - activation decisions;
-   - value delta;
-   - output path and artifact naming.
-7. What validation tier can close the decision?
-   - synthetic/focused tests;
-   - no-RAW artifact parity;
-   - 8RAW parity;
-   - 85RAW parity;
-   - targeted benchmark;
-   - manual EIC/MS2 review.
+- RAW opens and XIC extraction calls;
+- batching, sample/window locality, and cache ownership;
+- repeated TSV scans;
+- smoothing, normalization, and per-row recomputation.
 
-## Required Output Before Edits
+Completion criterion: one behavior-owner path is selected, reused helpers are
+explicit, rejected alternatives are briefly explained, every cost category is
+accounted for, and no parser, evidence computation, or RAW read is orphaned in
+a writer/CLI.
 
-Write a compact contract in the working message or plan:
+## 3. Bind Authority And Acceptance
+
+Classify the evidence-provider role and state the shortest human-explainable
+product rule. Read `docs/agent/architecture-public-contracts.md` when CLI,
+config, schema, workbook/report, or persisted identifiers may change. Always
+state whether matrix identity, activation, value delta, selected peak/area, or
+counted detection changes.
+
+Choose the lowest gate that can falsify the expected behavior: focused tests,
+no-RAW artifact parity, lane-specific 8RAW/85RAW, targeted benchmark, or manual
+EIC/MS2 review. Route an actual RAW launch or acceptance through
+`xic-raw-validation`.
+
+Completion criterion: every public surface is `changed` or `unchanged`, writer
+authority stays with an existing owner or has an explicit activation/export
+contract, and the validation gate can distinguish pass from fail.
+
+## 4. Issue The Pre-Edit Contract
 
 ```markdown
-Goal:
-Existing owner/helper to reuse:
-New code location:
-Evidence provider role:
+Goal / observable loss / affected XIC spine handoff:
+Current XIC behavior owner and existing evidence artifact:
+Reused helpers or `none`:
+Observed capability gap / cheapest XIC falsification probe:
+Reuse/owner decision; if a gap remains, proposed code location:
+Product spine / evidence-provider role:
 Simplest product rule:
 Call-cost model:
 Public contracts at risk:
-Validation gate:
-Stop rule:
+Validation gate and expected pass/fail consequence:
+Stop / rollback / diagnostic-scaffold exit rule:
 ```
 
-If the change is cleanup-only, say which behavior must remain numerically or
-schema-equivalent. If it is a behavior change, name the expected diff and the
-acceptance oracle before coding.
+For cleanup, require numerical/schema parity. For behavior change, require an
+expected diff and acceptance oracle. For diagnostic-only scaffolding, require
+an immediate XIC consumer plus promote, kill, externalize, or retirement
+condition.
 
-## Red Flags
-
-Stop and rethink when:
-
-- a new diagnostic tool needs its own TSV parser, bool/float parser, or row
-  grouping helper;
-- a writer computes domain evidence or reads RAW;
-- a diagnostic sidecar starts to look like production behavior without an exit
-  rule;
-- a product gate grows by adding dataset-specific adjectives instead of a
-  domain-meaningful rule and evidence test;
-- 85RAW shape or CID-NL assumptions appear in core models as permanent product
-  boundaries;
-- correctness is preserved but RAW calls, TSV scans, or smoothing operations
-  scale per row when they could be batched or cached;
-- a new evidence source wants to write the matrix directly instead of becoming
-  evidence for model selection.
-
-## Minimal Search
-
-Use targeted search before coding:
-
-```powershell
-rg -n "<concept>|<schema>|<helper>|<evidence-name>" xic_extractor tools tests docs
-rg -n "read_tsv|write_tsv|optional_float|EvidenceVector|PeakHypothesis|Activation|value_delta" xic_extractor tools tests
-```
-
-Use CodeGraph only when structural caller/callee impact would answer the
-ownership question faster than text search.
+Completion criterion: every field has evidence or a reasoned `N/A`; stop,
+rollback, and exit conditions are checkable. Begin edits only after this
+criterion is met.

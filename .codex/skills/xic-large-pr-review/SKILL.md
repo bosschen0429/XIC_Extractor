@@ -1,6 +1,6 @@
 ---
 name: xic-large-pr-review
-description: Large XIC PR review for diagnostics, architecture, preset performance, parity, 8RAW/85RAW, activation/value-delta, matrix identity, or RAW-locality diffs; review blast radius, public contracts, evidence, and residual risk.
+description: Large XIC PR review for diffs touching diagnostics, architecture, preset performance, parity, 8RAW/85RAW, activation/value-delta, matrix identity, or RAW locality.
 ---
 
 # XIC Large PR Review
@@ -46,6 +46,52 @@ For mechanical writer migrations, verify representative callers and the shared
 formatter rather than reading every identical call site. Check whether custom
 formatters, line terminators, encodings, hidden schema fields, and row order are
 preserved.
+
+## Finding Expansion Gate
+
+Treat a review comment as evidence of one failure instance, not as the boundary
+of the fix. First classify the mechanism and its owner. Expand the review beyond
+the commented line when the finding involves any of these shared
+responsibilities:
+
+- a shared helper, default, cache, loader, writer, parser, settings object, or
+  domain invariant;
+- fail-open/fail-closed behavior, exception translation, fallback, optional
+  suppression, or missing-artifact handling;
+- identity, hash, provenance, mutation, or writer/reader symmetry;
+- a hook predicate or validation rule whose conditions can interact.
+
+For an expanded finding, inspect:
+
+1. the owning implementation and every changed or live callsite;
+2. sibling boundaries that express the same responsibility;
+3. illegal states and adversarial inputs, including `NaN`, `Inf`, malformed or
+   reordered data, missing keys, blank identity, duplicate identity, and invalid
+   cross-field combinations where relevant;
+4. writer-to-loader round trips, cache reconstruction, and post-write mutation
+   resistance when artifacts cross a trust boundary;
+5. negative tests for the failure class, including crossed conditions such as
+   "accept existing evidence without launching a new run".
+
+For every input-to-map, input-to-group, or cross-artifact join, state the
+normalized key and expected cardinality (`one-to-one`, `one-to-many`, or
+`many-to-many`). A bare dict comprehension is not evidence that identity is
+unique. Test blank keys, duplicate keys with matching and conflicting payloads,
+and reversed row order; malformed inputs must not silently become last-row-wins
+or double-counted evidence.
+
+If evidence shows the issue is truly local, state why the owner and siblings are
+not affected. Do not invent a repository-wide redesign for an isolated bug.
+
+One same-class finding triggers this bounded class sweep before re-delivery. A
+second same-class finding on the same PR is a stop signal: freeze comment-by-
+comment resolution, refresh the PR head snapshot, and rerun the relevant lenses
+across the whole blast radius. Resolve comments only after the root fix is on the
+remote head and the class-level negative tests and fresh review pass.
+
+Reviewer and subagent findings are leads, not authority. Reproduce or ground
+them in the domain contract, changed code, public surface, or test gap before
+accepting their proposed fix.
 
 ## XIC Evidence Labels
 

@@ -37,6 +37,15 @@ Backfill values. Production write authority must come from a
 remain non-authority. Old plans that discuss broad promotion, sidecar-driven
 promotion, or productization gates are historical unless explicitly reactivated.
 
+## Current Pt Pattern Routing
+
+- `2026-07-01-pt-pattern-discovery-implementation-plan.md` is the active
+  execution plan for the first Pt pattern Discovery implementation. Use it for
+  code work on `codex/pt-pattern-discovery`.
+- `2026-07-01-pt-pattern-discovery-baseline.md` is now the refined source
+  baseline and provenance surface. Do not use it as the execution checklist
+  when the implementation plan is present.
+
 ## Rule
 
 Do not treat old implementation checklists as open work. First check the control

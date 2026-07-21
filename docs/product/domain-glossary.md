@@ -27,6 +27,12 @@ The lanes can reuse evidence, but evidence from one lane does not grant product
 write authority in another lane without an explicit contract, expected-diff
 evidence, and focused tests.
 
+Untargeted product flow is Discovery to Alignment to Backfill to product matrix.
+Discovery methods such as CID-NL, HCD-PI, and Delta Mass find features matching
+configured evidence settings. Alignment resolves cross-sample owner/group
+identity based on evidence. Backfill fills missing cells only when evidence and
+authority support recovery; it is not blind imputation or counted detection.
+
 ## Evidence Spine
 
 Use these terms consistently:
@@ -47,6 +53,22 @@ Use these terms consistently:
 Evidence providers can include CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 shape,
 standards, library matches, trace overlays, review labels, and future models.
 They feed the evidence spine; they do not directly become matrix write authority.
+
+Use family and instance names consistently. `delta_mass` is a Discovery strategy
+family for MS1 delta-pattern evidence; `pt` / `Pt pattern` is the first concrete
+pattern in that family; `pt_pattern` is a user-facing method or preset label.
+Composites such as `pt_pattern + cid_nl(dR)` intersect evidence providers and
+do not become product authority by themselves.
+
+For Pt pattern, distinguish the science target from the current operational
+proxy. The science target is a single Pt isotope envelope represented by
+base/+1/+2/+4 positions. The operational proxy is the observable evidence shape:
+those four positions appear as a sample-local full pattern and pass close-apex
+co-elution support. Ratio fit, isotope-envelope overlap, and co-eluting
+interference are unresolved review evidence until a bounded oracle proves how
+they should change the decision. In V1, a close-apex full-pattern candidate can
+still be called `detected` when ratios look unusual; ratio and collision
+concerns explain ambiguity and review priority, not the detected call itself.
 
 ## Product Authority Terms
 

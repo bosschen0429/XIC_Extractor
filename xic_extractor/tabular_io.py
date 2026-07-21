@@ -11,6 +11,7 @@ import csv
 import hashlib
 import io
 import math
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Literal
@@ -25,11 +26,46 @@ def read_delimited_rows(
 ) -> list[dict[str, str]]:
     with path.open(newline="", encoding=encoding) as handle:
         reader = csv.DictReader(handle, delimiter=delimiter)
-        fieldnames = tuple(reader.fieldnames or ())
-        missing = [column for column in required_columns if column not in fieldnames]
-        if missing:
-            raise ValueError(f"{path}: missing required columns: {', '.join(missing)}")
+        validate_delimited_header(
+            reader.fieldnames,
+            path=path,
+            required_columns=required_columns,
+        )
         return [dict(row) for row in reader]
+
+
+def validate_delimited_header(
+    fieldnames: Sequence[str] | None,
+    *,
+    path: Path,
+    required_columns: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Validate an exact CSV/TSV header before ``DictReader`` can overwrite it.
+
+    Header names are case-sensitive public schema values, so this helper keeps
+    their original spelling and order. It rejects blank and duplicate names
+    before checking required columns; otherwise ``csv.DictReader`` silently
+    turns duplicate columns into row-order-dependent last-value-wins mappings.
+    """
+
+    header = tuple(fieldnames or ())
+    blank_positions = [
+        str(index)
+        for index, column in enumerate(header, start=1)
+        if not column.strip()
+    ]
+    if blank_positions:
+        raise ValueError(
+            f"{path}: blank columns at positions: {', '.join(blank_positions)}"
+        )
+    counts = Counter(header)
+    duplicates = sorted(column for column, count in counts.items() if count > 1)
+    if duplicates:
+        raise ValueError(f"{path}: duplicate columns: {', '.join(duplicates)}")
+    missing = [column for column in required_columns if column not in header]
+    if missing:
+        raise ValueError(f"{path}: missing required columns: {', '.join(missing)}")
+    return header
 
 
 def read_tsv_required(
@@ -55,12 +91,11 @@ def read_tsv_with_header(
 ) -> tuple[tuple[str, ...], list[dict[str, str]]]:
     with path.open(encoding=encoding, newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        header = tuple(reader.fieldnames or ())
-        missing = [column for column in required_columns if column not in header]
-        if missing:
-            raise ValueError(
-                f"{path}: missing required columns: {', '.join(missing)}",
-            )
+        header = validate_delimited_header(
+            reader.fieldnames,
+            path=path,
+            required_columns=required_columns,
+        )
         return header, list(reader)
 
 
@@ -213,6 +248,12 @@ def _write_formatted_delimited_rows(
         writer.writerow(
             {key: value_formatter(row.get(key, "")) for key in fieldnames},
         )
+
+
+def escape_excel_formula(value: str) -> str:
+    if value.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
 
 
 def format_diagnostic_value(value: Any) -> str:

@@ -1,187 +1,79 @@
-# Docs Digestion Reference
+# Bound XIC Docs Compression Heuristics
 
-This reference turns repeated XIC documentation cleanup failures into a single
-decision process: digest meaning before moving files.
+Use this reference after the main skill has produced mechanical audit facts.
+`docs/project-layout.md` and `docs/agent/obsidian-handoff-contract.md` remain the
+owners of route names, lifecycle states, public/private boundaries, and
+retirement mechanics.
 
-## Cradle-To-Grave Model
+## What A Bound Referrer Proves
 
-Every durable document needs both a current role and an exit rule.
+An exact referrer proves a path dependency, not semantic value. Determine
+whether the referrer needs:
 
-| Stage | Repo responsibility | Exit question |
-| --- | --- | --- |
-| Draft/active plan, spec, goal, or note | Keep enough public context to execute safely. | What owner or active stub keeps the next action recoverable? |
-| Implemented or superseded plan/spec | Preserve only stable claims, decisions, gates, and lessons. | Has the stable claim been absorbed into a canonical owner so the original can retire? |
-| Validation result/report | Keep checker-readable evidence or compact verdict only if still current. | Is this live evidence, a stale snapshot, or private interpretation? |
-| Closeout/handoff | Keep PR body or short stub when it is the durable public surface. | Can future work resume without reading private history? |
-| Private history | Keep in Obsidian or ignored artifacts, not as repo authority. | Is there any public claim still missing from repo owners? |
+- a live checker/schema/status artifact;
+- the durable claim in a canonical owner;
+- temporary exact-path compatibility;
+- provenance lookup for an Obsidian original.
 
-## Three Routes
+Prefer retargeting to the compact owner. Keep a same-path stub only while active
+continuation or exact-path compatibility requires it.
 
-Final routing has only three answers:
+## Durable Payload Test
 
-- `obsidian_original`: long original goes to Obsidian. Repo keeps no long body,
-  except a compact pointer/stub while provenance or referrers require it.
-- `repo_distilled_plus_obsidian_original`: stable public claims go to a repo
-  owner or compact stub; long original and private reasoning go to Obsidian.
-- `repo_product_doc`: the file itself is a compact product, validation,
-  governance, or operating document and stays in repo.
+Retain a claim only when it helps current or future work:
 
-`needs_route_decision` is an audit state, not a destination.
+- active product behavior, schema, authority, or agent rule;
+- active validation oracle, checker input, retained summary, or fixture;
+- a self-sufficient next action for active work;
+- a still-valid decision and its reason;
+- a reusable failure lesson or supersession tombstone.
 
-## Route, Lifecycle, And Digestion
+Command chronology, reviewer narrative, branch sequencing, old row/cell counts,
+and repeated authority disclaimers are private history unless they change a
+current decision.
 
-Route answers where the document ends. Lifecycle answers whether it is draft,
-active, implemented, superseded, rejected, archived, or retired. Digestion
-answers whether the useful meaning has been absorbed into the right public owner.
+## Family Compression Questions
 
-These are separate:
+For each topic family, ask:
 
-- a `repo_product_doc` may still duplicate another owner;
-- a route-retained support file may still need owner absorption;
-- an active plan may need to stay in repo now but exit to Obsidian later;
-- a same-path stub may be necessary for active context or unresolved referrers
-  without carrying authority;
-- a generated manifest may be useful as a queue while not being product truth.
+1. Which current repo owner would a future agent consult first?
+2. Which sentence, schema, gate, or machine anchor is unique here?
+3. Is the evidence about the current code state or only a historical run?
+4. Does a referrer consume the file contents, its path, or only its conclusion?
+5. What would become unsafe or unknowable if the long document disappeared?
+6. Can one owner update plus one source-copy or tombstone replace the family?
 
-## What Bound Means
+If these questions reveal no unique current payload, treat the family as
+history pending the canonical absorption and retirement gates.
 
-`exact_referrer_bound_support` means another tracked file names this path. It
-does not mean the document still carries unique current knowledge.
+## Validation And Productization Families
 
-Treat bound status as a warning about migration mechanics:
+Validation history often repeats a shared conclusion across dated reports.
+Compare:
 
-- update or preserve referrers before moving/removing the path;
-- keep source lookup stable when an Obsidian original is expected;
-- avoid breaking checker/status/manifest paths;
-- do not infer semantic importance from the existence of a link.
+- lane-owned oracle and validation status;
+- producing code state and whether later evidence supersedes it;
+- checker/schema/fixture paths that are still live;
+- public authority language and its actual owner;
+- repeated counts, pass/fail prose, and diagnostic disclaimers.
 
-## Durable Payload
+Keep current checker-readable anchors and one compact owner verdict. Historical
+interpretation belongs in the original source copy, not parallel repo authority.
 
-Extract only information that helps current or future work:
+## Backfill And Quant Heuristic
 
-- active product behavior, schema, public contract, or agent rule;
-- active validation gate, checker input, retained summary, or schema;
-- productization status, writer authority, or activation boundary;
-- self-sufficient next action for an active handoff/plan;
-- final decision and why it still holds;
-- reusable failure lesson that prevents a likely repeated mistake;
-- tombstone saying which old claim is superseded and where the current owner is.
+Backfill and quant-matrix histories are especially repetitive. Group by
+validation family and compare authority wording, cell/row counts, ProductWriter
+or default-output disclaimers, gate names, and superseding evidence. An old
+count or old pass/fail snapshot without a current checker or decision consequence
+is history, not a durable product contract.
 
-Everything else is usually private history.
+## Stop Conditions
 
-## Product Absorption Gate
+Return a human decision instead of migrating when:
 
-Before closing a newly written `spec`, `plan`, `note`, or `handoff`, run a
-small-model review whose only job is to compare the transient document against
-the long-term owner. The review is not a general docs audit.
-
-Use these outcomes:
-
-- `pass_can_retire`: durable conclusions are present and correct in the owner;
-  source-copy the original to Obsidian, then delete the repo original if exact
-  referrers are absent.
-- `missing_absorption`: a durable conclusion exists only in the transient doc;
-  update the owner first.
-- `incorrect_absorption`: the owner contains the claim but has drifted,
-  weakened, or changed meaning; fix the owner first.
-- `still_active`: keep a short active repo stub until execution finishes.
-
-Do not preserve a same-path stub merely because the original existed. Stub only
-when active continuation or exact path compatibility needs it.
-
-## Waste Signals
-
-Treat content as likely waste when it:
-
-- records a branch-local pass/fail state without a current gate;
-- repeats `diagnostic_only`, no ProductWriter authority, no default matrix
-  change, or no workbook change without adding a unique decision;
-- gives row/cell counts from old code or old fixtures;
-- preserves command chronology, reviewer rationale, or branch sequencing;
-- has a later validation family, product doc, or status index that owns the same
-  conclusion;
-- documents a blocked path that later work solved differently;
-- exists only because a previous cleanup was afraid to remove a referrer-bound
-  file.
-
-## Topic Owner Rule
-
-One topic gets one canonical repo owner. Same-topic files may remain only as:
-
-- support artifacts;
-- validation packets;
-- generated manifests or indexes;
-- closeouts;
-- active stubs;
-- checker-readable machine anchors;
-- migration stubs that point back to the owner.
-
-Topic indexes are browsing and migration queues. They must not redefine product
-authority. If a topic has many support files, collapse the common claim into the
-owner or a compact family index before touching individual files.
-
-## Compression Pattern
-
-For each family:
-
-1. Name the current owner: product doc, validation family README, status index,
-   authority manifest, schema, retained summary, or topic index.
-2. Extract the tiny durable payload:
-   - final decision;
-   - still-valid reason;
-   - current gate/checker;
-   - public contract affected or explicitly unaffected;
-   - stale/superseded note if needed.
-3. Put repeated historical detail in Obsidian or drop it after explicit
-   approval.
-4. Retarget referrers to the compact owner, not to every historical artifact.
-5. Auto-retire the repo original after Obsidian/source-copy handling when exact
-   referrers are absent.
-6. Leave a same-path stub only when active continuation or exact paths remain
-   externally or repo-internally useful.
-
-## Obsidian And Wiki Route
-
-Obsidian is the private notebook, not repo authority. Use wiki/Obsidian skills
-for vault-side work:
-
-- `wiki-status` / `wiki-query`: find existing source copies or staged writes;
-- `wiki-ingest` / `wiki-update`: write originals or distilled project knowledge
-  after public repo claims are represented;
-- `obsidian-markdown`: keep manual note syntax valid;
-- `wiki-lint`: check links, frontmatter, summaries, provenance, visibility, and
-  lifecycle;
-- `wiki-stage-commit`: promote or reject staged pages.
-
-Repo pointers should use `source_repo_path:<repo path>` and verified note
-title/alias, not absolute vault paths.
-
-## Action Guide
-
-| Situation | Preferred action |
-| --- | --- |
-| Active product/agent contract | Keep or move claim into canonical repo owner. |
-| Active execution plan | Keep short self-sufficient repo stub; long reasoning can go to Obsidian. |
-| Implemented/superseded plan/spec | Distill stable claims, then source-copy original or tombstone. |
-| Live checker/status/schema artifact | Keep as `current_contract`; do not stub. |
-| Many validation reports repeat the same decision | Create/update one family index and retarget referrers. |
-| Historical narrative with stable conclusion already in product docs | Source-copy to Obsidian, then delete from repo when exact referrers are absent. |
-| Old result contradicted by later work | Tombstone with supersession pointer; do not keep as evidence. |
-| File only proves a past implementation step happened | Move to Obsidian history; repo keeps no authority. |
-| Exact path is still externally or internally bound | Prefer retargeting refs to the owner; keep a same-path stub only as temporary compatibility. |
-| Unclear current value | Stop with `needs_human_decision`; do not migrate mechanically. |
-
-## Backfill/Quant Heuristic
-
-Backfill and quant-matrix validation history is especially likely to contain
-high repetition. Start by grouping by validation family prefix, then compare:
-
-- authority language;
-- cell/row count claims;
-- ProductWriter or default-output disclaimers;
-- gate names;
-- superseding validation families;
-- current product doc links.
-
-If the only unique part is an old count or an old pass/fail snapshot, it usually
-belongs in Obsidian history, not as a retained repo authority surface.
+- two plausible canonical owners disagree;
+- private memory is the only support for a public action;
+- exact referrers cannot be classified safely;
+- retirement would affect a public contract, checker, schema, or active plan;
+- the stable payload cannot be separated from stale historical claims.
