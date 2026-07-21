@@ -912,7 +912,7 @@ def _trace_has_min_consecutive_intensity(
     if threshold <= 0:
         return True
     if not trace.scan_positions:
-        return True
+        return False
     consecutive = 0
     previous_position: int | None = None
     for scan_position, point in zip(trace.scan_positions, trace.points, strict=True):
@@ -939,7 +939,7 @@ def _link_traces(
     conflict_component_count = 0
     degraded_component_count = 0
 
-    for scan in index:
+    for scan_position, scan in enumerate(index):
         peaks = _positive_scan_peaks(scan)
         peak_mzs = np.asarray([mz for mz, _intensity in peaks], dtype=np.float64)
         assigned_traces: set[int] = set()
@@ -1018,6 +1018,8 @@ def _link_traces(
                     )
                     trace.internal_missing_scan_count += trace.trailing_missing_scans
                 trace.points.append((scan.scan_number, scan.rt, mz, intensity))
+                trace.scan_positions.append(scan_position)
+                trace.scan_position_set.add(scan_position)
                 trace.trailing_missing_scans = 0
                 trace.assignment_mode = assignment_mode
                 trace.component_size = component_size
@@ -1043,6 +1045,8 @@ def _link_traces(
                 _TraceBuilder(
                     trace_id=next_trace_id,
                     points=[(scan.scan_number, scan.rt, mz, intensity)],
+                    scan_positions=[scan_position],
+                    scan_position_set={scan_position},
                 )
             )
             next_trace_id += 1

@@ -120,6 +120,54 @@ def test_build_local_ms1_feature_table_emits_ok_and_weak_support_features() -> N
     )
 
 
+def test_scan_link_builder_enforces_consecutive_intensity_threshold() -> None:
+    index = tuple(
+        _scan(scan_number, 1.00 + (scan_number - 1) * 0.05, [(500.0, intensity)])
+        for scan_number, intensity in enumerate(
+            (10.0, 40.0, 100.0, 40.0, 10.0),
+            start=1,
+        )
+    )
+
+    features, _summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem="ScanLinkIntensity",
+        raw_path="ScanLinkIntensity.raw",
+        settings=_settings(
+            trace_builder_mode="scan_link",
+            min_observed_scans=3,
+            min_consecutive_trace_intensity=50.0,
+            gaussian_window_points=1,
+            min_ok_prominence=20.0,
+            weak_support_prominence=3.0,
+        ),
+    )
+
+    assert features == ()
+    assert [row.reason for row in diagnostics] == [
+        "too_few_consecutive_intense_scans"
+    ]
+
+
+def test_consecutive_intensity_gate_fails_closed_without_scan_positions() -> None:
+    trace = local_ms1_features._TraceBuilder(
+        trace_id=1,
+        points=[
+            (1, 1.00, 500.0, 100.0),
+            (2, 1.05, 500.0, 100.0),
+            (3, 1.10, 500.0, 100.0),
+        ],
+    )
+
+    assert not local_ms1_features._trace_has_min_consecutive_intensity(
+        trace,
+        _settings(
+            min_observed_scans=3,
+            min_consecutive_trace_intensity=50.0,
+        ),
+    )
+
+
 def test_seeded_builder_requires_high_intensity_seed_before_low_points_join() -> None:
     index = (
         _scan(1, 1.00, [(500.0000, 60.0), (501.0000, 80.0)]),

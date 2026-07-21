@@ -316,7 +316,11 @@ def filter_scan_hit_groups(
 
     if min_scans_per_group < 1:
         raise ValueError("min_scans_per_group must be >= 1")
-    return [list(group) for group in groups if len(group) >= min_scans_per_group]
+    return [
+        list(group)
+        for group in groups
+        if len({hit.scan_number for hit in group}) >= min_scans_per_group
+    ]
 
 
 def features_from_groups(

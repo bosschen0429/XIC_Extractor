@@ -308,6 +308,22 @@ def test_filter_scan_hit_groups_requires_minimum_scan_count() -> None:
     assert len(filtered[0]) == 2
 
 
+def test_filter_scan_hit_groups_counts_distinct_scan_numbers() -> None:
+    scan = _fake_full_pattern_scan(scan_number=100, rt_min=10.00)
+    hits = scan_pattern_hits(
+        scan,
+        lookup_ppm=50.0,
+        min_base_intensity=0.0,
+        min_position_intensity=0.0,
+        max_candidates_per_scan=500,
+    )
+    assert len(hits) == 1
+
+    filtered = filter_scan_hit_groups([[hits[0], hits[0]]], min_scans_per_group=2)
+
+    assert filtered == []
+
+
 def test_write_detected_features_csv_header_only_when_no_rows(
     tmp_path: Path,
 ) -> None:
