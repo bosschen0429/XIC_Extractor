@@ -97,6 +97,8 @@ def test_cli_builds_local_ms1_feature_outputs(
             str(dll_dir),
             "--output-dir",
             str(output_dir),
+            "--sample-stem",
+            " Sample_1 ",
             "--mass-detection-noise-level",
             "50000",
             "--min-trace-seed-intensity",
@@ -204,6 +206,30 @@ def test_cli_rejects_missing_raw(
 
     assert code == 2
     assert "RAW file does not exist" in capsys.readouterr().err
+
+
+def test_cli_rejects_blank_sample_stem_before_raw_io(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        build_local_ms1_feature_table.main(
+            [
+                "--raw",
+                str(tmp_path / "missing.raw"),
+                "--dll-dir",
+                str(tmp_path),
+                "--output-dir",
+                str(tmp_path / "out"),
+                "--sample-stem",
+                "   ",
+            ]
+        )
+
+    captured = capsys.readouterr()
+    assert exc_info.value.code == 2
+    assert "--sample-stem: sample_stem must contain non-whitespace text" in captured.err
+    assert "RAW file does not exist" not in captured.err
 
 
 def test_cli_reports_ms1_scan_read_failure_without_traceback(

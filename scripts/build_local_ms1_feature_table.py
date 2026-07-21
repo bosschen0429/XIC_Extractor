@@ -11,6 +11,7 @@ from pathlib import Path
 from xic_extractor.discovery.local_ms1_features import (
     LocalMs1FeatureSettings,
     build_local_ms1_feature_table,
+    normalize_local_ms1_sample_stem,
     write_local_ms1_feature_outputs,
 )
 from xic_extractor.ms1_scan_index import MS1ScanReadError, build_ms1_scan_index
@@ -358,13 +359,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_path = args.raw.resolve()
     dll_dir = args.dll_dir.resolve()
     output_dir = args.output_dir.resolve()
+    sample_stem_input = raw_path.stem if args.sample_stem is None else args.sample_stem
+    try:
+        sample_stem = normalize_local_ms1_sample_stem(sample_stem_input)
+    except ValueError as exc:
+        parser.error(f"--sample-stem: {exc}")
     if not raw_path.is_file():
         print(f"{raw_path}: RAW file does not exist", file=sys.stderr)
         return 2
     if not dll_dir.is_dir():
         print(f"{dll_dir}: DLL directory does not exist", file=sys.stderr)
         return 2
-    sample_stem = args.sample_stem or raw_path.stem
     raw_stat = raw_path.stat()
     try:
         with open_raw(raw_path, dll_dir) as handle:

@@ -263,6 +263,17 @@ class _PeakRegion:
     overlap_suspected: bool
 
 
+def normalize_local_ms1_sample_stem(value: object) -> str:
+    """Return the canonical sample identity used by every local-MS1 artifact."""
+
+    if not isinstance(value, str):
+        raise ValueError("sample_stem must be text")
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("sample_stem must contain non-whitespace text")
+    return normalized
+
+
 def build_local_ms1_feature_table(
     index: tuple[MS1Scan, ...],
     *,
@@ -276,6 +287,7 @@ def build_local_ms1_feature_table(
     LocalMs1FeatureSummary,
     tuple[LocalMs1FeatureDiagnosticRow, ...],
 ]:
+    sample_stem = normalize_local_ms1_sample_stem(sample_stem)
     resolved = settings or LocalMs1FeatureSettings()
     validate_ms1_scan_index(index, require_nonempty=True)
     start = time.perf_counter()

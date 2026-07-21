@@ -86,6 +86,40 @@ def test_build_local_ms1_feature_table_rejects_empty_index() -> None:
         )
 
 
+def test_build_local_ms1_feature_table_uses_one_canonical_sample_identity() -> None:
+    index = (
+        _scan(1, 1.00, [(500.0000, 10.0), (501.0000, 100.0)]),
+        _scan(2, 1.05, [(500.0001, 50.0), (501.0001, 50.0)]),
+        _scan(3, 1.10, [(500.0000, 10.0), (501.0000, 10.0)]),
+    )
+
+    features, summary, diagnostics = build_local_ms1_feature_table(
+        index,
+        sample_stem=" Sample_1 ",
+        raw_path="Sample_1.raw",
+        settings=_settings(min_ok_prominence=5.0),
+    )
+
+    assert summary.sample_stem == "Sample_1"
+    assert features
+    assert {feature.sample_stem for feature in features} == {"Sample_1"}
+    assert all(feature.feature_id.startswith("Sample_1|") for feature in features)
+    assert diagnostics
+    assert all(row.trace_id.startswith("Sample_1|") for row in diagnostics)
+
+
+@pytest.mark.parametrize("sample_stem", ["", "   "])
+def test_build_local_ms1_feature_table_rejects_blank_sample_identity(
+    sample_stem: str,
+) -> None:
+    with pytest.raises(ValueError, match="non-whitespace text"):
+        build_local_ms1_feature_table(
+            (_scan(1, 1.00, [(500.0000, 10.0)]),),
+            sample_stem=sample_stem,
+            raw_path="Sample_1.raw",
+        )
+
+
 def test_build_local_ms1_feature_table_emits_ok_and_weak_support_features() -> None:
     index = (
         _scan(1, 1.00, [(500.0000, 10.0), (501.0000, 2.0)]),
