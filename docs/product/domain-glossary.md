@@ -16,22 +16,41 @@ XIC Extractor is an LC-MS evidence and model-selection system. It should make
 peak choice, integration, review, and export decisions traceable through
 evidence rather than through dataset-specific shortcuts.
 
-Two product lanes share the same evidence spine:
+XIC has one core method lifecycle. Untargeted extraction is its general form;
+Targeted extraction is a highly constrained specialization of that method, not
+a second peer core:
 
-- Targeted extraction: target-list driven extraction, targeted MS1 shape
-  identity, limited NL_FAIL rescue, and bounded `detected_flagged` output.
-- Untargeted extraction: family discovery, Backfill, mechanical adjudication,
-  review packets, truth lockbox labels, and authority-controlled writes.
+- Untargeted extraction searches a broad candidate space, resolves cross-sample
+  identity, performs authority-gated Backfill, and produces the quantitative
+  feature-by-sample matrix intended for downstream preprocessing, calibration,
+  and statistics.
+- Targeted extraction supplies known targets and tighter m/z, RT, role, pairing,
+  and evidence conditions up front. Those constraints narrow Discovery and
+  preassign cross-sample target identity; Alignment still evaluates whether the
+  sample-local hypotheses represent the configured target, and evidence-based
+  Backfill may revisit initially uncounted sample/target results. Targeted then
+  produces its dedicated CSV/workbook delivery, which does not currently require
+  a downstream calibration or statistical-analysis consumer.
 
-The lanes can reuse evidence, but evidence from one lane does not grant product
-write authority in another lane without an explicit contract, expected-diff
-evidence, and focused tests.
+The shared core lifecycle is Discovery to Alignment to Backfill. Discovery
+methods such as CID-NL, HCD-PI, and Delta Mass find features matching
+configured evidence settings. Alignment establishes cross-sample
+correspondence: Untargeted constructs owner/group identity, while Targeted may
+start from configured target identity and test it with cross-sample evidence.
+Backfill revisits initially missing or uncounted cells only when evidence and
+authority support recovery; it is not blind imputation or counted Discovery.
 
-Untargeted product flow is Discovery to Alignment to Backfill to product matrix.
-Discovery methods such as CID-NL, HCD-PI, and Delta Mass find features matching
-configured evidence settings. Alignment resolves cross-sample owner/group
-identity based on evidence. Backfill fills missing cells only when evidence and
-authority support recovery; it is not blind imputation or counted detection.
+The current implementation only partially shares these stage owners. Targeted
+uses its own RT, paired-area, and MS1-shape evidence path. The headless limited
+`5-hmdC + 5-medC` CLI runs a baseline/support/final rescue, but GUI and direct
+API entry points do not generate that support automatically. This is an
+implementation parity gap, not a different product lifecycle.
+
+Targeted and Untargeted may apply different priors, projection rules, GUI flows,
+and output contracts. Evidence or output authority from one projection does not
+grant write authority in the other without an explicit contract, expected-diff
+evidence, and focused tests. Different projections do not imply different
+evidence, identity, Alignment, or Backfill cores.
 
 ## Evidence Spine
 
@@ -92,13 +111,20 @@ contract says otherwise.
 
 Targeted lane:
 
+- Target lists and method settings constrain the shared lifecycle; they do not
+  create a separate peak-identity or recovery system.
 - Limited rescue workflows may produce `detected_flagged` when explicitly
   contracted.
+- Treat the targeted result as its own delivery contract. Do not require an
+  analytical downstream reader when no such product consumer exists.
 - Do not expand targeted rescue to new analytes or default extraction behavior
   without expected-diff evidence and a product decision.
 
 Untargeted lane:
 
+- The feature-by-sample quantitative matrix is the downstream analytical
+  handoff. Its sample identity and order may share method-document-derived
+  metadata with Targeted delivery without sharing its output schema.
 - Backfill must stay authority-gated. Broad Backfill diagnostics or blockers
   cannot be promoted into writes just because they classify rows.
 - Review and lockbox assets are designed to reduce manual ambiguity and build

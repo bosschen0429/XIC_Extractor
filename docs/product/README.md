@@ -13,7 +13,7 @@ For definitions of domain-specific terms used in these pages, see the
 
 | Topic | Start here | Scope |
 | --- | --- | --- |
-| Discovery | [`discovery.md`](discovery.md) | Untargeted feature discovery, candidate/review outputs, seed evidence handoff |
+| Discovery | [`discovery.md`](discovery.md) | Shared candidate-discovery stage; broad Untargeted search and constrained Targeted search, candidate/review outputs, seed evidence handoff |
 | Untargeted Method | [`untargeted-method.md`](untargeted-method.md) | Durable method boundary for untargeted LC-MS recovery, hygiene, and historical report absorption |
 | Alignment | [`alignment.md`](alignment.md) | Cross-sample alignment, owner construction, backfill sidecars, matrix handoff |
 | Targeted Selection | [`targeted-selection.md`](targeted-selection.md) | Targeted behavior, selected hypotheses, region/boundary gates, reasons |

@@ -1,9 +1,11 @@
 # Discovery
 
-Discovery is the untargeted feature-discovery lane. It turns seed evidence and
-MS1 traces into reviewable candidates. It does not directly publish product
-matrices; publication requires the separate Backfill/ProductWriter authority
-path.
+Discovery is the candidate-generation stage of the shared XIC lifecycle. Its
+general Untargeted form searches a broad feature space; Targeted supplies known
+targets and tighter method constraints that narrow the same scientific task.
+Discovery turns seed evidence and MS1 traces into reviewable candidates. It
+does not directly publish product outputs; publication requires the relevant
+workflow projection and Backfill/ProductWriter authority path.
 
 ## Contract
 
@@ -58,22 +60,37 @@ path.
   tables when the accepted contract is matrix hygiene plus targeted benchmark
   recovery.
 
-## Untargeted Product Flow
+## Core Product Flow
 
 The intended product flow is:
 
 1. Discovery finds sample-local feature candidates that satisfy configured
    method evidence such as CID-NL, HCD-PI, Delta Mass, or explicit composites.
-2. Alignment resolves the cross-sample owner or group problem for those
-   candidates using evidence. A Discovery hit is a candidate anchor, not
-   cross-sample truth by itself.
-3. Backfill revisits accepted candidates or aligned groups to recover cells
-   that were not detected for normal signal, threshold, or workflow reasons.
+2. Alignment establishes cross-sample correspondence using evidence.
+   Untargeted constructs owners or groups; Targeted may begin with configured
+   target identity but still tests whether each sample-local hypothesis belongs
+   to it. A Discovery hit is a candidate anchor, not cross-sample truth by
+   itself.
+3. Backfill revisits accepted candidates, aligned groups, or configured target
+   cells to recover results that were not counted for normal signal, threshold,
+   or workflow reasons.
    Backfill still requires provenance-valid evidence; it is not blind
    imputation and it does not create counted Discovery detections.
-4. Product matrices are downstream-analysis surfaces only after the relevant
-   projection, Backfill/ProductWriter authority, expected-diff, and schema
-   contracts are satisfied.
+4. Product outputs are usable only after the relevant projection,
+   Backfill/ProductWriter authority, expected-diff, and schema contracts are
+   satisfied.
+
+Targeted applies this flow to a bounded target universe and ends in its own
+delivery projection. Untargeted is the general form and ends in the analytical
+feature-by-sample Matrix. Different projections do not create different
+Discovery, Alignment, or Backfill cores.
+
+Current Targeted implementation is a migration slice, not full shared-runtime
+parity. It uses configured target identity plus cross-sample RT, paired-area,
+and MS1-shape evidence. The headless limited `5-hmdC + 5-medC` CLI performs a
+baseline/support/final rescue; GUI and direct API entry points do not generate
+that support automatically, and Targeted does not yet reuse Untargeted
+owner/group Alignment and Backfill objects.
 
 ## Evidence Provider Naming
 
