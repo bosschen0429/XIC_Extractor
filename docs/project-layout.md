@@ -42,7 +42,7 @@
 | `xic_extractor/` | 主程式庫（domain logic、所有 pipeline 階段） | 經由 `packages.find` |
 | `gui/` | PyQt6 GUI 層；entry: `gui/main.py` | entry script |
 | `scripts/` | CLI 入口（`run_*.py`）+ 開發 / 驗證腳本 | 經由 `datas` |
-| `tools/diagnostics/` | 一次性診斷工具，**不打包**。`docs_policy.py` 是 docs governance 路徑常數與分類邏輯的中央模組；hooks 和 scripts 應從該模組 import，不另行硬寫路徑 | 否 |
+| `tools/diagnostics/` | Maintained product-adjacent diagnostics。`packages.find` 目前包含 `tools*`，因此會進 installed distribution；個別工具的 consumer／lifecycle／retirement disposition 由專門盤點決定。`docs_policy.py` 是 docs governance 路徑常數與分類邏輯的中央模組 | 未作為 datas 明列；實際 import closure 另驗 |
 | `tests/` | pytest 測試（扁平結構 + `fixtures/`） | 否，exclude |
 | `docs/` | 使用者文件（`docs/user/`）、產品主題文件（`docs/product/`）、agent contracts（`docs/agent/`）、architecture support（`docs/architecture/`）、JSON schema contract（`docs/superpowers/schemas/`）、短期 Markdown 規格（`docs/superpowers/specs/`）、計畫（`docs/superpowers/plans/`）、reusable solution notes（`docs/solutions/`） | 否 |
 | `assets/` | `app_icon.png`、`screenshots/` | 經由 `datas` |
@@ -279,7 +279,7 @@ summary，再考慮外部化原始 full dump。
 
 ```toml
 [tool.setuptools.packages.find]
-include = ["gui*", "scripts*", "xic_extractor*"]
+include = ["gui*", "scripts*", "tools*", "xic_extractor*"]
 exclude = ["tests*"]
 ```
 
@@ -345,7 +345,7 @@ Root `launch_gui.bat` 只服務本機開發雙擊啟動；release artifact 以
 │   │   └→ scripts/run_<purpose>.py   （需在 pyproject.toml.[project.scripts] 註冊）
 │   ├── 開發 / 驗證腳本（會被 PyInstaller 打包）
 │   │   └→ scripts/<purpose>.py
-│   ├── 一次性診斷工具（不進 bundle）
+│   ├── Maintained product-adjacent diagnostics（installed/package lifecycle 另驗）
 │   │   └→ tools/diagnostics/<purpose>.py
 │   └── Domain 邏輯
 │       └→ xic_extractor/<subpackage>/
