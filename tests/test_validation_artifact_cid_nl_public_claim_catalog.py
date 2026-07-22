@@ -47,6 +47,42 @@ def test_claim_catalog_rejects_missing_executable_gate(tmp_path: Path) -> None:
     assert any("executable gate does not resolve" in problem for problem in problems)
 
 
+def test_claim_catalog_rejects_missing_python_owner_symbol(tmp_path: Path) -> None:
+    rows = _read_rows(claim_catalog.DEFAULT_CATALOG_PATH)
+    rows[0]["existing_authority_owner"] = (
+        "xic_extractor/output/csv_writers.py::owner_that_does_not_exist"
+    )
+    catalog_path = tmp_path / "claim_catalog.tsv"
+    _write_rows(catalog_path, rows)
+
+    problems = claim_catalog.check_cid_nl_public_output_claim_catalog(
+        catalog_path=catalog_path
+    )
+
+    assert any(
+        "authority owner anchor does not resolve" in problem for problem in problems
+    )
+
+
+def test_claim_catalog_rejects_missing_markdown_heading(tmp_path: Path) -> None:
+    rows = _read_rows(claim_catalog.DEFAULT_CATALOG_PATH)
+    rows[0]["evidence_or_fixture"] = (
+        "docs/superpowers/validation/cid_nl_targeted_csv_contract_v1/"
+        "README.md#Missing Heading"
+    )
+    catalog_path = tmp_path / "claim_catalog.tsv"
+    _write_rows(catalog_path, rows)
+
+    problems = claim_catalog.check_cid_nl_public_output_claim_catalog(
+        catalog_path=catalog_path
+    )
+
+    assert any(
+        "evidence or fixture anchor does not resolve" in problem
+        for problem in problems
+    )
+
+
 def test_claim_catalog_marks_matrix_boundary_as_reference_only(
     tmp_path: Path,
 ) -> None:

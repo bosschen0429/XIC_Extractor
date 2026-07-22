@@ -7,6 +7,7 @@ ProductWriter, selected-value, counted-detection, or Matrix authority.
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import sys
 from collections import Counter
@@ -180,6 +181,57 @@ def _check_repo_reference(
         problems.append(
             f"row {row_index} ({claim_id}): {label} does not resolve: {ref}"
         )
+    elif not _reference_anchor_resolves(ref, path=path):
+        problems.append(
+            f"row {row_index} ({claim_id}): {label} anchor does not resolve: {ref}"
+        )
+
+
+def _reference_anchor_resolves(ref: str, *, path: Path) -> bool:
+    if "::" in ref:
+        return _python_symbol_resolves(path, ref.split("::", 1)[1].strip())
+    if "#" in ref:
+        return _markdown_heading_resolves(path, ref.split("#", 1)[1].strip())
+    return True
+
+
+def _python_symbol_resolves(path: Path, symbol: str) -> bool:
+    if path.suffix != ".py" or not symbol:
+        return False
+    try:
+        module = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeError):
+        return False
+    for node in module.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name == symbol:
+                return True
+        elif isinstance(node, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == symbol
+                for target in node.targets
+            ):
+                return True
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name) and node.target.id == symbol:
+                return True
+    return False
+
+
+def _markdown_heading_resolves(path: Path, heading: str) -> bool:
+    if path.suffix.lower() != ".md" or not heading:
+        return False
+    try:
+        source = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    return bool(
+        re.search(
+            rf"^#{{1,6}}\s+{re.escape(heading)}\s*#*\s*$",
+            source,
+            flags=re.MULTILINE,
+        )
+    )
 
 
 def _check_executable_gate(
