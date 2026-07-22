@@ -31,9 +31,45 @@ def test_pt_pattern_evidence_rule_accepts_full_supported_pattern() -> None:
     assert decision.detection_status == "detected"
     assert decision.reason == "full_pattern_close_apex_shape_overlap"
     assert pt_pattern_rule_id() == (
-        "pt_v2_fullpattern_apex_le_0p6s_or_1p25scan_pearson_ge_0p9_overlap_ge_0p5"
+        "pt_v2_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
+        "_apex_floor_le_0p6s_or_scan_multiplier_1p25_pearson_ge_0p9_overlap_ge_0p5"
         "_shiftedreviewonly_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
+
+
+def test_rule_id_changes_for_every_decision_affecting_threshold() -> None:
+    baseline = pt_pattern_rule_id()
+
+    assert (
+        pt_pattern_rule_id(
+            PtPatternEvidenceThresholds(min_non_base_positions_supported=2)
+        )
+        != baseline
+    )
+    assert (
+        pt_pattern_rule_id(
+            PtPatternEvidenceThresholds(
+                required_combined_status="pt_pattern_candidate_partial"
+            )
+        )
+        != baseline
+    )
+    assert (
+        pt_pattern_rule_id(
+            PtPatternEvidenceThresholds(max_abs_apex_delta_scan_step_multiplier=2.0)
+        )
+        != baseline
+    )
+
+
+def test_rule_id_distinguishes_close_decision_affecting_floats() -> None:
+    lower = PtPatternEvidenceThresholds(min_pearson_r_to_base=0.9000001)
+    higher = PtPatternEvidenceThresholds(min_pearson_r_to_base=0.9000002)
+    row = _row(min_pearson_r_to_base="0.90000015")
+
+    assert pt_pattern_rule_id(lower) != pt_pattern_rule_id(higher)
+    assert evaluate_pt_pattern_evidence(row, thresholds=lower).call == "accept"
+    assert evaluate_pt_pattern_evidence(row, thresholds=higher).call == "reject"
 
 
 def test_pt_pattern_evidence_rule_accepts_one_scan_apex_jitter() -> None:
@@ -68,6 +104,29 @@ def test_pt_pattern_evidence_rule_uses_observed_step_for_clipped_short_trace() -
 
     assert effective_max_abs_apex_delta_sec(row) == pytest.approx(1.5)
     assert decision.call == "accept"
+
+
+def test_pt_pattern_evidence_rule_rejects_conflicting_timing_provenance() -> None:
+    row = _row(
+        max_abs_apex_delta_sec="50",
+        min_median_rt_step_sec="100",
+        pt_plus_1_median_rt_step_sec="1",
+        pt_plus_2_median_rt_step_sec="1",
+        pt_plus_4_median_rt_step_sec="1",
+    )
+
+    with pytest.raises(ValueError, match="timing provenance"):
+        evaluate_pt_pattern_evidence(row)
+
+
+def test_pt_pattern_evidence_rule_validates_all_supplied_timing_fields() -> None:
+    row = _row(
+        min_median_rt_step_sec="1",
+        pt_plus_1_median_rt_step_sec="garbage",
+    )
+
+    with pytest.raises(ValueError, match="pt_plus_1_median_rt_step_sec"):
+        evaluate_pt_pattern_evidence(row)
 
 
 def test_pt_pattern_evidence_rule_does_not_infer_step_from_configured_window() -> None:
@@ -155,6 +214,48 @@ def test_pt_pattern_evidence_rule_rejects_expected_failure_modes(
     assert decision.reason == reason
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("non_base_positions_supported", "-1"),
+        ("non_base_positions_supported", "3.5"),
+        ("non_base_positions_supported", "4"),
+        ("max_abs_apex_delta_sec", "-0.1"),
+        ("min_pearson_r_to_base", "-1.1"),
+        ("min_pearson_r_to_base", "1.1"),
+        ("min_active_overlap_fraction", "-0.1"),
+        ("min_active_overlap_fraction", "1.1"),
+        ("min_shifted_pearson_r_to_base", "-1.1"),
+        ("min_shifted_pearson_r_to_base", "1.1"),
+        ("max_abs_shape_shift_sec_to_base", "-0.1"),
+    ],
+)
+def test_pt_pattern_evidence_rule_rejects_illegal_metric_domains(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValueError, match=field):
+        evaluate_pt_pattern_evidence(_row(**{field: value}))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("max_abs_apex_delta_sec", "garbage"),
+        ("min_shifted_pearson_r_to_base", True),
+        ("max_abs_shape_shift_sec_to_base", float("nan")),
+        ("min_median_rt_step_sec", "garbage"),
+        ("pt_plus_1_median_rt_step_sec", "0"),
+    ],
+)
+def test_pt_pattern_evidence_rule_rejects_malformed_supplied_metrics(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValueError, match=field):
+        evaluate_pt_pattern_evidence(_row(**{field: value}))
+
+
 def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
     thresholds = PtPatternEvidenceThresholds(
         max_abs_apex_delta_sec=2.0,
@@ -171,7 +272,8 @@ def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
 
     assert decision.reason == "pearson_below_threshold"
     assert pt_pattern_rule_id(thresholds) == (
-        "pt_v2_fullpattern_apex_le_2s_or_1p25scan_pearson_ge_0p99_overlap_ge_0p9"
+        "pt_v2_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
+        "_apex_floor_le_2s_or_scan_multiplier_1p25_pearson_ge_0p99_overlap_ge_0p9"
         "_shiftedreviewonly_shiftedpearson_ge_0p98_shapeshift_le_12s"
     )
 
@@ -180,7 +282,16 @@ def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
     "kwargs",
     [
         {"required_combined_status": ""},
+        {"required_combined_status": "   "},
+        {"required_combined_status": "other_status"},
+        {
+            "required_combined_status": (
+                " pt_pattern_detected_diagnostic "
+            )
+        },
+        {"required_combined_status": True},
         {"min_non_base_positions_supported": 0},
+        {"min_non_base_positions_supported": 4},
         {"max_abs_apex_delta_sec": 0.0},
         {"max_abs_apex_delta_scan_step_multiplier": 0.0},
         {"min_pearson_r_to_base": -0.1},

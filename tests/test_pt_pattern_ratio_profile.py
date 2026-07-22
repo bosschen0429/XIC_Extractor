@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.pt_pattern_evidence_fixtures import pt_evidence_row
 from tools.diagnostics import pt_pattern_ratio_profile as ratio_profile_cli
 from xic_extractor.discovery import delta_mass_csv
 from xic_extractor.discovery.pt_pattern_ratio_profile import (
@@ -111,7 +112,9 @@ def test_ratio_profile_summarizes_primary_and_background_populations(
     assert summary["changes_counted_detection"] is False
     assert summary["changes_export"] is False
     assert summary["primary_row_count"] == 5
-    assert summary["background_row_count"] == 2
+    assert summary["background_row_count"] == 1
+    assert summary["unprofiled_row_count"] == 1
+    assert summary["unprofiled_trace_rule_call_counts"] == {"not_evaluated": 1}
     formula_rows = read_delimited_rows(
         outputs["ratio_formula_manifest_csv"],
         required_columns=RATIO_FORMULA_COLUMNS,
@@ -126,6 +129,21 @@ def test_ratio_profile_summarizes_primary_and_background_populations(
     assert base_plus1["formula_family"] == "base_over_position"
     assert base_plus1["numerator"] == "base position"
     assert base_plus1["denominator"] == "+1 position"
+
+
+def test_ratio_profile_rejects_non_accept_primary_population_call(
+    tmp_path: Path,
+) -> None:
+    candidates_csv, evidence_csv = _write_profile_inputs(tmp_path)
+
+    with pytest.raises(ValueError, match="primary_trace_rule_call must be 'accept'"):
+        run_ratio_profile(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+            output_dir=tmp_path / "ratio_profile",
+            profile_id="reject_as_primary",
+            primary_trace_rule_call="reject",
+        )
 
 
 def test_ratio_profile_cli_writes_static_html_without_call_words(
@@ -210,6 +228,153 @@ def test_ratio_profile_rejects_duplicate_candidate_population_keys(
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("method_label", "stale-method"),
+        ("pattern_id", "stale-pattern"),
+        ("base_mz", "501.0"),
+        ("base_rt_apex_min", "13.0"),
+    ],
+)
+def test_ratio_profile_rejects_stale_candidate_evidence_join(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    candidates_csv, evidence_csv = _write_profile_inputs(tmp_path)
+    evidence = read_delimited_rows(
+        evidence_csv,
+        required_columns=delta_mass_csv.PT_EVIDENCE_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    evidence[0][field] = value
+    write_delimited_rows(
+        evidence_csv,
+        evidence,
+        delta_mass_csv.PT_EVIDENCE_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+
+    expected_message = (
+        "pattern_id.*must be 'pt'"
+        if field == "pattern_id"
+        else rf"{field}.*does not match"
+    )
+    with pytest.raises(ValueError, match=expected_message):
+        run_ratio_profile(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+            output_dir=tmp_path / "ratio_profile",
+            profile_id="stale_join",
+        )
+
+
+def test_ratio_profile_rejects_incomplete_candidate_evidence_envelope(
+    tmp_path: Path,
+) -> None:
+    candidates_csv, evidence_csv = _write_profile_inputs(tmp_path)
+    evidence = read_delimited_rows(
+        evidence_csv,
+        required_columns=delta_mass_csv.PT_EVIDENCE_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    write_delimited_rows(
+        evidence_csv,
+        evidence[:-1],
+        delta_mass_csv.PT_EVIDENCE_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="missing evidence keys: sample-a/candidate-7"):
+        run_ratio_profile(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+            output_dir=tmp_path / "ratio_profile",
+            profile_id="incomplete_envelope",
+        )
+
+
+def test_ratio_profile_rejects_authority_claim_in_evidence(tmp_path: Path) -> None:
+    candidates_csv, evidence_csv = _write_profile_inputs(tmp_path)
+    evidence = read_delimited_rows(
+        evidence_csv,
+        required_columns=delta_mass_csv.PT_EVIDENCE_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    evidence[0]["matrix_write_authority"] = "TRUE"
+    write_delimited_rows(
+        evidence_csv,
+        evidence,
+        delta_mass_csv.PT_EVIDENCE_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="matrix_write_authority must be FALSE"):
+        run_ratio_profile(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+            output_dir=tmp_path / "ratio_profile",
+            profile_id="authority_claim",
+        )
+
+
+@pytest.mark.parametrize(
+    ("source", "field", "value"),
+    [
+        ("candidate", "pt_plus_1_height_ratio_to_base", "garbage"),
+        ("candidate", "pt_plus_2_area_ratio_to_base", "nan"),
+        ("candidate", "pt_plus_4_height_ratio_to_base", "-0.1"),
+        ("candidate", "base_height", "-1"),
+        ("evidence", "max_abs_apex_delta_sec", "inf"),
+        ("evidence", "min_pearson_r_to_base", "1.1"),
+        ("evidence", "min_active_overlap_fraction", "-0.1"),
+        ("evidence", "max_abs_shape_shift_sec_to_base", "-1"),
+    ],
+)
+def test_ratio_profile_rejects_nonblank_invalid_numeric_values(
+    tmp_path: Path,
+    source: str,
+    field: str,
+    value: str,
+) -> None:
+    candidates_csv, evidence_csv = _write_profile_inputs(tmp_path)
+    path = candidates_csv if source == "candidate" else evidence_csv
+    columns = (
+        delta_mass_csv.PT_CANDIDATE_COLUMNS
+        if source == "candidate"
+        else delta_mass_csv.PT_EVIDENCE_COLUMNS
+    )
+    rows = read_delimited_rows(
+        path,
+        required_columns=columns,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0][field] = value
+    write_delimited_rows(
+        path,
+        rows,
+        columns,
+        delimiter=",",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=rf"{field} must"):
+        run_ratio_profile(
+            candidates_csv=candidates_csv,
+            evidence_csv=evidence_csv,
+            output_dir=tmp_path / "ratio_profile",
+            profile_id="invalid_numeric_value",
+        )
+
+
 def _write_profile_inputs(tmp_path: Path) -> tuple[Path, Path]:
     candidates_csv = tmp_path / "pt_pattern_candidates.csv"
     evidence_csv = tmp_path / "pt_pattern_evidence.csv"
@@ -265,9 +430,19 @@ def _candidate(
             "method_label": "pt_only",
             "pattern_id": "pt",
             "candidate_id": candidate_id,
-            "candidate_state": "candidate",
+            "candidate_state": "pt_pattern_candidate",
+            "base_feature_id": f"{candidate_id}-base",
             "base_mz": 500.0,
             "base_rt_apex_min": 12.5,
+            "pt_plus_1_feature_id": f"{candidate_id}-plus1",
+            "pt_plus_1_mz": "501.0020",
+            "pt_plus_1_expected_mz": "501.0021",
+            "pt_plus_2_feature_id": f"{candidate_id}-plus2",
+            "pt_plus_2_mz": "502.0021",
+            "pt_plus_2_expected_mz": "502.0023",
+            "pt_plus_4_feature_id": f"{candidate_id}-plus4",
+            "pt_plus_4_mz": "504.0050",
+            "pt_plus_4_expected_mz": "504.0052",
             "base_height": 100000.0,
             "base_area": 1000000.0,
             "pt_plus_1_height_ratio_to_base": plus1,
@@ -282,30 +457,10 @@ def _candidate(
 
 
 def _evidence(candidate_id: str, *, trace_rule_call: str) -> dict[str, object]:
-    row: dict[str, object] = {
-        column: "" for column in delta_mass_csv.PT_EVIDENCE_COLUMNS
-    }
-    row.update(
-        {
-            "schema_version": "pt_evidence.v1",
-            "sample_stem": "sample-a",
-            "method_label": "pt_only",
-            "pattern_id": "pt",
-            "candidate_id": candidate_id,
-            "trace_rule_call": trace_rule_call,
-            "trace_detection_status": "detected"
-            if trace_rule_call == "accept"
-            else "not_detected",
-            "combined_pt_pattern_status": "pt_pattern_detected_diagnostic"
-            if trace_rule_call == "accept"
-            else "not_detected",
-            "non_base_positions_supported": 3,
-            "max_abs_apex_delta_sec": 0.5,
-            "min_pearson_r_to_base": 0.95,
-            "min_active_overlap_fraction": 0.9,
-            "matrix_write_authority": "FALSE",
-            "counted_detection_authority": "FALSE",
-            "export_activation_authority": "FALSE",
-        }
+    candidate = _candidate(
+        candidate_id,
+        plus1=1.0,
+        plus2=1.0,
+        plus4=1.0,
     )
-    return row
+    return pt_evidence_row(candidate, trace_rule_call=trace_rule_call)

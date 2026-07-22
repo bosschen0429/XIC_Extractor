@@ -1018,6 +1018,36 @@ at that older checkpoint, not the latest release claim.
 - Remaining blocker:
 ```
 
+### 2026-07-22 - pt_pattern_diagnostic_artifact_lineage_v1
+
+- Previous tier: Pt pattern candidate, trace, review, historically named oracle,
+  threshold, and replay surfaces were `diagnostic_only`, with artifact joins
+  relying on a mixture of logical identifiers and partial file provenance.
+- New tier: unchanged at `diagnostic_only`. The active implementation lane is
+  `codex/pt-pattern-artifact-lineage-hardening`, rebuilt on the squash-merged
+  Discovery base before review.
+- Evidence: candidate assignments, extraction inputs, trace manifests, review
+  bundles, sealed machine calls, adjudication promotion, calibration, and
+  diagnostic replay now use role-aware schemas, exact dependency sets, and
+  SHA-256-bound verified loaders. This is structural provenance evidence, not
+  independent Pt truth or detector-performance evidence.
+- Product surface changed: diagnostic CSV/TSV/JSON schema and review/replay
+  behavior changed fail-closed; historical unsealed artifacts must be
+  regenerated. No selected peak/area, counted detection, Matrix, workbook,
+  Backfill, activation, export, or ProductWriter authority is granted.
+- Validation: focused artifact-lineage and conflict-resolution tests plus the
+  canonical clean-checkout PR gate are required on the rebuilt branch. No new
+  RAW replay or threshold tuning is part of this change.
+- Corrective closeout: bounded review packets are explicitly allowed to select
+  a subset of a complete trace-diagnosis bundle. Primary and context trace
+  points remain validated against the full bundle identity/metric set before
+  packet-only rendering. This repairs review/replay availability without
+  changing the `diagnostic_only` tier, scientific calls, or any product
+  authority.
+- Remaining blocker: independent scientific evidence for Pt attribution and
+  detector performance, plus broader multi-file atomic publication semantics,
+  remain follow-up work under #115.
+
 ### 2026-07-17 - pt_pattern_discovery_diagnostic_v1_closeout
 
 - Previous tier: the repaired 32-row reviewed-label packet was described as

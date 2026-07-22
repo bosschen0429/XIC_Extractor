@@ -19,7 +19,17 @@ def _build_parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument("--review-packet-csv", type=Path, required=True)
+    parser.add_argument(
+        "--review-packet-manifest-json",
+        type=Path,
+        help="Optional explicit review packet manifest; defaults to its sibling.",
+    )
     parser.add_argument("--trace-points-csv", type=Path, required=True)
+    parser.add_argument(
+        "--trace-manifest-json",
+        type=Path,
+        help="Optional explicit manifest for the primary trace-points CSV.",
+    )
     parser.add_argument(
         "--context-trace-points-csv",
         type=Path,
@@ -27,6 +37,11 @@ def _build_parser() -> argparse.ArgumentParser:
             "Optional full-window trace points. When provided, the primary "
             "trace-points CSV is treated as the anchor-local hypothesis."
         ),
+    )
+    parser.add_argument(
+        "--context-trace-manifest-json",
+        type=Path,
+        help="Optional explicit manifest for --context-trace-points-csv.",
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--title", default="Pt Pattern Blind Overlay Review")
@@ -38,6 +53,13 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error(f"{args.review_packet_csv}: review packet CSV does not exist")
     if not args.trace_points_csv.is_file():
         parser.error(f"{args.trace_points_csv}: trace-points CSV does not exist")
+    for label, path in (
+        ("review packet manifest", args.review_packet_manifest_json),
+        ("trace manifest", args.trace_manifest_json),
+        ("context trace manifest", args.context_trace_manifest_json),
+    ):
+        if path is not None and not path.is_file():
+            parser.error(f"{path}: {label} does not exist")
     if (
         args.context_trace_points_csv is not None
         and not args.context_trace_points_csv.is_file()
@@ -60,6 +82,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             context_trace_points_csv=(
                 args.context_trace_points_csv.resolve()
                 if args.context_trace_points_csv is not None
+                else None
+            ),
+            review_packet_manifest_json=(
+                args.review_packet_manifest_json.resolve()
+                if args.review_packet_manifest_json is not None
+                else None
+            ),
+            trace_manifest_json=(
+                args.trace_manifest_json.resolve()
+                if args.trace_manifest_json is not None
+                else None
+            ),
+            context_trace_manifest_json=(
+                args.context_trace_manifest_json.resolve()
+                if args.context_trace_manifest_json is not None
                 else None
             ),
             output_dir=args.output_dir.resolve(),

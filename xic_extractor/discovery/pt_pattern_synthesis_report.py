@@ -35,32 +35,112 @@ def render_hypothesis_synthesis_html(
     interference = _mapping(summary.get("interference"))
     plus1_seed = _mapping(summary.get("plus1_seed"))
     inclusion = _mapping(summary.get("inclusion_list"))
-    accepted = _integer(ratio.get("primary_row_count"))
-    background = _integer(ratio.get("background_row_count"))
+    accepted = _ratio_population_count(ratio, prefix="primary")
+    background = _ratio_population_count(ratio, prefix="background")
     total = _integer(interference.get("input_accept_count"))
     hotspot = _integer(interference.get("rt_12p5_13p5_accept_count"))
     overlap = _integer(interference.get("rt_12p5_13p5_overlap_candidate_count"))
+    interference_available = interference.get("available") is True
+    plus1_available = plus1_seed.get("available") is True
+    inclusion_available = inclusion.get("available") is True
+    top102 = _mapping(inclusion.get("top102"))
+    manual_known = _mapping(inclusion.get("manual_known"))
+    top102_misses = _integer(top102.get("features_all4_exist_but_no_candidate"))
+    manual_known_misses = _integer(
+        manual_known.get("features_all4_exist_but_no_candidate")
+    )
+    assembly_misses = top102_misses + manual_known_misses
+    if inclusion_available and assembly_misses > 0:
+        verdict_title = "先查 candidate assembly，不要先調 ratio gate"
+        verdict_text = (
+            "輸入的 inclusion artifact 顯示有 feature 已齊、卻沒有組成 "
+            "candidate 的 rows。ratio 仍只能幫人工排序與解釋，不能決定 "
+            "detected。"
+        )
+        next_loop = (
+            f"先 replay {top102_misses} 個 Top102 與 "
+            f"{manual_known_misses} 個 manual-known rows，定位 m/z pairing、"
+            "RT grouping 或 feature source 的第一個斷點。"
+        )
+    elif interference_available:
+        verdict_title = "目前先保留 interference 與 ratio 兩條假說"
+        verdict_text = (
+            "已有 RT hotspot evidence，但沒有足夠 assembly evidence 可宣告 "
+            "root cause；ratio 也仍是 diagnostic signal。"
+        )
+        next_loop = "補齊 assembly artifact，再比較第一個可重現斷點。"
+    else:
+        verdict_title = "目前只有 ratio artifact"
+        verdict_text = (
+            "可以比較 ratio 分布，但尚未提供 interference、+1 threshold 或 "
+            "assembly evidence，因此不能判定主要漏失來源。"
+        )
+        next_loop = "先補一個能區分 assembly 與 ratio 假說的 bounded artifact。"
+    hotspot_description = (
+        f"{total} 個原始 accepted seeds 中，{hotspot} 個落在 "
+        f"12.5-13.5 min；其中 {overlap} 個帶有 overlap candidate。"
+        if interference_available
+        else "未提供 interference artifact；RT hotspot 狀態未知。"
+    )
+    plus1_description = (
+        "下圖依輸入 artifact 顯示各 +1 threshold 的 recovered count 與 "
+        "recall；此 report 不把任一 threshold 升格為 detector gate。"
+        if plus1_available
+        else "未提供 +1 threshold artifact；threshold sensitivity 狀態未知。"
+    )
+    assembly_description = (
+        f"Top102 有 {top102_misses} 筆、manual known 有 "
+        f"{manual_known_misses} 筆四個位置都存在卻沒組成 candidate。"
+        if inclusion_available
+        else "未提供 inclusion artifact；assembly 漏失數未知。"
+    )
     body = "".join(
         [
-            '<section class="verdict"><div><h2>先查 candidate assembly，不要先調 ratio gate</h2><p>目前最明確的問題是候選在 13 分鐘大量群聚，以及 inclusion list 中「四個 feature 都存在、卻沒有組成 candidate」的漏失。ratio 只能幫人工排序與解釋，還不能決定 detected。</p></div><aside class="signal"><strong>下一個 evidence loop</strong><span>先 replay 17 個 Top102 與 5 個 known rows，定位 m/z pairing、RT grouping 或 feature source 的第一個斷點。</span></aside></section>',
+            f'<section class="verdict"><div><h2>{escape(verdict_title)}</h2><p>{escape(verdict_text)}</p></div><aside class="signal"><strong>下一個 evidence loop</strong><span>{escape(next_loop)}</span></aside></section>',
             '<section class="metric-strip">',
             _metric(accepted, "ratio 分析主群"),
-            _metric(hotspot, f"集中在 12.5-13.5 min（總數 {total}）"),
-            _metric(overlap, f"其中具 overlap（窗口內 {hotspot}）"),
+            _metric(
+                hotspot if interference_available else "n/a",
+                (
+                    f"集中在 12.5-13.5 min（總數 {total}）"
+                    if interference_available
+                    else "12.5-13.5 min（未提供）"
+                ),
+            ),
+            _metric(
+                overlap if interference_available else "n/a",
+                (
+                    f"其中具 overlap（窗口內 {hotspot}）"
+                    if interference_available
+                    else "overlap（未提供）"
+                ),
+            ),
             "</section>",
-            '<section class="report-section"><div class="section-head"><h2>1. 候選集中在哪裡</h2><p>356 個原始 accepted seeds 中，194 個落在 12.5-13.5 min；其中 177 個又帶有 overlap candidate。13 分鐘不是少數異常，而是整批資料的主結構。</p></div>',
-            _rt_hotspot_chart(total, hotspot, overlap),
+            f'<section class="report-section"><div class="section-head"><h2>1. 候選集中在哪裡</h2><p>{escape(hotspot_description)}</p></div>',
+            (
+                _rt_hotspot_chart(total, hotspot, overlap)
+                if interference_available
+                else _unavailable_chart("未提供 interference artifact")
+            ),
             f'<p class="takeaway">13 分鐘窗口包含 {percent(hotspot, total)} 的候選；窗口內 {percent(overlap, hotspot)} 帶 overlap。這支持 interference 假說值得追，但尚未證明物理機制。</p></section>',
             '<section class="report-section"><div class="section-head"><h2>2. Ratio 能不能分開兩群</h2><p>線段是 IQR，中間點是 median，三個公式共用 log 尺度。accepted 與 background 線段大量重疊時，median 差距不能直接升級成 hard gate。</p></div>',
             _ratio_chart(primary_ratio_summary, background_ratio_summary),
-            '<p class="takeaway">+1/base 幾乎重疊；+1/+2 只有小幅位移；+1/+4 差距最大，但 accepted 本身也很分散。結論是可排序、不可定生死。</p></section>',
-            '<section class="report-section"><div class="section-head"><h2>3. +1 門檻是不是漏失來源</h2><p>25k 門檻保留 146/146 accepted。50k 或 100k 只少 1 個，但 200k 後召回快速下降。</p></div>',
-            _threshold_chart(plus1_seed),
-            '<p class="takeaway">25k 不是目前 146 筆候選的漏失根源。繼續調低門檻只會擴大搜尋池，不能解釋已知物為何沒有組成 candidate。</p></section>',
+            '<p class="takeaway">比較各公式的 median 與 IQR；是否分離必須由本次輸入判讀，不能沿用舊 dataset 結論，也不能直接定生死。</p></section>',
+            f'<section class="report-section"><div class="section-head"><h2>3. +1 門檻是不是漏失來源</h2><p>{escape(plus1_description)}</p></div>',
+            (
+                _threshold_chart(plus1_seed)
+                if plus1_available
+                else _unavailable_chart("未提供 +1 threshold artifact")
+            ),
+            '<p class="takeaway">+1 intensity 在此仍是 seed/prioritization 診斷，不是 hard detector gate。</p></section>',
             '<section class="report-section"><div class="section-head"><h2>4. 已知清單掉在哪一層</h2><p>比較 feature 已齊、candidate 已組成、最後 accepted 三個階段。優先查的是「all 4 features 已存在，但 candidate 沒出現」。</p></div>',
-            _assembly_chart(inclusion),
-            '<p class="takeaway">Top102 有 17 筆、manual known 有 5 筆四個位置都存在卻沒組成 candidate。這比 ratio tuning 更接近可修的根因。</p></section>',
-            '<section class="next-step"><h2>後續只做一件事</h2><p>對 22 筆 all-4-exist-but-no-candidate 做逐層 replay，輸出每一步為何沒有連成同一個 Pt group。找到第一個系統性斷點後，再決定要改 feature table、m/z pairing 或 RT grouping。</p></section>',
+            (
+                _assembly_chart(inclusion)
+                if inclusion_available
+                else _unavailable_chart("未提供 inclusion artifact")
+            ),
+            f'<p class="takeaway">{escape(assembly_description)}</p></section>',
+            f'<section class="next-step"><h2>後續只做一件事</h2><p>{escape(next_loop)}</p></section>',
             _scope_details(summary, background),
         ]
     )
@@ -71,8 +151,34 @@ def render_hypothesis_synthesis_html(
     )
 
 
-def _metric(value: int, label: str) -> str:
-    return f'<div class="metric"><strong>{value}</strong><span>{escape(label)}</span></div>'
+def _metric(value: int | str, label: str) -> str:
+    return (
+        f'<div class="metric"><strong>{escape(str(value))}</strong>'
+        f'<span>{escape(label)}</span></div>'
+    )
+
+
+def _unavailable_chart(message: str) -> str:
+    return f'<div class="chart-shell">{escape(message)}。</div>'
+
+
+def _ratio_population_count(ratio: Mapping[str, object], *, prefix: str) -> str:
+    common_count = ratio.get(f"{prefix}_row_count")
+    if isinstance(common_count, int) and not isinstance(common_count, bool):
+        return str(common_count)
+    count_map = _mapping(ratio.get(f"{prefix}_row_count_by_ratio"))
+    counts = sorted(
+        {
+            value
+            for value in count_map.values()
+            if isinstance(value, int) and not isinstance(value, bool)
+        }
+    )
+    if not counts:
+        return "0"
+    if len(counts) == 1:
+        return str(counts[0])
+    return f"{counts[0]}–{counts[-1]}（依 ratio）"
 
 
 def _rt_hotspot_chart(total: int, hotspot: int, overlap: int) -> str:
@@ -93,7 +199,7 @@ def _rt_hotspot_chart(total: int, hotspot: int, overlap: int) -> str:
         )
     return (
         '<div class="chart-shell"><p class="chart-title">Accepted seeds across RT concentration</p>'
-        '<p class="chart-subtitle">同一分母 356；內層越接近外層，代表 13 分鐘結構越主導整批資料</p>'
+        f'<p class="chart-subtitle">同一分母 {total}；內層越接近外層，代表 13 分鐘結構越主導整批資料</p>'
         '<svg data-chart="rt-hotspot" viewBox="0 0 940 210" role="img" aria-label="13 minute hotspot concentration">'
         f'{"".join(rows)}</svg></div>'
     )
@@ -156,7 +262,7 @@ def _threshold_chart(plus1_seed: Mapping[str, object]) -> str:
         )
     return (
         '<div class="chart-shell"><p class="chart-title">Accepted recovery by +1 height threshold</p>'
-        '<p class="chart-subtitle">點上數字 = 146 中保留的數量；X 軸為 log threshold</p>'
+        '<p class="chart-subtitle">點上數字 = 輸入 artifact 的 recovered count；X 軸為 log threshold</p>'
         '<svg data-chart="plus1-threshold" viewBox="0 0 940 285" role="img" aria-label="plus one threshold sensitivity">'
         f'<line class="grid" x1="{left}" y1="{top}" x2="{left + width}" y2="{top}"/>'
         f'<line class="grid" x1="{left}" y1="{top + height / 2}" x2="{left + width}" y2="{top + height / 2}"/>'
@@ -265,12 +371,12 @@ def _log_fraction(value: float, minimum: float, maximum: float) -> float:
     return math.log(value / minimum) / math.log(maximum / minimum)
 
 
-def _scope_details(summary: Mapping[str, object], background: int) -> str:
+def _scope_details(summary: Mapping[str, object], background: str) -> str:
     return (
         '<details><summary>技術範圍與限制</summary><div class="table-wrap"><table>'
         '<thead><tr><th>項目</th><th>狀態</th></tr></thead><tbody>'
         f'<tr><td>report id</td><td><code>{escape(text_value(summary.get("report_id")))}</code></td></tr>'
-        f'<tr><td>background rows</td><td>{background}</td></tr>'
+        f'<tr><td>background rows</td><td>{escape(background)}</td></tr>'
         '<tr><td>RAW access</td><td>無</td></tr>'
         '<tr><td>detector / counted detection / Matrix</td><td>全部未改</td></tr>'
         '</tbody></table></div></details>'

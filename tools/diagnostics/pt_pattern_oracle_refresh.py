@@ -31,7 +31,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         action="append",
         default=[],
-        help="Current sealed machine-call CSV. Repeat for multi-packet refresh.",
+        help=(
+            "Current sealed machine-call CSV. Its sibling "
+            "pt_pattern_blind_overlay_summary.json must bind the complete "
+            "overlay bundle. Repeat for multi-packet refresh."
+        ),
     )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--refresh-packet-id", required=True)

@@ -8,6 +8,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.artifact_paths import require_disjoint_artifact_paths
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
+    PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
+    PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+    PT_PATTERN_TRACE_SCHEMA_ROLE,
+)
 from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_APEX_DELTA_MAX_SEC,
     DEFAULT_OVERLAP_MIN,
@@ -21,19 +29,25 @@ from xic_extractor.discovery.pt_pattern_evidence_rule import (
     evaluate_pt_pattern_evidence,
     pt_pattern_rule_id,
 )
-from xic_extractor.discovery.pt_pattern_oracle_promotion import PROMOTION_COLUMNS
+from xic_extractor.discovery.pt_pattern_oracle_promotion import (
+    load_verified_oracle_promotion_bundle,
+)
 from xic_extractor.discovery.pt_pattern_oracle_replay_contract import (
     load_review_packets,
     validate_oracle_promotion_binding,
 )
+from xic_extractor.discovery.pt_pattern_review_packet import PACKET_SCHEMA_ROLE
+from xic_extractor.discovery.pt_pattern_trace_manifest import (
+    VerifiedTraceSummaryBundle,
+    load_verified_trace_summary_bundle,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
     optional_float,
-    read_delimited_rows,
     write_delimited_rows,
 )
 
-SCHEMA_VERSION = "pt_pattern_diagnostic_gate.v1"
+SCHEMA_VERSION = "pt_pattern_diagnostic_gate.v2"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_diagnostic_gate"
 AUTHORITY_SCOPE = "diagnostic_gate_replay_only"
@@ -73,8 +87,12 @@ GATE_COLUMNS = (
     "rule_id",
     "packet_row_id",
     "source_label",
+    "input_schema_version",
     "sample_stem",
     "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
     "diagnostic_gate_call",
     "diagnostic_detection_status",
     "gate_reason",
@@ -113,6 +131,19 @@ def run_diagnostic_gate(
     shifted_pearson_min: float | None = None,
     shape_shift_max_sec: float | None = None,
 ) -> dict[str, Path]:
+    gate_rows_csv = output_dir / "pt_pattern_diagnostic_gate_rows.csv"
+    summary_json = output_dir / "pt_pattern_diagnostic_gate_summary.json"
+    input_paths = [
+        *review_packet_csvs,
+        *(item.path for item in trace_summary_csvs),
+    ]
+    if oracle_promotion_csv is not None:
+        input_paths.append(oracle_promotion_csv)
+    require_disjoint_artifact_paths(
+        input_paths=input_paths,
+        output_paths=(gate_rows_csv, summary_json),
+        label="Pt pattern diagnostic gate",
+    )
     thresholds = _thresholds(
         apex_delta_max_sec=apex_delta_max_sec,
         pearson_min=pearson_min,
@@ -122,26 +153,29 @@ def run_diagnostic_gate(
     )
     loaded_review_packets = load_review_packets(review_packet_csvs)
     review_rows = list(loaded_review_packets.rows)
-    trace_summary_rows = _read_trace_summary_inputs(trace_summary_csvs)
+    trace_summary_rows, trace_summary_bundles = _read_trace_summary_inputs(
+        trace_summary_csvs
+    )
     gate_input_rows = [*review_rows, *trace_summary_rows]
     if not gate_input_rows:
         raise ValueError(
             "at least one review packet CSV or trace summary CSV is required"
         )
-    oracle_rows = _read_oracle_rows(oracle_promotion_csv)
+    oracle_bundle = (
+        load_verified_oracle_promotion_bundle(oracle_promotion_csv)
+        if oracle_promotion_csv is not None
+        else None
+    )
+    oracle_rows = oracle_bundle.rows if oracle_bundle is not None else ()
     gate_rows = build_diagnostic_gate_rows(
         review_rows=gate_input_rows,
         oracle_rows=oracle_rows,
-        review_packet_sha256_by_row_id=(
-            loaded_review_packets.sha256_by_packet_row_id
-        ),
+        review_packet_sha256_by_row_id=(loaded_review_packets.sha256_by_packet_row_id),
         gate_id=gate_id,
         thresholds=thresholds,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    gate_rows_csv = output_dir / "pt_pattern_diagnostic_gate_rows.csv"
-    summary_json = output_dir / "pt_pattern_diagnostic_gate_summary.json"
     write_delimited_rows(gate_rows_csv, gate_rows, GATE_COLUMNS)
 
     call_counts = Counter(str(row["diagnostic_gate_call"]) for row in gate_rows)
@@ -168,12 +202,8 @@ def run_diagnostic_gate(
         ),
         "min_pearson_r_to_base": thresholds.min_pearson_r_to_base,
         "min_active_overlap_fraction": thresholds.min_active_overlap_fraction,
-        "min_shifted_pearson_r_to_base": (
-            thresholds.min_shifted_pearson_r_to_base
-        ),
-        "max_abs_shape_shift_sec_to_base": (
-            thresholds.max_abs_shape_shift_sec_to_base
-        ),
+        "min_shifted_pearson_r_to_base": (thresholds.min_shifted_pearson_r_to_base),
+        "max_abs_shape_shift_sec_to_base": (thresholds.max_abs_shape_shift_sec_to_base),
         "review_packet_csvs": [str(path) for path in review_packet_csvs],
         "review_packet_csv_sha256s": {
             str(path): file_sha256(path) for path in review_packet_csvs
@@ -185,9 +215,37 @@ def run_diagnostic_gate(
             f"{item.source_label}={item.path}": file_sha256(item.path)
             for item in trace_summary_csvs
         },
-        "oracle_promotion_csv": str(oracle_promotion_csv or ""),
+        "trace_metrics_csvs": [
+            str(bundle.metrics_csv) for bundle in trace_summary_bundles
+        ],
+        "trace_metrics_csv_sha256s": {
+            str(bundle.metrics_csv): file_sha256(bundle.metrics_csv)
+            for bundle in trace_summary_bundles
+        },
+        "trace_manifest_jsons": [
+            str(bundle.manifest_json) for bundle in trace_summary_bundles
+        ],
+        "trace_manifest_json_sha256s": {
+            str(bundle.manifest_json): file_sha256(bundle.manifest_json)
+            for bundle in trace_summary_bundles
+        },
+        "oracle_promotion_csv": (
+            str(oracle_bundle.packet_csv.resolve()) if oracle_bundle else ""
+        ),
         "oracle_promotion_csv_sha256": (
-            file_sha256(oracle_promotion_csv) if oracle_promotion_csv else ""
+            oracle_bundle.packet_csv_sha256 if oracle_bundle else ""
+        ),
+        "oracle_promotion_summary_json": (
+            str(oracle_bundle.summary_json) if oracle_bundle else ""
+        ),
+        "oracle_promotion_summary_json_sha256": (
+            oracle_bundle.summary_json_sha256 if oracle_bundle else ""
+        ),
+        "oracle_packet_id": (
+            oracle_bundle.oracle_packet_id if oracle_bundle else ""
+        ),
+        "oracle_bundle_row_count": (
+            len(oracle_bundle.rows) if oracle_bundle else 0
         ),
         "row_count": len(gate_rows),
         "diagnostic_gate_call_counts": dict(sorted(call_counts.items())),
@@ -230,9 +288,7 @@ def build_diagnostic_gate_rows(
     oracle_by_packet_row_id = _unique_oracle_rows(oracle_rows)
     missing = sorted(set(oracle_by_packet_row_id) - set(by_packet_row_id))
     if missing:
-        raise ValueError(
-            "oracle row missing review packet: " + ", ".join(missing[:5])
-        )
+        raise ValueError("oracle row missing review packet: " + ", ".join(missing[:5]))
     packet_sha256_by_row_id = review_packet_sha256_by_row_id or {}
     for packet_row_id, oracle in oracle_by_packet_row_id.items():
         review_packet_sha256 = packet_sha256_by_row_id.get(packet_row_id)
@@ -251,11 +307,14 @@ def build_diagnostic_gate_rows(
         review_rows,
         key=lambda row: (
             _required_text(row, "source_label"),
-            optional_float(row.get("base_rt_apex_min")) or float("inf"),
-            optional_float(row.get("base_mz")) or float("inf"),
+            _optional_float_sort_value(row.get("base_rt_apex_min")),
+            _optional_float_sort_value(row.get("base_mz")),
             _required_text(row, "packet_row_id"),
         ),
     ):
+        input_schema_version, assignment_sha256, extraction_sha256, artifact_role = (
+            _validated_input_lineage(review)
+        )
         packet_row_id = _required_text(review, "packet_row_id")
         decision = evaluate_pt_pattern_evidence(
             review,
@@ -277,8 +336,12 @@ def build_diagnostic_gate_rows(
                 "rule_id": pt_pattern_rule_id(thresholds),
                 "packet_row_id": packet_row_id,
                 "source_label": review.get("source_label", ""),
+                "input_schema_version": input_schema_version,
                 "sample_stem": review.get("sample_stem", ""),
                 "candidate_id": review.get("candidate_id", ""),
+                "candidate_assignment_sha256": assignment_sha256,
+                "trace_extraction_sha256": extraction_sha256,
+                "trace_artifact_role": artifact_role,
                 "diagnostic_gate_call": decision.call,
                 "diagnostic_detection_status": decision.detection_status,
                 "gate_reason": decision.reason,
@@ -286,12 +349,8 @@ def build_diagnostic_gate_rows(
                 "min_non_base_positions_supported": (
                     thresholds.min_non_base_positions_supported
                 ),
-                "max_abs_apex_delta_sec_threshold": (
-                    effective_apex_threshold
-                ),
-                "min_pearson_r_to_base_threshold": (
-                    thresholds.min_pearson_r_to_base
-                ),
+                "max_abs_apex_delta_sec_threshold": (effective_apex_threshold),
+                "min_pearson_r_to_base_threshold": (thresholds.min_pearson_r_to_base),
                 "min_active_overlap_fraction_threshold": (
                     thresholds.min_active_overlap_fraction
                 ),
@@ -321,17 +380,18 @@ def build_diagnostic_gate_rows(
                 "base_mz": review.get("base_mz", ""),
                 "base_rt_apex_min": review.get("base_rt_apex_min", ""),
                 "oracle_call": oracle_call,
-                "oracle_detection_status": oracle.get(
-                    "oracle_detection_status", ""
-                ),
+                "oracle_detection_status": oracle.get("oracle_detection_status", ""),
                 "replay_outcome": (
-                    _case_outcome(oracle_call, decision.call)
-                    if oracle_call
-                    else ""
+                    _case_outcome(oracle_call, decision.call) if oracle_call else ""
                 ),
             }
         )
     return tuple(rows)
+
+
+def _optional_float_sort_value(value: object) -> float:
+    parsed = optional_float(value)
+    return float("inf") if parsed is None else parsed
 
 
 def diagnostic_gate_call(
@@ -358,22 +418,23 @@ def diagnostic_gate_call(
 
 def _read_trace_summary_inputs(
     inputs: Sequence[TraceSummaryInput],
-) -> list[dict[str, str]]:
+) -> tuple[list[dict[str, str]], tuple[VerifiedTraceSummaryBundle, ...]]:
     rows: list[dict[str, str]] = []
+    bundles: list[VerifiedTraceSummaryBundle] = []
     for item in inputs:
         source_label = item.source_label.strip()
         if not source_label:
             raise ValueError("trace summary source_label must be non-empty")
+        bundle = load_verified_trace_summary_bundle(
+            item.path,
+            expected_artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+        )
+        bundles.append(bundle)
         rows.extend(
             _trace_summary_gate_row(row, source_label=source_label)
-            for row in read_delimited_rows(
-                item.path,
-                required_columns=TRACE_SUMMARY_GATE_REQUIRED_COLUMNS,
-                delimiter=",",
-                encoding="utf-8-sig",
-            )
+            for row in bundle.summary_rows
         )
-    return rows
+    return rows, tuple(bundles)
 
 
 def _trace_summary_gate_row(
@@ -383,22 +444,29 @@ def _trace_summary_gate_row(
 ) -> dict[str, str]:
     candidate_id = _required_text(row, "candidate_id")
     return {
+        "schema_version": row.get("schema_version", ""),
         "source_label": source_label,
         "packet_row_id": f"{source_label}|{candidate_id}",
         "sample_stem": row.get("sample_stem", ""),
         "candidate_id": candidate_id,
-        "combined_pt_pattern_status": row.get("combined_pt_pattern_status", ""),
-        "non_base_positions_supported": row.get(
-            "non_base_positions_supported", ""
+        "candidate_assignment_sha256": row.get(
+            PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
+            "",
         ),
+        "trace_extraction_sha256": row.get(
+            PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
+            "",
+        ),
+        "trace_artifact_role": row.get(
+            PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
+            "",
+        ),
+        "combined_pt_pattern_status": row.get("combined_pt_pattern_status", ""),
+        "non_base_positions_supported": row.get("non_base_positions_supported", ""),
         "max_abs_apex_delta_sec": row.get("max_abs_apex_delta_sec", ""),
         "min_pearson_r_to_base": row.get("min_pearson_r_to_base", ""),
-        "min_active_overlap_fraction": row.get(
-            "min_active_overlap_fraction", ""
-        ),
-        "min_shifted_pearson_r_to_base": row.get(
-            "min_shifted_pearson_r_to_base", ""
-        ),
+        "min_active_overlap_fraction": row.get("min_active_overlap_fraction", ""),
+        "min_shifted_pearson_r_to_base": row.get("min_shifted_pearson_r_to_base", ""),
         "max_abs_shape_shift_sec_to_base": row.get(
             "max_abs_shape_shift_sec_to_base", ""
         ),
@@ -406,25 +474,45 @@ def _trace_summary_gate_row(
         "min_effective_smoothing_window_sec": row.get(
             "min_effective_smoothing_window_sec", ""
         ),
-        "trace_smoothing_window_points": row.get(
-            "trace_smoothing_window_points", ""
-        ),
+        "trace_smoothing_window_points": row.get("trace_smoothing_window_points", ""),
         "base_mz": row.get("base_mz", ""),
         "base_rt_apex_min": row.get("base_rt_apex_min", ""),
     }
 
 
-def _read_oracle_rows(path: Path | None) -> tuple[dict[str, str], ...]:
-    if path is None:
-        return ()
-    return tuple(
-        read_delimited_rows(
-            path,
-            required_columns=PROMOTION_COLUMNS,
-            delimiter=",",
-            encoding="utf-8-sig",
+def _validated_input_lineage(
+    row: Mapping[str, str],
+) -> tuple[str, str, str, str]:
+    schema_version = _required_text(row, "schema_version")
+    artifact_role = _required_text(row, PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD)
+    expected_role = {
+        **PT_PATTERN_TRACE_SCHEMA_ROLE,
+        **PACKET_SCHEMA_ROLE,
+    }.get(schema_version)
+    if expected_role is None:
+        raise ValueError(
+            f"unsupported diagnostic gate input schema: {schema_version!r}"
         )
+    if artifact_role != expected_role:
+        raise ValueError("diagnostic gate input schema/trace_artifact_role mismatch")
+    assignment_sha256 = _required_lower_sha256(
+        row,
+        PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
     )
+    extraction_sha256 = _required_lower_sha256(
+        row,
+        PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
+    )
+    return schema_version, assignment_sha256, extraction_sha256, artifact_role
+
+
+def _required_lower_sha256(row: Mapping[str, str], field: str) -> str:
+    value = _required_text(row, field)
+    if len(value) != 64 or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise ValueError(f"{field} must be a lowercase SHA-256 digest")
+    return value
 
 
 def _unique_review_rows(

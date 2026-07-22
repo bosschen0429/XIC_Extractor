@@ -18,13 +18,18 @@ from pathlib import Path
 from typing import Literal
 
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
     prepare_pt_trace_summary_rows_for_csv,
+    pt_pattern_candidate_assignment_fingerprint,
+    pt_pattern_trace_extraction_fingerprint,
 )
 from xic_extractor.discovery.pt_pattern_trace_batch import (
     ANCHOR_LOCAL_METRIC_COLUMNS,
     ANCHOR_LOCAL_SCHEMA_VERSION,
     ANCHOR_LOCAL_SUMMARY_COLUMNS,
     ANCHOR_LOCAL_TRACE_POINT_COLUMNS,
+    ANCHOR_SEGMENTATION_SELECTOR,
     diagnose_pt_pattern_trace_batch,
 )
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
@@ -49,6 +54,9 @@ from xic_extractor.discovery.pt_pattern_trace_evidence import (
     diagnose_candidate_traces,
     load_candidate_rows,
     validate_candidate_sample_binding,
+)
+from xic_extractor.discovery.pt_pattern_trace_manifest import (
+    trace_bundle_manifest_fields,
 )
 from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.raw_reader import RawReaderError, open_raw
@@ -98,7 +106,33 @@ def run_trace_diagnosis(
         candidate_rows,
         expected_sample_stem=source_sample_stem,
     )
-    raw_sha256 = file_sha256(raw)
+    raw_sha256 = file_sha256(raw).lower()
+    candidates_csv_sha256 = file_sha256(candidates_csv).lower()
+    candidate_assignments = tuple(
+        (
+            str(row["candidate_id"]),
+            pt_pattern_candidate_assignment_fingerprint(row),
+        )
+        for row in candidate_rows
+    )
+    trace_extraction_sha256 = pt_pattern_trace_extraction_fingerprint(
+        candidates_csv_sha256=candidates_csv_sha256,
+        raw_sha256=raw_sha256,
+        source_sample_stem=source_sample_stem,
+        limit=limit,
+        offset=offset,
+        candidate_assignments=candidate_assignments,
+        ppm=ppm,
+        rt_half_window_sec=rt_half_window_sec,
+        mz_source=mz_source,
+        active_fraction=active_fraction,
+        min_pearson_r=min_pearson_r,
+        max_apex_delta_sec=max_apex_delta_sec,
+        trace_decision_basis=TRACE_DECISION_BASIS,
+        trace_smoothing_method=TRACE_SMOOTH_METHOD,
+        trace_smoothing_window_points=TRACE_SMOOTH_WINDOW_POINTS,
+        anchor_segmentation_selector=ANCHOR_SEGMENTATION_SELECTOR,
+    )
     request_items = tuple(
         item
         for row in candidate_rows
@@ -124,6 +158,7 @@ def run_trace_diagnosis(
     diagnosis = diagnose_pt_pattern_trace_batch(
         candidate_rows,
         trace_by_key,
+        trace_extraction_sha256=trace_extraction_sha256,
         ppm=ppm,
         rt_half_window_sec=rt_half_window_sec,
         mz_source=mz_source,
@@ -193,6 +228,8 @@ def run_trace_diagnosis(
         "raw": str(raw),
         "raw_file_name": raw.name,
         "raw_sha256": raw_sha256,
+        "candidates_csv_sha256": candidates_csv_sha256,
+        "trace_extraction_sha256": trace_extraction_sha256,
         "source_sample_stem": source_sample_stem,
         "output_dir": str(output_dir),
         "limit": limit,
@@ -205,6 +242,7 @@ def run_trace_diagnosis(
         "trace_decision_basis": TRACE_DECISION_BASIS,
         "trace_smoothing_method": TRACE_SMOOTH_METHOD,
         "trace_smoothing_window_points": TRACE_SMOOTH_WINDOW_POINTS,
+        "anchor_segmentation_selector": ANCHOR_SEGMENTATION_SELECTOR,
         "raw_trace_points_written": write_trace_points,
         "active_fraction": active_fraction,
         "min_pearson_r": min_pearson_r,
@@ -221,6 +259,18 @@ def run_trace_diagnosis(
         },
         "diagnostic_only": True,
     }
+    sidecar.update(
+        trace_bundle_manifest_fields(
+            schema_version=SCHEMA_VERSION,
+            artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+            trace_extraction_sha256=trace_extraction_sha256,
+            candidates_csv_sha256=candidates_csv_sha256,
+            summary_csv=summary_csv,
+            metrics_csv=metrics_csv,
+            trace_points_csv=trace_points_csv if write_trace_points else None,
+            candidate_assignments=candidate_assignments,
+        )
+    )
     sidecar_json.write_text(
         json.dumps(sidecar, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -238,14 +288,14 @@ def run_trace_diagnosis(
         "readiness_tier": READINESS_TIER,
         "evidence_owner": EVIDENCE_OWNER,
         "source_trace_schema_version": SCHEMA_VERSION,
-        "anchor_segmentation_selector": (
-            "anchor_containing_chrom_peak_segment.v1"
-        ),
+        "anchor_segmentation_selector": ANCHOR_SEGMENTATION_SELECTOR,
         "anchor_interval_semantics": "coelution_comparison_not_integration",
         "candidates_csv": str(candidates_csv),
         "raw": str(raw),
         "raw_file_name": raw.name,
         "raw_sha256": raw_sha256,
+        "candidates_csv_sha256": candidates_csv_sha256,
+        "trace_extraction_sha256": trace_extraction_sha256,
         "source_sample_stem": source_sample_stem,
         "output_dir": str(output_dir),
         "limit": limit,
@@ -284,6 +334,20 @@ def run_trace_diagnosis(
         },
         "diagnostic_only": True,
     }
+    anchor_sidecar.update(
+        trace_bundle_manifest_fields(
+            schema_version=ANCHOR_LOCAL_SCHEMA_VERSION,
+            artifact_role=PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+            trace_extraction_sha256=trace_extraction_sha256,
+            candidates_csv_sha256=candidates_csv_sha256,
+            summary_csv=anchor_summary_csv,
+            metrics_csv=anchor_metrics_csv,
+            trace_points_csv=(
+                anchor_trace_points_csv if write_trace_points else None
+            ),
+            candidate_assignments=candidate_assignments,
+        )
+    )
     anchor_sidecar_json.write_text(
         json.dumps(anchor_sidecar, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

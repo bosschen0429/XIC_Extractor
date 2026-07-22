@@ -11,7 +11,10 @@ from xic_extractor.discovery.pt_pattern_hypothesis_synthesis import (
     KNOWN_EXAMPLE_COLUMNS,
     run_hypothesis_synthesis,
 )
-from xic_extractor.discovery.pt_pattern_ratio_profile import RATIO_SUMMARY_COLUMNS
+from xic_extractor.discovery.pt_pattern_ratio_profile import (
+    RATIO_NAMES,
+    RATIO_SUMMARY_COLUMNS,
+)
 from xic_extractor.tabular_io import read_delimited_rows, write_delimited_rows
 
 
@@ -61,6 +64,12 @@ def test_hypothesis_synthesis_writes_diagnostic_only_report(
     assert 'data-chart="plus1-threshold"' in html
     assert 'data-chart="assembly-stage"' in html
     assert "ratio: `" not in markdown
+    assert "3 個原始 accepted seeds 中，2 個落在" in html
+    assert "Top102 有 2 筆、manual known 有 0 筆" in html
+    assert "356 個原始 accepted seeds" not in html
+    assert "146/146" not in html
+    assert "17 個 Top102" not in html
+    assert "22 筆 all-4" not in html
 
     layer_rows = read_delimited_rows(
         outputs["assembly_layer_summary_csv"],
@@ -129,6 +138,29 @@ def test_hypothesis_synthesis_cli(tmp_path: Path) -> None:
         )
     )
     assert summary["report_id"] == "fixture_hypothesis"
+
+
+def test_hypothesis_synthesis_marks_omitted_optional_sources_unavailable(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+
+    outputs = run_hypothesis_synthesis(
+        ratio_summary_csv=paths["ratio_summary"],
+        output_dir=tmp_path / "ratio_only",
+        report_id="ratio_only",
+    )
+
+    summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
+    assert summary["interference"]["available"] is False
+    assert summary["interference"]["input_accept_count"] is None
+    assert summary["plus1_seed"]["available"] is False
+    assert summary["inclusion_list"]["available"] is False
+    markdown = outputs["markdown"].read_text(encoding="utf-8")
+    html = outputs["html"].read_text(encoding="utf-8")
+    assert "未提供 interference artifact" in markdown
+    assert "目前只有 ratio artifact" in html
+    assert "目前最大嫌疑不是 ratio gate" not in markdown
 
 
 def test_hypothesis_synthesis_rejects_duplicate_ratio_name(tmp_path: Path) -> None:
@@ -225,6 +257,519 @@ def test_hypothesis_synthesis_rejects_fractional_plus1_threshold_identity(
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("row_count", "3.5"),
+        ("row_count", "-1"),
+        ("outlier_count", "garbage"),
+        ("outlier_count", "4"),
+    ],
+)
+def test_hypothesis_synthesis_rejects_invalid_ratio_summary_counts(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["ratio_summary"],
+        required_columns=RATIO_SUMMARY_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0][field] = value
+    write_delimited_rows(paths["ratio_summary"], rows, RATIO_SUMMARY_COLUMNS)
+
+    with pytest.raises(ValueError, match=field):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="invalid_ratio_count",
+        )
+
+
+def test_hypothesis_synthesis_allows_ratio_specific_nonmissing_counts(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["ratio_summary"],
+        required_columns=RATIO_SUMMARY_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[1]["row_count"] = "2"
+    rows[1]["missing_count"] = "1"
+    write_delimited_rows(paths["ratio_summary"], rows, RATIO_SUMMARY_COLUMNS)
+
+    outputs = run_hypothesis_synthesis(
+        ratio_summary_csv=paths["ratio_summary"],
+        output_dir=tmp_path / "synthesis",
+        report_id="ratio_specific_counts",
+    )
+    forward = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
+
+    write_delimited_rows(
+        paths["ratio_summary"],
+        list(reversed(rows)),
+        RATIO_SUMMARY_COLUMNS,
+    )
+    reversed_outputs = run_hypothesis_synthesis(
+        ratio_summary_csv=paths["ratio_summary"],
+        output_dir=tmp_path / "synthesis_reversed",
+        report_id="ratio_specific_counts_reversed",
+    )
+    reversed_summary = json.loads(
+        reversed_outputs["summary_json"].read_text(encoding="utf-8")
+    )
+
+    expected_counts = {ratio_name: 3 for ratio_name in RATIO_NAMES}
+    expected_counts[RATIO_NAMES[1]] = 2
+    assert forward["ratio"]["primary_row_count"] is None
+    assert forward["ratio"]["primary_row_count_by_ratio"] == expected_counts
+    assert reversed_summary["ratio"] == forward["ratio"]
+
+
+@pytest.mark.parametrize(
+    ("input_name", "wrong_label", "message"),
+    [
+        ("ratio_summary", "background_population", "primary ratio summary"),
+        ("background_summary", "primary_population", "background ratio summary"),
+    ],
+)
+def test_hypothesis_synthesis_rejects_wrong_ratio_population_role(
+    tmp_path: Path,
+    input_name: str,
+    wrong_label: str,
+    message: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    path = paths[input_name]
+    rows = read_delimited_rows(
+        path,
+        required_columns=RATIO_SUMMARY_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0]["population_label"] = wrong_label
+    write_delimited_rows(path, rows, RATIO_SUMMARY_COLUMNS)
+
+    with pytest.raises(ValueError, match=message):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            background_ratio_summary_csv=paths["background_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="wrong_population_role",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("schema_version", "pt_pattern_ratio_profile.v999", "schema_version"),
+        ("profile_id", "", "profile_id"),
+        ("missing_count", "-1", "missing_count"),
+    ],
+)
+def test_hypothesis_synthesis_rejects_invalid_ratio_artifact_envelope(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["ratio_summary"],
+        required_columns=RATIO_SUMMARY_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0][field] = value
+    write_delimited_rows(paths["ratio_summary"], rows, RATIO_SUMMARY_COLUMNS)
+
+    with pytest.raises(ValueError, match=message):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="invalid_ratio_envelope",
+        )
+
+
+def test_hypothesis_synthesis_rejects_mixed_or_cross_file_ratio_profiles(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    primary = read_delimited_rows(
+        paths["ratio_summary"],
+        required_columns=RATIO_SUMMARY_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    primary[0]["profile_id"] = "mixed"
+    write_delimited_rows(paths["ratio_summary"], primary, RATIO_SUMMARY_COLUMNS)
+
+    with pytest.raises(ValueError, match="single profile_id"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            output_dir=tmp_path / "mixed",
+            report_id="mixed_ratio_profiles",
+        )
+
+    primary[0]["profile_id"] = "fixture"
+    write_delimited_rows(paths["ratio_summary"], primary, RATIO_SUMMARY_COLUMNS)
+    background = read_delimited_rows(
+        paths["background_summary"],
+        required_columns=RATIO_SUMMARY_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    for row in background:
+        row["profile_id"] = "other"
+    write_delimited_rows(
+        paths["background_summary"],
+        background,
+        RATIO_SUMMARY_COLUMNS,
+    )
+
+    with pytest.raises(ValueError, match="profile_id must match"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            background_ratio_summary_csv=paths["background_summary"],
+            output_dir=tmp_path / "cross_file",
+            report_id="cross_file_ratio_profiles",
+        )
+
+
+def test_hypothesis_synthesis_requires_complete_canonical_ratio_set(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["ratio_summary"],
+        required_columns=RATIO_SUMMARY_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    write_delimited_rows(paths["ratio_summary"], rows[:-1], RATIO_SUMMARY_COLUMNS)
+
+    with pytest.raises(ValueError, match="canonical ratio_name set"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="incomplete_ratios",
+        )
+
+
+def test_hypothesis_synthesis_rejects_query_set_role_swap(tmp_path: Path) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["top102"],
+        required_columns=_assembly_columns(),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0]["query_set"] = "manual_known"
+    write_delimited_rows(paths["top102"], rows, _assembly_columns())
+
+    with pytest.raises(ValueError, match="query_set must be 'top102'"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            top102_diagnosis_csv=paths["top102"],
+            output_dir=tmp_path / "synthesis",
+            report_id="wrong_query_role",
+        )
+
+
+def test_hypothesis_synthesis_rejects_statistics_for_empty_ratio_population(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["ratio_summary"],
+        required_columns=RATIO_SUMMARY_COLUMNS,
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0]["row_count"] = "0"
+    write_delimited_rows(paths["ratio_summary"], rows, RATIO_SUMMARY_COLUMNS)
+
+    with pytest.raises(ValueError, match="median.*empty when row_count is 0"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="contradictory_empty_ratio",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("diagnostic_full_pattern_candidates", "3.9"),
+        ("current_146_accept_recovered", "-1"),
+        ("current_146_accept_recall_fraction", "1.1"),
+        ("top102_recall_fraction", "garbage"),
+        ("edge_to_candidate_ratio", "-0.1"),
+    ],
+)
+def test_hypothesis_synthesis_rejects_invalid_plus1_metrics(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["plus1_summary"],
+        required_columns=(field,),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0][field] = value
+    write_delimited_rows(paths["plus1_summary"], rows, tuple(rows[0]))
+
+    with pytest.raises(ValueError, match=field):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            plus1_seed_summary_csv=paths["plus1_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="invalid_plus1_metric",
+        )
+
+
+@pytest.mark.parametrize("value", ["2.5", "-1", "garbage"])
+def test_hypothesis_synthesis_rejects_invalid_inclusion_count(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["inclusion_summary"],
+        required_columns=("set", "metric", "value"),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0]["value"] = value
+    write_delimited_rows(paths["inclusion_summary"], rows, tuple(rows[0]))
+
+    with pytest.raises(ValueError, match="inclusion.*value"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            inclusion_summary_csv=paths["inclusion_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="invalid_inclusion_count",
+        )
+
+
+def test_hypothesis_synthesis_rejects_inclusion_child_above_row_count(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["inclusion_summary"],
+        required_columns=("set", "metric", "value"),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[1]["value"] = "4"
+    write_delimited_rows(paths["inclusion_summary"], rows, tuple(rows[0]))
+
+    with pytest.raises(
+        ValueError,
+        match="feature_all4_exist_20ppm must be <= row_count",
+    ):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            inclusion_summary_csv=paths["inclusion_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="impossible_inclusion_count",
+        )
+
+
+def test_hypothesis_synthesis_does_not_fallback_partial_assembly_to_legacy(
+    tmp_path: Path,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["known"],
+        required_columns=_assembly_columns(),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0]["diagnostic_status"] = "feature_base_exists"
+    rows[0]["trace_rule_reason"] = ""
+    columns = tuple(
+        column
+        for column in (*_assembly_columns(), "diagnostic_status", "trace_rule_reason")
+        if column != "feature_plus4_count_20ppm"
+    )
+    write_delimited_rows(paths["known"], rows, columns)
+
+    with pytest.raises(ValueError, match="feature_plus4_count_20ppm"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            known_diagnosis_csv=paths["known"],
+            output_dir=tmp_path / "synthesis",
+            report_id="partial_assembly_must_fail_closed",
+        )
+
+
+@pytest.mark.parametrize("value", ["1.5", "-1", "garbage"])
+def test_hypothesis_synthesis_rejects_invalid_assembly_feature_count(
+    tmp_path: Path,
+    value: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["top102"],
+        required_columns=_assembly_columns(),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0]["feature_base_count_20ppm"] = value
+    write_delimited_rows(paths["top102"], rows, _assembly_columns())
+
+    with pytest.raises(ValueError, match="feature_base_count_20ppm"):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            top102_diagnosis_csv=paths["top102"],
+            output_dir=tmp_path / "synthesis",
+            report_id="invalid_assembly_count",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("coherent_full_pattern_exists", "garbage"),
+        ("coherent_full_pattern_exists", ""),
+        ("compound", "   "),
+        ("list_plus1_mz", "garbage"),
+        ("list_plus1_mz", "0"),
+    ],
+)
+def test_hypothesis_synthesis_rejects_invalid_assembly_identity_and_boolean(
+    tmp_path: Path,
+    field: str,
+    value: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["top102"],
+        required_columns=_assembly_columns(),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0][field] = value
+    write_delimited_rows(paths["top102"], rows, _assembly_columns())
+
+    with pytest.raises(ValueError, match=field):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            top102_diagnosis_csv=paths["top102"],
+            output_dir=tmp_path / "synthesis",
+            report_id="invalid_assembly_identity",
+        )
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ([{"input_accept_count": 3}], "JSON object"),
+        ({}, "input_accept_count"),
+        ({"input_accept_count": 3.5}, "input_accept_count"),
+    ],
+)
+def test_hypothesis_synthesis_rejects_malformed_interference_summary(
+    tmp_path: Path,
+    payload: object,
+    message: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    paths["interference"].write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            interference_summary_json=paths["interference"],
+            output_dir=tmp_path / "synthesis",
+            report_id="invalid_interference",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("rt_12p5_13p5_accept_count", 4, "must be <= input_accept_count"),
+        (
+            "rt_12p5_13p5_overlap_candidate_count",
+            3,
+            "must be <= rt_12p5_13p5_accept_count",
+        ),
+        ("base_delta_overlap_candidate_count", 4, "must be <= input_accept_count"),
+        (
+            "base_delta_overlap_cluster_count",
+            3,
+            "must be <= base_delta_overlap_candidate_count",
+        ),
+        ("ratio_above_expected_with_overlap_count", 4, "must be <= input_accept_count"),
+    ],
+)
+def test_hypothesis_synthesis_rejects_impossible_interference_counts(
+    tmp_path: Path,
+    field: str,
+    value: int,
+    message: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    payload = json.loads(paths["interference"].read_text(encoding="utf-8"))
+    payload[field] = value
+    paths["interference"].write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            interference_summary_json=paths["interference"],
+            output_dir=tmp_path / "synthesis",
+            report_id="impossible_interference",
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("unique_base_count", "5", "must be <= diagnostic_full_pattern_candidates"),
+        (
+            "current_146_accept_recovered",
+            "5",
+            "must be <= current_386_candidate_recovered",
+        ),
+    ],
+)
+def test_hypothesis_synthesis_rejects_impossible_plus1_subset_counts(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    message: str,
+) -> None:
+    paths = _write_inputs(tmp_path)
+    rows = read_delimited_rows(
+        paths["plus1_summary"],
+        required_columns=(field,),
+        delimiter=",",
+        encoding="utf-8",
+    )
+    rows[0][field] = value
+    write_delimited_rows(paths["plus1_summary"], rows, tuple(rows[0]))
+
+    with pytest.raises(ValueError, match=message):
+        run_hypothesis_synthesis(
+            ratio_summary_csv=paths["ratio_summary"],
+            plus1_seed_summary_csv=paths["plus1_summary"],
+            output_dir=tmp_path / "synthesis",
+            report_id="impossible_plus1",
+        )
+
+
 def _write_inputs(tmp_path: Path) -> dict[str, Path]:
     ratio_summary = tmp_path / "accepted_ratio_summary.csv"
     background_summary = tmp_path / "rejected_ratio_background_summary.csv"
@@ -237,9 +782,15 @@ def _write_inputs(tmp_path: Path) -> dict[str, Path]:
     write_delimited_rows(
         ratio_summary,
         [
-            _ratio_summary("plus1_over_base_height_ratio", median=0.9),
-            _ratio_summary("base_over_plus1_height_ratio", median=1.1),
-            _ratio_summary("plus1_over_plus4_height_ratio", median=4.0),
+            _ratio_summary(
+                ratio_name,
+                median={
+                    "plus1_over_base_height_ratio": 0.9,
+                    "base_over_plus1_height_ratio": 1.1,
+                    "plus1_over_plus4_height_ratio": 4.0,
+                }.get(ratio_name, 1.0),
+            )
+            for ratio_name in RATIO_NAMES
         ],
         RATIO_SUMMARY_COLUMNS,
     )
@@ -247,10 +798,11 @@ def _write_inputs(tmp_path: Path) -> dict[str, Path]:
         background_summary,
         [
             _ratio_summary(
-                "plus1_over_base_height_ratio",
-                median=0.8,
+                ratio_name,
+                median=0.8 if ratio_name == "plus1_over_base_height_ratio" else 1.0,
                 population_label="background_population",
-            ),
+            )
+            for ratio_name in RATIO_NAMES
         ],
         RATIO_SUMMARY_COLUMNS,
     )
@@ -282,6 +834,24 @@ def _write_inputs(tmp_path: Path) -> dict[str, Path]:
                 "set": "top102",
                 "metric": "feature_all4_exist_20ppm",
                 "value": 2,
+                "note": "",
+            },
+            {
+                "set": "top102",
+                "metric": "features_all4_exist_but_no_candidate",
+                "value": 2,
+                "note": "",
+            },
+            {
+                "set": "manual_known",
+                "metric": "row_count",
+                "value": 1,
+                "note": "",
+            },
+            {
+                "set": "manual_known",
+                "metric": "features_all4_exist_but_no_candidate",
+                "value": 0,
                 "note": "",
             },
         ],
@@ -367,7 +937,9 @@ def _ratio_summary(
         {
             "schema_version": "pt_pattern_ratio_profile.v1",
             "readiness_tier": "diagnostic_only",
-            "evidence_owner": "owner",
+            "evidence_owner": (
+                "xic_extractor.discovery.pt_pattern_ratio_profile"
+            ),
             "authority_scope": "ratio_profile_only",
             "profile_id": "fixture",
             "population_label": population_label,

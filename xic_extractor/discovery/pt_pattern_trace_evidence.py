@@ -8,6 +8,7 @@ diagnostic outputs, or grant final quant authority.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -16,14 +17,28 @@ from typing import Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+    PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
+    PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+    PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
+    pt_pattern_candidate_assignment_fingerprint,
+)
 from xic_extractor.peak_detection.ms1_shape_identity import (
     DEFAULT_OWN_MAX_SMOOTH_POINTS,
     gaussian_smooth_values,
 )
-from xic_extractor.tabular_io import optional_float, read_delimited_rows
+from xic_extractor.tabular_io import (
+    format_diagnostic_value,
+    optional_float,
+    read_delimited_rows,
+)
 from xic_extractor.xic_models import XICRequest, XICTrace
 
-SCHEMA_VERSION = "pt_pattern_trace_diagnosis.v2"
+SCHEMA_VERSION = PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_trace_evidence"
 READINESS_TIER = "diagnostic_only"
 TRACE_DECISION_BASIS = "gaussian15_smoothed_trace"
@@ -41,18 +56,7 @@ PLUS4_WINDOW_DOMINANCE_MIN_CENTROID_SHIFT_SEC = 15.0
 
 POSITION_LABELS = ("base", "pt_plus_1", "pt_plus_2", "pt_plus_4")
 NON_BASE_POSITION_LABELS = ("pt_plus_1", "pt_plus_2", "pt_plus_4")
-REQUIRED_CANDIDATE_COLUMNS = (
-    "sample_stem",
-    "candidate_id",
-    "base_mz",
-    "base_rt_apex_min",
-    "pt_plus_1_mz",
-    "pt_plus_1_expected_mz",
-    "pt_plus_2_mz",
-    "pt_plus_2_expected_mz",
-    "pt_plus_4_mz",
-    "pt_plus_4_expected_mz",
-)
+REQUIRED_CANDIDATE_COLUMNS = PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS
 
 ANCHOR_SEGMENTATION_SUMMARY_COLUMNS = (
     "anchor_segmentation_status",
@@ -93,6 +97,9 @@ SUMMARY_COLUMNS = (
     "schema_version",
     "sample_stem",
     "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
     "scan_pattern_seed_status",
     "base_mz",
     "base_rt_apex_min",
@@ -125,10 +132,37 @@ SUMMARY_COLUMNS = (
     "reason",
 )
 
+TRACE_SUMMARY_AGGREGATE_COLUMNS = (
+    "min_median_rt_step_sec",
+    "min_effective_smoothing_window_sec",
+    "max_trace_point_count",
+    "positions_requested",
+    "positions_with_points",
+    "positions_with_signal",
+    "non_base_positions_supported",
+    "max_abs_apex_delta_sec",
+    "min_pearson_r_to_base",
+    "min_active_overlap_fraction",
+    "min_shifted_pearson_r_to_base",
+    "max_abs_shape_shift_sec_to_base",
+    "raw_max_abs_apex_delta_sec",
+    "raw_min_pearson_r_to_base",
+    "raw_min_active_overlap_fraction",
+    "trace_ambiguity_status",
+    "trace_ambiguity_flags",
+    "shifted_only_position_labels",
+    "trace_support_status",
+    "combined_pt_pattern_status",
+    "reason",
+)
+
 METRIC_COLUMNS = (
     "schema_version",
     "sample_stem",
     "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
     "position_label",
     "target_mz",
     "rt_min",
@@ -164,10 +198,45 @@ TRACE_POINT_COLUMNS = (
     "schema_version",
     "sample_stem",
     "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_extraction_sha256",
+    "trace_artifact_role",
     "position_label",
     "intensity_basis",
     "rt_min",
     "intensity",
+)
+
+TRACE_POINT_PROJECTED_METRIC_COLUMNS = (
+    "rt_min",
+    "rt_max",
+    "point_count",
+    "median_rt_step_sec",
+    "effective_smoothing_window_sec",
+    "raw_max_intensity",
+    "raw_apex_rt_min",
+    "raw_apex_delta_sec_to_base",
+    "raw_smoothed_apex_delta_sec",
+    "raw_height_ratio_to_base",
+    "raw_pearson_r_to_base",
+    "raw_active_overlap_fraction",
+    "max_intensity",
+    "apex_rt_min",
+    "apex_delta_sec_to_base",
+    "height_ratio_to_base",
+    "pearson_r_to_base",
+    "active_overlap_fraction",
+    "shifted_pearson_r_to_base",
+    "shape_shift_sec_to_base",
+    "trace_quality_flags",
+    "trace_support_status",
+    "reason",
+)
+
+TRACE_LINEAGE_COLUMNS = (
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,
+    PT_PATTERN_TRACE_EXTRACTION_SHA256_FIELD,
+    PT_PATTERN_TRACE_ARTIFACT_ROLE_FIELD,
 )
 
 DEFAULT_PPM = 20.0
@@ -249,6 +318,7 @@ def load_candidate_rows(
         encoding="utf-8-sig",
     )
     seen_candidate_ids: set[str] = set()
+    seen_canonical_bases: set[tuple[str, str]] = set()
     for row_index, row in enumerate(rows, start=2):
         candidate_id = _required_text(row, "candidate_id")
         if candidate_id in seen_candidate_ids:
@@ -256,6 +326,18 @@ def load_candidate_rows(
                 f"{path}:{row_index}: duplicate candidate_id: {candidate_id}"
             )
         seen_candidate_ids.add(candidate_id)
+        pt_pattern_candidate_assignment_fingerprint(row)
+        canonical_base = (
+            _required_text(row, "sample_stem"),
+            _required_text(row, "base_feature_id"),
+        )
+        if canonical_base in seen_canonical_bases:
+            raise ValueError(
+                f"{path}:{row_index}: duplicate canonical Pt base assignment: "
+                f"sample_stem={canonical_base[0]!r}, "
+                f"base_feature_id={canonical_base[1]!r}"
+            )
+        seen_canonical_bases.add(canonical_base)
     return tuple(rows[offset : offset + limit])
 
 
@@ -284,6 +366,7 @@ def build_trace_requests_for_candidate(
     rt_half_window_sec: float,
     mz_source: Literal["expected", "observed"],
 ) -> tuple[TraceRequestItem, ...]:
+    pt_pattern_candidate_assignment_fingerprint(row)
     sample_stem = _required_text(row, "sample_stem")
     candidate_id = _required_text(row, "candidate_id")
     base_rt = _required_float(row, "base_rt_apex_min", label=candidate_id)
@@ -320,6 +403,8 @@ def diagnose_candidate_traces(
     row: Mapping[str, str],
     trace_by_position: Mapping[str, XICTrace],
     *,
+    trace_extraction_sha256: str,
+    trace_artifact_role: Literal["full_context", "anchor_local"],
     ppm: float,
     rt_half_window_sec: float,
     mz_source: Literal["expected", "observed"],
@@ -330,10 +415,26 @@ def diagnose_candidate_traces(
 ) -> CandidateTraceDiagnosis:
     sample_stem = _required_text(row, "sample_stem")
     candidate_id = _required_text(row, "candidate_id")
+    candidate_assignment_sha256 = pt_pattern_candidate_assignment_fingerprint(row)
+    if re.fullmatch(r"[0-9a-f]{64}", trace_extraction_sha256) is None:
+        raise ValueError("trace_extraction_sha256 must be a lowercase SHA-256 digest")
+    if trace_artifact_role not in {
+        PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+        PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+    }:
+        raise ValueError(
+            "trace_artifact_role must be 'full_context' or 'anchor_local'"
+        )
     base_mz = _required_float(row, "base_mz", label=candidate_id)
     base_rt = _required_float(row, "base_rt_apex_min", label=candidate_id)
 
-    base_trace = trace_by_position.get("base", XICTrace.empty())
+    trace_by_position = {
+        position_label: _csv_precision_trace(
+            trace_by_position.get(position_label, XICTrace.empty())
+        )
+        for position_label in POSITION_LABELS
+    }
+    base_trace = trace_by_position["base"]
     base_raw_stats = _trace_stats(base_trace, intensity_basis="raw")
     base_stats = _trace_stats(base_trace, intensity_basis="decision")
     metrics: list[TraceMetric] = []
@@ -361,91 +462,38 @@ def diagnose_candidate_traces(
         )
 
     metrics = _with_family_quality_flags(metrics, trace_by_position)
-    non_base_metrics = [
-        metric
-        for metric in metrics
-        if metric.position_label in NON_BASE_POSITION_LABELS
-    ]
-    supported_count = sum(
-        metric.trace_support_status == "supported" for metric in non_base_metrics
-    )
-    positions_with_points = sum(metric.point_count > 0 for metric in metrics)
-    max_trace_point_count = max((metric.point_count for metric in metrics), default=0)
-    effective_smoothing_windows = [
-        metric.effective_smoothing_window_sec
-        for metric in metrics
-        if metric.effective_smoothing_window_sec is not None
-    ]
-    median_rt_steps = [
-        metric.median_rt_step_sec
-        for metric in metrics
-        if metric.median_rt_step_sec is not None and metric.median_rt_step_sec > 0
-    ]
-    positions_with_signal = sum(
-        metric.max_intensity is not None and metric.max_intensity > 0
-        for metric in metrics
-    )
-    apex_deltas = [
-        abs(metric.apex_delta_sec_to_base)
-        for metric in non_base_metrics
-        if metric.apex_delta_sec_to_base is not None
-    ]
-    correlations = [
-        metric.pearson_r_to_base
-        for metric in non_base_metrics
-        if metric.pearson_r_to_base is not None
-    ]
-    overlaps = [
-        metric.active_overlap_fraction
-        for metric in non_base_metrics
-        if metric.active_overlap_fraction is not None
-    ]
-    shifted_correlations = [
-        metric.shifted_pearson_r_to_base
-        for metric in non_base_metrics
-        if metric.shifted_pearson_r_to_base is not None
-    ]
-    shape_shifts = [
-        abs(metric.shape_shift_sec_to_base)
-        for metric in non_base_metrics
-        if metric.shape_shift_sec_to_base is not None
-    ]
-    raw_apex_deltas = [
-        abs(metric.raw_apex_delta_sec_to_base)
-        for metric in non_base_metrics
-        if metric.raw_apex_delta_sec_to_base is not None
-    ]
-    raw_correlations = [
-        metric.raw_pearson_r_to_base
-        for metric in non_base_metrics
-        if metric.raw_pearson_r_to_base is not None
-    ]
-    raw_overlaps = [
-        metric.raw_active_overlap_fraction
-        for metric in non_base_metrics
-        if metric.raw_active_overlap_fraction is not None
-    ]
-    trace_ambiguity_status, trace_ambiguity_flags = _summary_ambiguity(
-        non_base_metrics
-    )
-    shifted_only_position_labels = _shifted_only_position_labels(non_base_metrics)
-    summary_status, summary_reason = _summary_status(
-        supported_count=supported_count,
-        positions_with_signal=positions_with_signal,
-        base_stats=base_stats,
-    )
     metric_rows = tuple(
         _metric_row(
             metric,
             sample_stem=sample_stem,
             candidate_id=candidate_id,
+            candidate_assignment_sha256=candidate_assignment_sha256,
+            trace_extraction_sha256=trace_extraction_sha256,
+            trace_artifact_role=trace_artifact_role,
         )
         for metric in metrics
+    )
+    metric_rows = _with_serialized_metric_call_projection(
+        metric_rows,
+        min_pearson_r=min_pearson_r,
+        max_apex_delta_sec=max_apex_delta_sec,
+    )
+    summary_aggregate = trace_summary_aggregate_fields(
+        tuple(
+            {
+                field: format_diagnostic_value(value)
+                for field, value in metric_row.items()
+            }
+            for metric_row in metric_rows
+        )
     )
     trace_point_rows = (
         _trace_point_rows(
             sample_stem=sample_stem,
             candidate_id=candidate_id,
+            candidate_assignment_sha256=candidate_assignment_sha256,
+            trace_extraction_sha256=trace_extraction_sha256,
+            trace_artifact_role=trace_artifact_role,
             trace_by_position=trace_by_position,
         )
         if include_trace_points
@@ -456,6 +504,9 @@ def diagnose_candidate_traces(
             "schema_version": SCHEMA_VERSION,
             "sample_stem": sample_stem,
             "candidate_id": candidate_id,
+            "candidate_assignment_sha256": candidate_assignment_sha256,
+            "trace_extraction_sha256": trace_extraction_sha256,
+            "trace_artifact_role": trace_artifact_role,
             "scan_pattern_seed_status": "full_pattern_seeded",
             "base_mz": base_mz,
             "base_rt_apex_min": base_rt,
@@ -465,51 +516,566 @@ def diagnose_candidate_traces(
             "trace_decision_basis": TRACE_DECISION_BASIS,
             "trace_smoothing_method": TRACE_SMOOTH_METHOD,
             "trace_smoothing_window_points": TRACE_SMOOTH_WINDOW_POINTS,
-            "min_median_rt_step_sec": (
-                min(median_rt_steps) if median_rt_steps else None
-            ),
-            "min_effective_smoothing_window_sec": (
-                min(effective_smoothing_windows)
-                if effective_smoothing_windows
-                else None
-            ),
-            "max_trace_point_count": max_trace_point_count,
-            "positions_requested": len(POSITION_LABELS),
-            "positions_with_points": positions_with_points,
-            "positions_with_signal": positions_with_signal,
-            "non_base_positions_supported": supported_count,
-            "max_abs_apex_delta_sec": max(apex_deltas) if apex_deltas else None,
-            "min_pearson_r_to_base": min(correlations) if correlations else None,
-            "min_active_overlap_fraction": min(overlaps) if overlaps else None,
-            "min_shifted_pearson_r_to_base": (
-                min(shifted_correlations) if shifted_correlations else None
-            ),
-            "max_abs_shape_shift_sec_to_base": (
-                max(shape_shifts) if shape_shifts else None
-            ),
-            "raw_max_abs_apex_delta_sec": (
-                max(raw_apex_deltas) if raw_apex_deltas else None
-            ),
-            "raw_min_pearson_r_to_base": (
-                min(raw_correlations) if raw_correlations else None
-            ),
-            "raw_min_active_overlap_fraction": (
-                min(raw_overlaps) if raw_overlaps else None
-            ),
-            "trace_ambiguity_status": trace_ambiguity_status,
-            "trace_ambiguity_flags": trace_ambiguity_flags,
-            "shifted_only_position_labels": shifted_only_position_labels,
-            "trace_support_status": summary_status,
-            "combined_pt_pattern_status": _combined_pt_pattern_status(summary_status),
-            "reason": summary_reason,
+            **summary_aggregate,
         },
         metric_rows=metric_rows,
         trace_point_rows=trace_point_rows,
     )
 
 
+def trace_metric_evidence_fields_from_points(
+    metric_rows: Sequence[Mapping[str, object]],
+    trace_point_rows: Sequence[Mapping[str, object]],
+    *,
+    active_fraction: float,
+    min_pearson_r: float,
+    max_apex_delta_sec: float,
+) -> tuple[dict[str, str], ...]:
+    """Rebuild every point-derived metric field from persisted raw traces."""
+
+    metrics_by_candidate: dict[str, dict[str, Mapping[str, object]]] = {}
+    candidate_order: list[str] = []
+    for row in metric_rows:
+        candidate_id = _required_metric_text(row, "candidate_id")
+        position_label = _required_metric_text(row, "position_label")
+        if candidate_id not in metrics_by_candidate:
+            metrics_by_candidate[candidate_id] = {}
+            candidate_order.append(candidate_id)
+        if position_label in metrics_by_candidate[candidate_id]:
+            raise ValueError(
+                f"duplicate trace metric candidate/position: "
+                f"{candidate_id}:{position_label}"
+            )
+        metrics_by_candidate[candidate_id][position_label] = row
+
+    points_by_pair: dict[tuple[str, str], list[tuple[float, float]]] = {}
+    for row in trace_point_rows:
+        candidate_id = _required_metric_text(row, "candidate_id")
+        position_label = _required_metric_text(row, "position_label")
+        pair = (candidate_id, position_label)
+        if (
+            candidate_id not in metrics_by_candidate
+            or position_label not in metrics_by_candidate[candidate_id]
+        ):
+            raise ValueError(
+                "trace points contain a candidate/position outside metrics"
+            )
+        rt_min = _optional_finite_metric_float(row, "rt_min")
+        intensity = _optional_finite_metric_float(row, "intensity")
+        if rt_min is None or intensity is None or rt_min < 0.0 or intensity < 0.0:
+            raise ValueError(
+                "trace point projection requires finite non-negative rt/intensity"
+            )
+        points_by_pair.setdefault(pair, []).append((rt_min, intensity))
+
+    output_by_pair: dict[tuple[str, str], dict[str, str]] = {}
+    for candidate_id in candidate_order:
+        rows_by_position = metrics_by_candidate[candidate_id]
+        if set(rows_by_position) != set(POSITION_LABELS):
+            raise ValueError(
+                "trace point projection requires exactly one metric row for "
+                "every Pt position"
+            )
+        trace_by_position = {
+            position_label: XICTrace.from_arrays(
+                [
+                    rt_min
+                    for rt_min, _intensity in points_by_pair.get(
+                        (candidate_id, position_label),
+                        (),
+                    )
+                ],
+                [
+                    intensity
+                    for _rt_min, intensity in points_by_pair.get(
+                        (candidate_id, position_label),
+                        (),
+                    )
+                ],
+            )
+            for position_label in POSITION_LABELS
+        }
+        base_trace = trace_by_position["base"]
+        base_raw_stats = _trace_stats(base_trace, intensity_basis="raw")
+        base_stats = _trace_stats(base_trace, intensity_basis="decision")
+        projected_metrics = [
+            _trace_metric(
+                position_label=position_label,
+                target_mz=_required_positive_metric_float(
+                    rows_by_position[position_label],
+                    "target_mz",
+                ),
+                trace=trace_by_position[position_label],
+                base_trace=base_trace,
+                base_raw_stats=base_raw_stats,
+                base_stats=base_stats,
+                ppm=_required_positive_metric_float(
+                    rows_by_position[position_label],
+                    "ppm",
+                ),
+                active_fraction=active_fraction,
+                min_pearson_r=min_pearson_r,
+                max_apex_delta_sec=max_apex_delta_sec,
+            )
+            for position_label in POSITION_LABELS
+        ]
+        projected_metrics = _with_family_quality_flags(
+            projected_metrics,
+            trace_by_position,
+        )
+        projected_rows = _with_serialized_metric_call_projection(
+            tuple(
+                _metric_row(
+                    metric,
+                    sample_stem=_required_metric_text(
+                        rows_by_position[metric.position_label],
+                        "sample_stem",
+                    ),
+                    candidate_id=candidate_id,
+                    candidate_assignment_sha256=_required_metric_text(
+                        rows_by_position[metric.position_label],
+                        "candidate_assignment_sha256",
+                    ),
+                    trace_extraction_sha256=_required_metric_text(
+                        rows_by_position[metric.position_label],
+                        "trace_extraction_sha256",
+                    ),
+                    trace_artifact_role=_required_metric_text(
+                        rows_by_position[metric.position_label],
+                        "trace_artifact_role",
+                    ),
+                )
+                for metric in projected_metrics
+            ),
+            min_pearson_r=min_pearson_r,
+            max_apex_delta_sec=max_apex_delta_sec,
+        )
+        for row in projected_rows:
+            pair = (candidate_id, str(row["position_label"]))
+            output_by_pair[pair] = {
+                field: format_diagnostic_value(row.get(field))
+                for field in TRACE_POINT_PROJECTED_METRIC_COLUMNS
+            }
+
+    return tuple(
+        output_by_pair[
+            (
+                _required_metric_text(row, "candidate_id"),
+                _required_metric_text(row, "position_label"),
+            )
+        ]
+        for row in metric_rows
+    )
+
+
 def combined_pt_pattern_status(trace_support_status: str) -> str:
     return _combined_pt_pattern_status(trace_support_status)
+
+
+def trace_summary_aggregate_fields(
+    metric_rows: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    """Rebuild producer-owned summary aggregates from one candidate's metrics."""
+
+    by_position: dict[str, Mapping[str, object]] = {}
+    for row in metric_rows:
+        position_label = str(row.get("position_label", "")).strip()
+        if position_label not in POSITION_LABELS:
+            raise ValueError(
+                f"unsupported trace metric position_label {position_label!r}"
+            )
+        if position_label in by_position:
+            raise ValueError(
+                f"duplicate trace metric position_label {position_label!r}"
+            )
+        by_position[position_label] = row
+    if set(by_position) != set(POSITION_LABELS):
+        raise ValueError(
+            "trace summary projection requires exactly one metric row for "
+            "every Pt position"
+        )
+
+    ordered_rows = [by_position[label] for label in POSITION_LABELS]
+    non_base_rows = [by_position[label] for label in NON_BASE_POSITION_LABELS]
+    point_counts = [
+        _required_non_negative_metric_int(row, "point_count")
+        for row in ordered_rows
+    ]
+    support_statuses = [
+        _required_metric_text(row, "trace_support_status")
+        for row in ordered_rows
+    ]
+    allowed_support_statuses = {
+        "supported",
+        "missing_points",
+        "missing_signal",
+        "base_missing_signal",
+        "review",
+    }
+    if not set(support_statuses).issubset(allowed_support_statuses):
+        raise ValueError("trace metric contains unsupported trace_support_status")
+
+    max_intensities = [
+        _optional_finite_metric_float(row, "max_intensity")
+        for row in ordered_rows
+    ]
+    supported_count = sum(
+        _required_metric_text(row, "trace_support_status") == "supported"
+        for row in non_base_rows
+    )
+    positions_with_signal = sum(
+        value is not None and value > 0.0 for value in max_intensities
+    )
+    base_max_intensity = max_intensities[0]
+    if base_max_intensity is None or base_max_intensity <= 0.0:
+        summary_status = "base_missing_signal"
+        summary_reason = "base_has_no_positive_signal"
+    elif positions_with_signal < len(POSITION_LABELS):
+        summary_status = "incomplete_trace_signal"
+        summary_reason = "one_or_more_positions_missing_signal"
+    elif supported_count == len(NON_BASE_POSITION_LABELS):
+        summary_status = "supported"
+        summary_reason = "all_non_base_positions_trace_supported"
+    elif supported_count > 0:
+        summary_status = "partial_support"
+        summary_reason = "some_non_base_positions_trace_supported"
+    else:
+        summary_status = "review"
+        summary_reason = "no_non_base_positions_trace_supported"
+
+    trace_ambiguity_status, trace_ambiguity_flags = (
+        _summary_ambiguity_from_metric_rows(non_base_rows)
+    )
+    shifted_only_position_labels = _shifted_only_labels_from_metric_rows(
+        non_base_rows
+    )
+    return {
+        "min_median_rt_step_sec": _min_optional_metric_value(
+            ordered_rows,
+            "median_rt_step_sec",
+            positive_only=True,
+        ),
+        "min_effective_smoothing_window_sec": _min_optional_metric_value(
+            ordered_rows,
+            "effective_smoothing_window_sec",
+        ),
+        "max_trace_point_count": max(point_counts),
+        "positions_requested": len(POSITION_LABELS),
+        "positions_with_points": sum(value > 0 for value in point_counts),
+        "positions_with_signal": positions_with_signal,
+        "non_base_positions_supported": supported_count,
+        "max_abs_apex_delta_sec": _max_abs_optional_metric_value(
+            non_base_rows,
+            "apex_delta_sec_to_base",
+        ),
+        "min_pearson_r_to_base": _min_optional_metric_value(
+            non_base_rows,
+            "pearson_r_to_base",
+        ),
+        "min_active_overlap_fraction": _min_optional_metric_value(
+            non_base_rows,
+            "active_overlap_fraction",
+        ),
+        "min_shifted_pearson_r_to_base": _min_optional_metric_value(
+            non_base_rows,
+            "shifted_pearson_r_to_base",
+        ),
+        "max_abs_shape_shift_sec_to_base": _max_abs_optional_metric_value(
+            non_base_rows,
+            "shape_shift_sec_to_base",
+        ),
+        "raw_max_abs_apex_delta_sec": _max_abs_optional_metric_value(
+            non_base_rows,
+            "raw_apex_delta_sec_to_base",
+        ),
+        "raw_min_pearson_r_to_base": _min_optional_metric_value(
+            non_base_rows,
+            "raw_pearson_r_to_base",
+        ),
+        "raw_min_active_overlap_fraction": _min_optional_metric_value(
+            non_base_rows,
+            "raw_active_overlap_fraction",
+        ),
+        "trace_ambiguity_status": trace_ambiguity_status,
+        "trace_ambiguity_flags": trace_ambiguity_flags,
+        "shifted_only_position_labels": shifted_only_position_labels,
+        "trace_support_status": summary_status,
+        "combined_pt_pattern_status": _combined_pt_pattern_status(summary_status),
+        "reason": summary_reason,
+    }
+
+
+def trace_metric_call_fields(
+    metric_row: Mapping[str, object],
+    *,
+    base_metric_row: Mapping[str, object],
+    min_pearson_r: float,
+    max_apex_delta_sec: float,
+) -> dict[str, str]:
+    """Rebuild one producer-owned metric call from serialized scalar evidence."""
+
+    position_label = _required_metric_text(metric_row, "position_label")
+    point_count = _required_non_negative_metric_int(metric_row, "point_count")
+    max_intensity = _optional_finite_metric_float(metric_row, "max_intensity")
+    if position_label == "base":
+        status = (
+            "supported"
+            if max_intensity is not None and max_intensity > 0.0
+            else "missing_signal"
+        )
+        reason = status
+    else:
+        status, reason = _position_support_status(
+            point_count=point_count,
+            max_intensity=max_intensity,
+            base_max_intensity=_optional_finite_metric_float(
+                base_metric_row,
+                "max_intensity",
+            ),
+            apex_delta_sec=_optional_finite_metric_float(
+                metric_row,
+                "apex_delta_sec_to_base",
+            ),
+            pearson_r=_optional_finite_metric_float(
+                metric_row,
+                "pearson_r_to_base",
+            ),
+            active_overlap_fraction=_optional_finite_metric_float(
+                metric_row,
+                "active_overlap_fraction",
+            ),
+            shifted_pearson_r=_optional_finite_metric_float(
+                metric_row,
+                "shifted_pearson_r_to_base",
+            ),
+            min_pearson_r=min_pearson_r,
+            max_apex_delta_sec=max_apex_delta_sec,
+        )
+    flags = _split_flags(
+        _quality_flags(
+            point_count=point_count,
+            effective_smoothing_window_sec=_optional_finite_metric_float(
+                metric_row,
+                "effective_smoothing_window_sec",
+            ),
+            raw_smoothed_apex_delta_sec=_optional_finite_metric_float(
+                metric_row,
+                "raw_smoothed_apex_delta_sec",
+            ),
+            position_label=position_label,
+            reason=reason,
+            raw_pearson_r=_optional_finite_metric_float(
+                metric_row,
+                "raw_pearson_r_to_base",
+            ),
+            pearson_r=_optional_finite_metric_float(
+                metric_row,
+                "pearson_r_to_base",
+            ),
+            shape_shift_sec=_optional_finite_metric_float(
+                metric_row,
+                "shape_shift_sec_to_base",
+            ),
+            min_pearson_r=min_pearson_r,
+        )
+    )
+    existing_flags = _split_flags(
+        str(metric_row.get("trace_quality_flags", ""))
+    )
+    if (
+        position_label == "pt_plus_4"
+        and "plus4_window_tail_dominance" in existing_flags
+    ):
+        # This family-level flag is derived from the complete trace window,
+        # not from this scalar metric row. Preserve it while rebuilding every
+        # scalar-reconstructable flag.
+        flags.add("plus4_window_tail_dominance")
+    return {
+        "trace_quality_flags": _join_flags(flags),
+        "trace_support_status": status,
+        "reason": reason,
+    }
+
+
+def _with_serialized_metric_call_projection(
+    metric_rows: Sequence[Mapping[str, object]],
+    *,
+    min_pearson_r: float,
+    max_apex_delta_sec: float,
+) -> tuple[dict[str, object], ...]:
+    serialized_rows = tuple(
+        {
+            field: format_diagnostic_value(value)
+            for field, value in row.items()
+        }
+        for row in metric_rows
+    )
+    base_row = next(
+        row
+        for row in serialized_rows
+        if str(row.get("position_label", "")) == "base"
+    )
+    output: list[dict[str, object]] = []
+    for original_row, serialized_row in zip(
+        metric_rows,
+        serialized_rows,
+        strict=True,
+    ):
+        output.append(
+            dict(original_row)
+            | trace_metric_call_fields(
+                serialized_row,
+                base_metric_row=base_row,
+                min_pearson_r=min_pearson_r,
+                max_apex_delta_sec=max_apex_delta_sec,
+            )
+        )
+    return tuple(output)
+
+
+def _required_metric_text(row: Mapping[str, object], field: str) -> str:
+    value = str(row.get(field, "")).strip()
+    if not value:
+        raise ValueError(f"trace metric {field} must be non-empty")
+    return value
+
+
+def _required_non_negative_metric_int(
+    row: Mapping[str, object],
+    field: str,
+) -> int:
+    value = _optional_finite_metric_float(row, field)
+    if value is None or value < 0.0 or not value.is_integer():
+        raise ValueError(f"trace metric {field} must be a non-negative integer")
+    return int(value)
+
+
+def _required_positive_metric_float(
+    row: Mapping[str, object],
+    field: str,
+) -> float:
+    value = _optional_finite_metric_float(row, field)
+    if value is None or value <= 0.0:
+        raise ValueError(f"trace metric {field} must be a positive finite number")
+    return value
+
+
+def _optional_finite_metric_float(
+    row: Mapping[str, object],
+    field: str,
+) -> float | None:
+    value = optional_float(row.get(field))
+    if value is not None and not math.isfinite(value):
+        raise ValueError(f"trace metric {field} must be finite when supplied")
+    return value
+
+
+def _min_optional_metric_value(
+    rows: Sequence[Mapping[str, object]],
+    field: str,
+    *,
+    positive_only: bool = False,
+) -> float | None:
+    values = [
+        value
+        for row in rows
+        if (value := _optional_finite_metric_float(row, field)) is not None
+        and (not positive_only or value > 0.0)
+    ]
+    return min(values) if values else None
+
+
+def _max_abs_optional_metric_value(
+    rows: Sequence[Mapping[str, object]],
+    field: str,
+) -> float | None:
+    values = [
+        abs(value)
+        for row in rows
+        if (value := _optional_finite_metric_float(row, field)) is not None
+    ]
+    return max(values) if values else None
+
+
+def _summary_ambiguity_from_metric_rows(
+    rows: Sequence[Mapping[str, object]],
+) -> tuple[str, str]:
+    flags: set[str] = set()
+    shifted_only_positions: list[str] = []
+    shifted_values: list[float] = []
+    for row in rows:
+        metric_flags = _split_flags(str(row.get("trace_quality_flags", "")))
+        for flag in (
+            "low_scan_density",
+            "short_effective_smoothing_window",
+            "raw_smoothed_apex_mismatch",
+            "raw_shape_weak_for_shifted_support",
+            "smoothed_shape_weak_for_shifted_support",
+            "plus4_shifted_only_support",
+            "plus4_window_tail_dominance",
+            "large_shape_shift",
+        ):
+            if flag in metric_flags:
+                flags.add(flag)
+        if "shifted_only_support" in metric_flags:
+            flags.add("shifted_only_support_present")
+            shifted_only_positions.append(
+                _required_metric_text(row, "position_label")
+            )
+        shape_shift = _optional_finite_metric_float(
+            row,
+            "shape_shift_sec_to_base",
+        )
+        if shape_shift is not None:
+            shifted_values.append(shape_shift)
+    if _has_mixed_shift_direction(shifted_values):
+        flags.add("position_shift_direction_mixed")
+    if _has_isolated_position_shift_rows(rows):
+        flags.add("isolated_position_shift")
+    if shifted_only_positions:
+        flags.add(
+            "shifted_only_positions="
+            + ",".join(sorted(set(shifted_only_positions)))
+        )
+    joined = _join_flags(flags)
+    return ("review_required" if joined != TRACE_FLAG_NONE else "clear", joined)
+
+
+def _shifted_only_labels_from_metric_rows(
+    rows: Sequence[Mapping[str, object]],
+) -> str:
+    labels = [
+        _required_metric_text(row, "position_label")
+        for row in rows
+        if "shifted_only_support"
+        in _split_flags(str(row.get("trace_quality_flags", "")))
+    ]
+    return ",".join(labels) if labels else TRACE_FLAG_NONE
+
+
+def _has_isolated_position_shift_rows(
+    rows: Sequence[Mapping[str, object]],
+) -> bool:
+    shifts = [
+        value
+        for row in rows
+        if (
+            value := _optional_finite_metric_float(
+                row,
+                "shape_shift_sec_to_base",
+            )
+        )
+        is not None
+    ]
+    if len(shifts) < 3:
+        return False
+    for index, value in enumerate(shifts):
+        others = shifts[:index] + shifts[index + 1 :]
+        if abs(value) > LARGE_SHAPE_SHIFT_SEC and all(
+            abs(other) <= RAW_SMOOTHED_APEX_MISMATCH_SEC for other in others
+        ):
+            return True
+    return False
 
 
 def _with_family_quality_flags(
@@ -1035,6 +1601,14 @@ def _finite_sorted_arrays(
     return unique_rt, reduced_intensity
 
 
+def _csv_precision_trace(trace: XICTrace) -> XICTrace:
+    rt, intensity = _finite_sorted_arrays(trace)
+    return XICTrace.from_arrays(
+        [float(format_diagnostic_value(value)) for value in rt],
+        [float(format_diagnostic_value(value)) for value in intensity],
+    )
+
+
 def _position_support_status(
     *,
     point_count: int,
@@ -1108,81 +1682,10 @@ def _quality_flags(
     return _join_flags(flags)
 
 
-def _summary_ambiguity(
-    non_base_metrics: list[TraceMetric],
-) -> tuple[str, str]:
-    flags: set[str] = set()
-    shifted_only_positions: list[str] = []
-    shifted_values: list[float] = []
-    for metric in non_base_metrics:
-        metric_flags = _split_flags(metric.trace_quality_flags)
-        if "low_scan_density" in metric_flags:
-            flags.add("low_scan_density")
-        if "short_effective_smoothing_window" in metric_flags:
-            flags.add("short_effective_smoothing_window")
-        if "raw_smoothed_apex_mismatch" in metric_flags:
-            flags.add("raw_smoothed_apex_mismatch")
-        if "shifted_only_support" in metric_flags:
-            flags.add("shifted_only_support_present")
-            shifted_only_positions.append(metric.position_label)
-        if "raw_shape_weak_for_shifted_support" in metric_flags:
-            flags.add("raw_shape_weak_for_shifted_support")
-        if "smoothed_shape_weak_for_shifted_support" in metric_flags:
-            flags.add("smoothed_shape_weak_for_shifted_support")
-        if "plus4_shifted_only_support" in metric_flags:
-            flags.add("plus4_shifted_only_support")
-        if "plus4_window_tail_dominance" in metric_flags:
-            flags.add("plus4_window_tail_dominance")
-        if "large_shape_shift" in metric_flags:
-            flags.add("large_shape_shift")
-        if metric.shape_shift_sec_to_base is not None:
-            shifted_values.append(metric.shape_shift_sec_to_base)
-
-    if _has_mixed_shift_direction(shifted_values):
-        flags.add("position_shift_direction_mixed")
-    if _has_isolated_position_shift(non_base_metrics):
-        flags.add("isolated_position_shift")
-    if shifted_only_positions:
-        flags.add(
-            "shifted_only_positions="
-            + ",".join(sorted(set(shifted_only_positions)))
-        )
-
-    joined = _join_flags(flags)
-    status = "review_required" if joined != TRACE_FLAG_NONE else "clear"
-    return status, joined
-
-
-def _shifted_only_position_labels(non_base_metrics: list[TraceMetric]) -> str:
-    labels = [
-        metric.position_label
-        for metric in non_base_metrics
-        if "shifted_only_support" in _split_flags(metric.trace_quality_flags)
-    ]
-    return ",".join(labels) if labels else TRACE_FLAG_NONE
-
-
 def _has_mixed_shift_direction(values: list[float]) -> bool:
     positive = any(value > 0 for value in values)
     negative = any(value < 0 for value in values)
     return positive and negative
-
-
-def _has_isolated_position_shift(non_base_metrics: list[TraceMetric]) -> bool:
-    shifts = [
-        metric.shape_shift_sec_to_base
-        for metric in non_base_metrics
-        if metric.shape_shift_sec_to_base is not None
-    ]
-    if len(shifts) < 3:
-        return False
-    for index, value in enumerate(shifts):
-        others = shifts[:index] + shifts[index + 1 :]
-        if abs(value) <= LARGE_SHAPE_SHIFT_SEC:
-            continue
-        if all(abs(other) <= RAW_SMOOTHED_APEX_MISMATCH_SEC for other in others):
-            return True
-    return False
 
 
 def _split_flags(flags: str) -> set[str]:
@@ -1194,24 +1697,6 @@ def _split_flags(flags: str) -> set[str]:
 def _join_flags(flags: list[str] | set[str]) -> str:
     unique = sorted(set(flags))
     return ";".join(unique) if unique else TRACE_FLAG_NONE
-
-
-def _summary_status(
-    *,
-    supported_count: int,
-    positions_with_signal: int,
-    base_stats: tuple[int, float | None, float | None],
-) -> tuple[str, str]:
-    _point_count, base_max_intensity, _base_apex = base_stats
-    if base_max_intensity is None or base_max_intensity <= 0:
-        return "base_missing_signal", "base_has_no_positive_signal"
-    if positions_with_signal < len(POSITION_LABELS):
-        return "incomplete_trace_signal", "one_or_more_positions_missing_signal"
-    if supported_count == len(NON_BASE_POSITION_LABELS):
-        return "supported", "all_non_base_positions_trace_supported"
-    if supported_count > 0:
-        return "partial_support", "some_non_base_positions_trace_supported"
-    return "review", "no_non_base_positions_trace_supported"
 
 
 def _combined_pt_pattern_status(trace_support_status: str) -> str:
@@ -1231,11 +1716,17 @@ def _metric_row(
     *,
     sample_stem: str,
     candidate_id: str,
+    candidate_assignment_sha256: str,
+    trace_extraction_sha256: str,
+    trace_artifact_role: str,
 ) -> dict[str, object]:
     return {
         "schema_version": SCHEMA_VERSION,
         "sample_stem": sample_stem,
         "candidate_id": candidate_id,
+        "candidate_assignment_sha256": candidate_assignment_sha256,
+        "trace_extraction_sha256": trace_extraction_sha256,
+        "trace_artifact_role": trace_artifact_role,
         "position_label": metric.position_label,
         "target_mz": metric.target_mz,
         "rt_min": metric.rt_min,
@@ -1272,6 +1763,9 @@ def _trace_point_rows(
     *,
     sample_stem: str,
     candidate_id: str,
+    candidate_assignment_sha256: str,
+    trace_extraction_sha256: str,
+    trace_artifact_role: str,
     trace_by_position: Mapping[str, XICTrace],
 ) -> tuple[dict[str, object], ...]:
     rows: list[dict[str, object]] = []
@@ -1283,6 +1777,9 @@ def _trace_point_rows(
                 "schema_version": SCHEMA_VERSION,
                 "sample_stem": sample_stem,
                 "candidate_id": candidate_id,
+                "candidate_assignment_sha256": candidate_assignment_sha256,
+                "trace_extraction_sha256": trace_extraction_sha256,
+                "trace_artifact_role": trace_artifact_role,
                 "position_label": position_label,
                 "intensity_basis": RAW_TRACE_BASIS,
                 "rt_min": float(rt_value),

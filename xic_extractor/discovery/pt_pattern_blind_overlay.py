@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import math
-import re
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from typing import Literal, assert_never
@@ -290,7 +289,7 @@ def _render_case_card(
         str(row.get("min_effective_smoothing_window_sec", ""))
     )
     max_trace_point_count = html.escape(str(row.get("max_trace_point_count", "")))
-    case_label = html.escape(_case_label(row=row, index=index))
+    case_label = html.escape(_case_label(index=index))
     overlay_panels = _render_overlay_panels(
         traces,
         context_traces=context_traces,
@@ -364,11 +363,7 @@ def _render_boundary_evidence(row: Mapping[str, str]) -> str:
   </div>"""
 
 
-def _case_label(*, row: Mapping[str, str], index: int) -> str:
-    packet_row_id = str(row.get("packet_row_id", ""))
-    match = re.search(r"(?:^|\|)(Case\s+\d+)(?:\||$)", packet_row_id)
-    if match:
-        return match.group(1)
+def _case_label(*, index: int) -> str:
     return f"Case {index:02d}"
 
 

@@ -288,6 +288,17 @@ def build_local_ms1_feature_table(
     tuple[LocalMs1FeatureDiagnosticRow, ...],
 ]:
     sample_stem = normalize_local_ms1_sample_stem(sample_stem)
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise ValueError("raw_path must be a non-empty string")
+    raw_path = raw_path.strip()
+    raw_file_size_bytes = _optional_nonnegative_integer(
+        raw_file_size_bytes,
+        name="raw_file_size_bytes",
+    )
+    raw_file_mtime_ns = _optional_nonnegative_integer(
+        raw_file_mtime_ns,
+        name="raw_file_mtime_ns",
+    )
     resolved = settings or LocalMs1FeatureSettings()
     validate_ms1_scan_index(index, require_nonempty=True)
     start = time.perf_counter()
@@ -498,6 +509,15 @@ def _ppm_error(observed_mz: float, expected_mz: float) -> float:
 def _parameter_hash(settings: LocalMs1FeatureSettings) -> str:
     payload = json.dumps(asdict(settings), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _optional_nonnegative_integer(value: object, *, name: str) -> int | None:
+    if value is None:
+        return None
+    parsed = require_integer(value, name=name)
+    if parsed < 0:
+        raise ValueError(f"{name} must be an integer >= 0")
+    return parsed
 
 
 def _median_scan_interval_sec(index: tuple[MS1Scan, ...]) -> float | None:

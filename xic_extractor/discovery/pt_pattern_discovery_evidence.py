@@ -6,50 +6,53 @@ evidence. It does not read RAW files or grant matrix/export authority.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.discovery.delta_mass_patterns import PtPatternCandidate
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    PT_PATTERN_EVIDENCE_SCHEMA_VERSION,
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+    PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
+    pt_pattern_candidate_assignment_fingerprint,
     validate_pt_candidate_trace_summary_identity,
 )
 from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_THRESHOLDS,
+    EVIDENCE_RULE_OWNER,
     PtPatternEvidenceThresholds,
     effective_max_abs_apex_delta_sec,
     evaluate_pt_pattern_evidence,
     pt_pattern_rule_id,
+    pt_pattern_scan_interval_sec,
 )
-from xic_extractor.tabular_io import read_delimited_rows
+from xic_extractor.discovery.pt_pattern_trace_manifest import (
+    VerifiedTraceSummaryBundle,
+    load_verified_trace_summary_bundle,
+)
 
-SCHEMA_VERSION = "pt_pattern_discovery_evidence.v1"
-EVIDENCE_RULE_OWNER = "xic_extractor.discovery.pt_pattern_evidence_rule"
+SCHEMA_VERSION = PT_PATTERN_EVIDENCE_SCHEMA_VERSION
 TRACE_EVIDENCE_NOT_EVALUATED = "not_evaluated"
 TRACE_EVIDENCE_EVALUATED = "evaluated"
 NO_WRITE_AUTHORITY = False
-TRACE_SUMMARY_EVIDENCE_REQUIRED_COLUMNS = (
-    "sample_stem",
-    "candidate_id",
-    "base_mz",
-    "base_rt_apex_min",
-    "combined_pt_pattern_status",
-    "non_base_positions_supported",
-    "max_abs_apex_delta_sec",
-    "min_pearson_r_to_base",
-    "min_active_overlap_fraction",
-)
+_SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 
 
-def load_pt_trace_summary_rows(path: Path) -> tuple[dict[str, str], ...]:
-    """Load trace diagnosis summary rows for optional Discovery evidence join."""
+def load_pt_discovery_trace_bundle(
+    summary_csv: Path,
+    *,
+    metrics_csv: Path | None = None,
+    manifest_json: Path | None = None,
+) -> VerifiedTraceSummaryBundle:
+    """Load the full-context trace bundle permitted as Discovery evidence."""
 
-    return tuple(
-        read_delimited_rows(
-            path,
-            required_columns=TRACE_SUMMARY_EVIDENCE_REQUIRED_COLUMNS,
-            delimiter=",",
-            encoding="utf-8-sig",
-        )
+    return load_verified_trace_summary_bundle(
+        summary_csv,
+        expected_artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+        metrics_csv=metrics_csv,
+        manifest_json=manifest_json,
     )
 
 
@@ -57,6 +60,7 @@ def build_pt_pattern_evidence_rows(
     candidates: Sequence[PtPatternCandidate],
     *,
     trace_summary_rows: Sequence[Mapping[str, object]] | None = None,
+    trace_manifest_sha256: str | None = None,
     thresholds: PtPatternEvidenceThresholds = DEFAULT_THRESHOLDS,
 ) -> tuple[dict[str, object], ...]:
     """Build one Discovery evidence row per Pt candidate.
@@ -67,6 +71,10 @@ def build_pt_pattern_evidence_rows(
     """
 
     normalized_candidate_ids = _normalized_candidate_ids(candidates)
+    trace_source_fields = _trace_source_fields(
+        trace_summary_rows,
+        trace_manifest_sha256=trace_manifest_sha256,
+    )
     trace_by_candidate_id = (
         _trace_rows_by_candidate_id(trace_summary_rows)
         if trace_summary_rows is not None
@@ -78,6 +86,7 @@ def build_pt_pattern_evidence_rows(
             candidate,
             trace_row=trace_by_candidate_id.get(normalized_candidate_id),
             trace_summary_provided=trace_summary_provided,
+            trace_source_fields=trace_source_fields,
             thresholds=thresholds,
         )
         for candidate, normalized_candidate_id in zip(
@@ -86,6 +95,62 @@ def build_pt_pattern_evidence_rows(
             strict=True,
         )
     )
+
+
+def _trace_source_fields(
+    rows: Sequence[Mapping[str, object]] | None,
+    *,
+    trace_manifest_sha256: str | None,
+) -> dict[str, str]:
+    if rows is None:
+        if trace_manifest_sha256 is not None:
+            raise ValueError(
+                "trace_manifest_sha256 requires trace_summary_rows"
+            )
+        return {}
+    if not rows:
+        raise ValueError("trace summary rows must not be empty")
+    normalized_manifest_sha256 = str(trace_manifest_sha256 or "").strip()
+    if _SHA256_PATTERN.fullmatch(normalized_manifest_sha256) is None:
+        raise ValueError(
+            "trace_manifest_sha256 must be a lowercase SHA-256 digest when "
+            "trace summary rows are provided"
+        )
+    schemas = {
+        str(row.get("schema_version", "")).strip()
+        for row in rows
+    }
+    roles = {
+        str(row.get("trace_artifact_role", "")).strip()
+        for row in rows
+    }
+    extraction_sha256_values = {
+        str(row.get("trace_extraction_sha256", "")).strip()
+        for row in rows
+    }
+    if schemas != {PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION}:
+        raise ValueError(
+            "Discovery evidence requires one current full-context trace schema; "
+            f"observed={sorted(schemas)!r}"
+        )
+    if roles != {PT_PATTERN_TRACE_FULL_CONTEXT_ROLE}:
+        raise ValueError(
+            "Discovery evidence requires trace_artifact_role='full_context'; "
+            f"observed={sorted(roles)!r}"
+        )
+    if (
+        len(extraction_sha256_values) != 1
+        or _SHA256_PATTERN.fullmatch(next(iter(extraction_sha256_values))) is None
+    ):
+        raise ValueError(
+            "Discovery trace rows must use one lowercase trace_extraction_sha256"
+        )
+    return {
+        "trace_schema_version": PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
+        "trace_artifact_role": PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+        "trace_extraction_sha256": next(iter(extraction_sha256_values)),
+        "trace_manifest_sha256": normalized_manifest_sha256,
+    }
 
 
 def _normalized_candidate_ids(
@@ -138,9 +203,11 @@ def _evidence_row(
     *,
     trace_row: Mapping[str, object] | None,
     trace_summary_provided: bool,
+    trace_source_fields: Mapping[str, str],
     thresholds: PtPatternEvidenceThresholds,
 ) -> dict[str, object]:
     row = _base_evidence_row(candidate, thresholds=thresholds)
+    row.update(trace_source_fields)
     if trace_row is None:
         row.update(
             {
@@ -157,14 +224,10 @@ def _evidence_row(
         return row
 
     validate_pt_candidate_trace_summary_identity(
-        {
-            "candidate_id": candidate.candidate_id,
-            "sample_stem": candidate.sample_stem,
-            "base_mz": candidate.base_mz,
-            "base_rt_apex_min": candidate.base_rt_apex_min,
-        },
+        _candidate_assignment_row(candidate),
         trace_row,
     )
+    scan_interval_sec = pt_pattern_scan_interval_sec(trace_row)
     decision = evaluate_pt_pattern_evidence(trace_row, thresholds=thresholds)
     row.update(
         {
@@ -175,9 +238,14 @@ def _evidence_row(
             "trace_rule_call": decision.call,
             "trace_detection_status": decision.detection_status,
             "trace_rule_reason": decision.reason,
-            "max_abs_apex_delta_threshold_sec": effective_max_abs_apex_delta_sec(
-                trace_row,
-                thresholds=thresholds,
+            "min_median_rt_step_sec": (
+                scan_interval_sec if scan_interval_sec is not None else ""
+            ),
+            "effective_max_abs_apex_delta_threshold_sec": (
+                effective_max_abs_apex_delta_sec(
+                    trace_row,
+                    thresholds=thresholds,
+                )
             ),
             "combined_pt_pattern_status": _trace_value(
                 trace_row, "combined_pt_pattern_status"
@@ -219,12 +287,22 @@ def _base_evidence_row(
     *,
     thresholds: PtPatternEvidenceThresholds,
 ) -> dict[str, object]:
+    candidate_assignment = _candidate_assignment_row(candidate)
     return {
         "schema_version": SCHEMA_VERSION,
         "sample_stem": candidate.sample_stem,
         "method_label": candidate.method_label,
         "pattern_id": candidate.pattern_id,
         "candidate_id": candidate.candidate_id,
+        "candidate_assignment_sha256": (
+            pt_pattern_candidate_assignment_fingerprint(candidate_assignment)
+        ),
+        "trace_schema_version": "",
+        "trace_artifact_role": "",
+        "trace_extraction_sha256": "",
+        "trace_manifest_sha256": "",
+        "base_mz": candidate.base_mz,
+        "base_rt_apex_min": candidate.base_rt_apex_min,
         "candidate_state": candidate.candidate_state,
         "scan_pattern_seed_status": "full_pattern_seeded",
         "trace_evidence_status": "",
@@ -237,7 +315,14 @@ def _base_evidence_row(
         "min_non_base_positions_supported": (
             thresholds.min_non_base_positions_supported
         ),
-        "max_abs_apex_delta_threshold_sec": thresholds.max_abs_apex_delta_sec,
+        "configured_max_abs_apex_delta_threshold_sec": (
+            thresholds.max_abs_apex_delta_sec
+        ),
+        "max_abs_apex_delta_scan_step_multiplier": (
+            thresholds.max_abs_apex_delta_scan_step_multiplier
+        ),
+        "min_median_rt_step_sec": "",
+        "effective_max_abs_apex_delta_threshold_sec": "",
         "min_pearson_r_to_base_threshold": thresholds.min_pearson_r_to_base,
         "min_active_overlap_fraction_threshold": (
             thresholds.min_active_overlap_fraction
@@ -261,6 +346,15 @@ def _base_evidence_row(
         "matrix_write_authority": NO_WRITE_AUTHORITY,
         "counted_detection_authority": NO_WRITE_AUTHORITY,
         "export_activation_authority": NO_WRITE_AUTHORITY,
+    }
+
+
+def _candidate_assignment_row(
+    candidate: PtPatternCandidate,
+) -> dict[str, object]:
+    return {
+        field: getattr(candidate, field)
+        for field in PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS
     }
 
 

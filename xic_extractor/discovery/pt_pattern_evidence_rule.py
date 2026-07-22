@@ -7,14 +7,25 @@ authority.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import quote
 
 from xic_extractor.numeric_validation import require_finite_real, require_integer
 from xic_extractor.tabular_io import optional_float
 
 REQUIRED_COMBINED_STATUS = "pt_pattern_detected_diagnostic"
+VALID_COMBINED_PT_PATTERN_STATUSES = frozenset(
+    {
+        REQUIRED_COMBINED_STATUS,
+        "pt_pattern_candidate_partial",
+        "pt_pattern_candidate_incomplete",
+        "pt_pattern_candidate_base_missing",
+        "pt_pattern_candidate_review",
+    }
+)
 MIN_SUPPORTED_POSITIONS = 3
 DEFAULT_APEX_DELTA_MAX_SEC = 0.6
 DEFAULT_APEX_DELTA_SCAN_STEP_MULTIPLIER = 1.25
@@ -22,6 +33,8 @@ DEFAULT_PEARSON_MIN = 0.90
 DEFAULT_OVERLAP_MIN = 0.50
 DEFAULT_SHIFTED_PEARSON_MIN = 0.85
 DEFAULT_SHAPE_SHIFT_MAX_SEC = 45.0
+MAX_NON_BASE_POSITIONS = 3
+EVIDENCE_RULE_OWNER = "xic_extractor.discovery.pt_pattern_evidence_rule"
 
 
 @dataclass(frozen=True)
@@ -38,14 +51,24 @@ class PtPatternEvidenceThresholds:
     max_abs_shape_shift_sec_to_base: float = DEFAULT_SHAPE_SHIFT_MAX_SEC
 
     def __post_init__(self) -> None:
-        if not self.required_combined_status.strip():
-            raise ValueError("required_combined_status must be non-empty")
+        if (
+            not isinstance(self.required_combined_status, str)
+            or self.required_combined_status
+            not in VALID_COMBINED_PT_PATTERN_STATUSES
+        ):
+            raise ValueError(
+                "required_combined_status must be one of "
+                f"{sorted(VALID_COMBINED_PT_PATTERN_STATUSES)!r}"
+            )
         min_supported = require_integer(
             self.min_non_base_positions_supported,
             name="min_non_base_positions_supported",
         )
-        if min_supported <= 0:
-            raise ValueError("min_non_base_positions_supported must be > 0")
+        if not 1 <= min_supported <= MAX_NON_BASE_POSITIONS:
+            raise ValueError(
+                "min_non_base_positions_supported must be between 1 and "
+                f"{MAX_NON_BASE_POSITIONS}"
+            )
         max_apex_delta = require_finite_real(
             self.max_abs_apex_delta_sec,
             name="max_abs_apex_delta_sec",
@@ -103,18 +126,42 @@ def evaluate_pt_pattern_evidence(
     if status != thresholds.required_combined_status:
         return _reject("combined_status_not_detected")
 
-    supported = optional_float(row.get("non_base_positions_supported"))
-    apex_delta = optional_float(row.get("max_abs_apex_delta_sec"))
-    pearson = optional_float(row.get("min_pearson_r_to_base"))
-    overlap = optional_float(row.get("min_active_overlap_fraction"))
-    shifted_pearson = optional_float(row.get("min_shifted_pearson_r_to_base"))
-    shape_shift = optional_float(row.get("max_abs_shape_shift_sec_to_base"))
-    if (
-        supported is None
-        or apex_delta is None
-        or pearson is None
-        or overlap is None
-    ):
+    supported = _validated_metric(
+        row,
+        "non_base_positions_supported",
+        minimum=0,
+        maximum=MAX_NON_BASE_POSITIONS,
+        integer=True,
+    )
+    apex_delta = _validated_metric(
+        row,
+        "max_abs_apex_delta_sec",
+        minimum=0,
+    )
+    pearson = _validated_metric(
+        row,
+        "min_pearson_r_to_base",
+        minimum=-1,
+        maximum=1,
+    )
+    overlap = _validated_metric(
+        row,
+        "min_active_overlap_fraction",
+        minimum=0,
+        maximum=1,
+    )
+    shifted_pearson = _validated_metric(
+        row,
+        "min_shifted_pearson_r_to_base",
+        minimum=-1,
+        maximum=1,
+    )
+    shape_shift = _validated_metric(
+        row,
+        "max_abs_shape_shift_sec_to_base",
+        minimum=0,
+    )
+    if supported is None or apex_delta is None or pearson is None or overlap is None:
         return _reject("missing_required_metric")
     if supported < thresholds.min_non_base_positions_supported:
         return _reject("insufficient_non_base_positions")
@@ -166,8 +213,11 @@ def pt_pattern_rule_id(
 ) -> str:
     return (
         "pt_v2_fullpattern"
-        f"_apex_le_{_token(thresholds.max_abs_apex_delta_sec)}s"
-        f"_or_{_token(thresholds.max_abs_apex_delta_scan_step_multiplier)}scan"
+        f"_status_{quote(thresholds.required_combined_status, safe='')}"
+        f"_positions_ge_{thresholds.min_non_base_positions_supported}"
+        f"_apex_floor_le_{_token(thresholds.max_abs_apex_delta_sec)}s"
+        "_or_scan_multiplier_"
+        f"{_token(thresholds.max_abs_apex_delta_scan_step_multiplier)}"
         f"_pearson_ge_{_token(thresholds.min_pearson_r_to_base)}"
         f"_overlap_ge_{_token(thresholds.min_active_overlap_fraction)}"
         "_shiftedreviewonly"
@@ -189,7 +239,7 @@ def effective_max_abs_apex_delta_sec(
     exposes enough timing context.
     """
 
-    scan_interval_sec = _scan_interval_sec(row)
+    scan_interval_sec = pt_pattern_scan_interval_sec(row)
     if scan_interval_sec is None:
         return thresholds.max_abs_apex_delta_sec
     return max(
@@ -206,23 +256,81 @@ def _reject(reason: str) -> PtPatternEvidenceDecision:
     )
 
 
+def _validated_metric(
+    row: Mapping[str, object],
+    field: str,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    integer: bool = False,
+) -> float | None:
+    raw_value = row.get(field)
+    value = optional_float(raw_value)
+    if value is None:
+        if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
+            return None
+        raise ValueError(f"{field} must be a finite number")
+    if integer and not value.is_integer():
+        raise ValueError(f"{field} must be an integer")
+    if minimum is not None and value < minimum:
+        raise ValueError(f"{field} must be >= {minimum:g}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{field} must be <= {maximum:g}")
+    return value
+
+
 def _token(value: float) -> str:
-    return f"{value:g}".replace(".", "p")
+    # ``repr`` is the shortest round-tripping representation of the exact
+    # float. The previous ``:g`` default rounded to six significant digits,
+    # allowing decision-distinct thresholds to share one audit rule ID.
+    text = str(int(value)) if value.is_integer() else repr(value)
+    return text.replace(".", "p").replace("-", "m").replace("+", "")
 
 
-def _scan_interval_sec(row: Mapping[str, object]) -> float | None:
-    for field in ("min_median_rt_step_sec", "median_rt_step_sec"):
-        value = optional_float(row.get(field))
-        if value is not None and value > 0:
-            return value
+def pt_pattern_scan_interval_sec(row: Mapping[str, object]) -> float | None:
+    """Return the canonical observed scan interval used by the Pt rule."""
 
-    per_position_steps = [
-        optional_float(row.get(f"{label}_median_rt_step_sec"))
-        for label in ("pt_plus_1", "pt_plus_2", "pt_plus_4")
+    aggregate_step = _validated_positive_optional_metric(
+        row,
+        "min_median_rt_step_sec",
+    )
+    component_steps = {
+        field: _validated_positive_optional_metric(row, field)
+        for field in (
+            "median_rt_step_sec",
+            "pt_plus_1_median_rt_step_sec",
+            "pt_plus_2_median_rt_step_sec",
+            "pt_plus_4_median_rt_step_sec",
+        )
+    }
+    supplied_components = [
+        value for value in component_steps.values() if value is not None
     ]
-    positive_steps = [
-        value for value in per_position_steps if value is not None and value > 0
+    if aggregate_step is not None and supplied_components:
+        component_min = min(supplied_components)
+        if aggregate_step > component_min and not math.isclose(
+            aggregate_step,
+            component_min,
+            rel_tol=1e-6,
+            abs_tol=1e-9,
+        ):
+            raise ValueError(
+                "timing provenance is inconsistent: min_median_rt_step_sec "
+                "must not exceed a supplied component median RT step"
+            )
+    supplied_steps = [
+        value
+        for value in (aggregate_step, *component_steps.values())
+        if value is not None
     ]
-    if positive_steps:
-        return min(positive_steps)
-    return None
+    return min(supplied_steps) if supplied_steps else None
+
+
+def _validated_positive_optional_metric(
+    row: Mapping[str, object],
+    field: str,
+) -> float | None:
+    value = _validated_metric(row, field, minimum=0)
+    if value == 0:
+        raise ValueError(f"{field} must be > 0")
+    return value

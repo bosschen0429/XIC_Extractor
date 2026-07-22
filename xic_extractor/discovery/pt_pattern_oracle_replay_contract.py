@@ -7,10 +7,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
-    LEGACY_PACKET_REQUIRED_COLUMNS,
-    validate_packet_rows,
-)
 from xic_extractor.discovery.pt_pattern_oracle_promotion import (
     AUTHORITY_SCOPE as PROMOTION_AUTHORITY_SCOPE,
 )
@@ -26,13 +22,15 @@ from xic_extractor.discovery.pt_pattern_oracle_promotion import (
 from xic_extractor.discovery.pt_pattern_oracle_promotion import (
     SCHEMA_VERSION as PROMOTION_SCHEMA_VERSION,
 )
+from xic_extractor.discovery.pt_pattern_review_bundle import (
+    load_verified_review_packet_collection,
+)
 from xic_extractor.discovery.pt_pattern_review_packet import (
     EVIDENCE_OWNER as REVIEW_PACKET_EVIDENCE_OWNER,
 )
 from xic_extractor.discovery.pt_pattern_review_packet import (
     READINESS_TIER as REVIEW_PACKET_READINESS_TIER,
 )
-from xic_extractor.tabular_io import file_sha256, read_delimited_rows
 
 PROMOTED_ORACLE_STATUS = "manual_oracle_promoted"
 REVIEW_PACKET_ORACLE_STATUS = "pending_human_review"
@@ -46,38 +44,14 @@ class LoadedReviewPackets:
 
 
 def load_review_packets(paths: Sequence[Path]) -> LoadedReviewPackets:
-    """Load schema-valid v2/v3 packets and bind every row to its file hash."""
-    packet_groups: list[tuple[tuple[dict[str, str], ...], str]] = []
-    all_rows: list[dict[str, str]] = []
-    for path in paths:
-        packet_rows = tuple(
-            read_delimited_rows(
-                path,
-                required_columns=LEGACY_PACKET_REQUIRED_COLUMNS,
-                delimiter=",",
-                encoding="utf-8-sig",
-            )
-        )
-        validate_packet_rows(packet_rows)
-        packet_groups.append((packet_rows, file_sha256(path)))
-        all_rows.extend(packet_rows)
-
-    # A replay is one schema-shaped evidence surface. Reject v2/v3 mixtures
-    # even when they arrive in separate packet files.
-    validate_packet_rows(all_rows)
-
-    sha256_by_packet_row_id: dict[str, str] = {}
-    for packet_rows, packet_sha256 in packet_groups:
-        for row in packet_rows:
-            packet_row_id = _required_text(row, "packet_row_id")
-            if packet_row_id in sha256_by_packet_row_id:
-                raise ValueError(
-                    f"duplicate review packet_row_id: {packet_row_id}"
-                )
-            sha256_by_packet_row_id[packet_row_id] = packet_sha256
+    """Load manifest-verified current packets and bind rows to exact file hashes."""
+    collection = load_verified_review_packet_collection(
+        paths,
+        require_nonempty=False,
+    )
     return LoadedReviewPackets(
-        rows=tuple(all_rows),
-        sha256_by_packet_row_id=sha256_by_packet_row_id,
+        rows=collection.rows,
+        sha256_by_packet_row_id=collection.sha256_by_packet_row_id,
     )
 
 
@@ -101,9 +75,7 @@ def validate_oracle_promotion_binding(
     for field, expected in expected_promotion_values.items():
         observed = _required_text(oracle_row, field)
         if observed != expected:
-            raise ValueError(
-                f"{packet_row_id}: oracle {field} must be {expected!r}"
-            )
+            raise ValueError(f"{packet_row_id}: oracle {field} must be {expected!r}")
 
     _required_text(oracle_row, "oracle_packet_id")
     _required_text(oracle_row, "adjudication_basis")
@@ -158,9 +130,7 @@ def validate_oracle_promotion_binding(
         "review_packet_schema_version": "schema_version",
         "review_packet_readiness_tier": "readiness_tier",
         "review_packet_oracle_status": "oracle_status",
-        "review_packet_combined_pt_pattern_status": (
-            "combined_pt_pattern_status"
-        ),
+        "review_packet_combined_pt_pattern_status": ("combined_pt_pattern_status"),
     }
     for oracle_field, review_field in matching_fields.items():
         oracle_value = _required_text(oracle_row, oracle_field)
@@ -175,8 +145,7 @@ def validate_oracle_promotion_binding(
         review_coordinate = _required_finite_float(review_row, field)
         if oracle_coordinate != review_coordinate:
             raise ValueError(
-                f"{packet_row_id}: oracle {field} does not match "
-                f"review packet {field}"
+                f"{packet_row_id}: oracle {field} does not match review packet {field}"
             )
 
 

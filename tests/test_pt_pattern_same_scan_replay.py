@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.pt_pattern_evidence_fixtures import pt_evidence_row
 from xic_extractor.discovery import pt_pattern_same_scan_replay as replay
 from xic_extractor.discovery.pt_pattern_same_scan_evidence import SameScanSettings
 from xic_extractor.discovery.pt_pattern_same_scan_replay import run_same_scan_replay
@@ -14,10 +15,81 @@ from xic_extractor.ms1_scan_index import MS1Scan
 
 
 def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
+    prepared_rows = [
+        _complete_candidate_assignment(row)
+        if "base_feature_id" in row
+        else dict(row)
+        for row in rows
+    ]
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=tuple(rows[0]))
+        writer = csv.DictWriter(handle, fieldnames=tuple(prepared_rows[0]))
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(prepared_rows)
+
+
+def _complete_candidate_assignment(row: dict[str, str]) -> dict[str, str]:
+    base_mz = float(row.get("base_mz", "500"))
+    completed = {
+        "sample_stem": row.get("sample_stem", "SampleA"),
+        "method_label": row.get("method_label", "pt_pattern"),
+        "pattern_id": row.get("pattern_id", "pt"),
+        "candidate_id": row.get("candidate_id", "candidate-a"),
+        "candidate_state": row.get(
+            "candidate_state",
+            "pt_pattern_candidate",
+        ),
+        "base_feature_id": row.get("base_feature_id", "f1"),
+        "base_mz": str(base_mz),
+        "base_rt_apex_min": row.get("base_rt_apex_min", "10.0"),
+        "pt_plus_1_feature_id": row.get("pt_plus_1_feature_id", "f2"),
+        "pt_plus_1_mz": str(base_mz + 1.002111),
+        "pt_plus_1_expected_mz": str(base_mz + 1.002111),
+        "pt_plus_2_feature_id": row.get("pt_plus_2_feature_id", "f3"),
+        "pt_plus_2_mz": str(base_mz + 2.002271),
+        "pt_plus_2_expected_mz": str(base_mz + 2.002271),
+        "pt_plus_4_feature_id": row.get("pt_plus_4_feature_id", "f4"),
+        "pt_plus_4_mz": str(base_mz + 4.005213),
+        "pt_plus_4_expected_mz": str(base_mz + 4.005213),
+    }
+    completed.update(row)
+    return completed
+
+
+def _evidence_row(
+    candidate_id: str,
+    *,
+    trace_rule_call: str = "accept",
+    sample_stem: str = "SampleA",
+    method_label: str = "pt_pattern",
+    pattern_id: str = "pt",
+    base_mz: str = "500.0",
+    base_rt_apex_min: str = "10.0",
+    base_feature_id: str = "f1",
+    pt_plus_1_feature_id: str = "f2",
+    pt_plus_2_feature_id: str = "f3",
+    pt_plus_4_feature_id: str = "f4",
+) -> dict[str, str]:
+    candidate = _complete_candidate_assignment(
+        {
+            "sample_stem": sample_stem,
+            "method_label": method_label,
+            "pattern_id": pattern_id,
+            "candidate_id": candidate_id,
+            "base_feature_id": base_feature_id,
+            "base_mz": base_mz,
+            "base_rt_apex_min": base_rt_apex_min,
+            "pt_plus_1_feature_id": pt_plus_1_feature_id,
+            "pt_plus_2_feature_id": pt_plus_2_feature_id,
+            "pt_plus_4_feature_id": pt_plus_4_feature_id,
+        }
+    )
+    return {
+        field: str(value)
+        for field, value in pt_evidence_row(
+            candidate,
+            trace_rule_call=trace_rule_call,
+        ).items()
+    }
 
 
 def _index() -> tuple[MS1Scan, ...]:
@@ -69,6 +141,8 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
         [
             {
                 "sample_stem": "SampleA",
+                "method_label": "pt_pattern",
+                "pattern_id": "pt",
                 "candidate_id": "candidate-a",
                 "base_mz": "500.0",
                 "base_rt_apex_min": "10.01",
@@ -79,6 +153,8 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
             },
             {
                 "sample_stem": "SampleA",
+                "method_label": "pt_pattern",
+                "pattern_id": "pt",
                 "candidate_id": "candidate-b",
                 "base_mz": "520.0",
                 "base_rt_apex_min": "10.01",
@@ -92,8 +168,16 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
     _write_csv(
         evidence_csv,
         [
-            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
-            {"candidate_id": "candidate-b", "trace_rule_call": "accept"},
+            _evidence_row("candidate-a", base_rt_apex_min="10.01"),
+            _evidence_row(
+                "candidate-b",
+                base_mz="520.0",
+                base_rt_apex_min="10.01",
+                base_feature_id="f4",
+                pt_plus_1_feature_id="f5",
+                pt_plus_2_feature_id="f6",
+                pt_plus_4_feature_id="f7",
+            ),
         ],
     )
     _write_csv(
@@ -203,12 +287,41 @@ def test_core_only_component_is_not_counted_as_discovery_resolution() -> None:
         report_id="synthetic",
         index_source="fixture",
         candidate_rt_half_window_sec=45.0,
-        inputs=(),
+        inputs={},
     )
 
     assert summary["schema_version"] == "pt_pattern_same_scan_replay.v3"
     assert summary["conflict_resolution_counts"] == {"unique_core_support": 1}
     assert summary["uniquely_resolved_conflict_component_count"] == 0
+
+
+def test_same_scan_summary_keeps_input_roles_when_basenames_collide(
+    tmp_path: Path,
+) -> None:
+    candidates = tmp_path / "candidates" / "input.csv"
+    evidence = tmp_path / "evidence" / "input.csv"
+    candidates.parent.mkdir()
+    evidence.parent.mkdir()
+    candidates.write_text("candidate\n", encoding="utf-8")
+    evidence.write_text("evidence\n", encoding="utf-8")
+
+    summary = replay._summary(
+        evidence_rows=(),
+        conflict_rows=(),
+        index=(),
+        settings=SameScanSettings(),
+        report_id="colliding_basenames",
+        index_source="fixture",
+        candidate_rt_half_window_sec=45.0,
+        inputs={
+            "candidates_csv": candidates,
+            "evidence_csv": evidence,
+        },
+    )
+
+    assert set(summary["inputs"]) == {"candidates_csv", "evidence_csv"}
+    assert summary["inputs"]["candidates_csv"]["path"] == str(candidates)
+    assert summary["inputs"]["evidence_csv"]["path"] == str(evidence)
 
 
 def test_candidate_contexts_fail_closed_on_missing_accepted_id(
@@ -221,6 +334,8 @@ def test_candidate_contexts_fail_closed_on_missing_accepted_id(
         [
             {
                 "sample_stem": "SampleA",
+                "method_label": "pt_pattern",
+                "pattern_id": "pt",
                 "candidate_id": "candidate-a",
                 "base_mz": "500.0",
                 "base_rt_apex_min": "10.0",
@@ -234,12 +349,119 @@ def test_candidate_contexts_fail_closed_on_missing_accepted_id(
     _write_csv(
         evidence_csv,
         [
-            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
-            {"candidate_id": "candidate-missing", "trace_rule_call": "accept"},
+            _evidence_row("candidate-a"),
+            _evidence_row("candidate-missing"),
         ],
     )
 
-    with pytest.raises(ValueError, match="missing accepted ids: candidate-missing"):
+    with pytest.raises(ValueError, match="extra evidence keys: candidate-missing"):
+        replay._candidate_contexts(
+            candidates_csv,
+            evidence_csv,
+            rt_half_window_sec=45.0,
+        )
+
+
+def test_candidate_contexts_reject_stale_evidence_coordinates(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "candidates.csv"
+    evidence_csv = tmp_path / "evidence.csv"
+    _write_csv(
+        candidates_csv,
+        [
+            {
+                "sample_stem": "SampleA",
+                "method_label": "pt_pattern",
+                "pattern_id": "pt",
+                "candidate_id": "candidate-a",
+                "base_mz": "500.0",
+                "base_rt_apex_min": "10.0",
+                "base_feature_id": "f1",
+                "pt_plus_1_feature_id": "f2",
+                "pt_plus_2_feature_id": "f3",
+                "pt_plus_4_feature_id": "f4",
+            }
+        ],
+    )
+    _write_csv(
+        evidence_csv,
+        [
+            _evidence_row("candidate-a", base_mz="501.0")
+        ],
+    )
+
+    with pytest.raises(ValueError, match="base_mz.*does not match"):
+        replay._candidate_contexts(
+            candidates_csv,
+            evidence_csv,
+            rt_half_window_sec=45.0,
+        )
+
+
+def test_candidate_contexts_reject_stale_partner_assignment(tmp_path: Path) -> None:
+    candidate = _complete_candidate_assignment(
+        {
+            "sample_stem": "SampleA",
+            "method_label": "pt_pattern",
+            "pattern_id": "pt",
+            "candidate_id": "candidate-a",
+            "base_mz": "500.0",
+            "base_rt_apex_min": "10.0",
+            "base_feature_id": "f1",
+            "pt_plus_1_feature_id": "f2",
+            "pt_plus_2_feature_id": "f3",
+            "pt_plus_4_feature_id": "f8",
+        }
+    )
+    stale_evidence = _evidence_row("candidate-a")
+    candidates_csv = tmp_path / "candidates.csv"
+    evidence_csv = tmp_path / "evidence.csv"
+    _write_csv(candidates_csv, [candidate])
+    _write_csv(evidence_csv, [stale_evidence])
+
+    with pytest.raises(ValueError, match="candidate_assignment_sha256"):
+        replay._candidate_contexts(
+            candidates_csv,
+            evidence_csv,
+            rt_half_window_sec=45.0,
+        )
+
+
+def test_candidate_contexts_validate_rejected_evidence_before_filtering(
+    tmp_path: Path,
+) -> None:
+    candidates_csv = tmp_path / "candidates.csv"
+    evidence_csv = tmp_path / "evidence.csv"
+    _write_csv(
+        candidates_csv,
+        [
+            {
+                "sample_stem": "SampleA",
+                "method_label": "pt_pattern",
+                "pattern_id": "pt",
+                "candidate_id": "candidate-a",
+                "base_mz": "500.0",
+                "base_rt_apex_min": "10.0",
+                "base_feature_id": "f1",
+                "pt_plus_1_feature_id": "f2",
+                "pt_plus_2_feature_id": "f3",
+                "pt_plus_4_feature_id": "f4",
+            }
+        ],
+    )
+    _write_csv(
+        evidence_csv,
+        [
+            _evidence_row(
+                "candidate-a",
+                trace_rule_call="reject",
+                base_mz="501.0",
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match="base_mz.*does not match"):
         replay._candidate_contexts(
             candidates_csv,
             evidence_csv,
@@ -254,6 +476,8 @@ def test_candidate_contexts_fail_closed_on_duplicate_accepted_rows(
     evidence_csv = tmp_path / "evidence.csv"
     candidate = {
         "sample_stem": "SampleA",
+        "method_label": "pt_pattern",
+        "pattern_id": "pt",
         "candidate_id": "candidate-a",
         "base_mz": "500.0",
         "base_rt_apex_min": "10.0",
@@ -265,7 +489,7 @@ def test_candidate_contexts_fail_closed_on_duplicate_accepted_rows(
     _write_csv(candidates_csv, [candidate, candidate])
     _write_csv(
         evidence_csv,
-        [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
+        [_evidence_row("candidate-a")],
     )
 
     with pytest.raises(
@@ -283,16 +507,16 @@ def test_candidate_contexts_fail_closed_on_duplicate_accepted_rows(
     "evidence_rows",
     (
         (
-            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
-            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
+            _evidence_row("candidate-a"),
+            _evidence_row("candidate-a"),
         ),
         (
-            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
-            {"candidate_id": "candidate-a", "trace_rule_call": "reject"},
+            _evidence_row("candidate-a"),
+            _evidence_row("candidate-a", trace_rule_call="reject"),
         ),
         (
-            {"candidate_id": "candidate-a", "trace_rule_call": "reject"},
-            {"candidate_id": "candidate-a", "trace_rule_call": "accept"},
+            _evidence_row("candidate-a", trace_rule_call="reject"),
+            _evidence_row("candidate-a"),
         ),
     ),
 )
@@ -349,7 +573,7 @@ def test_candidate_contexts_reject_blank_candidate_identity_before_filtering(
     )
     _write_csv(
         evidence_csv,
-        [{"candidate_id": "candidate-a", "trace_rule_call": "reject"}],
+        [_evidence_row("candidate-a", trace_rule_call="reject")],
     )
 
     with pytest.raises(ValueError, match="candidate_id must be non-empty"):
@@ -363,9 +587,9 @@ def test_candidate_contexts_reject_blank_candidate_identity_before_filtering(
 @pytest.mark.parametrize(
     ("overrides", "message"),
     (
-        ({"pt_plus_4_feature_id": ""}, "non-empty feature claims"),
-        ({"pt_plus_4_feature_id": "f3"}, "distinct feature claims"),
-        ({"pt_plus_4_feature_id": " f3 "}, "distinct feature claims"),
+        ({"pt_plus_4_feature_id": ""}, "pt_plus_4_feature_id must be non-empty"),
+        ({"pt_plus_4_feature_id": "f3"}, "assignment IDs must be distinct"),
+        ({"pt_plus_4_feature_id": " f3 "}, "assignment IDs must be distinct"),
     ),
 )
 def test_candidate_contexts_reject_incomplete_or_duplicate_feature_claims(
@@ -377,6 +601,8 @@ def test_candidate_contexts_reject_incomplete_or_duplicate_feature_claims(
     evidence_csv = tmp_path / "evidence.csv"
     candidate = {
         "sample_stem": "SampleA",
+        "method_label": "pt_pattern",
+        "pattern_id": "pt",
         "candidate_id": "candidate-a",
         "base_mz": "500.0",
         "base_rt_apex_min": "10.0",
@@ -389,7 +615,7 @@ def test_candidate_contexts_reject_incomplete_or_duplicate_feature_claims(
     _write_csv(candidates_csv, [candidate])
     _write_csv(
         evidence_csv,
-        [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
+        [_evidence_row("candidate-a")],
     )
 
     with pytest.raises(ValueError, match=message):
@@ -405,6 +631,8 @@ def test_candidate_contexts_reject_source_sample_mismatch(tmp_path: Path) -> Non
     evidence_csv = tmp_path / "evidence.csv"
     candidate = {
         "sample_stem": "SampleB",
+        "method_label": "pt_pattern",
+        "pattern_id": "pt",
         "candidate_id": "candidate-a",
         "base_mz": "500.0",
         "base_rt_apex_min": "10.0",
@@ -416,7 +644,7 @@ def test_candidate_contexts_reject_source_sample_mismatch(tmp_path: Path) -> Non
     _write_csv(candidates_csv, [candidate])
     _write_csv(
         evidence_csv,
-        [{"candidate_id": "candidate-a", "trace_rule_call": "accept"}],
+        [_evidence_row("candidate-a", sample_stem="SampleB")],
     )
 
     with pytest.raises(ValueError, match="source sample 'SampleA'"):
@@ -489,6 +717,8 @@ def test_same_scan_replay_namespaces_candidate_and_known_seed_identity(
         [
             {
                 "sample_stem": "SampleA",
+                "method_label": "pt_pattern",
+                "pattern_id": "pt",
                 "candidate_id": "known:base_mz=500",
                 "base_mz": "500.0",
                 "base_rt_apex_min": "10.0",
@@ -501,7 +731,9 @@ def test_same_scan_replay_namespaces_candidate_and_known_seed_identity(
     )
     _write_csv(
         evidence_csv,
-        [{"candidate_id": "known:base_mz=500", "trace_rule_call": "accept"}],
+        [
+            _evidence_row("known:base_mz=500")
+        ],
     )
     _write_csv(
         known_csv,

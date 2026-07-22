@@ -126,6 +126,13 @@ PT_EVIDENCE_COLUMNS = (
     "method_label",
     "pattern_id",
     "candidate_id",
+    "candidate_assignment_sha256",
+    "trace_schema_version",
+    "trace_artifact_role",
+    "trace_extraction_sha256",
+    "trace_manifest_sha256",
+    "base_mz",
+    "base_rt_apex_min",
     "candidate_state",
     "scan_pattern_seed_status",
     "trace_evidence_status",
@@ -136,7 +143,10 @@ PT_EVIDENCE_COLUMNS = (
     "evidence_rule_owner",
     "required_combined_status",
     "min_non_base_positions_supported",
-    "max_abs_apex_delta_threshold_sec",
+    "configured_max_abs_apex_delta_threshold_sec",
+    "max_abs_apex_delta_scan_step_multiplier",
+    "min_median_rt_step_sec",
+    "effective_max_abs_apex_delta_threshold_sec",
     "min_pearson_r_to_base_threshold",
     "min_active_overlap_fraction_threshold",
     "min_shifted_pearson_r_to_base_threshold",
@@ -227,26 +237,66 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 
 def _pt_evidence_row(**overrides: object) -> dict[str, object]:
+    from xic_extractor.discovery.pt_pattern_artifact_contract import (
+        pt_pattern_candidate_assignment_fingerprint,
+    )
+    from xic_extractor.discovery.pt_pattern_evidence_rule import (
+        DEFAULT_THRESHOLDS,
+        pt_pattern_rule_id,
+    )
+
+    candidate = _pt_candidate()
     row: dict[str, object] = {
-        "schema_version": "pt_pattern_discovery_evidence.v1",
+        "schema_version": "pt_pattern_discovery_evidence.v3",
         "sample_stem": "Sample_1",
         "method_label": "pt_pattern",
         "pattern_id": "pt",
         "candidate_id": "Sample_1@pt@base-1",
+        "candidate_assignment_sha256": (
+            pt_pattern_candidate_assignment_fingerprint(
+                {
+                    field: getattr(candidate, field)
+                    for field in (
+                        "sample_stem",
+                        "method_label",
+                        "pattern_id",
+                        "candidate_id",
+                        "base_feature_id",
+                        "base_mz",
+                        "base_rt_apex_min",
+                        "pt_plus_1_feature_id",
+                        "pt_plus_1_mz",
+                        "pt_plus_1_expected_mz",
+                        "pt_plus_2_feature_id",
+                        "pt_plus_2_mz",
+                        "pt_plus_2_expected_mz",
+                        "pt_plus_4_feature_id",
+                        "pt_plus_4_mz",
+                        "pt_plus_4_expected_mz",
+                    )
+                }
+            )
+        ),
+        "trace_schema_version": "pt_pattern_trace_diagnosis.v4",
+        "trace_artifact_role": "full_context",
+        "trace_extraction_sha256": "e" * 64,
+        "trace_manifest_sha256": "f" * 64,
+        "base_mz": 500.0,
+        "base_rt_apex_min": 10.0,
         "candidate_state": "pt_pattern_candidate",
         "scan_pattern_seed_status": "full_pattern_seeded",
         "trace_evidence_status": "evaluated",
         "trace_rule_call": "accept",
         "trace_detection_status": "detected",
         "trace_rule_reason": "full_pattern_close_apex_shape_overlap",
-        "evidence_rule_id": (
-            "pt_v2_fullpattern_apex_le_0p6s_or_1p25scan_pearson_ge_0p9_overlap_ge_0p5"
-            "_shiftedreviewonly_shiftedpearson_ge_0p85_shapeshift_le_45s"
-        ),
+        "evidence_rule_id": pt_pattern_rule_id(DEFAULT_THRESHOLDS),
         "evidence_rule_owner": "xic_extractor.discovery.pt_pattern_evidence_rule",
         "required_combined_status": "pt_pattern_detected_diagnostic",
         "min_non_base_positions_supported": 3,
-        "max_abs_apex_delta_threshold_sec": 0.6,
+        "configured_max_abs_apex_delta_threshold_sec": 0.6,
+        "max_abs_apex_delta_scan_step_multiplier": 1.25,
+        "min_median_rt_step_sec": "",
+        "effective_max_abs_apex_delta_threshold_sec": 0.6,
         "min_pearson_r_to_base_threshold": 0.90,
         "min_active_overlap_fraction_threshold": 0.50,
         "min_shifted_pearson_r_to_base_threshold": 0.85,
@@ -546,7 +596,7 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
     write_pt_pattern_sidecar_json(output_path, result=result)
 
     payload = json.loads(output_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "pt_pattern_sidecar.v3"
+    assert payload["schema_version"] == "pt_pattern_sidecar.v4"
     assert payload["method_label"] == "pt_pattern"
     assert payload["pattern"] == {
         "pattern_id": "pt",
@@ -567,6 +617,14 @@ def test_pt_sidecar_json_shape_and_schema_version_for_pt_pattern_only(
         "mzmine_feature_table_csv": None,
         "cid_nl_candidates_csv": None,
         "trace_summary_csv": None,
+        "trace_metrics_csv": None,
+        "trace_manifest_json": None,
+        "trace_summary_csv_sha256": None,
+        "trace_metrics_csv_sha256": None,
+        "trace_manifest_json_sha256": None,
+        "trace_schema_version": None,
+        "trace_artifact_role": None,
+        "trace_extraction_sha256": None,
     }
     assert payload["summary"] == {
         "candidate_count": 1,
@@ -602,6 +660,14 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
         cid_nl_candidates_csv="discovery_candidates.csv",
         candidates=[composite_candidate],
         trace_summary_csv="trace_summary.csv",
+        trace_metrics_csv="trace_metrics.csv",
+        trace_manifest_json="trace_manifest.json",
+        trace_summary_csv_sha256="a" * 64,
+        trace_metrics_csv_sha256="b" * 64,
+        trace_manifest_json_sha256="c" * 64,
+        trace_schema_version="pt_pattern_trace_diagnosis.v4",
+        trace_artifact_role="full_context",
+        trace_extraction_sha256="d" * 64,
         evidence_rows=[
             _pt_evidence_row(
                 method_label="pt_pattern+cid_nl_dr",
@@ -622,6 +688,10 @@ def test_pt_sidecar_json_records_cid_nl_candidates_csv_for_composite_method(
     assert payload["inputs"]["mzmine_feature_table_csv"] is None
     assert payload["inputs"]["cid_nl_candidates_csv"] is not None
     assert payload["inputs"]["trace_summary_csv"] == "trace_summary.csv"
+    assert payload["inputs"]["trace_metrics_csv"] == "trace_metrics.csv"
+    assert payload["inputs"]["trace_manifest_json"] == "trace_manifest.json"
+    assert payload["inputs"]["trace_manifest_json_sha256"] == "c" * 64
+    assert payload["inputs"]["trace_artifact_role"] == "full_context"
     assert payload["summary"] == {
         "candidate_count": 1,
         "pt_only_candidate_count": 0,
@@ -723,6 +793,36 @@ def test_pt_evidence_csv_writes_header_only_when_no_rows(tmp_path: Path) -> None
         reader = csv.reader(handle)
         rows = list(reader)
     assert rows == [list(PT_EVIDENCE_COLUMNS)]
+
+
+def test_pt_evidence_csv_rejects_incomplete_or_wrong_version_row(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "pt_pattern_evidence.csv"
+
+    with pytest.raises(ValueError, match="missing required fields"):
+        write_pt_pattern_evidence_csv(
+            output_path,
+            [{"schema_version": "pt_pattern_discovery_evidence.v1"}],
+        )
+
+    assert not output_path.exists()
+
+    with pytest.raises(ValueError, match=r"unsupported evidence.*schema_version"):
+        write_pt_pattern_evidence_csv(
+            output_path,
+            [
+                _pt_evidence_row(
+                    schema_version="pt_pattern_discovery_evidence.v1"
+                )
+            ],
+        )
+
+    with pytest.raises(ValueError, match="matrix_write_authority must be FALSE"):
+        write_pt_pattern_evidence_csv(
+            output_path,
+            [_pt_evidence_row(matrix_write_authority=True)],
+        )
 
 
 def test_pt_candidate_csv_creates_parent_directories(tmp_path: Path) -> None:
@@ -846,26 +946,16 @@ def test_pt_review_csv_escapes_formula_like_text_consistently(
     assert row["reason"] == "'+suspicious reason"
 
 
-def test_pt_evidence_csv_escapes_formula_like_text_consistently(
+def test_pt_evidence_csv_rejects_formula_like_invalid_rule_reason(
     tmp_path: Path,
 ) -> None:
     output_path = tmp_path / "pt_pattern_evidence.csv"
 
-    write_pt_pattern_evidence_csv(
-        output_path,
-        [
-            _pt_evidence_row(
-                sample_stem="=cmd|'/c calc'!A1",
-                candidate_id="+candidate-1",
-                trace_rule_reason="-suspicious reason",
-            )
-        ],
-    )
-
-    row = _read_csv(output_path)[0]
-    assert row["sample_stem"] == "=cmd|'/c calc'!A1"
-    assert row["candidate_id"] == "+candidate-1"
-    assert row["trace_rule_reason"] == "'-suspicious reason"
+    with pytest.raises(ValueError, match="trace decision fields do not match"):
+        write_pt_pattern_evidence_csv(
+            output_path,
+            [_pt_evidence_row(trace_rule_reason="-suspicious reason")],
+        )
 
 
 def test_pt_candidate_csv_preserves_literal_leading_apostrophe_identity(

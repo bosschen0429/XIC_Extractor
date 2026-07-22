@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
+from tests.pt_pattern_trace_fixtures import (
+    write_overlay_lineage_bundle,
+    write_verified_oracle_promotion_bundle,
+)
 from xic_extractor.discovery import pt_pattern_oracle_promotion as promotion
 from xic_extractor.discovery import pt_pattern_oracle_thresholds as thresholds
 from xic_extractor.discovery import pt_pattern_review_packet as packet
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+)
 from xic_extractor.tabular_io import (
-    file_sha256,
     read_delimited_rows,
     write_delimited_rows,
 )
@@ -45,13 +53,20 @@ def _review_row(
             "packet_row_id": f"pt_only|{candidate_id}",
             "sample_stem": "SampleA",
             "candidate_id": candidate_id,
+            "candidate_assignment_sha256": hashlib.sha256(
+                f"threshold-test-assignment|{candidate_id}".encode("utf-8")
+            ).hexdigest(),
+            "trace_extraction_sha256": "e" * 64,
+            "trace_artifact_role": (
+                PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
+                if anchor_local
+                else PT_PATTERN_TRACE_FULL_CONTEXT_ROLE
+            ),
             "base_mz": "500.0",
             "base_rt_apex_min": "10.0",
             "trace_decision_basis": evidence.TRACE_DECISION_BASIS,
             "trace_smoothing_method": evidence.TRACE_SMOOTH_METHOD,
-            "trace_smoothing_window_points": str(
-                evidence.TRACE_SMOOTH_WINDOW_POINTS
-            ),
+            "trace_smoothing_window_points": str(evidence.TRACE_SMOOTH_WINDOW_POINTS),
             "combined_pt_pattern_status": status,
             "non_base_positions_supported": supported,
             "max_abs_apex_delta_sec": apex_delta,
@@ -114,9 +129,7 @@ def _oracle_row(
     return row
 
 
-def test_threshold_calibration_selects_zero_false_positive_rule(
-    tmp_path: Path,
-) -> None:
+def test_threshold_calibration_selects_zero_false_positive_rule() -> None:
     review_rows = [
         _review_row("accept-a", pearson="0.92", overlap="0.75"),
         _review_row("accept-b", pearson="0.97", overlap="0.90"),
@@ -129,17 +142,10 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
         ),
         _review_row("reject-apex", apex_delta="15.0", pearson="0.99"),
     ]
-    review_csv = _write_csv(
-        tmp_path / "review.csv",
-        review_rows,
-        packet.LEGACY_PACKET_COLUMNS,
-    )
-    review_sha256 = file_sha256(review_csv)
     oracle_rows = [
         _oracle_row(
             review_row,
             oracle_call=oracle_call,
-            review_packet_sha256=review_sha256,
         )
         for review_row, oracle_call in zip(
             review_rows,
@@ -148,37 +154,33 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
         )
     ]
 
-    outputs = thresholds.run_threshold_calibration(
-        oracle_promotion_csv=_write_csv(
-            tmp_path / "oracle.csv",
-            oracle_rows,
-            promotion.PROMOTION_COLUMNS,
-        ),
-        review_packet_csvs=[review_csv],
-        output_dir=tmp_path / "thresholds",
-        calibration_id="unit_thresholds",
+    cases = thresholds.build_calibration_cases(
+        oracle_rows=oracle_rows,
+        review_rows=review_rows,
+        review_packet_sha256_by_row_id={
+            row["packet_row_id"]: UNIT_REVIEW_SHA256 for row in review_rows
+        },
     )
-
-    threshold_rows = read_delimited_rows(
-        outputs["threshold_candidates_csv"],
-        required_columns=thresholds.THRESHOLD_COLUMNS,
-        delimiter=",",
+    threshold_rows = thresholds.evaluate_threshold_grid(
+        cases=cases,
+        calibration_id="unit_thresholds",
     )
     recommended = threshold_rows[0]
     assert recommended["rule_id"] == (
-        "pt_v2_fullpattern_apex_le_0p6s_or_1p25scan_pearson_ge_0p9_overlap_ge_0p5"
+        "pt_v2_fullpattern_status_pt_pattern_detected_diagnostic_positions_ge_3"
+        "_apex_floor_le_0p6s_or_scan_multiplier_1p25_pearson_ge_0p9_overlap_ge_0p5"
         "_shiftedreviewonly_shiftedpearson_ge_0p85_shapeshift_le_45s"
     )
-    assert recommended["min_shifted_pearson_r_to_base"] == "0.85"
-    assert recommended["max_abs_shape_shift_sec_to_base"] == "45"
-    assert recommended["true_positive"] == "2"
-    assert recommended["false_positive"] == "0"
-    assert recommended["false_negative"] == "0"
+    assert recommended["min_shifted_pearson_r_to_base"] == 0.85
+    assert recommended["max_abs_shape_shift_sec_to_base"] == 45.0
+    assert recommended["true_positive"] == 2
+    assert recommended["false_positive"] == 0
+    assert recommended["false_negative"] == 0
 
-    audit_rows = read_delimited_rows(
-        outputs["case_audit_csv"],
-        required_columns=thresholds.CASE_AUDIT_COLUMNS,
-        delimiter=",",
+    audit_rows = thresholds.build_case_audit_rows(
+        cases=cases,
+        recommended_rule=recommended,
+        calibration_id="unit_thresholds",
     )
     assert [row["calibration_outcome"] for row in audit_rows].count(
         "true_positive"
@@ -187,13 +189,9 @@ def test_threshold_calibration_selects_zero_false_positive_rule(
         "true_negative"
     ) == 3
 
-    summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
-    assert summary["readiness_tier"] == "diagnostic_only"
-    assert summary["calibration_status"] == "threshold_candidate_ready_for_review"
-    assert summary["recommended_rule"]["false_positive"] == 0
-    assert summary["recommended_rule"]["max_abs_shape_shift_sec_to_base"] == 45.0
-    assert summary["changes_matrix"] is False
-    assert summary["changes_counted_detection"] is False
+    assert thresholds._calibration_status(recommended) == (
+        "threshold_candidate_ready_for_review"
+    )
 
 
 def test_threshold_calibration_rejects_missing_review_packet() -> None:
@@ -206,25 +204,18 @@ def test_threshold_calibration_rejects_missing_review_packet() -> None:
         )
 
 
-def test_threshold_calibration_accepts_true_anchor_v3_packet(
+def test_threshold_calibration_accepts_current_anchor_packet(
     tmp_path: Path,
 ) -> None:
     review_row = _review_row("anchor-v3", anchor_local=True)
-    review_csv = _write_csv(
-        tmp_path / "review_v3.csv",
+    review_csv = _write_review_bundle(
+        tmp_path / "anchor" / "review.csv",
         [review_row],
-        packet.PACKET_COLUMNS,
     )
-    oracle_csv = _write_csv(
-        tmp_path / "oracle_v3.csv",
-        [
-            _oracle_row(
-                review_row,
-                oracle_call="accept",
-                review_packet_sha256=file_sha256(review_csv),
-            )
-        ],
-        promotion.PROMOTION_COLUMNS,
+    oracle_csv = _write_verified_promotion(
+        tmp_path / "oracle_v3",
+        review_csv=review_csv,
+        oracle_call="reject",
     )
 
     outputs = thresholds.run_threshold_calibration(
@@ -238,7 +229,7 @@ def test_threshold_calibration_accepts_true_anchor_v3_packet(
     assert summary["row_count"] == 1
 
 
-def test_threshold_calibration_rejects_partial_anchor_v3_packet(
+def test_threshold_calibration_rejects_partial_anchor_packet(
     tmp_path: Path,
 ) -> None:
     review_row = _review_row("partial-v3", anchor_local=True)
@@ -251,19 +242,17 @@ def test_threshold_calibration_rejects_partial_anchor_v3_packet(
         [review_row],
         partial_columns,
     )
-    oracle_csv = _write_csv(
-        tmp_path / "oracle_partial_v3.csv",
-        [
-            _oracle_row(
-                review_row,
-                oracle_call="accept",
-                review_packet_sha256=file_sha256(review_csv),
-            )
-        ],
-        promotion.PROMOTION_COLUMNS,
+    valid_review = _write_review_bundle(
+        tmp_path / "promotion_source" / "review.csv",
+        [_review_row("promotion-source")],
+    )
+    oracle_csv = _write_verified_promotion(
+        tmp_path / "oracle_partial_v3",
+        review_csv=valid_review,
+        oracle_call="reject",
     )
 
-    with pytest.raises(ValueError, match="v3 requires all anchor-local columns"):
+    with pytest.raises(ValueError, match="current schema columns mismatch"):
         thresholds.run_threshold_calibration(
             oracle_promotion_csv=oracle_csv,
             review_packet_csvs=[review_csv],
@@ -277,26 +266,18 @@ def test_threshold_calibration_rejects_mixed_packet_schemas(
 ) -> None:
     legacy_row = _review_row("legacy-v2")
     anchor_row = _review_row("anchor-v3", anchor_local=True)
-    legacy_csv = _write_csv(
-        tmp_path / "review_v2.csv",
+    legacy_csv = _write_review_bundle(
+        tmp_path / "full" / "review.csv",
         [legacy_row],
-        packet.LEGACY_PACKET_COLUMNS,
     )
-    anchor_csv = _write_csv(
-        tmp_path / "review_v3.csv",
+    anchor_csv = _write_review_bundle(
+        tmp_path / "anchor" / "review.csv",
         [anchor_row],
-        packet.PACKET_COLUMNS,
     )
-    oracle_csv = _write_csv(
-        tmp_path / "oracle.csv",
-        [
-            _oracle_row(
-                legacy_row,
-                oracle_call="accept",
-                review_packet_sha256=file_sha256(legacy_csv),
-            )
-        ],
-        promotion.PROMOTION_COLUMNS,
+    oracle_csv = _write_verified_promotion(
+        tmp_path / "oracle",
+        review_csv=legacy_csv,
+        oracle_call="reject",
     )
 
     with pytest.raises(ValueError, match="must use one schema_version"):
@@ -380,43 +361,37 @@ def test_threshold_calibration_rejects_invalid_actual_review_status(
 
 def test_threshold_calibration_cli_writes_outputs(tmp_path: Path) -> None:
     review_row = _review_row("accept-a")
-    review_csv = _write_csv(
+    review_csv = _write_review_bundle(
         tmp_path / "review.csv",
         [review_row],
-        packet.LEGACY_PACKET_COLUMNS,
     )
-    oracle_csv = _write_csv(
-        tmp_path / "oracle.csv",
-        [
-            _oracle_row(
-                review_row,
-                oracle_call="accept",
-                review_packet_sha256=file_sha256(review_csv),
-            )
-        ],
-        promotion.PROMOTION_COLUMNS,
+    oracle_csv = _write_verified_promotion(
+        tmp_path / "oracle",
+        review_csv=review_csv,
+        oracle_call="reject",
     )
 
     from tools.diagnostics import pt_pattern_oracle_thresholds as cli
 
-    assert cli.main(
-        [
-            "--oracle-promotion-csv",
-            str(oracle_csv),
-            "--review-packet-csv",
-            str(review_csv),
-            "--output-dir",
-            str(tmp_path / "thresholds"),
-            "--calibration-id",
-            "unit_thresholds",
-        ]
-    ) == 0
+    assert (
+        cli.main(
+            [
+                "--oracle-promotion-csv",
+                str(oracle_csv),
+                "--review-packet-csv",
+                str(review_csv),
+                "--output-dir",
+                str(tmp_path / "thresholds"),
+                "--calibration-id",
+                "unit_thresholds",
+            ]
+        )
+        == 0
+    )
 
     summary = json.loads(
         (
-            tmp_path
-            / "thresholds"
-            / "pt_pattern_oracle_threshold_summary.json"
+            tmp_path / "thresholds" / "pt_pattern_oracle_threshold_summary.json"
         ).read_text(encoding="utf-8")
     )
     assert summary["row_count"] == 1
@@ -430,3 +405,39 @@ def _write_csv(
 ) -> Path:
     write_delimited_rows(path, rows, fieldnames)
     return path
+
+
+def _write_review_bundle(
+    path: Path,
+    rows: list[dict[str, str]],
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_overlay_lineage_bundle(
+        review_packet_csv=path,
+        packet_rows=rows,
+        trace_points_csv=path.parent / "pt_pattern_trace_points.csv",
+        trace_point_rows=[],
+    )
+    return path
+
+
+def _write_verified_promotion(
+    output_dir: Path,
+    *,
+    review_csv: Path,
+    oracle_call: str,
+) -> Path:
+    review_rows = read_delimited_rows(
+        review_csv,
+        required_columns=("packet_row_id",),
+        delimiter=",",
+    )
+    outputs = write_verified_oracle_promotion_bundle(
+        review_packet_csv=review_csv,
+        trace_points_csv=review_csv.parent / "pt_pattern_trace_points.csv",
+        oracle_call_by_packet_row_id={
+            row["packet_row_id"]: oracle_call for row in review_rows
+        },
+        output_dir=output_dir,
+    )
+    return outputs["promotion_packet_csv"]

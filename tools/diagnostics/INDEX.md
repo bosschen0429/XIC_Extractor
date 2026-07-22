@@ -1680,11 +1680,11 @@ candidates, but the provenance labels the output `diagnostic_only`; see
 +4 around each candidate's base RT using
 `xic_extractor.raw_reader.open_raw` / `RawFileHandle.extract_xic_many`, and
 writes candidate-level trace support summaries, position-level co-elution
-metrics, and optional trace points. Existing schema v2 outputs keep their
-original full extraction-window semantics, including
+metrics, and optional trace points. Current full-context schema v4 keeps the
+full extraction-window semantics, including
 `pt_pattern_trace_points.csv`. Anchor-local segmentation is emitted separately
 as `pt_pattern_anchor_local_trace_*.csv` under
-`pt_pattern_anchor_local_trace_diagnosis.v1`. For the anchor-local output, each
+`pt_pattern_anchor_local_trace_diagnosis.v3`. For the anchor-local output, each
 Pt position must yield exactly one chromatographic segment that contains the
 candidate anchor RT; its co-elution metrics use the common intersection of the
 four selected segments. Missing or ambiguous segments fail closed to review
@@ -1709,7 +1709,11 @@ third diagnosis. Schema v2 records
 `trace_decision_basis = gaussian15_smoothed_trace`: apex, shape similarity,
 active overlap, and support status use Gaussian15-smoothed XIC intensity, while
 raw vendor trace points and raw audit metrics are retained as reference
-evidence. The JSON sidecar records `readiness_tier = diagnostic_only` and
+evidence. Every summary, metric, and point row carries candidate-assignment,
+trace-extraction, and artifact-role lineage. The JSON manifest binds those rows
+and output hashes to the candidate CSV, RAW hash, candidate slice, extraction
+settings, and decision/smoothing contracts. The JSON sidecar records
+`readiness_tier = diagnostic_only` and
 `evidence_owner = xic_extractor.discovery.pt_pattern_trace_evidence`.
 
 ---
@@ -1733,9 +1737,10 @@ write Matrix/workbook artifacts. The sidecar records
 historical `oracle_status` field names workflow state only: filled and promoted
 human labels remain bounded adjudication evidence, not independent ground truth.
 An `uncertain` label stays unresolved and must not be counted as a true reject.
-Legacy trace inputs retain packet schema v2 and its original columns;
-anchor-local inputs use packet schema v3 with explicit
-`anchor_segmentation_*` evidence fields.
+Current full-context inputs use packet schema v4; anchor-local inputs use packet
+schema v5 with explicit `anchor_segmentation_*` evidence fields. Both require a
+packet manifest and the verified trace manifest/fingerprint that produced the
+reviewed rows; historical unsealed packet schemas fail closed.
 
 ---
 
@@ -1764,16 +1769,19 @@ or final detector output; it is revealed only after the user records independent
 review decisions. The HTML plots Gaussian15-smoothed traces for review and
 sealed machine calls use the same Gaussian15 trace-decision metrics. Those calls
 are the current `trace_rule_call` proxy only. Raw trace-point CSVs remain raw
-vendor evidence and are not Matrix, counting, or quantitation authority. Legacy
-sealed-call output retains overlay schema v2; anchor-local packet or context
-inputs use overlay schema v3. Rendering, sealed-call projection, and artifact
+vendor evidence and are not Matrix, counting, or quantitation authority. Current
+full-context output uses overlay/machine schema v4; anchor-local inputs use
+overlay/machine schema v5. Rendering, sealed-call projection, and artifact
 writing are maintained by separate package modules. Trace-point CSVs are sparse
 observation tables: a reviewed candidate or position may have zero rows when
 the XIC is empty or anchor segmentation fails. The writer renders those gaps as
-missing evidence while still rejecting candidates outside the review packet,
+missing evidence only when a verified point manifest authenticates the
+header-only artifact, while still rejecting candidates outside the review packet,
 unknown position labels, non-finite points, and sample mismatches. Its summary
-binds the review packet, primary/context traces, gallery HTML, and sealed
-machine-call CSV by SHA-256. For schema v3, trace ambiguity, anchor segmentation,
+binds the review-packet manifest, primary/context trace manifests and points,
+gallery HTML, and sealed machine-call CSV by SHA-256. Schema, role, extraction
+fingerprint, gallery mode, and context presence must form one valid mode matrix.
+For anchor schema v5, trace ambiguity, anchor segmentation,
 and boundary review must all be explicitly `clear`; any other state routes the
 sealed review projection to `uncertain`. This is not a threshold reject or
 product non-detection.
@@ -1826,6 +1834,9 @@ logical continuity: without exact reviewed-artifact identity, old labels remain
 remain conflicts, and old rows absent from the current packet are reported as
 stale. A refresh draft can be packaged only after every pending/conflicting row
 is freshly resolved under the promotion v2 provenance contract. The
+machine-call CSV is accepted only through its sibling
+`pt_pattern_blind_overlay_summary.json`; that summary must verify the complete
+packet/trace/gallery/machine bundle and bind the exact supplied machine path.
 historical repaired 32-row packet is now stale calibration context: its labels
 were reviewed against an older bounded slice, are not independent ground truth,
 and cannot be carried into a changed packet merely because a legacy row ID
@@ -1847,7 +1858,7 @@ a case-level audit CSV, and a summary JSON.
 **Status note**: Diagnostic-only threshold calibration surface. It does not
 open RAW, create candidates, recompute trace evidence, mutate Discovery
 outputs, read Alignment state, or write Matrix/workbook artifacts. The
-calibration consumer validates packet schema v2/v3 and requires each promotion
+calibration consumer validates current manifest-sealed packet schema v4/v5 and requires each promotion
 row's schema/status, candidate/sample identity, and review-packet SHA-256 to
 match the actual packet supplying the metrics. A stale label cannot be paired
 with another packet merely by reusing `packet_row_id`. The recommended rule is
@@ -1992,8 +2003,12 @@ state, or write Matrix/workbook artifacts. The reusable Pt full-pattern
 accept/reject rule lives in
 `xic_extractor.discovery.pt_pattern_evidence_rule`; this CLI only adapts review
 packet or trace-summary rows into replay artifacts. `--trace-summary-input
-SOURCE_LABEL=PATH` lets the same calibrated rule run on full trace-diagnosed
-candidate slices instead of only bounded manual-review packets.
+SOURCE_LABEL=PATH` lets the same calibrated rule run on current full-context
+trace-diagnosed candidate slices instead of only bounded manual-review packets;
+the canonical sibling metrics CSV and trace manifest are required and the
+manifest fingerprint/output hashes are revalidated before any gate row is
+written. Diagnostic-gate schema v2 preserves the input schema, assignment SHA,
+extraction SHA, and artifact role in every output row.
 `--require-zero-fpfn` makes the CLI fail if bounded-oracle replay has any false
 positive or false negative. Reviewed-label replay first requires an exact
 promotion-v2 row and actual review-packet SHA/candidate/sample match; synthetic

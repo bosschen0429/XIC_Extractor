@@ -1,12 +1,36 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from tests.pt_pattern_trace_fixtures import (
+    full_context_trace_summary_row,
+    write_trace_summary_lineage_bundle,
+)
+from xic_extractor.discovery import pt_pattern_trace_evidence as trace_evidence
 from xic_extractor.discovery.delta_mass_patterns import PtPatternCandidate
+from xic_extractor.discovery.pt_pattern_artifact_contract import (
+    PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION,
+    PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+    PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+    PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
+    pt_pattern_candidate_assignment_fingerprint,
+    validate_pt_pattern_evidence_row_contract,
+)
 from xic_extractor.discovery.pt_pattern_discovery_evidence import (
     build_pt_pattern_evidence_rows,
-    load_pt_trace_summary_rows,
+    load_pt_discovery_trace_bundle,
 )
+from xic_extractor.tabular_io import (
+    file_sha256,
+    read_delimited_rows,
+    write_delimited_rows,
+)
+
+TRACE_EXTRACTION_SHA256 = "e" * 64
+TRACE_MANIFEST_SHA256 = "f" * 64
 
 
 def _candidate(**overrides: object) -> PtPatternCandidate:
@@ -62,21 +86,57 @@ def _candidate(**overrides: object) -> PtPatternCandidate:
         "pt_plus_4_area_ratio_to_base": 0.05,
     }
     values.update(overrides)
+    if "base_mz" in overrides:
+        base_mz = float(values["base_mz"])
+        for label, delta in (
+            ("pt_plus_1", 1.002111),
+            ("pt_plus_2", 2.002271),
+            ("pt_plus_4", 4.005213),
+        ):
+            values.setdefault(f"{label}_mz", base_mz + delta)
+            values.setdefault(f"{label}_expected_mz", base_mz + delta)
+            if f"{label}_mz" not in overrides:
+                values[f"{label}_mz"] = base_mz + delta
+            if f"{label}_expected_mz" not in overrides:
+                values[f"{label}_expected_mz"] = base_mz + delta
     return PtPatternCandidate(**values)  # type: ignore[arg-type]
 
 
 def _trace_summary_row(**overrides: object) -> dict[str, object]:
+    candidate = _candidate(
+        **{
+            field: value
+            for field, value in overrides.items()
+            if field in PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS
+        }
+    )
+    candidate_payload = {
+        field: getattr(candidate, field)
+        for field in PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS
+    }
     row: dict[str, object] = {
-        "sample_stem": "Sample_1",
-        "candidate_id": "Sample_1@pt@base-1",
-        "base_mz": 500.0,
-        "base_rt_apex_min": 10.0,
+        "schema_version": PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
+        "sample_stem": candidate.sample_stem,
+        "candidate_id": candidate.candidate_id,
+        "candidate_assignment_sha256": (
+            pt_pattern_candidate_assignment_fingerprint(candidate_payload)
+        ),
+        "trace_artifact_role": PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
+        "trace_extraction_sha256": TRACE_EXTRACTION_SHA256,
+        "base_mz": candidate.base_mz,
+        "base_rt_apex_min": candidate.base_rt_apex_min,
         "scan_pattern_seed_status": "full_pattern_seeded",
         "combined_pt_pattern_status": "pt_pattern_detected_diagnostic",
         "non_base_positions_supported": 3,
         "max_abs_apex_delta_sec": 0.4,
+        "min_median_rt_step_sec": "",
         "min_pearson_r_to_base": 0.95,
         "min_active_overlap_fraction": 0.70,
+        "min_shifted_pearson_r_to_base": "",
+        "max_abs_shape_shift_sec_to_base": "",
+        "trace_ambiguity_status": "clear",
+        "trace_ambiguity_flags": "none",
+        "shifted_only_position_labels": "none",
     }
     row.update(overrides)
     return row
@@ -92,6 +152,12 @@ def test_discovery_evidence_keeps_missing_trace_as_not_evaluated() -> None:
     assert row["trace_rule_call"] == "not_evaluated"
     assert row["trace_detection_status"] == "not_evaluated"
     assert row["trace_rule_reason"] == "trace_summary_not_provided"
+    assert row["trace_schema_version"] == ""
+    assert row["trace_artifact_role"] == ""
+    assert row["trace_extraction_sha256"] == ""
+    assert row["trace_manifest_sha256"] == ""
+    assert row["base_mz"] == 500.0
+    assert row["base_rt_apex_min"] == 10.0
     assert row["matrix_write_authority"] is False
     assert row["counted_detection_authority"] is False
     assert row["export_activation_authority"] is False
@@ -101,6 +167,7 @@ def test_discovery_evidence_applies_shared_rule_when_trace_summary_matches() -> 
     rows = build_pt_pattern_evidence_rows(
         [_candidate()],
         trace_summary_rows=[_trace_summary_row()],
+        trace_manifest_sha256=TRACE_MANIFEST_SHA256,
     )
 
     row = rows[0]
@@ -125,11 +192,36 @@ def test_discovery_evidence_records_effective_scan_aware_apex_threshold() -> Non
                 min_active_overlap_fraction=0.952381,
             )
         ],
+        trace_manifest_sha256=TRACE_MANIFEST_SHA256,
     )
 
     row = rows[0]
     assert row["trace_rule_call"] == "accept"
-    assert row["max_abs_apex_delta_threshold_sec"] == 1.6446083333333332
+    assert row["configured_max_abs_apex_delta_threshold_sec"] == 0.6
+    assert row["max_abs_apex_delta_scan_step_multiplier"] == 1.25
+    assert row["effective_max_abs_apex_delta_threshold_sec"] == (
+        1.6446083333333332
+    )
+
+
+def test_discovery_evidence_persists_component_derived_scan_interval() -> None:
+    rows = build_pt_pattern_evidence_rows(
+        [_candidate()],
+        trace_summary_rows=[
+            _trace_summary_row(
+                max_abs_apex_delta_sec=2.0,
+                min_median_rt_step_sec="",
+                median_rt_step_sec=2.0,
+            )
+        ],
+        trace_manifest_sha256=TRACE_MANIFEST_SHA256,
+    )
+
+    row = rows[0]
+    assert row["trace_rule_call"] == "accept"
+    assert row["min_median_rt_step_sec"] == 2.0
+    assert row["effective_max_abs_apex_delta_threshold_sec"] == 2.5
+    validate_pt_pattern_evidence_row_contract(row)
 
 
 def test_discovery_evidence_keeps_shifted_shape_review_only() -> None:
@@ -143,6 +235,7 @@ def test_discovery_evidence_keeps_shifted_shape_review_only() -> None:
                 max_abs_shape_shift_sec_to_base=44.9,
             )
         ],
+        trace_manifest_sha256=TRACE_MANIFEST_SHA256,
     )
 
     row = rows[0]
@@ -153,7 +246,7 @@ def test_discovery_evidence_keeps_shifted_shape_review_only() -> None:
     assert row["max_abs_shape_shift_sec_to_base_threshold"] == 45.0
 
 
-def test_discovery_evidence_loads_legacy_trace_summary_without_shifted_columns(
+def test_discovery_evidence_rejects_legacy_trace_summary_without_assignment_binding(
     tmp_path,
 ) -> None:
     legacy_trace_summary = tmp_path / "legacy_trace_summary.csv"
@@ -186,23 +279,93 @@ def test_discovery_evidence_loads_legacy_trace_summary_without_shifted_columns(
         encoding="utf-8",
     )
 
-    trace_rows = load_pt_trace_summary_rows(legacy_trace_summary)
-    rows = build_pt_pattern_evidence_rows(
-        [_candidate()],
-        trace_summary_rows=trace_rows,
+    with pytest.raises(ValueError, match="missing required columns"):
+        load_pt_discovery_trace_bundle(legacy_trace_summary)
+
+
+def test_discovery_evidence_rejects_anchor_local_trace_rows() -> None:
+    with pytest.raises(ValueError, match="full-context trace schema"):
+        build_pt_pattern_evidence_rows(
+            [_candidate()],
+            trace_summary_rows=[
+                _trace_summary_row(
+                    schema_version=(
+                        PT_PATTERN_ANCHOR_LOCAL_TRACE_SUMMARY_SCHEMA_VERSION
+                    ),
+                    trace_artifact_role=PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
+                )
+            ],
+            trace_manifest_sha256=TRACE_MANIFEST_SHA256,
+        )
+
+
+@pytest.mark.parametrize(
+    ("artifact", "field", "value"),
+    [
+        ("summary", "min_pearson_r_to_base", "0.10"),
+        ("summary", "combined_pt_pattern_status", "pt_pattern_candidate_review"),
+        ("metrics", "point_count", "100"),
+        ("metrics", "trace_support_status", "review"),
+    ],
+)
+def test_discovery_trace_loader_rejects_refreshed_hash_projection_tamper(
+    tmp_path,
+    artifact: str,
+    field: str,
+    value: str,
+) -> None:
+    summary_csv = tmp_path / "pt_pattern_trace_summary.csv"
+    paths = write_trace_summary_lineage_bundle(
+        trace_summary_csv=summary_csv,
+        summary_rows=[
+            full_context_trace_summary_row(
+                candidate_id="candidate-a",
+                candidate_assignment_sha256="a" * 64,
+                sample_stem="Sample_1",
+            )
+        ],
+    )
+    manifest_path = paths["trace_manifest_json"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if artifact == "summary":
+        rows = read_delimited_rows(
+            summary_csv,
+            required_columns=trace_evidence.SUMMARY_COLUMNS,
+            exact_columns=trace_evidence.SUMMARY_COLUMNS,
+            delimiter=",",
+        )
+        rows[0][field] = value
+        write_delimited_rows(summary_csv, rows, trace_evidence.SUMMARY_COLUMNS)
+        manifest["output_sha256"]["summary_csv"] = file_sha256(
+            summary_csv
+        ).lower()
+    else:
+        metrics_csv = paths["trace_metrics_csv"]
+        rows = read_delimited_rows(
+            metrics_csv,
+            required_columns=trace_evidence.METRIC_COLUMNS,
+            exact_columns=trace_evidence.METRIC_COLUMNS,
+            delimiter=",",
+        )
+        rows[1][field] = value
+        write_delimited_rows(metrics_csv, rows, trace_evidence.METRIC_COLUMNS)
+        manifest["output_sha256"]["metrics_csv"] = file_sha256(
+            metrics_csv
+        ).lower()
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
-    row = rows[0]
-    assert row["trace_rule_call"] == "accept"
-    assert row["trace_rule_reason"] == "full_pattern_close_apex_shape_overlap"
-    assert row["min_shifted_pearson_r_to_base"] == ""
-    assert row["trace_ambiguity_status"] == ""
+    with pytest.raises(ValueError, match="deterministic projection"):
+        load_pt_discovery_trace_bundle(summary_csv)
 
 
 def test_discovery_evidence_records_reject_without_dropping_seed_candidate() -> None:
     rows = build_pt_pattern_evidence_rows(
         [_candidate()],
         trace_summary_rows=[_trace_summary_row(min_pearson_r_to_base=0.84)],
+        trace_manifest_sha256=TRACE_MANIFEST_SHA256,
     )
 
     row = rows[0]
@@ -218,6 +381,7 @@ def test_discovery_evidence_marks_missing_candidate_trace_row() -> None:
         trace_summary_rows=[
             _trace_summary_row(candidate_id="Sample_1@pt@other-base")
         ],
+        trace_manifest_sha256=TRACE_MANIFEST_SHA256,
     )
 
     row = rows[0]
@@ -230,6 +394,7 @@ def test_discovery_evidence_rejects_duplicate_trace_summary_candidate_ids() -> N
         build_pt_pattern_evidence_rows(
             [_candidate()],
             trace_summary_rows=[_trace_summary_row(), _trace_summary_row()],
+            trace_manifest_sha256=TRACE_MANIFEST_SHA256,
         )
     except ValueError as error:
         assert "duplicate trace summary candidate_id" in str(error)
@@ -241,6 +406,7 @@ def test_discovery_evidence_joins_whitespace_equivalent_candidate_ids() -> None:
     rows = build_pt_pattern_evidence_rows(
         [_candidate(candidate_id=" candidate-a ")],
         trace_summary_rows=[_trace_summary_row(candidate_id="candidate-a")],
+        trace_manifest_sha256=TRACE_MANIFEST_SHA256,
     )
 
     assert rows[0]["trace_evidence_status"] == "evaluated"
@@ -278,6 +444,16 @@ def test_discovery_evidence_rejects_trace_summary_identity_mismatch(
         build_pt_pattern_evidence_rows(
             [_candidate()],
             trace_summary_rows=[_trace_summary_row(**{field: conflicting_value})],
+            trace_manifest_sha256=TRACE_MANIFEST_SHA256,
+        )
+
+
+def test_discovery_evidence_rejects_trace_from_old_partner_assignment() -> None:
+    with pytest.raises(ValueError, match="candidate_assignment_sha256"):
+        build_pt_pattern_evidence_rows(
+            [_candidate(pt_plus_1_feature_id="plus1-reassigned")],
+            trace_summary_rows=[_trace_summary_row()],
+            trace_manifest_sha256=TRACE_MANIFEST_SHA256,
         )
 
 
@@ -299,6 +475,7 @@ def test_discovery_evidence_join_is_independent_of_trace_summary_order() -> None
     rows = build_pt_pattern_evidence_rows(
         [candidate_a, candidate_b],
         trace_summary_rows=[summary_b, summary_a],
+        trace_manifest_sha256=TRACE_MANIFEST_SHA256,
     )
 
     assert [(row["candidate_id"], row["trace_rule_call"]) for row in rows] == [

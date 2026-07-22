@@ -81,9 +81,25 @@ def _build_parser() -> argparse.ArgumentParser:
         "--trace-summary-csv",
         type=Path,
         help=(
-            "Optional pt_pattern_trace_diagnosis summary CSV. When supplied, "
-            "the Discovery evidence CSV evaluates trace-level accept/reject "
-            "with the shared Pt evidence rule."
+            "Optional full-context pt_pattern_trace_diagnosis summary CSV. "
+            "When supplied, its sibling metrics CSV and trace manifest are "
+            "verified before Discovery evidence is evaluated."
+        ),
+    )
+    parser.add_argument(
+        "--trace-metrics-csv",
+        type=Path,
+        help=(
+            "Optional metrics CSV override for --trace-summary-csv; defaults "
+            "to the canonical full-context sibling path."
+        ),
+    )
+    parser.add_argument(
+        "--trace-manifest-json",
+        type=Path,
+        help=(
+            "Optional trace manifest override for --trace-summary-csv; "
+            "defaults to the canonical full-context sibling path."
         ),
     )
     return parser
@@ -209,8 +225,37 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if trace_summary_csv is None and (
+        args.trace_metrics_csv is not None or args.trace_manifest_json is not None
+    ):
+        parser.error(
+            "--trace-metrics-csv/--trace-manifest-json require "
+            "--trace-summary-csv"
+        )
+    resolved_trace_metrics_csv = (
+        args.trace_metrics_csv.resolve()
+        if args.trace_metrics_csv is not None
+        else None
+    )
+    resolved_trace_manifest_json = (
+        args.trace_manifest_json.resolve()
+        if args.trace_manifest_json is not None
+        else None
+    )
+    for trace_path, label in (
+        (resolved_trace_metrics_csv, "trace metrics csv"),
+        (resolved_trace_manifest_json, "trace manifest json"),
+    ):
+        if trace_path is not None and not trace_path.is_file():
+            print(f"{trace_path}: {label} does not exist", file=sys.stderr)
+            return 2
 
     try:
+        trace_overrides = {}
+        if resolved_trace_metrics_csv is not None:
+            trace_overrides["trace_metrics_csv"] = resolved_trace_metrics_csv
+        if resolved_trace_manifest_json is not None:
+            trace_overrides["trace_manifest_json"] = resolved_trace_manifest_json
         outputs = run_pt_pattern_discovery(
             detected_features_csv=detected_features_csv,
             external_feature_table_tsv=external_feature_table_tsv,
@@ -219,6 +264,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             preset_name=args.preset,
             cid_nl_candidates_csv=cid_nl_candidates_csv,
             trace_summary_csv=trace_summary_csv,
+            **trace_overrides,
         )
     except (OSError, PresetError, ValueError) as exc:
         print(f"pt_pattern_discovery failed: {exc}", file=sys.stderr)
