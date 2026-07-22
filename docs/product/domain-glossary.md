@@ -25,17 +25,26 @@ a second peer core:
   feature-by-sample matrix intended for downstream preprocessing, calibration,
   and statistics.
 - Targeted extraction supplies known targets and tighter m/z, RT, role, pairing,
-  and evidence conditions up front. Those constraints narrow Discovery, but
-  candidate hypotheses still pass through cross-sample Alignment and
-  evidence-based Backfill before a targeted projection produces its dedicated
-  CSV/workbook delivery. That delivery does not currently require a downstream
-  calibration or statistical-analysis consumer.
+  and evidence conditions up front. Those constraints narrow Discovery and
+  preassign cross-sample target identity; Alignment still evaluates whether the
+  sample-local hypotheses represent the configured target, and evidence-based
+  Backfill may revisit initially uncounted sample/target results. Targeted then
+  produces its dedicated CSV/workbook delivery, which does not currently require
+  a downstream calibration or statistical-analysis consumer.
 
 The shared core lifecycle is Discovery to Alignment to Backfill. Discovery
 methods such as CID-NL, HCD-PI, and Delta Mass find features matching
-configured evidence settings. Alignment resolves cross-sample owner/group
-identity based on evidence. Backfill fills missing cells only when evidence and
-authority support recovery; it is not blind imputation or counted detection.
+configured evidence settings. Alignment establishes cross-sample
+correspondence: Untargeted constructs owner/group identity, while Targeted may
+start from configured target identity and test it with cross-sample evidence.
+Backfill revisits initially missing or uncounted cells only when evidence and
+authority support recovery; it is not blind imputation or counted Discovery.
+
+The current implementation only partially shares these stage owners. Targeted
+uses its own RT, paired-area, and MS1-shape evidence path. The headless limited
+`5-hmdC + 5-medC` CLI runs a baseline/support/final rescue, but GUI and direct
+API entry points do not generate that support automatically. This is an
+implementation parity gap, not a different product lifecycle.
 
 Targeted and Untargeted may apply different priors, projection rules, GUI flows,
 and output contracts. Evidence or output authority from one projection does not

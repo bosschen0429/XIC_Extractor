@@ -59,7 +59,7 @@ graph TB
     ALN --> OUT
 ```
 
-**Product-method flow — shared core:**
+**Product-method flow — target architecture:**
 `.raw` files + method constraints → Discovery → PeakHypothesis/evidence → cross-sample Alignment → evidence-based Backfill → workflow projection
 
 **Untargeted application:** broad candidate search → shared core → feature-by-sample quantitative matrix + review artifacts → downstream preprocessing/calibration/statistics
@@ -69,11 +69,18 @@ graph TB
 Untargeted is the general XIC method and architectural core. Targeted is a
 constrained specialization over that lifecycle with its own application policy,
 GUI flow, and output projection. Separate output contracts and writer authority
-do not justify separate evidence, peak-identity, Alignment, or Backfill systems.
+do not justify permanent duplicate evidence, peak-identity, Alignment, or
+Backfill systems.
 
-The current package topology still routes much of Targeted through
-`extraction/` and the general Untargeted path through `discovery/` and
-`alignment/`. Treat that split as migration state and orchestration ownership,
+The current runtime has not completed that convergence. Targeted uses bounded
+sample-local hypotheses, configured target identity, and cross-sample RT,
+paired-area, and MS1-shape evidence through `extraction/`. The headless limited
+`5-hmdC + 5-medC` CLI additionally runs a baseline/support/final rescue before
+publishing; GUI and direct `extractor.run` calls do not generate that support
+automatically. Targeted does not yet reuse the Untargeted owner/group Alignment
+and Backfill implementation in `alignment/`.
+
+Treat this package and entry-point split as migration state and a parity gap,
 not as the product model or a reason to build two independent decision cores.
 
 ## Dependency Direction

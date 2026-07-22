@@ -11,11 +11,12 @@ new product authority.
 
 ## Product boundary
 
-`xic_results.csv` is the current targeted evidence delivery. Targeted and
-untargeted are separate product lines that share evidence/domain components but
-do not share an output schema or downstream-consumer requirement. The
-feature-by-sample untargeted matrix is the normal handoff to preprocessing,
-calibration, and statistics.
+`xic_results.csv` is the current targeted evidence delivery. Targeted is a
+constrained application of the shared XIC lifecycle with its own output schema
+and downstream-consumer contract. This packet characterizes the headless
+limited CLI baseline/final delivery; it does not establish GUI or direct-API
+two-pass parity. The feature-by-sample Untargeted matrix remains the normal
+handoff to preprocessing, calibration, and statistics.
 
 There is currently no required targeted downstream analytical consumer.
 Targeted results are technically convertible to a feature-by-sample matrix, but
