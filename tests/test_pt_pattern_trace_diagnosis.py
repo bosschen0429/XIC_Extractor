@@ -20,6 +20,7 @@ from xic_extractor.discovery.pt_pattern_trace_manifest import (
     load_trace_bundle_manifest,
     load_verified_trace_summary_bundle,
     validate_trace_points_manifest,
+    verified_trace_summary_identities,
 )
 from xic_extractor.peak_detection.chrom_peak_segments import (
     ChromPeakSegment,
@@ -583,19 +584,14 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
             exact_columns=evidence.TRACE_POINT_COLUMNS,
             delimiter=",",
         )
-        point_identities = {
-            str(row["candidate_id"]): (
-                str(row["candidate_assignment_sha256"]),
-                str(row["sample_stem"]),
-            )
-            for row in verified_summary.summary_rows
-        }
         validate_trace_points_manifest(
             manifest=load_trace_bundle_manifest(outputs[manifest_key]),
             trace_points_csv=outputs[points_key],
             trace_point_rows=persisted_points,
             expected_artifact_role=artifact_role,
-            expected_packet_identities=point_identities,
+            expected_bundle_identities=verified_trace_summary_identities(
+                verified_summary
+            ),
             expected_metric_rows=verified_summary.metric_rows,
         )
 

@@ -12,6 +12,9 @@ from xic_extractor.discovery import pt_pattern_blind_overlay_call as overlay_cal
 from xic_extractor.discovery import pt_pattern_review_packet as packet
 from xic_extractor.discovery import pt_pattern_trace_batch as trace_batch
 from xic_extractor.discovery import pt_pattern_trace_evidence as evidence
+from xic_extractor.discovery.pt_pattern_review_bundle import (
+    load_verified_blind_overlay_bundle,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
     format_diagnostic_value,
@@ -145,6 +148,52 @@ def _refresh_primary_trace_bindings(
     )
 
 
+def _limit_review_packet_to_one_row(
+    review_packet: Path,
+    bundle: dict[str, Path | None],
+) -> None:
+    packet_rows = read_delimited_rows(
+        review_packet,
+        required_columns=packet.PACKET_COLUMNS,
+        exact_columns=packet.PACKET_COLUMNS,
+        delimiter=",",
+        encoding="utf-8-sig",
+    )
+    assert len(packet_rows) == 2
+    write_delimited_rows(review_packet, packet_rows[:1], packet.PACKET_COLUMNS)
+
+    packet_manifest_path = bundle["review_packet_manifest_json"]
+    assert isinstance(packet_manifest_path, Path)
+    packet_manifest = json.loads(packet_manifest_path.read_text(encoding="utf-8"))
+    packet_manifest["max_per_status"] = 1
+    packet_manifest["packet_row_count"] = 1
+    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(
+        review_packet
+    ).lower()
+    packet_manifest_path.write_text(
+        json.dumps(packet_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _replace_candidate_trace_intensity(
+    trace_points: Path,
+    *,
+    candidate_id: str,
+    value: str,
+) -> None:
+    rows = read_delimited_rows(
+        trace_points,
+        required_columns=evidence.TRACE_POINT_COLUMNS,
+        exact_columns=evidence.TRACE_POINT_COLUMNS,
+        delimiter=",",
+        encoding="utf-8-sig",
+    )
+    target = next(row for row in rows if row["candidate_id"] == candidate_id)
+    target["intensity"] = value
+    write_delimited_rows(trace_points, rows, evidence.TRACE_POINT_COLUMNS)
+
+
 def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
     review_packet = tmp_path / "packet.csv"
     trace_points = tmp_path / "trace_points.csv"
@@ -217,7 +266,6 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
     assert machine_rows[0]["anchor_segmentation_common_end_owner_labels"] == (
         "pt_plus_4"
     )
-
     summary = json.loads(outputs["summary_json"].read_text(encoding="utf-8"))
     assert summary["schema_version"] == overlay.ANCHOR_LOCAL_SCHEMA_VERSION
     assert summary["blind_to_machine_calls_in_html"] is True
@@ -239,6 +287,118 @@ def test_machine_call_is_sealed_outside_blind_html(tmp_path: Path) -> None:
         "sealed_machine_calls_use_packet_decision_metrics;"
         "gallery_html_shows_raw_point_smoothed_time_smoothed"
     )
+
+
+def test_blind_overlay_accepts_packet_subset_of_complete_trace_bundle(
+    tmp_path: Path,
+) -> None:
+    review_packet = tmp_path / "packet.csv"
+    trace_points = tmp_path / "trace_points.csv"
+    context_trace_points = tmp_path / "context_trace_points.csv"
+    first_id = "cand-first"
+    second_id = "cand-second"
+    bundle = write_overlay_lineage_bundle(
+        review_packet_csv=review_packet,
+        packet_rows=[_packet_row(first_id), _packet_row(second_id)],
+        trace_points_csv=trace_points,
+        trace_point_rows=[*_trace_points(first_id), *_trace_points(second_id)],
+        context_trace_points_csv=context_trace_points,
+        context_trace_point_rows=[
+            *_trace_points(first_id),
+            *_trace_points(second_id),
+        ],
+    )
+    _limit_review_packet_to_one_row(review_packet, bundle)
+
+    outputs = overlay.run_blind_overlay(
+        review_packet_csv=review_packet,
+        trace_points_csv=trace_points,
+        context_trace_points_csv=context_trace_points,
+        output_dir=tmp_path / "overlay",
+        title="Bounded packet from complete trace bundle",
+    )
+
+    verified = load_verified_blind_overlay_bundle(outputs["summary_json"])
+    assert len(verified.review_packet.rows) == 1
+    html = outputs["gallery_html"].read_text(encoding="utf-8")
+    assert first_id in html
+    assert second_id not in html
+
+
+def test_blind_overlay_validates_non_packet_primary_trace_rows(
+    tmp_path: Path,
+) -> None:
+    review_packet = tmp_path / "packet.csv"
+    trace_points = tmp_path / "trace_points.csv"
+    first_id = "cand-first"
+    second_id = "cand-second"
+    bundle = write_overlay_lineage_bundle(
+        review_packet_csv=review_packet,
+        packet_rows=[_packet_row(first_id), _packet_row(second_id)],
+        trace_points_csv=trace_points,
+        trace_point_rows=[*_trace_points(first_id), *_trace_points(second_id)],
+    )
+    _limit_review_packet_to_one_row(review_packet, bundle)
+    _replace_candidate_trace_intensity(
+        trace_points,
+        candidate_id=second_id,
+        value="nan",
+    )
+    _refresh_primary_trace_bindings(bundle, trace_points_csv=trace_points)
+
+    with pytest.raises(ValueError, match="finite non-negative"):
+        overlay.run_blind_overlay(
+            review_packet_csv=review_packet,
+            trace_points_csv=trace_points,
+            output_dir=tmp_path / "overlay",
+            title="Invalid non-packet primary trace",
+        )
+
+
+def test_blind_overlay_validates_non_packet_context_trace_rows(
+    tmp_path: Path,
+) -> None:
+    review_packet = tmp_path / "packet.csv"
+    trace_points = tmp_path / "trace_points.csv"
+    context_trace_points = tmp_path / "context_trace_points.csv"
+    first_id = "cand-first"
+    second_id = "cand-second"
+    bundle = write_overlay_lineage_bundle(
+        review_packet_csv=review_packet,
+        packet_rows=[_packet_row(first_id), _packet_row(second_id)],
+        trace_points_csv=trace_points,
+        trace_point_rows=[*_trace_points(first_id), *_trace_points(second_id)],
+        context_trace_points_csv=context_trace_points,
+        context_trace_point_rows=[
+            *_trace_points(first_id),
+            *_trace_points(second_id),
+        ],
+    )
+    _limit_review_packet_to_one_row(review_packet, bundle)
+    _replace_candidate_trace_intensity(
+        context_trace_points,
+        candidate_id=second_id,
+        value="nan",
+    )
+    context_manifest_path = bundle["context_trace_manifest_json"]
+    assert isinstance(context_manifest_path, Path)
+    context_manifest = json.loads(context_manifest_path.read_text(encoding="utf-8"))
+    context_manifest["output_sha256"]["trace_points_csv"] = file_sha256(
+        context_trace_points
+    ).lower()
+    context_manifest_path.write_text(
+        json.dumps(context_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="finite non-negative"):
+        overlay.run_blind_overlay(
+            review_packet_csv=review_packet,
+            trace_points_csv=trace_points,
+            context_trace_points_csv=context_trace_points,
+            output_dir=tmp_path / "overlay",
+            title="Invalid non-packet context trace",
+        )
 
 
 def test_blind_overlay_rejects_packet_row_id_not_projected_from_sources(

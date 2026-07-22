@@ -244,6 +244,14 @@ and sealed machine rows use full v4 or anchor-local v5. Current consumers fail
 closed on blank/historical schemas, missing manifests, stale fingerprints,
 artifact swaps, role/schema conflicts, or full/anchor mixtures across files.
 
+Trace-point validation remains bundle-scoped even when a review packet is a
+bounded subset selected from that bundle. Blind-overlay writers and verified
+loaders first validate every primary/context trace row against the complete
+manifest-verified summary/metric identity set. Only after that validation may
+they filter trace rows to packet candidates for rendering and accept-completeness
+checks. Non-packet candidates therefore cannot escape integrity validation, and
+their presence in the source trace bundle is not itself an error.
+
 Human adjudication is bound to the exact review bundle, not just a logical row
 ID. The blind-overlay summary hashes the review packet, primary/context traces,
 gallery, and sealed calls. The historically named promotion step re-reads those

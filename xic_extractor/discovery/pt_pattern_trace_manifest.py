@@ -62,6 +62,23 @@ class VerifiedTraceSummaryBundle:
     metric_rows: tuple[dict[str, str], ...]
 
 
+def verified_trace_summary_identities(
+    bundle: VerifiedTraceSummaryBundle,
+) -> dict[str, tuple[str, str]]:
+    """Return the complete candidate identity map for a verified trace bundle."""
+
+    identities = _validate_lineage_rows(
+        bundle.summary_rows,
+        schema_version=bundle.schema_version,
+        artifact_role=bundle.trace_artifact_role,
+        trace_extraction_sha256=bundle.trace_extraction_sha256,
+        label="verified trace summary",
+    )
+    if len(identities) != len(bundle.summary_rows):
+        raise ValueError("verified trace summary candidate_id values must be unique")
+    return identities
+
+
 @dataclass(frozen=True, slots=True)
 class VerifiedTraceManifestIdentity:
     schema_version: str
@@ -776,7 +793,7 @@ def validate_trace_points_manifest(
     trace_points_csv: Path,
     trace_point_rows: Sequence[Mapping[str, str]],
     expected_artifact_role: str,
-    expected_packet_identities: Mapping[str, tuple[str, str]],
+    expected_bundle_identities: Mapping[str, tuple[str, str]],
     required_complete_candidate_ids: Collection[str] = (),
     expected_metric_rows: Sequence[Mapping[str, str]] | None = None,
 ) -> str:
@@ -796,20 +813,20 @@ def validate_trace_points_manifest(
     for candidate_id, (
         assignment_sha256,
         sample_stem,
-    ) in expected_packet_identities.items():
+    ) in expected_bundle_identities.items():
         if assignment_by_candidate.get(candidate_id) != assignment_sha256:
             raise ValueError(
-                "trace manifest candidate assignments do not cover review packet"
+                "trace manifest candidate assignments do not cover trace bundle"
             )
         if sample_stem != identity.source_sample_stem:
-            raise ValueError("trace manifest sample_stem does not match review packet")
+            raise ValueError("trace manifest sample_stem does not match trace bundle")
 
     _validate_lineage_rows(
         trace_point_rows,
         schema_version=schema_version,
         artifact_role=artifact_role,
         trace_extraction_sha256=trace_extraction_sha256,
-        expected_identities=expected_packet_identities,
+        expected_identities=expected_bundle_identities,
         label="trace points",
     )
     _validate_trace_point_values(trace_point_rows)

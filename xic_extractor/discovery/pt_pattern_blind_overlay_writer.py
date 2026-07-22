@@ -43,6 +43,7 @@ from xic_extractor.discovery.pt_pattern_trace_manifest import (
     load_verified_trace_summary_bundle,
     validate_cross_role_trace_request_identity,
     validate_trace_points_manifest,
+    verified_trace_summary_identities,
 )
 from xic_extractor.tabular_io import (
     file_sha256,
@@ -127,23 +128,30 @@ def run_blind_overlay(
         for row in packet_rows
     }
     primary_trace_manifest = load_trace_bundle_manifest(resolved_trace_manifest)
+    primary_bundle_identities = verified_trace_summary_identities(
+        review_bundle.trace_summary_bundle
+    )
     primary_trace_extraction_sha256 = validate_trace_points_manifest(
         manifest=primary_trace_manifest,
         trace_points_csv=trace_points_csv,
         trace_point_rows=trace_points,
         expected_artifact_role=packet_artifact_role,
-        expected_packet_identities=packet_identities,
+        expected_bundle_identities=primary_bundle_identities,
         required_complete_candidate_ids=machine_accept_candidate_ids(packet_rows),
         expected_metric_rows=review_bundle.trace_summary_bundle.metric_rows,
     )
     if primary_trace_extraction_sha256 != packet_trace_extraction_sha256:
         raise ValueError("review packet and primary trace extraction mismatch")
+    packet_trace_points = _trace_rows_for_candidates(
+        trace_points,
+        candidate_ids=set(packet_identities),
+    )
     _validate_trace_bundle_rows(
         packet_rows=packet_rows,
-        trace_rows=trace_points,
+        trace_rows=packet_trace_points,
         label="trace-points",
     )
-    traces_by_candidate = _load_traces_by_candidate(trace_points)
+    traces_by_candidate = _load_traces_by_candidate(packet_trace_points)
     context_traces_by_candidate = traces_by_candidate
     resolved_context_trace_manifest: Path | None = None
     if context_trace_points_csv is not None:
@@ -183,17 +191,25 @@ def run_blind_overlay(
             trace_points_csv=context_trace_points_csv,
             trace_point_rows=context_trace_points,
             expected_artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
-            expected_packet_identities=packet_identities,
+            expected_bundle_identities=verified_trace_summary_identities(
+                context_trace_bundle
+            ),
             expected_metric_rows=context_trace_bundle.metric_rows,
         )
         if context_trace_extraction_sha256 != packet_trace_extraction_sha256:
             raise ValueError("context and anchor trace extraction mismatch")
+        packet_context_trace_points = _trace_rows_for_candidates(
+            context_trace_points,
+            candidate_ids=set(packet_identities),
+        )
         _validate_trace_bundle_rows(
             packet_rows=packet_rows,
-            trace_rows=context_trace_points,
+            trace_rows=packet_context_trace_points,
             label="context trace-points",
         )
-        context_traces_by_candidate = _load_traces_by_candidate(context_trace_points)
+        context_traces_by_candidate = _load_traces_by_candidate(
+            packet_context_trace_points
+        )
     machine_rows = tuple(machine_call_row(row) for row in packet_rows)
     validate_machine_call_rows(machine_rows)
 
@@ -362,3 +378,15 @@ def _validate_trace_bundle_rows(
             f"{label} {candidate_id}: unsupported position_label values: "
             + ",".join(unexpected)
         )
+
+
+def _trace_rows_for_candidates(
+    rows: Sequence[Mapping[str, str]],
+    *,
+    candidate_ids: set[str],
+) -> tuple[Mapping[str, str], ...]:
+    return tuple(
+        row
+        for row in rows
+        if str(row.get("candidate_id", "")).strip() in candidate_ids
+    )

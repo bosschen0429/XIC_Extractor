@@ -33,6 +33,7 @@ from xic_extractor.discovery.pt_pattern_trace_manifest import (
     load_verified_trace_summary_bundle,
     validate_cross_role_trace_request_identity,
     validate_trace_points_manifest,
+    verified_trace_summary_identities,
 )
 from xic_extractor.tabular_io import (
     file_sha256,
@@ -416,13 +417,6 @@ def load_verified_blind_overlay_bundle(
     ):
         raise ValueError(f"{summary_json}: summary trace_extraction_sha256 mismatch")
 
-    packet_identities = {
-        str(row["candidate_id"]): (
-            str(row["candidate_assignment_sha256"]),
-            str(row["sample_stem"]),
-        )
-        for row in review_bundle.rows
-    }
     trace_points_csv = _verified_artifact(
         summary_json,
         path_value=summary.get("trace_points_csv"),
@@ -444,7 +438,9 @@ def load_verified_blind_overlay_bundle(
         trace_points_csv=trace_points_csv,
         trace_point_rows=trace_point_rows,
         expected_artifact_role=review_bundle.trace_artifact_role,
-        expected_packet_identities=packet_identities,
+        expected_bundle_identities=verified_trace_summary_identities(
+            review_bundle.trace_summary_bundle
+        ),
         required_complete_candidate_ids=machine_accept_candidate_ids(
             review_bundle.rows
         ),
@@ -511,7 +507,9 @@ def load_verified_blind_overlay_bundle(
             trace_points_csv=context_points_csv,
             trace_point_rows=context_rows,
             expected_artifact_role=PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
-            expected_packet_identities=packet_identities,
+            expected_bundle_identities=verified_trace_summary_identities(
+                context_trace_bundle
+            ),
             expected_metric_rows=context_trace_bundle.metric_rows,
         )
         if context_extraction != review_bundle.trace_extraction_sha256:
