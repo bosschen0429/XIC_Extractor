@@ -16,16 +16,26 @@ XIC Extractor is an LC-MS evidence and model-selection system. It should make
 peak choice, integration, review, and export decisions traceable through
 evidence rather than through dataset-specific shortcuts.
 
-Two product lanes share the same evidence spine:
+Two product lines share the same evidence spine while keeping separate GUI and
+output contracts:
 
 - Targeted extraction: target-list driven extraction, targeted MS1 shape
-  identity, limited NL_FAIL rescue, and bounded `detected_flagged` output.
+  identity, limited NL_FAIL rescue, and bounded `detected_flagged` output. Its
+  current product is a targeted evidence delivery for review or direct use; it
+  does not require a downstream calibration or statistical-analysis consumer.
 - Untargeted extraction: family discovery, Backfill, mechanical adjudication,
-  review packets, truth lockbox labels, and authority-controlled writes.
+  review packets, truth lockbox labels, and authority-controlled writes. Its
+  quantitative feature-by-sample matrix is the analytical handoff intended to
+  replace the legacy FH result and continue through preprocessing, calibration,
+  and statistics.
 
 The lanes can reuse evidence, but evidence from one lane does not grant product
 write authority in another lane without an explicit contract, expected-diff
 evidence, and focused tests.
+
+A targeted result may be technically convertible into a feature-by-sample
+matrix. That capability is not, by itself, an active untargeted handoff contract
+or permission to route targeted values into downstream statistics.
 
 Untargeted product flow is Discovery to Alignment to Backfill to product matrix.
 Discovery methods such as CID-NL, HCD-PI, and Delta Mass find features matching
@@ -94,11 +104,16 @@ Targeted lane:
 
 - Limited rescue workflows may produce `detected_flagged` when explicitly
   contracted.
+- Treat the targeted result as its own delivery contract. Do not require an
+  analytical downstream reader when no such product consumer exists.
 - Do not expand targeted rescue to new analytes or default extraction behavior
   without expected-diff evidence and a product decision.
 
 Untargeted lane:
 
+- The feature-by-sample quantitative matrix is the downstream analytical
+  handoff. Its sample identity and order may share method-document-derived
+  metadata with other product lines without sharing their output schema.
 - Backfill must stay authority-gated. Broad Backfill diagnostics or blockers
   cannot be promoted into writes just because they classify rows.
 - Review and lockbox assets are designed to reduce manual ambiguity and build

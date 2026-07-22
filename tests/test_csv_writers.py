@@ -254,6 +254,102 @@ def test_write_wide_and_long_csv(tmp_path: Path) -> None:
     }
 
 
+def test_write_wide_csv_bytes_are_exact_and_deterministic(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    target = _target("WithNL")
+    file_results = [
+        _file_result(),
+        FileResult(sample_name="FailedSample", results={}, error="read failed"),
+    ]
+    expected = (
+        b"\xef\xbb\xbf"
+        b"SampleName,WithNL_RT,WithNL_Int,WithNL_Area,WithNL_PeakStart,"
+        b"WithNL_PeakEnd,WithNL_PeakWidth,WithNL_NL\r\n"
+        b"SampleA,9.0000,500,123.45,8.9000,9.2000,0.3000,WARN_12.3ppm\r\n"
+        b"FailedSample,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR\r\n"
+    )
+
+    write_wide_csv(config, [target], file_results)
+    first = config.output_csv.read_bytes()
+    write_wide_csv(config, [target], file_results)
+
+    assert config.output_csv.name == "xic_results.csv"
+    assert first == expected
+    assert config.output_csv.read_bytes() == expected
+
+
+def test_write_wide_csv_preserves_zero_nd_and_duplicate_sample_rows(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    target = _target("WithNL")
+    zero_result = replace(
+        _result(nl=NLResult("WARN", 12.34, None, 3, 0, 2)),
+        selected_hypothesis=_selected_hypothesis_with_integration(
+            IntegrationResult(
+                rt_left_min=0.0,
+                rt_apex_min=0.0,
+                rt_right_min=0.0,
+                raw_apex_rt_min=0.0,
+                rt_width_min=0.0,
+                height_raw=0.0,
+                height_smoothed=0.0,
+                area_raw_counts_seconds=0.0,
+            )
+        ),
+    )
+    partial_result = replace(
+        zero_result,
+        selected_hypothesis=_selected_hypothesis_with_integration(
+            IntegrationResult(
+                rt_left_min=8.9,
+                rt_apex_min=9.0,
+                rt_right_min=9.2,
+                raw_apex_rt_min=9.03,
+                rt_width_min=0.3,
+                height_raw=500.0,
+                height_smoothed=450.0,
+                area_raw_counts_seconds=None,
+            )
+        ),
+    )
+    file_results = [
+        FileResult(sample_name="DuplicateSample", results={"WithNL": zero_result}),
+        FileResult(
+            sample_name="DuplicateSample",
+            results={"WithNL": partial_result},
+        ),
+    ]
+
+    write_wide_csv(config, [target], file_results)
+    rows = _read_csv(config.output_csv)
+
+    assert [row["SampleName"] for row in rows] == [
+        "DuplicateSample",
+        "DuplicateSample",
+    ]
+    assert rows[0] == {
+        "SampleName": "DuplicateSample",
+        "WithNL_RT": "0.0000",
+        "WithNL_Int": "0",
+        "WithNL_Area": "0.00",
+        "WithNL_PeakStart": "0.0000",
+        "WithNL_PeakEnd": "0.0000",
+        "WithNL_PeakWidth": "0.0000",
+        "WithNL_NL": "WARN_12.3ppm",
+    }
+    assert rows[1] == {
+        "SampleName": "DuplicateSample",
+        "WithNL_RT": "ND",
+        "WithNL_Int": "ND",
+        "WithNL_Area": "ND",
+        "WithNL_PeakStart": "ND",
+        "WithNL_PeakEnd": "ND",
+        "WithNL_PeakWidth": "ND",
+        "WithNL_NL": "WARN_12.3ppm",
+    }
+
+
 def test_write_diagnostics_and_score_breakdown_csv(tmp_path: Path) -> None:
     config = _config(tmp_path)
     file_result = _file_result()

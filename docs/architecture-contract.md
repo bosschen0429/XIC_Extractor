@@ -60,10 +60,17 @@ graph TB
 ```
 
 **Data flow — targeted:**
-`.raw` files + target list → `configuration/` → `extraction/` → `peak_detection/` → `output/` → Excel workbook
+`.raw` files + target list → `configuration/` → `extraction/` → `peak_detection/` → `output/` → targeted evidence delivery (CSV/workbook)
 
 **Data flow — untargeted:**
-`.raw` files + preset → `configuration/` → `discovery/` → `peak_detection/` → `alignment/` → `output/` → TSV matrix + HTML gallery
+`.raw` files + preset → `configuration/` → `discovery/` → `peak_detection/` → `alignment/` → `output/` → feature-by-sample quantitative matrix + review artifacts → downstream preprocessing/calibration/statistics
+
+Targeted and untargeted are separate product lines built on shared acquisition,
+peak, integration, evidence, and audit components. Shared components do not
+imply a shared GUI, output schema, downstream consumer, or write authority.
+Targeted-to-matrix conversion is a latent capability until an explicit product
+contract activates it; the untargeted matrix remains the normal downstream
+analytical handoff.
 
 ## Dependency Direction
 

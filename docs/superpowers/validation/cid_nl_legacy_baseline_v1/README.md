@@ -55,8 +55,9 @@ The baseline generator was intentionally retired after sealing because issue
 
 ## Boundary
 
-Issue #130 can now use `baseline_summary.json` for hard-exact CSV semantics and
-an external downstream-reader smoke. This packet does not change selected
-peaks or areas, counted detections, Matrix identity, workbook/output schemas,
-activation, export, or any productization maturity tier. It authorizes no
-additional RAW run.
+Issue #130 can now use `baseline_summary.json` for hard-exact targeted CSV
+semantics and consumer disposition. No targeted downstream analytical consumer
+is currently required, so this packet does not fabricate a reader smoke. This
+packet does not change selected peaks or areas, counted detections, Matrix
+identity, workbook/output schemas, activation, export, or any productization
+maturity tier. It authorizes no additional RAW run.
