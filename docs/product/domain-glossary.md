@@ -16,32 +16,32 @@ XIC Extractor is an LC-MS evidence and model-selection system. It should make
 peak choice, integration, review, and export decisions traceable through
 evidence rather than through dataset-specific shortcuts.
 
-Two product lines share the same evidence spine while keeping separate GUI and
-output contracts:
+XIC has one core method lifecycle. Untargeted extraction is its general form;
+Targeted extraction is a highly constrained specialization of that method, not
+a second peer core:
 
-- Targeted extraction: target-list driven extraction, targeted MS1 shape
-  identity, limited NL_FAIL rescue, and bounded `detected_flagged` output. Its
-  current product is a targeted evidence delivery for review or direct use; it
-  does not require a downstream calibration or statistical-analysis consumer.
-- Untargeted extraction: family discovery, Backfill, mechanical adjudication,
-  review packets, truth lockbox labels, and authority-controlled writes. Its
-  quantitative feature-by-sample matrix is the analytical handoff intended to
-  replace the legacy FH result and continue through preprocessing, calibration,
+- Untargeted extraction searches a broad candidate space, resolves cross-sample
+  identity, performs authority-gated Backfill, and produces the quantitative
+  feature-by-sample matrix intended for downstream preprocessing, calibration,
   and statistics.
+- Targeted extraction supplies known targets and tighter m/z, RT, role, pairing,
+  and evidence conditions up front. Those constraints narrow Discovery, but
+  candidate hypotheses still pass through cross-sample Alignment and
+  evidence-based Backfill before a targeted projection produces its dedicated
+  CSV/workbook delivery. That delivery does not currently require a downstream
+  calibration or statistical-analysis consumer.
 
-The lanes can reuse evidence, but evidence from one lane does not grant product
-write authority in another lane without an explicit contract, expected-diff
-evidence, and focused tests.
-
-A targeted result may be technically convertible into a feature-by-sample
-matrix. That capability is not, by itself, an active untargeted handoff contract
-or permission to route targeted values into downstream statistics.
-
-Untargeted product flow is Discovery to Alignment to Backfill to product matrix.
-Discovery methods such as CID-NL, HCD-PI, and Delta Mass find features matching
+The shared core lifecycle is Discovery to Alignment to Backfill. Discovery
+methods such as CID-NL, HCD-PI, and Delta Mass find features matching
 configured evidence settings. Alignment resolves cross-sample owner/group
 identity based on evidence. Backfill fills missing cells only when evidence and
 authority support recovery; it is not blind imputation or counted detection.
+
+Targeted and Untargeted may apply different priors, projection rules, GUI flows,
+and output contracts. Evidence or output authority from one projection does not
+grant write authority in the other without an explicit contract, expected-diff
+evidence, and focused tests. Different projections do not imply different
+evidence, identity, Alignment, or Backfill cores.
 
 ## Evidence Spine
 
@@ -102,6 +102,8 @@ contract says otherwise.
 
 Targeted lane:
 
+- Target lists and method settings constrain the shared lifecycle; they do not
+  create a separate peak-identity or recovery system.
 - Limited rescue workflows may produce `detected_flagged` when explicitly
   contracted.
 - Treat the targeted result as its own delivery contract. Do not require an
@@ -113,7 +115,7 @@ Untargeted lane:
 
 - The feature-by-sample quantitative matrix is the downstream analytical
   handoff. Its sample identity and order may share method-document-derived
-  metadata with other product lines without sharing their output schema.
+  metadata with Targeted delivery without sharing its output schema.
 - Backfill must stay authority-gated. Broad Backfill diagnostics or blockers
   cannot be promoted into writes just because they classify rows.
 - Review and lockbox assets are designed to reduce manual ambiguity and build

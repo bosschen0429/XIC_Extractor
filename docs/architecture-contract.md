@@ -59,18 +59,22 @@ graph TB
     ALN --> OUT
 ```
 
-**Data flow — targeted:**
-`.raw` files + target list → `configuration/` → `extraction/` → `peak_detection/` → `output/` → targeted evidence delivery (CSV/workbook)
+**Product-method flow — shared core:**
+`.raw` files + method constraints → Discovery → PeakHypothesis/evidence → cross-sample Alignment → evidence-based Backfill → workflow projection
 
-**Data flow — untargeted:**
-`.raw` files + preset → `configuration/` → `discovery/` → `peak_detection/` → `alignment/` → `output/` → feature-by-sample quantitative matrix + review artifacts → downstream preprocessing/calibration/statistics
+**Untargeted application:** broad candidate search → shared core → feature-by-sample quantitative matrix + review artifacts → downstream preprocessing/calibration/statistics
 
-Targeted and untargeted are separate product lines built on shared acquisition,
-peak, integration, evidence, and audit components. Shared components do not
-imply a shared GUI, output schema, downstream consumer, or write authority.
-Targeted-to-matrix conversion is a latent capability until an explicit product
-contract activates it; the untargeted matrix remains the normal downstream
-analytical handoff.
+**Targeted application:** known target/m/z/RT/role/pairing constraints → narrowly scoped shared core → targeted evidence delivery (CSV/workbook)
+
+Untargeted is the general XIC method and architectural core. Targeted is a
+constrained specialization over that lifecycle with its own application policy,
+GUI flow, and output projection. Separate output contracts and writer authority
+do not justify separate evidence, peak-identity, Alignment, or Backfill systems.
+
+The current package topology still routes much of Targeted through
+`extraction/` and the general Untargeted path through `discovery/` and
+`alignment/`. Treat that split as migration state and orchestration ownership,
+not as the product model or a reason to build two independent decision cores.
 
 ## Dependency Direction
 
@@ -90,7 +94,7 @@ where files live; this section owns the reason each package changes.
 | Surface | Owns | Should not own |
 | --- | --- | --- |
 | `xic_extractor/alignment/` | Cross-sample alignment, owner construction, backfill, matrix identity, primary consolidation, and alignment-side diagnostics | GUI, workbook rendering, RAW adapters, targeted extraction orchestration |
-| `xic_extractor/discovery/` | Untargeted feature discovery and seed generation | Cross-sample matrix consolidation or targeted target-list policy |
+| `xic_extractor/discovery/` | General candidate discovery and seed generation; reusable workflow-neutral discovery facts | Cross-sample matrix consolidation or targeted target-list policy |
 | `xic_extractor/extraction/` | Targeted extraction orchestration, target jobs, anchor windowing, drift handling, and backend coordination | Workbook rendering, GUI, alignment matrix decisions |
 | `xic_extractor/peak_detection/` | Trace models, hypotheses, resolver implementations, boundary selection, baseline/integration audit, and region logic | Cross-sample ownership, workbook output, GUI, RAW IO orchestration |
 | `xic_extractor/configuration/` | Settings schema, config/target CSV loading, validation, and normalization into typed runtime settings | Extraction behavior or output rendering |

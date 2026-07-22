@@ -1,9 +1,11 @@
 # Discovery
 
-Discovery is the untargeted feature-discovery lane. It turns seed evidence and
-MS1 traces into reviewable candidates. It does not directly publish product
-matrices; publication requires the separate Backfill/ProductWriter authority
-path.
+Discovery is the candidate-generation stage of the shared XIC lifecycle. Its
+general Untargeted form searches a broad feature space; Targeted supplies known
+targets and tighter method constraints that narrow the same scientific task.
+Discovery turns seed evidence and MS1 traces into reviewable candidates. It
+does not directly publish product outputs; publication requires the relevant
+workflow projection and Backfill/ProductWriter authority path.
 
 ## Contract
 
@@ -58,7 +60,7 @@ path.
   tables when the accepted contract is matrix hygiene plus targeted benchmark
   recovery.
 
-## Untargeted Product Flow
+## Core Product Flow
 
 The intended product flow is:
 
@@ -74,6 +76,11 @@ The intended product flow is:
 4. Product matrices are downstream-analysis surfaces only after the relevant
    projection, Backfill/ProductWriter authority, expected-diff, and schema
    contracts are satisfied.
+
+Targeted applies this flow to a bounded target universe and ends in its own
+delivery projection. Untargeted is the general form and ends in the analytical
+feature-by-sample Matrix. Different projections do not create different
+Discovery, Alignment, or Backfill cores.
 
 ## Evidence Provider Naming
 
