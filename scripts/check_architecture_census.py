@@ -42,7 +42,7 @@ CENSUS_OWNER_REFS: Mapping[str, str] = {
     "internal_imports": ARCHITECTURE_OWNER,
     "project_entrypoints": PUBLIC_CONTRACT_OWNER,
     "package_patterns": LAYOUT_OWNER,
-    "frozen_bundle_inputs": "XIC_Extractor.spec",
+    "frozen_bundle_inputs": "xic_extractor.spec",
     "workflow_files": "docs/agent/execution-gates.md",
     "diagnostic_entrypoints": DIAGNOSTICS_OWNER,
     "test_shards": SHARD_OWNER,
@@ -271,7 +271,9 @@ def build_architecture_census(repo_root: Path = ROOT) -> ArchitectureCensus:
             for key in ("include", "exclude")
             for pattern in find_config.get(key, ())
         ),
-        frozen_bundle_inputs=_pyinstaller_inputs(repo_root / "XIC_Extractor.spec"),
+        frozen_bundle_inputs=_pyinstaller_inputs(
+            repo_root / CENSUS_OWNER_REFS["frozen_bundle_inputs"]
+        ),
         workflow_files=tuple(
             path.relative_to(repo_root).as_posix()
             for path in sorted(
@@ -297,9 +299,14 @@ def check_architecture_census(
     repo_root = repo_root.resolve()
     observed = census or build_architecture_census(repo_root)
     problems: list[str] = []
+    tracked_paths = repository_tracked_paths(repo_root)
     for section, owner_ref in CENSUS_OWNER_REFS.items():
         if not getattr(observed, section):
             problems.append(f"architecture census section is empty: {section}")
+        if owner_ref not in tracked_paths:
+            problems.append(
+                f"architecture census owner is not an exact tracked path: {owner_ref}"
+            )
         owner = _repo_reference_path(repo_root, owner_ref)
         if owner is None or not owner.is_file():
             problems.append(f"architecture census owner does not resolve: {owner_ref}")
@@ -471,6 +478,16 @@ def repository_python_paths(repo_root: Path = ROOT) -> tuple[Path, ...]:
     return tuple(
         sorted(Path(line) for line in completed.stdout.splitlines() if line.strip())
     )
+
+
+def repository_tracked_paths(repo_root: Path = ROOT) -> frozenset[str]:
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "ls-files", "--cached"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return frozenset(line for line in completed.stdout.splitlines() if line)
 
 
 def module_name_from_path(path: Path) -> str:

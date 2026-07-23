@@ -114,6 +114,12 @@ def test_project_layout_package_include_snapshot_matches_pyproject() -> None:
     assert census.check_project_layout_package_snapshot(ROOT) == []
 
 
+def test_census_owner_refs_use_exact_tracked_path_spelling() -> None:
+    assert set(census.CENSUS_OWNER_REFS.values()) <= census.repository_tracked_paths(
+        ROOT
+    )
+
+
 def test_optional_json_census_has_content_identity_and_no_authority_claims(
     tmp_path: Path,
 ) -> None:
