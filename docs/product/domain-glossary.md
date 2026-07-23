@@ -107,6 +107,31 @@ concerns explain ambiguity and review priority, not the detected call itself.
 Treat diagnostics, sidecars, and reports as observability unless an authority
 contract says otherwise.
 
+## Processing Lineage Terms
+
+- `AcquisitionSource`: immutable identity for one RAW, mzML, or other
+  acquisition source and its native observation namespace. A path or sample
+  display name is not sufficient identity.
+- `ProcessingRequest`: one normalized scientific computation request over
+  identified sources, effective evidence/method settings, workflow
+  constraints, and contract versions.
+- `ProcessingAttempt`: one execution of a `ProcessingRequest`. Retries create
+  new attempts and never overwrite earlier attempt identity.
+- `EvidenceArtifact`: one immutable typed evidence instance identified by its
+  producer attempt, semantic role, schema, and content digest.
+- `DeliveryCellKey`: projection-owned stable position for one sample and
+  Targeted target or Untargeted matrix row. It is not a kernel observation or
+  an ordinal group label.
+- `DeliveryRevision`: immutable proposed or sealed value/null for one delivery
+  cell, linked to the producing attempt and kernel decision.
+- `DeliverySeal`: immutable manifest proving that a complete delivery revision
+  set and its output artifacts passed lineage closure and the owning writer
+  authority.
+
+These terms are internal lineage identities, not extra user-visible review
+states. Avoid the overloaded term `run_id` when the intended meaning is
+request, attempt, artifact bundle, or delivery revision.
+
 ## Lane Boundaries
 
 Targeted lane:

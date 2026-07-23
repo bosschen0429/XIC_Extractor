@@ -85,6 +85,10 @@ not as the product model or a reason to build two independent decision cores.
 The minimum workflow-neutral types, lifecycle operations, policy seam, and
 CID-NL / NL116 dual-projection tracer contract are owned by
 [`docs/product/shared-processing-kernel.md`](product/shared-processing-kernel.md).
+Stable processing-request, attempt, evidence-artifact, delivery-cell, and
+delivery-seal lineage is owned separately by
+[`docs/product/processing-lineage.md`](product/processing-lineage.md); storage
+and runtime lifecycle remain outside that contract.
 
 ## Dependency Direction
 
