@@ -503,27 +503,29 @@ def _pyinstaller_inputs(spec_path: Path) -> tuple[str, ...]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        if isinstance(node.func, ast.Name) and node.func.id == "collect_data_files":
-            if node.args and isinstance(node.args[0], ast.Constant):
-                value = node.args[0].value
-                if isinstance(value, str):
-                    discovered.add(f"collected_package_data:{value}")
-        if not isinstance(node.func, ast.Name) or node.func.id != "Analysis":
+        call_name = _called_name(node.func)
+        if call_name not in {
+            "collect_data_files",
+            "Analysis",
+            "PYZ",
+            "EXE",
+            "COLLECT",
+        }:
             continue
-        if node.args and isinstance(node.args[0], (ast.List, ast.Tuple)):
-            for item in node.args[0].elts:
-                if isinstance(item, ast.Constant) and isinstance(item.value, str):
-                    discovered.add(f"entry_script:{item.value}")
-        for keyword in node.keywords:
-            label = keyword.arg
-            if label not in {"hiddenimports", "datas"}:
-                continue
-            for descendant in ast.walk(keyword.value):
-                if isinstance(descendant, ast.Constant) and isinstance(
-                    descendant.value, str
-                ):
-                    discovered.add(f"{label}:{descendant.value}")
+        for descendant in ast.walk(node):
+            if isinstance(descendant, ast.Constant) and isinstance(
+                descendant.value, str
+            ):
+                discovered.add(f"{call_name}:{descendant.value}")
     return tuple(sorted(discovered))
+
+
+def _called_name(node: ast.expr) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return ""
 
 
 def _check_project_entrypoints(repo_root: Path) -> list[str]:
@@ -538,13 +540,35 @@ def _check_project_entrypoints(repo_root: Path) -> list[str]:
             problems.append(f"project entrypoint does not resolve: {name}={target}")
             continue
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-        if not any(
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            and node.name == symbol
-            for node in tree.body
-        ):
+        if symbol not in _module_exported_names(tree):
             problems.append(f"project entrypoint does not resolve: {name}={target}")
     return problems
+
+
+def _module_exported_names(tree: ast.Module) -> set[str]:
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                names.add(alias.asname or alias.name.split(".", 1)[0])
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                names.update(_bound_names(target))
+        elif isinstance(node, ast.AnnAssign):
+            names.update(_bound_names(node.target))
+    return names
+
+
+def _bound_names(node: ast.expr) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, (ast.Tuple, ast.List)):
+        return {name for element in node.elts for name in _bound_names(element)}
+    return set()
 
 
 def _repo_reference_path(repo_root: Path, value: str) -> Path | None:

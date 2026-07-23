@@ -120,6 +120,68 @@ def test_census_owner_refs_use_exact_tracked_path_spelling() -> None:
     )
 
 
+def test_pyinstaller_census_includes_globs_and_exe_resources(tmp_path: Path) -> None:
+    spec = tmp_path / "app.spec"
+    spec.write_text(
+        """
+preset_datas = collect_data_files(
+    "example.presets",
+    includes=["data/*.toml"],
+)
+analysis = Analysis(
+    ["gui/main.py"],
+    datas=[("assets", "assets")],
+    hiddenimports=["example.hidden"],
+)
+exe = EXE(
+    analysis.scripts,
+    name="Example",
+    icon="assets/app_icon.png",
+)
+""",
+        encoding="utf-8",
+    )
+
+    inputs = census._pyinstaller_inputs(spec)
+
+    assert {
+        "collect_data_files:example.presets",
+        "collect_data_files:data/*.toml",
+        "Analysis:gui/main.py",
+        "Analysis:assets",
+        "Analysis:example.hidden",
+        "EXE:Example",
+        "EXE:assets/app_icon.png",
+    } <= set(inputs)
+
+
+def test_project_entrypoint_accepts_facade_reexport_and_assignment(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[project]
+name = "example"
+version = "0"
+
+[project.scripts]
+reexported = "reexported:main"
+assigned = "assigned:main"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "reexported.py").write_text(
+        "from implementation import main as main\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "assigned.py").write_text(
+        "from implementation import main as _main\nmain = _main\n",
+        encoding="utf-8",
+    )
+
+    assert census._check_project_entrypoints(tmp_path) == []
+
+
 def test_optional_json_census_has_content_identity_and_no_authority_claims(
     tmp_path: Path,
 ) -> None:
