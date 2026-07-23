@@ -93,6 +93,45 @@ Reviewer and subagent findings are leads, not authority. Reproduce or ground
 them in the domain contract, changed code, public surface, or test gap before
 accepting their proposed fix.
 
+## Review Incident State
+
+After the first hosted-review finding, keep one transient incident table for the
+PR. This can live in the task conversation or ignored scratch output; do not add
+a tracked registry. Refresh it before each new fix and before resolving any
+thread:
+
+| Field | Required content |
+| --- | --- |
+| `head_sha` | Remote PR head actually reviewed |
+| `finding_class` | Shared mechanism, not the commented line |
+| `semantic_owner` | Module, contract, or external interpreter that owns the claim |
+| `claim_layer` | `checkout_static`, `installed_package`, `runtime_cli`, `frozen_app`, `domain_evidence`, or another explicit layer |
+| `class_count` | Number of same-class findings on this PR |
+| `affected_siblings` | Live callsites or sibling boundaries swept |
+| `oracle` | Test or artifact that can prove the whole class |
+| `state` | `local_instance`, `class_sweep`, `frozen_for_root_fix`, `verified`, or `deferred` |
+
+Use the table as a state machine:
+
+1. First finding: set `class_sweep`, reproduce it, and inspect siblings before
+   editing.
+2. Second same-class finding: set `frozen_for_root_fix`; do not reply "fixed",
+   resolve threads, or push another instance patch.
+3. Before implementation resumes, verify that the claim is being tested at its
+   authoritative layer. For example, source enumeration cannot prove wheel
+   contents, an editable install cannot prove a regular install, and an AST
+   approximation cannot prove arbitrary runtime resolution.
+4. Implement one class-level fix with negative tests for the known instances and
+   sibling shapes.
+5. On the final candidate head, rerun the class oracle and a fresh whole-PR
+   review. Set `verified` only when both pass.
+6. After the verified commit is on the remote head, reply to every affected
+   thread with the shared failure class, fix, and oracle result, then resolve it.
+
+If the correct oracle belongs to a later issue or a different artifact layer,
+reduce the current claim and set `deferred`; do not keep extending the lower-layer
+checker until it imitates the higher-layer runtime.
+
 ## XIC Evidence Labels
 
 State the strongest evidence actually reviewed:
