@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
-import sys
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -256,34 +257,62 @@ def test_installed_project_entrypoints_load_full_target_chain_and_are_callable(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]["scripts"]
     probe = """
-from importlib.metadata import EntryPoint
+import json
 import sys
+from importlib.metadata import distribution
+from pathlib import Path
 
-target = sys.argv[1]
-loaded = EntryPoint(
-    name="architecture-census-runtime-probe",
-    value=target,
-    group="console_scripts",
-).load()
-if not callable(loaded):
-    raise TypeError(f"entrypoint target is not callable: {target}")
+expected = json.loads(sys.argv[1])
+repo_root = Path(sys.argv[2]).resolve()
+if Path.cwd().resolve().is_relative_to(repo_root):
+    raise RuntimeError("entrypoint probe must run outside the source checkout")
+installed = {
+    entrypoint.name: entrypoint
+    for entrypoint in distribution("xic-extractor").entry_points
+    if entrypoint.group == "console_scripts"
+}
+observed = {name: entrypoint.value for name, entrypoint in installed.items()}
+if observed != expected:
+    raise RuntimeError(
+        f"installed console scripts do not match pyproject.toml: "
+        f"expected={expected!r}, observed={observed!r}"
+    )
+
+failures = []
+for name, entrypoint in installed.items():
+    try:
+        loaded = entrypoint.load()
+        if not callable(loaded):
+            failures.append(f"{name}={entrypoint.value}: target is not callable")
+    except Exception as exc:
+        failures.append(f"{name}={entrypoint.value}: {type(exc).__name__}: {exc}")
+if failures:
+    raise RuntimeError("\\n".join(failures))
 """
 
-    failures: list[str] = []
-    for name, target in scripts.items():
+    uv = shutil.which("uv")
+    assert uv is not None
+    with tempfile.TemporaryDirectory(prefix="xic-installed-entrypoints-") as temp_dir:
         result = subprocess.run(
-            [sys.executable, "-c", probe, target],
-            cwd=ROOT,
+            [
+                uv,
+                "run",
+                "--no-sync",
+                "--project",
+                str(ROOT),
+                "python",
+                "-c",
+                probe,
+                json.dumps(scripts, sort_keys=True),
+                str(ROOT),
+            ],
+            cwd=temp_dir,
             text=True,
             capture_output=True,
             check=False,
         )
-        if result.returncode:
-            failures.append(
-                f"{name}={target}: {result.stderr.strip() or result.stdout.strip()}"
-            )
 
-    assert failures == []
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 def test_optional_json_census_has_content_identity_and_no_authority_claims(
