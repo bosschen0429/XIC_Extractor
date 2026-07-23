@@ -82,6 +82,9 @@ and Backfill implementation in `alignment/`.
 
 Treat this package and entry-point split as migration state and a parity gap,
 not as the product model or a reason to build two independent decision cores.
+The minimum workflow-neutral types, lifecycle operations, policy seam, and
+CID-NL / NL116 dual-projection tracer contract are owned by
+[`docs/product/shared-processing-kernel.md`](product/shared-processing-kernel.md).
 
 ## Dependency Direction
 
