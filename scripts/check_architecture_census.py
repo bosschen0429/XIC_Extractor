@@ -532,43 +532,36 @@ def _check_project_entrypoints(repo_root: Path) -> list[str]:
     project = _read_toml(repo_root / "pyproject.toml")
     problems: list[str] = []
     for name, target in project.get("project", {}).get("scripts", {}).items():
-        module_name, separator, symbol = target.partition(":")
-        module_path = repo_root / Path(*module_name.split(".")).with_suffix(".py")
-        package_path = repo_root / Path(*module_name.split(".")) / "__init__.py"
-        path = module_path if module_path.is_file() else package_path
-        if not separator or not symbol or not path.is_file():
-            problems.append(f"project entrypoint does not resolve: {name}={target}")
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-        if symbol not in _module_exported_names(tree):
+        if not _entrypoint_resolves(repo_root, name, target):
             problems.append(f"project entrypoint does not resolve: {name}={target}")
     return problems
 
 
-def _module_exported_names(tree: ast.Module) -> set[str]:
-    names: set[str] = set()
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            names.add(node.name)
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            for alias in node.names:
-                if alias.name == "*":
-                    continue
-                names.add(alias.asname or alias.name.split(".", 1)[0])
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                names.update(_bound_names(target))
-        elif isinstance(node, ast.AnnAssign):
-            names.update(_bound_names(node.target))
-    return names
-
-
-def _bound_names(node: ast.expr) -> set[str]:
-    if isinstance(node, ast.Name):
-        return {node.id}
-    if isinstance(node, (ast.Tuple, ast.List)):
-        return {name for element in node.elts for name in _bound_names(element)}
-    return set()
+def _entrypoint_resolves(
+    repo_root: Path,
+    name: str,
+    target: str,
+) -> bool:
+    probe = (
+        "import sys; "
+        "from importlib.metadata import EntryPoint; "
+        "value = EntryPoint("
+        "name=sys.argv[1], value=sys.argv[2], group='console_scripts'"
+        ").load(); "
+        "raise SystemExit(0 if callable(value) else 1)"
+    )
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-c", probe, name, target],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0
 
 
 def _repo_reference_path(repo_root: Path, value: str) -> Path | None:

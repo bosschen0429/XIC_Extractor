@@ -155,7 +155,7 @@ exe = EXE(
     } <= set(inputs)
 
 
-def test_project_entrypoint_accepts_facade_reexport_and_assignment(
+def test_project_entrypoint_uses_loader_semantics_for_facades_and_dotted_attrs(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "pyproject.toml").write_text(
@@ -167,6 +167,7 @@ version = "0"
 [project.scripts]
 reexported = "reexported:main"
 assigned = "assigned:main"
+dotted = "dotted:cli.main"
 """,
         encoding="utf-8",
     )
@@ -178,8 +179,52 @@ assigned = "assigned:main"
         "from implementation import main as _main\nmain = _main\n",
         encoding="utf-8",
     )
+    (tmp_path / "dotted.py").write_text(
+        "from implementation import cli as cli\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "implementation.py").write_text(
+        """
+def main() -> None:
+    return None
+
+class CLI:
+    def main(self) -> None:
+        return None
+
+cli = CLI()
+""",
+        encoding="utf-8",
+    )
 
     assert census._check_project_entrypoints(tmp_path) == []
+
+
+def test_project_entrypoint_rejects_missing_dotted_attribute(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[project]
+name = "example"
+version = "0"
+
+[project.scripts]
+broken = "facade:cli.missing"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "facade.py").write_text(
+        """
+class CLI:
+    pass
+
+cli = CLI()
+""",
+        encoding="utf-8",
+    )
+
+    assert census._check_project_entrypoints(tmp_path) == [
+        "project entrypoint does not resolve: broken=facade:cli.missing"
+    ]
 
 
 def test_optional_json_census_has_content_identity_and_no_authority_claims(
