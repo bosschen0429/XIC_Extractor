@@ -3,8 +3,9 @@
 **Last refreshed:** 2026-07-14
 **Total entry-points:** 121
 **Total files (incl. helpers):** 205 Python files under `tools/diagnostics/`
-**Governing spec:** `docs/architecture-contract.md`; the retired dated
-diagnostic lifecycle spec remains only as a same-path public stub.
+**Governing specs:** `docs/architecture-contract.md` and
+`docs/agent/script-tool-lifecycle.md`; the retired dated diagnostic lifecycle
+spec remains only as a same-path public stub.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
 name historical implementation identifiers. After the docs-cleanup migration,
 they are not current source-of-truth links and should not by themselves keep a
@@ -42,7 +43,7 @@ top-level `tools/diagnostics/*.py` files for total files.
 8. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization) — 7 tools
 9. [Area / Region Audits](#area--region-audits) — 4 tools
 10. [One-off Fixtures](#one-off-fixtures) — 1 tool
-11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 13 tools
+11. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery) — 14 tools
 12. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards) — 6 tools
 
 ---
