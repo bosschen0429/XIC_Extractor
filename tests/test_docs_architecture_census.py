@@ -160,8 +160,56 @@ def test_import_linter_config_owns_the_four_static_dependency_contracts() -> Non
     }
     assert all(
         config[section]["type"] == "forbidden"
-        and config[section].getboolean("allow_indirect_imports")
+        and not config[section].getboolean("allow_indirect_imports")
         for section in contracts
+    )
+    expected_migration_debt = {
+        "importlinter:contract:peak-detection-stays-inner": (
+            "xic_extractor.peak_detection.candidate_selection "
+            "-> xic_extractor.decision_policy",
+            "xic_extractor.peak_detection.decision_policy "
+            "-> xic_extractor.decision_policy",
+            "xic_extractor.peak_detection.evidence_facts "
+            "-> xic_extractor.evidence_semantics",
+            "xic_extractor.peak_detection.hypotheses "
+            "-> xic_extractor.evidence_semantics",
+            "xic_extractor.peak_detection.hypotheses "
+            "-> xic_extractor.neutral_loss",
+            "xic_extractor.peak_detection.model_selection "
+            "-> xic_extractor.decision_policy",
+            "xic_extractor.peak_detection.model_selection "
+            "-> xic_extractor.evidence_semantics",
+            "xic_extractor.peak_detection.selection_decision "
+            "-> xic_extractor.evidence_semantics",
+        ),
+        "importlinter:contract:output-does-not-read-raw": (
+            "xic_extractor.output.csv_writers "
+            "-> xic_extractor.neutral_loss",
+            "xic_extractor.output.csv_writers "
+            "-> xic_extractor.signal_processing",
+            "xic_extractor.output.excel_pipeline -> xic_extractor.extractor",
+            "xic_extractor.output.messages -> xic_extractor.neutral_loss",
+            "xic_extractor.output.messages -> xic_extractor.signal_processing",
+            "xic_extractor.output.peak_candidate_boundaries "
+            "-> xic_extractor.extraction.peak_candidate_boundaries",
+            "xic_extractor.output.peak_candidates "
+            "-> xic_extractor.extraction.peak_candidate_table",
+            "xic_extractor.output.target_pair_rt_auto_reselection "
+            "-> xic_extractor.extraction.paired_area_ratio_projection",
+            "xic_extractor.output.target_pair_rt_auto_reselection "
+            "-> xic_extractor.peak_detection.model_selection",
+        ),
+    }
+    for section, expected_ignores in expected_migration_debt.items():
+        assert tuple(
+            line
+            for line in config[section]["ignore_imports"].splitlines()
+            if line.strip()
+        ) == expected_ignores
+        assert config[section]["unmatched_ignore_imports_alerting"] == "error"
+    assert all(
+        "ignore_imports" not in config[section]
+        for section in contracts - expected_migration_debt.keys()
     )
 
 
@@ -169,8 +217,10 @@ def test_import_linter_static_scope_does_not_claim_dynamic_resolution(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "app").mkdir()
+    (tmp_path / "middle").mkdir()
     (tmp_path / "outer").mkdir()
     (tmp_path / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "middle" / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "outer" / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "outer" / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
     (tmp_path / "app" / "bad.py").write_text(
@@ -183,6 +233,7 @@ def test_import_linter_static_scope_does_not_claim_dynamic_resolution(
 [importlinter]
 root_packages =
     app
+    middle
     outer
 exclude_type_checking_imports = False
 
@@ -193,7 +244,7 @@ source_modules =
     app
 forbidden_modules =
     outer
-allow_indirect_imports = True
+allow_indirect_imports = False
 """.lstrip(),
         encoding="utf-8",
     )
@@ -210,6 +261,24 @@ allow_indirect_imports = True
 
     assert static_result.returncode == 1
 
+    (tmp_path / "middle" / "bridge.py").write_text(
+        "from outer import helper\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "app" / "bad.py").write_text(
+        "from middle import bridge\n",
+        encoding="utf-8",
+    )
+    indirect_result = subprocess.run(
+        [executable, "--config", str(config), "--no-cache"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert indirect_result.returncode == 1
+
     (tmp_path / "app" / "bad.py").write_text(
         'import importlib\nimportlib.import_module("outer.helper")\n',
         encoding="utf-8",
@@ -223,6 +292,81 @@ allow_indirect_imports = True
     )
 
     assert dynamic_result.returncode == 0
+
+
+def test_import_linter_ignore_is_exact_and_expires_with_legacy_edge(
+    tmp_path: Path,
+) -> None:
+    for package in ("app", "middle", "outer"):
+        (tmp_path / package).mkdir()
+        (tmp_path / package / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "outer" / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "middle" / "bridge.py").write_text(
+        "from outer import helper\n",
+        encoding="utf-8",
+    )
+    legacy = tmp_path / "app" / "legacy.py"
+    legacy.write_text("from middle import bridge\n", encoding="utf-8")
+    config = tmp_path / ".importlinter"
+    config.write_text(
+        """
+[importlinter]
+root_packages =
+    app
+    middle
+    outer
+
+[importlinter:contract:cross-root]
+name = App cannot import outer
+type = forbidden
+source_modules =
+    app
+forbidden_modules =
+    outer
+allow_indirect_imports = False
+ignore_imports =
+    app.legacy -> middle.bridge
+unmatched_ignore_imports_alerting = error
+""".lstrip(),
+        encoding="utf-8",
+    )
+    executable = shutil.which("lint-imports")
+    assert executable is not None
+
+    grandfathered_result = subprocess.run(
+        [executable, "--config", str(config), "--no-cache"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert grandfathered_result.returncode == 0
+
+    new_caller = tmp_path / "app" / "new_caller.py"
+    new_caller.write_text("from middle import bridge\n", encoding="utf-8")
+    new_caller_result = subprocess.run(
+        [executable, "--config", str(config), "--no-cache"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert new_caller_result.returncode == 1
+    assert "app.new_caller" in new_caller_result.stdout
+
+    new_caller.unlink()
+    legacy.write_text("VALUE = 1\n", encoding="utf-8")
+    stale_ignore_result = subprocess.run(
+        [executable, "--config", str(config), "--no-cache"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert stale_ignore_result.returncode == 1
+    assert "no matches for ignored import app.legacy -> middle.bridge" in (
+        stale_ignore_result.stdout.lower()
+    )
 
 
 def test_census_records_declarations_without_claiming_runtime_closure() -> None:

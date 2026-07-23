@@ -64,10 +64,14 @@ directions.
   installed entry points, or duplicate workflow, diagnostics-index, and pytest-
   shard gates. Those remain with their executable owners. Installed package and
   frozen-application closure belong to their later artifact-level work.
-- Import Linter ignores are permitted only for active migration debt. A new
-  ignore must cite an owner and rationale next to the contract, and must set
-  unmatched-ignore alerting to `error` so removal of the import retires the
-  exception mechanically. No ignores exist in the baseline.
+- Import Linter checks indirect static dependencies. Its 17 exact baseline
+  ignores freeze current source-boundary edges that collapse onto four
+  underlying `raw_reader` dependencies in `neutral_loss`, `extractor`,
+  `extraction.istd_prepass`, and `extraction.pipeline`; #117 R6 and #122 own
+  those shared-kernel and projection debts. New caller edges remain forbidden.
+  A new ignore is permitted only for active migration debt, must cite an owner
+  and rationale next to the contract, and must set unmatched-ignore alerting to
+  `error` so removal of the edge retires the exception mechanically.
 - Optional JSON output is permitted only outside the repository or under an
   ignored path. It records HEAD, dirty state, and a census content digest; it is
   a review/debug projection, not a canonical registry.
