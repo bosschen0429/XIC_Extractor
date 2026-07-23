@@ -33,10 +33,10 @@ import tools.diagnostics.example
 from xic_extractor import output
 from . import models
 from ..peak_detection import hypotheses
-import importlib
-from importlib import import_module
-importlib.import_module("tools.diagnostics.dynamic")
-import_module("scripts.run_alignment")
+import importlib as il
+from importlib import import_module as im
+il.import_module("tools.diagnostics.dynamic")
+im("scripts.run_alignment")
 __import__("gui.main")
 """
 
@@ -55,6 +55,25 @@ __import__("gui.main")
         "scripts.run_alignment",
         "gui.main",
     } <= {reference.imported_module for reference in imports}
+
+
+def test_dependency_gate_rejects_aliased_literal_dynamic_import(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "xic_extractor" / "peak_detection" / "bad.py"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text(
+        'import importlib as il\nil.import_module("tools.diagnostics.helper")\n',
+        encoding="utf-8",
+    )
+
+    problems = census.check_dependency_rules(
+        tmp_path,
+        python_paths=(Path("xic_extractor/peak_detection/bad.py"),),
+    )
+
+    assert any("domain_no_outer_layer" in problem for problem in problems)
+    assert any("forbidden dependency tools" in problem for problem in problems)
 
 
 def test_dependency_gate_rejects_forbidden_outer_layer_import(tmp_path: Path) -> None:

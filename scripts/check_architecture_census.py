@@ -154,6 +154,7 @@ def scan_imports_from_source(
     source: str, *, source_module: str, source_path: Path
 ) -> tuple[ImportReference, ...]:
     tree = ast.parse(source, filename=str(source_path))
+    importlib_aliases, import_module_aliases = _dynamic_import_aliases(tree)
     references: list[ImportReference] = []
     for node in ast.walk(tree):
         modules: list[str] = []
@@ -171,7 +172,11 @@ def scan_imports_from_source(
                     f"{base}.{alias.name}" for alias in node.names if alias.name != "*"
                 )
         elif isinstance(node, ast.Call):
-            dynamic_module = _literal_dynamic_import(node)
+            dynamic_module = _literal_dynamic_import(
+                node,
+                importlib_aliases=importlib_aliases,
+                import_module_aliases=import_module_aliases,
+            )
             if dynamic_module:
                 modules.append(dynamic_module)
         references.extend(
@@ -191,20 +196,45 @@ def scan_imports_from_source(
     )
 
 
-def _literal_dynamic_import(node: ast.Call) -> str:
+def _dynamic_import_aliases(tree: ast.Module) -> tuple[set[str], set[str]]:
+    importlib_aliases: set[str] = set()
+    import_module_aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "importlib":
+                    importlib_aliases.add(alias.asname or "importlib")
+                elif alias.name.startswith("importlib.") and alias.asname is None:
+                    importlib_aliases.add("importlib")
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.level == 0
+            and node.module == "importlib"
+        ):
+            for alias in node.names:
+                if alias.name == "import_module":
+                    import_module_aliases.add(alias.asname or alias.name)
+    return importlib_aliases, import_module_aliases
+
+
+def _literal_dynamic_import(
+    node: ast.Call,
+    *,
+    importlib_aliases: set[str],
+    import_module_aliases: set[str],
+) -> str:
     if not node.args:
         return ""
     first = node.args[0]
     if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
         return ""
-    direct = isinstance(node.func, ast.Name) and node.func.id in {
-        "__import__",
-        "import_module",
-    }
+    direct = isinstance(node.func, ast.Name) and (
+        node.func.id == "__import__" or node.func.id in import_module_aliases
+    )
     qualified = (
         isinstance(node.func, ast.Attribute)
         and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "importlib"
+        and node.func.value.id in importlib_aliases
         and node.func.attr == "import_module"
     )
     return first.value if direct or qualified else ""
