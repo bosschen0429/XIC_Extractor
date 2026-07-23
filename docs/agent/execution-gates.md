@@ -111,6 +111,8 @@ so future CI tuning is based on observed queue, install, and shard timing.
 
 ```powershell
 $env:UV_CACHE_DIR='.uv-cache'; uv run ruff check xic_extractor tests
+$env:UV_CACHE_DIR='.uv-cache'; uv run lint-imports --no-cache
+$env:UV_CACHE_DIR='.uv-cache'; uv run python scripts/check_architecture_census.py
 $env:UV_CACHE_DIR='.uv-cache'; uv run python scripts/check_diagnostics_index.py
 $env:UV_CACHE_DIR='.uv-cache'; uv run python tools/diagnostics/docs_management_audit.py --repo-only --fail-on-completed-transient --json
 $env:UV_CACHE_DIR='.uv-cache'; uv run mypy xic_extractor

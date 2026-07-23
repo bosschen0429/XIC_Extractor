@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import configparser
 import json
 import shutil
 import subprocess
-import tempfile
 import tomllib
 from pathlib import Path
 
@@ -14,127 +14,234 @@ from scripts import check_architecture_census as census
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_current_architecture_census_is_complete_and_valid() -> None:
+def test_current_architecture_census_is_valid_and_static_only() -> None:
     observed = census.build_architecture_census(ROOT)
 
-    assert census.check_architecture_census(ROOT, census=observed) == []
+    assert census.validate_architecture_census(ROOT, observed) == []
     assert set(observed.serializable()) == set(census.CENSUS_OWNER_REFS)
     assert all(observed.serializable().values())
     assert not {
         "productization_lanes",
         "authority_scopes",
         "retained_artifacts",
+        "installed_entrypoints",
+        "frozen_bundle_inputs",
     } & set(observed.serializable())
 
 
-def test_import_scanner_resolves_static_and_literal_dynamic_imports() -> None:
-    source = """
-import tools.diagnostics.example
-from xic_extractor import output
-from . import models
-from ..peak_detection import hypotheses
-import importlib as il
-from importlib import import_module as im
-il.import_module("tools.diagnostics.dynamic")
-im("scripts.run_alignment")
-__import__("gui.main")
-"""
-
-    imports = census.scan_imports_from_source(
-        source,
-        source_module="xic_extractor.alignment.example",
-        source_path=Path("xic_extractor/alignment/example.py"),
-    )
+def test_grimp_census_records_only_importable_internal_modules() -> None:
+    observed = census.build_architecture_census(ROOT)
+    importable_modules = {
+        census.module_name_from_path(path)
+        for path in census.repository_python_paths(ROOT)
+        if path.parts and path.parts[0] in census.REPOSITORY_ROOTS
+    }
 
     assert {
-        "tools.diagnostics.example",
-        "xic_extractor.output",
-        "xic_extractor.alignment.models",
-        "xic_extractor.peak_detection.hypotheses",
-        "tools.diagnostics.dynamic",
-        "scripts.run_alignment",
-        "gui.main",
-    } <= {reference.imported_module for reference in imports}
+        reference.source_module for reference in observed.internal_static_imports
+    } <= importable_modules
+    assert {
+        reference.imported_module for reference in observed.internal_static_imports
+    } <= importable_modules
 
 
-def test_dependency_gate_rejects_aliased_literal_dynamic_import(
+def test_census_excludes_ignored_modules_from_grimp_graph(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source_path = tmp_path / "xic_extractor" / "peak_detection" / "bad.py"
-    source_path.parent.mkdir(parents=True)
-    source_path.write_text(
-        'import importlib as il\nil.import_module("tools.diagnostics.helper")\n',
+    class FakeGraph:
+        modules = {
+            "xic_extractor.keep",
+            "xic_extractor.other",
+            "xic_extractor.ignored",
+        }
+
+        @staticmethod
+        def find_modules_directly_imported_by(module: str) -> set[str]:
+            return {
+                "xic_extractor.keep": {
+                    "xic_extractor.other",
+                    "xic_extractor.ignored",
+                },
+                "xic_extractor.other": set(),
+                "xic_extractor.ignored": {"xic_extractor.keep"},
+            }[module]
+
+        @staticmethod
+        def get_import_details(
+            *,
+            importer: str,
+            imported: str,
+        ) -> list[dict[str, int]]:
+            del importer, imported
+            return [{"line_number": 1}]
+
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[project.scripts]
+example = "xic_extractor.keep:main"
+
+[tool.setuptools.packages.find]
+include = ["xic_extractor*"]
+exclude = ["tests*"]
+""".lstrip(),
         encoding="utf-8",
     )
-
-    problems = census.check_dependency_rules(
-        tmp_path,
-        python_paths=(Path("xic_extractor/peak_detection/bad.py"),),
+    monkeypatch.setattr(
+        census,
+        "repository_python_paths",
+        lambda repo_root: (
+            Path("xic_extractor/keep.py"),
+            Path("xic_extractor/other.py"),
+        ),
+    )
+    monkeypatch.setattr(
+        census.grimp,
+        "build_graph",
+        lambda *args, **kwargs: FakeGraph(),
     )
 
-    assert any("domain_no_outer_layer" in problem for problem in problems)
-    assert any("forbidden dependency tools" in problem for problem in problems)
+    observed = census.build_architecture_census(tmp_path)
 
-
-def test_dependency_gate_rejects_forbidden_outer_layer_import(tmp_path: Path) -> None:
-    source_path = tmp_path / "xic_extractor" / "peak_detection" / "bad.py"
-    source_path.parent.mkdir(parents=True)
-    source_path.write_text("from tools.diagnostics import helper\n", encoding="utf-8")
-
-    problems = census.check_dependency_rules(
-        tmp_path,
-        python_paths=(Path("xic_extractor/peak_detection/bad.py"),),
+    assert observed.internal_static_imports == (
+        census.StaticImportReference(
+            source_path="xic_extractor/keep.py",
+            source_module="xic_extractor.keep",
+            imported_module="xic_extractor.other",
+            line=1,
+        ),
     )
 
-    assert any("domain_no_outer_layer" in problem for problem in problems)
-    assert any("tools" in problem for problem in problems)
 
-
-def test_dependency_exception_requires_executable_removal_gate() -> None:
-    exception = census.DependencyException(
-        rule_id="domain_no_outer_layer",
-        source_path="xic_extractor/example.py",
-        imported_prefix="tools.diagnostics",
-        owner_ref="",
-        rationale="",
-        removal_gate="issue_closed",
-    )
-
-    problems = census.validate_dependency_exceptions((exception,), ROOT)
-
-    assert any("owner_ref" in problem for problem in problems)
-    assert any("rationale" in problem for problem in problems)
-    assert any("must be executable" in problem for problem in problems)
-
-
-def test_dependency_gate_rejects_exception_after_import_is_removed(
+def test_repository_python_paths_excludes_unstaged_tracked_deletions(
     tmp_path: Path,
 ) -> None:
-    source_path = tmp_path / "xic_extractor" / "example.py"
-    source_path.parent.mkdir(parents=True)
-    source_path.write_text("VALUE = 1\n", encoding="utf-8")
-    owner = tmp_path / "docs" / "architecture-contract.md"
-    owner.parent.mkdir(parents=True)
-    owner.write_text("# Architecture Contract\n", encoding="utf-8")
-    exception = census.DependencyException(
-        rule_id="domain_no_outer_layer",
-        source_path="xic_extractor/example.py",
-        imported_prefix="tools.diagnostics",
-        owner_ref="docs/architecture-contract.md",
-        rationale="Temporary migration edge.",
+    subprocess.run(
+        ["git", "init", "--quiet"],
+        cwd=tmp_path,
+        check=True,
+    )
+    package = tmp_path / "xic_extractor"
+    package.mkdir()
+    deleted = package / "deleted.py"
+    deleted.write_text("VALUE = 1\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "add", "xic_extractor/deleted.py"],
+        cwd=tmp_path,
+        check=True,
+    )
+    deleted.unlink()
+    kept = package / "kept.py"
+    kept.write_text("VALUE = 2\n", encoding="utf-8")
+
+    paths = census.repository_python_paths(tmp_path)
+
+    assert paths == (Path("xic_extractor/kept.py"),)
+
+
+def test_import_linter_config_owns_the_four_static_dependency_contracts() -> None:
+    config = configparser.ConfigParser()
+    config.read(ROOT / ".importlinter", encoding="utf-8")
+
+    assert config["importlinter"]["root_packages"].split() == list(
+        census.REPOSITORY_ROOTS
+    )
+    assert config["importlinter"].getboolean("exclude_type_checking_imports") is False
+    contracts = {
+        section
+        for section in config.sections()
+        if section.startswith("importlinter:contract:")
+    }
+    assert contracts == {
+        "importlinter:contract:domain-no-outer-layer",
+        "importlinter:contract:peak-detection-stays-inner",
+        "importlinter:contract:configuration-stays-inner",
+        "importlinter:contract:output-does-not-read-raw",
+    }
+    assert all(
+        config[section]["type"] == "forbidden"
+        and config[section].getboolean("allow_indirect_imports")
+        for section in contracts
     )
 
-    problems = census.check_dependency_rules(
-        tmp_path,
-        python_paths=(Path("xic_extractor/example.py"),),
-        exceptions=(exception,),
+
+def test_import_linter_static_scope_does_not_claim_dynamic_resolution(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "app").mkdir()
+    (tmp_path / "outer").mkdir()
+    (tmp_path / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "outer" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "outer" / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "app" / "bad.py").write_text(
+        "from outer import helper\n",
+        encoding="utf-8",
+    )
+    config = tmp_path / ".importlinter"
+    config.write_text(
+        """
+[importlinter]
+root_packages =
+    app
+    outer
+exclude_type_checking_imports = False
+
+[importlinter:contract:cross-root]
+name = App cannot import outer
+type = forbidden
+source_modules =
+    app
+forbidden_modules =
+    outer
+allow_indirect_imports = True
+""".lstrip(),
+        encoding="utf-8",
+    )
+    executable = shutil.which("lint-imports")
+    assert executable is not None
+
+    static_result = subprocess.run(
+        [executable, "--config", str(config), "--no-cache"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
-    assert any("stale dependency exception" in problem for problem in problems)
+    assert static_result.returncode == 1
+
+    (tmp_path / "app" / "bad.py").write_text(
+        'import importlib\nimportlib.import_module("outer.helper")\n',
+        encoding="utf-8",
+    )
+    dynamic_result = subprocess.run(
+        [executable, "--config", str(config), "--no-cache"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert dynamic_result.returncode == 0
 
 
-def test_project_layout_package_include_snapshot_matches_pyproject() -> None:
-    assert census.check_project_layout_package_snapshot(ROOT) == []
+def test_census_records_declarations_without_claiming_runtime_closure() -> None:
+    observed = census.build_architecture_census(ROOT)
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    scripts = project["project"]["scripts"]
+    find = project["tool"]["setuptools"]["packages"]["find"]
+
+    assert observed.project_entrypoint_declarations == tuple(
+        f"{name}={target}" for name, target in sorted(scripts.items())
+    )
+    assert observed.package_discovery_patterns == tuple(
+        f"{key}:{pattern}"
+        for key in ("include", "exclude")
+        for pattern in find[key]
+    )
+    assert {
+        pattern.removesuffix("*") for pattern in find["include"]
+    } == set(census.REPOSITORY_ROOTS)
 
 
 def test_census_owner_refs_use_exact_tracked_path_spelling() -> None:
@@ -143,208 +250,17 @@ def test_census_owner_refs_use_exact_tracked_path_spelling() -> None:
     )
 
 
-def test_pyinstaller_census_includes_globs_and_exe_resources(tmp_path: Path) -> None:
-    spec = tmp_path / "app.spec"
-    spec.write_text(
-        """
-preset_datas = collect_data_files(
-    "example.presets",
-    includes=["data/*.toml"],
-)
-analysis = Analysis(
-    ["gui/main.py"],
-    datas=[("assets", "assets")],
-    hiddenimports=["example.hidden"],
-)
-exe = EXE(
-    analysis.scripts,
-    name="Example",
-    icon="assets/app_icon.png",
-)
-""",
-        encoding="utf-8",
-    )
-
-    inputs = census._pyinstaller_inputs(spec)
-
-    assert {
-        "collect_data_files:example.presets",
-        "collect_data_files:data/*.toml",
-        "Analysis:gui/main.py",
-        "Analysis:assets",
-        "Analysis:example.hidden",
-        "EXE:Example",
-        "EXE:assets/app_icon.png",
-    } <= set(inputs)
-
-
-def test_project_entrypoint_accepts_facades_and_dotted_attrs_statically(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        """
-[project]
-name = "example"
-version = "0"
-
-[project.scripts]
-reexported = "reexported:main"
-assigned = "assigned:main"
-dotted = "dotted:cli.main"
-""",
-        encoding="utf-8",
-    )
-    (tmp_path / "reexported.py").write_text(
-        "from implementation import main as main\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "assigned.py").write_text(
-        "from implementation import main as _main\nmain = _main\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "dotted.py").write_text(
-        "from implementation import cli as cli\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "implementation.py").write_text(
-        """
-def main() -> None:
-    return None
-
-class CLI:
-    def main(self) -> None:
-        return None
-
-cli = CLI()
-""",
-        encoding="utf-8",
-    )
-
-    assert census._check_project_entrypoint_declarations(tmp_path) == []
-
-
-def test_project_entrypoint_validation_does_not_import_runtime_module(
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        """
-[project]
-name = "example"
-version = "0"
-
-[project.scripts]
-headless = "headless:main"
-""",
-        encoding="utf-8",
-    )
-    (tmp_path / "headless.py").write_text(
-        """
-raise RuntimeError("optional runtime dependency is unavailable")
-
-def main() -> None:
-    return None
-""",
-        encoding="utf-8",
-    )
-
-    assert census._check_project_entrypoint_declarations(tmp_path) == []
-
-
-def test_project_entrypoint_rejects_missing_top_level_export(tmp_path: Path) -> None:
-    (tmp_path / "pyproject.toml").write_text(
-        """
-[project]
-name = "example"
-version = "0"
-
-[project.scripts]
-broken = "facade:missing.main"
-""",
-        encoding="utf-8",
-    )
-    (tmp_path / "facade.py").write_text("cli = object()\n", encoding="utf-8")
-
-    assert census._check_project_entrypoint_declarations(tmp_path) == [
-        "project entrypoint declaration is not statically valid: "
-        "broken=facade:missing.main"
-    ]
-
-
-def test_installed_project_entrypoints_load_full_target_chain_and_are_callable(
-) -> None:
-    scripts = tomllib.loads(
-        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    )["project"]["scripts"]
-    probe = """
-import json
-import sys
-from importlib.metadata import distribution
-from pathlib import Path
-
-expected = json.loads(sys.argv[1])
-repo_root = Path(sys.argv[2]).resolve()
-if Path.cwd().resolve().is_relative_to(repo_root):
-    raise RuntimeError("entrypoint probe must run outside the source checkout")
-installed = {
-    entrypoint.name: entrypoint
-    for entrypoint in distribution("xic-extractor").entry_points
-    if entrypoint.group == "console_scripts"
-}
-observed = {name: entrypoint.value for name, entrypoint in installed.items()}
-if observed != expected:
-    raise RuntimeError(
-        f"installed console scripts do not match pyproject.toml: "
-        f"expected={expected!r}, observed={observed!r}"
-    )
-
-failures = []
-for name, entrypoint in installed.items():
-    try:
-        loaded = entrypoint.load()
-        if not callable(loaded):
-            failures.append(f"{name}={entrypoint.value}: target is not callable")
-    except Exception as exc:
-        failures.append(f"{name}={entrypoint.value}: {type(exc).__name__}: {exc}")
-if failures:
-    raise RuntimeError("\\n".join(failures))
-"""
-
-    uv = shutil.which("uv")
-    assert uv is not None
-    with tempfile.TemporaryDirectory(prefix="xic-installed-entrypoints-") as temp_dir:
-        result = subprocess.run(
-            [
-                uv,
-                "run",
-                "--no-sync",
-                "--project",
-                str(ROOT),
-                "python",
-                "-c",
-                probe,
-                json.dumps(scripts, sort_keys=True),
-                str(ROOT),
-            ],
-            cwd=temp_dir,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-
-    assert result.returncode == 0, result.stderr or result.stdout
-
-
-def test_optional_json_census_has_content_identity_and_no_authority_claims(
-    tmp_path: Path,
-) -> None:
+def test_optional_json_census_has_content_identity_and_scope(tmp_path: Path) -> None:
     observed = census.build_architecture_census(ROOT)
     output = tmp_path / "architecture_census.json"
 
     census.write_architecture_census_json(output, observed, ROOT)
 
     payload = json.loads(output.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "architecture_census_v1"
+    assert payload["schema_version"] == "architecture_census_v2"
     assert payload["claim"] == "derived_disposable_not_authority"
+    assert payload["static_dependency_scope"] == "grimp_static_import_graph"
+    assert payload["static_dependency_gate"] == ".importlinter"
     assert payload["source_identity"]["head"]
     assert len(payload["source_identity"]["census_sha256"]) == 64
     assert isinstance(payload["source_identity"]["worktree_dirty"], bool)

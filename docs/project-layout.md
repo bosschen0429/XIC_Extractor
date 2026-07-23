@@ -28,6 +28,7 @@
 |------|------|-----|
 | `pyproject.toml` | 專案 metadata、依賴、CLI entry points、setuptools.packages.find、pytest 設定 | 追蹤 |
 | `uv.lock` | uv 套件鎖定檔 | 追蹤 |
+| `.importlinter` | 靜態 dependency floor；只解析 static import graph | 追蹤 |
 | `xic_extractor.spec` | PyInstaller 打包設定 | 追蹤 |
 | `.gitattributes` | repo-wide text / line-ending / diff contract | 追蹤 |
 | `.gitignore` | git 忽略規則 | 追蹤 |
@@ -42,7 +43,7 @@
 | `xic_extractor/` | 主程式庫（domain logic、所有 pipeline 階段） | 經由 `packages.find` |
 | `gui/` | PyQt6 GUI 層；entry: `gui/main.py` | entry script |
 | `scripts/` | CLI 入口（`run_*.py`）+ 開發 / 驗證腳本 | 經由 `datas` |
-| `tools/diagnostics/` | Maintained product-adjacent diagnostics。`packages.find` 目前包含 `tools*`，因此會進 installed distribution；個別工具的 consumer／lifecycle／retirement disposition 由專門盤點決定。`docs_policy.py` 是 docs governance 路徑常數與分類邏輯的中央模組 | 未作為 datas 明列；實際 import closure 另驗 |
+| `tools/diagnostics/` | Maintained product-adjacent diagnostics。`packages.find` 目前把 `tools*` 列為 package-discovery candidate；實際 installed artifact closure 另由 R2a 驗證。個別工具的 consumer／lifecycle／retirement disposition 由 #121 盤點。`docs_policy.py` 是 docs governance 路徑常數與分類邏輯的中央模組 | 未作為 datas 明列；實際 import closure 另驗 |
 | `tests/` | pytest 測試（扁平結構 + `fixtures/`） | 否，exclude |
 | `docs/` | 使用者文件（`docs/user/`）、產品主題文件（`docs/product/`）、agent contracts（`docs/agent/`）、architecture support（`docs/architecture/`）、JSON schema contract（`docs/superpowers/schemas/`）、短期 Markdown 規格（`docs/superpowers/specs/`）、計畫（`docs/superpowers/plans/`）、reusable solution notes（`docs/solutions/`） | 否 |
 | `assets/` | `app_icon.png`、`screenshots/` | 經由 `datas` |
@@ -283,8 +284,8 @@ include = ["gui*", "scripts*", "tools*", "xic_extractor*"]
 exclude = ["tests*"]
 ```
 
-→ `gui/`、`scripts/`、`xic_extractor/` **必須在根目錄**，不能搬進 `src/` 或任何子目錄。
-→ 違反後果：5 個 CLI entry point（`xic-extractor`、`xic-extractor-cli`、`xic-discovery-cli`、`xic-align-cli`、`xic-align-validate-cli`）全失敗。
+→ `gui/`、`scripts/`、`tools/`、`xic_extractor/` **必須在根目錄**，不能搬進 `src/` 或任何子目錄。
+→ 違反後果：package discovery 與 6 個已宣告 console scripts 可能失效；實際 installed artifact closure 由 R2a 驗證。
 
 ### (b) `xic_extractor.spec` 寫死的相對路徑
 

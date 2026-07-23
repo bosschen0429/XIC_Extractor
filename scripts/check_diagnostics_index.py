@@ -33,7 +33,7 @@ _FILES_PROSE_RE = re.compile(
 )
 
 
-def entry_point_files(diagnostics_dir: Path) -> list[str]:
+def _entry_point_files(diagnostics_dir: Path) -> list[str]:
     names: list[str] = []
     for path in sorted(diagnostics_dir.glob("*.py")):
         text = path.read_text(encoding="utf-8")
@@ -55,7 +55,7 @@ def main() -> int:
     heading_names = sorted(
         match.split("`")[1] for match in _HEADING_RE.findall(index_text)
     )
-    entry_files = entry_point_files(_DIAGNOSTICS_DIR)
+    entry_files = _entry_point_files(_DIAGNOSTICS_DIR)
     total_py = len(list(_DIAGNOSTICS_DIR.glob("*.py")))
 
     problems: list[str] = []
@@ -99,7 +99,9 @@ def main() -> int:
         )
         return 1
 
-    print(f"INDEX.md in sync: {len(entry_files)} entry points, {total_py} total files.")
+    print(
+        f"INDEX.md in sync: {len(entry_files)} entry points, {total_py} total files."
+    )
     return 0
 
 
