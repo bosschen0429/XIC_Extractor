@@ -315,7 +315,7 @@ def check_architecture_census(
         problems.append("architecture census contains unassigned pytest modules")
     problems.extend(check_project_layout_package_snapshot(repo_root))
     problems.extend(check_dependency_rules(repo_root))
-    problems.extend(_check_project_entrypoints(repo_root))
+    problems.extend(_check_project_entrypoint_declarations(repo_root))
     return problems
 
 
@@ -529,16 +529,19 @@ def _called_name(node: ast.expr) -> str:
     return ""
 
 
-def _check_project_entrypoints(repo_root: Path) -> list[str]:
+def _check_project_entrypoint_declarations(repo_root: Path) -> list[str]:
     project = _read_toml(repo_root / "pyproject.toml")
     problems: list[str] = []
     for name, target in project.get("project", {}).get("scripts", {}).items():
-        if not _entrypoint_declaration_resolves(repo_root, name, target):
-            problems.append(f"project entrypoint does not resolve: {name}={target}")
+        if not _entrypoint_declaration_is_statically_valid(repo_root, name, target):
+            problems.append(
+                f"project entrypoint declaration is not statically valid: "
+                f"{name}={target}"
+            )
     return problems
 
 
-def _entrypoint_declaration_resolves(
+def _entrypoint_declaration_is_statically_valid(
     repo_root: Path,
     name: str,
     target: str,

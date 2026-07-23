@@ -48,9 +48,14 @@ canonical owners below.
 - Human decisions remain in this contract, `docs/architecture-contract.md`,
   `docs/project-layout.md`, and the existing artifact/product control-plane
   owners. Census rows point to those owners instead of copying their claims.
-- The checker rebuilds Python modules and internal imports, installed entry
-  points, package-discovery patterns, frozen-bundle inputs, workflow files,
-  diagnostic entry points, and test-shard membership from current repo state.
+- The checker rebuilds Python modules and internal imports, installed
+  entry-point declarations, package-discovery patterns, frozen-bundle inputs,
+  workflow files, diagnostic entry points, and test-shard membership from
+  current repo state. It validates entry-point grammar, module paths, and
+  top-level exports without importing runtime modules. A separate isolated
+  subprocess contract test loads every configured target through
+  `importlib.metadata.EntryPoint.load()` and verifies the complete attribute
+  chain is callable.
   Productization status, retained-artifact decisions, and writer authority stay
   exclusively in their existing owners and are not copied into this census.
 - Coarse dependency rules are an executable floor. Lane-specific boundary tests

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -197,7 +200,7 @@ cli = CLI()
         encoding="utf-8",
     )
 
-    assert census._check_project_entrypoints(tmp_path) == []
+    assert census._check_project_entrypoint_declarations(tmp_path) == []
 
 
 def test_project_entrypoint_validation_does_not_import_runtime_module(
@@ -224,7 +227,7 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    assert census._check_project_entrypoints(tmp_path) == []
+    assert census._check_project_entrypoint_declarations(tmp_path) == []
 
 
 def test_project_entrypoint_rejects_missing_top_level_export(tmp_path: Path) -> None:
@@ -241,9 +244,46 @@ broken = "facade:missing.main"
     )
     (tmp_path / "facade.py").write_text("cli = object()\n", encoding="utf-8")
 
-    assert census._check_project_entrypoints(tmp_path) == [
-        "project entrypoint does not resolve: broken=facade:missing.main"
+    assert census._check_project_entrypoint_declarations(tmp_path) == [
+        "project entrypoint declaration is not statically valid: "
+        "broken=facade:missing.main"
     ]
+
+
+def test_installed_project_entrypoints_load_full_target_chain_and_are_callable(
+) -> None:
+    scripts = tomllib.loads(
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["scripts"]
+    probe = """
+from importlib.metadata import EntryPoint
+import sys
+
+target = sys.argv[1]
+loaded = EntryPoint(
+    name="architecture-census-runtime-probe",
+    value=target,
+    group="console_scripts",
+).load()
+if not callable(loaded):
+    raise TypeError(f"entrypoint target is not callable: {target}")
+"""
+
+    failures: list[str] = []
+    for name, target in scripts.items():
+        result = subprocess.run(
+            [sys.executable, "-c", probe, target],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode:
+            failures.append(
+                f"{name}={target}: {result.stderr.strip() or result.stdout.strip()}"
+            )
+
+    assert failures == []
 
 
 def test_optional_json_census_has_content_identity_and_no_authority_claims(
