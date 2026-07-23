@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from typing import Any
 
-from tools.diagnostics.diagnostic_io import write_tsv
+from tools.diagnostics.diagnostic_io import format_diagnostic_value, write_tsv
 
 SUMMARY_COLUMNS = (
     "target_label",
@@ -189,19 +188,7 @@ def _write_tsv(
     fieldnames: Sequence[str],
     rows: Sequence[Mapping[str, object]],
 ) -> None:
-    write_tsv(path, rows, fieldnames, formatter=_format_value)
-
-
-def _format_value(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, bool):
-        return _bool_text(value)
-    if isinstance(value, float):
-        if math.isnan(value):
-            return ""
-        return f"{value:.6g}"
-    return str(value)
+    write_tsv(path, rows, fieldnames, formatter=format_diagnostic_value)
 
 
 def _bool_text(value: bool) -> str:

@@ -15,6 +15,8 @@ from tools.diagnostics.diagnostic_io import (
     write_tsv as write_diagnostic_tsv,
 )
 
+_format_value = format_diagnostic_value
+
 
 def write_outputs(output_dir: Path, result: Mapping[str, Any]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -54,7 +56,12 @@ def _write_tsv(
     rows: Sequence[Mapping[str, Any]],
     fieldnames: Sequence[str],
 ) -> None:
-    write_diagnostic_tsv(path, rows, fieldnames, formatter=_format_value)
+    write_diagnostic_tsv(
+        path,
+        rows,
+        fieldnames,
+        formatter=format_diagnostic_value,
+    )
 
 
 def _write_markdown(path: Path, result: Mapping[str, Any]) -> None:
@@ -217,7 +224,3 @@ def _detail_fields() -> tuple[str, ...]:
 
 def _format_counts(counter: Counter[str]) -> str:
     return ";".join(f"{key}:{counter[key]}" for key in sorted(counter))
-
-
-def _format_value(value: Any) -> str:
-    return format_diagnostic_value(value)
