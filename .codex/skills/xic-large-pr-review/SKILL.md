@@ -1,138 +1,158 @@
 ---
 name: xic-large-pr-review
-description: Large XIC PR review for diffs touching diagnostics, architecture, preset performance, parity, 8RAW/85RAW, activation/value-delta, matrix identity, or RAW locality.
+description: Review large or repeatedly re-reviewed XIC PRs, especially diagnostics, architecture, public contracts, packaging/runtime, RAW/evidence, performance, activation, Matrix, or review-churn changes.
 ---
 
 # XIC Large PR Review
 
-Use this after adopting the normal code-review stance: findings first, ordered by
-severity, with exact file and line references when findings exist.
+Review for **closure**, not for a plausible sample of defects. A review is
+complete only when every changed file belongs to a reviewed semantic cluster,
+every material claim has an oracle at the correct layer, and every discovered
+failure class has a bounded universe rather than a growing list of examples.
 
-This skill is for review only. Do not edit files, stage, push, update PRs, or
-merge unless the user separately asks.
+This skill is review-only. Return findings and a verdict. Mutation, thread
+replies, resolution, push, or merge require separate user authorization.
 
-## Scope Check
+## 1. Freeze The Review Object
 
-Start with read-only state:
+Start read-only and record the exact object being reviewed:
 
 ```powershell
 git status --short --branch
-gh pr view --json number,title,state,isDraft,baseRefName,headRefName,mergeable,commits,statusCheckRollup,url
+gh pr view --json number,title,state,isDraft,baseRefName,headRefName,headRefOid,mergeable,commits,statusCheckRollup,url
 $base = gh pr view --json baseRefName --jq ".baseRefName"
+git merge-base "origin/$base" HEAD
 git diff --stat "origin/$base...HEAD"
-git diff --name-only "origin/$base...HEAD"
+git diff --name-status "origin/$base...HEAD"
+git log --oneline "origin/$base..HEAD"
 ```
 
-If the worktree is dirty, say whether the dirty files affect the review. Do not
-revert or stage anything.
+Account for dirty files, renames, deletions, generated files, lockfiles, and
+stacked ancestry. If the apparent PR includes unrelated ancestors, report the
+base problem before reviewing implementation details.
 
-## Review Strategy
+Completion criterion: the base, merge base, local HEAD, remote PR head, dirty
+scope, CI head, and complete changed-file set are known.
 
-Do not try to spend equal attention on every changed file in a huge PR. Build a
-blast-radius map and review in this order:
+## 2. Build The Review-Closure Ledger
 
-1. Package-neutral or shared helpers used by many writers or diagnostics.
-2. Public contract surfaces: CLI flags, config keys, TSV/CSV/workbook schemas,
-   matrix identity, activation decisions, value deltas, and output paths.
-3. Diagnostic architecture boundaries between `tools/diagnostics/` orchestration
-   and reusable `xic_extractor/diagnostics/` package logic.
-4. RAW access locality, batching, reuse, caching, and any fallback path that can
-   silently change evidence availability.
-5. Product-vs-diagnostic claims: whether wrappers, sidecars, reports, or gates
-   are being overclaimed as production behavior.
-6. Focused tests, parity gates, and real-data evidence that match the PR intent.
-
-For mechanical writer migrations, verify representative callers and the shared
-formatter rather than reading every identical call site. Check whether custom
-formatters, line terminators, encodings, hidden schema fields, and row order are
-preserved.
-
-## Finding Expansion Gate
-
-Treat a review comment as evidence of one failure instance, not as the boundary
-of the fix. First classify the mechanism and its owner. Expand the review beyond
-the commented line when the finding involves any of these shared
-responsibilities:
-
-- a shared helper, default, cache, loader, writer, parser, settings object, or
-  domain invariant;
-- fail-open/fail-closed behavior, exception translation, fallback, optional
-  suppression, or missing-artifact handling;
-- identity, hash, provenance, mutation, or writer/reader symmetry;
-- a hook predicate or validation rule whose conditions can interact.
-
-For an expanded finding, inspect:
-
-1. the owning implementation and every changed or live callsite;
-2. sibling boundaries that express the same responsibility;
-3. illegal states and adversarial inputs, including `NaN`, `Inf`, malformed or
-   reordered data, missing keys, blank identity, duplicate identity, and invalid
-   cross-field combinations where relevant;
-4. writer-to-loader round trips, cache reconstruction, and post-write mutation
-   resistance when artifacts cross a trust boundary;
-5. negative tests for the failure class, including crossed conditions such as
-   "accept existing evidence without launching a new run".
-
-For every input-to-map, input-to-group, or cross-artifact join, state the
-normalized key and expected cardinality (`one-to-one`, `one-to-many`, or
-`many-to-many`). A bare dict comprehension is not evidence that identity is
-unique. Test blank keys, duplicate keys with matching and conflicting payloads,
-and reversed row order; malformed inputs must not silently become last-row-wins
-or double-counted evidence.
-
-If evidence shows the issue is truly local, state why the owner and siblings are
-not affected. Do not invent a repository-wide redesign for an isolated bug.
-
-One same-class finding triggers this bounded class sweep before re-delivery. A
-second same-class finding on the same PR is a stop signal: freeze comment-by-
-comment resolution, refresh the PR head snapshot, and rerun the relevant lenses
-across the whole blast radius. Resolve comments only after the root fix is on the
-remote head and the class-level negative tests and fresh review pass.
-
-Reviewer and subagent findings are leads, not authority. Reproduce or ground
-them in the domain contract, changed code, public surface, or test gap before
-accepting their proposed fix.
-
-## Review Incident State
-
-After the first hosted-review finding, keep one transient incident table for the
-PR. This can live in the task conversation or ignored scratch output; do not add
-a tracked registry. Refresh it before each new fix and before resolving any
-thread:
+Cluster the diff by responsibility, not directory. Keep a transient ledger:
 
 | Field | Required content |
 | --- | --- |
-| `head_sha` | Remote PR head actually reviewed |
-| `finding_class` | Shared mechanism, not the commented line |
-| `semantic_owner` | Module, contract, or external interpreter that owns the claim |
-| `claim_layer` | `checkout_static`, `installed_package`, `runtime_cli`, `frozen_app`, `domain_evidence`, or another explicit layer |
-| `class_count` | Number of same-class findings on this PR |
-| `affected_siblings` | Live callsites or sibling boundaries swept |
-| `oracle` | Test or artifact that can prove the whole class |
-| `state` | `local_instance`, `class_sweep`, `frozen_for_root_fix`, `verified`, or `deferred` |
+| `cluster` | One changed behavior or responsibility |
+| `files` | Every changed file assigned to this cluster |
+| `semantic_owner` | The implementation, contract, or external interpreter that actually owns the behavior |
+| `consumers` | Live callers, entry points, writers/readers, CI, GUI/CLI, or downstream artifacts affected |
+| `claims` | Behavior, compatibility, evidence, performance, or product statements made by the PR |
+| `claim_layer` | `checkout_static`, `source_runtime`, `installed_package`, `runtime_cli`, `frozen_app`, `domain_evidence`, `public_projection`, or an explicit equivalent |
+| `failure_classes` | Mechanisms capable of violating the claims |
+| `oracle` | Test, artifact, parity check, or manual evidence at the same claim layer |
+| `state` | `unreviewed`, `reviewed`, `finding`, `verified`, `deferred`, or `inconclusive` |
 
-Use the table as a state machine:
+Mechanical or generated changes still need an owner and synchronization oracle.
+Representative sampling is valid only after the full set is enumerated and
+shown to share one implementation and contract.
 
-1. First finding: set `class_sweep`, reproduce it, and inspect siblings before
-   editing.
-2. Second same-class finding: set `frozen_for_root_fix`; do not reply "fixed",
-   resolve threads, or push another instance patch.
-3. Before implementation resumes, verify that the claim is being tested at its
-   authoritative layer. For example, source enumeration cannot prove wheel
-   contents, an editable install cannot prove a regular install, and an AST
-   approximation cannot prove arbitrary runtime resolution.
-4. Implement one class-level fix with negative tests for the known instances and
-   sibling shapes.
-5. On the final candidate head, rerun the class oracle and a fresh whole-PR
-   review. Set `verified` only when both pass.
-6. After the verified commit is on the remote head, reply to every affected
-   thread with the shared failure class, fix, and oracle result, then resolve it.
+Keep accounting exhaustive and inspection depth risk-ranked. Deepen shared
+owners, public/product claims, cross-layer behavior, weak oracles, and expensive
+failure modes first; keep proven mechanical-equivalence clusters lightweight.
 
-If the correct oracle belongs to a later issue or a different artifact layer,
-reduce the current claim and set `deferred`; do not keep extending the lower-layer
-checker until it imitates the higher-layer runtime.
+Completion criterion: every changed file is assigned exactly once as a primary
+member, cross-cluster effects are linked, and no material claim lacks an owner
+or oracle.
 
-## XIC Evidence Labels
+## 3. Review Each Cluster Mechanism-First
+
+For every cluster:
+
+1. Review requirement/claim fit independently from implementation quality.
+2. Read the semantic owner before judging adapters or tests.
+3. Trace changed and live consumers in both directions: caller to effect, and
+   artifact/schema back to producer.
+4. Compare base behavior with final-head behavior, including removed behavior
+   and defaults not mentioned in the PR body.
+5. Write one concrete counterexample that could make the implementation wrong
+   while its current happy-path tests still pass.
+6. Inspect the oracle as production code: its inputs, environment, independence,
+   negative path, and ability to go red.
+7. Record the result in the ledger before moving to the next cluster.
+
+Always examine these six dimensions:
+
+- authority and dependency direction;
+- public and persisted contracts;
+- absent, malformed, duplicate, reordered, partial, fallback, and exception
+  states;
+- test/oracle integrity;
+- checkout, installed, runtime, platform, and artifact-layer differences;
+- diagnostic evidence versus product behavior or scientific authority.
+
+After tagging the ledger, open
+[`references/review-lenses.md`](references/review-lenses.md) and apply every
+conditional lens whose trigger matches a cluster. Do not load unrelated lenses.
+
+Completion criterion: each cluster has a base-to-head judgment, a counterexample,
+the applicable lenses, and a supported state.
+
+## 4. Census Every Finding Class
+
+A review comment is a seed, never the universe. At the first finding, before
+proposing a fix, read and apply
+[`references/finding-class-census.md`](references/finding-class-census.md).
+The finding branch owns class predicates, authoritative enumeration, repeated-
+finding freeze, claim/oracle alignment, and thread-resolution gates.
+
+If a hosted finding reveals a changed file, claim layer, consumer, or failure
+mechanism absent from the ledger, reopen the whole review; the ledger—not only
+that finding class—was incomplete.
+
+Completion criterion: every finding has an explicit universe and class oracle;
+no fix is called a root fix from reviewer examples alone.
+
+## 5. Audit Oracle Integrity
+
+Passing tests are evidence only when they can detect the claimed failure.
+Check:
+
+- a pre-fix RED reproduction or a grounded counterexample;
+- correct artifact and claim layer;
+- independence from the implementation being checked;
+- assertion weakening, removed coverage, new skips, and reduced fixture
+  representativeness relative to the base;
+- clean-checkout behavior, path casing, ignored/untracked/deleted paths, working
+  directory, editable-install leakage, optional dependencies, and platform;
+- negative, crossed, and stale-exception behavior;
+- deterministic identity/cardinality where rows, maps, joins, caches, or
+  artifacts are involved;
+- exact local and hosted CI commit identity.
+
+For every input-to-map, input-to-group, or cross-artifact join, state the
+normalized key and cardinality (`one-to-one`, `one-to-many`, or `many-to-many`).
+Exercise blank and duplicate keys, matching and conflicting duplicates, reversed
+order, and partial input.
+
+Completion criterion: every material claim has an oracle that can go red at the
+same layer, or the claim is explicitly deferred/inconclusive.
+
+## 6. Fresh Final-Head Pass
+
+After fixes, review the complete merge-base-to-final-head diff again, not only
+the newest patch:
+
+1. Regenerate the changed-file set and review-closure ledger.
+2. Re-run every open class census and applicable conditional lens.
+3. Inspect PR body, docs, config, tests, generated artifacts, and lockfiles for
+   stale claims.
+4. Confirm CI belongs to the final remote SHA.
+5. Query thread-aware review state and require zero unresolved actionable
+   threads before a merge-ready verdict.
+
+Completion criterion: every ledger row is `verified`, `deferred`, or
+`inconclusive`; no row is `unreviewed`; every deferment and residual risk is
+reader-visible.
+
+## Evidence Labels
 
 State the strongest evidence actually reviewed:
 
@@ -146,67 +166,51 @@ State the strongest evidence actually reviewed:
 - `diagnostic_only`
 - `inconclusive`
 
-Do not treat `8RAW` evidence as proof of `85RAW` readiness. If 85RAW was
-intentionally skipped, say so as residual risk, not as a failure.
+Do not promote one evidence tier into another. In particular, CI, 8RAW, reports,
+sidecars, and diagnostics do not independently grant production, Matrix,
+selected/count, activation, export, or scientific authority.
 
-## Parity And Public Contract Checks
+## Output
 
-When the PR mentions matrix-only, deep-audit, activation, or value delta, look
-for evidence covering:
-
-- activation decisions;
-- activation value delta;
-- matrix cell values and sample identity;
-- matrix identity sidecars;
-- row ordering or deterministic duplicate policy;
-- publication mode differences such as image rendering disabled but evidence
-  TSVs preserved.
-
-When the PR touches RAW access or overlay extraction, check that batching and
-cache changes preserve:
-
-- one output row per requested family/sample/seed;
-- fallback behavior when scan-window or retention-time lookup is unavailable;
-- trace cropping back to the original request window;
-- explicit counts for RAW opens, XIC requests, batch calls, super-window groups,
-  and trace points when those metrics exist.
-
-## Output Format
-
-Use this review shape:
+Lead with findings:
 
 ```markdown
 **Findings**
 
-- [P1/P2/P3] <issue title> — <file:line>
-  <why this can break behavior, schema, validation, or reviewability>
+- [P1/P2/P3] <mechanism> — <file:line>
+  <impact, affected universe, owner, and missing or failing oracle>
 
-**Open Questions / Assumptions**
+**Verdict**
 
-<Only include if they affect the verdict.>
+<merge-ready, changes required, deferred, or inconclusive>
+
+**Review Coverage**
+
+<clusters reviewed, conditional lenses used, class census counts, and any gaps>
 
 **Verification Reviewed**
 
-<CI, focused local tests, parity evidence, or artifacts inspected.>
+<exact SHA, CI/local gates, parity evidence, and strongest evidence label>
 
 **Residual Risk**
 
-<What remains unproven, especially because of PR size or skipped RAW tier.>
+<unproven layers, deferred claims, skipped evidence tiers, or unresolved scope>
 ```
 
-If no blocking issue is found, say that clearly. Do not invent findings just to
-make the review look useful.
+No findings is a valid result only when the closure ledger has no `unreviewed`
+row and every material claim has a same-layer oracle.
 
 ## Stop Rules
 
-Stop and report the limitation when:
+Return `inconclusive` rather than a merge-ready verdict when:
 
-- the PR base cannot be determined;
-- CI status cannot be checked and no local gate can substitute;
-- the diff is too large for full manual coverage and no meaningful blast-radius
-  map can be built;
-- a suspected issue cannot be grounded in a changed file, public contract, or
-  focused test gap.
+- base, remote head, dirty scope, or complete diff cannot be established;
+- a changed file or material claim remains outside the closure ledger;
+- a failure-class universe cannot be bounded;
+- claim and oracle layers do not match;
+- a repeated finding class remains frozen or unknown;
+- CI/thread state cannot be tied to the final remote head;
+- the diff is too large to build a defensible responsibility map.
 
-For subagent review, use repo routing in `docs/agent/subagent-routing.md` only
-when the user explicitly asks for subagents or when runtime policy permits it.
+For subagent review, follow `docs/agent/subagent-routing.md` only when the user
+explicitly requests subagents or runtime policy authorizes them.
