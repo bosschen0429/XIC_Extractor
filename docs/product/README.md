@@ -7,7 +7,8 @@ and code reviewers. For user-facing workflow guides, see
 Use this index when a GUI workflow, preset, review surface, matrix, or
 validation claim needs a durable rule instead of a dated plan or private note.
 For definitions of domain-specific terms used in these pages, see the
-[Glossary](glossary.md).
+[XIC Extractor Domain Glossary](domain-glossary.md), the single vocabulary
+owner for product documentation.
 
 ### Pipeline
 

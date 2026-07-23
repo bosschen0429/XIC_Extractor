@@ -1,4 +1,4 @@
-# XIC Extractor Context
+# XIC Extractor Domain Glossary
 
 Doc placement: formal_repo_doc
 Doc kind: product_doc
@@ -6,9 +6,9 @@ Doc lifecycle: active
 Repo owner: docs/product/domain-glossary.md
 Doc exit rule: Update when stable vocabulary, lane boundaries, or authority concepts change.
 
-This file is the stable domain glossary for XIC Extractor. Keep volatile
-productization status, counts, tiers, and current blockers in the active
-handoff and control plane docs, not here.
+This file is the single stable vocabulary owner for XIC Extractor. Keep
+volatile productization status, counts, current tier assignments, and current
+blockers in the active handoff and control plane docs, not here.
 
 ## Product Shape
 
@@ -60,18 +60,52 @@ Use these terms consistently:
 - `TraceGroup`: related traces that should be compared together.
 - `PeakHypothesis`: a proposed peak identity, retention-time window, and
   integration basis.
+- `selected hypothesis`: the chosen `PeakHypothesis` and its audit context.
+  Selection identifies the candidate used by a workflow projection; it does
+  not by itself grant counted-detection, Matrix, workbook, or writer authority.
 - `EvidenceVector`: structured evidence used for scoring or model selection.
+- `EvidenceDecisionSemantics`: typed interpretation of evidence support,
+  conflict, exclusion, ambiguity, or review meaning. It is not product-write
+  authority.
 - `IntegrationResult`: selected boundaries, area, and integration diagnostics.
 - `DecisionRecord`: audit/explanation record of how evidence, policy gates,
   blockers, tie-breaks, and projection authority produced a decision. It is not
   an LC-MS `Trace` and not analytical evidence.
 - `AuditTrail`: reproducible record of how evidence became a decision.
-- `ProductWriter`: the narrow product output writer. It must only consume
-  explicitly authorized scopes.
+- `CrossSamplePeakGroupHypothesis` (`cross-sample group hypothesis`): successor
+  cross-sample owner/group identity, exposed through `group_hypothesis_id`. It
+  does not own per-peak integration truth or product projection.
+- `ChromPeakSegment`: scoped product-candidate boundary unit used by
+  quantitation-context decisions.
+- `ProductWriter`: the exclusive approved code path for product-matrix
+  mutations. It consumes only explicitly authorized scopes and never derives
+  writer authority from evidence, diagnostics, or its own implementation.
 
 Evidence providers can include CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 shape,
 standards, library matches, trace overlays, review labels, and future models.
 They feed the evidence spine; they do not directly become matrix write authority.
+
+Related evidence and analysis terms:
+
+- `sidecar`: accompanying TSV, JSON, or similar metadata that explains or
+  audits a primary output without inheriting its writer authority.
+- `provenance`: the inputs, effective settings, runtime, and decision path
+  needed to identify or reproduce how an artifact or decision was produced.
+- `seed evidence`: initial MS1/MS2 evidence that triggers candidate generation
+  in Discovery. A seed is not same-peak proof or counted detection.
+- `family`: legacy review/search container for related candidate or aligned
+  evidence. Family membership is not same-peak proof or product authority.
+- `canonical projection`: one workflow-owned mapping from shared evidence and
+  decisions to that workflow's product output. Targeted and Untargeted keep
+  separate projections; neither projection is the other's oracle.
+- `morphology`: peak-shape characteristics such as width, symmetry, boundaries,
+  and quality flags used as evidence for selection or integration.
+- `evidence-chain packet`: structured source evidence assembled for review,
+  validation, or approval. The packet is evidence, not approval itself.
+- `RAW-tier evidence label`: validation-depth label naming the actual
+  lane-specified fixture or real-sample review used for a claim. Historical
+  CID-NL 8RAW/85RAW fixtures are not universal gates for Pt pattern or other
+  methods.
 
 Use family and instance names consistently. `delta_mass` is a Discovery strategy
 family for MS1 delta-pattern evidence; `pt` / `Pt pattern` is the first concrete
@@ -89,23 +123,72 @@ they should change the decision. In V1, a close-apex full-pattern candidate can
 still be called `detected` when ratios look unusual; ratio and collision
 concerns explain ambiguity and review priority, not the detected call itself.
 
+## LC-MS/MS Terms
+
+- `XIC`: extracted-ion chromatogram, the signal intensity over time for a
+  specified m/z window.
+- `CID-NL`: Collision-Induced Dissociation Neutral Loss, a fragmentation
+  pattern used as Discovery seed evidence. Targeted may constrain its candidate
+  universe while Untargeted applies it broadly.
+- `Delta Mass`: Discovery strategy family for configured MS1 mass-difference
+  patterns.
+- `Pt pattern`: the first built-in `delta_mass` pattern for Pt-related MS1
+  feature discovery. It creates candidates and review evidence, not direct
+  Matrix-write authority.
+- `HCD`: Higher-energy Collision Dissociation. Its product-ion audit is a review
+  surface unless a separate contract grants stronger decision meaning.
+- `DDA`: Data-Dependent Acquisition, where MS2 scan triggering depends on MS1
+  observations and instrument acquisition policy.
+- `ISTD`: internal standard, a spiked reference used for RT calibration,
+  paired-area context, and method QC.
+- `NL`: neutral loss, the mass difference between a precursor ion and a product
+  ion after fragmentation.
+
 ## Product Authority Terms
 
 - `candidate/audit universe`: rows that are visible for review, audit, or
   diagnosis. This is not the same as writable product output.
 - `write_ready`: a scope with explicit current product write authority.
 - `authority`: the permission boundary for matrix/workbook/value writes.
+- `authority manifest`: machine-checkable record of the exact ProductWriter
+  scopes and cells currently authorized to write.
+- `maturity tier`: validation-readiness vocabulary:
+  `diagnostic_only`, `shadow_ready`, `production_candidate`, or
+  `production_ready`. Current assignments live in the control plane and status
+  index, not in this glossary.
+- `activation contract`: explicit evidence, tests, authority, and expected-diff
+  conditions required before diagnostic or shadow behavior may affect product
+  values.
+- `parity`: requirement that a replacement preserve the declared observable
+  contract unless an explicit expected diff authorizes a change.
+- `promotion gate`: the evidence and approval conditions required before a
+  capability advances to a stronger maturity or authority state.
+- `active lane`: the current priority development area and WIP assignment
+  recorded in the productization control plane.
 - `adjudication`: machine classification of a candidate. It can route work, but
   it is not by itself permission to write product output.
 - `review packet`: a structured human-review surface. It is not free-form value
   entry and does not automatically grant writer authority.
-- `truth lockbox`: independent peak-choice or area labels used to evaluate
-  future automation. Lockbox labels do not automatically mutate product output.
+- `truth lockbox` (`lockbox`): independent peak-choice or area labels used to
+  evaluate future automation. Lockbox labels do not automatically mutate
+  product output.
 - `expected-diff`: explicit evidence that a public output change is intended,
   bounded, and test-covered.
 
 Treat diagnostics, sidecars, and reports as observability unless an authority
 contract says otherwise.
+
+## Shared Contract Identifiers
+
+- `sample_metadata_v1`: canonical schema for sample identity, injection order,
+  role, batch, and QC context.
+- `review_action_v1`: typed action-import schema for converting human review
+  decisions into machine-checkable plans without silently editing product
+  values.
+- `method_manifest.json`: machine-readable run envelope for effective input
+  hashes, settings, runtime, invocation context, and output pointers.
+- `validation-minimal`: lightweight Alignment validation output profile. It is
+  an artifact surface, not production-readiness evidence by itself.
 
 ## Processing Lineage Terms
 
@@ -169,6 +252,10 @@ Shared lane:
 Update this file when a stable domain term, lane boundary, or authority concept
 changes. Do not update it for every validation result, count, temporary blocker,
 or current task status.
+
+Do not create another hand-maintained product glossary. A user-facing glossary,
+if needed, belongs under `docs/user/` as a reader-specific projection that links
+back to this vocabulary owner.
 
 Use the productization control plane and current handoff for live state. Use
 ADRs for durable architecture decisions that need rationale and alternatives.
