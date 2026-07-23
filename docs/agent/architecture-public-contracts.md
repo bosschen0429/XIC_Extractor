@@ -78,9 +78,17 @@ directions.
 
 ## Public Contracts
 
+Command exposure and lifecycle are separate. A command is public when it is
+declared in `[project.scripts]` or named by an explicit product/downstream
+contract. Being located under `scripts/`, directly runnable, imported, tested,
+or included in package discovery does not by itself make it public. A produced
+artifact may still be public even when its command is an uninstalled operator
+surface. Lifecycle decisions and the bounded census live in
+[`script-tool-lifecycle.md`](script-tool-lifecycle.md).
+
 Treat these as public unless an approved plan explicitly changes them:
 
-- CLI commands under `scripts/`
+- declared console scripts and contract-bearing commands
 - `xic_extractor.extractor.run`
 - `xic_extractor.signal_processing.find_peak_and_area`
 - `scripts.csv_to_excel.run`

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from collections import Counter
@@ -11,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tools.diagnostics.diagnostic_io import read_tsv_required, write_tsv
+from tools.diagnostics.diagnostic_io import file_sha256, read_tsv_required, write_tsv
 from xic_extractor.alignment.production_candidate_gate import (
     TIER2_RAW_MANIFEST_REQUIRED_COLUMNS,
     TIER2_TRACE_EVIDENCE_REQUIRED_COLUMNS,
@@ -144,7 +143,7 @@ def run_producer(
         candidate_rows=candidate_rows,
         cells_by_family=cells_by_family,
         source_context=source_context,
-        raw_manifest_sha256=_sha256_file(raw_manifest_path),
+        raw_manifest_sha256=file_sha256(raw_manifest_path),
         source_expected_sample_count=len(sample_stems),
         trace_loader=loader,
         config=effective_config,
@@ -187,9 +186,9 @@ def run_producer(
         "evidence_status_counts": dict(sorted(status_counts.items())),
         "positive_support_count": positive_support_count,
         "raw_manifest_artifact": str(raw_manifest_path),
-        "raw_manifest_sha256": _sha256_file(raw_manifest_path),
+        "raw_manifest_sha256": file_sha256(raw_manifest_path),
         "trace_evidence_artifact": str(trace_evidence_path),
-        "trace_evidence_sha256": _sha256_file(trace_evidence_path),
+        "trace_evidence_sha256": file_sha256(trace_evidence_path),
         "validated_count": sum(
             1 for row in evidence_rows if row.get("evidence_status") == "validated"
         ),
@@ -284,10 +283,6 @@ def _utc_now() -> str:
         .isoformat()
         .replace("+00:00", "Z")
     )
-
-
-def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:

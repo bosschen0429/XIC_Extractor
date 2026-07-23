@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from tools.diagnostics.diagnostic_io import read_tsv_required, write_tsv
+from tools.diagnostics.diagnostic_io import file_sha256, read_tsv_required, write_tsv
 from xic_extractor.alignment.production_candidate_gate import (
     PRODUCTION_CANDIDATE_GATE_COLUMNS,
     evaluate_production_candidate_gate,
@@ -143,11 +142,11 @@ def run_gate(
         summary.update(
             {
                 "tier2_trace_evidence_artifact": str(tier2_trace_evidence_tsv),
-                "tier2_trace_evidence_sha256": _sha256_file(
+                "tier2_trace_evidence_sha256": file_sha256(
                     tier2_trace_evidence_tsv
                 ),
                 "tier2_raw_manifest_artifact": str(tier2_raw_manifest_tsv),
-                "tier2_raw_manifest_sha256": _sha256_file(tier2_raw_manifest_tsv),
+                "tier2_raw_manifest_sha256": file_sha256(tier2_raw_manifest_tsv),
                 "tier2_candidate_subset_sha256": candidate_subset.sha256,
                 "tier2_candidate_subset_count": candidate_subset.count,
             },
@@ -208,10 +207,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Required with --tier2-trace-evidence-tsv; RAW manifest TSV.",
     )
     return parser.parse_args(argv)
-
-
-def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 if __name__ == "__main__":

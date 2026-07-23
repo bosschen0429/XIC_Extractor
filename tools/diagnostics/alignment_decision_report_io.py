@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from xic_extractor.tabular_io import read_tsv_with_header
 
 
 @dataclass(frozen=True)
@@ -17,20 +18,15 @@ class TsvTable:
 
 def read_tsv(path: Path, *, required_columns: tuple[str, ...]) -> TsvTable:
     try:
-        with path.open(newline="", encoding="utf-8") as handle:
-            reader = csv.DictReader(handle, delimiter="\t")
-            fieldnames = tuple(reader.fieldnames or ())
-            missing = tuple(
-                column for column in required_columns if column not in fieldnames
-            )
-            if missing:
-                raise ValueError(
-                    f"{path}: missing required columns: {', '.join(missing)}"
-                )
-            return TsvTable(
-                fieldnames=fieldnames,
-                rows=tuple(dict(row) for row in reader),
-            )
+        fieldnames, rows = read_tsv_with_header(
+            path,
+            required_columns=required_columns,
+            encoding="utf-8",
+        )
+        return TsvTable(
+            fieldnames=fieldnames,
+            rows=tuple(dict(row) for row in rows),
+        )
     except OSError as exc:
         raise ValueError(f"{path}: could not read TSV: {exc}") from exc
 

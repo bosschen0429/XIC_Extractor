@@ -119,8 +119,9 @@ def _write_tsv(
     fieldnames: Sequence[str],
     rows: Sequence[Mapping[str, object]],
 ) -> None:
-    write_diagnostic_tsv(path, rows, fieldnames, formatter=_format_value)
-
-
-def _format_value(value: object) -> str:
-    return format_diagnostic_value(value)
+    write_diagnostic_tsv(
+        path,
+        rows,
+        fieldnames,
+        formatter=format_diagnostic_value,
+    )

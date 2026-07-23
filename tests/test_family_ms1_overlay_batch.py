@@ -19,6 +19,34 @@ def test_family_ms1_modules_document_legacy_peak_group_terminology() -> None:
         assert "legacy" in docstring or "family-id" in docstring, path.name
 
 
+def test_write_tsv_preserves_exact_serialization_contract(tmp_path: Path) -> None:
+    path = tmp_path / "summary.tsv"
+
+    batch._write_tsv(
+        path,
+        (
+            {
+                "label": "alpha",
+                "value": 1.23456789,
+                "flag": True,
+                "missing": None,
+            },
+            {
+                "label": "beta",
+                "value": float("nan"),
+                "flag": False,
+            },
+        ),
+        ("label", "value", "flag", "missing"),
+    )
+
+    assert path.read_bytes() == (
+        b"label\tvalue\tflag\tmissing\n"
+        b"alpha\t1.23457\tTrue\t\n"
+        b"beta\tnan\tFalse\t\n"
+    )
+
+
 def test_render_family_job_returns_failure_row_instead_of_raising(
     tmp_path: Path,
 ) -> None:

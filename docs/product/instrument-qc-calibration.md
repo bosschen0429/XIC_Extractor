@@ -21,12 +21,21 @@ contract promotes a correction or gate.
   matrix mutation, or default gating.
 - The next safe calibration direction is shadow/readiness evidence, not
   value mutation.
+- `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
+  visualizing measured ISTD RT drift. The observed ISTD trend does not justify
+  inferring, correcting, or gating other-feature RT behavior.
+- `scripts/run_instrument_qc.py` is a contract-bearing product adapter. Its
+  method-document path already produces sequence, injection-order, and
+  `sample_metadata_v1` projections that should be reused rather than
+  reimplemented by a future downstream handoff.
 
 ## Surfaces
 
 | Surface | Role |
 | --- | --- |
 | Instrument QC trend TSV/workbook | Clean-standard and biological QC review surface |
+| `run_instrument_qc.py` method-document outputs | Sequence manifest, injection-order projection, and additive sample metadata |
+| `add_istd_rt_trend.py` visualization | Direct ISTD drift review; not an other-feature RT model |
 | HCD audit TSV/JSON/workbook sheet | Product-ion audit evidence |
 | Calibration maturity gate | Readiness and blocker summary |
 | Biological ISTD transfer audit | Real-matrix transfer evidence |
@@ -40,6 +49,10 @@ contract promotes a correction or gate.
   activation, DNP or downstream normalization behavior, or matrix activation.
 - Dated QC/calibration notes and specs become history stubs after their
   stable claims are absorbed here.
+- SDOLEK trend rows currently carry `injection_order` but remain in
+  filename/target production order; the TSV/workbook writers do not sort by
+  injection order. A sorted compatibility projection is a known product gap
+  related to the Untargeted downstream handoff in #137.
 
 ## Verification
 

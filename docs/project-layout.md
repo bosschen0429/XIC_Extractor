@@ -42,8 +42,8 @@
 |------|------|------|
 | `xic_extractor/` | 主程式庫（domain logic、所有 pipeline 階段） | 經由 `packages.find` |
 | `gui/` | PyQt6 GUI 層；entry: `gui/main.py` | entry script |
-| `scripts/` | CLI 入口（`run_*.py`）+ 開發 / 驗證腳本 | 經由 `datas` |
-| `tools/diagnostics/` | Maintained product-adjacent diagnostics。`packages.find` 目前把 `tools*` 列為 package-discovery candidate；實際 installed artifact closure 另由 R2a 驗證。個別工具的 consumer／lifecycle／retirement disposition 由 #121 盤點。`docs_policy.py` 是 docs governance 路徑常數與分類邏輯的中央模組 | 未作為 datas 明列；實際 import closure 另驗 |
+| `scripts/` | 已註冊 CLI、具產品契約的 adapter，以及開發 / 驗證腳本；public exposure 與 lifecycle 依 [`docs/agent/script-tool-lifecycle.md`](agent/script-tool-lifecycle.md) 判斷 | 經由 `datas` |
+| `tools/diagnostics/` | Maintained product-adjacent diagnostics。`packages.find` 目前把 `tools*` 列為 package-discovery candidate；實際 installed artifact closure 另由 R2a 驗證。個別工具的 consumer／lifecycle／retirement disposition 由 [`docs/agent/script-tool-lifecycle.md`](agent/script-tool-lifecycle.md) 與 `tools/diagnostics/INDEX.md` 共同承接。`docs_policy.py` 是 docs governance 路徑常數與分類邏輯的中央模組 | 未作為 datas 明列；實際 import closure 另驗 |
 | `tests/` | pytest 測試（扁平結構 + `fixtures/`） | 否，exclude |
 | `docs/` | 使用者文件（`docs/user/`）、產品主題文件（`docs/product/`）、agent contracts（`docs/agent/`）、architecture support（`docs/architecture/`）、JSON schema contract（`docs/superpowers/schemas/`）、短期 Markdown 規格（`docs/superpowers/specs/`）、計畫（`docs/superpowers/plans/`）、reusable solution notes（`docs/solutions/`） | 否 |
 | `assets/` | `app_icon.png`、`screenshots/` | 經由 `datas` |
@@ -342,8 +342,10 @@ Root `launch_gui.bat` 只服務本機開發雙擊啟動；release artifact 以
 ├── 程式碼
 │   ├── GUI（PyQt6 widget、worker、styles）
 │   │   └→ gui/                       （子目錄：sections/、workers/）
-│   ├── CLI 入口
+│   ├── 安裝型 public CLI 入口
 │   │   └→ scripts/run_<purpose>.py   （需在 pyproject.toml.[project.scripts] 註冊）
+│   ├── 具產品／下游契約但未安裝的 adapter
+│   │   └→ scripts/<purpose>.py       （需有正式 product/downstream owner）
 │   ├── 開發 / 驗證腳本（會被 PyInstaller 打包）
 │   │   └→ scripts/<purpose>.py
 │   ├── Maintained product-adjacent diagnostics（installed/package lifecycle 另驗）

@@ -23,7 +23,7 @@ from xic_extractor.alignment.scan_retention_times import (
     ScanRetentionTimeCache,
     cached_retention_time_for_scan,
 )
-from xic_extractor.tabular_io import write_tsv  # noqa: E402,I001
+from xic_extractor.tabular_io import file_sha256, write_tsv  # noqa: E402,I001
 
 _DEFAULT_LOAD_FAMILY_CELLS = overlay_plot.load_family_cells
 _DEFAULT_EXTRACT_FAMILY_TRACE_ROWS = overlay_plot.extract_family_trace_rows
@@ -640,8 +640,8 @@ def _store_success_row_in_cache(
         "trace_data_json": str(paths["trace_data_json"]),
         "trace_summary_size_bytes": paths["trace_summary_tsv"].stat().st_size,
         "trace_data_size_bytes": paths["trace_data_json"].stat().st_size,
-        "trace_summary_sha256": _sha256_file(paths["trace_summary_tsv"]),
-        "trace_data_sha256": _sha256_file(paths["trace_data_json"]),
+        "trace_summary_sha256": file_sha256(paths["trace_summary_tsv"]),
+        "trace_data_sha256": file_sha256(paths["trace_data_json"]),
         "evidence_summary": dict(evidence_summary),
     }
     paths["manifest_json"].write_text(
@@ -833,7 +833,7 @@ def _artifact_fingerprint_matches(
     expected_hash = str(record.get(hash_key, "")).strip().upper()
     if not expected_hash:
         return False
-    return expected_hash == _sha256_file(path)
+    return expected_hash == file_sha256(path)
 
 
 def _size_matches(expected_size: object, path: Path) -> bool:
@@ -1629,9 +1629,9 @@ def _source_provenance(
     return {
         "overlay_batch_source": OVERLAY_BATCH_SOURCE,
         "review_queue_tsv": str(review_queue_tsv),
-        "review_queue_sha256": _sha256_file(review_queue_tsv),
+        "review_queue_sha256": file_sha256(review_queue_tsv),
         "alignment_cells_tsv": str(alignment_cells),
-        "alignment_cells_sha256": _sha256_file(alignment_cells),
+        "alignment_cells_sha256": file_sha256(alignment_cells),
         "raw_dir": str(raw_dir),
         "dll_dir": str(dll_dir),
     }
@@ -1798,10 +1798,6 @@ def _identity_int(value: object) -> int:
         return int(value)
     except (TypeError, ValueError):
         return -1
-
-
-def _sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
 def _load_requests(
@@ -2052,13 +2048,11 @@ def _write_tsv(
     rows: Sequence[Mapping[str, Any]],
     fields: Sequence[str],
 ) -> None:
-    formatted_rows = tuple(
-        {field: _format_value(row.get(field)) for field in fields} for row in rows
-    )
     write_tsv(
         path,
-        formatted_rows,
+        rows,
         fields,
+        formatter=_format_value,
         lineterminator="\n",
     )
 
