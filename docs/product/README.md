@@ -14,6 +14,7 @@ For definitions of domain-specific terms used in these pages, see the
 | Topic | Start here | Scope |
 | --- | --- | --- |
 | Discovery | [`discovery.md`](discovery.md) | Shared candidate-discovery stage; broad Untargeted search and constrained Targeted search, candidate/review outputs, seed evidence handoff |
+| Shared Processing Kernel | [`shared-processing-kernel.md`](shared-processing-kernel.md) | Workflow-neutral trace, hypothesis, cross-sample group, cell-observation, and Backfill contract; Targeted/Untargeted policy and projection seam |
 | Untargeted Method | [`untargeted-method.md`](untargeted-method.md) | Durable method boundary for untargeted LC-MS recovery, hygiene, and historical report absorption |
 | Alignment | [`alignment.md`](alignment.md) | Cross-sample alignment, owner construction, backfill sidecars, matrix handoff |
 | Targeted Selection | [`targeted-selection.md`](targeted-selection.md) | Targeted behavior, selected hypotheses, region/boundary gates, reasons |
