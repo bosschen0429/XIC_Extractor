@@ -4,6 +4,12 @@ Run provenance records method and artifact context so a product run can be
 reviewed, replayed, or compared without relying on branch-local command
 diaries.
 
+The workflow-neutral request/attempt/artifact/delivery identity and retention
+contract is owned by [`processing-lineage.md`](processing-lineage.md). This
+page owns the current Targeted method-manifest and run-metadata projection of
+that broader contract; `method_manifest.json` is not yet a complete lineage
+seal.
+
 ## Contract
 
 - `config_hash` and `target_config_hash` are useful configuration fragments,
@@ -11,6 +17,8 @@ diaries.
 - A method manifest is an additive run envelope: input artifact hashes,
   settings fragments, runtime/backend, CLI invocation when available, output
   pointers, and schema versions.
+- A generated timestamp, config hash, output path, or successful process exit
+  is not a canonical processing-attempt or delivery identity.
 - Provenance writers render run context only. They must not recompute domain
   evidence or change selected peaks, areas, confidence, counted detections,
   workbook values, or matrix values.
@@ -31,6 +39,9 @@ diaries.
 
 - Owns: method manifest structure, run metadata keys, config hashes, output
   schema version tracking, and replay artifact validation.
+- Does not own: workflow-neutral processing identity, evidence retention,
+  delivery-cell lineage, or delivery sealing; those belong to the processing
+  lineage contract.
 - Does not own: exact replay CLI semantics for every workflow, sample metadata
   role behavior, review action import, matrix activation authority, or
   productization tier decisions.
@@ -48,6 +59,8 @@ diaries.
 ## Pitfalls
 
 - Treating a config hash as full method replay.
+- Treating a path, timestamp, diagnostic `run_id`, or method manifest as a
+  sealed delivery lineage.
 - Hiding replay-critical command shape only in a branch diary.
 - Letting provenance sidecars recompute evidence or decisions.
 
@@ -56,5 +69,6 @@ diaries.
 - [Agent parameter settings](../agent/parameter-settings.md)
 - [Sample metadata and QC](sample-metadata-qc.md)
 - [Review roundtrip](review-roundtrip.md)
+- [Processing identity, lineage, and retention](processing-lineage.md)
 - [Productization](productization.md)
 - [Validation harness](../validation/harness.md)

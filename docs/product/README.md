@@ -7,7 +7,8 @@ and code reviewers. For user-facing workflow guides, see
 Use this index when a GUI workflow, preset, review surface, matrix, or
 validation claim needs a durable rule instead of a dated plan or private note.
 For definitions of domain-specific terms used in these pages, see the
-[Glossary](glossary.md).
+[XIC Extractor Domain Glossary](domain-glossary.md), the single vocabulary
+owner for product documentation.
 
 ### Pipeline
 
@@ -33,6 +34,7 @@ For definitions of domain-specific terms used in these pages, see the
 | Peak Anchor And Group Boundary | [`family-hypothesis-boundary.md`](family-hypothesis-boundary.md) | Discovery peak anchors, cross-sample groups, PeakHypothesis, and projection authority |
 | Backfill | [`backfill.md`](backfill.md) | ProductWriter authority, accepted quant values, expansion gates |
 | Run Provenance | [`run-provenance.md`](run-provenance.md) | Method manifests, run metadata, replay context |
+| Processing Lineage | [`processing-lineage.md`](processing-lineage.md) | Stable request/attempt/artifact/delivery identity, plot-ready retention, retry/supersession, and two-phase delivery sealing |
 
 ### Quality and Review
 
