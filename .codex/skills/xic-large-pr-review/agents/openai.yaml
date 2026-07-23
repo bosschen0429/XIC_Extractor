@@ -1,0 +1,4 @@
+interface:
+  display_name: "XIC Large PR Review"
+  short_description: "Close large XIC PRs with class-level review coverage"
+  default_prompt: "Use $xic-large-pr-review to review this XIC PR for complete blast-radius, claim-layer, oracle, and finding-class closure."

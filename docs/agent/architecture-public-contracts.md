@@ -34,6 +34,48 @@ contract surfaces. The fuller decomposition contract remains in
   review asks a structural caller/callee/impact question or CLI output is
   insufficient.
 
+CodeGraph is a reconnaissance aid, not a clean-checkout CI authority. Its local
+index can belong to another worktree or contain unresolved references. The
+clean-checkout architecture baseline therefore uses two deliberately narrow
+surfaces: `scripts/check_architecture_census.py` for disposable checkout facts,
+and Import Linter's `.importlinter` contracts for blocking static dependency
+directions.
+
+## Executable Census And Dependency Gate
+
+- The architecture census is derived and disposable. It has no tracked TSV or
+  JSON registry and grants no owner, lifecycle, public-output, or product
+  authority.
+- Human decisions remain in this contract, `docs/architecture-contract.md`,
+  `docs/project-layout.md`, and the existing artifact/product control-plane
+  owners. Census rows point to those owners instead of copying their claims.
+- The checker rebuilds Python module paths, Grimp's static internal import graph,
+  declared console scripts, and declared package-discovery patterns from current
+  repo state. Console scripts and package patterns are declarations only; they
+  do not prove an installed wheel, a callable command wrapper, or artifact
+  closure.
+- `.importlinter` is the single coarse static dependency floor. It covers
+  Python's static import graph, including relative and type-checking imports. It
+  deliberately does not interpret `importlib`, `__import__`, loader wrappers,
+  plugin registries, or other runtime module resolution. Architecture-sensitive
+  dynamic loaders need a targeted owner contract instead of another repository-
+  wide alias parser.
+- The census and dependency floor do not interpret PyInstaller specs, validate
+  installed entry points, or duplicate workflow, diagnostics-index, and pytest-
+  shard gates. Those remain with their executable owners. Installed package and
+  frozen-application closure belong to their later artifact-level work.
+- Import Linter checks indirect static dependencies. Its 17 exact baseline
+  ignores freeze current source-boundary edges that collapse onto four
+  underlying `raw_reader` dependencies in `neutral_loss`, `extractor`,
+  `extraction.istd_prepass`, and `extraction.pipeline`; #117 R6 and #122 own
+  those shared-kernel and projection debts. New caller edges remain forbidden.
+  A new ignore is permitted only for active migration debt, must cite an owner
+  and rationale next to the contract, and must set unmatched-ignore alerting to
+  `error` so removal of the edge retires the exception mechanically.
+- Optional JSON output is permitted only outside the repository or under an
+  ignored path. It records HEAD, dirty state, and a census content digest; it is
+  a review/debug projection, not a canonical registry.
+
 ## Public Contracts
 
 Treat these as public unless an approved plan explicitly changes them:
