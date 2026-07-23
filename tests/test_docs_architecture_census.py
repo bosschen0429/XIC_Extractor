@@ -155,7 +155,7 @@ exe = EXE(
     } <= set(inputs)
 
 
-def test_project_entrypoint_uses_loader_semantics_for_facades_and_dotted_attrs(
+def test_project_entrypoint_accepts_facades_and_dotted_attrs_statically(
     tmp_path: Path,
 ) -> None:
     (tmp_path / "pyproject.toml").write_text(
@@ -200,7 +200,9 @@ cli = CLI()
     assert census._check_project_entrypoints(tmp_path) == []
 
 
-def test_project_entrypoint_rejects_missing_dotted_attribute(tmp_path: Path) -> None:
+def test_project_entrypoint_validation_does_not_import_runtime_module(
+    tmp_path: Path,
+) -> None:
     (tmp_path / "pyproject.toml").write_text(
         """
 [project]
@@ -208,22 +210,39 @@ name = "example"
 version = "0"
 
 [project.scripts]
-broken = "facade:cli.missing"
+headless = "headless:main"
 """,
         encoding="utf-8",
     )
-    (tmp_path / "facade.py").write_text(
+    (tmp_path / "headless.py").write_text(
         """
-class CLI:
-    pass
+raise RuntimeError("optional runtime dependency is unavailable")
 
-cli = CLI()
+def main() -> None:
+    return None
 """,
         encoding="utf-8",
     )
+
+    assert census._check_project_entrypoints(tmp_path) == []
+
+
+def test_project_entrypoint_rejects_missing_top_level_export(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        """
+[project]
+name = "example"
+version = "0"
+
+[project.scripts]
+broken = "facade:missing.main"
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "facade.py").write_text("cli = object()\n", encoding="utf-8")
 
     assert census._check_project_entrypoints(tmp_path) == [
-        "project entrypoint does not resolve: broken=facade:cli.missing"
+        "project entrypoint does not resolve: broken=facade:missing.main"
     ]
 
 
