@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-06-25
+**Last updated:** 2026-07-24
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -480,6 +480,43 @@ Recommended next check:
 5. Do not rerun 85RAW just to re-prove this fix. Rerun 85RAW only after a new
    production behavior change or if a current artifact contradicts the 85RAW
    summary fixture.
+
+## 2026-07-24 Acquisition Source And Reusable Artifact Capability
+
+Issue #124 is source-qualified in
+`docs/superpowers/validation/acquisition_source_capability_probe_v1/README.md`.
+
+Reusable conclusion:
+
+- Keep Thermo vendor XIC as the current acquisition oracle. Of the two
+  vendor-backed modes measured in the current probe, super-window was faster
+  and still obtained XIC through the vendor API; point-by-point trace parity
+  between those two vendor modes was not established.
+- The local MS1 scan index is useful diagnostic/replay evidence, not an exact
+  vendor-XIC substitute. Current one-RAW evidence matched trace length and RT
+  grid for 100/100 requests but had only 77/100 apexes within 0.05 min, 2.595%
+  median area relative delta, and 1048.47% p95 area relative delta.
+- The one-RAW NPZ was 1.6435 times the RAW size. Do not assume a whole-scan
+  index is a storage win.
+- mzML is not implemented as an acquisition adapter. Do not treat legacy
+  `.mzML Peak area` columns or format expressibility as RAW-to-mzML fidelity.
+- Existing overlay caches and Pt trace manifests prove diagnostic-specific
+  no-RAW reuse patterns, not a universal persistent `EvidenceArtifact`.
+
+Rerun policy:
+
+1. Use this packet to avoid rerunning 8RAW/85RAW merely to re-prove the
+   directional scan-index non-parity result. Exact replay additionally requires
+   the hash-bound ignored `output/` inputs and RAW named in the packet; a clean
+   checkout does not contain them. If those inputs cannot be restored and exact
+   adjudication is required, produce a new source-qualified bounded probe.
+2. Reopen a bounded RAW scan-mode probe only when profile/centroid or native
+   controller identity can change the implementation decision.
+3. Run a RAW-to-mzML crosswalk only when a real consumer requires mzML input;
+   pin converter version and all precision/centroiding options.
+4. Route retry, partial-result, cleanup, and cache lifecycle decisions to #128.
+
+Status remains `diagnostic_only`. This entry grants no product-write authority.
 
 ## Reusable Diagnostics
 
