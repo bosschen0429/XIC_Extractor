@@ -2,6 +2,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts import bootstrap_worktree
 
 
@@ -52,6 +54,20 @@ def test_check_rejects_interpreter_from_other_platform_only(
     monkeypatch.setattr(bootstrap_worktree, "_repo_root", lambda: tmp_path)
 
     assert bootstrap_worktree.main(["--check"]) == 1
+
+
+def test_linked_worktree_venv_fails_closed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_contract(tmp_path)
+    monkeypatch.setattr(bootstrap_worktree, "_venv_is_link", lambda _root: True)
+
+    state = bootstrap_worktree.inspect_state(tmp_path)
+
+    assert state.ready is False
+    assert state.reason == bootstrap_worktree.LINKED_VENV_REASON
+    with pytest.raises(RuntimeError, match="link or junction"):
+        bootstrap_worktree.bootstrap(tmp_path)
 
 
 def test_inspect_state_requires_current_contract_stamp(

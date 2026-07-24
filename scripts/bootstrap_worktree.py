@@ -30,6 +30,9 @@ REQUIRED_DISTRIBUTIONS = (
     "xic-extractor",
 )
 STAMP_NAME = ".xic-worktree-bootstrap.json"
+LINKED_VENV_REASON = (
+    "worktree .venv is a link or junction; remove only the link before bootstrap"
+)
 # Keep caller network/index credentials and offline policy, but do not let an
 # inherited shell redirect the project/environment or weaken install semantics.
 UV_SYNC_SEMANTIC_ENV_VARS = (
@@ -99,6 +102,17 @@ def _venv_python(root: Path) -> Path:
     return root / ".venv" / "bin" / "python"
 
 
+def _venv_is_link(root: Path) -> bool:
+    venv = root / ".venv"
+    is_junction = getattr(venv, "is_junction", None)
+    return (
+        venv.is_symlink()
+        or bool(is_junction and is_junction())
+        or os.path.normcase(os.path.realpath(venv))
+        != os.path.normcase(os.path.abspath(venv))
+    )
+
+
 def _shared_cache_dir(root: Path) -> Path:
     dot_git = root / ".git"
     if dot_git.is_dir():
@@ -142,6 +156,13 @@ def _inspect_distributions(python: Path) -> dict[str, str]:
 
 def inspect_state(root: Path) -> BootstrapState:
     contract_digest = _contract_digest(root)
+    if _venv_is_link(root):
+        return BootstrapState(
+            ready=False,
+            reason=LINKED_VENV_REASON,
+            contract_digest=contract_digest,
+            distributions={},
+        )
     python = _venv_python(root)
     if not python.is_file():
         expected = python.relative_to(root)
@@ -215,6 +236,8 @@ def _write_stamp(root: Path, state: BootstrapState) -> None:
 
 
 def bootstrap(root: Path) -> BootstrapState:
+    if _venv_is_link(root):
+        raise RuntimeError(LINKED_VENV_REASON)
     current = inspect_state(root)
     if current.ready:
         return current
@@ -291,7 +314,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(state.as_dict(), sort_keys=True))
     else:
         print(state.reason)
-        if not state.ready:
+        if not state.ready and not _venv_is_link(root):
             print(
                 "Run `uv run --cache-dir .uv-cache --no-project python "
                 "scripts/bootstrap_worktree.py` from this worktree.",
