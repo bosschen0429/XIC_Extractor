@@ -111,8 +111,9 @@ two measured concurrent slots. The local PR closeout gate below mirrors the
 command surface.
 Hosted lint/typecheck jobs use the GitHub uv cache keyed by `pyproject.toml` and
 `uv.lock`; self-hosted jobs use the same locked dependency contract, reuse one
-environment per Python version, and record install/per-shard seconds in the job
-summary so future CI tuning is based on observed timing.
+environment per Python version and the runner-persistent local uv cache, and do
+not upload that cache through GitHub Actions. They record install/per-shard
+seconds in the job summary so future CI tuning is based on observed timing.
 
 ```powershell
 uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check

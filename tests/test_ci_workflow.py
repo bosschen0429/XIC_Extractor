@@ -60,8 +60,8 @@ def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
         assert f"name: {job_name} (Python {version})" in block
         assert f"path: {checkout_path}" in block
         assert f"working-directory: {checkout_path}" in block
-        assert "enable-cache: true" in block
-        assert f"cache-suffix: py{version.replace('.', '')}" in block
+        assert "enable-cache: true" not in block
+        assert "cache-suffix:" not in block
         assert (
             f"uv sync --locked --extra dev --group dev --python {version}"
             in block

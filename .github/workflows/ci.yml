@@ -65,11 +65,6 @@ jobs:
         with:
           python-version: "3.12"
           working-directory: repo-3.12-tests
-          enable-cache: true
-          cache-suffix: py312
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
       - name: Install
         shell: pwsh
         working-directory: repo-3.12-tests
@@ -123,11 +118,6 @@ jobs:
         with:
           python-version: "3.11"
           working-directory: repo-3.11-compatibility
-          enable-cache: true
-          cache-suffix: py311
-          cache-dependency-glob: |
-            pyproject.toml
-            uv.lock
       - name: Install
         shell: pwsh
         working-directory: repo-3.11-compatibility
