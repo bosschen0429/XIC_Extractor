@@ -58,7 +58,7 @@ def test_inspect_state_requires_current_contract_stamp(
     tmp_path: Path, monkeypatch
 ) -> None:
     _write_contract(tmp_path)
-    python = tmp_path / ".venv" / "bin" / "python"
+    python = bootstrap_worktree._venv_python(tmp_path)
     python.parent.mkdir(parents=True)
     python.touch()
     versions = {
@@ -124,7 +124,7 @@ def test_bootstrap_overrides_inherited_environment_for_linked_worktree(
     worktree.mkdir(parents=True)
     (worktree / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
     _write_contract(worktree)
-    python = worktree / ".venv" / "bin" / "python"
+    python = bootstrap_worktree._venv_python(worktree)
     python.parent.mkdir(parents=True)
     python.touch()
     versions = {
