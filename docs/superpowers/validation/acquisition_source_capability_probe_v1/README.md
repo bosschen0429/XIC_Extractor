@@ -52,10 +52,12 @@ persistence schema.
 
 The bounded probe ran on commit
 `421814a9141200bd6bc3acf92ba93fac97e2d225` with one known RAW and the
-first 100 owner-backfill requests. Direct vendor extraction and vendor
-super-window extraction used identical requests. Both were compared with
-local scan-index `max` and `sum` traces; the index was written and loaded three
-times. `tools.diagnostics.ms1_index_backfill_audit` produced both runs.
+100 owner-backfill requests selected at evenly spaced integer indices across
+the complete eligible record sequence. Direct vendor extraction and vendor
+super-window extraction used the identical selected requests. Both were
+compared with local scan-index `max` and `sum` traces; the index was written and
+loaded three times. `tools.diagnostics.ms1_index_backfill_audit` produced both
+runs.
 
 Input identity:
 
@@ -64,6 +66,7 @@ Input identity:
 | Sample | `BenignfatBC1055_DNA` |
 | RAW `path_stat_v1` identity | size `197960732` bytes; `mtime_ns` `1768897726000000000` |
 | Probe parameters | `preferred_ppm=20`, `max_rt_sec=180`, `owner_backfill_min_detected_samples=1`, `request_count_per_sample=100`, `cache_warm_repeats=3` |
+| Request selection | `_limited_records`: `np.linspace(0, len(records) - 1, num=100, dtype=int)` over the eligible record sequence |
 | Discovery batch index | `1D902E48FED2B2715D332DAC294771FA1E8CB3DFA6EB63691A98A7E6850E05CA` |
 | Alignment review | `D50D7FEF55D1FC60B622F4C4ECA8D5F4020FCE9D2076F63271579813F6E60996` |
 | Alignment cells | `71B96D088DFFBA7DE253136AF7353DEE461E42C1572C99E1471258D30A2616F1` |
