@@ -85,6 +85,11 @@ def test_inspect_state_requires_current_contract_stamp(
         "_inspect_distributions",
         lambda _python: versions,
     )
+    monkeypatch.setattr(
+        bootstrap_worktree,
+        "_environment_is_synchronized",
+        lambda _root: (True, ""),
+    )
     stamp = python.parent.parent / bootstrap_worktree.STAMP_NAME
     stamp.write_text(
         json.dumps(
@@ -143,6 +148,46 @@ def test_inspect_state_rejects_stamp_from_another_worktree(
     assert state.reason == "bootstrap stamp belongs to a different worktree"
 
 
+def test_inspect_state_requires_the_complete_locked_environment(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_contract(tmp_path)
+    python = bootstrap_worktree._venv_python(tmp_path)
+    python.parent.mkdir(parents=True)
+    python.touch()
+    versions = {
+        name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS
+    }
+    monkeypatch.setattr(
+        bootstrap_worktree,
+        "_inspect_distributions",
+        lambda _python: versions,
+    )
+    monkeypatch.setattr(
+        bootstrap_worktree,
+        "_environment_is_synchronized",
+        lambda _root: (False, "PyQt6 is missing"),
+    )
+    stamp = python.parent.parent / bootstrap_worktree.STAMP_NAME
+    stamp.write_text(
+        json.dumps(
+            {
+                "repo_root": bootstrap_worktree._root_identity(tmp_path),
+                "contract_digest": bootstrap_worktree._contract_digest(tmp_path),
+                "distributions": versions,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = bootstrap_worktree.inspect_state(tmp_path)
+
+    assert state.ready is False
+    assert state.reason == (
+        "locked development environment is not synchronized: PyQt6 is missing"
+    )
+
+
 def test_bootstrap_sync_command_is_locked_and_installs_both_dev_surfaces() -> None:
     assert bootstrap_worktree.SYNC_COMMAND == (
         "uv",
@@ -153,6 +198,44 @@ def test_bootstrap_sync_command_is_locked_and_installs_both_dev_surfaces() -> No
         "--group",
         "dev",
     )
+    assert bootstrap_worktree.SYNC_CHECK_COMMAND == (
+        *bootstrap_worktree.SYNC_COMMAND,
+        "--check",
+    )
+
+
+def test_locked_environment_check_uses_sanitized_worktree_context(
+    tmp_path: Path, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(bootstrap_worktree.shutil, "which", lambda _name: "uv")
+    monkeypatch.setenv("VIRTUAL_ENV", "other-worktree")
+    monkeypatch.setenv("UV_PROJECT", "other-project")
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(
+            args=command,
+            returncode=1,
+            stdout="",
+            stderr="environment is not up-to-date",
+        )
+
+    monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
+
+    synchronized, detail = bootstrap_worktree._environment_is_synchronized(
+        tmp_path
+    )
+
+    assert synchronized is False
+    assert detail == "environment is not up-to-date"
+    assert captured["command"] == bootstrap_worktree.SYNC_CHECK_COMMAND
+    assert captured["cwd"] == tmp_path
+    env = captured["env"]
+    assert isinstance(env, dict)
+    assert "VIRTUAL_ENV" not in env
+    assert "UV_PROJECT" not in env
 
 
 def test_linked_worktree_reuses_main_repo_uv_cache(tmp_path: Path) -> None:

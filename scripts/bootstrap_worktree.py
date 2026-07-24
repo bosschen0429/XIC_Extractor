@@ -22,6 +22,7 @@ SYNC_COMMAND = (
     "--group",
     "dev",
 )
+SYNC_CHECK_COMMAND = (*SYNC_COMMAND, "--check")
 REQUIRED_DISTRIBUTIONS = (
     "import-linter",
     "mypy",
@@ -154,6 +155,33 @@ def _inspect_distributions(python: Path) -> dict[str, str]:
     return {str(key): str(value) for key, value in payload.items()}
 
 
+def _sync_environment(root: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("VIRTUAL_ENV", None)
+    for name in UV_SYNC_SEMANTIC_ENV_VARS:
+        env.pop(name, None)
+    env["UV_CACHE_DIR"] = str(_shared_cache_dir(root))
+    return env
+
+
+def _environment_is_synchronized(root: Path) -> tuple[bool, str]:
+    if shutil.which("uv") is None:
+        return False, "uv is not available on PATH"
+    completed = subprocess.run(
+        SYNC_CHECK_COMMAND,
+        cwd=root,
+        env=_sync_environment(root),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode == 0:
+        return True, ""
+    failure_lines = (completed.stdout + "\n" + completed.stderr).splitlines()
+    detail = "\n".join(failure_lines[-20:]).strip()
+    return False, detail or f"uv sync --check exited {completed.returncode}"
+
+
 def inspect_state(root: Path) -> BootstrapState:
     contract_digest = _contract_digest(root)
     if _venv_is_link(root):
@@ -214,6 +242,17 @@ def inspect_state(root: Path) -> BootstrapState:
             contract_digest=contract_digest,
             distributions=distributions,
         )
+    synchronized, detail = _environment_is_synchronized(root)
+    if not synchronized:
+        return BootstrapState(
+            ready=False,
+            reason=(
+                "locked development environment is not synchronized: "
+                f"{detail}"
+            ),
+            contract_digest=contract_digest,
+            distributions=distributions,
+        )
     return BootstrapState(
         ready=True,
         reason="worktree development environment is ready",
@@ -244,15 +283,10 @@ def bootstrap(root: Path) -> BootstrapState:
     if shutil.which("uv") is None:
         raise RuntimeError("uv is not available on PATH")
 
-    env = os.environ.copy()
-    env.pop("VIRTUAL_ENV", None)
-    for name in UV_SYNC_SEMANTIC_ENV_VARS:
-        env.pop(name, None)
-    env["UV_CACHE_DIR"] = str(_shared_cache_dir(root))
     completed = subprocess.run(
         SYNC_COMMAND,
         cwd=root,
-        env=env,
+        env=_sync_environment(root),
         check=False,
         capture_output=True,
         text=True,
