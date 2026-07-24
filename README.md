@@ -89,8 +89,7 @@ for visual review.
 git clone https://github.com/Chao-hu-Lab/XIC_Extractor.git
 cd XIC_Extractor
 
-uv venv --python 3.13
-uv sync --extra dev
+uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py
 uv run python -m gui.main
 ```
 

@@ -110,6 +110,7 @@ Hosted lint/typecheck jobs use the GitHub uv cache keyed by `pyproject.toml` and
 so future CI tuning is based on observed queue, install, and shard timing.
 
 ```powershell
+uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
 $env:UV_CACHE_DIR='.uv-cache'; uv run ruff check xic_extractor tests
 $env:UV_CACHE_DIR='.uv-cache'; uv run lint-imports --no-cache
 $env:UV_CACHE_DIR='.uv-cache'; uv run python scripts/check_architecture_census.py

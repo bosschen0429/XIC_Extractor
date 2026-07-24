@@ -16,6 +16,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
     {
         "docs-config": (
             "tests/test_agent_sandbox_doctor.py",
+            "tests/test_bootstrap_worktree.py",
             "tests/test_bounded_product_lanes_contract.py",
             "tests/test_check_productization_authority.py",
             "tests/test_ci_workflow.py",

@@ -100,6 +100,7 @@ mzML 相關路徑。
 涉及本機 Python、RAW、DLL 或 validation data 時，先用這組最小檢查：
 
 ```powershell
+uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
 Get-Command python | Select-Object -ExpandProperty Source
 python --version
 .venv\Scripts\python.exe --version
@@ -107,6 +108,16 @@ python --version
 Test-Path "$env:XIC_RAW_ROOT"
 Test-Path "$env:THERMO_RAWFILE_READER_DLL_DIR"
 ```
+
+新建 worktree 尚未通過第一行的離線檢查時，只執行一次：
+
+```powershell
+uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py
+```
+
+這是 Windows / WSL 共用且可重複執行的完整 dev bootstrap；它使用 locked
+`dev` extra 與 dependency group，並把環境綁定目前 worktree。不要複製其他
+worktree 的 ignored `.venv`，也不要臨時逐套件安裝。
 
 如果本檔列出的 stable path 存在，就使用它。除非 `Test-Path` 失敗或使用者
 提供更新路徑，否則不要重新搜尋，也不要自行替換成 sibling directory。
