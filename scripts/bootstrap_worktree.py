@@ -185,7 +185,7 @@ def bootstrap(root: Path) -> BootstrapState:
 
     env = os.environ.copy()
     env.pop("VIRTUAL_ENV", None)
-    env.setdefault("UV_CACHE_DIR", str(_shared_cache_dir(root)))
+    env["UV_CACHE_DIR"] = str(_shared_cache_dir(root))
     completed = subprocess.run(
         SYNC_COMMAND,
         cwd=root,
