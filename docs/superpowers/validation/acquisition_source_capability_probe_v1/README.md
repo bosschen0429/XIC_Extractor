@@ -59,19 +59,56 @@ compared with local scan-index `max` and `sum` traces; the index was written and
 loaded three times. `tools.diagnostics.ms1_index_backfill_audit` produced both
 runs.
 
-Input identity:
+Input identity and locator:
 
-| Input | SHA256 or fact |
-| --- | --- |
-| Sample | `BenignfatBC1055_DNA` |
-| RAW `path_stat_v1` identity | size `197960732` bytes; `mtime_ns` `1768897726000000000` |
-| Probe parameters | `preferred_ppm=20`, `max_rt_sec=180`, `owner_backfill_min_detected_samples=1`, `request_count_per_sample=100`, `cache_warm_repeats=3` |
-| Request selection | `_limited_records`: `np.linspace(0, len(records) - 1, num=100, dtype=int)` over the eligible record sequence |
-| Discovery batch index | `1D902E48FED2B2715D332DAC294771FA1E8CB3DFA6EB63691A98A7E6850E05CA` |
-| Alignment review | `D50D7FEF55D1FC60B622F4C4ECA8D5F4020FCE9D2076F63271579813F6E60996` |
-| Alignment cells | `71B96D088DFFBA7DE253136AF7353DEE461E42C1572C99E1471258D30A2616F1` |
-| Candidate CSV | `DC443F0825BC10C6EFD19E52C4ACF8A92DD9A218CB840B39E64B8BCE797ADEB6` |
-| Runner | Python 3.13.7 with `pythonnet` |
+The three tabular input paths below are relative to
+`<INPUT_ARTIFACT_ROOT>`, the main checkout that held the ignored retained 8RAW
+artifact bundle. The probe code ran from a separate branch worktree, represented
+as `<RUN_CHECKOUT>`. Neither checkout gets these `output/` artifacts from Git.
+The hashes identify the required source files if the external input bundle is
+restored; they do not make this packet independently replayable.
+
+| Input | Locator | SHA256 or fact |
+| --- | --- | --- |
+| Sample RAW | `<RAW_DIR>/BenignfatBC1055_DNA.raw` | `path_stat_v1`: size `197960732` bytes; `mtime_ns` `1768897726000000000` |
+| Discovery batch index | `<INPUT_ARTIFACT_ROOT>/output/performance/dna_dr_product_ready_8raw_20260622_current_perf_fresh/discovery/discovery_batch_index.csv` | `1D902E48FED2B2715D332DAC294771FA1E8CB3DFA6EB63691A98A7E6850E05CA` |
+| Alignment review | `<INPUT_ARTIFACT_ROOT>/output/performance/dna_dr_product_ready_8raw_validation_cells_ms1_cache_20260622/alignment_review.tsv` | `D50D7FEF55D1FC60B622F4C4ECA8D5F4020FCE9D2076F63271579813F6E60996` |
+| Alignment cells | `<INPUT_ARTIFACT_ROOT>/output/performance/dna_dr_product_ready_8raw_validation_cells_ms1_cache_20260622/alignment_cells.tsv` | `71B96D088DFFBA7DE253136AF7353DEE461E42C1572C99E1471258D30A2616F1` |
+| Probe parameters | CLI arguments below | `preferred_ppm=20`, `max_rt_sec=180`, `owner_backfill_min_detected_samples=1`, `request_count_per_sample=100`, `cache_warm_repeats=3` |
+| Request selection | `_limited_records` | sample is first in batch order; 100 evenly spaced integer indices across its 3,676 eligible owner-backfill records: `np.linspace(0, 3675, num=100, dtype=int)` |
+| Runner | Repository environment | Python 3.13.7 with `pythonnet` |
+
+The batch index contains candidate-CSV locators, but this owner-backfill audit
+does not open those files. `collect_owner_backfill_requests` derives requests
+from batch sample order, Alignment review, and Alignment cells only, so a
+candidate CSV is not listed as an evidence input.
+
+Command template, run from `<RUN_CHECKOUT>` after restoring the hash-bound
+inputs under `<INPUT_ARTIFACT_ROOT>`:
+
+```powershell
+python -m tools.diagnostics.ms1_index_backfill_audit `
+  --discovery-batch-index <INPUT_ARTIFACT_ROOT>/output/performance/dna_dr_product_ready_8raw_20260622_current_perf_fresh/discovery/discovery_batch_index.csv `
+  --raw-dir <RAW_DIR> `
+  --dll-dir <THERMO_DLL_DIR> `
+  --alignment-review <INPUT_ARTIFACT_ROOT>/output/performance/dna_dr_product_ready_8raw_validation_cells_ms1_cache_20260622/alignment_review.tsv `
+  --alignment-cells <INPUT_ARTIFACT_ROOT>/output/performance/dna_dr_product_ready_8raw_validation_cells_ms1_cache_20260622/alignment_cells.tsv `
+  --output-dir output/issue124_raw_artifact_capability_probe_20260724/<MODE_DIR> `
+  --sample-count 1 `
+  --request-count-per-sample 100 `
+  --example-limit 20 `
+  --max-rt-sec 180 `
+  --preferred-ppm 20 `
+  --owner-backfill-min-detected-samples 1 `
+  --index-cache-dir output/issue124_raw_artifact_capability_probe_20260724/<MODE_DIR>/cache `
+  --cache-warm-repeats 3 `
+  --vendor-extraction-mode <VENDOR_MODE>
+```
+
+| Run | `<MODE_DIR>` | `<VENDOR_MODE>` |
+| --- | --- | --- |
+| Direct vendor | `direct` | `direct` |
+| Vendor super-window | `superwindow` | `raw-superwindow` |
 
 Results:
 
@@ -96,6 +133,18 @@ The NPZ payload is `325340836` bytes, or 1.6435 times the RAW size. Its
 stored NumPy arrays occupy `325338488` bytes; mass and intensity each occupy
 `162632936` bytes. Direct and super-window runs produced the same NPZ SHA256:
 `FFCE49CF4ECAC7A384DAF7FE6258D0295BBD5278407F8C5429478FE8E2CFAEEE`.
+
+Result artifact identity:
+
+| Artifact locator | SHA256 |
+| --- | --- |
+| `<RUN_CHECKOUT>/output/issue124_raw_artifact_capability_probe_20260724/direct/ms1_index_backfill_audit.json` | `312E0F55A26F8841BBD3EF6A5216FF5969AFABA2CCF45A7D758CA99489CBF9EA` |
+| `<RUN_CHECKOUT>/output/issue124_raw_artifact_capability_probe_20260724/superwindow/ms1_index_backfill_audit.json` | `F22592CAED7CD908A9D0481BA240603E4D00F2FDB6BE01290AB37D14351172BC` |
+| Both `BenignfatBC1055_DNA.ms1_index.npz` payloads | `FFCE49CF4ECAC7A384DAF7FE6258D0295BBD5278407F8C5429478FE8E2CFAEEE` |
+
+These result artifacts are also ignored local outputs. Their hashes bind the
+reported metrics if the bundle is restored; the tracked packet does not claim
+to contain the raw result payloads.
 
 This one-sample result is sufficient to falsify exact backend parity and show
 the cost shape. It is not population-wide performance evidence.

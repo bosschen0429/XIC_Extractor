@@ -505,7 +505,11 @@ Reusable conclusion:
 
 Rerun policy:
 
-1. Do not rerun 8RAW/85RAW to re-prove scan-index non-parity.
+1. Use this packet to avoid rerunning 8RAW/85RAW merely to re-prove the
+   directional scan-index non-parity result. Exact replay additionally requires
+   the hash-bound ignored `output/` inputs and RAW named in the packet; a clean
+   checkout does not contain them. If those inputs cannot be restored and exact
+   adjudication is required, produce a new source-qualified bounded probe.
 2. Reopen a bounded RAW scan-mode probe only when profile/centroid or native
    controller identity can change the implementation decision.
 3. Run a RAW-to-mzML crosswalk only when a real consumer requires mzML input;
