@@ -30,6 +30,32 @@ REQUIRED_DISTRIBUTIONS = (
     "xic-extractor",
 )
 STAMP_NAME = ".xic-worktree-bootstrap.json"
+# Keep caller network/index credentials and offline policy, but do not let an
+# inherited shell redirect the project/environment or weaken install semantics.
+UV_SYNC_SEMANTIC_ENV_VARS = (
+    "UV_CONFIG_FILE",
+    "UV_DEV",
+    "UV_NO_CACHE",
+    "UV_NO_CONFIG",
+    "UV_NO_DEFAULT_GROUPS",
+    "UV_NO_DEV",
+    "UV_NO_EDITABLE",
+    "UV_NO_GROUP",
+    "UV_NO_INSTALL_LOCAL",
+    "UV_NO_INSTALL_PROJECT",
+    "UV_NO_INSTALL_WORKSPACE",
+    "UV_NO_PROJECT",
+    "UV_NO_SOURCES",
+    "UV_NO_SOURCES_PACKAGE",
+    "UV_NO_SYNC",
+    "UV_ONLY_GROUP",
+    "UV_ONLY_INSTALL_LOCAL",
+    "UV_ONLY_INSTALL_PROJECT",
+    "UV_ONLY_INSTALL_WORKSPACE",
+    "UV_PROJECT",
+    "UV_PROJECT_ENVIRONMENT",
+    "UV_WORKING_DIR",
+)
 
 
 @dataclass(frozen=True)
@@ -197,6 +223,8 @@ def bootstrap(root: Path) -> BootstrapState:
 
     env = os.environ.copy()
     env.pop("VIRTUAL_ENV", None)
+    for name in UV_SYNC_SEMANTIC_ENV_VARS:
+        env.pop(name, None)
     env["UV_CACHE_DIR"] = str(_shared_cache_dir(root))
     completed = subprocess.run(
         SYNC_COMMAND,

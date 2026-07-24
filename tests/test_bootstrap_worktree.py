@@ -176,6 +176,8 @@ def test_bootstrap_overrides_inherited_environment_for_linked_worktree(
     monkeypatch.setattr(bootstrap_worktree.shutil, "which", lambda _name: "uv")
     monkeypatch.setenv("UV_CACHE_DIR", "inherited-cache")
     monkeypatch.setenv("VIRTUAL_ENV", "inherited-venv")
+    for name in bootstrap_worktree.UV_SYNC_SEMANTIC_ENV_VARS:
+        monkeypatch.setenv(name, "inherited-value")
     captured_env: dict[str, str] = {}
 
     def fake_run(*_args, **kwargs):
@@ -189,3 +191,6 @@ def test_bootstrap_overrides_inherited_environment_for_linked_worktree(
     assert state.ready is True
     assert captured_env["UV_CACHE_DIR"] == str(main_repo / ".uv-cache")
     assert "VIRTUAL_ENV" not in captured_env
+    assert not (
+        set(bootstrap_worktree.UV_SYNC_SEMANTIC_ENV_VARS) & set(captured_env)
+    )
