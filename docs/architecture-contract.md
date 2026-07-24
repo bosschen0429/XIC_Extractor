@@ -87,8 +87,13 @@ CID-NL / NL116 dual-projection tracer contract are owned by
 [`docs/product/shared-processing-kernel.md`](product/shared-processing-kernel.md).
 Stable processing-request, attempt, evidence-artifact, delivery-cell, and
 delivery-seal lineage is owned separately by
-[`docs/product/processing-lineage.md`](product/processing-lineage.md); storage
-and runtime lifecycle remain outside that contract.
+[`docs/product/processing-lineage.md`](product/processing-lineage.md). Attempt
+scheduling, cancellation, retry/resume, worker/resource cleanup, cache
+lifecycle, and runtime observability are owned by
+[`docs/product/execution-runtime.md`](product/execution-runtime.md). Storage
+engine, schema, location, and retention policy remain outside both contracts;
+the runtime may only execute owner-supplied lifecycle actions for registered
+temporary resources and caches while respecting lineage pins.
 
 ## Dependency Direction
 
