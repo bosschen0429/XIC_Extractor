@@ -40,6 +40,10 @@ for the active task unless a hard gate below says otherwise.
 
 - Before non-trivial edits, confirm intended worktree, branch, and dirty diff
   scope. Do not stage, rewrite, or revert unrelated user changes.
+- In a newly created worktree, run the bootstrap command in
+  `docs/agent/parameter-settings.md` before the first project `uv run`. Before
+  PR verification, run its offline `--check`; do not infer missing packages
+  from a different worktree's ignored `.venv`.
 - Before Python, RAW, DLL, or validation commands, read
   `docs/agent/parameter-settings.md` and use documented runners and paths.
 - Keep outputs under task-specific `output/` or `docs/superpowers/` paths. New

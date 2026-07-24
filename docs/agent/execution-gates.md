@@ -101,15 +101,22 @@ Before opening a PR, changing its remote head, or marking it ready, run the
 CI-equivalent commands from `.github/workflows/ci.yml` in the current worktree.
 Root `AGENTS.md` links here instead of mirroring this command list:
 
-CI is layered: pull requests run the required Python 3.12 shard matrix, while
-pushes to `main` or `master` also run the Python 3.11 compatibility matrix. The
-local PR closeout gate below mirrors the command surface; it is not a request to
-rerun every GitHub matrix job locally.
+CI is layered: pull requests run all required shards sequentially in one locked
+Python 3.12 self-hosted environment, while pushes to `main` or `master` also run
+the same shards in one Python 3.11 compatibility environment. While the
+self-hosted runner pool has only one concurrent execution slot, do not fan
+shards out into a job matrix: that only adds queue and repeated setup without
+adding parallel capacity. Reconsider two balanced lanes only after the pool has
+two measured concurrent slots. The local PR closeout gate below mirrors the
+command surface.
 Hosted lint/typecheck jobs use the GitHub uv cache keyed by `pyproject.toml` and
-`uv.lock`; self-hosted shard jobs record install/test seconds in the job summary
-so future CI tuning is based on observed queue, install, and shard timing.
+`uv.lock`; self-hosted jobs use the same locked dependency contract, reuse one
+environment per Python version and the runner-persistent local uv cache, and do
+not upload that cache through GitHub Actions. They record install/per-shard
+seconds in the job summary so future CI tuning is based on observed timing.
 
 ```powershell
+uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
 $env:UV_CACHE_DIR='.uv-cache'; uv run ruff check xic_extractor tests
 $env:UV_CACHE_DIR='.uv-cache'; uv run lint-imports --no-cache
 $env:UV_CACHE_DIR='.uv-cache'; uv run python scripts/check_architecture_census.py

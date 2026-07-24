@@ -54,96 +54,106 @@ jobs:
       - run: uv run mypy xic_extractor
 
   test:
-    name: test / ${{ matrix.shard }} (Python 3.12)
+    name: test (Python 3.12)
     runs-on: self-hosted
-    strategy:
-      fail-fast: false
-      matrix:
-        shard:
-          - docs-config
-          - gui
-          - targeted-core
-          - alignment-core
-          - product-gates-activation
-          - product-gates-evidence
-          - diagnostics-tools
     steps:
       - uses: actions/checkout@v6
         with:
-          path: repo-3.12-${{ matrix.shard }}
+          path: repo-3.12-tests
           submodules: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           python-version: "3.12"
-          working-directory: repo-3.12-${{ matrix.shard }}
+          working-directory: repo-3.12-tests
       - name: Install
         shell: pwsh
-        working-directory: repo-3.12-${{ matrix.shard }}
+        working-directory: repo-3.12-tests
         run: |
           $started = Get-Date
-          uv venv --python 3.12 --clear
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv pip install -e .[dev]
+          uv sync --locked --extra dev --group dev --python 3.12
           $exitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-          "### ${{ matrix.shard }} Python 3.12 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "### Python 3.12 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- install_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           exit $exitCode
-      - name: Test
+      - name: Test shards
         shell: pwsh
-        working-directory: repo-3.12-${{ matrix.shard }}
+        working-directory: repo-3.12-tests
         run: |
-          $started = Get-Date
-          uv run python -m tools.testing.test_shards ${{ matrix.shard }} -- -v --tb=short -x
-          $exitCode = $LASTEXITCODE
-          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-          "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          exit $exitCode
+          $venvScripts = (Resolve-Path .\.venv\Scripts).Path
+          $env:PATH = "$venvScripts;$env:PATH"
+          $shards = @(
+            "docs-config",
+            "gui",
+            "targeted-core",
+            "alignment-core",
+            "product-gates-activation",
+            "product-gates-evidence",
+            "diagnostics-tools"
+          )
+          $failed = @()
+          foreach ($shard in $shards) {
+            $started = Get-Date
+            & .\.venv\Scripts\python.exe -m tools.testing.test_shards $shard -- -v --tb=short -x
+            $exitCode = $LASTEXITCODE
+            $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+            "- $shard test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            if ($exitCode -ne 0) { $failed += $shard }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "Failed shards: $($failed -join ', ')"
+            exit 1
+          }
 
   compatibility:
-    name: compatibility / ${{ matrix.shard }} (Python 3.11)
+    name: compatibility (Python 3.11)
     if: github.event_name == 'push'
     runs-on: self-hosted
-    strategy:
-      fail-fast: false
-      matrix:
-        shard:
-          - docs-config
-          - gui
-          - targeted-core
-          - alignment-core
-          - product-gates-activation
-          - product-gates-evidence
-          - diagnostics-tools
     steps:
       - uses: actions/checkout@v6
         with:
-          path: repo-3.11-${{ matrix.shard }}
+          path: repo-3.11-compatibility
           submodules: false
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           python-version: "3.11"
-          working-directory: repo-3.11-${{ matrix.shard }}
+          working-directory: repo-3.11-compatibility
       - name: Install
         shell: pwsh
-        working-directory: repo-3.11-${{ matrix.shard }}
+        working-directory: repo-3.11-compatibility
         run: |
           $started = Get-Date
-          uv venv --python 3.11 --clear
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          uv pip install -e .[dev]
+          uv sync --locked --extra dev --group dev --python 3.11
           $exitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-          "### ${{ matrix.shard }} Python 3.11 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "### Python 3.11 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- install_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           exit $exitCode
-      - name: Test
+      - name: Test shards
         shell: pwsh
-        working-directory: repo-3.11-${{ matrix.shard }}
+        working-directory: repo-3.11-compatibility
         run: |
-          $started = Get-Date
-          uv run python -m tools.testing.test_shards ${{ matrix.shard }} -- -v --tb=short -x
-          $exitCode = $LASTEXITCODE
-          $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
-          "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
-          exit $exitCode
+          $venvScripts = (Resolve-Path .\.venv\Scripts).Path
+          $env:PATH = "$venvScripts;$env:PATH"
+          $shards = @(
+            "docs-config",
+            "gui",
+            "targeted-core",
+            "alignment-core",
+            "product-gates-activation",
+            "product-gates-evidence",
+            "diagnostics-tools"
+          )
+          $failed = @()
+          foreach ($shard in $shards) {
+            $started = Get-Date
+            & .\.venv\Scripts\python.exe -m tools.testing.test_shards $shard -- -v --tb=short -x
+            $exitCode = $LASTEXITCODE
+            $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+            "- $shard test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+            if ($exitCode -ne 0) { $failed += $shard }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "Failed shards: $($failed -join ', ')"
+            exit 1
+          }
