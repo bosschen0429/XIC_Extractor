@@ -47,30 +47,45 @@ def test_ci_workflow_uses_uv_cache_for_hosted_static_jobs() -> None:
         assert "uv.lock" in block
 
 
-def test_ci_workflow_runs_sharded_tests() -> None:
+def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    shard_command = (
-        "uv run python -m tools.testing.test_shards "
-        "${{ matrix.shard }} -- -v --tb=short -x"
-    )
 
     assert "uv run python -m tools.testing.test_shards --check" in workflow
-    assert _matrix_shard_blocks(workflow) == (
-        tuple(SHARD_PATTERNS),
-        tuple(SHARD_PATTERNS),
+    for job_name, version, checkout_path in (
+        ("test", "3.12", "repo-3.12-tests"),
+        ("compatibility", "3.11", "repo-3.11-compatibility"),
+    ):
+        block = _job_block(workflow, job_name)
+        assert "matrix:" not in block
+        assert f"name: {job_name} (Python {version})" in block
+        assert f"path: {checkout_path}" in block
+        assert f"working-directory: {checkout_path}" in block
+        assert "enable-cache: true" in block
+        assert f"cache-suffix: py{version.replace('.', '')}" in block
+        assert (
+            f"uv sync --locked --extra dev --group dev --python {version}"
+            in block
+        )
+        assert (
+            r"& .\.venv\Scripts\python.exe "
+            "-m tools.testing.test_shards $shard -- -v --tb=short -x"
+        ) in block
+        assert (
+            r'$env:PATH = "$venvScripts;$env:PATH"'
+            in block
+        )
+        for shard in SHARD_PATTERNS:
+            assert block.count(f'"{shard}"') == 1
+        assert "install_seconds=" in block
+        assert "test_seconds=" in block
+        assert "$env:GITHUB_STEP_SUMMARY" in block
+    assert "if: github.event_name == 'push'" in _job_block(
+        workflow, "compatibility"
     )
-    assert "name: test / ${{ matrix.shard }} (Python 3.12)" in workflow
-    assert "name: compatibility / ${{ matrix.shard }} (Python 3.11)" in workflow
-    assert "if: github.event_name == 'push'" in workflow
-    assert "repo-3.12-${{ matrix.shard }}" in workflow
-    assert "repo-3.11-${{ matrix.shard }}" in workflow
-    assert "repo-${{ matrix.python-version }}-${{ matrix.shard }}" not in workflow
-    assert 'python-version: ["3.11", "3.12"]' not in workflow
-    assert shard_command in workflow
-    assert "install_seconds=" in workflow
-    assert "test_seconds=" in workflow
-    assert "$env:GITHUB_STEP_SUMMARY" in workflow
+    assert "${{ matrix." not in workflow
     assert "uv run pytest -v --tb=short -x" not in workflow
+    assert "uv pip install" not in workflow
+    assert "uv venv" not in workflow
 
 
 def test_pr_gate_owner_matches_ci_commands_and_root_points_to_it() -> None:
@@ -91,26 +106,6 @@ def test_pr_gate_owner_matches_ci_commands_and_root_points_to_it() -> None:
         assert command in execution_gate
         assert command not in root_agent_contract
     assert "uv run pytest -v --tb=short -x" not in execution_gate
-
-
-def _matrix_shard_blocks(workflow: str) -> tuple[tuple[str, ...], ...]:
-    lines = workflow.splitlines()
-    blocks: list[tuple[str, ...]] = []
-    for index, line in enumerate(lines):
-        if line.strip() != "shard:":
-            continue
-        shards: list[str] = []
-        for follow in lines[index + 1 :]:
-            stripped = follow.strip()
-            if stripped.startswith("- "):
-                shards.append(stripped[2:])
-                continue
-            if stripped:
-                break
-        blocks.append(tuple(shards))
-    if not blocks:
-        raise AssertionError("missing test shard matrix")
-    return tuple(blocks)
 
 
 def _job_block(workflow: str, job_name: str) -> str:
