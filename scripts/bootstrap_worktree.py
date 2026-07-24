@@ -63,6 +63,10 @@ def _contract_digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def _root_identity(root: Path) -> str:
+    return os.path.normcase(str(root.resolve()))
+
+
 def _venv_python(root: Path) -> Path:
     if os.name == "nt":
         return root / ".venv" / "Scripts" / "python.exe"
@@ -142,6 +146,13 @@ def inspect_state(root: Path) -> BootstrapState:
             contract_digest=contract_digest,
             distributions=distributions,
         )
+    if stamp.get("repo_root") != _root_identity(root):
+        return BootstrapState(
+            ready=False,
+            reason="bootstrap stamp belongs to a different worktree",
+            contract_digest=contract_digest,
+            distributions=distributions,
+        )
     if stamp.get("contract_digest") != contract_digest:
         return BootstrapState(
             ready=False,
@@ -167,6 +178,7 @@ def inspect_state(root: Path) -> BootstrapState:
 def _write_stamp(root: Path, state: BootstrapState) -> None:
     stamp_path = root / ".venv" / STAMP_NAME
     payload = {
+        "repo_root": _root_identity(root),
         "contract_digest": state.contract_digest,
         "distributions": state.distributions,
     }

@@ -73,6 +73,7 @@ def test_inspect_state_requires_current_contract_stamp(
     stamp.write_text(
         json.dumps(
             {
+                "repo_root": bootstrap_worktree._root_identity(tmp_path),
                 "contract_digest": bootstrap_worktree._contract_digest(tmp_path),
                 "distributions": versions,
             }
@@ -87,6 +88,43 @@ def test_inspect_state_requires_current_contract_stamp(
     state = bootstrap_worktree.inspect_state(tmp_path)
     assert state.ready is False
     assert state.reason == "pyproject.toml or uv.lock changed after bootstrap"
+
+
+def test_inspect_state_rejects_stamp_from_another_worktree(
+    tmp_path: Path, monkeypatch
+) -> None:
+    worktree = tmp_path / "current"
+    sibling = tmp_path / "sibling"
+    worktree.mkdir()
+    sibling.mkdir()
+    _write_contract(worktree)
+    python = bootstrap_worktree._venv_python(worktree)
+    python.parent.mkdir(parents=True)
+    python.touch()
+    versions = {
+        name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS
+    }
+    monkeypatch.setattr(
+        bootstrap_worktree,
+        "_inspect_distributions",
+        lambda _python: versions,
+    )
+    stamp = python.parent.parent / bootstrap_worktree.STAMP_NAME
+    stamp.write_text(
+        json.dumps(
+            {
+                "repo_root": bootstrap_worktree._root_identity(sibling),
+                "contract_digest": bootstrap_worktree._contract_digest(worktree),
+                "distributions": versions,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    state = bootstrap_worktree.inspect_state(worktree)
+
+    assert state.ready is False
+    assert state.reason == "bootstrap stamp belongs to a different worktree"
 
 
 def test_bootstrap_sync_command_is_locked_and_installs_both_dev_surfaces() -> None:
