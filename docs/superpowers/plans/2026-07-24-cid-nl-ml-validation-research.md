@@ -1,5 +1,12 @@
 # CID-NL / NL116 ML Validation Research
 
+Doc placement: repo_support_doc
+Doc kind: note
+Doc lifecycle: active
+Repo owner: docs/product/discovery.md
+Doc exit rule: Retire or supersede after #125 selects an ML validation design
+and durable guidance is absorbed into the Discovery product owner.
+
 Date: 2026-07-24
 Issue: [#125](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/125)
 Status: `diagnostic_only`

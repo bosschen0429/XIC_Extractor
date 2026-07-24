@@ -1,5 +1,12 @@
 # CID-NL / NL116 Blinded Oracle And Tracer Acceptance Contract
 
+Doc placement: repo_support_doc
+Doc kind: spec
+Doc lifecycle: active
+Repo owner: docs/product/discovery.md
+Doc exit rule: Mark implemented, rejected, or retired after #125 closes and
+durable oracle rules are absorbed into the Discovery product owner.
+
 Date: 2026-07-24
 Issue: [#125](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/125)
 Parent map: [#118](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/118)
@@ -314,6 +321,21 @@ The packet runs in bounded waves:
    `inconclusive`.
 
 Formal rules do not change between waves.
+
+Cases added by step 3 are labelled `adaptive_supplemental`. Because their
+selection can depend on first-wave results, they do not enter the frozen random
+representative set's numerator, denominator, rates, confidence intervals, or
+representative metric thresholds.
+
+Adaptive cases may still diagnose an uncovered class, estimate reviewer
+repeatability, or support a challenge-class decision whose evaluation unit,
+rule, and threshold were frozen before unblinding. Any quantitative claim over
+adaptive cases uses a separately reported estimand and denominator. Its
+eligible frame, trigger, inclusion probability or analysis weight, uncertainty
+method, and stopping cap must be preregistered before machine, legacy, or
+interim results are inspected; otherwise the result remains descriptive only
+and can inform a later preregistered packet, not revise this packet's frozen
+representative metrics.
 
 ## Synthetic Contract Suite
 
