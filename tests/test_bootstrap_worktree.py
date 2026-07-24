@@ -10,7 +10,7 @@ def _write_contract(root: Path, *, lock_text: str = "lock") -> None:
     (root / "uv.lock").write_text(lock_text, encoding="utf-8")
 
 
-def test_inspect_state_fails_fast_when_worktree_venv_is_missing(
+def test_inspect_state_fails_fast_when_worktree_interpreter_is_missing(
     tmp_path: Path,
 ) -> None:
     _write_contract(tmp_path)
@@ -18,7 +18,40 @@ def test_inspect_state_fails_fast_when_worktree_venv_is_missing(
     state = bootstrap_worktree.inspect_state(tmp_path)
 
     assert state.ready is False
-    assert state.reason == "worktree .venv is missing"
+    assert state.reason == (
+        f"worktree interpreter is missing: "
+        f"{bootstrap_worktree._venv_python(tmp_path).relative_to(tmp_path)}"
+    )
+
+
+def test_venv_python_uses_current_platform_layout(
+    tmp_path: Path, monkeypatch
+) -> None:
+    windows_python = tmp_path / ".venv" / "Scripts" / "python.exe"
+    posix_python = tmp_path / ".venv" / "bin" / "python"
+    windows_python.parent.mkdir(parents=True)
+    posix_python.parent.mkdir(parents=True)
+    windows_python.touch()
+    posix_python.touch()
+
+    monkeypatch.setattr(bootstrap_worktree.os, "name", "nt")
+    assert bootstrap_worktree._venv_python(tmp_path) == windows_python
+
+    monkeypatch.setattr(bootstrap_worktree.os, "name", "posix")
+    assert bootstrap_worktree._venv_python(tmp_path) == posix_python
+
+
+def test_check_rejects_interpreter_from_other_platform_only(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _write_contract(tmp_path)
+    windows_python = tmp_path / ".venv" / "Scripts" / "python.exe"
+    windows_python.parent.mkdir(parents=True)
+    windows_python.touch()
+    monkeypatch.setattr(bootstrap_worktree.os, "name", "posix")
+    monkeypatch.setattr(bootstrap_worktree, "_repo_root", lambda: tmp_path)
+
+    assert bootstrap_worktree.main(["--check"]) == 1
 
 
 def test_inspect_state_requires_current_contract_stamp(

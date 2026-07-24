@@ -64,9 +64,8 @@ def _contract_digest(root: Path) -> str:
 
 
 def _venv_python(root: Path) -> Path:
-    windows_python = root / ".venv" / "Scripts" / "python.exe"
-    if windows_python.is_file():
-        return windows_python
+    if os.name == "nt":
+        return root / ".venv" / "Scripts" / "python.exe"
     return root / ".venv" / "bin" / "python"
 
 
@@ -115,9 +114,10 @@ def inspect_state(root: Path) -> BootstrapState:
     contract_digest = _contract_digest(root)
     python = _venv_python(root)
     if not python.is_file():
+        expected = python.relative_to(root)
         return BootstrapState(
             ready=False,
-            reason="worktree .venv is missing",
+            reason=f"worktree interpreter is missing: {expected}",
             contract_digest=contract_digest,
             distributions={},
         )
