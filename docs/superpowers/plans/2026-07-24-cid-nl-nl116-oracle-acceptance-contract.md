@@ -187,10 +187,11 @@ The reviewer may see:
 
 The reviewer must not see:
 
-- machine score or machine call;
-- legacy or Targeted final call;
+- scores, component scores, rankings, reason codes, suggested peak/apex/boundary
+  decisions, threshold outcomes, or calls from the tested tracer,
+  legacy/Targeted pipeline, or any other evaluated system;
 - counted-detection or selected-area result;
-- machine-selected apex or boundary.
+- any comparison field derived from an evaluated-system output.
 
 The reviewer independently records feature identity and sample-local
 peak/boundary judgment.
@@ -211,10 +212,17 @@ revealed. Machine and legacy results may then be revealed for failure taxonomy
 and method-development analysis only. This unblinded pass cannot change the
 confirmatory label.
 
-If post-reveal inspection shows that a packet was corrupt, misbound, or missing
-required evidence, the case is invalidated under a preregistered rule rather
-than relabelled. The invalidation event records the reason, reviewer, time, and
-affected gate.
+Packet integrity checks and every case-level invalidation decision are completed
+before reveal by the still-blinded reviewer or by a custodian who cannot see
+machine/legacy outcomes. The valid-case manifest and its denominator are then
+sealed and hashed.
+
+If corruption, misbinding, or missing required evidence is discovered only
+after reveal, that case is not selectively removed and the frozen metric is not
+recomputed. The affected gate fails closed as `inconclusive`; a quantitative
+claim requires a new preregistered packet and seal. The event records the
+reason, reviewer or custodian, time, affected gate, and superseding packet when
+one exists.
 
 Any correction needed before reveal remains append-only. Original verdicts are
 never overwritten.
