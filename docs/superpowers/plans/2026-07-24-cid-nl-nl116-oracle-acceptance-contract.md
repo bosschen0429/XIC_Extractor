@@ -224,6 +224,14 @@ never overwritten.
 The formal packet includes a small number of hidden duplicate cases separated
 in presentation order. Only inconsistent judgments require adjudication.
 
+Each underlying `case_id` remains one primary analysis unit. Before review, the
+manifest designates one presentation as primary and links every hidden duplicate
+to that same `case_id`. Only the preregistered primary presentation may enter
+precision, recovery, disagreement, `unassessable`, confidence-interval, or gate
+denominators. Duplicate presentations and any duplicate-triggered adjudication
+are reported only as repeatability/adjudication evidence; they never add weight
+to the underlying case or revise the frozen denominator.
+
 The duplicate fraction and stopping rule are frozen during calibration; the
 packet does not expand human work merely to reach a cosmetically large count.
 
@@ -489,10 +497,17 @@ Allowed inputs may include:
 Forbidden inputs include:
 
 - human verdict;
-- machine/legacy final call;
+- scores, component scores, rankings, threshold outcomes, calls, or other
+  intermediate/final decision outputs from the tested tracer, legacy pipeline,
+  or any other evaluated system;
 - counted detection or final selected area;
 - post-review corrections;
 - any field created only after the prediction being evaluated.
+
+Evaluated-system outputs may be retained only in a comparison manifest and
+revealed after model predictions are frozen. They cannot enter feature
+construction, preprocessing, fitting, calibration, threshold selection, or
+inference.
 
 ### Automation and abstention
 

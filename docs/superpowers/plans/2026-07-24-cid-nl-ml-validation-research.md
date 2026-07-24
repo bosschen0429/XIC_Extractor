@@ -204,6 +204,10 @@ adaptation. The two scores answer different questions and must not be merged.
 - The manifest records the intended estimand and every grouping key used.
 - All learned preprocessing and selection steps are fitted inside the fold.
 - Threshold and probability calibration count as learned steps.
+- Scores, component scores, rankings, calls, and intermediate decision outputs
+  from the tested tracer, legacy pipeline, or another evaluated system are
+  comparison-only artifacts, not model, preprocessing, calibration, or
+  threshold-selection inputs.
 - The confirmatory holdout is sealed before final pipeline selection.
 - Any post-unblinding adaptive change downgrades that holdout to
   `development_exposed`.
