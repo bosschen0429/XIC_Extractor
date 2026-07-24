@@ -53,14 +53,19 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
   `.venv` 底下。不要用 root repo 的絕對路徑
   `"${env:XIC_REPO_ROOT}\.venv\Scripts\python.exe"` 直接啟動
   worktree 的 85RAW；這會被 canonical guard 拒絕。
-- 若 active worktree 沒有 `.venv`，且 root repo `.venv` 是要共用的 RAW
-  runtime，先確認沒有既有 `.venv` 後建立 junction：
+- 每個 worktree 必須有自己的 `.venv`；只有 uv package cache
+  (`.uv-cache`) 在 linked worktrees 間共用。不要建立或保留指向 root repo
+  `.venv` 的 junction，否則 editable install 與 bootstrap stamp 會指向錯誤
+  checkout。
+- 舊 worktree 若仍使用 shared-venv junction，先確認它確實是 junction，再只
+  移除 junction 本身，最後執行本頁的 bootstrap：
 
 ```powershell
-New-Item -ItemType Junction -Path .venv -Target "${env:XIC_REPO_ROOT}\.venv"
+$venv = Get-Item .venv -Force
+if ($venv.LinkType -ne 'Junction') { throw '.venv is not a junction; stop and inspect it' }
+Remove-Item .venv
+uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py
 ```
-
-  然後使用 `.venv\Scripts\python.exe` 啟動 preflight / validation。
 
 ## Stable Local Paths
 
@@ -411,7 +416,7 @@ the active spec or validation note before running alignment.
 | Profile | Status | Reusable parameters | Evidence |
 | --- | --- | --- | --- |
 | 85RAW validation-minimal super-window | Verified foreground run, exit code `0`, wall-clock `620.9 s` | `.venv\Scripts\python.exe`, 85RAW RAW root, `--output-level validation-minimal`, `--backfill-scope production-equivalent`, `--audit-evidence-mode none`, `--performance-profile validation-fast`, `--raw-workers 11`, `--owner-backfill-window-strategy super-window`, `--owner-backfill-superwindow-span-factor 2`, timing output + live heartbeat | `docs\diagnostic-ledger.md` section "2026-05-26 P8b 85RAW Super-Window Acceptance" |
-| 85RAW primary-delivery validation | Verified foreground run, exit code `0`, wall-clock `596.6 s`; worktree `.venv` junction required before launch | same canonical 85RAW shape plus `--expected-sample-count 85`; output hashes and diagnostics fixed in durable fixtures | `docs\diagnostic-ledger.md` section "2026-05-28 Qualitative Selection / Owner-Backfill Scan Support Gate"; `docs\superpowers\fixtures\diagnostic_ledger_2026_05_28\85raw_primary_delivery_fix_summary.tsv` |
+| 85RAW primary-delivery validation | Verified historical foreground run, exit code `0`, wall-clock `596.6 s`; that run used the now-retired worktree `.venv` junction workflow, which must not be reproduced | same canonical 85RAW shape plus `--expected-sample-count 85`; current runs use the per-worktree bootstrap above; output hashes and diagnostics fixed in durable fixtures | `docs\diagnostic-ledger.md` section "2026-05-28 Qualitative Selection / Owner-Backfill Scan Support Gate"; `docs\superpowers\fixtures\diagnostic_ledger_2026_05_28\85raw_primary_delivery_fix_summary.tsv` |
 
 The cited `620.9 s` run predates the `--expected-sample-count 85` guard. The
 guard is a later test-covered launch safety check and should be included in new
