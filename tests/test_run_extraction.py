@@ -330,7 +330,7 @@ def test_cli_loads_model_selection_expected_diff_approval_registry(
 
     monkeypatch.setattr(module, "load_config", fake_load_config)
     monkeypatch.setattr(
-        module,
+        "xic_extractor.extraction.targeted_inputs."
         "load_expected_diff_approval_registry",
         _load_approvals,
     )

@@ -1,3 +1,5 @@
+import hashlib
+
 import pytest
 
 from xic_extractor.processing_lineage import (
@@ -10,6 +12,7 @@ from xic_extractor.processing_lineage import (
     ProcessingAttemptRef,
     ProcessingRequestIdentityBasis,
     build_processing_request_ref,
+    derive_evidence_artifact_id,
     derive_processing_request_id,
     validate_delivery_seal_candidate,
     validate_retry_attempt,
@@ -52,12 +55,25 @@ def test_processing_request_identity_changes_with_semantic_inputs() -> None:
     assert derive_processing_request_id(changed) != request.request_id
 
 
+def test_evidence_artifact_id_is_bound_to_immutable_identity_fields() -> None:
+    artifact = _artifact("artifact-evidence", "attempt-1")
+
+    with pytest.raises(LineageContractError, match="immutable evidence artifact"):
+        EvidenceArtifactRef(
+            artifact_id=artifact.artifact_id,
+            producer_attempt_id="attempt-2",
+            semantic_role=artifact.semantic_role,
+            schema_version=artifact.schema_version,
+            content_sha256=artifact.content_sha256,
+        )
+
+
 def test_delivery_seal_closes_approved_revisions_and_acknowledged_artifacts() -> None:
     artifact = _artifact("artifact-evidence", "attempt-1")
     output = _artifact(
         "artifact-output",
         "attempt-1",
-        dependency_artifact_ids=("artifact-evidence",),
+        dependency_artifact_ids=(artifact.artifact_id,),
     )
     revision = DeliveryRevisionRef(
         revision_id="revision-1",
@@ -67,14 +83,14 @@ def test_delivery_seal_closes_approved_revisions_and_acknowledged_artifacts() ->
             "target-1",
         ),
         producer_attempt_id="attempt-1",
-        evidence_artifact_ids=("artifact-evidence",),
+        evidence_artifact_ids=(artifact.artifact_id,),
         review_record_refs=(_review_record(),),
         authority_approved=True,
     )
     candidate = DeliverySealCandidate(
         revision_ids=("revision-1",),
-        output_artifact_ids=("artifact-output",),
-        acknowledged_artifact_ids=("artifact-evidence", "artifact-output"),
+        output_artifact_ids=(output.artifact_id,),
+        acknowledged_artifact_ids=(artifact.artifact_id, output.artifact_id),
     )
 
     closure = validate_delivery_seal_candidate(
@@ -90,8 +106,8 @@ def test_delivery_seal_closes_approved_revisions_and_acknowledged_artifacts() ->
 
     assert closure.revisions == (revision,)
     assert {item.artifact_id for item in closure.artifacts} == {
-        "artifact-evidence",
-        "artifact-output",
+        artifact.artifact_id,
+        output.artifact_id,
     }
 
 
@@ -105,12 +121,12 @@ def test_delivery_seal_rejects_unapproved_revision() -> None:
             "row-1",
         ),
         producer_attempt_id="attempt-1",
-        evidence_artifact_ids=("artifact-evidence",),
+        evidence_artifact_ids=(artifact.artifact_id,),
     )
     candidate = DeliverySealCandidate(
         revision_ids=("revision-1",),
-        output_artifact_ids=("artifact-evidence",),
-        acknowledged_artifact_ids=("artifact-evidence",),
+        output_artifact_ids=(artifact.artifact_id,),
+        acknowledged_artifact_ids=(artifact.artifact_id,),
     )
 
     with pytest.raises(LineageContractError, match="owner approval"):
@@ -133,12 +149,12 @@ def test_delivery_seal_rejects_missing_owner_acknowledgement() -> None:
             "target-1",
         ),
         producer_attempt_id="attempt-1",
-        evidence_artifact_ids=("artifact-evidence",),
+        evidence_artifact_ids=(artifact.artifact_id,),
         authority_approved=True,
     )
     candidate = DeliverySealCandidate(
         revision_ids=("revision-1",),
-        output_artifact_ids=("artifact-evidence",),
+        output_artifact_ids=(artifact.artifact_id,),
         acknowledged_artifact_ids=("unrelated-artifact",),
     )
 
@@ -195,15 +211,17 @@ def test_delivery_seal_rejects_multiple_revisions_for_one_cell() -> None:
 
 
 def test_delivery_seal_rejects_artifact_dependency_cycle() -> None:
+    first_id = _fixture_artifact_id("artifact-1", "attempt-1")
+    second_id = _fixture_artifact_id("artifact-2", "attempt-1")
     first = _artifact(
         "artifact-1",
         "attempt-1",
-        dependency_artifact_ids=("artifact-2",),
+        dependency_artifact_ids=(second_id,),
     )
     second = _artifact(
         "artifact-2",
         "attempt-1",
-        dependency_artifact_ids=("artifact-1",),
+        dependency_artifact_ids=(first_id,),
     )
     revision = _revision("revision-1", "target-1", first.artifact_id)
     candidate = DeliverySealCandidate(
@@ -316,8 +334,8 @@ def test_delivery_revision_allows_cross_attempt_dependency() -> None:
     )
 
     assert {artifact.artifact_id for artifact in closure.artifacts} == {
-        "artifact-current",
-        "artifact-old",
+        current_artifact.artifact_id,
+        old_artifact.artifact_id,
     }
 
 
@@ -509,7 +527,9 @@ def _review_record() -> ImmutableReviewRecordRef:
         review_record_id="review-1",
         schema_version="review-record-v1",
         content_sha256="d" * 64,
-        evidence_artifact_ids=("artifact-evidence",),
+        evidence_artifact_ids=(
+            _fixture_artifact_id("artifact-evidence", "attempt-1"),
+        ),
     )
 
 
@@ -523,16 +543,28 @@ def _sample_rows() -> tuple[SampleMetadata, ...]:
 
 
 def _artifact(
-    artifact_id: str,
+    fixture_label: str,
     attempt_id: str,
     *,
     dependency_artifact_ids: tuple[str, ...] = (),
 ) -> EvidenceArtifactRef:
+    content_sha256 = hashlib.sha256(fixture_label.encode("utf-8")).hexdigest()
     return EvidenceArtifactRef(
-        artifact_id=artifact_id,
+        artifact_id=_fixture_artifact_id(fixture_label, attempt_id),
         producer_attempt_id=attempt_id,
         semantic_role="synthetic_contract_fixture",
         schema_version="fixture_v1",
-        content_sha256="a" * 64,
+        content_sha256=content_sha256,
         dependency_artifact_ids=dependency_artifact_ids,
+    )
+
+
+def _fixture_artifact_id(fixture_label: str, attempt_id: str) -> str:
+    return derive_evidence_artifact_id(
+        producer_attempt_id=attempt_id,
+        semantic_role="synthetic_contract_fixture",
+        schema_version="fixture_v1",
+        content_sha256=hashlib.sha256(
+            fixture_label.encode("utf-8")
+        ).hexdigest(),
     )

@@ -26,9 +26,6 @@ from xic_extractor.output.method_manifest import (
     load_method_manifest_for_replay,
     write_method_manifest,
 )
-from xic_extractor.peak_detection.model_selection_approval_registry import (
-    load_expected_diff_approval_registry,
-)
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     EXPLICIT_SUPPORT_TSV_POLICY,
@@ -106,18 +103,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             else config
         )
         excel_config = config
-        approval_registry_path = (
-            run_config.model_selection_expected_diff_approval_registry
-        )
-        try:
-            model_selection_expected_diff_approvals = (
-                load_expected_diff_approval_registry(approval_registry_path)
-                if approval_registry_path is not None
-                else None
-            )
-        except ValueError as exc:
-            raise ConfigError(str(exc)) from exc
-
         if _should_run_targeted_ms1_shape_identity_auto_limited_default(
             args,
             config,
@@ -137,9 +122,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if args.targeted_ms1_shape_identity_auto_output_dir is None
                         else args.targeted_ms1_shape_identity_auto_output_dir.resolve()
                     ),
-                    model_selection_expected_diff_approvals=(
-                        model_selection_expected_diff_approvals
-                    ),
                 )
             except (OSError, ValueError, csv.Error) as exc:
                 raise ConfigError(
@@ -153,9 +135,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                     run_config,
                     targets,
                     progress_callback=_print_progress,
-                    model_selection_expected_diff_approvals=(
-                        model_selection_expected_diff_approvals
-                    ),
                 )
             )
             write_method_manifest(
@@ -373,7 +352,6 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
     settings_overrides: dict[str, str],
     output_mode: str,
     auto_output_dir: Path | None,
-    model_selection_expected_diff_approvals,
 ):
     auto_root = auto_output_dir or (
         base_dir
@@ -406,9 +384,6 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
             baseline_config,
             targets,
             progress_callback=_print_progress,
-            model_selection_expected_diff_approvals=(
-                model_selection_expected_diff_approvals
-            ),
         )
     )
     write_method_manifest(
@@ -453,9 +428,6 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
             final_staging_config,
             targets,
             progress_callback=_print_progress,
-            model_selection_expected_diff_approvals=(
-                model_selection_expected_diff_approvals
-            ),
         )
     )
     diff_outputs = write_targeted_ms1_shape_identity_auto_diff_artifacts(

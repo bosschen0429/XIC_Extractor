@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
@@ -13,65 +12,14 @@ from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     apply_targeted_ms1_shape_identity_projection,
     load_targeted_ms1_shape_identity_supports,
 )
-from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.raw_reader import RawReaderError, preflight_raw_reader
-from xic_extractor.rt_prior_library import LibraryEntry, load_library
-from xic_extractor.sample_metadata import (
-    is_sample_metadata_source,
-    load_sample_metadata,
-    sample_metadata_to_injection_order,
-)
-from xic_extractor.target_pair_rt_calibration import (
-    load_target_pair_rt_calibration,
-    rt_prior_library_from_target_pair_calibration,
-)
+from xic_extractor.rt_prior_library import LibraryEntry
+
+from .targeted_inputs import resolve_targeted_inputs, resolve_targeted_raw_paths
 
 if TYPE_CHECKING:
     from xic_extractor.extractor import RunOutput
-
-
-def resolve_injection_order(
-    config: ExtractionConfig,
-    raw_paths: list[Path],
-    injection_order: dict[str, int] | None,
-) -> dict[str, int]:
-    if injection_order is not None:
-        return injection_order
-    if config.injection_order_source is not None:
-        return _read_injection_order_source(config.injection_order_source)
-    return fallback_injection_order_from_mtime(raw_paths)
-
-
-def _read_injection_order_source(path: Path) -> dict[str, int]:
-    if is_sample_metadata_source(path):
-        return sample_metadata_to_injection_order(load_sample_metadata(path))
-    return read_injection_order(path)
-
-
-def resolve_rt_prior_library(
-    config: ExtractionConfig,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None,
-) -> dict[tuple[str, str], LibraryEntry]:
-    if config.target_pair_rt_calibration_path is not None:
-        calibration_rows = load_target_pair_rt_calibration(
-            config.target_pair_rt_calibration_path,
-            expected_target_config_hash=config.target_config_hash or None,
-        )
-        return rt_prior_library_from_target_pair_calibration(calibration_rows)
-    if rt_prior_library is not None:
-        return rt_prior_library
-    if config.rt_prior_library_path is None:
-        return {}
-    return load_library(config.rt_prior_library_path, config.config_hash)
-
-
-def fallback_injection_order_from_mtime(raw_paths: list[Path]) -> dict[str, int]:
-    ordered_paths = sorted(
-        raw_paths,
-        key=lambda path: (path.stat().st_mtime, path.name),
-    )
-    return {path.stem: index for index, path in enumerate(ordered_paths, start=1)}
 
 
 def run_pipeline(
@@ -88,13 +36,16 @@ def run_pipeline(
     if reader_errors:
         raise RawReaderError(" ".join(reader_errors))
 
-    raw_paths = sorted(config.data_dir.glob("*.raw"))
-    scoring_injection_order = resolve_injection_order(
+    raw_paths = resolve_targeted_raw_paths(config)
+    resolved_inputs = resolve_targeted_inputs(
         config,
-        raw_paths,
-        injection_order,
+        raw_paths=raw_paths,
+        injection_order=injection_order,
+        rt_prior_library=rt_prior_library,
+        model_selection_expected_diff_approvals=(
+            model_selection_expected_diff_approvals
+        ),
     )
-    resolved_rt_prior_library = resolve_rt_prior_library(config, rt_prior_library)
 
     if config.parallel_mode == "process":
         from xic_extractor.extraction.process_backend import run_process
@@ -105,10 +56,10 @@ def run_pipeline(
             raw_paths=raw_paths,
             progress_callback=progress_callback,
             should_stop=should_stop,
-            injection_order=scoring_injection_order,
-            rt_prior_library=resolved_rt_prior_library,
+            injection_order=resolved_inputs.injection_order,
+            rt_prior_library=resolved_inputs.rt_prior_library,
             model_selection_expected_diff_approvals=(
-                model_selection_expected_diff_approvals
+                resolved_inputs.model_selection_expected_diff_approvals
             ),
         )
     else:
@@ -120,10 +71,10 @@ def run_pipeline(
             raw_paths=raw_paths,
             progress_callback=progress_callback,
             should_stop=should_stop,
-            injection_order=scoring_injection_order,
-            rt_prior_library=resolved_rt_prior_library,
+            injection_order=resolved_inputs.injection_order,
+            rt_prior_library=resolved_inputs.rt_prior_library,
             model_selection_expected_diff_approvals=(
-                model_selection_expected_diff_approvals
+                resolved_inputs.model_selection_expected_diff_approvals
             ),
         )
 

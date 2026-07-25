@@ -204,6 +204,72 @@ def test_canonical_scoring_input_identity_is_mapping_order_independent() -> None
     )
 
 
+def test_canonical_request_hashes_resolved_injection_order(tmp_path: Path) -> None:
+    injection_order_path = tmp_path / "injection_order.csv"
+    injection_order_path.write_text(
+        "Sample_Name,Injection_Order\nSample A,1\nSample B,2\n",
+        encoding="utf-8",
+    )
+    config = replace(
+        _config(),
+        data_dir=tmp_path,
+        injection_order_source=injection_order_path,
+        config_hash="config-sha",
+        target_config_hash="targets-sha",
+    )
+    request = build_targeted_application_request(config, [_target()])
+    sources = (
+        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
+    )
+
+    first = build_canonical_targeted_request(
+        request,
+        sources=sources,
+        preset_id="cid-dR",
+    )
+    injection_order_path.write_text(
+        "Sample_Name,Injection_Order\nSample A,2\nSample B,1\n",
+        encoding="utf-8",
+    )
+    second = build_canonical_targeted_request(
+        request,
+        sources=sources,
+        preset_id="cid-dR",
+    )
+
+    assert first.processing_request.request_id != second.processing_request.request_id
+
+
+def test_canonical_request_hashes_shape_support_content(tmp_path: Path) -> None:
+    support_path = tmp_path / "shape_support.tsv"
+    support_path.write_text("first", encoding="utf-8")
+    config = replace(
+        _config(),
+        data_dir=tmp_path,
+        targeted_ms1_shape_identity_support_tsv=support_path,
+        config_hash="config-sha",
+        target_config_hash="targets-sha",
+    )
+    request = build_targeted_application_request(config, [_target()])
+    sources = (
+        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
+    )
+
+    first = build_canonical_targeted_request(
+        request,
+        sources=sources,
+        preset_id="cid-dR",
+    )
+    support_path.write_text("second", encoding="utf-8")
+    second = build_canonical_targeted_request(
+        request,
+        sources=sources,
+        preset_id="cid-dR",
+    )
+
+    assert first.processing_request.request_id != second.processing_request.request_id
+
+
 def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:
     forbidden_prefixes = (
         "gui",

@@ -4,6 +4,7 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
@@ -14,6 +15,13 @@ from xic_extractor.processing_lineage import (
     build_processing_request_ref,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
+
+from .targeted_inputs import (
+    ResolvedTargetedInputs,
+    resolve_model_selection_expected_diff_approvals,
+    resolve_targeted_inputs,
+    resolve_targeted_raw_paths,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.extractor import RunOutput
@@ -83,6 +91,10 @@ class TargetedApplicationService:
     runner: TargetedRunner
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
+        resolved_approvals = resolve_model_selection_expected_diff_approvals(
+            request.config,
+            request.model_selection_expected_diff_approvals,
+        )
         return self.runner(
             request.config,
             list(request.targets),
@@ -90,9 +102,7 @@ class TargetedApplicationService:
             should_stop=request.should_stop,
             injection_order=request.injection_order,
             rt_prior_library=request.rt_prior_library,
-            model_selection_expected_diff_approvals=(
-                request.model_selection_expected_diff_approvals
-            ),
+            model_selection_expected_diff_approvals=resolved_approvals,
         )
 
 
@@ -139,6 +149,15 @@ def build_canonical_targeted_request(
         raise ValueError(
             "canonical Targeted request requires effective config and target hashes"
         )
+    resolved_inputs = resolve_targeted_inputs(
+        request.config,
+        raw_paths=resolve_targeted_raw_paths(request.config),
+        injection_order=request.injection_order,
+        rt_prior_library=request.rt_prior_library,
+        model_selection_expected_diff_approvals=(
+            request.model_selection_expected_diff_approvals
+        ),
+    )
     identity_basis = ProcessingRequestIdentityBasis(
         acquisition_sources=canonical_sources,
         normalized_query_sha256=_digest_text(
@@ -148,7 +167,7 @@ def build_canonical_targeted_request(
         ),
         method_constraints_sha256=_digest_text(
             request.config.target_config_hash,
-            _canonical_scoring_inputs(request),
+            _canonical_effective_inputs(request, resolved_inputs),
         ),
         algorithm_version=preset_id,
         schema_version=TARGETED_APPLICATION_CONTRACT_VERSION,
@@ -174,44 +193,47 @@ def _digest_text(*values: str) -> str:
     return digest.hexdigest()
 
 
-def _canonical_scoring_inputs(request: TargetedApplicationRequest) -> str:
-    injection_order = (
-        None
-        if request.injection_order is None
-        else sorted(request.injection_order.items())
-    )
-    rt_prior_library = (
-        None
-        if request.rt_prior_library is None
-        else [
-            {
-                "key": list(key),
-                "entry": asdict(entry),
-            }
-            for key, entry in sorted(request.rt_prior_library.items())
-        ]
-    )
+def _canonical_effective_inputs(
+    request: TargetedApplicationRequest,
+    resolved_inputs: ResolvedTargetedInputs,
+) -> str:
+    rt_prior_library = [
+        {
+            "key": list(key),
+            "entry": asdict(entry),
+        }
+        for key, entry in sorted(resolved_inputs.rt_prior_library.items())
+    ]
     expected_diff_approvals = (
         None
-        if request.model_selection_expected_diff_approvals is None
+        if resolved_inputs.model_selection_expected_diff_approvals is None
         else [
             {
                 "key": key,
                 "record": asdict(record),
             }
             for key, record in sorted(
-                request.model_selection_expected_diff_approvals.items()
+                resolved_inputs.model_selection_expected_diff_approvals.items()
             )
         ]
     )
     return json.dumps(
         {
-            "injection_order": injection_order,
+            "injection_order": sorted(resolved_inputs.injection_order.items()),
             "model_selection_expected_diff_approvals": expected_diff_approvals,
             "rt_prior_library": rt_prior_library,
+            "targeted_ms1_shape_identity_support_sha256": _optional_file_sha256(
+                request.config.targeted_ms1_shape_identity_support_tsv
+            ),
         },
         allow_nan=False,
         ensure_ascii=True,
         separators=(",", ":"),
         sort_keys=True,
     )
+
+
+def _optional_file_sha256(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()

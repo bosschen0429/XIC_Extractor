@@ -139,14 +139,49 @@ class EvidenceArtifactRef:
     dependency_artifact_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
-        _require_text(self.artifact_id, "artifact_id")
         _require_text(self.producer_attempt_id, "producer_attempt_id")
         _require_text(self.semantic_role, "semantic_role")
         _require_text(self.schema_version, "schema_version")
         _require_sha256(self.content_sha256, "content_sha256")
+        expected_artifact_id = derive_evidence_artifact_id(
+            producer_attempt_id=self.producer_attempt_id,
+            semantic_role=self.semantic_role,
+            schema_version=self.schema_version,
+            content_sha256=self.content_sha256,
+        )
+        if self.artifact_id != expected_artifact_id:
+            raise LineageContractError(
+                "artifact_id does not match immutable evidence artifact identity"
+            )
         _require_unique(self.dependency_artifact_ids, "dependency_artifact_ids")
         if self.artifact_id in self.dependency_artifact_ids:
             raise LineageContractError("an artifact cannot depend on itself")
+
+
+def derive_evidence_artifact_id(
+    *,
+    producer_attempt_id: str,
+    semantic_role: str,
+    schema_version: str,
+    content_sha256: str,
+) -> str:
+    _require_text(producer_attempt_id, "producer_attempt_id")
+    _require_text(semantic_role, "semantic_role")
+    _require_text(schema_version, "schema_version")
+    _require_sha256(content_sha256, "content_sha256")
+    payload = {
+        "content_sha256": content_sha256,
+        "producer_attempt_id": producer_attempt_id,
+        "schema_version": schema_version,
+        "semantic_role": semantic_role,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return f"evidence-artifact-sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
 @dataclass(frozen=True)

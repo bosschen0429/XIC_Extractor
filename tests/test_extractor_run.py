@@ -302,11 +302,11 @@ def test_run_resolves_scoring_inputs_before_backend(
     }
 
     monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.read_injection_order",
+        "xic_extractor.extraction.targeted_inputs.read_injection_order",
         lambda path: {"SampleA": 1},
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.load_library",
+        "xic_extractor.extraction.targeted_inputs.load_library",
         lambda path, config_hash: library,
     )
 
@@ -441,7 +441,7 @@ def test_target_pair_rt_calibration_fences_legacy_rt_prior_library(
         )
     }
     monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.load_library",
+        "xic_extractor.extraction.targeted_inputs.load_library",
         lambda path, config_hash: injected_library,
     )
 
@@ -467,7 +467,7 @@ def test_target_pair_rt_calibration_fences_legacy_rt_prior_library(
 def test_resolve_injection_order_returns_empty_dict_without_raw_files(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.pipeline import resolve_injection_order
+    from xic_extractor.extraction.targeted_inputs import resolve_injection_order
 
     config = _config(tmp_path, keep_intermediate_csv=False)
 
