@@ -119,14 +119,27 @@ narrow, or stop as actual evidence changes the plan.
 
 ## Evidence-Driven Execution Packages
 
+### Pre-Implementation Gate — Issue #127
+
+Issue #127 reviews this plan before any Package 0 implementation write begins.
+Only a recorded `GO` opens Package 0. `NARROW` or `REDRAW` revises the package
+first; neither verdict permits interfaces or executable gates to be frozen in
+code while the challenge remains open.
+
 ### Package 0 — Turn Decisions Into Executable No-RAW Gates
 
 **Write scope**
 
 - freeze the smallest concrete interfaces needed by the tracer;
+- define one canonical headless Targeted application-service contract; CLI and
+  GUI are input, lifecycle-control, and presentation adapters over that service,
+  not separate scientific or orchestration owners;
 - add pure tests for processing identity, attempt/event transitions, retry,
   cancellation, exactly-once cleanup, resource loss, artifact disposition,
   two-phase delivery sealing, trace capability, and dependency direction;
+- add an equal-adapter invariant: the same normalized source set and `cid-dR`
+  preset must produce equivalent canonical requests, attempt semantics,
+  lineage, scientific results, and delivery projection through CLI and GUI;
 - bind sample identity to the existing canonical owner; filename, display name,
   row order, and trace-array offset are forbidden substitutes;
 - classify the durable supervisor finalization marker as runtime recovery
@@ -137,6 +150,8 @@ narrow, or stop as actual evidence changes the plan.
 **Evidence**
 
 - pure state and schema tests;
+- headless CLI/GUI adapter-contract fixtures; GUI interaction receives a
+  focused smoke, while scientific parity remains owned by the headless service;
 - Windows spawn/no-RAW envelope smoke;
 - static dependency and architecture census;
 - hard-exact Targeted CSV fixture remains unchanged;
@@ -145,11 +160,11 @@ narrow, or stop as actual evidence changes the plan.
 **Exit gate**
 
 - all no-RAW contracts are executable;
+- neither CLI nor GUI can bypass the canonical Targeted application service or
+  retain a second Discovery/Alignment/Backfill orchestration path;
 - no workflow-specific scientific flag leaks into runtime or acquisition;
 - the proposed interfaces require no generic `core/`, storage engine, or second
   decision model;
-- Issue #127 can review this package. A REDRAW verdict stops implementation
-  before Package 1.
 
 ### Package 1 — Build Two Disjoint Pure Substrates
 
@@ -195,6 +210,10 @@ constrained Discovery
 
 - adapt the Targeted process scheduler and Alignment process runner as the first
   two runtime consumers inside the complete Targeted method;
+- route both CLI and GUI `cid-dR` execution through the same canonical Targeted
+  application service; adapters may differ in start, cancellation, progress,
+  and display mechanics, but not in normalized parameters, scientific stages,
+  attempt semantics, or output projection;
 - route constrained Discovery candidates into shared `PeakHypothesis`,
   evidence, and lineage carriers;
 - preserve hypothesis identity across samples through Alignment;
@@ -213,6 +232,8 @@ constrained Discovery
 - a bounded synthetic/frozen batch exercises Discovery, Alignment, at least one
   eligible Backfill, true missing, ambiguity, and failure;
 - trace, hypothesis, alignment, Backfill, and selected-result parity;
+- CLI/GUI parity for normalized request, lineage, scientific selections, and
+  output when given the same source set and `cid-dR` preset;
 - hard-exact CSV bytes and semantic assertions;
 - cancellation, worker-loss, partial-artifact, and rollback tests;
 - exact zero product-writer and Matrix differences;
@@ -221,6 +242,8 @@ constrained Discovery
 **Exit gate**
 
 - the complete Targeted method runs end to end;
+- CLI and GUI reach that method through one application service, with no
+  adapter-specific scientific branch or duplicate downstream orchestration;
 - Targeted integration does not change selected peak, boundary, area,
   confidence/reason, counted state, output bytes, or public CLI/config;
 - rollback routes the entire attempt to legacy and leaves the previous sealed
@@ -337,7 +360,7 @@ The two decision vocabularies serve different times:
 
 | Gate | Timing | Meaning |
 | --- | --- | --- |
-| Issue #127 `GO / NARROW / REDRAW` | Before Package 1 implementation | Is this package itself the best plan? `REDRAW` means revise the plan before code. |
+| Issue #127 `GO / NARROW / REDRAW` | Before any Package 0 implementation write | Is this package itself the best plan? `NARROW` or `REDRAW` revises the package before code. |
 | Package 4 `GO / NARROW / KILL` | After full Targeted, Discovery widening, and comparator evidence | Did the implementation hypothesis survive? `KILL` means stop the tested successor direction rather than redraw history. |
 
 ## Promotion Ladder
