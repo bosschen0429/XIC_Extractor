@@ -506,10 +506,13 @@ def test_run_loads_scoring_inputs_from_config_paths(
         return {}
 
     monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.read_injection_order",
+        "xic_extractor.extraction.targeted_inputs.read_injection_order",
         _read_injection_order,
     )
-    monkeypatch.setattr("xic_extractor.extraction.pipeline.load_library", _load_library)
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_inputs.load_library",
+        _load_library,
+    )
 
     _run(config, targets)
 

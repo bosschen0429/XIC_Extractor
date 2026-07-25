@@ -8,6 +8,10 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from xic_extractor import config as config_module
 from xic_extractor import extractor
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.extraction.targeted_service import (
+    TargetedApplicationService,
+    build_targeted_application_request,
+)
 from xic_extractor.extractor import ExtractionResult, RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.raw_reader import RawReaderError
@@ -29,11 +33,13 @@ class PipelineWorker(QThread):
     def run(self) -> None:
         try:
             config, targets = config_module.load_config(self._config_dir)
-            output = extractor.run(
-                config,
-                targets,
-                progress_callback=self.progress.emit,
-                should_stop=self.isInterruptionRequested,
+            output = TargetedApplicationService(extractor.run).execute(
+                build_targeted_application_request(
+                    config,
+                    targets,
+                    progress_callback=self.progress.emit,
+                    should_stop=self.isInterruptionRequested,
+                )
             )
             if self.isInterruptionRequested():
                 self.cancelled.emit()

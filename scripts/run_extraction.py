@@ -15,15 +15,19 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_support_producer import (
     run_build_targeted_ms1_shape_identity_supports,
 )
+from xic_extractor.extraction.targeted_inputs import (
+    resolve_model_selection_expected_diff_approvals,
+)
+from xic_extractor.extraction.targeted_service import (
+    TargetedApplicationService,
+    build_targeted_application_request,
+)
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,
     MethodManifestError,
     load_method_manifest_for_replay,
     write_method_manifest,
-)
-from xic_extractor.peak_detection.model_selection_approval_registry import (
-    load_expected_diff_approval_registry,
 )
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.targeted_ms1_shape_identity_policy import (
@@ -102,18 +106,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             else config
         )
         excel_config = config
-        approval_registry_path = (
-            run_config.model_selection_expected_diff_approval_registry
-        )
-        try:
-            model_selection_expected_diff_approvals = (
-                load_expected_diff_approval_registry(approval_registry_path)
-                if approval_registry_path is not None
-                else None
-            )
-        except ValueError as exc:
-            raise ConfigError(str(exc)) from exc
-
         if _should_run_targeted_ms1_shape_identity_auto_limited_default(
             args,
             config,
@@ -133,9 +125,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if args.targeted_ms1_shape_identity_auto_output_dir is None
                         else args.targeted_ms1_shape_identity_auto_output_dir.resolve()
                     ),
-                    model_selection_expected_diff_approvals=(
-                        model_selection_expected_diff_approvals
-                    ),
                 )
             except (OSError, ValueError, csv.Error) as exc:
                 raise ConfigError(
@@ -144,13 +133,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ) from exc
             output, excel_config = auto_result
         else:
-            output = extractor.run(
-                run_config,
-                targets,
-                progress_callback=_print_progress,
-                model_selection_expected_diff_approvals=(
-                    model_selection_expected_diff_approvals
-                ),
+            output = TargetedApplicationService(extractor.run).execute(
+                build_targeted_application_request(
+                    run_config,
+                    targets,
+                    progress_callback=_print_progress,
+                )
             )
             write_method_manifest(
                 run_config,
@@ -367,8 +355,11 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
     settings_overrides: dict[str, str],
     output_mode: str,
     auto_output_dir: Path | None,
-    model_selection_expected_diff_approvals,
 ):
+    approval_snapshot = resolve_model_selection_expected_diff_approvals(
+        config,
+        None,
+    )
     auto_root = auto_output_dir or (
         base_dir
         / "output"
@@ -395,11 +386,13 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited baseline output: {baseline_output_dir}")
-    extractor.run(
-        baseline_config,
-        targets,
-        progress_callback=_print_progress,
-        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
+    TargetedApplicationService(extractor.run).execute(
+        build_targeted_application_request(
+            baseline_config,
+            targets,
+            progress_callback=_print_progress,
+            model_selection_expected_diff_approvals=approval_snapshot,
+        )
     )
     write_method_manifest(
         baseline_config,
@@ -438,11 +431,13 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited unverified final output: {final_staging_output_dir}")
-    final_output = extractor.run(
-        final_staging_config,
-        targets,
-        progress_callback=_print_progress,
-        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
+    final_output = TargetedApplicationService(extractor.run).execute(
+        build_targeted_application_request(
+            final_staging_config,
+            targets,
+            progress_callback=_print_progress,
+            model_selection_expected_diff_approvals=approval_snapshot,
+        )
     )
     diff_outputs = write_targeted_ms1_shape_identity_auto_diff_artifacts(
         baseline_output_dir=baseline_output_dir,

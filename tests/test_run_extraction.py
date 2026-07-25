@@ -330,7 +330,7 @@ def test_cli_loads_model_selection_expected_diff_approval_registry(
 
     monkeypatch.setattr(module, "load_config", fake_load_config)
     monkeypatch.setattr(
-        module,
+        "xic_extractor.extraction.targeted_inputs."
         "load_expected_diff_approval_registry",
         _load_approvals,
     )
@@ -529,10 +529,17 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
     capsys,
 ) -> None:
     module = _module()
-    config = _config(tmp_path)
+    registry_path = tmp_path / "approval_registry.tsv"
+    config = replace(
+        _config(tmp_path),
+        model_selection_expected_diff_approval_registry=registry_path,
+    )
     targets = [_target("Analyte")]
     auto_dir = tmp_path / "auto"
+    approval_snapshot = {"row-1": object()}
     calls: dict[str, object] = {
+        "approval_registry_loads": [],
+        "approval_snapshots": [],
         "run_configs": [],
         "manifest_entrypoints": [],
     }
@@ -541,12 +548,18 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
 
     def fake_run(run_config, run_targets, **kwargs):
         calls["run_configs"].append(run_config)
+        calls["approval_snapshots"].append(
+            kwargs["model_selection_expected_diff_approvals"]
+        )
         run_config.output_csv.parent.mkdir(parents=True, exist_ok=True)
         run_config.output_csv.write_text("SampleName\n", encoding="utf-8")
         run_config.diagnostics_csv.write_text("SampleName\n", encoding="utf-8")
         calls["run_targets"] = run_targets
-        assert kwargs["model_selection_expected_diff_approvals"] is None
         return RunOutput(file_results=[], diagnostics=[])
+
+    def fake_load_approvals(path):
+        calls["approval_registry_loads"].append(path)
+        return approval_snapshot
 
     def fake_support_builder(**kwargs):
         calls["support_builder_kwargs"] = kwargs
@@ -580,6 +593,11 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
 
     monkeypatch.setattr(module.extractor, "run", fake_run)
     monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_inputs."
+        "load_expected_diff_approval_registry",
+        fake_load_approvals,
+    )
+    monkeypatch.setattr(
         module,
         "run_build_targeted_ms1_shape_identity_supports",
         fake_support_builder,
@@ -609,6 +627,12 @@ def test_cli_auto_limited_default_runs_baseline_support_final(
     )
 
     assert exit_code == 0
+    assert calls["approval_registry_loads"] == [registry_path]
+    assert calls["approval_snapshots"] == [
+        approval_snapshot,
+        approval_snapshot,
+    ]
+    assert calls["approval_snapshots"][0] is calls["approval_snapshots"][1]
     run_configs = calls["run_configs"]
     assert len(run_configs) == 2
     baseline_config, final_config = run_configs
@@ -1145,6 +1169,9 @@ def _fake_run(calls: dict[str, object]):
         config,
         targets,
         progress_callback=None,
+        should_stop=None,
+        injection_order=None,
+        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ):
         calls["run_config"] = config
@@ -1152,6 +1179,9 @@ def _fake_run(calls: dict[str, object]):
         calls["model_selection_expected_diff_approvals"] = (
             model_selection_expected_diff_approvals
         )
+        calls["should_stop"] = should_stop
+        calls["injection_order"] = injection_order
+        calls["rt_prior_library"] = rt_prior_library
         if progress_callback is not None:
             progress_callback(1, 2, "SampleA.raw")
         output = RunOutput(
