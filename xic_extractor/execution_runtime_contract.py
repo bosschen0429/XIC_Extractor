@@ -23,8 +23,10 @@ class RuntimeEventKind(str, Enum):
     CANCELLATION_REQUESTED = "cancellation_requested"
     WORK_SUCCEEDED = "work_succeeded"
     WORK_FAILED = "work_failed"
+    WORK_CANCELLED = "work_cancelled"
     RESOURCE_RESERVED = "resource_reserved"
     RESOURCE_OPENED = "resource_opened"
+    RESOURCE_ACCESSED = "resource_accessed"
     RESOURCE_OPEN_FAILED = "resource_open_failed"
     RESOURCE_NOT_OPENED = "resource_not_opened"
     RESOURCE_UNKNOWN_AFTER_WORKER_LOSS = "resource_unknown_after_worker_loss"
@@ -48,6 +50,8 @@ class RequiredWorkManifest:
             raise RuntimeContractError(
                 "required-work manifest needs owner completeness attestation"
             )
+        if not self.work_unit_keys:
+            raise RuntimeContractError("required-work manifest must not be empty")
         if any(not key.strip() for key in self.work_unit_keys):
             raise RuntimeContractError("work-unit keys cannot be blank")
         if len(self.work_unit_keys) != len(set(self.work_unit_keys)):
@@ -92,6 +96,7 @@ def validate_attempt_history(
     phase = "queued"
     cancellation_requested = False
     preflight_failed = False
+    attempt_started = False
     work_states: dict[str, str] = {}
     resources: dict[str, str] = {}
     cleanup_states: dict[str, str] = {}
@@ -102,8 +107,16 @@ def validate_attempt_history(
         if terminal_event is not None:
             raise RuntimeContractError("events cannot follow attempt_terminal")
         kind = event.kind
+        if kind is not RuntimeEventKind.ATTEMPT_TERMINAL and event.outcome is not None:
+            raise RuntimeContractError(
+                f"{kind.value} cannot declare a terminal outcome"
+            )
         if kind is RuntimeEventKind.MANIFEST_PREFLIGHT_FAILED:
             _require_phase(phase, "queued", kind)
+            if preflight_failed:
+                raise RuntimeContractError(
+                    "manifest_preflight_failed cannot be emitted more than once"
+                )
             preflight_failed = True
         elif kind is RuntimeEventKind.ATTEMPT_STARTED:
             _require_phase(phase, "queued", kind)
@@ -111,14 +124,22 @@ def validate_attempt_history(
                 raise RuntimeContractError(
                     "preflight-failed attempt cannot emit attempt_started"
                 )
+            attempt_started = True
             phase = "running"
         elif kind is RuntimeEventKind.CANCELLATION_REQUESTED:
-            if phase == "terminal":
-                raise RuntimeContractError("late cancellation cannot rewrite outcome")
+            if phase not in {"queued", "running"}:
+                raise RuntimeContractError(
+                    "cancellation requires queued or running phase"
+                )
+            if cancellation_requested:
+                raise RuntimeContractError(
+                    "cancellation_requested cannot be emitted more than once"
+                )
             cancellation_requested = True
         elif kind in {
             RuntimeEventKind.WORK_SUCCEEDED,
             RuntimeEventKind.WORK_FAILED,
+            RuntimeEventKind.WORK_CANCELLED,
         }:
             _require_phase(phase, "running", kind)
             _require_subject(event)
@@ -130,11 +151,18 @@ def validate_attempt_history(
                 raise RuntimeContractError(
                     f"work unit {event.subject_id!r} settled more than once"
                 )
-            work_states[event.subject_id] = (
-                "succeeded"
-                if kind is RuntimeEventKind.WORK_SUCCEEDED
-                else "failed"
-            )
+            if (
+                kind is RuntimeEventKind.WORK_CANCELLED
+                and not cancellation_requested
+            ):
+                raise RuntimeContractError(
+                    "work_cancelled requires a cancellation request"
+                )
+            work_states[event.subject_id] = {
+                RuntimeEventKind.WORK_SUCCEEDED: "succeeded",
+                RuntimeEventKind.WORK_FAILED: "failed",
+                RuntimeEventKind.WORK_CANCELLED: "cancelled",
+            }[kind]
         elif kind is RuntimeEventKind.RESOURCE_RESERVED:
             _require_phase(phase, "running", kind)
             _require_subject(event)
@@ -151,6 +179,20 @@ def validate_attempt_history(
         }:
             _require_phase(phase, "running", kind)
             _transition_resource(resources, event, expected="reserved")
+        elif kind is RuntimeEventKind.RESOURCE_ACCESSED:
+            _require_phase(phase, "running", kind)
+            _require_subject(event)
+            if (
+                resources.get(event.subject_id)
+                != RuntimeEventKind.RESOURCE_OPENED.value
+            ):
+                raise RuntimeContractError(
+                    f"resource {event.subject_id!r} cannot be accessed unless open"
+                )
+            if event.subject_id in cleanup_states:
+                raise RuntimeContractError(
+                    f"resource {event.subject_id!r} cannot be accessed after cleanup"
+                )
         elif kind in {
             RuntimeEventKind.CLEANUP_SUCCEEDED,
             RuntimeEventKind.CLEANUP_FAILED,
@@ -228,6 +270,7 @@ def validate_attempt_history(
     expected_outcome = _expected_outcome(
         manifest=manifest,
         preflight_failed=preflight_failed,
+        attempt_started=attempt_started,
         cancellation_requested=cancellation_requested,
         work_states=work_states,
         cleanup_states=cleanup_states,
@@ -237,6 +280,7 @@ def validate_attempt_history(
         raise RuntimeContractError(
             f"terminal outcome must be {expected_outcome.value!r}"
         )
+    _validate_artifact_disposition(artifacts, expected_outcome)
     return ValidatedAttemptHistory(
         attempt_id=terminal_event.attempt_id,
         outcome=expected_outcome,
@@ -262,11 +306,16 @@ def _expected_outcome(
     *,
     manifest: RequiredWorkManifest,
     preflight_failed: bool,
+    attempt_started: bool,
     cancellation_requested: bool,
     work_states: dict[str, str],
     cleanup_states: dict[str, str],
     resources: dict[str, str],
 ) -> AttemptOutcome:
+    if attempt_started and set(work_states) != set(manifest.work_unit_keys):
+        raise RuntimeContractError(
+            "started attempt must settle every manifest work unit"
+        )
     failed = (
         preflight_failed
         or "failed" in work_states.values()
@@ -275,18 +324,47 @@ def _expected_outcome(
         in cleanup_states.values()
         or RuntimeEventKind.RESOURCE_UNKNOWN_AFTER_WORKER_LOSS.value
         in resources.values()
+        or RuntimeEventKind.RESOURCE_OPEN_FAILED.value in resources.values()
+        or (
+            RuntimeEventKind.RESOURCE_NOT_OPENED.value in resources.values()
+            and not cancellation_requested
+        )
     )
     if failed:
         return AttemptOutcome.FAILED
     if cancellation_requested:
         return AttemptOutcome.CANCELLED
-    if set(work_states) != set(manifest.work_unit_keys) or any(
-        state != "succeeded" for state in work_states.values()
-    ):
+    if any(state != "succeeded" for state in work_states.values()):
         raise RuntimeContractError(
             "successful attempt must settle every manifest work unit"
         )
     return AttemptOutcome.SUCCEEDED
+
+
+def _validate_artifact_disposition(
+    artifacts: dict[str, str],
+    outcome: AttemptOutcome,
+) -> None:
+    expected_state = (
+        RuntimeEventKind.ARTIFACT_ACKNOWLEDGED.value
+        if outcome is AttemptOutcome.SUCCEEDED
+        else RuntimeEventKind.ARTIFACT_QUARANTINED.value
+    )
+    invalid = sorted(
+        artifact_id
+        for artifact_id, state in artifacts.items()
+        if state != expected_state
+    )
+    if invalid:
+        disposition = (
+            "acknowledged"
+            if outcome is AttemptOutcome.SUCCEEDED
+            else "quarantined"
+        )
+        raise RuntimeContractError(
+            f"{outcome.value} attempt requires all artifacts to be "
+            f"{disposition}: {', '.join(invalid)}"
+        )
 
 
 def _require_phase(actual: str, expected: str, kind: RuntimeEventKind) -> None:

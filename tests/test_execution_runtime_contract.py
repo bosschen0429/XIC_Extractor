@@ -41,6 +41,7 @@ def test_cancelled_attempt_quarantines_partial_artifacts() -> None:
             (RuntimeEventKind.WORK_SUCCEEDED, "work-1", None),
             (RuntimeEventKind.ARTIFACT_REGISTERED, "artifact-1", None),
             (RuntimeEventKind.CANCELLATION_REQUESTED, "", None),
+            (RuntimeEventKind.WORK_CANCELLED, "work-2", None),
             (RuntimeEventKind.ARTIFACT_QUARANTINED, "artifact-1", None),
             (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.CANCELLED),
         ),
@@ -67,6 +68,7 @@ def test_worker_loss_and_unknown_cleanup_fail_closed() -> None:
                 "resource-1",
                 None,
             ),
+            (RuntimeEventKind.WORK_FAILED, "work-1", None),
             (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.FAILED),
         ),
     )
@@ -85,6 +87,7 @@ def test_cleanup_must_settle_exactly_once_before_terminal() -> None:
                 (RuntimeEventKind.RESOURCE_NOT_OPENED, "resource-1", None),
                 (RuntimeEventKind.CLEANUP_SUCCEEDED, "resource-1", None),
                 (RuntimeEventKind.CLEANUP_SUCCEEDED, "resource-1", None),
+                (RuntimeEventKind.WORK_FAILED, "work-1", None),
                 (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.FAILED),
             ),
         )
@@ -93,6 +96,68 @@ def test_cleanup_must_settle_exactly_once_before_terminal() -> None:
 def test_manifest_rejects_duplicate_work_units_before_start() -> None:
     with pytest.raises(RuntimeContractError, match="must be unique"):
         RequiredWorkManifest(("work-1", "work-1"), owner_attests_complete=True)
+
+
+def test_started_attempt_must_settle_closed_manifest() -> None:
+    with pytest.raises(RuntimeContractError, match="settle every manifest"):
+        validate_attempt_history(
+            RequiredWorkManifest(("work-1", "work-2"), owner_attests_complete=True),
+            _events(
+                (RuntimeEventKind.ATTEMPT_QUEUED, "", None),
+                (RuntimeEventKind.ATTEMPT_STARTED, "", None),
+                (RuntimeEventKind.WORK_FAILED, "work-1", None),
+                (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.FAILED),
+            ),
+        )
+
+
+def test_open_failure_forces_failed_attempt() -> None:
+    with pytest.raises(RuntimeContractError, match="terminal outcome must be 'failed'"):
+        validate_attempt_history(
+            RequiredWorkManifest(("work-1",), owner_attests_complete=True),
+            _events(
+                (RuntimeEventKind.ATTEMPT_QUEUED, "", None),
+                (RuntimeEventKind.ATTEMPT_STARTED, "", None),
+                (RuntimeEventKind.RESOURCE_RESERVED, "resource-1", None),
+                (RuntimeEventKind.RESOURCE_OPEN_FAILED, "resource-1", None),
+                (RuntimeEventKind.CLEANUP_SUCCEEDED, "resource-1", None),
+                (RuntimeEventKind.WORK_SUCCEEDED, "work-1", None),
+                (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.SUCCEEDED),
+            ),
+        )
+
+
+def test_failed_attempt_cannot_acknowledge_artifact() -> None:
+    with pytest.raises(RuntimeContractError, match="requires all artifacts"):
+        validate_attempt_history(
+            RequiredWorkManifest(("work-1",), owner_attests_complete=True),
+            _events(
+                (RuntimeEventKind.ATTEMPT_QUEUED, "", None),
+                (RuntimeEventKind.ATTEMPT_STARTED, "", None),
+                (RuntimeEventKind.WORK_FAILED, "work-1", None),
+                (RuntimeEventKind.ARTIFACT_REGISTERED, "artifact-1", None),
+                (RuntimeEventKind.ARTIFACT_OFFERED_TO_OWNER, "artifact-1", None),
+                (RuntimeEventKind.ARTIFACT_ACKNOWLEDGED, "artifact-1", None),
+                (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.FAILED),
+            ),
+        )
+
+
+def test_resource_access_after_cleanup_fails_closed() -> None:
+    with pytest.raises(RuntimeContractError, match="unless open|after cleanup"):
+        validate_attempt_history(
+            RequiredWorkManifest(("work-1",), owner_attests_complete=True),
+            _events(
+                (RuntimeEventKind.ATTEMPT_QUEUED, "", None),
+                (RuntimeEventKind.ATTEMPT_STARTED, "", None),
+                (RuntimeEventKind.RESOURCE_RESERVED, "resource-1", None),
+                (RuntimeEventKind.RESOURCE_OPENED, "resource-1", None),
+                (RuntimeEventKind.CLEANUP_SUCCEEDED, "resource-1", None),
+                (RuntimeEventKind.RESOURCE_ACCESSED, "resource-1", None),
+                (RuntimeEventKind.WORK_SUCCEEDED, "work-1", None),
+                (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.SUCCEEDED),
+            ),
+        )
 
 
 def test_supervisor_marker_is_recovery_metadata_not_delivery_evidence() -> None:
