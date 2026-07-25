@@ -122,6 +122,33 @@ def test_unstarted_attempt_cannot_claim_success() -> None:
         )
 
 
+def test_queued_event_cannot_declare_terminal_outcome() -> None:
+    with pytest.raises(RuntimeContractError, match="cannot declare"):
+        validate_attempt_history(
+            RequiredWorkManifest(("work-1",), owner_attests_complete=True),
+            _events(
+                (RuntimeEventKind.ATTEMPT_QUEUED, "", AttemptOutcome.FAILED),
+                (RuntimeEventKind.ATTEMPT_STARTED, "", None),
+                (RuntimeEventKind.WORK_SUCCEEDED, "work-1", None),
+                (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.SUCCEEDED),
+            ),
+        )
+
+
+def test_queued_cancellation_prevents_attempt_start() -> None:
+    with pytest.raises(RuntimeContractError, match="prevents attempt_started"):
+        validate_attempt_history(
+            RequiredWorkManifest(("work-1",), owner_attests_complete=True),
+            _events(
+                (RuntimeEventKind.ATTEMPT_QUEUED, "", None),
+                (RuntimeEventKind.CANCELLATION_REQUESTED, "", None),
+                (RuntimeEventKind.ATTEMPT_STARTED, "", None),
+                (RuntimeEventKind.WORK_SUCCEEDED, "work-1", None),
+                (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.CANCELLED),
+            ),
+        )
+
+
 def test_open_failure_forces_failed_attempt() -> None:
     with pytest.raises(RuntimeContractError, match="terminal outcome must be 'failed'"):
         validate_attempt_history(

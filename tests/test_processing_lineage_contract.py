@@ -248,6 +248,79 @@ def test_delivery_seal_requires_exact_acknowledgement_closure() -> None:
         )
 
 
+def test_delivery_revision_rejects_direct_cross_attempt_evidence() -> None:
+    old_artifact = _artifact("artifact-old", "attempt-old")
+    revision = DeliveryRevisionRef(
+        revision_id="revision-1",
+        cell_key=DeliveryCellKey(
+            "targeted",
+            SampleIdentityRef("sample-1"),
+            "target-1",
+        ),
+        producer_attempt_id="attempt-new",
+        evidence_artifact_ids=(old_artifact.artifact_id,),
+        authority_approved=True,
+    )
+    candidate = DeliverySealCandidate(
+        revision_ids=(revision.revision_id,),
+        output_artifact_ids=(old_artifact.artifact_id,),
+        acknowledged_artifact_ids=(old_artifact.artifact_id,),
+    )
+
+    with pytest.raises(LineageContractError, match="dependency edge"):
+        validate_delivery_seal_candidate(
+            candidate,
+            revisions={revision.revision_id: revision},
+            artifacts={old_artifact.artifact_id: old_artifact},
+            sample_metadata_rows=_sample_rows(),
+            review_records=(),
+        )
+
+
+def test_delivery_revision_allows_cross_attempt_dependency() -> None:
+    old_artifact = _artifact("artifact-old", "attempt-old")
+    current_artifact = _artifact(
+        "artifact-current",
+        "attempt-new",
+        dependency_artifact_ids=(old_artifact.artifact_id,),
+    )
+    revision = DeliveryRevisionRef(
+        revision_id="revision-1",
+        cell_key=DeliveryCellKey(
+            "targeted",
+            SampleIdentityRef("sample-1"),
+            "target-1",
+        ),
+        producer_attempt_id="attempt-new",
+        evidence_artifact_ids=(current_artifact.artifact_id,),
+        authority_approved=True,
+    )
+    candidate = DeliverySealCandidate(
+        revision_ids=(revision.revision_id,),
+        output_artifact_ids=(current_artifact.artifact_id,),
+        acknowledged_artifact_ids=(
+            current_artifact.artifact_id,
+            old_artifact.artifact_id,
+        ),
+    )
+
+    closure = validate_delivery_seal_candidate(
+        candidate,
+        revisions={revision.revision_id: revision},
+        artifacts={
+            current_artifact.artifact_id: current_artifact,
+            old_artifact.artifact_id: old_artifact,
+        },
+        sample_metadata_rows=_sample_rows(),
+        review_records=(),
+    )
+
+    assert {artifact.artifact_id for artifact in closure.artifacts} == {
+        "artifact-current",
+        "artifact-old",
+    }
+
+
 def test_delivery_seal_requires_known_superseded_seal() -> None:
     artifact = _artifact("artifact-evidence", "attempt-1")
     revision = _revision("revision-1", "target-1", artifact.artifact_id)

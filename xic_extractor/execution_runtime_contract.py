@@ -92,6 +92,12 @@ def validate_attempt_history(
         raise RuntimeContractError("runtime event sequence must be contiguous")
     if events[0].kind is not RuntimeEventKind.ATTEMPT_QUEUED:
         raise RuntimeContractError("attempt history must start with attempt_queued")
+    for event in events:
+        kind = event.kind
+        if kind is not RuntimeEventKind.ATTEMPT_TERMINAL and event.outcome is not None:
+            raise RuntimeContractError(
+                f"{kind.value} cannot declare a terminal outcome"
+            )
 
     phase = "queued"
     cancellation_requested = False
@@ -107,10 +113,6 @@ def validate_attempt_history(
         if terminal_event is not None:
             raise RuntimeContractError("events cannot follow attempt_terminal")
         kind = event.kind
-        if kind is not RuntimeEventKind.ATTEMPT_TERMINAL and event.outcome is not None:
-            raise RuntimeContractError(
-                f"{kind.value} cannot declare a terminal outcome"
-            )
         if kind is RuntimeEventKind.MANIFEST_PREFLIGHT_FAILED:
             _require_phase(phase, "queued", kind)
             if preflight_failed:
@@ -123,6 +125,10 @@ def validate_attempt_history(
             if preflight_failed:
                 raise RuntimeContractError(
                     "preflight-failed attempt cannot emit attempt_started"
+                )
+            if cancellation_requested:
+                raise RuntimeContractError(
+                    "queued cancellation prevents attempt_started"
                 )
             attempt_started = True
             phase = "running"

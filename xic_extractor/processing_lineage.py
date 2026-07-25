@@ -247,6 +247,10 @@ def validate_delivery_seal_candidate(
         raise LineageContractError(
             "delivery seal requires projection-owner approval for every revision"
         )
+    _validate_revision_artifact_lineage(
+        selected_revisions,
+        artifacts=artifacts,
+    )
 
     required_artifact_ids: set[str] = set(candidate.output_artifact_ids)
     for revision in selected_revisions:
@@ -324,6 +328,28 @@ def validate_delivery_seal_candidate(
         revisions=selected_revisions,
         artifacts=selected_artifacts,
     )
+
+
+def _validate_revision_artifact_lineage(
+    revisions: tuple[DeliveryRevisionRef, ...],
+    *,
+    artifacts: Mapping[str, EvidenceArtifactRef],
+) -> None:
+    for revision in revisions:
+        for artifact_id in revision.evidence_artifact_ids:
+            artifact = _lookup_identity(
+                artifacts,
+                artifact_id,
+                "revision evidence artifact",
+                identity_attribute="artifact_id",
+            )
+            if artifact.producer_attempt_id != revision.producer_attempt_id:
+                raise LineageContractError(
+                    f"delivery revision {revision.revision_id!r} directly "
+                    f"references artifact {artifact_id!r} from a different "
+                    "producer attempt; cross-attempt evidence requires an "
+                    "artifact dependency edge"
+                )
 
 
 def _validate_projection_owner_references(
