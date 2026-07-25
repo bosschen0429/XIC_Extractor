@@ -27,6 +27,37 @@ or the relevant control-plane owner.
 
 - `bounded_non_broad_product_lanes.v1.json`: bounded product-lane contract for
   non-broad activation lanes and review scope.
+- `cid_nl_tested_tracer_proposal_manifest_schema.v1.json`: diagnostic-only
+  Issue #125 contract that freezes every proposal and Targeted/Untargeted
+  decision from one specific CID-NL/NL116 tracer attempt before formal holdout
+  review. It owns the proposal-conditioned denominator and seal protocol, not
+  reference recovery or product authority.
+- `cid_nl_formal_holdout_sampling_manifest_schema.v1.json`: diagnostic-only
+  Issue #125 contract for blinded challenge, representative, hidden-duplicate,
+  and adaptive-supplemental presentations. It keeps `case_id` as the analysis
+  unit and prevents duplicates or adaptive rows from inflating confirmatory
+  denominators.
+- `cid_nl_oracle_lineage_binding_schema.v1.json`: diagnostic-only Issue #125
+  adapter into the canonical #123 `AcquisitionSource`, `ProcessingRequest`,
+  `ProcessingAttempt`, `EvidenceArtifact`, kernel-object, and immutable review
+  identities. It forbids paths, display names, timestamps, and `case_id` from
+  substituting for lineage.
+- `cid_nl_oracle_review_adjudication_schema.v1.json`: diagnostic-only Issue
+  #125 contract for phase-separated blinded sample-local review, sealed
+  cross-sample policy review, hidden-duplicate repeatability, unblinded failure
+  taxonomy, and append-only adjudication. It keeps `unassessable` distinct from
+  pending review and forbids post-reveal label rewriting.
+- `cid_nl_reference_universe_manifest_schema.v1.json`: diagnostic-only Issue
+  #125 contract for expected-positive controls and independently supported
+  sample-local positives. It prevents tested-tracer proposals, legacy calls,
+  or spectral-library membership from defining the recovery denominator.
+- `cid_nl_oracle_narrow_scope_manifest_schema.v1.json`: diagnostic-only Issue
+  #125 contract that freezes candidate NARROW claims, exact membership hashes,
+  required gates, allowed overall failures, and precedence before reveal.
+- `cid_nl_oracle_statistical_design_manifest_schema.v1.json`: diagnostic-only
+  Issue #125 preregistration contract for estimands, finite-census versus
+  sampled uncertainty dispatch, grouping keys, threshold parameters, planning
+  inputs, incomplete-frame claim downgrades, and reveal timing.
 - `lockbox_label_schema_v1.json`: lockbox/truth-label packet row contract for
   protected review evidence.
 - `mechanical_adjudication_schema.v1.json`: mechanical adjudication index
@@ -108,3 +139,8 @@ or the relevant control-plane owner.
 If a schema conflicts with the control plane, current handoff, or current
 Backfill quant-matrix product blueprint, stop and resolve the conflict instead
 of silently following the older schema.
+
+The Issue #125 CID-NL schema metadata is enforced by
+`xic_extractor.discovery.cid_nl_oracle_contract`. Focused negative tests submit
+invalid proposal, sampling, reference, review, narrow-scope, synthetic, and
+verdict inputs; schema booleans are not treated as validation by themselves.
