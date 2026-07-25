@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import csv
 import itertools
+import json
 from pathlib import Path
 
 import pytest
 
 from xic_extractor.discovery.cid_nl_oracle_contract import (
+    _NARROW_SCOPE_REQUIRED_FIELDS,
+    _NARROW_SCOPE_SEAL_REQUIRED_FIELDS,
+    OracleContractError,
     canonical_row_sha256,
     canonical_tsv_bytes,
     reduce_oracle_verdict,
@@ -58,6 +62,73 @@ def _resolve_verdict(
         ):
             return rule["verdict"]
     raise AssertionError(f"no verdict for {state}")
+
+
+def _sealed_scope_bundle(
+    *,
+    required_gate_ids: tuple[str, ...],
+    allowed_failed_gate_ids: tuple[str, ...],
+) -> tuple[dict[str, str], dict[str, object]]:
+    membership_bytes = b"case_id\nC1\n"
+    scope = {
+        "schema_version": "cid_nl_oracle_narrow_scope_manifest_v1",
+        "narrow_scope_manifest_id": "NSM1",
+        "narrow_scope_id": "NS1",
+        "scope_precedence": "1",
+        "claim_label": "scientific-evaluation-only",
+        "membership_predicate": "source_universe == independent_reference",
+        "scope_membership_manifest_id": "MEM1",
+        "scope_membership_manifest_sha256": sha256_bytes(membership_bytes),
+        "source_universe": "independent_reference",
+        "workflow_policy": "untargeted",
+        "method_scope": "nl116_only",
+        "included_sampling_strata": "all",
+        "excluded_sampling_strata": "none",
+        "minimum_independent_units_parameter": "n_min",
+        "gatekeeping_rule_id": "scope_gate_v1",
+        "required_gate_ids": "|".join(required_gate_ids),
+        "allowed_overall_failed_gate_ids": "|".join(allowed_failed_gate_ids),
+        "membership_frozen_before_reveal": "TRUE",
+        "machine_mapping_visible_at_seal": "FALSE",
+        "source_row_sha256": "",
+    }
+    scope["source_row_sha256"] = canonical_row_sha256(scope)
+    manifest_bytes = canonical_tsv_bytes([scope])
+    seal = {
+        "schema_version": "cid_nl_oracle_narrow_scope_manifest_v1",
+        "narrow_scope_manifest_id": "NSM1",
+        "narrow_scope_tsv_sha256": sha256_bytes(manifest_bytes),
+        "scope_membership_digests": {
+            "MEM1": sha256_bytes(membership_bytes)
+        },
+        "scope_membership_bundle_sha256": "",
+        "scope_count": "1",
+        "all_membership_manifests_present": "TRUE",
+        "all_scope_gate_sets_resolvable": "TRUE",
+        "machine_mapping_revealed": "FALSE",
+        "holdout_labels_revealed": "FALSE",
+        "sealed_at_utc": "2026-07-25T00:00:00Z",
+        "sealed_by": "custodian",
+        "seal_status": "sealed",
+        "supersedes_narrow_scope_manifest_id": "none",
+    }
+    seal["scope_membership_bundle_sha256"] = sha256_canonical_json(
+        seal["scope_membership_digests"]
+    )
+    kwargs: dict[str, object] = {
+        "gate_table_bytes": GATE_TABLE.read_bytes(),
+        "verdict_table_bytes": VERDICT_TABLE.read_bytes(),
+        "narrow_membership_bytes_by_id": {"MEM1": membership_bytes},
+        "narrow_manifest_bytes_by_id": {"NSM1": manifest_bytes},
+        "narrow_manifest_seals_by_id": {"NSM1": seal},
+        "narrow_scope_gate_results_by_id": {
+            ("NSM1", "NS1"): [
+                {"gate_id": gate_id, "status": "pass"}
+                for gate_id in required_gate_ids
+            ]
+        },
+    }
+    return scope, kwargs
 
 
 def test_gate_table_is_complete_fail_closed_and_parameterized() -> None:
@@ -115,6 +186,22 @@ def test_gate_table_is_complete_fail_closed_and_parameterized() -> None:
     assert rows["area_retention"]["threshold_value"] == "0.98"
     assert rows["untargeted_non_inferiority"]["threshold_value"] == "2"
     assert rows["automated_coverage"]["threshold_value"] == "0.90"
+
+
+def test_narrow_scope_required_fields_match_schema() -> None:
+    schema = json.loads(
+        (
+            ROOT
+            / "docs/superpowers/schemas/"
+            "cid_nl_oracle_narrow_scope_manifest_schema.v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert set(_NARROW_SCOPE_REQUIRED_FIELDS) == set(
+        schema["required_columns"]
+    )
+    assert set(_NARROW_SCOPE_SEAL_REQUIRED_FIELDS) == set(
+        schema["seal_required_fields"]
+    )
 
 
 def test_verdict_table_is_total_and_has_frozen_precedence() -> None:
@@ -182,70 +269,131 @@ def test_narrow_verdict_is_derived_from_presealed_scope_membership() -> None:
         }
         for row in gate_rows
     ]
-    membership_bytes = b"case_id\nC1\n"
-    scope = {
-        "narrow_scope_manifest_id": "NSM1",
-        "narrow_scope_id": "NS1",
-        "scope_precedence": "1",
-        "claim_label": "independent-reference-only",
-        "membership_predicate": "source_universe == independent_reference",
-        "scope_membership_manifest_id": "MEM1",
-        "scope_membership_manifest_sha256": sha256_bytes(membership_bytes),
-        "source_universe": "independent_reference",
-        "workflow_policy": "untargeted",
-        "method_scope": "nl116_only",
-        "minimum_independent_units_parameter": "n_min",
-        "gatekeeping_rule_id": "scope_gate_v1",
-        "required_gate_ids": "oracle_packet_integrity|reference_recovery",
-        "allowed_overall_failed_gate_ids": "proposal_precision",
-        "membership_frozen_before_reveal": "TRUE",
-        "machine_mapping_visible_at_seal": "FALSE",
-        "source_row_sha256": "",
-    }
-    scope["source_row_sha256"] = canonical_row_sha256(scope)
-    manifest_bytes = canonical_tsv_bytes([scope])
-    seal = {
-        "narrow_scope_manifest_id": "NSM1",
-        "narrow_scope_tsv_sha256": sha256_bytes(manifest_bytes),
-        "scope_membership_digests": {
-            "MEM1": sha256_bytes(membership_bytes)
-        },
-        "scope_membership_bundle_sha256": "",
-        "scope_count": "1",
-        "all_membership_manifests_present": "TRUE",
-        "all_scope_gate_sets_resolvable": "TRUE",
-        "machine_mapping_revealed": "FALSE",
-        "holdout_labels_revealed": "FALSE",
-        "sealed_at_utc": "2026-07-25T00:00:00Z",
-        "sealed_by": "custodian",
-        "seal_status": "sealed",
-    }
-    seal["scope_membership_bundle_sha256"] = sha256_canonical_json(
-        seal["scope_membership_digests"]
+    scope, kwargs = _sealed_scope_bundle(
+        required_gate_ids=(
+            "oracle_packet_integrity",
+            "proposal_precision",
+            "reference_recovery",
+        ),
+        allowed_failed_gate_ids=("proposal_precision",),
     )
-    kwargs = {
-        "gate_table_bytes": GATE_TABLE.read_bytes(),
-        "narrow_membership_bytes_by_id": {"MEM1": membership_bytes},
-        "narrow_manifest_bytes_by_id": {"NSM1": manifest_bytes},
-        "narrow_manifest_seals_by_id": {"NSM1": seal},
-        "narrow_scope_gate_results_by_id": {
-            "NS1": [
-                {"gate_id": gate_id, "status": "pass"}
-                for gate_id in (
-                    "oracle_packet_integrity",
-                    "reference_recovery",
-                )
-            ]
-        },
-    }
 
     assert reduce_oracle_verdict(gate_results, [], **kwargs) == "REDRAW"
     assert reduce_oracle_verdict(gate_results, [scope], **kwargs) == "NARROW"
 
     post_hoc_scope = {**scope, "membership_frozen_before_reveal": "FALSE"}
     post_hoc_scope["source_row_sha256"] = canonical_row_sha256(post_hoc_scope)
-    with pytest.raises(ValueError, match="membership must be frozen"):
+    with pytest.raises(ValueError, match="sealed manifest"):
         reduce_oracle_verdict(gate_results, [post_hoc_scope], **kwargs)
+
+
+def test_narrow_scope_must_retest_the_failed_scientific_gate() -> None:
+    gate_rows = _tsv(GATE_TABLE)
+    gate_results = [
+        {
+            "gate_id": row["gate_id"],
+            "gate_group": row["gate_group"],
+            "status": (
+                "fail" if row["gate_id"] == "reference_recovery" else "pass"
+            ),
+        }
+        for row in gate_rows
+    ]
+    insufficient_scope, insufficient_kwargs = _sealed_scope_bundle(
+        required_gate_ids=("oracle_packet_integrity",),
+        allowed_failed_gate_ids=("reference_recovery",),
+    )
+    assert reduce_oracle_verdict(
+        gate_results,
+        [insufficient_scope],
+        **insufficient_kwargs,
+    ) == "REDRAW"
+
+    sufficient_scope, sufficient_kwargs = _sealed_scope_bundle(
+        required_gate_ids=(
+            "oracle_packet_integrity",
+            "reference_recovery",
+        ),
+        allowed_failed_gate_ids=("reference_recovery",),
+    )
+    assert reduce_oracle_verdict(
+        gate_results,
+        [sufficient_scope],
+        **sufficient_kwargs,
+    ) == "NARROW"
+
+
+def test_scope_results_use_manifest_scoped_primary_key() -> None:
+    gate_rows = _tsv(GATE_TABLE)
+    gate_results = [
+        {
+            "gate_id": row["gate_id"],
+            "gate_group": row["gate_group"],
+            "status": (
+                "fail" if row["gate_id"] == "proposal_precision" else "pass"
+            ),
+        }
+        for row in gate_rows
+    ]
+    first_scope, first_kwargs = _sealed_scope_bundle(
+        required_gate_ids=("proposal_precision",),
+        allowed_failed_gate_ids=("reference_recovery",),
+    )
+    second_membership = b"case_id\nC2\n"
+    second_scope = {
+        **first_scope,
+        "narrow_scope_manifest_id": "NSM2",
+        "scope_precedence": "2",
+        "scope_membership_manifest_id": "MEM2",
+        "scope_membership_manifest_sha256": sha256_bytes(
+            second_membership
+        ),
+        "allowed_overall_failed_gate_ids": "proposal_precision",
+        "source_row_sha256": "",
+    }
+    second_scope["source_row_sha256"] = canonical_row_sha256(second_scope)
+    second_manifest = canonical_tsv_bytes([second_scope])
+    second_digests = {
+        "MEM2": second_scope["scope_membership_manifest_sha256"]
+    }
+    first_seal = first_kwargs["narrow_manifest_seals_by_id"]["NSM1"]
+    second_seal = {
+        **first_seal,
+        "narrow_scope_manifest_id": "NSM2",
+        "narrow_scope_tsv_sha256": sha256_bytes(second_manifest),
+        "scope_membership_digests": second_digests,
+        "scope_membership_bundle_sha256": sha256_canonical_json(
+            second_digests
+        ),
+    }
+    combined_kwargs = {
+        **first_kwargs,
+        "narrow_membership_bytes_by_id": {
+            "MEM1": b"case_id\nC1\n",
+            "MEM2": second_membership,
+        },
+        "narrow_manifest_bytes_by_id": {
+            "NSM1": first_kwargs["narrow_manifest_bytes_by_id"]["NSM1"],
+            "NSM2": second_manifest,
+        },
+        "narrow_manifest_seals_by_id": {
+            "NSM1": first_seal,
+            "NSM2": second_seal,
+        },
+        "narrow_scope_gate_results_by_id": {
+            ("NSM1", "NS1"): [
+                {"gate_id": "proposal_precision", "status": "pass"}
+            ],
+            ("NSM2", "NS1"): [
+                {"gate_id": "proposal_precision", "status": "pass"}
+            ],
+        },
+    }
+    assert reduce_oracle_verdict(
+        gate_results,
+        [first_scope, second_scope],
+        **combined_kwargs,
+    ) == "NARROW"
 
 
 def test_performance_only_failure_narrows_after_scientific_pass() -> None:
@@ -260,16 +408,298 @@ def test_performance_only_failure_narrows_after_scientific_pass() -> None:
         }
         for row in gate_rows
     ]
+    scientific_gate_ids = tuple(
+        row["gate_id"]
+        for row in gate_rows
+        if row["gate_group"] != "performance"
+    )
+    scope, kwargs = _sealed_scope_bundle(
+        required_gate_ids=scientific_gate_ids,
+        allowed_failed_gate_ids=("performance_budget",),
+    )
 
     assert reduce_oracle_verdict(
         gate_results,
         [],
         gate_table_bytes=GATE_TABLE.read_bytes(),
+        verdict_table_bytes=VERDICT_TABLE.read_bytes(),
         narrow_membership_bytes_by_id={},
         narrow_manifest_bytes_by_id={},
         narrow_manifest_seals_by_id={},
         narrow_scope_gate_results_by_id={},
+    ) == "inconclusive"
+    assert reduce_oracle_verdict(
+        gate_results,
+        [scope],
+        **kwargs,
     ) == "NARROW"
+
+
+def test_redraw_only_gates_cannot_be_narrowed_by_hostile_scope() -> None:
+    gate_rows = _tsv(GATE_TABLE)
+    for failed_gate in gate_rows:
+        if (
+            failed_gate["narrow_scope_rule"] != "not_allowed"
+            or failed_gate["fail_verdict"] == "inconclusive"
+        ):
+            continue
+        gate_results = [
+            {
+                "gate_id": row["gate_id"],
+                "gate_group": row["gate_group"],
+                "status": (
+                    "fail"
+                    if row["gate_id"] == failed_gate["gate_id"]
+                    else "pass"
+                ),
+            }
+            for row in gate_rows
+        ]
+        scope, kwargs = _sealed_scope_bundle(
+            required_gate_ids=("oracle_packet_integrity",),
+            allowed_failed_gate_ids=(failed_gate["gate_id"],),
+        )
+        assert reduce_oracle_verdict(
+            gate_results,
+            [scope],
+            **kwargs,
+        ) == "REDRAW", failed_gate["gate_id"]
+
+
+def test_narrow_scope_rejects_partial_or_duplicate_contract_rows() -> None:
+    gate_rows = _tsv(GATE_TABLE)
+    gate_results = [
+        {
+            "gate_id": row["gate_id"],
+            "gate_group": row["gate_group"],
+            "status": (
+                "fail" if row["gate_id"] == "proposal_precision" else "pass"
+            ),
+        }
+        for row in gate_rows
+    ]
+    scope, kwargs = _sealed_scope_bundle(
+        required_gate_ids=(
+            "oracle_packet_integrity",
+            "proposal_precision",
+        ),
+        allowed_failed_gate_ids=("proposal_precision",),
+    )
+    partial = {
+        **scope,
+        "included_sampling_strata": "",
+        "source_row_sha256": "",
+    }
+    partial["source_row_sha256"] = canonical_row_sha256(partial)
+    with pytest.raises(OracleContractError, match="sealed manifest"):
+        reduce_oracle_verdict(gate_results, [partial], **kwargs)
+
+    duplicate = {
+        **scope,
+        "narrow_scope_id": "NS2",
+        "source_row_sha256": "",
+    }
+    duplicate["source_row_sha256"] = canonical_row_sha256(duplicate)
+    with pytest.raises(OracleContractError, match="precedence"):
+        reduce_oracle_verdict(
+            gate_results,
+            [scope, duplicate],
+            **kwargs,
+        )
+
+    duplicated_results = {
+        **kwargs,
+        "narrow_scope_gate_results_by_id": {
+            ("NSM1", "NS1"): [
+                {"gate_id": "oracle_packet_integrity", "status": "pass"},
+                {"gate_id": "oracle_packet_integrity", "status": "pass"},
+            ]
+        },
+    }
+    with pytest.raises(OracleContractError, match="duplicate scope-specific"):
+        reduce_oracle_verdict(
+            gate_results,
+            [scope],
+            **duplicated_results,
+        )
+
+    second_membership = b"case_id\nC2\n"
+    second_scope = {
+        **scope,
+        "narrow_scope_id": "NS2",
+        "scope_precedence": "2",
+        "scope_membership_manifest_id": "MEM2",
+        "scope_membership_manifest_sha256": sha256_bytes(
+            second_membership
+        ),
+        "source_row_sha256": "",
+    }
+    second_scope["source_row_sha256"] = canonical_row_sha256(second_scope)
+    two_scope_manifest = canonical_tsv_bytes([scope, second_scope])
+    original_seal = kwargs["narrow_manifest_seals_by_id"]["NSM1"]
+    two_scope_digests = {
+        "MEM1": scope["scope_membership_manifest_sha256"],
+        "MEM2": second_scope["scope_membership_manifest_sha256"],
+    }
+    two_scope_seal = {
+        **original_seal,
+        "narrow_scope_tsv_sha256": sha256_bytes(two_scope_manifest),
+        "scope_membership_digests": two_scope_digests,
+        "scope_membership_bundle_sha256": sha256_canonical_json(
+            two_scope_digests
+        ),
+        "scope_count": "2",
+    }
+    incomplete_caller_kwargs = {
+        **kwargs,
+        "narrow_membership_bytes_by_id": {
+            "MEM1": b"case_id\nC1\n",
+            "MEM2": second_membership,
+        },
+        "narrow_manifest_bytes_by_id": {"NSM1": two_scope_manifest},
+        "narrow_manifest_seals_by_id": {"NSM1": two_scope_seal},
+    }
+    with pytest.raises(OracleContractError, match="complete sealed manifest"):
+        reduce_oracle_verdict(
+            gate_results,
+            [scope],
+            **incomplete_caller_kwargs,
+        )
+
+    missing_high_precedence_results = {
+        **incomplete_caller_kwargs,
+        "narrow_scope_gate_results_by_id": {
+            ("NSM1", "NS2"): [
+                {"gate_id": gate_id, "status": "pass"}
+                for gate_id in (
+                    "oracle_packet_integrity",
+                    "proposal_precision",
+                )
+            ]
+        },
+    }
+    assert reduce_oracle_verdict(
+        gate_results,
+        [scope, second_scope],
+        **missing_high_precedence_results,
+    ) == "inconclusive"
+
+    duplicate_membership = b"case_id\nC1\nC1\n"
+    duplicate_member_scope = {
+        **scope,
+        "scope_membership_manifest_sha256": sha256_bytes(
+            duplicate_membership
+        ),
+        "source_row_sha256": "",
+    }
+    duplicate_member_scope["source_row_sha256"] = canonical_row_sha256(
+        duplicate_member_scope
+    )
+    duplicate_member_manifest = canonical_tsv_bytes(
+        [duplicate_member_scope]
+    )
+    duplicate_member_digests = {
+        "MEM1": duplicate_member_scope[
+            "scope_membership_manifest_sha256"
+        ]
+    }
+    duplicate_member_seal = {
+        **original_seal,
+        "narrow_scope_tsv_sha256": sha256_bytes(
+            duplicate_member_manifest
+        ),
+        "scope_membership_digests": duplicate_member_digests,
+        "scope_membership_bundle_sha256": sha256_canonical_json(
+            duplicate_member_digests
+        ),
+    }
+    duplicate_member_kwargs = {
+        **kwargs,
+        "narrow_membership_bytes_by_id": {
+            "MEM1": duplicate_membership,
+        },
+        "narrow_manifest_bytes_by_id": {
+            "NSM1": duplicate_member_manifest,
+        },
+        "narrow_manifest_seals_by_id": {
+            "NSM1": duplicate_member_seal,
+        },
+    }
+    with pytest.raises(OracleContractError, match="duplicate case_id"):
+        reduce_oracle_verdict(
+            gate_results,
+            [duplicate_member_scope],
+            **duplicate_member_kwargs,
+        )
+
+
+@pytest.mark.parametrize(
+    "failed_gate_id",
+    (
+        "independent_unit_sufficiency",
+        "reviewer_repeatability",
+        "unassessable_rate",
+    ),
+)
+def test_packet_sufficiency_failures_are_inconclusive(
+    failed_gate_id: str,
+) -> None:
+    gate_results = [
+        {
+            "gate_id": row["gate_id"],
+            "gate_group": row["gate_group"],
+            "status": "fail" if row["gate_id"] == failed_gate_id else "pass",
+        }
+        for row in _tsv(GATE_TABLE)
+    ]
+
+    assert reduce_oracle_verdict(
+        gate_results,
+        [],
+        gate_table_bytes=GATE_TABLE.read_bytes(),
+        verdict_table_bytes=VERDICT_TABLE.read_bytes(),
+        narrow_membership_bytes_by_id={},
+        narrow_manifest_bytes_by_id={},
+        narrow_manifest_seals_by_id={},
+        narrow_scope_gate_results_by_id={},
+    ) == "inconclusive"
+
+
+def test_single_gate_failures_follow_frozen_no_scope_disposition() -> None:
+    gate_rows = _tsv(GATE_TABLE)
+
+    for failed_gate in gate_rows:
+        gate_results = [
+            {
+                "gate_id": row["gate_id"],
+                "gate_group": row["gate_group"],
+                "status": (
+                    "fail"
+                    if row["gate_id"] == failed_gate["gate_id"]
+                    else "pass"
+                ),
+            }
+            for row in gate_rows
+        ]
+        expected = (
+            "inconclusive"
+            if (
+                failed_gate["fail_verdict"] == "inconclusive"
+                or failed_gate["gate_group"] == "performance"
+            )
+            else "REDRAW"
+        )
+
+        assert reduce_oracle_verdict(
+            gate_results,
+            [],
+            gate_table_bytes=GATE_TABLE.read_bytes(),
+            verdict_table_bytes=VERDICT_TABLE.read_bytes(),
+            narrow_membership_bytes_by_id={},
+            narrow_manifest_bytes_by_id={},
+            narrow_manifest_seals_by_id={},
+            narrow_scope_gate_results_by_id={},
+        ) == expected, failed_gate["gate_id"]
 
 
 def test_missing_gate_result_is_inconclusive() -> None:
@@ -287,8 +717,36 @@ def test_missing_gate_result_is_inconclusive() -> None:
         gate_results,
         [],
         gate_table_bytes=GATE_TABLE.read_bytes(),
+        verdict_table_bytes=VERDICT_TABLE.read_bytes(),
         narrow_membership_bytes_by_id={},
         narrow_manifest_bytes_by_id={},
         narrow_manifest_seals_by_id={},
         narrow_scope_gate_results_by_id={},
     ) == "inconclusive"
+
+
+def test_reducer_rejects_substituted_verdict_table() -> None:
+    gate_rows = _tsv(GATE_TABLE)
+    gate_results = [
+        {
+            "gate_id": row["gate_id"],
+            "gate_group": row["gate_group"],
+            "status": "pass",
+        }
+        for row in gate_rows
+    ]
+    substituted = VERDICT_TABLE.read_bytes().replace(
+        b"\tGO\tEvery required gate",
+        b"\tREDRAW\tEvery required gate",
+    )
+    with pytest.raises(OracleContractError, match="verdict table bytes"):
+        reduce_oracle_verdict(
+            gate_results,
+            [],
+            gate_table_bytes=GATE_TABLE.read_bytes(),
+            verdict_table_bytes=substituted,
+            narrow_membership_bytes_by_id={},
+            narrow_manifest_bytes_by_id={},
+            narrow_manifest_seals_by_id={},
+            narrow_scope_gate_results_by_id={},
+        )

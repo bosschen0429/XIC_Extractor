@@ -2,6 +2,7 @@
   "schema_version": "cid_nl_oracle_review_adjudication_schema_v1",
   "review_event_schema_version": "cid_nl_oracle_review_event_v1",
   "adjudication_event_schema_version": "cid_nl_oracle_adjudication_event_v1",
+  "label_seal_schema_version": "cid_nl_oracle_label_seal_v1",
   "status": "active",
   "validation_status": "diagnostic_only",
   "purpose": "Record blinded CID-NL oracle judgments and append-only adjudication without collapsing review workflow state, scientific observation state, or product authority.",
