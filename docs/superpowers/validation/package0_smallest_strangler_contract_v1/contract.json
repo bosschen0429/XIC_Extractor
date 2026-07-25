@@ -1,0 +1,44 @@
+{
+  "authority": {
+    "product_authority_granted": false,
+    "validation_status": "diagnostic_only"
+  },
+  "baseline_id": "cid_nl_legacy_baseline_6d3b18ef_8raw_v2",
+  "canonical_output_inventory_sha256": "CC25A6A731C822F9147FECAB5949EAABB79D0415FCA67436365CEC035B4293B1",
+  "legacy_comparator": {
+    "baseline_stage_xic_results_sha256": "DFDC5B4227819BA8087FC72EE9023FFFAC8FE4A82E77FD73ED1CEF813C8EB145",
+    "final_stage_xic_results_sha256": "F1783E22AF31B92F99938FDA9420B8A3A1671BB17587A4EECD936A83E16EF168",
+    "sample_row_count_per_stage": 8,
+    "column_count_per_stage": 99,
+    "sample_identity_cell_count_per_stage": 8,
+    "analytical_cell_count_per_stage": 784,
+    "target_count": 14,
+    "fields_per_target": 7,
+    "ordered_sample_sha256": "BE184540E1CC5B32A7F40BECDADE25CDE5830DEE5F87036B42780C3A1D2AC2D0",
+    "ordered_final_header_sha256": "8CBD538012713D9042752D00296C0654E9C7DBC5C7107F52E3D11EED4157CC08",
+    "membership_rule": "complete_ordered_sample_x_ordered_header_cartesian_product",
+    "required_exact_globs": [
+      "**/*.csv",
+      "**/*.tsv"
+    ]
+  },
+  "legacy_intra_stage_expected_diff": {
+    "scope": "one_5-hmdC_row",
+    "cell_count": 6,
+    "fields": [
+      "RT",
+      "Int",
+      "Area",
+      "PeakStart",
+      "PeakEnd",
+      "PeakWidth"
+    ],
+    "successor_diff_authority": false
+  },
+  "new_shadow_selection_route": {
+    "legacy_comparator_membership": false,
+    "independent_oracle_required": true,
+    "product_write_authority": false
+  },
+  "schema_version": "package0_smallest_strangler_contract_v1"
+}
