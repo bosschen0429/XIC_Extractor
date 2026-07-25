@@ -70,6 +70,7 @@ def resolve_current_review_record(
 ) -> ImmutableReviewRecordRef:
     """Resolve one immutable current record and reject stale/superseded bindings."""
 
+    _validate_review_record_graph(records)
     matches = [
         record for record in records if record.review_record_id == review_record_id
     ]
@@ -98,6 +99,41 @@ def resolve_current_review_record(
             f"review record {review_record_id!r} artifact binding mismatch"
         )
     return record
+
+
+def _validate_review_record_graph(
+    records: tuple[ImmutableReviewRecordRef, ...],
+) -> None:
+    by_id = {record.review_record_id: record for record in records}
+    if len(by_id) != len(records):
+        raise ReviewRecordReferenceError("review record IDs must be unique")
+
+    successor_by_predecessor: dict[str, str] = {}
+    for record in records:
+        predecessor_id = record.supersedes_review_record_id
+        if not predecessor_id:
+            continue
+        if predecessor_id not in by_id:
+            raise ReviewRecordReferenceError(
+                f"review record {record.review_record_id!r} has orphan predecessor "
+                f"{predecessor_id!r}"
+            )
+        if predecessor_id in successor_by_predecessor:
+            raise ReviewRecordReferenceError(
+                f"review record {predecessor_id!r} has multiple successors"
+            )
+        successor_by_predecessor[predecessor_id] = record.review_record_id
+
+    for start_id in by_id:
+        seen: set[str] = set()
+        current_id = start_id
+        while current_id in successor_by_predecessor:
+            if current_id in seen:
+                raise ReviewRecordReferenceError(
+                    "review record supersession graph contains a cycle"
+                )
+            seen.add(current_id)
+            current_id = successor_by_predecessor[current_id]
 
 
 @dataclass(frozen=True)

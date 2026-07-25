@@ -102,6 +102,14 @@ class TraceObservation:
             raise AcquisitionContractError(
                 "scan-qualified observations require one observation ID per point"
             )
+        elif any(not value.strip() for value in self.observation_ids):
+            raise AcquisitionContractError(
+                "scan-qualified observation IDs cannot be blank"
+            )
+        elif len(self.observation_ids) != len(set(self.observation_ids)):
+            raise AcquisitionContractError(
+                "scan-qualified observation IDs must be unique"
+            )
         if (
             self.coordinate_mode is TraceCoordinateMode.CONVERSION_SCAN
             and not self.conversion_provenance.strip()
@@ -140,6 +148,16 @@ def validate_trace_observation(
         raise AcquisitionContractError("observation source_id mismatch")
     if observation.coordinate_mode is not query.coordinate_mode:
         raise AcquisitionContractError("observation coordinate mode mismatch")
+    if observation.coordinate_mode is not TraceCoordinateMode.RT_ONLY:
+        namespace_prefix = f"{query.source.observation_namespace} "
+        if any(
+            observation_id != query.source.observation_namespace
+            and not observation_id.startswith(namespace_prefix)
+            for observation_id in observation.observation_ids
+        ):
+            raise AcquisitionContractError(
+                "scan identity lies outside the source observation namespace"
+            )
     if observation.rt and (
         observation.rt[0] < query.rt_min or observation.rt[-1] > query.rt_max
     ):

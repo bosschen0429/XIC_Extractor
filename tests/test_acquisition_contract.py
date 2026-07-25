@@ -74,6 +74,46 @@ def test_conversion_scan_requires_explicit_provenance() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "observation_ids",
+    [
+        ("",),
+        (
+            "controllerType=0 controllerNumber=1 scan=10",
+            "controllerType=0 controllerNumber=1 scan=10",
+        ),
+    ],
+)
+def test_scan_identity_rejects_blank_or_duplicate_ids(
+    observation_ids: tuple[str, ...],
+) -> None:
+    rt = tuple(1.0 + index * 0.1 for index in range(len(observation_ids)))
+    with pytest.raises(AcquisitionContractError, match="blank|unique"):
+        TraceObservation(
+            query_id="query-1",
+            source_id="source-1",
+            coordinate_mode=TraceCoordinateMode.NATIVE_SCAN,
+            rt=rt,
+            intensity=tuple(10.0 for _ in observation_ids),
+            observation_ids=observation_ids,
+        )
+
+
+def test_scan_identity_must_stay_in_source_namespace() -> None:
+    query = _query(TraceCoordinateMode.NATIVE_SCAN)
+    observation = TraceObservation(
+        query_id=query.query_id,
+        source_id=query.source.source_id,
+        coordinate_mode=TraceCoordinateMode.NATIVE_SCAN,
+        rt=(1.0,),
+        intensity=(10.0,),
+        observation_ids=("controllerType=0 controllerNumber=2 scan=10",),
+    )
+
+    with pytest.raises(AcquisitionContractError, match="outside"):
+        validate_trace_observation(query, observation)
+
+
 def _query(mode: TraceCoordinateMode) -> TraceQuery:
     return TraceQuery(
         query_id="query-1",

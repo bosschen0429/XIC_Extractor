@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.processing_lineage import AcquisitionSourceRef
+from xic_extractor.processing_lineage import (
+    AcquisitionSourceRef,
+    ProcessingRequestIdentityBasis,
+    ProcessingRequestRef,
+    build_processing_request_ref,
+)
 from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
@@ -64,10 +70,11 @@ class CanonicalTargetedRequest:
 
     contract_version: str
     preset_id: str
-    acquisition_source_ids: tuple[str, ...]
+    acquisition_sources: tuple[AcquisitionSourceRef, ...]
     config_hash: str
     target_config_hash: str
     targets: tuple[Target, ...]
+    processing_request: ProcessingRequestRef
 
 
 @dataclass(frozen=True)
@@ -121,7 +128,8 @@ def build_canonical_targeted_request(
 ) -> CanonicalTargetedRequest:
     if not sources:
         raise ValueError("canonical Targeted request requires identified sources")
-    source_ids = tuple(sorted(source.source_id for source in sources))
+    canonical_sources = tuple(sorted(sources, key=lambda source: source.source_id))
+    source_ids = tuple(source.source_id for source in canonical_sources)
     if len(source_ids) != len(set(source_ids)):
         raise ValueError("canonical Targeted source identities must be unique")
     if not preset_id.strip():
@@ -130,11 +138,35 @@ def build_canonical_targeted_request(
         raise ValueError(
             "canonical Targeted request requires effective config and target hashes"
         )
+    identity_basis = ProcessingRequestIdentityBasis(
+        acquisition_sources=canonical_sources,
+        normalized_query_sha256=_digest_text(
+            TARGETED_APPLICATION_CONTRACT_VERSION,
+            preset_id,
+            request.config.config_hash,
+        ),
+        method_constraints_sha256=_digest_text(
+            request.config.target_config_hash,
+        ),
+        algorithm_version=preset_id,
+        schema_version=TARGETED_APPLICATION_CONTRACT_VERSION,
+        contract_version=TARGETED_APPLICATION_CONTRACT_VERSION,
+    )
     return CanonicalTargetedRequest(
         contract_version=TARGETED_APPLICATION_CONTRACT_VERSION,
         preset_id=preset_id,
-        acquisition_source_ids=source_ids,
+        acquisition_sources=canonical_sources,
         config_hash=request.config.config_hash,
         target_config_hash=request.config.target_config_hash,
         targets=request.targets,
+        processing_request=build_processing_request_ref(identity_basis),
     )
+
+
+def _digest_text(*values: str) -> str:
+    digest = hashlib.sha256()
+    for value in values:
+        encoded = value.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    return digest.hexdigest()

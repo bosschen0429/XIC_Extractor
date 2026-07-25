@@ -96,6 +96,37 @@ def test_equal_adapters_produce_same_pickle_safe_canonical_request() -> None:
 
     assert cli_canonical == gui_canonical
     assert pickle.loads(pickle.dumps(cli_canonical)) == cli_canonical
+    assert cli_canonical.acquisition_sources == tuple(
+        sorted(sources, key=lambda source: source.source_id)
+    )
+    assert cli_canonical.processing_request.identity_basis.acquisition_sources == (
+        cli_canonical.acquisition_sources
+    )
+
+
+def test_canonical_request_identity_changes_with_source_namespace() -> None:
+    config = replace(
+        _config(),
+        config_hash="config-sha",
+        target_config_hash="targets-sha",
+    )
+    request = build_targeted_application_request(config, [_target()])
+    first = build_canonical_targeted_request(
+        request,
+        sources=(
+            AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
+        ),
+        preset_id="cid-dR",
+    )
+    second = build_canonical_targeted_request(
+        request,
+        sources=(
+            AcquisitionSourceRef("source-a", "thermo_raw", "controller=2"),
+        ),
+        preset_id="cid-dR",
+    )
+
+    assert first.processing_request.request_id != second.processing_request.request_id
 
 
 def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:

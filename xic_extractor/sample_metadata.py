@@ -157,8 +157,7 @@ def resolve_sample_identity(
         raise SampleMetadataError(
             f"sample identity token {clean_token!r} is not owned by sample metadata"
         )
-    sample_keys = {row.sample_name for row in matches}
-    if len(sample_keys) != 1:
+    if len(matches) != 1:
         raise SampleMetadataError(
             f"sample identity token {clean_token!r} is ambiguous"
         )
