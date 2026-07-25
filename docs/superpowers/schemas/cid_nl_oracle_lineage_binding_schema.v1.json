@@ -1,0 +1,197 @@
+{
+  "schema_version": "cid_nl_oracle_lineage_binding_schema_v1",
+  "binding_schema_version": "cid_nl_oracle_lineage_binding_v1",
+  "status": "active",
+  "validation_status": "diagnostic_only",
+  "purpose": "Bind CID-NL/NL116 proposal rows, holdout cases, review events, and gate results to the canonical #123 processing-lineage identities without inventing identity from paths, display names, timestamps, or case locators.",
+  "row_unit": "one oracle object x one immutable EvidenceArtifact binding",
+  "required_columns": [
+    "schema_version",
+    "oracle_packet_id",
+    "binding_id",
+    "binding_role",
+    "case_id",
+    "presentation_id",
+    "proposal_manifest_id",
+    "proposal_row_id",
+    "acquisition_source_id",
+    "sample_key",
+    "processing_request_id",
+    "processing_attempt_id",
+    "evidence_artifact_id",
+    "artifact_schema_version",
+    "artifact_semantic_role",
+    "artifact_sha256",
+    "upstream_evidence_artifact_ids",
+    "kernel_object_ref",
+    "review_record_id",
+    "review_record_schema_version",
+    "review_record_sha256",
+    "gate_id",
+    "gate_table_sha256",
+    "gate_input_artifact_ids",
+    "gate_status",
+    "gate_observed_value",
+    "gate_threshold_resolved_value",
+    "gate_verdict_dependency",
+    "source_universe",
+    "sampling_stratum",
+    "staleness_status",
+    "supersedes_binding_id",
+    "source_row_sha256"
+  ],
+  "allowed_binding_roles": [
+    "tested_tracer_proposal",
+    "holdout_case_evidence",
+    "human_review_event",
+    "machine_comparison",
+    "gate_result"
+  ],
+  "required_binding_identity_fields": {
+    "tested_tracer_proposal": [
+      "proposal_manifest_id",
+      "proposal_row_id"
+    ],
+    "holdout_case_evidence": [
+      "case_id",
+      "presentation_id"
+    ],
+    "human_review_event": [
+      "review_record_id"
+    ],
+    "machine_comparison": [
+      "case_id",
+      "presentation_id"
+    ],
+    "gate_result": [
+      "gate_id"
+    ]
+  },
+  "allowed_staleness_statuses": [
+    "current",
+    "superseded",
+    "stale",
+    "not_replayable"
+  ],
+  "nullable_columns": [
+    "case_id",
+    "presentation_id",
+    "proposal_manifest_id",
+    "proposal_row_id",
+    "acquisition_source_id",
+    "sample_key",
+    "kernel_object_ref",
+    "review_record_id",
+    "review_record_schema_version",
+    "review_record_sha256",
+    "gate_id",
+    "gate_table_sha256",
+    "gate_input_artifact_ids",
+    "gate_status",
+    "gate_observed_value",
+    "gate_threshold_resolved_value",
+    "gate_verdict_dependency",
+    "source_universe",
+    "sampling_stratum",
+    "supersedes_binding_id"
+  ],
+  "role_required_fields": {
+    "all_roles": [
+      "schema_version",
+      "oracle_packet_id",
+      "binding_id",
+      "binding_role",
+      "processing_request_id",
+      "processing_attempt_id",
+      "evidence_artifact_id",
+      "artifact_schema_version",
+      "artifact_semantic_role",
+      "artifact_sha256",
+      "staleness_status",
+      "source_row_sha256"
+    ],
+    "tested_tracer_proposal": [
+      "proposal_manifest_id",
+      "proposal_row_id",
+      "acquisition_source_id",
+      "sample_key",
+      "kernel_object_ref"
+    ],
+    "holdout_case_evidence": [
+      "case_id",
+      "presentation_id",
+      "acquisition_source_id",
+      "sample_key",
+      "source_universe",
+      "sampling_stratum"
+    ],
+    "human_review_event": [
+      "case_id",
+      "presentation_id",
+      "review_record_id",
+      "review_record_schema_version",
+      "review_record_sha256"
+    ],
+    "machine_comparison": [
+      "case_id",
+      "presentation_id",
+      "kernel_object_ref"
+    ],
+    "gate_result": [
+      "gate_id",
+      "gate_table_sha256",
+      "gate_input_artifact_ids",
+      "gate_status",
+      "gate_observed_value",
+      "gate_threshold_resolved_value",
+      "gate_verdict_dependency"
+    ]
+  },
+  "seal_required_fields": [
+    "schema_version",
+    "oracle_packet_id",
+    "lineage_binding_tsv_sha256",
+    "proposal_manifest_seal_id",
+    "holdout_sampling_manifest_seal_id",
+    "human_label_seal_id",
+    "gate_table_sha256",
+    "binding_row_count",
+    "distinct_acquisition_source_count",
+    "distinct_processing_request_count",
+    "distinct_processing_attempt_count",
+    "distinct_evidence_artifact_count",
+    "missing_required_binding_count",
+    "sealed_at_utc",
+    "sealed_by",
+    "seal_status",
+    "supersedes_lineage_seal_id"
+  ],
+  "integrity_rules": {
+    "primary_key": [
+      "oracle_packet_id",
+      "binding_id"
+    ],
+    "one_immutable_artifact_binding_per_row": true,
+    "processing_attempt_references_exactly_one_request": true,
+    "kernel_object_ref_is_processing_request_namespaced": true,
+    "artifact_identity_requires_attempt_role_schema_and_digest": true,
+    "missing_required_binding_count_is_derived_from_complete_required_binding_universe": true,
+    "review_binding_requires_stable_record_schema_digest_and_artifact_links": true,
+    "gate_result_binding_requires_gate_table_input_artifacts_status_observed_threshold_and_verdict_dependency": true,
+    "case_id_is_locator_not_lineage_identity": true,
+    "path_display_name_timestamp_and_row_order_forbidden_as_identity": true,
+    "missing_source_bytes_recorded_not_replayable": true,
+    "historical_provenance_must_not_be_invented": true,
+    "sealed_rows_are_append_only": true,
+    "correction_requires_new_binding_and_supersession_edge": true,
+    "missing_required_binding_verdict": "inconclusive"
+  },
+  "authority_rules": {
+    "lineage_binding_grants_review_truth": false,
+    "lineage_binding_grants_matrix_authority": false,
+    "lineage_binding_grants_backfill_writer_authority": false,
+    "lineage_binding_grants_counted_detection_authority": false,
+    "lineage_binding_grants_selected_area_authority": false,
+    "lineage_binding_grants_activation_or_export_authority": false
+  }
+}

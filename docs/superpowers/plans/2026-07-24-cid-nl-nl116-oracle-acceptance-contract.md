@@ -97,6 +97,12 @@ The human reviewer does not type a visual "true area." The reviewer confirms or
 corrects the peak and boundaries; a frozen deterministic integrator calculates
 the adjudicated area.
 
+This packet judges integration correctness, not absolute-concentration
+accuracy. A consistent baseline policy, attributable peak, acceptable
+boundaries, and deterministic integration are sufficient for the area
+judgment. Internal-standard concentration, calibration curves, linearity,
+LOD/LOQ, and absolute quantification are outside this tracer oracle.
+
 If feature identity is rejected or no applicable peak exists, this dimension is
 `not_applicable`, not `unassessable`.
 
@@ -149,6 +155,28 @@ Evidence roles remain distinct:
 - synthetic cases test mechanics and policy boundaries, not real-world
   recovery or false-positive rates.
 
+Physical presence and method detectability remain separate. The seven
+isotope-labelled internal standards are fixed-spike expected-presence controls
+for every biological and QC injection in the 85RAW fixture. Their paired
+analytes are not expected-presence controls: each analyte must be judged from
+its own sample evidence. A paired internal standard may support RT, identity,
+peak selection, and run-quality interpretation; it cannot upgrade an analyte
+to `observed` or `select_value`.
+
+The current Untargeted Discovery acceptance scope is NL116-only. Six internal
+standards with `neutral_loss_da=116.0474` are method-applicable expected
+detections. `[13C,15N2]-8-oxo-Guo` is physically present but has
+`neutral_loss_da=132.0423`; its absence from an NL116-only proposal set is an
+explicit method-scope exclusion, not a tracer false negative. Targeted can
+search both neutral losses from per-target configuration, but that broader
+Targeted capability does not silently expand the Untargeted acceptance scope.
+
+Uniform fixed spiking establishes expected presence, not equal observed area.
+The pooled QC injections contain all seven internal standards, but their
+effective concentration or response is not required to equal individual
+biological samples. Matrix, preparation, and pooling effects remain observable
+evidence rather than oracle failure.
+
 Strong benchmark anchors do not transfer compound-identification confidence to
 cases that lack the same evidence.
 
@@ -174,6 +202,37 @@ After calibration, the review schema, deterministic integration method,
 acceptance metrics, tolerances, and GO/NARROW/REDRAW rules are frozen before
 formal holdout review.
 
+### Frozen boundary and area comparison
+
+The 2RAW × 6 NL116 internal-standard calibration freezes the following
+formal-holdout comparison for cases where the human reviewer accepts feature
+identity and records an observed peak:
+
+- the human left/right coordinates are a conservative outer envelope of the
+  visibly attributable peak, not exact threshold-crossing truth;
+- the machine interval must be contained within that human envelope;
+- the machine area, recomputed with the same frozen trace morphology and
+  deterministic integrator, must retain at least `98%` of the area inside the
+  human envelope.
+
+Coordinate equality, fixed minute deltas, and boundary IoU are descriptive
+diagnostics, not pass/fail gates. The `98%` retained-area floor is a
+formal-holdout validation tolerance; it is not a new runtime boundary threshold
+and does not replace the active `2%` sustained baseline-return rule.
+
+The calibration observed a minimum retained-area ratio of `98.9616%` across 12
+accepted cases. The owner judged the resulting tail-area differences
+acceptable and preferred one reproducible machine policy over repeated manual
+boundary placement. The formal holdout tests this frozen rule once. A holdout
+failure is not repaired by tuning the rule against revealed holdout outcomes.
+
+The sealed human labels, human-machine comparison, and area-sensitivity tables
+are tracked. The 12 blind plot bytes remain hash-bound local evidence without a
+durable portable archive. Until those existing bytes are pinned and bound to a
+retention seal, `calibration_evidence_portability` is `inconclusive` and no
+formal GO may inherit the `0.98` gate. Closing this portability gap requires no
+new RAW replay.
+
 ### First blinded pass
 
 The reviewer may see:
@@ -195,6 +254,12 @@ The reviewer must not see:
 
 The reviewer independently records feature identity and sample-local
 peak/boundary judgment.
+
+The machine-readable review and append-only adjudication owner is
+[`cid_nl_oracle_review_adjudication_schema.v1.json`](../schemas/cid_nl_oracle_review_adjudication_schema.v1.json).
+It supports the current single-domain-reviewer constraint through hidden
+duplicates without inheriting the older lockbox requirement for two human
+reviewers per case.
 
 ### Cross-sample policy pass
 
@@ -282,12 +347,48 @@ may come from authentic/labelled standards, accepted internal-standard or
 profile anchors, an independently generated benchmark, or blinded systematic
 review of the bounded search space. Each source retains its own claim strength.
 
+The 85RAW sample-material strata are also frozen:
+
+- `TumorBC2286_DNAandRNA` and `TumorBC2304_DNAandRNA` are the two known
+  DNA-and-RNA mixed biological samples;
+- all other biological samples are DNA-only;
+- pooled QC samples are a separate stratum and are not inferred to be DNA-only
+  or RNA-containing from their names.
+
+RNA-applicable analyte hypotheses such as `8-oxo-Guo` may be evaluated for
+sample applicability in the two mixed biological samples. Applicability does
+not assert that the analyte is present. QC analyte presence is judged from
+evidence or a separate QC composition contract, not inferred from pooling.
+External spectral-library comparisons must preserve these material and
+neutral-loss strata; an RNA or NL132 library record cannot become an
+expected-positive case for a DNA-only sample or the current NL116-only tracer.
+
 Two denominators remain separate:
 
 - proposal-conditioned precision / false-positive behavior over tracer
   proposals;
 - reference-universe recovery over independently supported positives,
   including positives the tracer never proposed.
+
+The tested-tracer proposal manifest has two lifecycle steps. Issue #125 freezes
+its required fields, lineage bindings, and sealing protocol before tracer
+implementation. A populated proposal manifest cannot be created until a
+specific tested tracer and normalized `ProcessingRequest` exist; it is frozen
+after that tracer runs and before machine mappings are revealed or formal
+holdout labels are opened. Missing populated proposals therefore block formal
+holdout execution, not completion of the oracle contract itself. Placeholder
+or legacy machine-conditioned rows must not be relabelled as tested-tracer
+proposals.
+
+The canonical shape is
+[`cid_nl_tested_tracer_proposal_manifest_schema.v1.json`](../schemas/cid_nl_tested_tracer_proposal_manifest_schema.v1.json).
+It records one `PeakHypothesis × AcquisitionSource × workflow_policy` row and
+must include every candidate emitted by the sealed tracer attempt before any
+denominator filtering. The proposal-conditioned positive denominator is
+computed from frozen `select_value` rows. `hold` and `leave_missing` remain
+auditable rows but are not positive proposals. Independent-reference recovery
+uses the separate reference universe and can therefore count supported
+positives that the tracer never proposed.
 
 When a universe is sampled rather than exhausted, the manifest records the
 sampling frame, stratum, inclusion probability, and analysis weight.
@@ -353,6 +454,20 @@ interim results are inspected; otherwise the result remains descriptive only
 and can inform a later preregistered packet, not revise this packet's frozen
 representative metrics.
 
+The canonical case/sampling shape is
+[`cid_nl_formal_holdout_sampling_manifest_schema.v1.json`](../schemas/cid_nl_formal_holdout_sampling_manifest_schema.v1.json).
+It records one blinded presentation per row while keeping `case_id` as the
+primary analysis unit. Hidden duplicates are repeatability-only, and adaptive
+supplemental rows cannot enter the frozen representative denominator.
+
+Reference-universe construction follows
+[`2026-07-25-cid-nl-reference-universe-protocol.md`](2026-07-25-cid-nl-reference-universe-protocol.md)
+and
+[`cid_nl_reference_universe_manifest_schema.v1.json`](../schemas/cid_nl_reference_universe_manifest_schema.v1.json).
+The protocol freezes source eligibility, independent enumeration, material and
+method scope, deduplication, sampling weights, review, sealing, and
+post-reveal fail-closed behavior.
+
 ## Synthetic Contract Suite
 
 Synthetic cases are scored separately from human RAW review and cover at least:
@@ -367,6 +482,15 @@ Synthetic cases are scored separately from human RAW review and cover at least:
 
 Synthetic success cannot establish scientific recovery or false-positive rate.
 
+The executable no-RAW fixture is
+[`cid_nl_oracle_synthetic_contract_suite_v1.tsv`](../validation/cid_nl_oracle_packet_preflight_v1/cid_nl_oracle_synthetic_contract_suite_v1.tsv).
+It contains clean, absent/noise, neighbour ambiguity, wrong apex/boundary,
+Targeted-prior, state-collapse, unassessable, replay, duplicate-weighting,
+reference-independence, complete observation/projection crosswalk, and NL132
+scope-exclusion cases. Focused tests apply
+the frozen crosswalk and gate expectations; they do not emulate tracer
+scientific performance.
+
 ## Evaluation Units
 
 Results are reported at two levels:
@@ -377,6 +501,37 @@ Results are reported at two levels:
 Sample-cells from the same hypothesis are not treated as independent compounds.
 Uncertainty estimates and split manifests report the independent hypotheses,
 families, batches, studies, and instruments represented.
+
+## Statistical Design
+
+The primary-source research owner is
+[`2026-07-25-cid-nl-oracle-statistical-design-research.md`](2026-07-25-cid-nl-oracle-statistical-design-research.md).
+Each formal estimand is frozen through
+[`cid_nl_oracle_statistical_design_manifest_schema.v1.json`](../schemas/cid_nl_oracle_statistical_design_manifest_schema.v1.json).
+
+The frozen design rules are:
+
+- proposal precision and independent-reference recovery remain separate
+  estimands and sampling frames;
+- challenge-set composition is not deployment prevalence;
+- a complete bounded census is reported descriptively for that finite frame;
+  it does not receive a binomial sampling interval for itself;
+- an independent equal-probability Bernoulli sample may use a preregistered
+  Wilson or exact interval;
+- stratified, weighted, or clustered samples require design-aware,
+  cluster-aware uncertainty using the recorded inclusion probabilities and
+  grouping keys;
+- hidden duplicates estimate intra-rater repeatability only and retain their
+  two pre-adjudication labels;
+- automation reports coverage jointly with error among decided cases,
+  positive-class coverage, and unconditional reference recovery;
+- an incomplete reference frame supports only bounded known-reference
+  recovery, not full-dataset sensitivity or false-negative rate.
+
+Case counts follow the preregistered estimand, acceptable bound or interval
+width, confidence level, design value, power, prevalence/stratum mixture,
+cluster design, and review budget. No universal count is frozen by this
+contract.
 
 ## Targeted / Untargeted Relationship
 
@@ -399,6 +554,19 @@ area behavior on in-scope paired cases. Untargeted may miss a preregistered
 bounded subset when the only legitimate difference is Targeted prior support.
 The allowable gap is frozen after calibration and before formal holdout.
 
+For the full 85RAW expected-positive anchor gate, the six NL116 internal
+standards define `85 × 6 = 510` sample-cells. The owner expects no practical
+Targeted/Untargeted difference for these easy-to-recognize anchors and allows at
+most two fewer correct Untargeted cells than Targeted. This relative gate does
+not hide shared misses: absolute ISTD recovery remains part of the independent
+reference-recovery gate.
+
+The owner, capture time, exact scopes, rationales, and canonical decision hashes
+for this two-cell tolerance and the 90% automated-coverage floor are retained in
+[`cid_nl_oracle_owner_policy_seal_v1.json`](../validation/cid_nl_oracle_packet_preflight_v1/cid_nl_oracle_owner_policy_seal_v1.json).
+The durable human-readable source record is
+[`2026-07-25-cid-nl-oracle-owner-decisions.md`](2026-07-25-cid-nl-oracle-owner-decisions.md).
+
 Raw Targeted/Untargeted agreement is not itself a success metric.
 
 ## End-To-End Responsibility Localization
@@ -418,15 +586,25 @@ the project does not patch only the final projection.
 
 The following cannot be averaged away:
 
-- false feature identity;
 - Targeted-only authority leaking into Untargeted;
 - `hold`, `unassessable`, or insufficient evidence becoming a selected value;
 - overwriting a trusted existing value;
 - collapsing missing, failure, ambiguity, and detected states;
 - tracer lineage/provenance mismatch under an otherwise valid oracle packet.
 
-Peak, boundary, area, recovery, repeatability, reproducibility, and performance
-use preregistered tolerances.
+False accepted features contribute to proposal-conditioned precision rather
+than acting as a zero-tolerance hard blocker. The owner prioritizes recovery of
+true features because downstream feature filtering remains available and
+false-positive control is expected to improve iteratively. This does not permit
+authority leaks or non-observed states to become selected values.
+
+Peak, boundary, area, precision, recovery, repeatability, reproducibility, and
+performance use preregistered tolerances.
+
+Routine automation may abstain or return `hold` on at most `10%` of primary
+cases, so automated coverage must be at least `90%`. Human-adjudicated
+`unassessable` remains a separate completed observation state and packet-
+sufficiency metric; it is not folded into the machine-abstention rate.
 
 `unassessable` is neither pass nor fail. Excessive `unassessable` means the
 packet is insufficient and cannot produce GO.
@@ -462,6 +640,27 @@ The decision function is total and fail-closed:
 `NARROW` requires a positive bounded claim that passed its own gates. Mere lack
 of evidence is `inconclusive`. The frozen gate table, not interpretation after
 results are known, determines the verdict.
+
+Every candidate NARROW claim must exist in a sealed
+[`cid_nl_oracle_narrow_scope_manifest_schema.v1.json`](../schemas/cid_nl_oracle_narrow_scope_manifest_schema.v1.json)
+manifest before machine mappings or holdout labels are revealed. The manifest
+binds exact case membership, membership predicate, required gates, allowed
+overall failed gates, independent-unit parameter, and precedence. The verdict
+reducer derives scope pass from raw gate results. Without a passing sealed
+scope, a non-hard scientific failure is `REDRAW`, not an invitation to choose a
+successful subgroup afterward.
+
+The machine-readable owners are:
+
+- [`cid_nl_oracle_gate_table_v1.tsv`](../validation/cid_nl_oracle_packet_preflight_v1/cid_nl_oracle_gate_table_v1.tsv);
+- [`cid_nl_oracle_verdict_table_v1.tsv`](../validation/cid_nl_oracle_packet_preflight_v1/cid_nl_oracle_verdict_table_v1.tsv).
+
+Every gate now has a denominator, statistic, threshold kind, required inputs,
+unknown outcome, failure verdict, precedence, freeze stage, and evidence basis.
+Numerical values unsupported by calibration or an owner decision are named
+preregistered parameters that must be sealed before formal holdout. They are
+not `UNSET` runtime defaults. Issue #128 remains the external owner of the
+performance parameter.
 
 ## ML-Ready Contract
 
@@ -652,6 +851,13 @@ Issue #128 owns execution outcome, cancellation, retry scheduling, cleanup,
 volatile cache lifecycle, and runtime observability. A versioned handoff links
 the two without redefining either state model.
 
+The oracle-specific adapter shape is
+[`cid_nl_oracle_lineage_binding_schema.v1.json`](../schemas/cid_nl_oracle_lineage_binding_schema.v1.json).
+It does not mint replacement identities. It binds proposal rows, holdout cases,
+review events, comparisons, and gate results to #123 identities and records
+unavailable historical bytes as `not_replayable` rather than manufacturing
+provenance.
+
 ## Remaining Calibration Decisions
 
 Calibration must still preregister:
@@ -659,24 +865,34 @@ Calibration must still preregister:
 - case counts and staged expansion limits;
 - hidden duplicate fraction;
 - exact identity-family grouping implementation;
-- folds/repeats for development validation;
-- boundary and area tolerances;
-- Targeted/Untargeted non-inferiority gap;
-- acceptable `unassessable` and automated-coverage ranges;
-- uncertainty/confidence reporting method;
+- independent-unit/precision design;
+- `nl116_istd_recovery_floor`;
+- `proposal_precision_floor`;
+- `reference_recovery_floor`;
+- `reviewer_repeatability_floor`;
+- `unassessable_rate_ceiling`;
+- `automated_selective_risk_ceiling`;
 - performance budget inherited from #128.
 
-These choices require observed candidate prevalence, independent group counts,
-reviewer calibration, and intended deployment precision.
+The Targeted/Untargeted 510-cell gap, machine automated coverage, and
+boundary/area rules are already frozen. Folds/repeats remain conditional ML
+annex decisions rather than deterministic-tracer blockers. The remaining
+parameters require observed candidate prevalence, independent group counts,
+reviewer calibration, intended claim precision, or the #128 budget. Their
+formula, uncertainty role, freeze stage, and fail-closed handling are already
+defined.
 
 ## Acceptance Packet Deliverables
 
 Before tracer implementation or promotion planning, #125 must produce:
 
-1. a case-universe manifest and sampling strata;
+1. case-universe, sampling-design, tested-tracer proposal, independent
+   reference, and narrow-scope manifest schemas plus sealing protocols;
 2. a blinded review schema and append-only adjudication schema;
 3. a calibration packet with proposed frozen tolerances;
-4. a formal challenge/random holdout manifest;
+4. a formal challenge/random holdout manifest schema and preregistration
+   lifecycle; populated rows follow a real sealed tracer attempt and
+   independently constructed reference frame;
 5. a synthetic contract suite specification;
 6. a machine-readable metric/gate/verdict preregistration;
 7. an authority statement retaining `diagnostic_only`;
@@ -689,3 +905,23 @@ and unseen-family.
 No formal RAW replay is authorized by this document. A later replay requires
 the XIC RAW validation and architecture preflights plus an explicit bounded run
 scope.
+
+## No-RAW Completion State
+
+Issue #125's acceptance-contract design is complete without pretending the
+formal evaluation has run:
+
+- proposal, holdout sampling, reference-universe, review/adjudication, and
+  lineage schemas are defined;
+- reference construction, review custody, correction, and sealing protocols
+  are defined;
+- the gate inventory and verdict function are total and fail-closed;
+- the 25-case synthetic contract suite exercises the required state, policy,
+  boundary, lineage, and denominator mechanics;
+- the 2RAW calibration remains the only RAW-backed evidence and is not rerun.
+
+Formal holdout execution remains blocked until a real tracer attempt, populated
+and sealed proposal/reference/sampling/review/lineage manifests, preregistered
+remaining parameter values, retained evidence bundle, and #128 performance
+budget exist. This completed contract remains `diagnostic_only` and grants no
+product authority.

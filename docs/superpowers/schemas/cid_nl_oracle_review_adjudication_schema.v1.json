@@ -1,0 +1,242 @@
+{
+  "schema_version": "cid_nl_oracle_review_adjudication_schema_v1",
+  "review_event_schema_version": "cid_nl_oracle_review_event_v1",
+  "adjudication_event_schema_version": "cid_nl_oracle_adjudication_event_v1",
+  "label_seal_schema_version": "cid_nl_oracle_label_seal_v1",
+  "status": "active",
+  "validation_status": "diagnostic_only",
+  "purpose": "Record blinded CID-NL oracle judgments and append-only adjudication without collapsing review workflow state, scientific observation state, or product authority.",
+  "review_event_row_unit": "one reviewer judgment event for one blinded presentation and review phase",
+  "adjudication_event_row_unit": "one append-only resolution or integrity event over immutable review records",
+  "required_review_event_columns": [
+    "schema_version",
+    "oracle_packet_id",
+    "holdout_manifest_id",
+    "case_id",
+    "presentation_id",
+    "review_record_id",
+    "review_phase",
+    "analysis_role",
+    "reviewer_id",
+    "reviewed_at_utc",
+    "review_status",
+    "evidence_sufficiency",
+    "feature_identity_decision",
+    "observation_state",
+    "peak_decision",
+    "human_apex_rt_min",
+    "human_left_rt_min",
+    "human_right_rt_min",
+    "targeted_projection",
+    "untargeted_projection",
+    "reason_codes",
+    "reviewer_notes",
+    "evidence_artifact_ids",
+    "evidence_bundle_sha256",
+    "source_sampling_row_sha256",
+    "local_label_seal_id",
+    "local_review_record_id",
+    "local_review_record_sha256",
+    "source_roles_visible",
+    "machine_mapping_visible",
+    "legacy_mapping_visible",
+    "evaluated_system_scores_visible",
+    "predecessor_review_record_id",
+    "source_row_sha256"
+  ],
+  "allowed_review_phases": [
+    "sample_local_blinded",
+    "cross_sample_policy_blinded",
+    "hidden_duplicate_sample_local_blinded",
+    "hidden_duplicate_policy_blinded",
+    "unblinded_failure_taxonomy"
+  ],
+  "allowed_analysis_roles": [
+    "primary_confirmatory",
+    "repeatability_only",
+    "supplemental_descriptive"
+  ],
+  "allowed_review_statuses": [
+    "completed",
+    "invalid_before_reveal"
+  ],
+  "allowed_evidence_sufficiency": [
+    "sufficient",
+    "insufficient"
+  ],
+  "allowed_feature_identity_decisions": [
+    "accept",
+    "reject",
+    "unassessable",
+    "not_applicable"
+  ],
+  "allowed_observation_states": [
+    "observed",
+    "missing",
+    "absent",
+    "unassessable",
+    "ambiguous",
+    "failed",
+    "not_applicable"
+  ],
+  "allowed_peak_decisions": [
+    "acceptable",
+    "wrong_peak",
+    "no_applicable_peak",
+    "unassessable",
+    "not_applicable"
+  ],
+  "allowed_policy_projections": [
+    "select_value",
+    "leave_missing",
+    "hold",
+    "not_adjudicated"
+  ],
+  "nullable_review_columns": [
+    "human_apex_rt_min",
+    "human_left_rt_min",
+    "human_right_rt_min",
+    "targeted_projection",
+    "untargeted_projection",
+    "reviewer_notes",
+    "local_label_seal_id",
+    "local_review_record_id",
+    "local_review_record_sha256",
+    "predecessor_review_record_id"
+  ],
+  "review_phase_required_fields": {
+    "sample_local_blinded": [
+      "evidence_sufficiency",
+      "feature_identity_decision",
+      "observation_state",
+      "peak_decision"
+    ],
+    "cross_sample_policy_blinded": [
+      "local_label_seal_id",
+      "local_review_record_id",
+      "local_review_record_sha256",
+      "targeted_projection",
+      "untargeted_projection"
+    ],
+    "hidden_duplicate_sample_local_blinded": [
+      "evidence_sufficiency",
+      "feature_identity_decision",
+      "observation_state",
+      "peak_decision"
+    ],
+    "hidden_duplicate_policy_blinded": [
+      "local_label_seal_id",
+      "local_review_record_id",
+      "local_review_record_sha256",
+      "targeted_projection",
+      "untargeted_projection"
+    ],
+    "unblinded_failure_taxonomy": [
+      "predecessor_review_record_id",
+      "reason_codes"
+    ]
+  },
+  "review_conditional_rules": {
+    "observed_accepted_peak_requires_finite_ordered_apex_and_boundaries": true,
+    "human_apex_must_be_inside_human_boundaries": true,
+    "rejected_identity_requires_not_applicable_peak_and_boundaries": true,
+    "no_applicable_peak_requires_not_applicable_boundaries": true,
+    "unassessable_is_completed_observation_not_pending_review": true,
+    "sample_local_phase_requires_all_evaluated_system_outputs_hidden": true,
+    "cross_sample_phase_requires_sealed_sample_local_label": true,
+    "cross_sample_phase_requires_immutable_local_record_id_and_sha256": true,
+    "cross_sample_phase_enforces_observation_projection_crosswalk": true,
+    "cross_sample_context_cannot_change_sample_local_identity_peak_or_boundary": true,
+    "hidden_duplicate_requires_complete_sample_local_and_policy_phases_for_policy_repeatability": true,
+    "hidden_duplicate_phases_require_repeatability_only_analysis_role": true,
+    "hidden_duplicate_and_primary_must_use_same_reviewer_within_each_phase": true,
+    "every_designated_primary_requires_complete_sample_local_and_policy_phases": true,
+    "unblinded_taxonomy_cannot_change_confirmatory_label": true,
+    "primary_confirmatory_denominator_uses_exactly_one_designated_primary_presentation": true
+  },
+  "required_adjudication_event_columns": [
+    "schema_version",
+    "oracle_packet_id",
+    "adjudication_record_id",
+    "case_id",
+    "adjudication_type",
+    "trigger_review_record_ids",
+    "trigger_reason_codes",
+    "adjudicator_id",
+    "adjudicated_at_utc",
+    "machine_mapping_visible",
+    "legacy_mapping_visible",
+    "resulting_confirmatory_review_record_id",
+    "adjudicated_dimension",
+    "adjudicated_value",
+    "adjudication_rule_id",
+    "affected_gate_ids",
+    "packet_effect",
+    "superseding_packet_id",
+    "predecessor_adjudication_record_id",
+    "source_row_sha256"
+  ],
+  "allowed_adjudication_types": [
+    "pre_reveal_hidden_duplicate_inconsistency",
+    "pre_reveal_inter_reviewer_disagreement",
+    "pre_reveal_case_validity",
+    "post_reveal_integrity_incident"
+  ],
+  "allowed_packet_effects": [
+    "confirm_frozen_label",
+    "invalidate_case_before_reveal",
+    "packet_inconclusive",
+    "taxonomy_only"
+  ],
+  "nullable_adjudication_columns": [
+    "resulting_confirmatory_review_record_id",
+    "adjudicated_dimension",
+    "adjudicated_value",
+    "adjudication_rule_id",
+    "affected_gate_ids",
+    "superseding_packet_id",
+    "predecessor_adjudication_record_id"
+  ],
+  "adjudication_rules": {
+    "adjudication_is_append_only": true,
+    "trigger_records_are_immutable": true,
+    "pre_reveal_label_resolution_requires_machine_and_legacy_mapping_hidden": true,
+    "pre_reveal_label_resolution_requires_dimension_value_and_rule": true,
+    "post_reveal_integrity_incident_cannot_change_confirmatory_label": true,
+    "post_reveal_integrity_incident_requires_packet_inconclusive": true,
+    "post_reveal_case_removal_and_denominator_recomputation_forbidden": true,
+    "duplicate_presentations_never_enter_confirmatory_metric_denominators": true,
+    "correction_after_reveal_requires_new_packet_and_supersession_edge": true
+  },
+  "label_seal_required_fields": [
+    "schema_version",
+    "oracle_packet_id",
+    "holdout_manifest_seal_id",
+    "review_event_log_sha256",
+    "adjudication_event_log_sha256",
+    "primary_confirmatory_case_count",
+    "hidden_duplicate_presentation_count",
+    "invalid_before_reveal_case_count",
+    "unassessable_primary_case_count",
+    "source_roles_revealed",
+    "machine_mapping_revealed",
+    "legacy_mapping_revealed",
+    "sealed_at_utc",
+    "sealed_by",
+    "seal_status",
+    "supersedes_label_seal_id"
+  ],
+  "label_seal_expected_values": {
+    "source_roles_revealed": false,
+    "machine_mapping_revealed": false,
+    "legacy_mapping_revealed": false
+  },
+  "authority_rules": {
+    "review_or_adjudication_grants_matrix_authority": false,
+    "review_or_adjudication_grants_backfill_writer_authority": false,
+    "review_or_adjudication_grants_counted_detection_authority": false,
+    "review_or_adjudication_grants_selected_area_authority": false,
+    "review_or_adjudication_grants_workbook_or_gui_authority": false,
+    "review_or_adjudication_grants_activation_or_export_authority": false
+  }
+}
