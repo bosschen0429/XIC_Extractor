@@ -30,9 +30,9 @@ names, process IDs, or runtime-local cache keys.
 The minimum contract succeeds when three properties are mechanically
 testable:
 
-1. for an attempt whose coordinator survives through terminal commit, no listed
-   work unit, reserved resource, or produced artifact can disappear from the
-   terminal attempt record;
+1. for an attempt with a durable terminal acknowledgement, no listed work unit,
+   reserved resource, or produced artifact can disappear from the terminal
+   attempt record;
 2. cancellation, worker loss, retry, cleanup, and cache reuse cannot turn
    incomplete execution into scientific absence or deliverable output; and
 3. Targeted and Alignment can report comparable execution cost without moving
@@ -139,10 +139,10 @@ Terminal outcome is deterministic:
 
 An attempt can become terminal after every manifest unit has a terminal result
 and every reserved resource has exactly one terminal cleanup record, and every
-current-attempt runtime artifact has a terminal disposition. Cleanup failure,
-worker loss, or artifact-disposition failure therefore blocks success, not
-terminalization. A manifest preflight failure has an empty work, resource, and
-artifact registry and can terminalize immediately as `failed`.
+current-attempt runtime artifact has a proposed terminal disposition. Cleanup
+failure, worker loss, or artifact-disposition failure therefore blocks success,
+not terminalization. A manifest preflight failure has an empty work, resource,
+and artifact registry and can immediately propose `failed`.
 
 All state-changing events use one monotonic sequence per attempt. Appending a
 required lifecycle event and applying its state transition are one atomic
@@ -152,19 +152,33 @@ sink is a non-authoritative copy: export failure is recorded when possible as a
 telemetry failure but cannot erase the in-memory ledger. Cancellation accepted
 before the atomic terminal decision affects the outcome. A request arriving
 after that decision is recorded as rejected/no-op. Cleanup failure still has
-precedence over cancellation.
+precedence over cancellation. The in-memory terminal decision is a frozen
+proposal; it becomes the terminal outcome only through the durable
+acknowledgement below.
 
 ## Coordinator And Host-Loss Boundary
 
-The first runtime is intentionally in-memory. Its complete terminal-record and
-exactly-once logical cleanup guarantees require the coordinator process to
-survive through terminal commit. They cover worker loss; they do not pretend to
-survive coordinator or host loss without durable state.
+The first runtime keeps its reducer and detailed event ledger in memory. It uses
+one small durable supervisor marker to close the terminal handoff without
+claiming a durable queue:
 
-Before launch, the lineage owner or entry-point supervisor must durably bind the
-owner-created attempt identity to one attempt-scoped temporary-artifact
-namespace and the coordinator launch. If the coordinator exits without a
-terminal commit:
+1. before launch, the lineage owner or entry-point supervisor atomically records
+   the owner-created attempt identity, attempt-scoped temporary-artifact
+   namespace, and coordinator launch;
+2. after work, cleanup, and artifact-disposition closure, the coordinator writes
+   one immutable terminal-record artifact in that namespace containing the
+   outcome, manifest and per-unit outcomes, resource cleanup outcomes, artifact
+   registry and proposed dispositions, failures, metrics, and event-ledger
+   digest;
+3. the supervisor atomically records that terminal record's content digest as
+   the durable terminal acknowledgement; only this acknowledgement commits the
+   attempt outcome and corresponding logical artifact dispositions.
+
+Terminal-record write, integrity, or acknowledgement failure cannot commit
+success. The terminal record is recovery metadata, not delivery evidence or a
+ProductWriter artifact.
+
+If the coordinator exits before durable terminal acknowledgement:
 
 - the supervisor reports `coordinator_loss`, and the lineage owner records the
   old attempt as failed from the durable launch marker;
@@ -176,11 +190,17 @@ terminal commit:
   registry; cleanup is conservatively unknown at attempt scope; and
 - retry requires a new `ProcessingAttempt` identity and fresh runtime.
 
-This launch marker is recovery evidence, not a second attempt identity or a
-durable runtime queue. A production integration that needs per-resource crash
-recovery must first add and validate a durable registry or equivalent
-supervision contract. Until then, abrupt coordinator-loss handling remains a
-tested `diagnostic_only` boundary.
+If the coordinator exits after acknowledgement, the durable acknowledgement is
+authoritative: the lineage owner verifies and reads the acknowledged immutable
+terminal record rather than downgrading it to `coordinator_loss`. A repeated
+acknowledgement with the same digest is idempotent; a different terminal-record
+digest for the same attempt fails closed.
+
+The launch/terminal marker is recovery evidence, not a second attempt identity
+or a durable runtime queue. A production integration that needs per-resource
+crash recovery before terminal proposal must first add and validate a durable
+registry or equivalent supervision contract. Until then, abrupt
+coordinator-loss handling remains a tested `diagnostic_only` boundary.
 
 ## Cancellation, Worker Loss, Partial Work, And Failure
 
@@ -217,17 +237,18 @@ double-apply destructive effects. Unknown or failed cleanup makes the attempt
 `failed` but still lets it reach terminal state.
 
 Every runtime-mediated artifact is registered before its first write. Artifacts
-produced by the current attempt remain `runtime_temporary` until terminal
-commit. That commit atomically sets attempt `succeeded` and every such artifact
-to `offered_to_owner`; if the attempt fails or is cancelled, every registered
-artifact, including partial bytes from a failed unit, becomes logically
-`quarantined_diagnostic`. Failure of an owner-supplied physical quarantine
-action is aggregated as cleanup failure, but never makes the artifact
-deliverable. These artifacts may support diagnosis or a later lineage-approved
-dependency, but they cannot silently become scientific `missing`, `absent`,
-selected values, or product output. An artifact referenced through
-`validated_dependency` keeps its prior producer-owned disposition; only this
-attempt's dependency-use record becomes non-deliverable.
+produced by the current attempt remain `runtime_temporary` through the
+in-memory terminal proposal. Durable terminal acknowledgement atomically
+commits a successful attempt and every such artifact to `offered_to_owner`; a
+failed/cancelled acknowledgement, or coordinator loss before acknowledgement,
+logically changes every registered artifact, including partial bytes from a
+failed unit, to `quarantined_diagnostic`. Failure of an owner-supplied physical
+quarantine action is aggregated as cleanup failure, but never makes the
+artifact deliverable. These artifacts may support diagnosis or a later
+lineage-approved dependency, but they cannot silently become scientific
+`missing`, `absent`, selected values, or product output. An artifact referenced
+through `validated_dependency` keeps its prior producer-owned disposition; only
+this attempt's dependency-use record becomes non-deliverable.
 
 All failures are retained as typed records and aggregated at the attempt
 boundary. Each preserves the work-unit/resource key, stage, source reference,
@@ -307,8 +328,8 @@ Every event carries the attempt identity, monotonic sequence, monotonic offset
 from the runtime origin established by `attempt_queued`, event kind, and
 work-unit/resource reference where applicable. The minimum event set covers:
 
-- attempt queued, started, cancellation accepted/rejected, terminal decision,
-  and terminal outcome;
+- attempt queued, started, cancellation accepted/rejected, terminal proposal,
+  durable terminal acknowledgement, and terminal outcome;
 - required-work manifest closed and work unit submitted, started, and settled;
 - dependency reuse accepted/rejected/not used and unit satisfaction source;
 - acquisition/resource reserved, opened/open-failed/not-opened, and terminal
@@ -331,7 +352,7 @@ lifecycle events fail closed.
 | `xic_batch_count` | Sum of adapter batch invocations |
 | `adapter_chromatogram_call_count` | Sum of observed vendor/backend chromatogram calls; separate from logical requests |
 | `trace_point_count` | Sum of returned trace points |
-| `attempt_wall_seconds` | Monotonic span from committed `attempt_started` through committed terminal outcome after cleanup; parallel child spans are not summed into it |
+| `attempt_wall_seconds` | Monotonic span from committed `attempt_started` through durably acknowledged terminal outcome after cleanup; parallel child spans are not summed into it |
 | `stage_or_unit_elapsed_seconds` | Individually scoped monotonic spans; aggregation retains count/sum/max |
 | `worker_peak_rss_bytes` | Maximum measured RSS per worker, with unsupported reason when unavailable |
 | `process_tree_peak_rss_bytes` | Maximum observed parent-plus-child RSS, not a sum of per-worker peaks |
@@ -406,10 +427,12 @@ integration must provide:
 - synthetic hung-process tests proving deadline escalation, bounded parent
   terminalization, duplicate reap idempotency, and the race between a late child
   cleanup result and parent `unknown_after_worker_loss`;
-- synthetic coordinator-loss tests proving the launch marker cannot be
-  mistaken for terminal success, the old attempt and namespace stay
-  non-deliverable, no per-resource cleanup is invented, and retry uses a new
-  attempt identity;
+- synthetic coordinator-loss tests on both sides of terminal acknowledgement:
+  before acknowledgement the old attempt and namespace stay non-deliverable,
+  no per-resource cleanup is invented, and retry uses a new attempt identity;
+  after acknowledgement the content-bound terminal record, exact outcome, and
+  artifact dispositions survive, while a missing/corrupt record or conflicting
+  acknowledgement fails closed;
 - volatile-cache cleanup tests across success, failure, cancellation, and
   worker loss;
 - no-RAW Windows-spawn pickling smoke for work, event, failure, resource, and
@@ -457,9 +480,10 @@ meaning in the runtime core.
   and cannot publish partial output.
 - Worker loss and cleanup unknown/failure aggregate without becoming scientific
   absence or preventing terminalization.
-- Coordinator survival is an explicit precondition for complete in-memory
-  terminal records; unexpected coordinator exit fails the old attempt at the
-  lineage boundary, quarantines its namespace, and requires a new attempt.
+- A terminal proposal is not success: only its idempotent durable
+  acknowledgement commits outcome and artifact dispositions; coordinator loss
+  before acknowledgement fails/quarantines the old attempt, while loss after
+  acknowledgement preserves the acknowledged result.
 - Every resource is reserved before allocation, has one
   opened/open-failed/not-opened event and exactly one logical terminal cleanup
   record, and cleanup is idempotent.
