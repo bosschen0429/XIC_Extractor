@@ -10,7 +10,9 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.extractor import RunOutput
+from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
 from xic_extractor.processing_lineage import AcquisitionSourceRef
+from xic_extractor.rt_prior_library import LibraryEntry
 
 
 def test_cli_and_gui_use_same_targeted_application_service() -> None:
@@ -129,6 +131,79 @@ def test_canonical_request_identity_changes_with_source_namespace() -> None:
     assert first.processing_request.request_id != second.processing_request.request_id
 
 
+def test_canonical_request_identity_includes_scoring_inputs() -> None:
+    config = replace(
+        _config(),
+        config_hash="config-sha",
+        target_config_hash="targets-sha",
+    )
+    sources = (
+        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
+    )
+    requests = (
+        build_targeted_application_request(config, [_target()]),
+        build_targeted_application_request(
+            config,
+            [_target()],
+            injection_order={"Sample A": 1},
+        ),
+        build_targeted_application_request(
+            config,
+            [_target()],
+            rt_prior_library={("Analyte", "analyte"): _library_entry()},
+        ),
+        build_targeted_application_request(
+            config,
+            [_target()],
+            model_selection_expected_diff_approvals={
+                "row-1": _approval_record()
+            },
+        ),
+    )
+
+    request_ids = {
+        build_canonical_targeted_request(
+            request,
+            sources=sources,
+            preset_id="cid-dR",
+        ).processing_request.request_id
+        for request in requests
+    }
+
+    assert len(request_ids) == len(requests)
+
+
+def test_canonical_scoring_input_identity_is_mapping_order_independent() -> None:
+    config = replace(
+        _config(),
+        config_hash="config-sha",
+        target_config_hash="targets-sha",
+    )
+    sources = (
+        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
+    )
+    first = build_targeted_application_request(
+        config,
+        [_target()],
+        injection_order={"Sample B": 2, "Sample A": 1},
+    )
+    second = build_targeted_application_request(
+        config,
+        [_target()],
+        injection_order={"Sample A": 1, "Sample B": 2},
+    )
+
+    assert build_canonical_targeted_request(
+        first,
+        sources=sources,
+        preset_id="cid-dR",
+    ) == build_canonical_targeted_request(
+        second,
+        sources=sources,
+        preset_id="cid-dR",
+    )
+
+
 def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:
     forbidden_prefixes = (
         "gui",
@@ -186,4 +261,37 @@ def _target() -> Target:
         nl_ppm_max=40.0,
         is_istd=False,
         istd_pair="",
+    )
+
+
+def _library_entry() -> LibraryEntry:
+    return LibraryEntry(
+        config_hash="config-sha",
+        target_label="Analyte",
+        role="analyte",
+        istd_pair="ISTD",
+        median_delta_rt=0.1,
+        sigma_delta_rt=0.01,
+        median_abs_rt=None,
+        sigma_abs_rt=None,
+        n_samples=8,
+        updated_at="2026-07-26T00:00:00Z",
+    )
+
+
+def _approval_record() -> ExpectedDiffApprovalRecord:
+    return ExpectedDiffApprovalRecord(
+        stable_row_id="row-1",
+        sample_name="Sample A",
+        target_label="Analyte",
+        legacy_selected_candidate_id="legacy-1",
+        successor_selected_candidate_id="successor-1",
+        public_outputs_touched=("selected rt",),
+        matrix_value_impact="none",
+        evidence_sources=("manual_review",),
+        evidence_summary="reviewed",
+        validation_tier="targeted_benchmark",
+        reviewer_role="owner",
+        reviewer_verdict="approved",
+        final_label="expected_diff",
     )

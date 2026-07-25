@@ -21,9 +21,10 @@ def test_success_requires_closed_manifest_cleanup_and_acknowledgement() -> None:
             (RuntimeEventKind.RESOURCE_OPENED, "resource-1", None),
             (RuntimeEventKind.WORK_SUCCEEDED, "work-1", None),
             (RuntimeEventKind.ARTIFACT_REGISTERED, "artifact-1", None),
+            (RuntimeEventKind.CLEANUP_SUCCEEDED, "resource-1", None),
+            (RuntimeEventKind.TERMINAL_PROPOSED, "", None),
             (RuntimeEventKind.ARTIFACT_OFFERED_TO_OWNER, "artifact-1", None),
             (RuntimeEventKind.ARTIFACT_ACKNOWLEDGED, "artifact-1", None),
-            (RuntimeEventKind.CLEANUP_SUCCEEDED, "resource-1", None),
             (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.SUCCEEDED),
         ),
     )
@@ -42,6 +43,7 @@ def test_cancelled_attempt_quarantines_partial_artifacts() -> None:
             (RuntimeEventKind.ARTIFACT_REGISTERED, "artifact-1", None),
             (RuntimeEventKind.CANCELLATION_REQUESTED, "", None),
             (RuntimeEventKind.WORK_CANCELLED, "work-2", None),
+            (RuntimeEventKind.TERMINAL_PROPOSED, "", None),
             (RuntimeEventKind.ARTIFACT_QUARANTINED, "artifact-1", None),
             (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.CANCELLED),
         ),
@@ -69,6 +71,7 @@ def test_worker_loss_and_unknown_cleanup_fail_closed() -> None:
                 None,
             ),
             (RuntimeEventKind.WORK_FAILED, "work-1", None),
+            (RuntimeEventKind.TERMINAL_PROPOSED, "", None),
             (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.FAILED),
         ),
     )
@@ -99,13 +102,14 @@ def test_manifest_rejects_duplicate_work_units_before_start() -> None:
 
 
 def test_started_attempt_must_settle_closed_manifest() -> None:
-    with pytest.raises(RuntimeContractError, match="settle every manifest"):
+    with pytest.raises(RuntimeContractError, match="every manifest work unit"):
         validate_attempt_history(
             RequiredWorkManifest(("work-1", "work-2"), owner_attests_complete=True),
             _events(
                 (RuntimeEventKind.ATTEMPT_QUEUED, "", None),
                 (RuntimeEventKind.ATTEMPT_STARTED, "", None),
                 (RuntimeEventKind.WORK_FAILED, "work-1", None),
+                (RuntimeEventKind.TERMINAL_PROPOSED, "", None),
                 (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.FAILED),
             ),
         )
@@ -160,13 +164,14 @@ def test_open_failure_forces_failed_attempt() -> None:
                 (RuntimeEventKind.RESOURCE_OPEN_FAILED, "resource-1", None),
                 (RuntimeEventKind.CLEANUP_SUCCEEDED, "resource-1", None),
                 (RuntimeEventKind.WORK_SUCCEEDED, "work-1", None),
+                (RuntimeEventKind.TERMINAL_PROPOSED, "", None),
                 (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.SUCCEEDED),
             ),
         )
 
 
 def test_failed_attempt_cannot_acknowledge_artifact() -> None:
-    with pytest.raises(RuntimeContractError, match="requires all artifacts"):
+    with pytest.raises(RuntimeContractError, match="successful finalizing"):
         validate_attempt_history(
             RequiredWorkManifest(("work-1",), owner_attests_complete=True),
             _events(
@@ -174,9 +179,24 @@ def test_failed_attempt_cannot_acknowledge_artifact() -> None:
                 (RuntimeEventKind.ATTEMPT_STARTED, "", None),
                 (RuntimeEventKind.WORK_FAILED, "work-1", None),
                 (RuntimeEventKind.ARTIFACT_REGISTERED, "artifact-1", None),
-                (RuntimeEventKind.ARTIFACT_OFFERED_TO_OWNER, "artifact-1", None),
+                (RuntimeEventKind.TERMINAL_PROPOSED, "", None),
                 (RuntimeEventKind.ARTIFACT_ACKNOWLEDGED, "artifact-1", None),
                 (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.FAILED),
+            ),
+        )
+
+
+def test_artifact_disposition_requires_execution_finalization() -> None:
+    with pytest.raises(RuntimeContractError, match="requires finalizing phase"):
+        validate_attempt_history(
+            RequiredWorkManifest(("work-1",), owner_attests_complete=True),
+            _events(
+                (RuntimeEventKind.ATTEMPT_QUEUED, "", None),
+                (RuntimeEventKind.ATTEMPT_STARTED, "", None),
+                (RuntimeEventKind.ARTIFACT_REGISTERED, "artifact-1", None),
+                (RuntimeEventKind.WORK_SUCCEEDED, "work-1", None),
+                (RuntimeEventKind.ARTIFACT_OFFERED_TO_OWNER, "artifact-1", None),
+                (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.SUCCEEDED),
             ),
         )
 

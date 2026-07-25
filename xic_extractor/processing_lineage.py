@@ -252,34 +252,65 @@ def validate_delivery_seal_candidate(
         artifacts=artifacts,
     )
 
-    required_artifact_ids: set[str] = set(candidate.output_artifact_ids)
-    for revision in selected_revisions:
-        required_artifact_ids.update(revision.evidence_artifact_ids)
+    artifact_closure_cache: dict[str, frozenset[str]] = {}
 
-    pending_artifact_ids = list(required_artifact_ids)
-    visited_artifact_ids: set[str] = set()
-    active_artifact_ids: set[str] = set()
-
-    def visit_artifact(artifact_id: str) -> None:
+    def artifact_closure(
+        artifact_id: str,
+        *,
+        active_artifact_ids: frozenset[str] = frozenset(),
+    ) -> frozenset[str]:
         if artifact_id in active_artifact_ids:
             raise LineageContractError("artifact dependency graph contains a cycle")
-        if artifact_id in visited_artifact_ids:
-            return
-        active_artifact_ids.add(artifact_id)
+        cached = artifact_closure_cache.get(artifact_id)
+        if cached is not None:
+            return cached
         artifact = _lookup_identity(
             artifacts,
             artifact_id,
             "artifact",
             identity_attribute="artifact_id",
         )
+        closure_ids = {artifact_id}
+        next_active = active_artifact_ids | {artifact_id}
         for dependency_id in artifact.dependency_artifact_ids:
-            required_artifact_ids.add(dependency_id)
-            visit_artifact(dependency_id)
-        active_artifact_ids.remove(artifact_id)
-        visited_artifact_ids.add(artifact_id)
+            closure_ids.update(
+                artifact_closure(
+                    dependency_id,
+                    active_artifact_ids=next_active,
+                )
+            )
+        closure = frozenset(closure_ids)
+        artifact_closure_cache[artifact_id] = closure
+        return closure
 
-    while pending_artifact_ids:
-        visit_artifact(pending_artifact_ids.pop())
+    output_closures = {
+        artifact_id: artifact_closure(artifact_id)
+        for artifact_id in candidate.output_artifact_ids
+    }
+    required_artifact_ids = set().union(*output_closures.values())
+    revision_evidence_ids = {
+        artifact_id
+        for revision in selected_revisions
+        for artifact_id in revision.evidence_artifact_ids
+    }
+    missing_revision_evidence = revision_evidence_ids.difference(
+        required_artifact_ids
+    )
+    if missing_revision_evidence:
+        raise LineageContractError(
+            "delivery output closure does not contain selected revision evidence: "
+            + ", ".join(sorted(missing_revision_evidence))
+        )
+    disconnected_output_ids = sorted(
+        artifact_id
+        for artifact_id, closure in output_closures.items()
+        if closure.isdisjoint(revision_evidence_ids)
+    )
+    if disconnected_output_ids:
+        raise LineageContractError(
+            "delivery output artifacts are disconnected from selected revisions: "
+            + ", ".join(disconnected_output_ids)
+        )
     selected_artifacts = tuple(
         _lookup_identity(
             artifacts,

@@ -34,6 +34,7 @@ class RuntimeEventKind(str, Enum):
     CLEANUP_FAILED = "cleanup_failed"
     CLEANUP_UNKNOWN_AFTER_WORKER_LOSS = "cleanup_unknown_after_worker_loss"
     ARTIFACT_REGISTERED = "artifact_registered"
+    TERMINAL_PROPOSED = "terminal_proposed"
     ARTIFACT_OFFERED_TO_OWNER = "artifact_offered_to_owner"
     ARTIFACT_ACKNOWLEDGED = "artifact_acknowledged"
     ARTIFACT_QUARANTINED = "artifact_quarantined_diagnostic"
@@ -108,6 +109,7 @@ def validate_attempt_history(
     cleanup_states: dict[str, str] = {}
     artifacts: dict[str, str] = {}
     terminal_event: RuntimeEvent | None = None
+    proposed_outcome: AttemptOutcome | None = None
 
     for event in events[1:]:
         if terminal_event is not None:
@@ -227,19 +229,50 @@ def validate_attempt_history(
                     f"artifact {event.subject_id!r} registered more than once"
                 )
             artifacts[event.subject_id] = "registered"
+        elif kind is RuntimeEventKind.TERMINAL_PROPOSED:
+            _require_phase(phase, "running", kind)
+            _require_execution_closure(
+                manifest=manifest,
+                work_states=work_states,
+                resources=resources,
+                cleanup_states=cleanup_states,
+            )
+            proposed_outcome = _expected_outcome(
+                manifest=manifest,
+                preflight_failed=preflight_failed,
+                attempt_started=attempt_started,
+                cancellation_requested=cancellation_requested,
+                work_states=work_states,
+                cleanup_states=cleanup_states,
+                resources=resources,
+            )
+            phase = "finalizing"
         elif kind in {
             RuntimeEventKind.ARTIFACT_OFFERED_TO_OWNER,
             RuntimeEventKind.ARTIFACT_QUARANTINED,
         }:
-            _require_phase(phase, "running", kind)
-            expected_states = (
-                {"registered", RuntimeEventKind.ARTIFACT_OFFERED_TO_OWNER.value}
-                if kind is RuntimeEventKind.ARTIFACT_QUARANTINED
-                else {"registered"}
-            )
-            _transition_artifact(artifacts, event, expected=expected_states)
+            _require_phase(phase, "finalizing", kind)
+            if (
+                kind is RuntimeEventKind.ARTIFACT_OFFERED_TO_OWNER
+                and proposed_outcome is not AttemptOutcome.SUCCEEDED
+            ):
+                raise RuntimeContractError(
+                    "only a successful finalizing attempt may offer artifacts"
+                )
+            if (
+                kind is RuntimeEventKind.ARTIFACT_QUARANTINED
+                and proposed_outcome is AttemptOutcome.SUCCEEDED
+            ):
+                raise RuntimeContractError(
+                    "successful finalizing attempt cannot quarantine artifacts"
+                )
+            _transition_artifact(artifacts, event, expected={"registered"})
         elif kind is RuntimeEventKind.ARTIFACT_ACKNOWLEDGED:
-            _require_phase(phase, "running", kind)
+            _require_phase(phase, "finalizing", kind)
+            if proposed_outcome is not AttemptOutcome.SUCCEEDED:
+                raise RuntimeContractError(
+                    "only a successful finalizing attempt may acknowledge artifacts"
+                )
             _transition_artifact(
                 artifacts,
                 event,
@@ -248,6 +281,10 @@ def validate_attempt_history(
         elif kind is RuntimeEventKind.ATTEMPT_TERMINAL:
             if event.outcome is None:
                 raise RuntimeContractError("attempt_terminal requires an outcome")
+            if attempt_started and phase != "finalizing":
+                raise RuntimeContractError(
+                    "started attempt must enter finalizing before terminal"
+                )
             terminal_event = event
             phase = "terminal"
         else:  # pragma: no cover - Enum exhaustiveness guard
@@ -273,7 +310,7 @@ def validate_attempt_history(
             "every artifact must be acknowledged or quarantined before terminal"
         )
 
-    expected_outcome = _expected_outcome(
+    expected_outcome = proposed_outcome or _expected_outcome(
         manifest=manifest,
         preflight_failed=preflight_failed,
         attempt_started=attempt_started,
@@ -353,6 +390,23 @@ def _expected_outcome(
             "successful attempt must settle every manifest work unit"
         )
     return AttemptOutcome.SUCCEEDED
+
+
+def _require_execution_closure(
+    *,
+    manifest: RequiredWorkManifest,
+    work_states: dict[str, str],
+    resources: dict[str, str],
+    cleanup_states: dict[str, str],
+) -> None:
+    if set(work_states) != set(manifest.work_unit_keys):
+        raise RuntimeContractError(
+            "finalization requires every manifest work unit to be settled"
+        )
+    if set(resources) != set(cleanup_states):
+        raise RuntimeContractError(
+            "finalization requires every reserved resource to be cleaned"
+        )
 
 
 def _validate_artifact_disposition(

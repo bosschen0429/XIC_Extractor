@@ -321,6 +321,55 @@ def test_delivery_revision_allows_cross_attempt_dependency() -> None:
     }
 
 
+def test_delivery_output_must_contain_selected_revision_evidence() -> None:
+    evidence = _artifact("artifact-evidence", "attempt-1")
+    unrelated_output = _artifact("artifact-output", "attempt-2")
+    revision = _revision("revision-1", "target-1", evidence.artifact_id)
+    candidate = DeliverySealCandidate(
+        revision_ids=(revision.revision_id,),
+        output_artifact_ids=(unrelated_output.artifact_id,),
+        acknowledged_artifact_ids=(unrelated_output.artifact_id,),
+    )
+
+    with pytest.raises(LineageContractError, match="does not contain"):
+        validate_delivery_seal_candidate(
+            candidate,
+            revisions={revision.revision_id: revision},
+            artifacts={
+                evidence.artifact_id: evidence,
+                unrelated_output.artifact_id: unrelated_output,
+            },
+            sample_metadata_rows=_sample_rows(),
+            review_records=(),
+        )
+
+
+def test_delivery_rejects_disconnected_extra_output_root() -> None:
+    evidence = _artifact("artifact-evidence", "attempt-1")
+    unrelated_output = _artifact("artifact-unrelated", "attempt-2")
+    revision = _revision("revision-1", "target-1", evidence.artifact_id)
+    candidate = DeliverySealCandidate(
+        revision_ids=(revision.revision_id,),
+        output_artifact_ids=(evidence.artifact_id, unrelated_output.artifact_id),
+        acknowledged_artifact_ids=(
+            evidence.artifact_id,
+            unrelated_output.artifact_id,
+        ),
+    )
+
+    with pytest.raises(LineageContractError, match="disconnected"):
+        validate_delivery_seal_candidate(
+            candidate,
+            revisions={revision.revision_id: revision},
+            artifacts={
+                evidence.artifact_id: evidence,
+                unrelated_output.artifact_id: unrelated_output,
+            },
+            sample_metadata_rows=_sample_rows(),
+            review_records=(),
+        )
+
+
 def test_delivery_seal_requires_known_superseded_seal() -> None:
     artifact = _artifact("artifact-evidence", "attempt-1")
     revision = _revision("revision-1", "target-1", artifact.artifact_id)

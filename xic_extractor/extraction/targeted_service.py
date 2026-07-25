@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
@@ -147,6 +148,7 @@ def build_canonical_targeted_request(
         ),
         method_constraints_sha256=_digest_text(
             request.config.target_config_hash,
+            _canonical_scoring_inputs(request),
         ),
         algorithm_version=preset_id,
         schema_version=TARGETED_APPLICATION_CONTRACT_VERSION,
@@ -170,3 +172,46 @@ def _digest_text(*values: str) -> str:
         digest.update(len(encoded).to_bytes(8, "big"))
         digest.update(encoded)
     return digest.hexdigest()
+
+
+def _canonical_scoring_inputs(request: TargetedApplicationRequest) -> str:
+    injection_order = (
+        None
+        if request.injection_order is None
+        else sorted(request.injection_order.items())
+    )
+    rt_prior_library = (
+        None
+        if request.rt_prior_library is None
+        else [
+            {
+                "key": list(key),
+                "entry": asdict(entry),
+            }
+            for key, entry in sorted(request.rt_prior_library.items())
+        ]
+    )
+    expected_diff_approvals = (
+        None
+        if request.model_selection_expected_diff_approvals is None
+        else [
+            {
+                "key": key,
+                "record": asdict(record),
+            }
+            for key, record in sorted(
+                request.model_selection_expected_diff_approvals.items()
+            )
+        ]
+    )
+    return json.dumps(
+        {
+            "injection_order": injection_order,
+            "model_selection_expected_diff_approvals": expected_diff_approvals,
+            "rt_prior_library": rt_prior_library,
+        },
+        allow_nan=False,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
