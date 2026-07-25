@@ -231,6 +231,35 @@ def test_delivery_seal_requires_exact_acknowledgement_closure() -> None:
         )
 
 
+def test_delivery_seal_requires_known_superseded_seal() -> None:
+    artifact = _artifact("artifact-evidence", "attempt-1")
+    revision = _revision("revision-1", "target-1", artifact.artifact_id)
+    candidate = DeliverySealCandidate(
+        revision_ids=(revision.revision_id,),
+        output_artifact_ids=(artifact.artifact_id,),
+        acknowledged_artifact_ids=(artifact.artifact_id,),
+        supersedes_seal_id="seal-missing",
+    )
+
+    with pytest.raises(LineageContractError, match="unknown prior seal"):
+        validate_delivery_seal_candidate(
+            candidate,
+            revisions={revision.revision_id: revision},
+            artifacts={artifact.artifact_id: artifact},
+        )
+
+
+def test_both_projection_keys_require_owner_backed_sample_refs() -> None:
+    sample_ref = SampleIdentityRef("sample-1")
+
+    assert DeliveryCellKey("targeted", sample_ref, "target-1").sample_key == (
+        "sample-1"
+    )
+    assert DeliveryCellKey("untargeted", sample_ref, "matrix-row-1").sample_key == (
+        "sample-1"
+    )
+
+
 def _identity_basis() -> ProcessingRequestIdentityBasis:
     return ProcessingRequestIdentityBasis(
         acquisition_sources=(

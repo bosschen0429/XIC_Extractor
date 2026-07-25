@@ -269,6 +269,17 @@ def validate_delivery_seal_candidate(
         )
         for artifact_id in sorted(required_artifact_ids)
     )
+    for revision in selected_revisions:
+        for review_record in revision.review_record_refs:
+            missing_review_artifacts = set(
+                review_record.evidence_artifact_ids
+            ).difference(required_artifact_ids)
+            if missing_review_artifacts:
+                raise LineageContractError(
+                    f"review record {review_record.review_record_id!r} references "
+                    "artifacts outside the delivery lineage closure: "
+                    + ", ".join(sorted(missing_review_artifacts))
+                )
 
     missing_acknowledgements = required_artifact_ids.difference(
         candidate.acknowledged_artifact_ids
