@@ -30,8 +30,9 @@ names, process IDs, or runtime-local cache keys.
 The minimum contract succeeds when three properties are mechanically
 testable:
 
-1. no listed work unit, reserved resource, or produced artifact can disappear
-   from the terminal attempt record;
+1. for an attempt whose coordinator survives through terminal commit, no listed
+   work unit, reserved resource, or produced artifact can disappear from the
+   terminal attempt record;
 2. cancellation, worker loss, retry, cleanup, and cache reuse cannot turn
    incomplete execution into scientific absence or deliverable output; and
 3. Targeted and Alignment can report comparable execution cost without moving
@@ -107,11 +108,11 @@ not depend on reuse. Before adapter construction or allocation, the runtime
 creates a unique `resource_reserved` record. Unregistered handles must never be
 used. Each record transitions from `reserved` to `opened`, `open_failed`, or
 `not_opened`, then to one terminal cleanup outcome. `not_opened` covers
-pre-allocation cancellation or preflight failure and performs an idempotent
-no-op cleanup. Worker loss closes every non-terminal resource record, including
-`reserved`, `opened`, and `open_failed`, as `unknown_after_worker_loss`. Every
-transition is observable, a late child report cannot rewrite a terminal
-resource record, and a reopened source is a new runtime session.
+pre-allocation cancellation and performs an idempotent no-op cleanup. Worker
+loss closes every non-terminal resource record, including `reserved`, `opened`,
+and `open_failed`, as `unknown_after_worker_loss`. Every transition is
+observable, a late child report cannot rewrite a terminal resource record, and
+a reopened source is a new runtime session.
 
 ## Small State Model
 
@@ -152,6 +153,34 @@ telemetry failure but cannot erase the in-memory ledger. Cancellation accepted
 before the atomic terminal decision affects the outcome. A request arriving
 after that decision is recorded as rejected/no-op. Cleanup failure still has
 precedence over cancellation.
+
+## Coordinator And Host-Loss Boundary
+
+The first runtime is intentionally in-memory. Its complete terminal-record and
+exactly-once logical cleanup guarantees require the coordinator process to
+survive through terminal commit. They cover worker loss; they do not pretend to
+survive coordinator or host loss without durable state.
+
+Before launch, the lineage owner or entry-point supervisor must durably bind the
+owner-created attempt identity to one attempt-scoped temporary-artifact
+namespace and the coordinator launch. If the coordinator exits without a
+terminal commit:
+
+- the supervisor reports `coordinator_loss`, and the lineage owner records the
+  old attempt as failed from the durable launch marker;
+- the old attempt can never become `succeeded`, resume in place, or lend its
+  current-attempt artifacts to delivery;
+- the whole attempt namespace is logically quarantined, while physical
+  reclamation remains an owner-supplied idempotent action;
+- no per-resource cleanup result is fabricated from the lost in-memory
+  registry; cleanup is conservatively unknown at attempt scope; and
+- retry requires a new `ProcessingAttempt` identity and fresh runtime.
+
+This launch marker is recovery evidence, not a second attempt identity or a
+durable runtime queue. A production integration that needs per-resource crash
+recovery must first add and validate a durable registry or equivalent
+supervision contract. Until then, abrupt coordinator-loss handling remains a
+tested `diagnostic_only` boundary.
 
 ## Cancellation, Worker Loss, Partial Work, And Failure
 
@@ -275,8 +304,8 @@ resources.
 ## Minimum Observability
 
 Every event carries the attempt identity, monotonic sequence, monotonic offset
-from attempt start, event kind, and work-unit/resource reference where
-applicable. The minimum event set covers:
+from the runtime origin established by `attempt_queued`, event kind, and
+work-unit/resource reference where applicable. The minimum event set covers:
 
 - attempt queued, started, cancellation accepted/rejected, terminal decision,
   and terminal outcome;
@@ -377,6 +406,10 @@ integration must provide:
 - synthetic hung-process tests proving deadline escalation, bounded parent
   terminalization, duplicate reap idempotency, and the race between a late child
   cleanup result and parent `unknown_after_worker_loss`;
+- synthetic coordinator-loss tests proving the launch marker cannot be
+  mistaken for terminal success, the old attempt and namespace stay
+  non-deliverable, no per-resource cleanup is invented, and retry uses a new
+  attempt identity;
 - volatile-cache cleanup tests across success, failure, cancellation, and
   worker loss;
 - no-RAW Windows-spawn pickling smoke for work, event, failure, resource, and
@@ -424,6 +457,9 @@ meaning in the runtime core.
   and cannot publish partial output.
 - Worker loss and cleanup unknown/failure aggregate without becoming scientific
   absence or preventing terminalization.
+- Coordinator survival is an explicit precondition for complete in-memory
+  terminal records; unexpected coordinator exit fails the old attempt at the
+  lineage boundary, quarantines its namespace, and requires a new attempt.
 - Every resource is reserved before allocation, has one
   opened/open-failed/not-opened event and exactly one logical terminal cleanup
   record, and cleanup is idempotent.
