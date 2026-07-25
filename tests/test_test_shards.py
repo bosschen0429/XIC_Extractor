@@ -49,6 +49,10 @@ _ALLOWED_SHARD_OVERLAPS = {
         "targeted-core",
         "product-gates-evidence",
     ),
+    Path("tests/test_targeted_service_contract.py"): (
+        "targeted-core",
+        "product-gates-evidence",
+    ),
     Path("tests/test_untargeted_view.py"): ("gui", "alignment-core"),
     Path("tests/test_validate_ms1_scan_index_xic.py"): (
         "alignment-core",
