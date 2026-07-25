@@ -96,11 +96,14 @@ owner completeness attestation, submission failure, or an attempt to add later
 work fails closed. The runtime cannot discover that the owner omitted a unit
 from the manifest; its enforceable invariant is that every key in an
 owner-attested manifest settles exactly once. Manifest preflight failure
-terminalizes the attempt as `failed` before any work or resource reservation.
-Dynamic manifest expansion and later-added stage manifests are outside the
-first integration. If Targeted or Alignment cannot state its complete work
-universe up front, stop and redraw the seam rather than infer completion from
-only the units that happened to be submitted.
+terminalizes the attempt as `failed` before any work or resource reservation. It
+uses an explicit queued-to-terminal path: `attempt_queued` and
+`manifest_preflight_failed` are recorded, `attempt_started` is not fabricated,
+and the empty work, resource, and artifact registries permit an immediate
+terminal proposal. Dynamic manifest expansion and later-added stage manifests
+are outside the first integration. If Targeted or Alignment cannot state its
+complete work universe up front, stop and redraw the seam rather than infer
+completion from only the units that happened to be submitted.
 
 An acquisition session may be reused only within the same attempt, worker,
 `AcquisitionSource`, and owner-supplied compatibility token. Correctness must
@@ -167,19 +170,22 @@ claiming a durable queue:
 1. before launch, the lineage owner or entry-point supervisor atomically records
    the owner-created attempt identity, attempt-scoped temporary-artifact
    namespace, and coordinator launch;
-2. after work, cleanup, and artifact-disposition closure, the coordinator
+2. after work, cleanup, and artifact-disposition proposal closure, the
+   coordinator
    writes one immutable `CoordinatorTerminalRecord` containing the proposed
    outcome, manifest and per-unit outcomes, resource cleanup outcomes, artifact
    registry and proposed dispositions, failures, coordinator metrics ending at
    terminal proposal, and the coordinator event-ledger digest through that
    proposal;
 3. the supervisor atomically replaces the launch marker with one immutable
-   `SupervisorFinalizationRecord` containing the coordinator-record digest,
-   `terminal_acknowledged` and `terminal_outcome` events continuing the
-   coordinator sequence, the finalization offset, and
-   `attempt_wall_seconds`. Existence of this finalization record is the durable
-   acknowledgement that commits the attempt outcome and corresponding logical
-   artifact dispositions.
+   `SupervisorFinalizationRecord` containing the coordinator-record digest and
+   an atomic event batch continuing the coordinator sequence:
+   `terminal_acknowledged`, one committed disposition event for every
+   current-attempt artifact, and `terminal_outcome`. It also contains the
+   finalization offset and `attempt_wall_seconds`. Existence of this finalization
+   record is the durable acknowledgement that commits the attempt outcome and
+   corresponding logical artifact dispositions; no disposition event is
+   emitted before this atomic finalization exists.
 
 Coordinator-record write/integrity failure or supervisor-finalization failure
 cannot commit success. The coordinator and finalization records are recovery
@@ -251,9 +257,13 @@ in-memory terminal proposal. Durable terminal acknowledgement atomically
 commits a successful attempt and every such artifact to `offered_to_owner`; a
 failed/cancelled acknowledgement, or coordinator loss before acknowledgement,
 logically changes every registered artifact, including partial bytes from a
-failed unit, to `quarantined_diagnostic`. Failure of an owner-supplied physical
-quarantine action is aggregated as cleanup failure, but never makes the
-artifact deliverable. These artifacts may support diagnosis or a later
+failed unit, to `quarantined_diagnostic`. The
+`SupervisorFinalizationRecord` contains exactly one
+`artifact_offered_to_owner` or `artifact_quarantined_diagnostic` event for each
+current-attempt artifact, in the same atomic finalization that commits the
+terminal outcome. Failure of an owner-supplied physical quarantine action is
+aggregated as cleanup failure, but never makes the artifact deliverable. These
+artifacts may support diagnosis or a later
 lineage-approved dependency, but they cannot silently become scientific
 `missing`, `absent`, selected values, or product output. An artifact referenced
 through `validated_dependency` keeps its prior producer-owned disposition; only
@@ -337,20 +347,25 @@ Every coordinator event carries the attempt identity, monotonic sequence,
 monotonic offset from the runtime origin established by `attempt_queued`, event
 kind, and work-unit/resource reference where applicable. The coordinator ledger
 ends at `terminal_proposal`. The supervisor finalization continues from the last
-coordinator sequence and durably adds acknowledgement and outcome; it is not
-part of the coordinator-record digest. The minimum event set covers:
+coordinator sequence and durably adds acknowledgement, committed artifact
+dispositions, and outcome; it is not part of the coordinator-record digest. The
+queued-to-terminal manifest-preflight path omits `attempt_started`; events
+listed below as started exist only after successful preflight. The minimum
+event set covers:
 
-- coordinator: attempt queued, started, cancellation accepted/rejected, and
-  terminal proposal;
-- supervisor finalization: durable terminal acknowledgement and terminal
-  outcome;
+- coordinator: `attempt_queued`, `manifest_preflight_failed` when applicable,
+  `attempt_started` after successful preflight, cancellation accepted/rejected,
+  and `terminal_proposal`;
+- supervisor finalization: `terminal_acknowledged`, exactly one
+  `artifact_offered_to_owner` or `artifact_quarantined_diagnostic` per
+  current-attempt artifact, and `terminal_outcome`;
 - required-work manifest closed and work unit submitted, started, and settled;
 - dependency reuse accepted/rejected/not used and unit satisfaction source;
 - acquisition/resource reserved, `opened`, `open_failed`, `not_opened`, or
   `open_state_unknown_after_worker_loss`, and terminal cleanup outcome;
 - cache hit, miss, stale rejection, write, rebuild outcome, and eviction
   outcome;
-- runtime artifact created, quarantined, or offered to its owner;
+- coordinator-side runtime artifact creation;
 - worker, scheduler, integrity, telemetry, and cleanup failures.
 
 Every metric records its scope (`attempt`, `stage`, `work_unit`, `worker`, or
@@ -366,8 +381,8 @@ lifecycle events fail closed.
 | `xic_batch_count` | Sum of adapter batch invocations |
 | `adapter_chromatogram_call_count` | Sum of observed vendor/backend chromatogram calls; separate from logical requests |
 | `trace_point_count` | Sum of returned trace points |
-| `coordinator_work_seconds` | Monotonic span from committed `attempt_started` through frozen terminal proposal; stored in the coordinator record |
-| `attempt_wall_seconds` | Monotonic span from committed `attempt_started` through supervisor finalization after cleanup; stored only in the finalization record; parallel child spans are not summed into it |
+| `coordinator_work_seconds` | Monotonic span from committed `attempt_started` through frozen terminal proposal; stored in the coordinator record; `unsupported:not_started_preflight_failure` when preflight terminalizes from `queued` |
+| `attempt_wall_seconds` | Monotonic span from committed `attempt_queued` through supervisor finalization after cleanup; stored only in the finalization record; parallel child spans are not summed into it |
 | `stage_or_unit_elapsed_seconds` | Individually scoped monotonic spans; aggregation retains count/sum/max |
 | `worker_peak_rss_bytes` | Maximum measured RSS per worker, with unsupported reason when unavailable |
 | `process_tree_peak_rss_bytes` | Maximum observed parent-plus-child RSS, not a sum of per-worker peaks |
@@ -382,9 +397,14 @@ For the first Targeted and Alignment consumers, `raw_open_count`,
 `adapter_chromatogram_call_count`, `trace_point_count`,
 `coordinator_work_seconds`, `attempt_wall_seconds`,
 `stage_or_unit_elapsed_seconds`, and runtime-mediated artifact read/write
-counts and bytes are required `measured`. Process-mode comparators must also
-measure per-worker and process tree peak RSS; serial mode must measure process
-peak RSS and may report
+counts and bytes are required `measured` for attempts that enter `running`.
+Manifest-preflight terminalization instead reports measured zero for
+resource/work/artifact-I/O counts, measured `attempt_wall_seconds` from
+`attempt_queued`, and `unsupported:not_started_preflight_failure` for
+`coordinator_work_seconds`, stage/unit elapsed time, and worker-derived
+metrics; it must not emit measured zero durations for work that never started.
+Process-mode comparators must also measure per-worker and process tree peak RSS;
+serial mode must measure process peak RSS and may report
 per-worker RSS as `unsupported:not_applicable_serial`. Artifact-I/O coverage is
 complete only when every registered runtime-artifact read and write contributes
 to the counters; direct legacy writer I/O stays explicitly out of scope rather
@@ -435,7 +455,9 @@ The logical contract still requires implementation evidence. The first
 integration must provide:
 
 - pure state-table tests for success, duplicate required-work keys, missing
-  owner completeness attestation, manifest preflight terminalization,
+  owner completeness attestation, queued-to-terminal manifest preflight
+  terminalization without `attempt_started` and with explicit metric
+  availability,
   submission failure, cancellation before resource open, cancellation races,
   required-event append failure, worker loss while still `reserved`, worker
   loss after `open_failed`, late cleanup reports, cleanup failed/unknown,
@@ -450,8 +472,10 @@ integration must provide:
   after acknowledgement the content-bound terminal record, exact outcome, and
   artifact dispositions survive, while a missing/corrupt record or conflicting
   acknowledgement fails closed; fixtures also prove the coordinator record ends
-  at terminal proposal, supervisor events continue its sequence, and
-  `attempt_wall_seconds` exists only in the finalization layer;
+  at terminal proposal, supervisor events continue its sequence, every
+  current-attempt artifact has one committed disposition event in the atomic
+  finalization, and `attempt_wall_seconds` starts at `attempt_queued` and exists
+  only in the finalization layer;
 - volatile-cache cleanup tests across success, failure, cancellation, and
   worker loss;
 - no-RAW Windows-spawn pickling smoke for work, event, failure, resource, and
@@ -464,7 +488,8 @@ integration must provide:
   product writer, that every partial artifact is registered, and that
   current-attempt artifact disposition closes atomically with terminal outcome;
 - observability fixtures proving metric scope, aggregation, and unavailable
-  semantics, including cache rebuild and eviction outcomes.
+  semantics, including preflight-not-started, cache rebuild, and eviction
+  outcomes.
 
 This evidence must begin no-RAW. Thermo RAW validation is justified only if a
 later bounded question requires cooperative-call or worker-termination
