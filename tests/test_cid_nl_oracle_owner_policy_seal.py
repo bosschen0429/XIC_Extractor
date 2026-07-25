@@ -27,6 +27,9 @@ def test_owner_policy_seal_binds_scope_rationale_and_decision_hashes() -> None:
     )
     source = ROOT / seal["decision_source"]
     assert seal["decision_source_sha256"] == sha256_bytes(source.read_bytes())
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    expected_attribute = f"/{seal['decision_source']} text eol=lf"
+    assert expected_attribute in attributes.splitlines()
     assert set(decisions) == {
         "untargeted_non_inferiority",
         "automated_coverage",
