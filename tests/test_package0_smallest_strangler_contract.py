@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -25,15 +26,17 @@ def test_package0_comparator_is_bound_to_canonical_sealed_baseline() -> None:
 
 
 def test_package0_comparator_membership_is_complete_and_not_hand_picked() -> None:
-    comparator = _load(PACKET / "contract.json")["legacy_comparator"]
+    contract = _load(PACKET / "contract.json")
+    comparator = contract["legacy_comparator"]
+    receipt = _load(PACKET / contract["membership_receipt"])
+    samples = receipt["ordered_sample_identities"]
+    header = receipt["ordered_final_header"]
 
-    assert comparator["sample_identity_cell_count_per_stage"] == (
-        comparator["sample_row_count_per_stage"]
-    )
+    assert len(samples) == comparator["sample_row_count_per_stage"]
+    assert len(header) == comparator["column_count_per_stage"]
+    assert comparator["sample_identity_cell_count_per_stage"] == len(samples)
     assert comparator["analytical_cell_count_per_stage"] == (
-        comparator["sample_row_count_per_stage"]
-        * comparator["target_count"]
-        * comparator["fields_per_target"]
+        len(samples) * (len(header) - 1)
     )
     assert comparator["column_count_per_stage"] == (
         1 + comparator["target_count"] * comparator["fields_per_target"]
@@ -41,6 +44,28 @@ def test_package0_comparator_membership_is_complete_and_not_hand_picked() -> Non
     assert comparator["membership_rule"] == (
         "complete_ordered_sample_x_ordered_header_cartesian_product"
     )
+    assert _ordered_sha256(samples) == comparator["ordered_sample_sha256"]
+    assert _ordered_sha256(header) == comparator["ordered_final_header_sha256"]
+
+
+def test_package0_receipt_freezes_artifacts_and_public_surface_owners() -> None:
+    contract = _load(PACKET / "contract.json")
+    receipt = _load(PACKET / contract["membership_receipt"])
+
+    assert len(receipt["canonical_artifact_paths"]) == 12
+    assert {
+        "baseline/output/xic_results.csv",
+        "final/output/xic_results.csv",
+        "baseline/output/method_manifest.json",
+        "final/output/method_manifest.json",
+    }.issubset(receipt["canonical_artifact_paths"])
+    assert receipt["public_surface_owners"] == {
+        "cli_entrypoint": "scripts/run_extraction.py",
+        "csv_writer_owner": "xic_extractor/output/csv_writers.py",
+        "gui_entrypoint": "gui/workers/pipeline_worker.py",
+        "method_manifest_writer": "xic_extractor/method_manifest.py",
+        "workbook_writer": "xic_extractor/output/excel_pipeline.py",
+    }
 
 
 def test_package0_keeps_new_shadow_selections_outside_legacy_authority() -> None:
@@ -58,3 +83,7 @@ def test_package0_keeps_new_shadow_selections_outside_legacy_authority() -> None
 
 def _load(path: Path) -> dict[str, object]:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _ordered_sha256(values: list[str]) -> str:
+    return hashlib.sha256("\n".join(values).encode("utf-8")).hexdigest().upper()

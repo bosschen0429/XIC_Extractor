@@ -5,6 +5,7 @@
   },
   "baseline_id": "cid_nl_legacy_baseline_6d3b18ef_8raw_v2",
   "canonical_output_inventory_sha256": "CC25A6A731C822F9147FECAB5949EAABB79D0415FCA67436365CEC035B4293B1",
+  "membership_receipt": "membership_receipt.json",
   "legacy_comparator": {
     "baseline_stage_xic_results_sha256": "DFDC5B4227819BA8087FC72EE9023FFFAC8FE4A82E77FD73ED1CEF813C8EB145",
     "final_stage_xic_results_sha256": "F1783E22AF31B92F99938FDA9420B8A3A1671BB17587A4EECD936A83E16EF168",

@@ -54,3 +54,8 @@ independent scientific oracle named by the later package before promotion.
 Until then, legacy remains sole product authority.
 
 [`contract.json`](contract.json) is the executable form of this checklist.
+[`membership_receipt.json`](membership_receipt.json) retains the ordered sample
+and header identities, the complete canonical artifact-path inventory, and the
+existing public-surface owners needed to recompute membership from a clean
+checkout. The receipt is an address and membership oracle, not a copied
+scientific result.
