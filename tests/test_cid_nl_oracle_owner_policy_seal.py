@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 
 from xic_extractor.discovery.cid_nl_oracle_contract import (
-    sha256_bytes,
     sha256_canonical_json,
+    sha256_utf8_text_normalized_to_lf,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +26,18 @@ def test_owner_policy_seal_binds_scope_rationale_and_decision_hashes() -> None:
         "2026-07-25-cid-nl-oracle-owner-decisions.md"
     )
     source = ROOT / seal["decision_source"]
-    assert seal["decision_source_sha256"] == sha256_bytes(source.read_bytes())
+    assert (
+        seal["decision_source_hash_mode"]
+        == "utf8_text_normalized_to_lf"
+    )
+    assert seal[
+        "decision_source_sha256"
+    ] == sha256_utf8_text_normalized_to_lf(source.read_bytes())
+    assert sha256_utf8_text_normalized_to_lf(
+        b"owner decision\r\nsecond line\r\n"
+    ) == sha256_utf8_text_normalized_to_lf(
+        b"owner decision\nsecond line\n"
+    )
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
     expected_attribute = f"/{seal['decision_source']} text eol=lf"
     assert expected_attribute in attributes.splitlines()
