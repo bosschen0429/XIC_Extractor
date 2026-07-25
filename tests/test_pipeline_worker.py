@@ -56,10 +56,18 @@ def test_worker_runs_shared_pipeline_and_emits_structured_summary(
         actual_targets: list[Target],
         progress_callback=None,
         should_stop=None,
+        injection_order=None,
+        rt_prior_library=None,
+        model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         calls["extract_config"] = actual_config
         calls["extract_targets"] = actual_targets
         calls["should_stop"] = should_stop
+        calls["injection_order"] = injection_order
+        calls["rt_prior_library"] = rt_prior_library
+        calls["model_selection_expected_diff_approvals"] = (
+            model_selection_expected_diff_approvals
+        )
         assert progress_callback is not None
         assert should_stop is not None
         progress_callback(1, 2, "Tumor_1.raw")

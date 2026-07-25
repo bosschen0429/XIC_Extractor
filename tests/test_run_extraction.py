@@ -1145,6 +1145,9 @@ def _fake_run(calls: dict[str, object]):
         config,
         targets,
         progress_callback=None,
+        should_stop=None,
+        injection_order=None,
+        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ):
         calls["run_config"] = config
@@ -1152,6 +1155,9 @@ def _fake_run(calls: dict[str, object]):
         calls["model_selection_expected_diff_approvals"] = (
             model_selection_expected_diff_approvals
         )
+        calls["should_stop"] = should_stop
+        calls["injection_order"] = injection_order
+        calls["rt_prior_library"] = rt_prior_library
         if progress_callback is not None:
             progress_callback(1, 2, "SampleA.raw")
         output = RunOutput(

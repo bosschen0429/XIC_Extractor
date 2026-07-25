@@ -15,6 +15,10 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_support_producer import (
     run_build_targeted_ms1_shape_identity_supports,
 )
+from xic_extractor.extraction.targeted_service import (
+    TargetedApplicationService,
+    build_targeted_application_request,
+)
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,
@@ -144,13 +148,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ) from exc
             output, excel_config = auto_result
         else:
-            output = extractor.run(
-                run_config,
-                targets,
-                progress_callback=_print_progress,
-                model_selection_expected_diff_approvals=(
-                    model_selection_expected_diff_approvals
-                ),
+            output = TargetedApplicationService(extractor.run).execute(
+                build_targeted_application_request(
+                    run_config,
+                    targets,
+                    progress_callback=_print_progress,
+                    model_selection_expected_diff_approvals=(
+                        model_selection_expected_diff_approvals
+                    ),
+                )
             )
             write_method_manifest(
                 run_config,
@@ -395,11 +401,15 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited baseline output: {baseline_output_dir}")
-    extractor.run(
-        baseline_config,
-        targets,
-        progress_callback=_print_progress,
-        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
+    TargetedApplicationService(extractor.run).execute(
+        build_targeted_application_request(
+            baseline_config,
+            targets,
+            progress_callback=_print_progress,
+            model_selection_expected_diff_approvals=(
+                model_selection_expected_diff_approvals
+            ),
+        )
     )
     write_method_manifest(
         baseline_config,
@@ -438,11 +448,15 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited unverified final output: {final_staging_output_dir}")
-    final_output = extractor.run(
-        final_staging_config,
-        targets,
-        progress_callback=_print_progress,
-        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
+    final_output = TargetedApplicationService(extractor.run).execute(
+        build_targeted_application_request(
+            final_staging_config,
+            targets,
+            progress_callback=_print_progress,
+            model_selection_expected_diff_approvals=(
+                model_selection_expected_diff_approvals
+            ),
+        )
     )
     diff_outputs = write_targeted_ms1_shape_identity_auto_diff_artifacts(
         baseline_output_dir=baseline_output_dir,
