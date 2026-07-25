@@ -1,0 +1,176 @@
+{
+  "schema_version": "cid_nl_oracle_packet_preflight_v1",
+  "status": "no_raw_contract_complete_formal_execution_blocked",
+  "validation_label": "diagnostic_only",
+  "raw_replay_ran": true,
+  "new_raw_replay_ran_for_no_raw_contract_completion": false,
+  "decision": "The no-RAW acceptance contract is complete: use the six NL116 fixed-spike internal standards as expected-positive controls, keep proposal precision separate from independent-reference recovery, preserve the sealed 2RAW boundary/area calibration, use append-only blinded review/adjudication, and apply the total fail-closed gate/verdict contract plus synthetic suite. Formal evaluation remains blocked until a real tracer and populated sealed manifests, parameter values, lineage, evidence, and the Issue #128 performance budget exist.",
+  "method_scope": {
+    "current_untargeted_discovery": "nl116_only",
+    "current_untargeted_preset_exists": true,
+    "nl132_untargeted_expansion_in_scope": false,
+    "targeted_uses_per_target_neutral_loss": true
+  },
+  "standard_anchor_frame": {
+    "status": "partial_anchor_definitions_with_sealed_calibration_cases",
+    "physical_presence_expected_anchor_count": 7,
+    "nl116_method_applicable_expected_detection_count": 6,
+    "nl132_known_present_method_out_of_scope_count": 1,
+    "paired_analyte_expected_presence": "unknown",
+    "absolute_concentration_required": false,
+    "uniform_fixed_spike_across_injections": true,
+    "pooled_qc_equal_area_or_effective_concentration_required": false,
+    "manifest": "cid_nl_oracle_reference_anchor_manifest.tsv",
+    "source": "config/targets.example.csv",
+    "source_sha256": "4F1C0917E29B828E447EA2E9463DD26C7036293FF760045390862EC27ADE71D1"
+  },
+  "sample_material_scope": {
+    "known_dna_and_rna_mixed_biological_samples": [
+      "TumorBC2286_DNAandRNA",
+      "TumorBC2304_DNAandRNA"
+    ],
+    "other_biological_samples": "dna_only",
+    "pooled_qc_samples": "separate_stratum_composition_not_inferred_from_name",
+    "rna_applicable_analyte_presence": "not_asserted_by_applicability"
+  },
+  "integration_claim": {
+    "judges": [
+      "consistent_baseline_policy",
+      "attributable_peak_choice",
+      "acceptable_boundaries",
+      "deterministic_area",
+      "machine_boundary_containment_within_human_outer_envelope",
+      "machine_area_retention_at_least_0.98"
+    ],
+    "does_not_judge": [
+      "absolute_concentration_accuracy",
+      "calibration_linearity",
+      "lod_or_loq",
+      "equal_area_across_biological_and_pooled_qc_injections"
+    ],
+    "runtime_boundary_rule_changed": false,
+    "active_baseline_return_fraction": 0.02,
+    "formal_holdout_area_retention_floor": 0.98,
+    "exact_coordinate_or_iou_gate": false
+  },
+  "owner_policy": {
+    "error_priority": "recovery_over_precision",
+    "false_feature_identity_gate": "proposal_precision_tolerance_not_zero_error_hard_blocker",
+    "istd_expected_positive_cell_count": 510,
+    "untargeted_max_correct_cell_deficit_vs_targeted": 2,
+    "machine_abstention_rate_max": 0.1,
+    "automated_coverage_min": 0.9,
+    "unassessable_is_separate_from_machine_hold": true,
+    "policy_seal": "cid_nl_oracle_owner_policy_seal_v1.json",
+    "policy_seal_sha256": "dac9eb518620e13f51e576fba4e28bfc6b5828ced2adf8f0d2a169f81a53702b"
+  },
+  "library_comparison_boundary": {
+    "status": "available_sources_not_yet_mapped_or_frozen",
+    "must_preserve": [
+      "experimental_provenance",
+      "neutral_loss_scope",
+      "sample_material_scope",
+      "adduct_and_polarity"
+    ],
+    "sample_presence_authority_granted": false
+  },
+  "legacy_authority_translation_context": {
+    "status": "available_machine_conditioned",
+    "authority_decision_cell_count": 511,
+    "transition_count": 87,
+    "sample_count": 85,
+    "write_authorized_cell_count": 147,
+    "detected_baseline_context_cell_count": 337,
+    "omitted_no_target_cell_count": 27,
+    "matrix_identity_row_count": 2595,
+    "tracked_closure_owner": "docs/superpowers/validation/cid_nl_85raw_universe_closure_v1/README.md",
+    "boundary": "This establishes internal closure of an old authority universe only. It is neither the tested tracer proposal denominator nor oracle truth."
+  },
+  "tested_tracer_proposal_manifest": {
+    "status": "deferred_until_specific_tracer_exists",
+    "contract_action_now": "freeze_required_fields_lineage_bindings_and_sealing_protocol",
+    "population_action_later": "run_specific_tracer_then_seal_before_machine_reveal_or_formal_holdout_review",
+    "legacy_machine_rows_may_substitute": false,
+    "proposal_conditioned_precision_ready": false,
+    "dataset_false_positive_rate_claim_allowed": false
+  },
+  "independent_reference_frame": {
+    "status": "protocol_and_schema_defined_without_populated_formal_rows",
+    "standard_anchor_definition_count": 7,
+    "calibration_case_count": 12,
+    "sealed_calibration_case_count": 12,
+    "sealed_reference_case_count": 0,
+    "recovery_estimand_ready": false,
+    "dataset_false_negative_rate_claim_allowed": false
+  },
+  "overlay_evidence": {
+    "legacy_summary_locator_count": 78,
+    "legacy_status": "summary_locator_only",
+    "legacy_replay_status": "not_replayable_from_tracked_packet",
+    "calibration_case_count": 12,
+    "calibration_status": "sealed_before_machine_reveal_and_area_sensitivity_complete",
+    "calibration_packet": "../cid_nl_oracle_istd_calibration_2raw_v1/README.md",
+    "formal_holdout_evidence_bundle_retained": false,
+    "calibration_numeric_tables_retained": true,
+    "calibration_visual_evidence_portable": false,
+    "calibration_retention_status": "../cid_nl_oracle_istd_calibration_2raw_v1/calibration_evidence_retention_status.json",
+    "calibration_retention_status_sha256": "62ba48ee75b3c469c7c40b561ca1a5aafbd3ddcf457a563c1d87a10a91c97ba5"
+  },
+  "lineage": {
+    "processing_lineage_binding_status": "schema_defined_unpopulated",
+    "binding_schema": "../../schemas/cid_nl_oracle_lineage_binding_schema.v1.json",
+    "source_row_sha256_available": true,
+    "missing_bindings": [
+      "acquisition_source_id",
+      "processing_request_id",
+      "processing_attempt_id",
+      "evidence_artifact_id",
+      "staleness_or_supersession_reference"
+    ]
+  },
+  "formal_holdout": {
+    "ready": false,
+    "status": "blocked",
+    "sampling_manifest_schema_status": "defined_unpopulated",
+    "sampling_manifest_schema": "../../schemas/cid_nl_formal_holdout_sampling_manifest_schema.v1.json",
+    "gate_table_status": "contract_complete_with_15_frozen_1_future_input_rule_7_preregistered_parameters_1_retention_dependency_and_1_external_dependency",
+    "gate_table": "cid_nl_oracle_gate_table_v1.tsv",
+    "gate_table_sha256": "b1e3e67cc0051b9eb9b0bf41bf9163477ed6b3da66582b19cba74b0fcd7f4b99",
+    "verdict_table": "cid_nl_oracle_verdict_table_v1.tsv",
+    "verdict_table_sha256": "5100fb80ae7ade82df50e2971891b20be639c4753150cf1a2d307de8dc6f33e0",
+    "synthetic_contract_suite": "cid_nl_oracle_synthetic_contract_suite_v1.tsv",
+    "synthetic_contract_suite_sha256": "904cdfb705170571389f736aaa5eb06e6519d007e4e2f57aa657494e2725e337",
+    "blockers": [
+      "tested_tracer_proposal_manifest_missing",
+      "formal_independent_reference_universe_unpopulated",
+      "formal_blinded_case_and_sampling_manifest_unpopulated",
+      "preregistered_narrow_scope_membership_manifest_unpopulated",
+      "seven_statistical_parameter_values_not_preregistered",
+      "canonical_processing_lineage_bindings_missing",
+      "formal_holdout_evidence_and_review_bundle_not_retained",
+      "calibration_visual_evidence_not_durably_portable",
+      "issue_128_performance_budget_missing"
+    ]
+  },
+  "no_raw_contract": {
+    "status": "complete",
+    "independent_spec_review": "../../plans/2026-07-25-cid-nl-oracle-independent-spec-review.md",
+    "independent_spec_review_verdict": "APPROVE",
+    "reference_universe_protocol": "../../plans/2026-07-25-cid-nl-reference-universe-protocol.md",
+    "statistical_design_research": "../../plans/2026-07-25-cid-nl-oracle-statistical-design-research.md",
+    "review_adjudication_schema": "../../schemas/cid_nl_oracle_review_adjudication_schema.v1.json",
+    "reference_universe_schema": "../../schemas/cid_nl_reference_universe_manifest_schema.v1.json",
+    "narrow_scope_schema": "../../schemas/cid_nl_oracle_narrow_scope_manifest_schema.v1.json",
+    "statistical_design_schema": "../../schemas/cid_nl_oracle_statistical_design_manifest_schema.v1.json",
+    "executable_validator": "../../../../xic_extractor/discovery/cid_nl_oracle_contract.py",
+    "synthetic_case_count": 25,
+    "raw_replay_required_for_contract_completion": false
+  },
+  "authority": {
+    "product_authority_granted": false,
+    "matrix_or_writer_changed": false,
+    "selected_area_or_counting_changed": false,
+    "workbook_gui_activation_or_export_changed": false,
+    "compound_identification_claim_granted": false
+  }
+}
