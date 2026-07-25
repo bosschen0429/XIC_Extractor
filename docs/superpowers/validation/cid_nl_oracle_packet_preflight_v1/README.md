@@ -7,8 +7,10 @@ CID-NL metadata already support a blinded formal holdout and recovery claim?
 
 ## Result
 
-The no-RAW acceptance contract is complete, but the formal evaluation cannot
-run yet. Two different evidence sets remain explicit.
+The no-RAW acceptance contract is implemented, locally verified, and
+independently approved after hosted-review remediation and a same-class
+fail-closed sweep. Formal evaluation still cannot run yet. Two different
+evidence sets remain explicit.
 
 The legacy machine-conditioned context contains:
 
@@ -113,7 +115,7 @@ false-positive rate, and false-negative rate remain unavailable.
 - `cid_nl_oracle_owner_policy_seal_v1.json`: owner, time, scope, rationale, and
   decision hashes for the two explicitly frozen policy values.
 - `independent_spec_review.md`: durable fixed-snapshot review history and final
-  `APPROVE` verdict.
+  approval of the hosted-review remediation snapshot.
 - `cid_nl_oracle_packet_preflight_summary.json`: decision, observed context,
   partial anchors, and blockers.
 - `cid_nl_oracle_packet_preflight_sources.tsv`: portable source locators,

@@ -10,7 +10,7 @@ with a later fixed-snapshot review of a changed contract.
 Validation status: `diagnostic_only`
 Review date: 2026-07-25
 Review mode: independent fixed-diff review; no RAW execution
-Final verdict: `APPROVE`
+Current verdict: `APPROVE`
 
 ## Scope
 
@@ -44,11 +44,38 @@ closed through repeated fixed-snapshot adjudication:
 - owner policy values bind to a durable owner decision record;
 - lifecycle metadata and `diagnostic_only` authority boundaries are explicit.
 
-The final bounded review reported:
+The pre-hosted-review bounded snapshot reported:
 
 - Findings: none.
 - Residual risks within the no-RAW contract scope: none.
 - Verdict: `APPROVE`.
+
+That verdict is historical rather than authority for every later PR snapshot.
+Hosted PR review subsequently reopened the contract after finding five
+fail-open paths in verdict disposition, schema enforcement, and cross-phase
+identity. The required same-class census then found related gaps in sealed
+scope completeness, review/adjudication cardinality, reference denominator
+counts, manifest primary keys, schema versions/enums, and statistical binding.
+
+The implementation and regression suite now address those finding classes.
+The final fixed-diff review used two independent reviewers. One reviewer found
+no remaining issue. The other drove a final same-class closure over manifest
+byte-to-row binding, seal cardinality and identity invariants, review and
+adjudication custody, reference-frame denominators, cross-stratum invariants,
+and standalone sampling-manifest method scope. Both reviewers then returned:
+
+- Findings: none.
+- Residual risks within the no-RAW contract scope: none.
+- Verdict: `APPROVE`.
+
+The final local verification for this snapshot reported:
+
+- 235 related CID-NL and artifact-retention tests passed;
+- ruff passed for `xic_extractor` and `tests`;
+- mypy passed for 445 source files;
+- strict artifact retention passed with 281 retained files, 52 externalized
+  files, and zero `shrink_later` entries;
+- `git diff --check` passed.
 
 ## Boundary
 

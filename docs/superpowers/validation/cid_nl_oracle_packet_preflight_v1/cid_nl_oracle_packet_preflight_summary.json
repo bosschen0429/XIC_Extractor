@@ -4,7 +4,7 @@
   "validation_label": "diagnostic_only",
   "raw_replay_ran": true,
   "new_raw_replay_ran_for_no_raw_contract_completion": false,
-  "decision": "The no-RAW acceptance contract is complete: use the six NL116 fixed-spike internal standards as expected-positive controls, keep proposal precision separate from independent-reference recovery, preserve the sealed 2RAW boundary/area calibration, use append-only blinded review/adjudication, and apply the total fail-closed gate/verdict contract plus synthetic suite. Formal evaluation remains blocked until a real tracer and populated sealed manifests, parameter values, lineage, evidence, and the Issue #128 performance budget exist.",
+  "decision": "The no-RAW acceptance contract is implemented, locally verified, and independently approved after hosted-review remediation and a same-class fail-closed sweep. Its bounded policy remains: use the six NL116 fixed-spike internal standards as expected-positive controls, keep proposal precision separate from independent-reference recovery, preserve the sealed 2RAW boundary/area calibration, use append-only blinded review/adjudication, and apply the total fail-closed gate/verdict contract plus synthetic suite. Formal evaluation remains blocked until a real tracer and populated sealed manifests, parameter values, lineage, evidence, and the Issue #128 performance budget exist.",
   "method_scope": {
     "current_untargeted_discovery": "nl116_only",
     "current_untargeted_preset_exists": true,
