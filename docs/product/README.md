@@ -35,6 +35,7 @@ owner for product documentation.
 | Backfill | [`backfill.md`](backfill.md) | ProductWriter authority, accepted quant values, expansion gates |
 | Run Provenance | [`run-provenance.md`](run-provenance.md) | Method manifests, run metadata, replay context |
 | Processing Lineage | [`processing-lineage.md`](processing-lineage.md) | Stable request/attempt/artifact/delivery identity, plot-ready retention, retry/supersession, and two-phase delivery sealing |
+| Execution Runtime | [`execution-runtime.md`](execution-runtime.md) | Attempt scheduling, cancellation, retry/resume, cleanup, cache lifecycle, failure aggregation, and runtime observability |
 
 ### Quality and Review
 
