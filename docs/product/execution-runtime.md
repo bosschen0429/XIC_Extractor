@@ -106,13 +106,15 @@ An acquisition session may be reused only within the same attempt, worker,
 `AcquisitionSource`, and owner-supplied compatibility token. Correctness must
 not depend on reuse. Before adapter construction or allocation, the runtime
 creates a unique `resource_reserved` record. Unregistered handles must never be
-used. Each record transitions from `reserved` to `opened`, `open_failed`, or
-`not_opened`, then to one terminal cleanup outcome. `not_opened` covers
-pre-allocation cancellation and performs an idempotent no-op cleanup. Worker
-loss closes every non-terminal resource record, including `reserved`, `opened`,
-and `open_failed`, as `unknown_after_worker_loss`. Every transition is
-observable, a late child report cannot rewrite a terminal resource record, and
-a reopened source is a new runtime session.
+used. Each record transitions from `reserved` to `opened`, `open_failed`,
+`not_opened`, or `open_state_unknown_after_worker_loss`, then to one terminal
+cleanup outcome. `not_opened` covers pre-allocation cancellation and performs
+an idempotent no-op cleanup. If a worker disappears while the parent still sees
+`reserved`, the runtime records `open_state_unknown_after_worker_loss`; it must
+not infer whether allocation occurred. Worker loss closes every non-terminal
+resource record as `unknown_after_worker_loss`. Every transition is observable,
+a late child report cannot rewrite a terminal resource record, and a reopened
+source is a new runtime session.
 
 ## Small State Model
 
@@ -165,18 +167,24 @@ claiming a durable queue:
 1. before launch, the lineage owner or entry-point supervisor atomically records
    the owner-created attempt identity, attempt-scoped temporary-artifact
    namespace, and coordinator launch;
-2. after work, cleanup, and artifact-disposition closure, the coordinator writes
-   one immutable terminal-record artifact in that namespace containing the
+2. after work, cleanup, and artifact-disposition closure, the coordinator
+   writes one immutable `CoordinatorTerminalRecord` containing the proposed
    outcome, manifest and per-unit outcomes, resource cleanup outcomes, artifact
-   registry and proposed dispositions, failures, metrics, and event-ledger
-   digest;
-3. the supervisor atomically records that terminal record's content digest as
-   the durable terminal acknowledgement; only this acknowledgement commits the
-   attempt outcome and corresponding logical artifact dispositions.
+   registry and proposed dispositions, failures, coordinator metrics ending at
+   terminal proposal, and the coordinator event-ledger digest through that
+   proposal;
+3. the supervisor atomically replaces the launch marker with one immutable
+   `SupervisorFinalizationRecord` containing the coordinator-record digest,
+   `terminal_acknowledged` and `terminal_outcome` events continuing the
+   coordinator sequence, the finalization offset, and
+   `attempt_wall_seconds`. Existence of this finalization record is the durable
+   acknowledgement that commits the attempt outcome and corresponding logical
+   artifact dispositions.
 
-Terminal-record write, integrity, or acknowledgement failure cannot commit
-success. The terminal record is recovery metadata, not delivery evidence or a
-ProductWriter artifact.
+Coordinator-record write/integrity failure or supervisor-finalization failure
+cannot commit success. The coordinator and finalization records are recovery
+metadata, not delivery evidence or ProductWriter artifacts. Neither record
+contains or digests facts that occur only after that record is finalized.
 
 If the coordinator exits before durable terminal acknowledgement:
 
@@ -191,10 +199,11 @@ If the coordinator exits before durable terminal acknowledgement:
 - retry requires a new `ProcessingAttempt` identity and fresh runtime.
 
 If the coordinator exits after acknowledgement, the durable acknowledgement is
-authoritative: the lineage owner verifies and reads the acknowledged immutable
-terminal record rather than downgrading it to `coordinator_loss`. A repeated
-acknowledgement with the same digest is idempotent; a different terminal-record
-digest for the same attempt fails closed.
+authoritative: the lineage owner verifies the supervisor finalization and its
+referenced coordinator record rather than downgrading the attempt to
+`coordinator_loss`. Replaying the same coordinator-record digest, outcome, and
+finalization facts is idempotent; a conflicting finalization for the same
+attempt fails closed.
 
 The launch/terminal marker is recovery evidence, not a second attempt identity
 or a durable runtime queue. A production integration that needs per-resource
@@ -324,16 +333,21 @@ resources.
 
 ## Minimum Observability
 
-Every event carries the attempt identity, monotonic sequence, monotonic offset
-from the runtime origin established by `attempt_queued`, event kind, and
-work-unit/resource reference where applicable. The minimum event set covers:
+Every coordinator event carries the attempt identity, monotonic sequence,
+monotonic offset from the runtime origin established by `attempt_queued`, event
+kind, and work-unit/resource reference where applicable. The coordinator ledger
+ends at `terminal_proposal`. The supervisor finalization continues from the last
+coordinator sequence and durably adds acknowledgement and outcome; it is not
+part of the coordinator-record digest. The minimum event set covers:
 
-- attempt queued, started, cancellation accepted/rejected, terminal proposal,
-  durable terminal acknowledgement, and terminal outcome;
+- coordinator: attempt queued, started, cancellation accepted/rejected, and
+  terminal proposal;
+- supervisor finalization: durable terminal acknowledgement and terminal
+  outcome;
 - required-work manifest closed and work unit submitted, started, and settled;
 - dependency reuse accepted/rejected/not used and unit satisfaction source;
-- acquisition/resource reserved, opened/open-failed/not-opened, and terminal
-  cleanup outcome;
+- acquisition/resource reserved, `opened`, `open_failed`, `not_opened`, or
+  `open_state_unknown_after_worker_loss`, and terminal cleanup outcome;
 - cache hit, miss, stale rejection, write, rebuild outcome, and eviction
   outcome;
 - runtime artifact created, quarantined, or offered to its owner;
@@ -352,7 +366,8 @@ lifecycle events fail closed.
 | `xic_batch_count` | Sum of adapter batch invocations |
 | `adapter_chromatogram_call_count` | Sum of observed vendor/backend chromatogram calls; separate from logical requests |
 | `trace_point_count` | Sum of returned trace points |
-| `attempt_wall_seconds` | Monotonic span from committed `attempt_started` through durably acknowledged terminal outcome after cleanup; parallel child spans are not summed into it |
+| `coordinator_work_seconds` | Monotonic span from committed `attempt_started` through frozen terminal proposal; stored in the coordinator record |
+| `attempt_wall_seconds` | Monotonic span from committed `attempt_started` through supervisor finalization after cleanup; stored only in the finalization record; parallel child spans are not summed into it |
 | `stage_or_unit_elapsed_seconds` | Individually scoped monotonic spans; aggregation retains count/sum/max |
 | `worker_peak_rss_bytes` | Maximum measured RSS per worker, with unsupported reason when unavailable |
 | `process_tree_peak_rss_bytes` | Maximum observed parent-plus-child RSS, not a sum of per-worker peaks |
@@ -365,10 +380,11 @@ quality or authorize a result.
 For the first Targeted and Alignment consumers, `raw_open_count`,
 `logical_xic_request_count`, `xic_batch_count`,
 `adapter_chromatogram_call_count`, `trace_point_count`,
-`attempt_wall_seconds`, `stage_or_unit_elapsed_seconds`, and
-runtime-mediated artifact read/write counts and bytes are required
-`measured`. Process-mode comparators must also measure per-worker and process
-tree peak RSS; serial mode must measure process peak RSS and may report
+`coordinator_work_seconds`, `attempt_wall_seconds`,
+`stage_or_unit_elapsed_seconds`, and runtime-mediated artifact read/write
+counts and bytes are required `measured`. Process-mode comparators must also
+measure per-worker and process tree peak RSS; serial mode must measure process
+peak RSS and may report
 per-worker RSS as `unsupported:not_applicable_serial`. Artifact-I/O coverage is
 complete only when every registered runtime-artifact read and write contributes
 to the counters; direct legacy writer I/O stays explicitly out of scope rather
@@ -421,8 +437,9 @@ integration must provide:
 - pure state-table tests for success, duplicate required-work keys, missing
   owner completeness attestation, manifest preflight terminalization,
   submission failure, cancellation before resource open, cancellation races,
-  required-event append failure, worker loss after `open_failed`, late cleanup
-  reports, cleanup failed/unknown, retry with owner-supplied dependency tokens,
+  required-event append failure, worker loss while still `reserved`, worker
+  loss after `open_failed`, late cleanup reports, cleanup failed/unknown,
+  retry with owner-supplied dependency tokens,
   and cancellation after dependency reuse;
 - synthetic hung-process tests proving deadline escalation, bounded parent
   terminalization, duplicate reap idempotency, and the race between a late child
@@ -432,7 +449,9 @@ integration must provide:
   no per-resource cleanup is invented, and retry uses a new attempt identity;
   after acknowledgement the content-bound terminal record, exact outcome, and
   artifact dispositions survive, while a missing/corrupt record or conflicting
-  acknowledgement fails closed;
+  acknowledgement fails closed; fixtures also prove the coordinator record ends
+  at terminal proposal, supervisor events continue its sequence, and
+  `attempt_wall_seconds` exists only in the finalization layer;
 - volatile-cache cleanup tests across success, failure, cancellation, and
   worker loss;
 - no-RAW Windows-spawn pickling smoke for work, event, failure, resource, and
@@ -484,9 +503,9 @@ meaning in the runtime core.
   acknowledgement commits outcome and artifact dispositions; coordinator loss
   before acknowledgement fails/quarantines the old attempt, while loss after
   acknowledgement preserves the acknowledged result.
-- Every resource is reserved before allocation, has one
-  opened/open-failed/not-opened event and exactly one logical terminal cleanup
-  record, and cleanup is idempotent.
+- Every resource is reserved before allocation, has one `opened`,
+  `open_failed`, `not_opened`, or `open_state_unknown_after_worker_loss` event
+  and exactly one logical terminal cleanup record, and cleanup is idempotent.
 - Bounded hard cancel is claimed only for a validated killable process boundary.
 - Retry/resume receives new identity and non-overlapping work-key-bound
   dependency tokens from the lineage owner; zero tokens means full recompute.
