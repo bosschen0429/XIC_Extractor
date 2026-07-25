@@ -112,8 +112,8 @@ false-positive rate, and false-negative rate remain unavailable.
   boundary, replay, denominator, and scope cases.
 - `cid_nl_oracle_owner_policy_seal_v1.json`: owner, time, scope, rationale, and
   decision hashes for the two explicitly frozen policy values.
-- `../../plans/2026-07-25-cid-nl-oracle-independent-spec-review.md`: durable
-  fixed-snapshot review history and final `APPROVE` verdict.
+- `independent_spec_review.md`: durable fixed-snapshot review history and final
+  `APPROVE` verdict.
 - `cid_nl_oracle_packet_preflight_summary.json`: decision, observed context,
   partial anchors, and blockers.
 - `cid_nl_oracle_packet_preflight_sources.tsv`: portable source locators,

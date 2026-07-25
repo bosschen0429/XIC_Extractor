@@ -154,7 +154,7 @@
   },
   "no_raw_contract": {
     "status": "complete",
-    "independent_spec_review": "../../plans/2026-07-25-cid-nl-oracle-independent-spec-review.md",
+    "independent_spec_review": "independent_spec_review.md",
     "independent_spec_review_verdict": "APPROVE",
     "reference_universe_protocol": "../../plans/2026-07-25-cid-nl-reference-universe-protocol.md",
     "statistical_design_research": "../../plans/2026-07-25-cid-nl-oracle-statistical-design-research.md",

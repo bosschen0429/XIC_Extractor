@@ -357,12 +357,12 @@ def validate_sampling_statistical_binding(
     """Bind every sampled case to exactly one compatible estimand design."""
 
     designs: dict[str, Mapping[str, Any]] = {}
-    for design_row in statistical_rows:
-        validate_statistical_design_row(design_row)
-        estimand_id = _required_text(design_row, "estimand_id")
+    for statistical_row in statistical_rows:
+        validate_statistical_design_row(statistical_row)
+        estimand_id = _required_text(statistical_row, "estimand_id")
         if estimand_id in designs:
             raise OracleContractError("duplicate estimand_id")
-        designs[estimand_id] = design_row
+        designs[estimand_id] = statistical_row
     for sampling_row in sampling_rows:
         validate_sampling_row(sampling_row)
         estimand_id = _required_text(sampling_row, "estimand_id")
@@ -1734,7 +1734,9 @@ def _finite_number(row: Mapping[str, Any], field: str) -> float:
 
 def _optional_number(row: Mapping[str, Any], field: str) -> float | None:
     value = row.get(field)
-    if value in {None, "", "not_applicable"}:
+    if value is None:
+        return None
+    if value in {"", "not_applicable"}:
         return None
     if isinstance(value, bool):
         raise OracleContractError(f"{field} must be numeric")
