@@ -27,6 +27,16 @@ acquisition-session compatibility tokens from their existing owners. It must
 not derive substitutes from paths, timestamps, worker order, sample display
 names, process IDs, or runtime-local cache keys.
 
+The minimum contract succeeds when three properties are mechanically
+testable:
+
+1. no listed work unit, reserved resource, or produced artifact can disappear
+   from the terminal attempt record;
+2. cancellation, worker loss, retry, cleanup, and cache reuse cannot turn
+   incomplete execution into scientific absence or deliverable output; and
+3. Targeted and Alignment can report comparable execution cost without moving
+   either workflow's scientific or writer authority into the runtime.
+
 ## Ownership Boundary
 
 The execution runtime owns:
@@ -38,7 +48,8 @@ The execution runtime owns:
   then managing their lifetime inside workers;
 - bounded cooperative cancellation, pending-work suppression, and worker-loss
   escalation;
-- retry scheduling using lineage-owner-supplied attempt and dependency tokens;
+- scheduling a lineage-owner-authorized retry attempt using owner-supplied
+  attempt and dependency tokens;
 - typed per-unit, scheduler, worker-loss, and cleanup failure aggregation;
 - one terminal cleanup record for every reserved resource and idempotent
   cleanup execution;
@@ -80,20 +91,27 @@ These concepts are internal mechanics, not user-visible review tags.
 | `ValidatedDependencyToken` | Lineage-owner approval bound to the new attempt and exactly one manifest work-unit key, plus an opaque immutable dependency reference | Runtime-created identity or compatibility proof |
 
 The manifest is closed before the attempt starts. Duplicate keys, a missing
-required key, submission failure, or an attempt to add later work fails closed.
-If a workflow cannot state its complete work set up front, it must define
-owner-visible stage manifests before runtime integration; the runtime must not
-infer completion from only the units that happened to be submitted.
+owner completeness attestation, submission failure, or an attempt to add later
+work fails closed. The runtime cannot discover that the owner omitted a unit
+from the manifest; its enforceable invariant is that every key in an
+owner-attested manifest settles exactly once. Manifest preflight failure
+terminalizes the attempt as `failed` before any work or resource reservation.
+Dynamic manifest expansion and later-added stage manifests are outside the
+first integration. If Targeted or Alignment cannot state its complete work
+universe up front, stop and redraw the seam rather than infer completion from
+only the units that happened to be submitted.
 
 An acquisition session may be reused only within the same attempt, worker,
 `AcquisitionSource`, and owner-supplied compatibility token. Correctness must
 not depend on reuse. Before adapter construction or allocation, the runtime
 creates a unique `resource_reserved` record. Unregistered handles must never be
-used. Each record transitions from `reserved` to `opened` or `open_failed`, then
-to one terminal cleanup outcome. Worker loss closes every non-terminal resource
-record, including `reserved`, `opened`, and `open_failed`, as
-`unknown_after_worker_loss`. Every transition is observable, and a
-reopened source is a new runtime session.
+used. Each record transitions from `reserved` to `opened`, `open_failed`, or
+`not_opened`, then to one terminal cleanup outcome. `not_opened` covers
+pre-allocation cancellation or preflight failure and performs an idempotent
+no-op cleanup. Worker loss closes every non-terminal resource record, including
+`reserved`, `opened`, and `open_failed`, as `unknown_after_worker_loss`. Every
+transition is observable, a late child report cannot rewrite a terminal
+resource record, and a reopened source is a new runtime session.
 
 ## Small State Model
 
@@ -111,7 +129,7 @@ runtime artifact disposition, not by a `partial` attempt outcome.
 
 Terminal outcome is deterministic:
 
-1. duplicate/missing required work, submission failure, worker loss, unit
+1. manifest precondition failure, submission failure, worker loss, unit
    failure, integrity failure, or cleanup `failed` /
    `unknown_after_worker_loss` makes the attempt `failed`;
 2. otherwise, a cancellation accepted before the terminal decision makes it
@@ -119,13 +137,21 @@ Terminal outcome is deterministic:
 3. otherwise, every manifest unit settling successfully makes it `succeeded`.
 
 An attempt can become terminal after every manifest unit has a terminal result
-and every reserved resource has exactly one terminal cleanup record.
-Cleanup failure or worker loss therefore blocks success, not terminalization.
+and every reserved resource has exactly one terminal cleanup record, and every
+current-attempt runtime artifact has a terminal disposition. Cleanup failure,
+worker loss, or artifact-disposition failure therefore blocks success, not
+terminalization. A manifest preflight failure has an empty work, resource, and
+artifact registry and can terminalize immediately as `failed`.
 
-All state-changing events use one monotonic sequence per attempt. Cancellation
-accepted before the atomic terminal decision affects the outcome. A request
-arriving after that decision is recorded as rejected/no-op. Cleanup failure
-still has precedence over cancellation.
+All state-changing events use one monotonic sequence per attempt. Appending a
+required lifecycle event and applying its state transition are one atomic
+in-memory reducer operation; a required append failure becomes an
+`integrity_failure` and prevents success. Export to an external log or metrics
+sink is a non-authoritative copy: export failure is recorded when possible as a
+telemetry failure but cannot erase the in-memory ledger. Cancellation accepted
+before the atomic terminal decision affects the outcome. A request arriving
+after that decision is recorded as rejected/no-op. Cleanup failure still has
+precedence over cancellation.
 
 ## Cancellation, Worker Loss, Partial Work, And Failure
 
@@ -161,13 +187,18 @@ Cleanup operations must be idempotent so parent-side reaping or retry does not
 double-apply destructive effects. Unknown or failed cleanup makes the attempt
 `failed` but still lets it reach terminal state.
 
-Artifacts produced by the current attempt for an execution-satisfied unit
-become `quarantined_diagnostic` when that attempt fails or is cancelled. They
-may support diagnosis or a later lineage-approved dependency, but they cannot
-silently become scientific `missing`, `absent`, selected values, or product
-output. An artifact referenced through `validated_dependency` keeps its prior
-producer-owned disposition; only this attempt's dependency-use record becomes
-non-deliverable.
+Every runtime-mediated artifact is registered before its first write. Artifacts
+produced by the current attempt remain `runtime_temporary` until terminal
+commit. That commit atomically sets attempt `succeeded` and every such artifact
+to `offered_to_owner`; if the attempt fails or is cancelled, every registered
+artifact, including partial bytes from a failed unit, becomes logically
+`quarantined_diagnostic`. Failure of an owner-supplied physical quarantine
+action is aggregated as cleanup failure, but never makes the artifact
+deliverable. These artifacts may support diagnosis or a later lineage-approved
+dependency, but they cannot silently become scientific `missing`, `absent`,
+selected values, or product output. An artifact referenced through
+`validated_dependency` keeps its prior producer-owned disposition; only this
+attempt's dependency-use record becomes non-deliverable.
 
 All failures are retained as typed records and aggregated at the attempt
 boundary. Each preserves the work-unit/resource key, stage, source reference,
@@ -200,6 +231,9 @@ of the old attempt. Zero tokens means a full recomputation. Only a claimed
 reuse whose token is missing, malformed, bound to another attempt/key, or
 overlaps another token fails closed. Semantically stale or incompatible work
 must be rejected by the lineage owner before scheduling reaches the runtime.
+The runtime performs no hidden same-attempt automatic retry: retry policy first
+returns to the lineage owner for a new attempt identity and, where applicable,
+new validated dependency tokens.
 
 ## Cache And Temporary-Resource Lifecycle
 
@@ -208,10 +242,17 @@ Cache rules:
 - correctness is identical on cache hit and miss;
 - keys and compatibility predicates come from the owning identity/evidence
   contract;
-- hits, misses, rejected stale entries, reads, writes, and evictions are
-  runtime events;
-- attempt-local volatile caches are released through registered idempotent
-  cleanup actions;
+- hits, misses, rejected stale entries, reads, writes, rebuilds, and evictions
+  are runtime events;
+- a miss or stale rejection may trigger ordinary work execution; any resulting
+  cache rebuild is recorded once with `succeeded`, `failed`, or `not_attempted`
+  plus reason rather than becoming another attempt state;
+- an eviction request is recorded once with `succeeded`, `failed`, or
+  `rejected_pinned` plus reason; a rejected or failed eviction does not mutate
+  the existing entry;
+- every attempt-local volatile cache is registered as a runtime resource and
+  released through the same terminal, idempotent cleanup contract on success,
+  failure, cancellation, or worker loss;
 - persistent cache format, retention period, and eviction policy remain
   separate owner decisions.
 
@@ -233,16 +274,18 @@ resources.
 
 ## Minimum Observability
 
-Every event carries the attempt identity, monotonic sequence, event kind, and
-work-unit/resource reference where applicable. The minimum event set covers:
+Every event carries the attempt identity, monotonic sequence, monotonic offset
+from attempt start, event kind, and work-unit/resource reference where
+applicable. The minimum event set covers:
 
 - attempt queued, started, cancellation accepted/rejected, terminal decision,
   and terminal outcome;
 - required-work manifest closed and work unit submitted, started, and settled;
 - dependency reuse accepted/rejected/not used and unit satisfaction source;
-- acquisition/resource reserved, open succeeded/failed, and terminal cleanup
+- acquisition/resource reserved, opened/open-failed/not-opened, and terminal
+  cleanup outcome;
+- cache hit, miss, stale rejection, write, rebuild outcome, and eviction
   outcome;
-- cache hit, miss, stale rejection, write, and eviction;
 - runtime artifact created, quarantined, or offered to its owner;
 - worker, scheduler, integrity, telemetry, and cleanup failures.
 
@@ -259,7 +302,7 @@ lifecycle events fail closed.
 | `xic_batch_count` | Sum of adapter batch invocations |
 | `adapter_chromatogram_call_count` | Sum of observed vendor/backend chromatogram calls; separate from logical requests |
 | `trace_point_count` | Sum of returned trace points |
-| `attempt_wall_seconds` | Monotonic wall-clock span; parallel child spans are not summed into it |
+| `attempt_wall_seconds` | Monotonic span from committed `attempt_started` through committed terminal outcome after cleanup; parallel child spans are not summed into it |
 | `stage_or_unit_elapsed_seconds` | Individually scoped monotonic spans; aggregation retains count/sum/max |
 | `worker_peak_rss_bytes` | Maximum measured RSS per worker, with unsupported reason when unavailable |
 | `process_tree_peak_rss_bytes` | Maximum observed parent-plus-child RSS, not a sum of per-worker peaks |
@@ -268,6 +311,29 @@ lifecycle events fail closed.
 
 These metrics describe cost and execution locality. They do not score evidence
 quality or authorize a result.
+
+For the first Targeted and Alignment consumers, `raw_open_count`,
+`logical_xic_request_count`, `xic_batch_count`,
+`adapter_chromatogram_call_count`, `trace_point_count`,
+`attempt_wall_seconds`, `stage_or_unit_elapsed_seconds`, and
+runtime-mediated artifact read/write counts and bytes are required
+`measured`. Process-mode comparators must also measure per-worker and process
+tree peak RSS; serial mode must measure process peak RSS and may report
+per-worker RSS as `unsupported:not_applicable_serial`. Artifact-I/O coverage is
+complete only when every registered runtime-artifact read and write contributes
+to the counters; direct legacy writer I/O stays explicitly out of scope rather
+than being reported as measured zero.
+
+The first cache-disabled successful comparator is a hard locality gate:
+baseline and candidate must have exact equality for RAW opens, logical XIC
+requests, batches, adapter calls, trace points, and runtime-mediated artifact
+I/O. Elapsed time and RSS use paired baseline/candidate measurements in the
+same environment. #128 intentionally does not invent a numeric tolerance before
+that baseline exists: the owning implementation lane must preregister its
+elapsed/RSS budget before promotion, and missing tolerance keeps the runtime at
+`diagnostic_only`. A hard-locality mismatch, a lane-budget breach, or missing
+required measurement is a rollback/stop signal, never a reason to relax
+scientific parity.
 
 ## Current Implementation Gaps
 
@@ -288,15 +354,31 @@ quality or authorize a result.
 7. Some modules named as runtime helpers currently apply model-selection or
    product policy. Those decisions must remain with evidence/projection owners.
 
+## Alternatives And Trade-Offs
+
+| Option | Decision | Reason |
+| --- | --- | --- |
+| Keep separate workflow schedulers as the long-term contract | Rejected | Existing cancellation, failure, cleanup, cache, and timing semantics already diverge and cannot support comparable rollback evidence. |
+| Promote the Targeted scheduler into a generic pipeline engine | Rejected | It would make current Targeted behavior the architecture boundary and invite scientific and writer policy into the runtime. |
+| Introduce a database, durable queue, or public event API first | Rejected | #128 needs enforceable lifecycle semantics before persistence or distribution choices. |
+| Add one small mechanical runtime behind thin Targeted and Alignment adapters | Selected | Two real consumers can falsify the seam while legacy scientific and writer paths remain authoritative. |
+
 ## Required Evidence Before Integration
 
 The logical contract still requires implementation evidence. The first
 integration must provide:
 
-- pure state-table tests for success, duplicate/missing required work,
-  submission failure, cancellation races, worker loss after `open_failed`,
-  cleanup failed/unknown, retry with owner-supplied dependency tokens, and
-  cancellation after dependency reuse;
+- pure state-table tests for success, duplicate required-work keys, missing
+  owner completeness attestation, manifest preflight terminalization,
+  submission failure, cancellation before resource open, cancellation races,
+  required-event append failure, worker loss after `open_failed`, late cleanup
+  reports, cleanup failed/unknown, retry with owner-supplied dependency tokens,
+  and cancellation after dependency reuse;
+- synthetic hung-process tests proving deadline escalation, bounded parent
+  terminalization, duplicate reap idempotency, and the race between a late child
+  cleanup result and parent `unknown_after_worker_loss`;
+- volatile-cache cleanup tests across success, failure, cancellation, and
+  worker loss;
 - no-RAW Windows-spawn pickling smoke for work, event, failure, resource, and
   metrics envelopes;
 - Targeted serial/process characterization parity;
@@ -304,9 +386,10 @@ integration must provide:
 - zero selected-result and writer-byte difference for successful comparator
   runs;
 - assertions that failed/cancelled runtime artifacts never enter either
-  product writer;
+  product writer, that every partial artifact is registered, and that
+  current-attempt artifact disposition closes atomically with terminal outcome;
 - observability fixtures proving metric scope, aggregation, and unavailable
-  semantics.
+  semantics, including cache rebuild and eviction outcomes.
 
 This evidence must begin no-RAW. Thermo RAW validation is justified only if a
 later bounded question requires cooperative-call or worker-termination
@@ -335,17 +418,23 @@ meaning in the runtime core.
 
 - One `AttemptRuntime` maps to one lineage-identified `ProcessingAttempt`.
 - A closed unique required-work manifest prevents omitted work from becoming a
-  successful partial attempt.
+  successful partial attempt within the owner-attested work universe; the
+  runtime does not claim to discover owner omissions.
 - Cancellation is ordered against terminal decision, prevents new scheduling,
   and cannot publish partial output.
 - Worker loss and cleanup unknown/failure aggregate without becoming scientific
   absence or preventing terminalization.
-- Every resource is reserved before allocation, has one open/open-failed event
-  and exactly one logical terminal cleanup record, and cleanup is idempotent.
+- Every resource is reserved before allocation, has one
+  opened/open-failed/not-opened event and exactly one logical terminal cleanup
+  record, and cleanup is idempotent.
 - Bounded hard cancel is claimed only for a validated killable process boundary.
 - Retry/resume receives new identity and non-overlapping work-key-bound
   dependency tokens from the lineage owner; zero tokens means full recompute.
 - Cache reuse is optional, owner-keyed, observable, and correctness-neutral.
+- Volatile caches are registered resources whose cleanup must close before
+  terminalization.
+- Current-attempt artifacts remain temporary until terminal success; failure or
+  cancellation can only quarantine them.
 - Calls, opens, points, elapsed, memory, and artifact I/O have comparable scope,
   aggregation, source, and unavailable semantics.
 - Targeted and Alignment must pass spawn, parity, and no-writer-diff gates
