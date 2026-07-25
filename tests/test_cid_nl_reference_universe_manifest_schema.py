@@ -71,6 +71,9 @@ def test_reference_universe_schema_preserves_scope_and_denominators() -> None:
         "expected_positive_control_requires_in_scope_expected_control_detectability"
     ]
     assert conditional[
+        "in_scope_fixed_spike_or_authentic_standard_must_be_labeled_expected_positive_control"
+    ]
+    assert conditional[
         "independently_supported_positive_requires_supported_sample_local_evidence"
     ]
     assert conditional[

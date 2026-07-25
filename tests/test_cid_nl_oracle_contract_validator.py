@@ -617,6 +617,18 @@ def test_reference_validator_rejects_every_unknown_enum(field: str) -> None:
         _validate_reference(_reference(**{field: "unknown_enum"}))
 
 
+def test_in_scope_fixed_spike_cannot_be_labeled_supported_negative() -> None:
+    with pytest.raises(OracleContractError, match="expected_positive_control"):
+        _validate_reference(
+            _reference(
+                reference_source_type="fixed_spike_internal_standard",
+                physical_presence_basis="fixed_spike_design",
+                method_detectability_basis="in_scope_expected_control",
+                reference_label="supported_negative",
+            )
+        )
+
+
 def test_full_reference_recovery_requires_cross_row_completeness_seal() -> None:
     row = _reference(recovery_claim_label="full_bounded_reference_recovery")
     with pytest.raises(OracleContractError, match="verified complete"):
@@ -939,6 +951,10 @@ def test_sampling_manifest_binds_frame_method_scope() -> None:
 
 
 def test_sampling_manifest_scopes_cases_and_reuses_duplicate_locator() -> None:
+    with pytest.raises(OracleContractError, match="repeatability_only"):
+        validate_sampling_manifest_rows(
+            [_sampling(analysis_role="repeatability_only")]
+        )
     with pytest.raises(OracleContractError, match="scientific locator"):
         validate_sampling_manifest_rows(
             [
@@ -1116,6 +1132,39 @@ def test_hidden_duplicate_requires_both_review_phases() -> None:
                 ),
             },
         )
+    other_local = _local_review(
+        sampling_row=duplicate_sampling,
+        review_record_id="RD3",
+        presentation_id="PD1",
+        review_phase="hidden_duplicate_sample_local_blinded",
+        analysis_role="repeatability_only",
+        reviewer_id="reviewer-2",
+    )
+    other_policy = _policy_review(
+        local_record=other_local,
+        review_record_id="RD4",
+        presentation_id="PD1",
+        review_phase="hidden_duplicate_policy_blinded",
+        analysis_role="repeatability_only",
+        reviewer_id="reviewer-2",
+        local_review_record_id="RD3",
+        local_label_seal_id="LS_OTHER",
+    )
+    with pytest.raises(OracleContractError, match="same reviewer"):
+        validate_review_event_set(
+            [primary_local, primary_policy, other_local, other_policy],
+            sampling_rows=[primary_sampling, duplicate_sampling],
+            local_label_seals_by_id={
+                "LS_PRIMARY": _local_label_seal(
+                    primary_local,
+                    seal_id="LS_PRIMARY",
+                ),
+                "LS_OTHER": _local_label_seal(
+                    other_local,
+                    seal_id="LS_OTHER",
+                ),
+            },
+        )
 
 
 def test_primary_review_is_complete_and_chronological() -> None:
@@ -1133,6 +1182,17 @@ def test_primary_review_is_complete_and_chronological() -> None:
         validate_review_event_set(
             [],
             sampling_rows=[sampling],
+            local_label_seals_by_id={},
+        )
+    supplemental_sampling = _sampling(
+        case_role="adaptive_supplemental",
+        analysis_role="supplemental_descriptive",
+    )
+    validate_sampling_manifest_rows([supplemental_sampling])
+    with pytest.raises(OracleContractError, match="primary presentation"):
+        validate_review_event_set(
+            [],
+            sampling_rows=[supplemental_sampling],
             local_label_seals_by_id={},
         )
     with pytest.raises(OracleContractError, match="earlier sample-local"):
@@ -1548,6 +1608,114 @@ def test_lineage_gate_result_requires_gate_specific_binding_fields() -> None:
     )
     with pytest.raises(OracleContractError, match="multiple requests"):
         validate_lineage_binding_rows([row, crossed_request])
+    conflicting_artifact = {
+        **row,
+        "binding_id": "B2",
+        "processing_attempt_id": "ATT2",
+        "artifact_semantic_role": "different-role",
+        "artifact_schema_version": "v2",
+        "artifact_sha256": "d" * 64,
+        "source_row_sha256": "",
+    }
+    conflicting_artifact["source_row_sha256"] = canonical_row_sha256(
+        conflicting_artifact
+    )
+    with pytest.raises(OracleContractError, match="conflicting lineage"):
+        validate_lineage_binding_rows([row, conflicting_artifact])
+    same_artifact = {
+        **row,
+        "binding_id": "B2",
+        "source_row_sha256": "",
+    }
+    same_artifact["source_row_sha256"] = canonical_row_sha256(same_artifact)
+    validate_lineage_binding_rows([row, same_artifact])
+
+
+def test_lineage_seal_derives_missing_required_binding_coverage() -> None:
+    schema = json.loads(
+        (
+            ROOT
+            / "docs/superpowers/schemas/"
+            "cid_nl_oracle_lineage_binding_schema.v1.json"
+        ).read_text(encoding="utf-8")
+    )
+    row = {
+        "schema_version": "cid_nl_oracle_lineage_binding_v1",
+        "oracle_packet_id": "OP1",
+        "binding_id": "B1",
+        "binding_role": "gate_result",
+        "processing_request_id": "REQ1",
+        "processing_attempt_id": "ATT1",
+        "evidence_artifact_id": "ART1",
+        "gate_id": "G1",
+        "gate_table_sha256": sha256_bytes(b"gate table"),
+    }
+    manifest_bytes = canonical_tsv_bytes([row])
+    gate_table_bytes = b"gate table"
+    seal = {
+        "schema_version": "cid_nl_oracle_lineage_binding_v1",
+        "oracle_packet_id": "OP1",
+        "lineage_binding_tsv_sha256": sha256_bytes(manifest_bytes),
+        "proposal_manifest_seal_id": "PS1",
+        "holdout_sampling_manifest_seal_id": "HS1",
+        "human_label_seal_id": "LS1",
+        "gate_table_sha256": sha256_bytes(gate_table_bytes),
+        "binding_row_count": "1",
+        "distinct_acquisition_source_count": "0",
+        "distinct_processing_request_count": "1",
+        "distinct_processing_attempt_count": "1",
+        "distinct_evidence_artifact_count": "1",
+        "missing_required_binding_count": "4",
+        "sealed_at_utc": "2026-07-25T00:00:00Z",
+        "sealed_by": "custodian",
+        "seal_status": "sealed",
+        "supersedes_lineage_seal_id": "none",
+    }
+    required = {
+        "tested_tracer_proposal": [
+            {"proposal_manifest_id": "PM1", "proposal_row_id": "PR1"}
+        ],
+        "holdout_case_evidence": [
+            {"case_id": "C1", "presentation_id": "P1"}
+        ],
+        "human_review_event": [{"review_record_id": "R1"}],
+        "machine_comparison": [
+            {"case_id": "C1", "presentation_id": "P1"}
+        ],
+        "gate_result": [{"gate_id": "G1"}],
+    }
+    artifacts = {
+        "lineage_binding_tsv_sha256": manifest_bytes,
+        "gate_table_sha256": gate_table_bytes,
+    }
+    validate_manifest_seal(
+        schema,
+        seal,
+        artifact_bytes_by_sha_field=artifacts,
+        manifest_rows=[row],
+        required_binding_rows_by_role=required,
+    )
+    with pytest.raises(
+        OracleContractError,
+        match="missing_required_binding_count",
+    ):
+        validate_manifest_seal(
+            schema,
+            {**seal, "missing_required_binding_count": "0"},
+            artifact_bytes_by_sha_field=artifacts,
+            manifest_rows=[row],
+            required_binding_rows_by_role=required,
+        )
+    with pytest.raises(
+        OracleContractError,
+        match="complete required binding universe",
+    ):
+        validate_manifest_seal(
+            schema,
+            seal,
+            artifact_bytes_by_sha_field=artifacts,
+            manifest_rows=[row],
+        )
 
 
 def test_manifest_seal_validator_rejects_missing_or_invalid_hashes() -> None:
@@ -1702,6 +1870,13 @@ def test_proposal_seal_binds_distinct_hypothesis_count() -> None:
             artifact_bytes_by_sha_field=artifacts,
             manifest_rows=[row],
         )
+    with pytest.raises(OracleContractError, match="candidate_universe_complete"):
+        validate_manifest_seal(
+            schema,
+            {**seal, "candidate_universe_complete": "FALSE"},
+            artifact_bytes_by_sha_field=artifacts,
+            manifest_rows=[row],
+        )
 
 
 def test_review_label_seal_binds_event_logs_and_counts() -> None:
@@ -1712,12 +1887,23 @@ def test_review_label_seal_binds_event_logs_and_counts() -> None:
             "cid_nl_oracle_review_adjudication_schema.v1.json"
         ).read_text(encoding="utf-8")
     )
-    reviews = [
-        _local_review(review_record_id="R1"),
-        _local_review(review_record_id="R2"),
-        _local_review(review_record_id="R3"),
-    ]
-    adjudications = [_adjudication()]
+    sampling_rows = [_sampling()]
+    sampling_manifest_bytes = canonical_tsv_bytes(sampling_rows)
+    sampling_manifest_seal = {
+        "holdout_manifest_seal_id": "HS1",
+        "holdout_manifest_id": "HM1",
+        "holdout_tsv_sha256": sha256_bytes(sampling_manifest_bytes),
+        "case_counts_and_staged_limits_frozen": "TRUE",
+        "source_roles_revealed_to_reviewer": "FALSE",
+        "machine_mapping_revealed_to_reviewer": "FALSE",
+        "legacy_mapping_revealed_to_reviewer": "FALSE",
+        "seal_status": "sealed",
+    }
+    local = _local_review(sampling_row=sampling_rows[0])
+    policy = _policy_review(local_record=local)
+    reviews = [local, policy]
+    adjudications: list[dict[str, object]] = []
+    local_label_seals = {"LS1": _local_label_seal(local)}
     review_bytes = canonical_tsv_bytes(reviews)
     adjudication_bytes = canonical_tsv_bytes(adjudications)
     seal = {
@@ -1748,7 +1934,23 @@ def test_review_label_seal_binds_event_logs_and_counts() -> None:
         artifact_bytes_by_sha_field=artifacts,
         review_rows=reviews,
         adjudication_rows=adjudications,
+        sampling_rows=sampling_rows,
+        sampling_manifest_bytes=sampling_manifest_bytes,
+        sampling_manifest_seal=sampling_manifest_seal,
+        local_label_seals_by_id=local_label_seals,
     )
+    with pytest.raises(OracleContractError, match="source_roles_revealed"):
+        validate_review_label_seal(
+            schema,
+            {**seal, "source_roles_revealed": "TRUE"},
+            artifact_bytes_by_sha_field=artifacts,
+            review_rows=reviews,
+            adjudication_rows=adjudications,
+            sampling_rows=sampling_rows,
+            sampling_manifest_bytes=sampling_manifest_bytes,
+            sampling_manifest_seal=sampling_manifest_seal,
+            local_label_seals_by_id=local_label_seals,
+        )
 
     with pytest.raises(
         OracleContractError,
@@ -1760,6 +1962,10 @@ def test_review_label_seal_binds_event_logs_and_counts() -> None:
             artifact_bytes_by_sha_field=artifacts,
             review_rows=reviews,
             adjudication_rows=adjudications,
+            sampling_rows=sampling_rows,
+            sampling_manifest_bytes=sampling_manifest_bytes,
+            sampling_manifest_seal=sampling_manifest_seal,
+            local_label_seals_by_id=local_label_seals,
         )
     with pytest.raises(
         OracleContractError,
@@ -1771,6 +1977,10 @@ def test_review_label_seal_binds_event_logs_and_counts() -> None:
             artifact_bytes_by_sha_field=artifacts,
             review_rows=[*reviews, _local_review(review_record_id="R4")],
             adjudication_rows=adjudications,
+            sampling_rows=sampling_rows,
+            sampling_manifest_bytes=sampling_manifest_bytes,
+            sampling_manifest_seal=sampling_manifest_seal,
+            local_label_seals_by_id=local_label_seals,
         )
     with pytest.raises(OracleContractError, match="packet ID"):
         validate_review_label_seal(
@@ -1779,6 +1989,36 @@ def test_review_label_seal_binds_event_logs_and_counts() -> None:
             artifact_bytes_by_sha_field=artifacts,
             review_rows=reviews,
             adjudication_rows=adjudications,
+            sampling_rows=sampling_rows,
+            sampling_manifest_bytes=sampling_manifest_bytes,
+            sampling_manifest_seal=sampling_manifest_seal,
+            local_label_seals_by_id=local_label_seals,
+        )
+    unblinded = {
+        **local,
+        "machine_mapping_visible": "TRUE",
+        "source_row_sha256": "",
+    }
+    unblinded["source_row_sha256"] = canonical_row_sha256(unblinded)
+    unblinded_reviews = [unblinded, policy]
+    unblinded_bytes = canonical_tsv_bytes(unblinded_reviews)
+    with pytest.raises(OracleContractError, match="roles hidden"):
+        validate_review_label_seal(
+            schema,
+            {
+                **seal,
+                "review_event_log_sha256": sha256_bytes(unblinded_bytes),
+            },
+            artifact_bytes_by_sha_field={
+                **artifacts,
+                "review_event_log_sha256": unblinded_bytes,
+            },
+            review_rows=unblinded_reviews,
+            adjudication_rows=adjudications,
+            sampling_rows=sampling_rows,
+            sampling_manifest_bytes=sampling_manifest_bytes,
+            sampling_manifest_seal=sampling_manifest_seal,
+            local_label_seals_by_id=local_label_seals,
         )
 
 
@@ -1832,6 +2072,15 @@ def test_statistical_design_validator_rejects_wrong_uncertainty_dispatch() -> No
     with pytest.raises(OracleContractError, match="confidence_sidedness"):
         invalid = {**row, "confidence_sidedness": "unknown"}
         invalid["source_row_sha256"] = canonical_row_sha256(invalid)
+        validate_statistical_design_row(invalid)
+    for invalid_level in ("garbage", "nan", "inf", "0", "1", "-0.1", "1.1"):
+        invalid = {**row, "confidence_level": invalid_level}
+        invalid["source_row_sha256"] = canonical_row_sha256(invalid)
+        with pytest.raises(OracleContractError, match="confidence_level"):
+            validate_statistical_design_row(invalid)
+    invalid = {**row, "confidence_sidedness": "not_applicable"}
+    invalid["source_row_sha256"] = canonical_row_sha256(invalid)
+    with pytest.raises(OracleContractError, match="sidedness"):
         validate_statistical_design_row(invalid)
 
 
@@ -1958,13 +2207,15 @@ def test_sampling_rows_bind_to_matching_estimand_frame_and_design() -> None:
                 inconsistent_reference,
             ],
         )
-    for field, value in (
-        ("evaluation_unit", "wrong_unit"),
-        ("comparator", "less_than_or_equal"),
-        ("threshold_parameter_id", "wrong_parameter"),
-    ):
-        mutated = {**design, field: value, "source_row_sha256": ""}
-        mutated["source_row_sha256"] = canonical_row_sha256(mutated)
+        for field, value in (
+            ("evaluation_unit", "wrong_unit"),
+            ("comparator", "less_than_or_equal"),
+            ("threshold_parameter_id", "wrong_parameter"),
+        ):
+            mutated = {**design, field: value, "source_row_sha256": ""}
+            if field == "comparator":
+                mutated["confidence_sidedness"] = "one_sided_upper"
+            mutated["source_row_sha256"] = canonical_row_sha256(mutated)
         with pytest.raises(OracleContractError, match="mismatches frozen gate"):
             validate_sampling_statistical_binding(
                 [_sampling()],

@@ -149,6 +149,8 @@
     "cross_sample_context_cannot_change_sample_local_identity_peak_or_boundary": true,
     "hidden_duplicate_requires_complete_sample_local_and_policy_phases_for_policy_repeatability": true,
     "hidden_duplicate_phases_require_repeatability_only_analysis_role": true,
+    "hidden_duplicate_and_primary_must_use_same_reviewer_within_each_phase": true,
+    "every_designated_primary_requires_complete_sample_local_and_policy_phases": true,
     "unblinded_taxonomy_cannot_change_confirmatory_label": true,
     "primary_confirmatory_denominator_uses_exactly_one_designated_primary_presentation": true
   },
@@ -224,6 +226,11 @@
     "seal_status",
     "supersedes_label_seal_id"
   ],
+  "label_seal_expected_values": {
+    "source_roles_revealed": false,
+    "machine_mapping_revealed": false,
+    "legacy_mapping_revealed": false
+  },
   "authority_rules": {
     "review_or_adjudication_grants_matrix_authority": false,
     "review_or_adjudication_grants_backfill_writer_authority": false,

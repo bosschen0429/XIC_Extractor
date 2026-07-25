@@ -74,6 +74,9 @@ def test_cid_nl_oracle_lineage_schema_does_not_invent_authority_or_identity() ->
         "gate_result_binding_requires_gate_table_input_artifacts_status_observed_threshold_and_verdict_dependency"
     ]
     assert integrity["missing_required_binding_verdict"] == "inconclusive"
+    assert integrity[
+        "missing_required_binding_count_is_derived_from_complete_required_binding_universe"
+    ]
 
     authority = schema["authority_rules"]
     assert all(value is False for value in authority.values())

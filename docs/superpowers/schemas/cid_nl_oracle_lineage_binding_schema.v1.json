@@ -47,6 +47,26 @@
     "machine_comparison",
     "gate_result"
   ],
+  "required_binding_identity_fields": {
+    "tested_tracer_proposal": [
+      "proposal_manifest_id",
+      "proposal_row_id"
+    ],
+    "holdout_case_evidence": [
+      "case_id",
+      "presentation_id"
+    ],
+    "human_review_event": [
+      "review_record_id"
+    ],
+    "machine_comparison": [
+      "case_id",
+      "presentation_id"
+    ],
+    "gate_result": [
+      "gate_id"
+    ]
+  },
   "allowed_staleness_statuses": [
     "current",
     "superseded",
@@ -155,6 +175,7 @@
     "processing_attempt_references_exactly_one_request": true,
     "kernel_object_ref_is_processing_request_namespaced": true,
     "artifact_identity_requires_attempt_role_schema_and_digest": true,
+    "missing_required_binding_count_is_derived_from_complete_required_binding_universe": true,
     "review_binding_requires_stable_record_schema_digest_and_artifact_links": true,
     "gate_result_binding_requires_gate_table_input_artifacts_status_observed_threshold_and_verdict_dependency": true,
     "case_id_is_locator_not_lineage_identity": true,

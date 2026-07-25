@@ -699,6 +699,10 @@ def validate_sampling_manifest_rows(
         primary_row = next(
             row for row in case_rows if _boolean(row, "primary_presentation")
         )
+        if primary_row.get("analysis_role") == "repeatability_only":
+            raise OracleContractError(
+                "primary presentation cannot be repeatability_only"
+            )
         for row in case_rows:
             if row.get("case_role") == "hidden_duplicate":
                 if row.get("duplicate_of_case_id") != case_id:
@@ -827,6 +831,8 @@ def validate_sampling_statistical_binding(
         "sampling_design_type",
         "point_estimator",
         "uncertainty_method",
+        "confidence_level",
+        "confidence_sidedness",
         "primary_cluster_key",
         "secondary_grouping_keys",
         "stratum_weight_rule",
@@ -1182,6 +1188,15 @@ def _validate_reference_row(
             raise OracleContractError(
                 "expected control requires in-scope method detectability"
             )
+    if (
+        presence in {"fixed_spike_design", "authentic_standard_design"}
+        and detectability == "in_scope_expected_control"
+        and label != "expected_positive_control"
+    ):
+        raise OracleContractError(
+            "in-scope fixed-spike or authentic-standard control must be "
+            "labeled expected_positive_control"
+        )
     if label == "independently_supported_positive":
         if local_evidence != "supported":
             raise OracleContractError(
@@ -1577,6 +1592,9 @@ def validate_review_event_set(
     prior_confirmatory_ids: set[str] = set()
     phases_by_presentation: dict[str, set[str]] = {}
     completed_phases_by_presentation: dict[str, set[str]] = {}
+    review_by_presentation_phase: dict[
+        tuple[str, str], Mapping[str, Any]
+    ] = {}
     for index, row in enumerate(rows):
         phase = _required_text(row, "review_phase")
         presentation = _required_text(row, "presentation_id")
@@ -1682,6 +1700,7 @@ def validate_review_event_set(
                 "duplicate review phase for presentation"
             )
         presentation_phases.add(phase)
+        review_by_presentation_phase[(presentation, phase)] = row
         if row.get("review_status") == "completed":
             completed_phases_by_presentation.setdefault(
                 presentation,
@@ -1709,7 +1728,6 @@ def validate_review_event_set(
         _required_text(row, "presentation_id")
         for row in sampling_rows
         if _boolean(row, "primary_presentation")
-        and row.get("analysis_role") == "primary_confirmatory"
     }
     for presentation in expected_primaries:
         if not required_primary_phases <= phases_by_presentation.get(
@@ -1735,6 +1753,47 @@ def validate_review_event_set(
         raise OracleContractError(
             "hidden duplicate reviews do not match sealed sampling manifest"
         )
+    primary_presentation_by_case = {
+        _required_text(row, "case_id"): _required_text(
+            row,
+            "presentation_id",
+        )
+        for row in sampling_rows
+        if _boolean(row, "primary_presentation")
+    }
+    for sampling_row in sampling_rows:
+        if sampling_row.get("case_role") != "hidden_duplicate":
+            continue
+        case_id = _required_text(sampling_row, "case_id")
+        duplicate_presentation = _required_text(
+            sampling_row,
+            "presentation_id",
+        )
+        primary_presentation = primary_presentation_by_case[case_id]
+        for primary_phase, duplicate_phase in (
+            (
+                "sample_local_blinded",
+                "hidden_duplicate_sample_local_blinded",
+            ),
+            (
+                "cross_sample_policy_blinded",
+                "hidden_duplicate_policy_blinded",
+            ),
+        ):
+            primary_review = review_by_presentation_phase[
+                (primary_presentation, primary_phase)
+            ]
+            duplicate_review = review_by_presentation_phase[
+                (duplicate_presentation, duplicate_phase)
+            ]
+            if _required_text(
+                primary_review,
+                "reviewer_id",
+            ) != _required_text(duplicate_review, "reviewer_id"):
+                raise OracleContractError(
+                    "hidden duplicate must be reviewed by the same reviewer "
+                    "as its primary presentation"
+                )
 
 
 def validate_adjudication_event(row: Mapping[str, Any]) -> None:
@@ -1920,6 +1979,7 @@ def validate_narrow_scope_row(
     row: Mapping[str, Any],
     *,
     membership_bytes: bytes,
+    holdout_sampling_rows: Sequence[Mapping[str, Any]],
     manifest_bytes: bytes,
     manifest_seal: Mapping[str, Any],
 ) -> None:
@@ -1947,7 +2007,12 @@ def validate_narrow_scope_row(
         raise OracleContractError("scope membership digest must be SHA256")
     if not membership_bytes.strip() or sha256_bytes(membership_bytes) != digest:
         raise OracleContractError("scope membership bytes do not match digest")
-    _validate_scope_membership_bytes(membership_bytes)
+    membership_rows = _validate_scope_membership_bytes(membership_bytes)
+    _validate_scope_membership_against_holdout(
+        row,
+        membership_rows=membership_rows,
+        holdout_sampling_rows=holdout_sampling_rows,
+    )
     if _required_text(manifest_seal, "seal_status") != "sealed":
         raise OracleContractError("narrow scope manifest must be sealed")
     if sha256_bytes(manifest_bytes) != _required_text(
@@ -2077,6 +2142,9 @@ def validate_lineage_binding_rows(
 
     primary_keys: set[tuple[str, str]] = set()
     request_by_attempt: dict[tuple[str, str], str] = {}
+    identity_by_artifact_id: dict[
+        tuple[str, str], tuple[str, str, str, str, tuple[str, ...]]
+    ] = {}
     packet_ids: set[str] = set()
     for row in rows:
         validate_lineage_binding_row(row)
@@ -2095,6 +2163,25 @@ def validate_lineage_binding_rows(
         if previous != request_id:
             raise OracleContractError(
                 "processing attempt references multiple requests"
+            )
+        artifact_key = (
+            packet_id,
+            _required_text(row, "evidence_artifact_id"),
+        )
+        artifact_identity = (
+            _required_text(row, "processing_attempt_id"),
+            _required_text(row, "artifact_semantic_role"),
+            _required_text(row, "artifact_schema_version"),
+            _required_text(row, "artifact_sha256").lower(),
+            tuple(sorted(_tokens(row, "upstream_evidence_artifact_ids"))),
+        )
+        previous_identity = identity_by_artifact_id.setdefault(
+            artifact_key,
+            artifact_identity,
+        )
+        if previous_identity != artifact_identity:
+            raise OracleContractError(
+                "evidence artifact ID has conflicting lineage identity"
             )
     if len(packet_ids) > 1:
         raise OracleContractError("lineage rows mix oracle packet IDs")
@@ -2142,7 +2229,13 @@ def validate_statistical_design_row(row: Mapping[str, Any]) -> None:
         raise OracleContractError(
             "uncertainty method is incompatible with sampling design"
         )
-    if uncertainty in {"wilson_score", "clopper_pearson_exact"}:
+    confidence_bound_methods = {
+        "wilson_score",
+        "clopper_pearson_exact",
+        "design_based_ratio_variance",
+        "design_preserving_cluster_resampling",
+    }
+    if uncertainty in confidence_bound_methods:
         level = _finite_number(row, "confidence_level")
         if not 0 < level < 1:
             raise OracleContractError("confidence_level must be in (0, 1)")
@@ -2183,6 +2276,10 @@ def validate_manifest_seal(
     *,
     artifact_bytes_by_sha_field: Mapping[str, bytes],
     manifest_rows: Sequence[Mapping[str, Any]],
+    required_binding_rows_by_role: Mapping[
+        str, Sequence[Mapping[str, Any]]
+    ]
+    | None = None,
 ) -> None:
     """Reject incomplete seals using a schema's declared required fields."""
 
@@ -2246,6 +2343,60 @@ def validate_manifest_seal(
             "sealed manifest bytes do not match manifest rows"
         )
     derived_counts = _derive_manifest_counts(manifest_rows)
+    required_binding_identity_fields = schema.get(
+        "required_binding_identity_fields"
+    )
+    if required_binding_identity_fields is not None:
+        if not isinstance(required_binding_identity_fields, Mapping):
+            raise OracleContractError(
+                "required_binding_identity_fields must be an object"
+            )
+        if required_binding_rows_by_role is None:
+            raise OracleContractError(
+                "lineage seal requires the complete required binding universe"
+            )
+        declared_roles = {
+            str(role) for role in required_binding_identity_fields
+        }
+        if set(required_binding_rows_by_role) != declared_roles:
+            raise OracleContractError(
+                "required binding universe roles do not match schema"
+            )
+        required_keys: set[tuple[str, tuple[str, ...]]] = set()
+        observed_keys: set[tuple[str, tuple[str, ...]]] = set()
+        for role_value, fields_value in (
+            required_binding_identity_fields.items()
+        ):
+            role = str(role_value)
+            if not isinstance(fields_value, Sequence) or isinstance(
+                fields_value,
+                str,
+            ):
+                raise OracleContractError(
+                    "required binding identity fields must be lists"
+                )
+            fields_for_role = tuple(str(field) for field in fields_value)
+            for row in required_binding_rows_by_role[role]:
+                required_keys.add(
+                    (
+                        role,
+                        tuple(_required_text(row, field) for field in fields_for_role),
+                    )
+                )
+            for row in manifest_rows:
+                if row.get("binding_role") == role:
+                    observed_keys.add(
+                        (
+                            role,
+                            tuple(
+                                _required_text(row, field)
+                                for field in fields_for_role
+                            ),
+                        )
+                    )
+        derived_counts["missing_required_binding_count"] = len(
+            required_keys - observed_keys
+        )
     for field, expected in derived_counts.items():
         if field in seal and _nonnegative_integer(seal, field) != expected:
             raise OracleContractError(
@@ -2275,7 +2426,12 @@ def validate_manifest_seal(
                 f"seal field {field} does not match manifest rows"
             )
     for field, expected in schema.get("seal_expected_values", {}).items():
-        if seal.get(field) != expected:
+        actual = (
+            _boolean(seal, field)
+            if isinstance(expected, bool)
+            else seal.get(field)
+        )
+        if actual != expected:
             raise OracleContractError(
                 f"seal field {field} must equal {expected!r}"
             )
@@ -2288,6 +2444,10 @@ def validate_review_label_seal(
     artifact_bytes_by_sha_field: Mapping[str, bytes],
     review_rows: Sequence[Mapping[str, Any]],
     adjudication_rows: Sequence[Mapping[str, Any]],
+    sampling_rows: Sequence[Mapping[str, Any]],
+    sampling_manifest_bytes: bytes,
+    sampling_manifest_seal: Mapping[str, Any],
+    local_label_seals_by_id: Mapping[str, Mapping[str, Any]],
 ) -> None:
     """Bind a review label seal to its immutable event logs and counts."""
 
@@ -2329,6 +2489,19 @@ def validate_review_label_seal(
         _boolean(seal, field)
     if seal.get("seal_status") not in {"sealed", "valid"}:
         raise OracleContractError("label seal_status must be sealed or valid")
+    for field, expected in schema.get(
+        "label_seal_expected_values",
+        {},
+    ).items():
+        actual = (
+            _boolean(seal, field)
+            if isinstance(expected, bool)
+            else seal.get(field)
+        )
+        if actual != expected:
+            raise OracleContractError(
+                f"label seal field {field} must equal {expected!r}"
+            )
 
     review_payload = artifact_bytes_by_sha_field.get("review_event_log_sha256")
     adjudication_payload = artifact_bytes_by_sha_field.get(
@@ -2342,13 +2515,23 @@ def validate_review_label_seal(
         raise OracleContractError(
             "sealed adjudication log bytes do not match adjudication rows"
         )
-    for review_row in review_rows:
-        _require_schema_version(
-            review_row,
-            "cid_nl_oracle_review_event_v1",
+    _validate_holdout_sampling_rows_binding(
+        sampling_rows,
+        manifest_bytes=sampling_manifest_bytes,
+        manifest_seal=sampling_manifest_seal,
+    )
+    if _required_text(
+        seal,
+        "holdout_manifest_seal_id",
+    ) != _required_text(sampling_manifest_seal, "holdout_manifest_seal_id"):
+        raise OracleContractError(
+            "label seal does not reference its holdout manifest seal"
         )
-        _require_fields(review_row, _REVIEW_REQUIRED_FIELDS)
-        validate_canonical_row_hash(review_row)
+    validate_review_event_set(
+        review_rows,
+        sampling_rows=sampling_rows,
+        local_label_seals_by_id=local_label_seals_by_id,
+    )
     packet_id = _required_text(seal, "oracle_packet_id")
     if any(
         _required_text(row, "oracle_packet_id") != packet_id
@@ -2481,7 +2664,6 @@ def _derive_manifest_counts(
                 and row.get("observation_state") == "unassessable"
             }
         ),
-        "missing_required_binding_count": 0,
     }
 
 
@@ -2609,6 +2791,9 @@ def reduce_oracle_verdict(
     *,
     gate_table_bytes: bytes,
     verdict_table_bytes: bytes,
+    holdout_sampling_rows: Sequence[Mapping[str, Any]] = (),
+    holdout_manifest_bytes: bytes = b"",
+    holdout_manifest_seal: Mapping[str, Any] | None = None,
     narrow_membership_bytes_by_id: Mapping[str, bytes],
     narrow_manifest_bytes_by_id: Mapping[str, bytes],
     narrow_manifest_seals_by_id: Mapping[str, Mapping[str, Any]],
@@ -2704,6 +2889,16 @@ def reduce_oracle_verdict(
             verdict_rules,
             "nonhard_failure_without_passing_narrow_scope",
         )
+    if narrow_scopes:
+        if holdout_manifest_seal is None:
+            raise OracleContractError(
+                "NARROW evaluation requires a sealed holdout manifest"
+            )
+        _validate_holdout_sampling_rows_binding(
+            holdout_sampling_rows,
+            manifest_bytes=holdout_manifest_bytes,
+            manifest_seal=holdout_manifest_seal,
+        )
 
     performance_gate_ids = {
         gate_id
@@ -2788,6 +2983,7 @@ def reduce_oracle_verdict(
             validate_narrow_scope_row(
                 scope,
                 membership_bytes=membership_bytes,
+                holdout_sampling_rows=holdout_sampling_rows,
                 manifest_bytes=manifest_bytes,
                 manifest_seal=manifest_seal,
             )
@@ -3044,7 +3240,9 @@ def _parse_tsv_bytes(value: bytes) -> list[dict[str, str]]:
     return list(csv.DictReader(io.StringIO(text), delimiter="\t"))
 
 
-def _validate_scope_membership_bytes(value: bytes) -> None:
+def _validate_scope_membership_bytes(
+    value: bytes,
+) -> list[dict[str, str]]:
     try:
         text = value.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -3052,11 +3250,20 @@ def _validate_scope_membership_bytes(value: bytes) -> None:
             "scope membership must be UTF-8 TSV"
         ) from exc
     reader = csv.DictReader(io.StringIO(text), delimiter="\t")
-    if reader.fieldnames is None or "case_id" not in reader.fieldnames:
+    required_columns = {
+        "case_id",
+        "presentation_id",
+        "source_sampling_row_sha256",
+    }
+    if reader.fieldnames is None or not required_columns <= set(
+        reader.fieldnames
+    ):
         raise OracleContractError(
-            "scope membership requires a case_id column"
+            "scope membership requires case_id, presentation_id, and "
+            "source_sampling_row_sha256 columns"
         )
     case_ids: set[str] = set()
+    rows: list[dict[str, str]] = []
     for row in reader:
         case_id = str(row.get("case_id", "") or "").strip()
         if not case_id:
@@ -3068,8 +3275,126 @@ def _validate_scope_membership_bytes(value: bytes) -> None:
                 "duplicate case_id in scope membership"
             )
         case_ids.add(case_id)
+        presentation_id = str(
+            row.get("presentation_id", "") or ""
+        ).strip()
+        if not presentation_id:
+            raise OracleContractError(
+                "scope membership presentation_id is required"
+            )
+        source_hash = str(
+            row.get("source_sampling_row_sha256", "") or ""
+        ).strip()
+        if not _SHA256_RE.fullmatch(source_hash):
+            raise OracleContractError(
+                "scope membership source_sampling_row_sha256 must be SHA256"
+            )
+        rows.append({str(key): str(item) for key, item in row.items()})
     if not case_ids:
         raise OracleContractError("scope membership cannot be empty")
+    return rows
+
+
+def _validate_scope_membership_against_holdout(
+    scope: Mapping[str, Any],
+    *,
+    membership_rows: Sequence[Mapping[str, Any]],
+    holdout_sampling_rows: Sequence[Mapping[str, Any]],
+) -> None:
+    primary_by_presentation: dict[str, Mapping[str, Any]] = {}
+    for row in holdout_sampling_rows:
+        if not _boolean(row, "primary_presentation"):
+            continue
+        presentation_id = _required_text(row, "presentation_id")
+        if presentation_id in primary_by_presentation:
+            raise OracleContractError(
+                "duplicate primary holdout presentation"
+            )
+        primary_by_presentation[presentation_id] = row
+    for member in membership_rows:
+        presentation_id = _required_text(member, "presentation_id")
+        sampling_row = primary_by_presentation.get(presentation_id)
+        if sampling_row is None:
+            raise OracleContractError(
+                "scope membership presentation is absent from primary holdout rows"
+            )
+        if _required_text(member, "case_id") != _required_text(
+            sampling_row,
+            "case_id",
+        ):
+            raise OracleContractError(
+                "scope membership case does not match holdout presentation"
+            )
+        if _required_text(
+            member,
+            "source_sampling_row_sha256",
+        ) != canonical_row_sha256(sampling_row):
+            raise OracleContractError(
+                "scope membership does not bind its holdout sampling row"
+            )
+        for field in ("source_universe", "workflow_policy", "method_scope"):
+            if _required_text(sampling_row, field) != _required_text(
+                scope,
+                field,
+            ):
+                raise OracleContractError(
+                    f"scope membership {field} does not match preregistered scope"
+                )
+        stratum = _required_text(sampling_row, "sampling_stratum")
+        included = set(_tokens(scope, "included_sampling_strata"))
+        excluded = set(_tokens(scope, "excluded_sampling_strata"))
+        if (
+            ("all" not in included and stratum not in included)
+            or stratum in excluded
+        ):
+            raise OracleContractError(
+                "scope membership sampling stratum is outside preregistered scope"
+            )
+
+
+def _validate_holdout_sampling_rows_binding(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    manifest_bytes: bytes,
+    manifest_seal: Mapping[str, Any],
+) -> None:
+    if not rows:
+        raise OracleContractError("holdout sampling manifest cannot be empty")
+    if manifest_bytes != canonical_tsv_bytes(rows):
+        raise OracleContractError(
+            "holdout manifest bytes do not match sampling rows"
+        )
+    if sha256_bytes(manifest_bytes) != _required_text(
+        manifest_seal,
+        "holdout_tsv_sha256",
+    ):
+        raise OracleContractError("holdout manifest digest mismatch")
+    if _required_text(manifest_seal, "seal_status") != "sealed":
+        raise OracleContractError("holdout manifest must be sealed")
+    if not _boolean(
+        manifest_seal,
+        "case_counts_and_staged_limits_frozen",
+    ):
+        raise OracleContractError(
+            "holdout case counts and staged limits must be frozen"
+        )
+    for field in (
+        "source_roles_revealed_to_reviewer",
+        "machine_mapping_revealed_to_reviewer",
+        "legacy_mapping_revealed_to_reviewer",
+    ):
+        if _boolean(manifest_seal, field):
+            raise OracleContractError(
+                f"{field} must be FALSE at holdout seal"
+            )
+    manifest_id = _required_text(manifest_seal, "holdout_manifest_id")
+    if any(
+        _required_text(row, "holdout_manifest_id") != manifest_id
+        for row in rows
+    ):
+        raise OracleContractError(
+            "holdout sampling rows do not match sealed manifest ID"
+        )
 
 
 def _validate_bound_bytes(

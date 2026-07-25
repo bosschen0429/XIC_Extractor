@@ -50,6 +50,11 @@ def test_cid_nl_tested_tracer_proposal_manifest_schema_is_fail_closed() -> None:
     assert integrity["seal_before_formal_holdout_labels_open"]
     assert integrity["seal_before_machine_or_legacy_mapping_reveal_to_reviewer"]
     assert integrity["missing_or_invalid_seal_verdict"] == "inconclusive"
+    assert schema["seal_expected_values"] == {
+        "candidate_universe_complete": True,
+        "machine_mapping_revealed_to_reviewer": False,
+        "legacy_mapping_revealed_to_reviewer": False,
+    }
 
     conditional = schema["conditional_rules"]
     assert conditional["select_value_requires_observed_state"]

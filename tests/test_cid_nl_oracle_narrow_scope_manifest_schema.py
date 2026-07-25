@@ -32,6 +32,10 @@ def test_narrow_scope_schema_forbids_post_hoc_scope_selection() -> None:
 
     integrity = schema["integrity_rules"]
     assert integrity["membership_predicate_and_exact_membership_hash_required"]
+    assert integrity[
+        "membership_rows_bind_existing_primary_holdout_rows_by_source_sha256"
+    ]
+    assert integrity["membership_rows_must_match_structured_scope_fields"]
     assert integrity["membership_frozen_before_machine_and_holdout_reveal"]
     assert integrity["narrow_scope_pass_is_derived_from_raw_gate_results"]
     assert integrity[

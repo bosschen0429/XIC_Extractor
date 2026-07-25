@@ -64,12 +64,58 @@ def _resolve_verdict(
     raise AssertionError(f"no verdict for {state}")
 
 
+def _holdout_row(case_id: str, presentation_id: str) -> dict[str, str]:
+    row = {
+        "holdout_manifest_id": "HM1",
+        "case_id": case_id,
+        "presentation_id": presentation_id,
+        "primary_presentation": "TRUE",
+        "source_universe": "independent_reference",
+        "workflow_policy": "untargeted",
+        "method_scope": "nl116_only",
+        "sampling_stratum": "reference_positive",
+        "source_row_sha256": "",
+    }
+    row["source_row_sha256"] = canonical_row_sha256(row)
+    return row
+
+
+def _membership_bytes(
+    case_id: str,
+    presentation_id: str,
+    holdout_row: dict[str, str],
+) -> bytes:
+    return canonical_tsv_bytes(
+        [
+            {
+                "case_id": case_id,
+                "presentation_id": presentation_id,
+                "source_sampling_row_sha256": canonical_row_sha256(
+                    holdout_row
+                ),
+            }
+        ]
+    )
+
+
 def _sealed_scope_bundle(
     *,
     required_gate_ids: tuple[str, ...],
     allowed_failed_gate_ids: tuple[str, ...],
 ) -> tuple[dict[str, str], dict[str, object]]:
-    membership_bytes = b"case_id\nC1\n"
+    holdout_rows = [_holdout_row("C1", "P1"), _holdout_row("C2", "P2")]
+    holdout_bytes = canonical_tsv_bytes(holdout_rows)
+    holdout_seal = {
+        "holdout_manifest_seal_id": "HMS1",
+        "holdout_manifest_id": "HM1",
+        "holdout_tsv_sha256": sha256_bytes(holdout_bytes),
+        "case_counts_and_staged_limits_frozen": "TRUE",
+        "source_roles_revealed_to_reviewer": "FALSE",
+        "machine_mapping_revealed_to_reviewer": "FALSE",
+        "legacy_mapping_revealed_to_reviewer": "FALSE",
+        "seal_status": "sealed",
+    }
+    membership_bytes = _membership_bytes("C1", "P1", holdout_rows[0])
     scope = {
         "schema_version": "cid_nl_oracle_narrow_scope_manifest_v1",
         "narrow_scope_manifest_id": "NSM1",
@@ -118,6 +164,9 @@ def _sealed_scope_bundle(
     kwargs: dict[str, object] = {
         "gate_table_bytes": GATE_TABLE.read_bytes(),
         "verdict_table_bytes": VERDICT_TABLE.read_bytes(),
+        "holdout_sampling_rows": holdout_rows,
+        "holdout_manifest_bytes": holdout_bytes,
+        "holdout_manifest_seal": holdout_seal,
         "narrow_membership_bytes_by_id": {"MEM1": membership_bytes},
         "narrow_manifest_bytes_by_id": {"NSM1": manifest_bytes},
         "narrow_manifest_seals_by_id": {"NSM1": seal},
@@ -287,6 +336,62 @@ def test_narrow_verdict_is_derived_from_presealed_scope_membership() -> None:
         reduce_oracle_verdict(gate_results, [post_hoc_scope], **kwargs)
 
 
+def test_narrow_membership_must_bind_an_in_scope_primary_holdout_row() -> None:
+    gate_rows = _tsv(GATE_TABLE)
+    gate_results = [
+        {
+            "gate_id": row["gate_id"],
+            "gate_group": row["gate_group"],
+            "status": (
+                "fail" if row["gate_id"] == "proposal_precision" else "pass"
+            ),
+        }
+        for row in gate_rows
+    ]
+    scope, kwargs = _sealed_scope_bundle(
+        required_gate_ids=("proposal_precision",),
+        allowed_failed_gate_ids=("proposal_precision",),
+    )
+    nonexistent_membership = _membership_bytes(
+        "C9",
+        "P9",
+        _holdout_row("C9", "P9"),
+    )
+    invalid_scope = {
+        **scope,
+        "scope_membership_manifest_sha256": sha256_bytes(
+            nonexistent_membership
+        ),
+        "source_row_sha256": "",
+    }
+    invalid_scope["source_row_sha256"] = canonical_row_sha256(invalid_scope)
+    invalid_manifest = canonical_tsv_bytes([invalid_scope])
+    digest_map = {
+        "MEM1": invalid_scope["scope_membership_manifest_sha256"]
+    }
+    original_seal = kwargs["narrow_manifest_seals_by_id"]["NSM1"]
+    invalid_seal = {
+        **original_seal,
+        "narrow_scope_tsv_sha256": sha256_bytes(invalid_manifest),
+        "scope_membership_digests": digest_map,
+        "scope_membership_bundle_sha256": sha256_canonical_json(digest_map),
+    }
+    invalid_kwargs = {
+        **kwargs,
+        "narrow_membership_bytes_by_id": {
+            "MEM1": nonexistent_membership
+        },
+        "narrow_manifest_bytes_by_id": {"NSM1": invalid_manifest},
+        "narrow_manifest_seals_by_id": {"NSM1": invalid_seal},
+    }
+    with pytest.raises(OracleContractError, match="absent from primary holdout"):
+        reduce_oracle_verdict(
+            gate_results,
+            [invalid_scope],
+            **invalid_kwargs,
+        )
+
+
 def test_narrow_scope_must_retest_the_failed_scientific_gate() -> None:
     gate_rows = _tsv(GATE_TABLE)
     gate_results = [
@@ -339,7 +444,11 @@ def test_scope_results_use_manifest_scoped_primary_key() -> None:
         required_gate_ids=("proposal_precision",),
         allowed_failed_gate_ids=("reference_recovery",),
     )
-    second_membership = b"case_id\nC2\n"
+    second_membership = _membership_bytes(
+        "C2",
+        "P2",
+        _holdout_row("C2", "P2"),
+    )
     second_scope = {
         **first_scope,
         "narrow_scope_manifest_id": "NSM2",
@@ -369,7 +478,11 @@ def test_scope_results_use_manifest_scoped_primary_key() -> None:
     combined_kwargs = {
         **first_kwargs,
         "narrow_membership_bytes_by_id": {
-            "MEM1": b"case_id\nC1\n",
+            "MEM1": _membership_bytes(
+                "C1",
+                "P1",
+                _holdout_row("C1", "P1"),
+            ),
             "MEM2": second_membership,
         },
         "narrow_manifest_bytes_by_id": {
@@ -523,7 +636,11 @@ def test_narrow_scope_rejects_partial_or_duplicate_contract_rows() -> None:
             **duplicated_results,
         )
 
-    second_membership = b"case_id\nC2\n"
+    second_membership = _membership_bytes(
+        "C2",
+        "P2",
+        _holdout_row("C2", "P2"),
+    )
     second_scope = {
         **scope,
         "narrow_scope_id": "NS2",
@@ -553,7 +670,11 @@ def test_narrow_scope_rejects_partial_or_duplicate_contract_rows() -> None:
     incomplete_caller_kwargs = {
         **kwargs,
         "narrow_membership_bytes_by_id": {
-            "MEM1": b"case_id\nC1\n",
+            "MEM1": _membership_bytes(
+                "C1",
+                "P1",
+                _holdout_row("C1", "P1"),
+            ),
             "MEM2": second_membership,
         },
         "narrow_manifest_bytes_by_id": {"NSM1": two_scope_manifest},
@@ -584,7 +705,16 @@ def test_narrow_scope_rejects_partial_or_duplicate_contract_rows() -> None:
         **missing_high_precedence_results,
     ) == "inconclusive"
 
-    duplicate_membership = b"case_id\nC1\nC1\n"
+    duplicate_row = {
+        "case_id": "C1",
+        "presentation_id": "P1",
+        "source_sampling_row_sha256": canonical_row_sha256(
+            _holdout_row("C1", "P1")
+        ),
+    }
+    duplicate_membership = canonical_tsv_bytes(
+        [duplicate_row, duplicate_row]
+    )
     duplicate_member_scope = {
         **scope,
         "scope_membership_manifest_sha256": sha256_bytes(

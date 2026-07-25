@@ -46,5 +46,15 @@ def test_statistical_design_schema_dispatches_by_sampling_design() -> None:
     ]
     assert rules["machine_hold_remains_in_unconditional_recovery_denominator"]
     assert rules["hidden_duplicates_excluded_from_scientific_denominators"]
+    assert rules[
+        "confidence_bound_methods_require_finite_open_interval_level_and_compatible_sidedness"
+    ]
+    assert schema["seal_expected_values"] == {
+        "all_required_gate_parameters_resolved": True,
+        "all_uncertainty_routes_resolved": True,
+        "all_group_keys_resolved": True,
+        "machine_mapping_revealed": False,
+        "holdout_labels_revealed": False,
+    }
 
     assert all(value is False for value in schema["authority_rules"].values())

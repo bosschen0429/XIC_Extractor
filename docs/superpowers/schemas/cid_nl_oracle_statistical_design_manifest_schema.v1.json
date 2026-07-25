@@ -74,6 +74,7 @@
     "nonprobability_challenge_requires_descriptive_only_claim": true,
     "incomplete_reference_frame_requires_partial_bounds_or_known_reference_claim": true,
     "confidence_level_required_when_uncertainty_method_uses_confidence_bounds": true,
+    "confidence_bound_methods_require_finite_open_interval_level_and_compatible_sidedness": true,
     "threshold_value_and_parameter_source_required_before_formal_holdout": true,
     "hidden_duplicates_excluded_from_scientific_denominators": true,
     "adaptive_supplemental_excluded_from_representative_estimands": true,
@@ -99,6 +100,13 @@
     "seal_status",
     "supersedes_statistical_design_manifest_id"
   ],
+  "seal_expected_values": {
+    "all_required_gate_parameters_resolved": true,
+    "all_uncertainty_routes_resolved": true,
+    "all_group_keys_resolved": true,
+    "machine_mapping_revealed": false,
+    "holdout_labels_revealed": false
+  },
   "integrity_rules": {
     "primary_key": [
       "statistical_design_manifest_id",

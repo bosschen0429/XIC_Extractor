@@ -90,6 +90,7 @@
     "hidden_duplicate_requires_duplicate_of_case_id": true,
     "hidden_duplicate_requires_repeatability_only_analysis_role": true,
     "hidden_duplicate_cannot_be_primary_presentation": true,
+    "primary_presentation_cannot_be_repeatability_only": true,
     "hidden_duplicate_reuses_underlying_case_scientific_locator": true,
     "non_duplicate_requires_blank_duplicate_of_case_id": true,
     "random_representative_primary_requires_positive_inclusion_probability": true,
@@ -137,6 +138,12 @@
     "seal_status",
     "supersedes_manifest_id"
   ],
+  "seal_expected_values": {
+    "case_counts_and_staged_limits_frozen": true,
+    "source_roles_revealed_to_reviewer": false,
+    "machine_mapping_revealed_to_reviewer": false,
+    "legacy_mapping_revealed_to_reviewer": false
+  },
   "analysis_rules": {
     "case_id_is_primary_analysis_unit": true,
     "exactly_one_primary_presentation_per_case": true,

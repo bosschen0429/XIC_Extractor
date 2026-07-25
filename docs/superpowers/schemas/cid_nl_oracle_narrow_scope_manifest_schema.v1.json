@@ -5,6 +5,11 @@
   "validation_status": "diagnostic_only",
   "purpose": "Freeze every candidate NARROW claim and its exact case membership before machine or holdout outcomes are revealed, so a narrower passing scope cannot be selected post hoc.",
   "row_unit": "one preregistered candidate claim scope",
+  "scope_membership_required_columns": [
+    "case_id",
+    "presentation_id",
+    "source_sampling_row_sha256"
+  ],
   "required_columns": [
     "schema_version",
     "narrow_scope_manifest_id",
@@ -55,6 +60,8 @@
     ],
     "scope_precedence_is_unique_positive_integer": true,
     "membership_predicate_and_exact_membership_hash_required": true,
+    "membership_rows_bind_existing_primary_holdout_rows_by_source_sha256": true,
+    "membership_rows_must_match_structured_scope_fields": true,
     "source_row_sha256_is_canonical_row_digest_excluding_itself": true,
     "membership_frozen_before_machine_and_holdout_reveal": true,
     "required_gate_ids_must_resolve_in_frozen_gate_table": true,

@@ -104,6 +104,11 @@
     "seal_status",
     "supersedes_manifest_id"
   ],
+  "seal_expected_values": {
+    "candidate_universe_complete": true,
+    "machine_mapping_revealed_to_reviewer": false,
+    "legacy_mapping_revealed_to_reviewer": false
+  },
   "precision_denominator_rules": {
     "rule_id": "cid_nl_tested_tracer_select_value_v1",
     "sample_policy_unit": "Count unique proposal rows whose projection_outcome is select_value, grouped by workflow_policy.",

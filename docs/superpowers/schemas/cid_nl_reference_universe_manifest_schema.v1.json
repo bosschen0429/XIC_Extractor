@@ -147,6 +147,7 @@
   "conditional_rules": {
     "expected_positive_control_requires_fixed_spike_or_authentic_standard_presence_basis": true,
     "expected_positive_control_requires_in_scope_expected_control_detectability": true,
+    "in_scope_fixed_spike_or_authentic_standard_must_be_labeled_expected_positive_control": true,
     "independently_supported_positive_requires_supported_sample_local_evidence": true,
     "library_or_profile_source_alone_cannot_assert_sample_local_presence": true,
     "method_out_of_scope_rows_cannot_enter_recovery_denominator": true,

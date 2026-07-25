@@ -34,6 +34,7 @@ def test_cid_nl_holdout_sampling_schema_preserves_analysis_units() -> None:
     conditional = schema["conditional_rules"]
     assert conditional["hidden_duplicate_requires_duplicate_of_case_id"]
     assert conditional["hidden_duplicate_requires_repeatability_only_analysis_role"]
+    assert conditional["primary_presentation_cannot_be_repeatability_only"]
     assert conditional[
         "random_representative_primary_requires_positive_analysis_weight"
     ]
@@ -86,6 +87,12 @@ def test_cid_nl_holdout_sampling_schema_stays_blinded_and_fail_closed() -> None:
     assert integrity["case_counts_and_staged_limits_frozen_before_review"]
     assert integrity["post_reveal_case_removal_forbidden"]
     assert integrity["corruption_discovered_after_reveal_verdict"] == "inconclusive"
+    assert schema["seal_expected_values"] == {
+        "case_counts_and_staged_limits_frozen": True,
+        "source_roles_revealed_to_reviewer": False,
+        "machine_mapping_revealed_to_reviewer": False,
+        "legacy_mapping_revealed_to_reviewer": False,
+    }
 
     authority = schema["authority_rules"]
     assert authority["matrix_authority"] is False
