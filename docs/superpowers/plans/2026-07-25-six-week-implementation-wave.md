@@ -15,6 +15,12 @@ Parent map: [Find the six-week route to an evidence-first shared processing kern
 Pre-implementation challenge: [Challenge the implementation package and decide GO, NARROW, or REDRAW](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/127)
 Validation status: `diagnostic_only`
 
+This transient file owns package order, package-specific gates, WIP, and stop
+conditions only. Durable runtime, lineage, review, promotion, and rollback
+semantics remain with the canonical owners in the frozen-input table below; if
+this map conflicts with an owner, the owner controls and this map must be
+corrected.
+
 ## Decision
 
 The smallest credible wave is one evidence-complete CID-NL / NL116 vertical
@@ -64,10 +70,12 @@ inputs, not work-package research tasks:
 | Script/tool lifecycle and consumer inventory | `docs/agent/script-tool-lifecycle.md`; `docs/agent/script-lifecycle-family-snapshot-2026-07-23.tsv` |
 | Shared kernel and policy seam | `docs/product/shared-processing-kernel.md` |
 | Processing identity, lineage, and delivery sealing | `docs/product/processing-lineage.md` |
+| Canonical sample identity and retained review records | `docs/product/sample-metadata-qc.md`; `docs/product/review-roundtrip.md` |
 | Acquisition and reusable-artifact capabilities | `docs/superpowers/validation/acquisition_source_capability_probe_v1/README.md` |
 | Independent oracle and no-RAW packet contract | `docs/superpowers/plans/2026-07-24-cid-nl-nl116-oracle-acceptance-contract.md`; `docs/superpowers/validation/cid_nl_oracle_packet_preflight_v1/README.md` |
 | Runtime lifecycle, cleanup, retry, and metrics | `docs/product/execution-runtime.md` |
 | Frozen legacy and Targeted-output behavior | `docs/superpowers/validation/cid_nl_legacy_baseline_v1/`; `docs/superpowers/validation/cid_nl_targeted_csv_contract_v1/` |
+| Product maturity and promotion authority | `docs/superpowers/plans/2026-06-15-productization-control-plane.md`; `docs/superpowers/validation/productization_status_index_v1.tsv`; `docs/superpowers/schemas/productization_authority_manifest.v1.json` |
 
 An input is reopened only when its checksum, public contract, owner, or
 implementation assumption has materially changed. A new timestamp alone is not
@@ -140,12 +148,16 @@ code while the challenge remains open.
 - add an equal-adapter invariant: the same normalized source set and `cid-dR`
   preset must produce equivalent canonical requests, attempt semantics,
   lineage, scientific results, and delivery projection through CLI and GUI;
-- bind sample identity to the existing canonical owner; filename, display name,
-  row order, and trace-array offset are forbidden substitutes;
+- bind sample identity and retained human-review conclusions through explicit
+  references to their existing canonical owners; filename, display name, row
+  order, trace-array offset, lineage-local IDs, and mutable review rows are
+  forbidden substitutes;
 - classify the durable supervisor finalization marker as runtime recovery
   metadata, not product persistence or delivery evidence;
 - create the frozen smallest-strangler comparison checklist before successor
-  implementation starts.
+  implementation starts, including exact legacy-comparator cell membership,
+  public-output surfaces, and the separate oracle route for new shadow
+  selections.
 
 **Evidence**
 
@@ -154,6 +166,9 @@ code while the challenge remains open.
   focused smoke, while scientific parity remains owned by the headless service;
 - Windows spawn/no-RAW envelope smoke;
 - static dependency and architecture census;
+- owner-binding fixtures proving stable sample identity and immutable typed
+  review-record references, including missing, ambiguous, stale, and superseded
+  fail-closed cases;
 - hard-exact Targeted CSV fixture remains unchanged;
 - no new RAW.
 
@@ -162,6 +177,9 @@ code while the challenge remains open.
 - all no-RAW contracts are executable;
 - neither CLI nor GUI can bypass the canonical Targeted application service or
   retain a second Discovery/Alignment/Backfill orchestration path;
+- canonical sample-identity and immutable review-record references are
+  executable from both tracer projections; an owner that cannot provide an
+  unambiguous reference stops Package 0 rather than creating a substitute;
 - no workflow-specific scientific flag leaks into runtime or acquisition;
 - the proposed interfaces require no generic `core/`, storage engine, or second
   decision model;
@@ -307,8 +325,13 @@ implied by this architecture wave.
 
 - constrained and broadened Discovery both preserve Alignment/Backfill
   invariants and exact locality;
-- zero selected-result and writer-byte difference for successful comparator
-  runs;
+- hard-zero selected-result difference within the frozen legacy-comparator
+  cells, Targeted public writer-byte difference, and Untargeted production
+  Matrix identity/value difference;
+- newly recovered shadow selections outside the frozen legacy-comparator cells
+  are adjudicated through independent-reference recovery, proposal precision,
+  automated coverage, and bounded Untargeted non-inferiority rather than raw
+  agreement with legacy;
 - sealed proposal, independent reference universe, sampling manifest, review
   packet, adjudication, and lineage binding;
 - the frozen Untargeted non-inferiority and automated-coverage gates;
@@ -365,35 +388,26 @@ The two decision vocabularies serve different times:
 
 ## Promotion Ladder
 
-Promotion is evidence-driven, not calendar-driven.
+Promotion is evidence-driven, not calendar-driven. This table records only the
+states reachable or explicitly excluded by this wave; the durable authority
+rules remain in the productization and processing-lineage owners.
 
 | State | Entry criteria | Product authority |
 | --- | --- | --- |
 | `diagnostic_only` | Default through Packages 0–3; contracts, synthetic tests, and bounded tracer evidence may exist | None |
-| `shadow_ready` | Complete Targeted Discovery/Alignment/Backfill and broadened-Discovery no-write paths pass; hard-exact output and selected-result parity, lineage, exact locality, oracle packet, and rollback evidence are complete | Legacy remains sole product authority |
-| opt-in candidate | Package 4 GO plus a separately reviewed expected-diff/public-surface packet and explicit whole-attempt routing | Only the named opt-in attempt; no mixed run authority |
-| default candidate | Separate post-wave product decision; multiple representative runs, accepted lane-specific oracle, registered performance budget, operational rollback, and no unresolved public-contract or consumer defect | Not granted by this plan |
-| legacy retirement | Default soak, consumer proof, replay/retention proof, and successful rollback rehearsal after all required capabilities have successor owners | Not granted by this plan |
+| `shadow_ready` | Complete Targeted Discovery/Alignment/Backfill and broadened-Discovery no-write paths pass; frozen comparator cells and public outputs preserve their hard-exact contracts; new shadow selections pass the independent oracle; lineage, exact locality, and rollback evidence are complete | Legacy remains sole product authority |
 
-Default and retirement thresholds remain later product decisions. Their absence
-does not block a shadow tracer, but it does block any claim that the six-week
-wave completes production migration.
+Opt-in, default promotion, and legacy retirement remain later product
+decisions. This plan grants none of them.
 
 ## Rollback Contract
 
-- Legacy remains installed and default throughout this wave.
-- Routing selects one full attempt authority before execution.
-- Successor writes only to an attempt-scoped temporary namespace until durable
-  finalization.
-- Before opt-in, rollback means disabling successor routing and quarantining
-  its attempt namespace; no public artifact is replaced.
-- After a future opt-in, rollback restores whole-attempt legacy routing,
-  preserves both attempt records, and keeps the last valid sealed delivery
-  current.
-- A rollback does not rewrite or delete old attempts, evidence, adjudication,
-  or comparator artifacts.
-- Branch/worktree deletion, cache eviction, and retained-artifact cleanup are
-  separate owner actions after audit; they are not part of the runtime rollback.
+Package 4 rehearses the canonical whole-attempt rollback from
+[`processing-lineage.md`](../../product/processing-lineage.md) and
+[`execution-runtime.md`](../../product/execution-runtime.md): legacy remains
+default, successor artifacts stay attempt-scoped and quarantinable, and the
+last valid sealed delivery remains current. Cleanup and retention remain owner
+actions outside runtime rollback.
 
 Failure to demonstrate this rollback is a Package 4 KILL condition.
 
@@ -440,11 +454,15 @@ These are not reasons to redo the completed decision tickets:
   manifests;
 - formal reviewer-load estimate derived from the sealed sampling design;
 - durable locator for the existing 12 blind calibration plots;
-- concrete sample-identity and review-record APIs used by the tracer;
+- concrete owner-backed sample-identity and immutable review-record APIs used by
+  the tracer;
 - post-wave default-promotion and legacy-retirement thresholds.
 
-The first five block the affected RAW or Package 4 claim. The last item blocks only
-default/retirement, not a `diagnostic_only` or `shadow_ready` tracer.
+The owner-backed identity APIs block Package 0 closure and every later tracer
+package. The elapsed/RSS budget, populated manifests, reviewer-load estimate,
+and durable plot locator block only the affected RAW, formal-oracle, or Package
+4 claim. Post-wave thresholds block default promotion and retirement, not a
+`diagnostic_only` or `shadow_ready` tracer.
 
 ## Verification Of This Plan
 
