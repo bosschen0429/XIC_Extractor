@@ -15,6 +15,9 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_support_producer import (
     run_build_targeted_ms1_shape_identity_supports,
 )
+from xic_extractor.extraction.targeted_inputs import (
+    resolve_model_selection_expected_diff_approvals,
+)
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
     build_targeted_application_request,
@@ -353,6 +356,10 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
     output_mode: str,
     auto_output_dir: Path | None,
 ):
+    approval_snapshot = resolve_model_selection_expected_diff_approvals(
+        config,
+        None,
+    )
     auto_root = auto_output_dir or (
         base_dir
         / "output"
@@ -384,6 +391,7 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
             baseline_config,
             targets,
             progress_callback=_print_progress,
+            model_selection_expected_diff_approvals=approval_snapshot,
         )
     )
     write_method_manifest(
@@ -428,6 +436,7 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
             final_staging_config,
             targets,
             progress_callback=_print_progress,
+            model_selection_expected_diff_approvals=approval_snapshot,
         )
     )
     diff_outputs = write_targeted_ms1_shape_identity_auto_diff_artifacts(
