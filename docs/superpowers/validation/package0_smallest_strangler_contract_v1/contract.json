@@ -5,12 +5,28 @@
   },
   "baseline_id": "cid_nl_legacy_baseline_6d3b18ef_8raw_v2",
   "canonical_output_inventory_sha256": "CC25A6A731C822F9147FECAB5949EAABB79D0415FCA67436365CEC035B4293B1",
+  "delivery_scope": {
+    "issue_149_completion": "partial",
+    "implemented": [
+      "legacy_comparator_membership",
+      "shared_headless_targeted_service"
+    ],
+    "deferred": [
+      "canonical_acquisition_source_identity",
+      "canonical_processing_request_identity",
+      "processing_attempt_identity",
+      "evidence_artifact_identity",
+      "delivery_revision_identity",
+      "delivery_seal_identity"
+    ]
+  },
   "membership_receipt": "membership_receipt.json",
   "legacy_comparator": {
     "baseline_stage_xic_results_sha256": "DFDC5B4227819BA8087FC72EE9023FFFAC8FE4A82E77FD73ED1CEF813C8EB145",
     "final_stage_xic_results_sha256": "F1783E22AF31B92F99938FDA9420B8A3A1671BB17587A4EECD936A83E16EF168",
     "sample_row_count_per_stage": 8,
     "column_count_per_stage": 99,
+    "canonical_artifact_path_sha256": "35C7F35F7D0D8779058341C6ED83CA11CE244AB829031989865DD7164BB0682F",
     "sample_identity_cell_count_per_stage": 8,
     "analytical_cell_count_per_stage": 784,
     "target_count": 14,

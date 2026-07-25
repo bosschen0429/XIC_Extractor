@@ -58,17 +58,6 @@ class SampleMetadata:
     exclusion_reason: str = ""
 
 
-@dataclass(frozen=True)
-class SampleIdentityRef:
-    """Owner-backed stable sample identity used outside metadata projections."""
-
-    sample_key: str
-
-    def __post_init__(self) -> None:
-        if not self.sample_key.strip():
-            raise SampleMetadataError("sample_key is required")
-
-
 class SampleMetadataError(ValueError):
     """Raised when sample metadata cannot be treated as a shared contract."""
 
@@ -137,31 +126,6 @@ def sample_metadata_to_injection_order(
         if row.raw_stem and row.raw_stem != row.sample_name:
             _add_injection_order(out, row.raw_stem, row.injection_order)
     return out
-
-
-def resolve_sample_identity(
-    rows: Sequence[SampleMetadata],
-    token: str,
-) -> SampleIdentityRef:
-    """Resolve only canonical metadata aliases; never infer identity from a path."""
-
-    clean_token = token.strip()
-    if not clean_token:
-        raise SampleMetadataError("sample identity token is required")
-    matches = [
-        row
-        for row in rows
-        if clean_token == row.sample_name or clean_token == row.raw_stem
-    ]
-    if not matches:
-        raise SampleMetadataError(
-            f"sample identity token {clean_token!r} is not owned by sample metadata"
-        )
-    if len(matches) != 1:
-        raise SampleMetadataError(
-            f"sample identity token {clean_token!r} is ambiguous"
-        )
-    return SampleIdentityRef(sample_key=matches[0].sample_name)
 
 
 def summarize_sample_metadata(rows: Sequence[SampleMetadata]) -> dict[str, object]:

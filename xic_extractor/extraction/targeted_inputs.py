@@ -51,10 +51,7 @@ def resolve_targeted_inputs(
         ),
         rt_prior_library=resolve_rt_prior_library(config, rt_prior_library),
         model_selection_expected_diff_approvals=(
-            resolve_model_selection_expected_diff_approvals(
-                config,
-                model_selection_expected_diff_approvals,
-            )
+            model_selection_expected_diff_approvals
         ),
     )
 

@@ -25,6 +25,26 @@ def test_package0_comparator_is_bound_to_canonical_sealed_baseline() -> None:
     }
 
 
+def test_package0_declares_partial_issue_scope() -> None:
+    contract = _load(PACKET / "contract.json")
+
+    assert contract["delivery_scope"] == {
+        "issue_149_completion": "partial",
+        "implemented": [
+            "legacy_comparator_membership",
+            "shared_headless_targeted_service",
+        ],
+        "deferred": [
+            "canonical_acquisition_source_identity",
+            "canonical_processing_request_identity",
+            "processing_attempt_identity",
+            "evidence_artifact_identity",
+            "delivery_revision_identity",
+            "delivery_seal_identity",
+        ],
+    }
+
+
 def test_package0_comparator_membership_is_complete_and_not_hand_picked() -> None:
     contract = _load(PACKET / "contract.json")
     comparator = contract["legacy_comparator"]
@@ -52,13 +72,11 @@ def test_package0_receipt_freezes_artifacts_and_public_surface_owners() -> None:
     contract = _load(PACKET / "contract.json")
     receipt = _load(PACKET / contract["membership_receipt"])
 
-    assert len(receipt["canonical_artifact_paths"]) == 12
-    assert {
-        "baseline/output/xic_results.csv",
-        "final/output/xic_results.csv",
-        "baseline/output/method_manifest.json",
-        "final/output/method_manifest.json",
-    }.issubset(receipt["canonical_artifact_paths"])
+    artifact_paths = receipt["canonical_artifact_paths"]
+    assert len(artifact_paths) == 12
+    assert _ordered_sha256(artifact_paths) == (
+        contract["legacy_comparator"]["canonical_artifact_path_sha256"]
+    )
     assert receipt["public_surface_owners"] == {
         "cli_entrypoint": "scripts/run_extraction.py",
         "csv_writer_owner": "xic_extractor/output/csv_writers.py",

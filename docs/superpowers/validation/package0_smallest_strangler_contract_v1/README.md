@@ -7,6 +7,19 @@ strangler before successor implementation. It adds no scientific truth,
 selected-value, counted-detection, Matrix, workbook, activation, publication,
 or export authority.
 
+## Scope boundary
+
+This packet is a partial Issue #149 deliverable. It freezes comparator
+membership and proves that CLI and GUI adapters can share one headless Targeted
+application service. It does **not** implement or claim completion of canonical
+acquisition-source, processing-request, processing-attempt, evidence-artifact,
+delivery-revision, or delivery-seal identity.
+
+Those identities require owner-backed semantic bases, immutable resolved
+execution inputs, and changed-input/substitution tests as one coherent follow-up
+contract. Until that contract exists, this packet must not be cited as closing
+Issue #149's deterministic-identity or lineage requirements.
+
 ## Legacy comparator membership
 
 The only canonical legacy comparator is
@@ -51,7 +64,8 @@ A successor-selected cell outside the frozen legacy observation set is not
 silently added to the legacy comparator and is not treated as a legacy
 failure. It enters a separate no-write shadow universe and requires the
 independent scientific oracle named by the later package before promotion.
-Until then, legacy remains sole product authority.
+Existing writer and product routing remain unchanged; neither the legacy
+comparator nor this packet receives product authority.
 
 [`contract.json`](contract.json) is the executable form of this checklist.
 [`membership_receipt.json`](membership_receipt.json) retains the ordered sample

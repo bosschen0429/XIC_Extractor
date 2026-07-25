@@ -1,18 +1,14 @@
 import ast
-import pickle
 from dataclasses import replace
 from pathlib import Path
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
-    build_canonical_targeted_request,
     build_targeted_application_request,
 )
 from xic_extractor.extractor import RunOutput
-from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
-from xic_extractor.processing_lineage import AcquisitionSourceRef
-from xic_extractor.rt_prior_library import LibraryEntry
 
 
 def test_cli_and_gui_use_same_targeted_application_service() -> None:
@@ -64,210 +60,59 @@ def test_headless_service_preserves_inputs_and_callbacks() -> None:
     assert calls["should_stop"] is should_stop
 
 
-def test_equal_adapters_produce_same_pickle_safe_canonical_request() -> None:
-    config = replace(
-        _config(),
-        config_hash="config-sha",
-        target_config_hash="targets-sha",
-    )
-    sources = (
-        AcquisitionSourceRef("source-b", "thermo_raw", "controller=1"),
-        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
-    )
-    cli_request = build_targeted_application_request(
-        config,
-        [_target()],
-        progress_callback=lambda *_args: None,
-    )
-    gui_request = build_targeted_application_request(
-        config,
-        [_target()],
-        should_stop=lambda: False,
+def test_service_resolves_approval_registry_at_adapter_boundary(monkeypatch) -> None:
+    resolved_approvals = {"row-1": object()}
+    calls: dict[str, object] = {}
+
+    def resolve_approvals(actual_config, approvals):
+        assert actual_config is config
+        assert approvals is None
+        return resolved_approvals
+
+    def runner(_config, _targets, **kwargs):
+        calls.update(kwargs)
+        return RunOutput(file_results=[], diagnostics=[])
+
+    config = _config()
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_service."
+        "resolve_model_selection_expected_diff_approvals",
+        resolve_approvals,
     )
 
-    cli_canonical = build_canonical_targeted_request(
-        cli_request,
-        sources=sources,
-        preset_id="cid-dR",
-    )
-    gui_canonical = build_canonical_targeted_request(
-        gui_request,
-        sources=tuple(reversed(sources)),
-        preset_id="cid-dR",
+    TargetedApplicationService(runner).execute(
+        build_targeted_application_request(config, [_target()])
     )
 
-    assert cli_canonical == gui_canonical
-    assert pickle.loads(pickle.dumps(cli_canonical)) == cli_canonical
-    assert cli_canonical.acquisition_sources == tuple(
-        sorted(sources, key=lambda source: source.source_id)
-    )
-    assert cli_canonical.processing_request.identity_basis.acquisition_sources == (
-        cli_canonical.acquisition_sources
-    )
+    assert calls["model_selection_expected_diff_approvals"] is resolved_approvals
 
 
-def test_canonical_request_identity_changes_with_source_namespace() -> None:
-    config = replace(
-        _config(),
-        config_hash="config-sha",
-        target_config_hash="targets-sha",
-    )
-    request = build_targeted_application_request(config, [_target()])
-    first = build_canonical_targeted_request(
-        request,
-        sources=(
-            AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
-        ),
-        preset_id="cid-dR",
-    )
-    second = build_canonical_targeted_request(
-        request,
-        sources=(
-            AcquisitionSourceRef("source-a", "thermo_raw", "controller=2"),
-        ),
-        preset_id="cid-dR",
-    )
-
-    assert first.processing_request.request_id != second.processing_request.request_id
-
-
-def test_canonical_request_identity_includes_scoring_inputs() -> None:
-    config = replace(
-        _config(),
-        config_hash="config-sha",
-        target_config_hash="targets-sha",
-    )
-    sources = (
-        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
-    )
-    requests = (
-        build_targeted_application_request(config, [_target()]),
-        build_targeted_application_request(
-            config,
-            [_target()],
-            injection_order={"Sample A": 1},
-        ),
-        build_targeted_application_request(
-            config,
-            [_target()],
-            rt_prior_library={("Analyte", "analyte"): _library_entry()},
-        ),
-        build_targeted_application_request(
-            config,
-            [_target()],
-            model_selection_expected_diff_approvals={
-                "row-1": _approval_record()
-            },
-        ),
-    )
-
-    request_ids = {
-        build_canonical_targeted_request(
-            request,
-            sources=sources,
-            preset_id="cid-dR",
-        ).processing_request.request_id
-        for request in requests
-    }
-
-    assert len(request_ids) == len(requests)
-
-
-def test_canonical_scoring_input_identity_is_mapping_order_independent() -> None:
-    config = replace(
-        _config(),
-        config_hash="config-sha",
-        target_config_hash="targets-sha",
-    )
-    sources = (
-        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
-    )
-    first = build_targeted_application_request(
-        config,
-        [_target()],
-        injection_order={"Sample B": 2, "Sample A": 1},
-    )
-    second = build_targeted_application_request(
-        config,
-        [_target()],
-        injection_order={"Sample A": 1, "Sample B": 2},
-    )
-
-    assert build_canonical_targeted_request(
-        first,
-        sources=sources,
-        preset_id="cid-dR",
-    ) == build_canonical_targeted_request(
-        second,
-        sources=sources,
-        preset_id="cid-dR",
-    )
-
-
-def test_canonical_request_hashes_resolved_injection_order(tmp_path: Path) -> None:
-    injection_order_path = tmp_path / "injection_order.csv"
-    injection_order_path.write_text(
-        "Sample_Name,Injection_Order\nSample A,1\nSample B,2\n",
-        encoding="utf-8",
-    )
+def test_pipeline_input_resolution_keeps_approvals_explicit(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     config = replace(
         _config(),
         data_dir=tmp_path,
-        injection_order_source=injection_order_path,
-        config_hash="config-sha",
-        target_config_hash="targets-sha",
+        model_selection_expected_diff_approval_registry=tmp_path / "registry.tsv",
     )
-    request = build_targeted_application_request(config, [_target()])
-    sources = (
-        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
-    )
-
-    first = build_canonical_targeted_request(
-        request,
-        sources=sources,
-        preset_id="cid-dR",
-    )
-    injection_order_path.write_text(
-        "Sample_Name,Injection_Order\nSample A,2\nSample B,1\n",
-        encoding="utf-8",
-    )
-    second = build_canonical_targeted_request(
-        request,
-        sources=sources,
-        preset_id="cid-dR",
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_inputs."
+        "load_expected_diff_approval_registry",
+        lambda _path: (_ for _ in ()).throw(
+            AssertionError("pipeline resolver must not load adapter policy")
+        ),
     )
 
-    assert first.processing_request.request_id != second.processing_request.request_id
-
-
-def test_canonical_request_hashes_shape_support_content(tmp_path: Path) -> None:
-    support_path = tmp_path / "shape_support.tsv"
-    support_path.write_text("first", encoding="utf-8")
-    config = replace(
-        _config(),
-        data_dir=tmp_path,
-        targeted_ms1_shape_identity_support_tsv=support_path,
-        config_hash="config-sha",
-        target_config_hash="targets-sha",
-    )
-    request = build_targeted_application_request(config, [_target()])
-    sources = (
-        AcquisitionSourceRef("source-a", "thermo_raw", "controller=1"),
+    resolved = resolve_targeted_inputs(
+        config,
+        raw_paths=[],
+        injection_order={},
+        rt_prior_library={},
+        model_selection_expected_diff_approvals=None,
     )
 
-    first = build_canonical_targeted_request(
-        request,
-        sources=sources,
-        preset_id="cid-dR",
-    )
-    support_path.write_text("second", encoding="utf-8")
-    second = build_canonical_targeted_request(
-        request,
-        sources=sources,
-        preset_id="cid-dR",
-    )
-
-    assert first.processing_request.request_id != second.processing_request.request_id
+    assert resolved.model_selection_expected_diff_approvals is None
 
 
 def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:
@@ -277,12 +122,7 @@ def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:
         "xic_extractor.output",
         "xic_extractor.raw_reader",
     )
-    for path in (
-        Path("xic_extractor/acquisition_contract.py"),
-        Path("xic_extractor/processing_lineage.py"),
-        Path("xic_extractor/execution_runtime_contract.py"),
-        Path("xic_extractor/extraction/targeted_service.py"),
-    ):
+    for path in (Path("xic_extractor/extraction/targeted_service.py"),):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         imports = _imports(tree)
         assert not any(
@@ -327,37 +167,4 @@ def _target() -> Target:
         nl_ppm_max=40.0,
         is_istd=False,
         istd_pair="",
-    )
-
-
-def _library_entry() -> LibraryEntry:
-    return LibraryEntry(
-        config_hash="config-sha",
-        target_label="Analyte",
-        role="analyte",
-        istd_pair="ISTD",
-        median_delta_rt=0.1,
-        sigma_delta_rt=0.01,
-        median_abs_rt=None,
-        sigma_abs_rt=None,
-        n_samples=8,
-        updated_at="2026-07-26T00:00:00Z",
-    )
-
-
-def _approval_record() -> ExpectedDiffApprovalRecord:
-    return ExpectedDiffApprovalRecord(
-        stable_row_id="row-1",
-        sample_name="Sample A",
-        target_label="Analyte",
-        legacy_selected_candidate_id="legacy-1",
-        successor_selected_candidate_id="successor-1",
-        public_outputs_touched=("selected rt",),
-        matrix_value_impact="none",
-        evidence_sources=("manual_review",),
-        evidence_summary="reviewed",
-        validation_tier="targeted_benchmark",
-        reviewer_role="owner",
-        reviewer_verdict="approved",
-        final_label="expected_diff",
     )

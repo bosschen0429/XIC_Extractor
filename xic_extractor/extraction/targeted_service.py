@@ -1,35 +1,19 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
-from pathlib import Path
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.processing_lineage import (
-    AcquisitionSourceRef,
-    ProcessingRequestIdentityBasis,
-    ProcessingRequestRef,
-    build_processing_request_ref,
-)
 from xic_extractor.rt_prior_library import LibraryEntry
 
-from .targeted_inputs import (
-    ResolvedTargetedInputs,
-    resolve_model_selection_expected_diff_approvals,
-    resolve_targeted_inputs,
-    resolve_targeted_raw_paths,
-)
+from .targeted_inputs import resolve_model_selection_expected_diff_approvals
 
 if TYPE_CHECKING:
     from xic_extractor.extractor import RunOutput
     from xic_extractor.peak_detection.model_selection import (
         ExpectedDiffApprovalRecord,
     )
-
-TARGETED_APPLICATION_CONTRACT_VERSION = "targeted_application_v1"
 
 
 class TargetedRunner(Protocol):
@@ -60,31 +44,6 @@ class TargetedApplicationRequest:
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None
-
-    def __post_init__(self) -> None:
-        if not self.targets:
-            raise ValueError(
-                "Targeted application request requires at least one target"
-            )
-        labels = tuple(target.label for target in self.targets)
-        if any(not label.strip() for label in labels):
-            raise ValueError("Targeted application target labels cannot be blank")
-        if len(labels) != len(set(labels)):
-            raise ValueError("Targeted application target labels must be unique")
-
-
-@dataclass(frozen=True)
-class CanonicalTargetedRequest:
-    """Pickle-safe scientific parity key shared by CLI and GUI adapters."""
-
-    contract_version: str
-    preset_id: str
-    acquisition_sources: tuple[AcquisitionSourceRef, ...]
-    config_hash: str
-    target_config_hash: str
-    targets: tuple[Target, ...]
-    processing_request: ProcessingRequestRef
-
 
 @dataclass(frozen=True)
 class TargetedApplicationService:
@@ -129,111 +88,3 @@ def build_targeted_application_request(
             model_selection_expected_diff_approvals
         ),
     )
-
-
-def build_canonical_targeted_request(
-    request: TargetedApplicationRequest,
-    *,
-    sources: tuple[AcquisitionSourceRef, ...],
-    preset_id: str,
-) -> CanonicalTargetedRequest:
-    if not sources:
-        raise ValueError("canonical Targeted request requires identified sources")
-    canonical_sources = tuple(sorted(sources, key=lambda source: source.source_id))
-    source_ids = tuple(source.source_id for source in canonical_sources)
-    if len(source_ids) != len(set(source_ids)):
-        raise ValueError("canonical Targeted source identities must be unique")
-    if not preset_id.strip():
-        raise ValueError("canonical Targeted request requires preset_id")
-    if not request.config.config_hash or not request.config.target_config_hash:
-        raise ValueError(
-            "canonical Targeted request requires effective config and target hashes"
-        )
-    resolved_inputs = resolve_targeted_inputs(
-        request.config,
-        raw_paths=resolve_targeted_raw_paths(request.config),
-        injection_order=request.injection_order,
-        rt_prior_library=request.rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            request.model_selection_expected_diff_approvals
-        ),
-    )
-    identity_basis = ProcessingRequestIdentityBasis(
-        acquisition_sources=canonical_sources,
-        normalized_query_sha256=_digest_text(
-            TARGETED_APPLICATION_CONTRACT_VERSION,
-            preset_id,
-            request.config.config_hash,
-        ),
-        method_constraints_sha256=_digest_text(
-            request.config.target_config_hash,
-            _canonical_effective_inputs(request, resolved_inputs),
-        ),
-        algorithm_version=preset_id,
-        schema_version=TARGETED_APPLICATION_CONTRACT_VERSION,
-        contract_version=TARGETED_APPLICATION_CONTRACT_VERSION,
-    )
-    return CanonicalTargetedRequest(
-        contract_version=TARGETED_APPLICATION_CONTRACT_VERSION,
-        preset_id=preset_id,
-        acquisition_sources=canonical_sources,
-        config_hash=request.config.config_hash,
-        target_config_hash=request.config.target_config_hash,
-        targets=request.targets,
-        processing_request=build_processing_request_ref(identity_basis),
-    )
-
-
-def _digest_text(*values: str) -> str:
-    digest = hashlib.sha256()
-    for value in values:
-        encoded = value.encode("utf-8")
-        digest.update(len(encoded).to_bytes(8, "big"))
-        digest.update(encoded)
-    return digest.hexdigest()
-
-
-def _canonical_effective_inputs(
-    request: TargetedApplicationRequest,
-    resolved_inputs: ResolvedTargetedInputs,
-) -> str:
-    rt_prior_library = [
-        {
-            "key": list(key),
-            "entry": asdict(entry),
-        }
-        for key, entry in sorted(resolved_inputs.rt_prior_library.items())
-    ]
-    expected_diff_approvals = (
-        None
-        if resolved_inputs.model_selection_expected_diff_approvals is None
-        else [
-            {
-                "key": key,
-                "record": asdict(record),
-            }
-            for key, record in sorted(
-                resolved_inputs.model_selection_expected_diff_approvals.items()
-            )
-        ]
-    )
-    return json.dumps(
-        {
-            "injection_order": sorted(resolved_inputs.injection_order.items()),
-            "model_selection_expected_diff_approvals": expected_diff_approvals,
-            "rt_prior_library": rt_prior_library,
-            "targeted_ms1_shape_identity_support_sha256": _optional_file_sha256(
-                request.config.targeted_ms1_shape_identity_support_tsv
-            ),
-        },
-        allow_nan=False,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _optional_file_sha256(path: Path | None) -> str | None:
-    if path is None:
-        return None
-    return hashlib.sha256(path.read_bytes()).hexdigest()
