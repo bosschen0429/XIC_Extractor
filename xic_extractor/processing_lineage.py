@@ -3,12 +3,21 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, TypeVar
 
-from xic_extractor.review_actions_models import ImmutableReviewRecordRef
-from xic_extractor.sample_metadata import SampleIdentityRef
+from xic_extractor.review_actions_models import (
+    ImmutableReviewRecordRef,
+    ReviewRecordReferenceError,
+    resolve_current_review_record,
+)
+from xic_extractor.sample_metadata import (
+    SampleIdentityRef,
+    SampleMetadata,
+    SampleMetadataError,
+    resolve_sample_identity,
+)
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 ProjectionKind = Literal["targeted", "untargeted"]
@@ -209,6 +218,8 @@ def validate_delivery_seal_candidate(
     *,
     revisions: Mapping[str, DeliveryRevisionRef],
     artifacts: Mapping[str, EvidenceArtifactRef],
+    sample_metadata_rows: Sequence[SampleMetadata],
+    review_records: tuple[ImmutableReviewRecordRef, ...],
     known_seal_ids: frozenset[str] = frozenset(),
 ) -> ValidatedSealClosure:
     """Validate lineage closure and two-phase acknowledgement without publishing."""
@@ -227,6 +238,11 @@ def validate_delivery_seal_candidate(
         raise LineageContractError(
             "delivery seal cannot contain multiple revisions for one delivery cell"
         )
+    _validate_projection_owner_references(
+        selected_revisions,
+        sample_metadata_rows=sample_metadata_rows,
+        review_records=review_records,
+    )
     if any(not revision.authority_approved for revision in selected_revisions):
         raise LineageContractError(
             "delivery seal requires projection-owner approval for every revision"
@@ -308,6 +324,51 @@ def validate_delivery_seal_candidate(
         revisions=selected_revisions,
         artifacts=selected_artifacts,
     )
+
+
+def _validate_projection_owner_references(
+    revisions: tuple[DeliveryRevisionRef, ...],
+    *,
+    sample_metadata_rows: Sequence[SampleMetadata],
+    review_records: tuple[ImmutableReviewRecordRef, ...],
+) -> None:
+    for revision in revisions:
+        try:
+            resolved_sample = resolve_sample_identity(
+                sample_metadata_rows,
+                revision.cell_key.sample_key,
+            )
+        except SampleMetadataError as exc:
+            raise LineageContractError(
+                f"delivery revision {revision.revision_id!r} has invalid "
+                f"sample owner reference: {exc}"
+            ) from exc
+        if resolved_sample != revision.cell_key.sample_ref:
+            raise LineageContractError(
+                f"delivery revision {revision.revision_id!r} sample reference "
+                "does not match the sample-metadata owner"
+            )
+
+        for review_record in revision.review_record_refs:
+            try:
+                resolved_review = resolve_current_review_record(
+                    review_records,
+                    review_record_id=review_record.review_record_id,
+                    expected_content_sha256=review_record.content_sha256,
+                    expected_evidence_artifact_ids=(
+                        review_record.evidence_artifact_ids
+                    ),
+                )
+            except ReviewRecordReferenceError as exc:
+                raise LineageContractError(
+                    f"delivery revision {revision.revision_id!r} has invalid "
+                    f"review owner reference: {exc}"
+                ) from exc
+            if resolved_review != review_record:
+                raise LineageContractError(
+                    f"delivery revision {revision.revision_id!r} review reference "
+                    "does not match the review-roundtrip owner"
+                )
 
 
 def validate_retry_attempt(

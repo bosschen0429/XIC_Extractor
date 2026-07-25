@@ -111,6 +111,17 @@ def test_started_attempt_must_settle_closed_manifest() -> None:
         )
 
 
+def test_unstarted_attempt_cannot_claim_success() -> None:
+    with pytest.raises(RuntimeContractError, match="must start"):
+        validate_attempt_history(
+            RequiredWorkManifest(("work-1",), owner_attests_complete=True),
+            _events(
+                (RuntimeEventKind.ATTEMPT_QUEUED, "", None),
+                (RuntimeEventKind.ATTEMPT_TERMINAL, "", AttemptOutcome.SUCCEEDED),
+            ),
+        )
+
+
 def test_open_failure_forces_failed_attempt() -> None:
     with pytest.raises(RuntimeContractError, match="terminal outcome must be 'failed'"):
         validate_attempt_history(

@@ -63,9 +63,13 @@ def test_package0_receipt_freezes_artifacts_and_public_surface_owners() -> None:
         "cli_entrypoint": "scripts/run_extraction.py",
         "csv_writer_owner": "xic_extractor/output/csv_writers.py",
         "gui_entrypoint": "gui/workers/pipeline_worker.py",
-        "method_manifest_writer": "xic_extractor/method_manifest.py",
+        "method_manifest_writer": "xic_extractor/output/method_manifest.py",
         "workbook_writer": "xic_extractor/output/excel_pipeline.py",
     }
+    assert all(
+        Path(path).is_file()
+        for path in receipt["public_surface_owners"].values()
+    )
 
 
 def test_package0_keeps_new_shadow_selections_outside_legacy_authority() -> None:

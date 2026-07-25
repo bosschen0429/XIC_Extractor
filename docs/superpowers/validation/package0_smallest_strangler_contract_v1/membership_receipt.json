@@ -134,7 +134,7 @@
     "cli_entrypoint": "scripts/run_extraction.py",
     "gui_entrypoint": "gui/workers/pipeline_worker.py",
     "workbook_writer": "xic_extractor/output/excel_pipeline.py",
-    "method_manifest_writer": "xic_extractor/method_manifest.py",
+    "method_manifest_writer": "xic_extractor/output/method_manifest.py",
     "csv_writer_owner": "xic_extractor/output/csv_writers.py"
   }
 }

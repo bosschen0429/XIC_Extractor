@@ -15,7 +15,10 @@ from xic_extractor.processing_lineage import (
     validate_retry_attempt,
 )
 from xic_extractor.review_actions_models import ImmutableReviewRecordRef
-from xic_extractor.sample_metadata import SampleIdentityRef
+from xic_extractor.sample_metadata import (
+    SampleIdentityRef,
+    SampleMetadata,
+)
 
 
 def test_retry_requires_new_attempt_for_same_request() -> None:
@@ -81,6 +84,8 @@ def test_delivery_seal_closes_approved_revisions_and_acknowledged_artifacts() ->
             artifact.artifact_id: artifact,
             output.artifact_id: output,
         },
+        sample_metadata_rows=_sample_rows(),
+        review_records=(_review_record(),),
     )
 
     assert closure.revisions == (revision,)
@@ -113,6 +118,8 @@ def test_delivery_seal_rejects_unapproved_revision() -> None:
             candidate,
             revisions={revision.revision_id: revision},
             artifacts={artifact.artifact_id: artifact},
+            sample_metadata_rows=_sample_rows(),
+            review_records=(_review_record(),),
         )
 
 
@@ -140,6 +147,8 @@ def test_delivery_seal_rejects_missing_owner_acknowledgement() -> None:
             candidate,
             revisions={revision.revision_id: revision},
             artifacts={artifact.artifact_id: artifact},
+            sample_metadata_rows=_sample_rows(),
+            review_records=(_review_record(),),
         )
 
 
@@ -157,6 +166,8 @@ def test_delivery_seal_rejects_mapping_identity_mismatch() -> None:
             candidate,
             revisions={"revision-alias": revision},
             artifacts={artifact.artifact_id: artifact},
+            sample_metadata_rows=_sample_rows(),
+            review_records=(_review_record(),),
         )
 
 
@@ -178,6 +189,8 @@ def test_delivery_seal_rejects_multiple_revisions_for_one_cell() -> None:
                 second.revision_id: second,
             },
             artifacts={artifact.artifact_id: artifact},
+            sample_metadata_rows=_sample_rows(),
+            review_records=(_review_record(),),
         )
 
 
@@ -207,6 +220,8 @@ def test_delivery_seal_rejects_artifact_dependency_cycle() -> None:
                 first.artifact_id: first,
                 second.artifact_id: second,
             },
+            sample_metadata_rows=_sample_rows(),
+            review_records=(_review_record(),),
         )
 
 
@@ -228,6 +243,8 @@ def test_delivery_seal_requires_exact_acknowledgement_closure() -> None:
                 artifact.artifact_id: artifact,
                 unrelated.artifact_id: unrelated,
             },
+            sample_metadata_rows=_sample_rows(),
+            review_records=(_review_record(),),
         )
 
 
@@ -246,6 +263,76 @@ def test_delivery_seal_requires_known_superseded_seal() -> None:
             candidate,
             revisions={revision.revision_id: revision},
             artifacts={artifact.artifact_id: artifact},
+            sample_metadata_rows=_sample_rows(),
+            review_records=(_review_record(),),
+        )
+
+
+def test_delivery_seal_revalidates_sample_ref_against_owner() -> None:
+    artifact = _artifact("artifact-evidence", "attempt-1")
+    revision = DeliveryRevisionRef(
+        revision_id="revision-1",
+        cell_key=DeliveryCellKey(
+            "targeted",
+            SampleIdentityRef("sample.raw"),
+            "target-1",
+        ),
+        producer_attempt_id="attempt-1",
+        evidence_artifact_ids=(artifact.artifact_id,),
+        authority_approved=True,
+    )
+    candidate = DeliverySealCandidate(
+        revision_ids=(revision.revision_id,),
+        output_artifact_ids=(artifact.artifact_id,),
+        acknowledged_artifact_ids=(artifact.artifact_id,),
+    )
+
+    with pytest.raises(LineageContractError, match="sample owner reference"):
+        validate_delivery_seal_candidate(
+            candidate,
+            revisions={revision.revision_id: revision},
+            artifacts={artifact.artifact_id: artifact},
+            sample_metadata_rows=_sample_rows(),
+            review_records=(),
+        )
+
+
+def test_delivery_seal_rejects_superseded_review_ref() -> None:
+    artifact = _artifact("artifact-evidence", "attempt-1")
+    original = _review_record()
+    successor = ImmutableReviewRecordRef(
+        review_record_id="review-2",
+        schema_version="review-record-v1",
+        content_sha256="e" * 64,
+        evidence_artifact_ids=(artifact.artifact_id,),
+        supersedes_review_record_id=original.review_record_id,
+        supersession_reason="adjudicated",
+    )
+    revision = DeliveryRevisionRef(
+        revision_id="revision-1",
+        cell_key=DeliveryCellKey(
+            "targeted",
+            SampleIdentityRef("sample-1"),
+            "target-1",
+        ),
+        producer_attempt_id="attempt-1",
+        evidence_artifact_ids=(artifact.artifact_id,),
+        review_record_refs=(original,),
+        authority_approved=True,
+    )
+    candidate = DeliverySealCandidate(
+        revision_ids=(revision.revision_id,),
+        output_artifact_ids=(artifact.artifact_id,),
+        acknowledged_artifact_ids=(artifact.artifact_id,),
+    )
+
+    with pytest.raises(LineageContractError, match="review owner reference"):
+        validate_delivery_seal_candidate(
+            candidate,
+            revisions={revision.revision_id: revision},
+            artifacts={artifact.artifact_id: artifact},
+            sample_metadata_rows=_sample_rows(),
+            review_records=(original, successor),
         )
 
 
@@ -301,6 +388,15 @@ def _review_record() -> ImmutableReviewRecordRef:
         schema_version="review-record-v1",
         content_sha256="d" * 64,
         evidence_artifact_ids=("artifact-evidence",),
+    )
+
+
+def _sample_rows() -> tuple[SampleMetadata, ...]:
+    return (
+        SampleMetadata(
+            sample_name="sample-1",
+            raw_stem="sample_acquisition_1",
+        ),
     )
 
 

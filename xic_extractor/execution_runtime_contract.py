@@ -312,6 +312,14 @@ def _expected_outcome(
     cleanup_states: dict[str, str],
     resources: dict[str, str],
 ) -> AttemptOutcome:
+    if not attempt_started:
+        if preflight_failed:
+            return AttemptOutcome.FAILED
+        if cancellation_requested:
+            return AttemptOutcome.CANCELLED
+        raise RuntimeContractError(
+            "attempt must start before it can reach a terminal outcome"
+        )
     if attempt_started and set(work_states) != set(manifest.work_unit_keys):
         raise RuntimeContractError(
             "started attempt must settle every manifest work unit"
