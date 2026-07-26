@@ -14,6 +14,11 @@ The evidence spine is the shared layer that converts chromatographic observation
   by Targeted `MS2ProductEvidence` and Untargeted direct `DiscoverySeed` as
   `CidNlEvidenceRef`. Target/Discovery-only fields remain in thin adapters;
   neither projection artifact is a selection or delivery decision.
+- The existing `peak_detection` owner now exposes a bounded
+  `PeakObservationRef`. Its physical content is canonical sample identity, m/z,
+  one contiguous selected RT/intensity subtrace, and its normalized
+  `IntegrationResult`. Exact full-trace/query/resolver provenance and producer
+  request/attempt remain explicit without becoming physical-content identity.
 - Legacy family IDs are review and compatibility containers. Group identity
   belongs to `CrossSamplePeakGroupHypothesis`, while current candidate IDs and
   `PeakHypothesis` IDs remain workflow-local working identities. Neither is a
@@ -41,21 +46,39 @@ cross-workflow identity object:
   observations. It cannot be represented as one evidence field attached to one
   peak.
 
-The next contract must resolve, rather than assume:
+The operator selected the existing-owner route: deepen `peak_detection`, not a
+new lineage package and not a second feature/sample owner. The first owner API
+closes the following bounded rules:
 
-1. whether an existing peak/feature owner can expose the required immutable
-   physical-observation reference, or whether existing owner-backed references
-   should be composed without another owner;
-2. which trace, query, boundary, integration, sample, and attempt facts belong
-   to observation content versus generation provenance and applicability;
-3. how a single-observation interpretation and a multi-observation Pt pattern
-   express hypothesis composition without inheriting provider-specific fields;
-4. which generation/evaluation changes invalidate an observation, hypothesis,
-   evidence application, or selection decision.
+1. Physical content identity includes canonical sample identity, m/z, the
+   contiguous selected RT/intensity points, peak bounds/apex, and all normalized
+   `IntegrationResult` facts.
+2. Full trace digest, query RT/ppm, trace source, source-relative indices,
+   resolver mode, and proposal sources are generation provenance. Changing
+   them does not re-mint physical content when the selected signal and
+   integration are unchanged, but it does change the exact artifact payload.
+3. Processing request/attempt identify the produced artifact instance. A retry
+   of the same exact payload preserves content identity and receives a distinct
+   artifact identity.
+4. Target label, Targeted/Untargeted role, ISTD policy, CID-NL status, and Pt
+   membership are not physical-observation content. They belong to evidence
+   applicability or later hypothesis composition.
+5. Selected-signal mutation changes content identity. Missing, gapped,
+   reordered, or duplicate selected indices and sample/request/attempt
+   substitution fail closed.
+6. Mint and binding consume an already validated `ProcessingOwnerReferences`
+   closure. The chosen sample must belong to that request, `Trace.sample_name`
+   must resolve to that owner row, and integration RT bounds must map to the
+   selected contiguous subtrace under the existing nearest-index/bounded-
+   interval owner semantics. A caller cannot validate a bad mint by repeating
+   the same mismatched sample or attempt.
 
-No attempt binding, content boundary, invalidation rule, new observation ID, or
-final owner is established here. The test-local comparison tuples are
-characterization probes only.
+This does not yet close method-hypothesis composition. In particular, a
+provider-local Discovery `DetectedFeature` that lacks the owner-required full
+`Trace` plus `IntegrationResult` cannot mint a substitute reference. The next
+contract must show how one observation or a multi-observation Pt pattern is
+composed with provider evidence without promoting the current Targeted-shaped
+`PeakHypothesis` into the physical owner.
 
 ## Surfaces
 
@@ -63,6 +86,7 @@ characterization probes only.
 | --- | --- |
 | `EvidenceVector` / `EvidenceDecisionSemantics` | Shared typed evidence vocabulary |
 | `CidNlEvidenceRef` | Attempt- and sample-bound immutable direct measured CID-NL observation for the no-write dual-projection tracer |
+| `PeakObservationRef` | `peak_detection`-owned physical MS1 content plus exact generation provenance and request/attempt artifact binding; diagnostic only |
 | `PeakHypothesis` | Current Targeted-shaped candidate working identity; not canonical physical observation identity |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
 | `IntegrationResult` | Integrated signal and boundary result |

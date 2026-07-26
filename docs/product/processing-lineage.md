@@ -477,23 +477,35 @@ compose several MS1 feature observations. Directly wiring the CID-NL reference
 into the current object would collapse provider evidence, physical observation,
 and method interpretation.
 
-Before another scientific identity API is implemented or frozen, the operator
-must explicitly accept a shared-kernel architecture decision that records:
+The operator selected the existing-owner alternative. A third bounded
+implementation deepens `peak_detection` with `PeakObservationRef` rather than
+creating a lineage-local or provider-local owner. The owner mints physical
+content identity from canonical sample, m/z, one contiguous selected MS1
+subtrace, and normalized integration facts. Full trace/query/source indices and
+resolver/proposal facts form generation provenance; the exact artifact also
+binds request and attempt. Target/provider labels and method interpretation do
+not enter physical content.
 
-1. whether existing `peak_detection` observation facts are deepened behind one
-   owner-backed reference or provider-local owner references remain explicitly
-   composed without a universal observation ID;
-2. which trace/query/boundary/integration/sample/attempt facts are content,
-   provenance, or applicability; and
-3. which generation, evidence, and method-context changes invalidate an
-   observation, hypothesis, evidence application, or selection decision.
+The no-RAW tests prove content stability across query/resolver provenance and
+retry, distinct exact artifacts where provenance or attempt differs, mutation
+invalidation, canonical source-order handling, and fail-closed missing/gapped/
+reordered/duplicate indices plus sample/request/attempt substitution. Minting
+requires an existing validated `ProcessingOwnerReferences` closure, the sample
+must belong to that request, the trace name must resolve to that sample owner
+row, and integration RT bounds must map to the selected contiguous subtrace
+under the existing nearest-index/bounded-interval semantics. Issue #113's
+`PeakObservation` / `FeatureObservation` names did not grant authority; the
+implementation authority comes from the existing `peak_detection` owner and
+its explicit input contract.
 
-Issue #113's `PeakObservation` / `FeatureObservation` names remain provisional
-vocabulary, not implementation authority. Until the decision above is closed,
-do not mint a lineage-local substitute, a second `PeakHypothesis`, or a generic
-workflow runtime. Any later tracer must still retain zero source reopens, exact
-review/lineage closure, and hard-zero public-output diff with both legacy
-writers authoritative.
+This closes only the physical-observation owner boundary. It does not allow a
+Discovery `DetectedFeature` without a complete owner `Trace` and
+`IntegrationResult` to mint a substitute, and it does not define method
+hypothesis composition. The next tracer must compose owner-backed MS1 and
+provider-evidence references without wiring `CidNlEvidenceRef` directly into
+the current Targeted-shaped `PeakHypothesis`. It must retain zero source
+reopens, exact review/lineage closure, and hard-zero public-output diff with
+both legacy writers authoritative.
 
 The tracer must consume the sample identity owner and review-record owner
 through explicit references. If either owner cannot provide an unambiguous

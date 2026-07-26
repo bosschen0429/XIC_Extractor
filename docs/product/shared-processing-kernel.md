@@ -253,11 +253,13 @@ This is not the complete kernel tracer. The remaining gaps are:
 6. Targeted CLI baseline/support/final orchestration is not shared by GUI or
    direct API. Issue #134 owns that entry-point parity defect; fixing it must
    not create a second permanent kernel.
-7. The canonical CID-NL ref has not yet been composed with a canonical physical
-   MS1-observation reference, method hypothesis, cross-sample group,
-   `CellObservation`, or Backfill result. Carrying it directly into the current
-   `PeakHypothesis` would collapse provider evidence, physical observation, and
-   interpretation into one Targeted-shaped object.
+7. `peak_detection.observations` now owns a bounded canonical physical
+   MS1-observation reference over an existing `Trace` plus `IntegrationResult`.
+   It has not yet been composed with the canonical CID-NL ref, a method
+   hypothesis, cross-sample group, `CellObservation`, or Backfill result.
+   Carrying CID-NL directly into the current `PeakHypothesis` would still
+   collapse provider evidence, physical observation, and interpretation into
+   one Targeted-shaped object.
 8. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
    `group_hypothesis_id` is the successor cross-sample identity.
 
@@ -287,15 +289,13 @@ projected both ways:
 The tracer does not need to migrate every Discovery provider, Alignment
 diagnostic, or Backfill authority path.
 
-The current scientific-reference fixture and identity-decomposition
-characterization satisfy only the direct evidence-reference and boundary
-preconditions. They show that current `PeakHypothesis` cannot be promoted as
-the physical observation owner: its builder hard-codes Targeted mode, its ID
-changes with interpretation labels, and its ID does not change when CID-NL
-evidence content changes. Completion first requires an owner/content/
-invalidation contract for immutable physical MS1 observations, then explicit
-hypothesis composition and group/cell decisions. Targeted output and Untargeted
-Matrix authority remain unchanged.
+The scientific-reference fixture, identity-decomposition characterization, and
+bounded `PeakObservationRef` now satisfy the first direct-evidence and physical
+observation preconditions. The existing `peak_detection` owner—not the current
+`PeakHypothesis`, lineage, or a provider-local `DetectedFeature`—mints the
+physical reference. Completion still requires explicit evidence applicability,
+single- and multi-observation hypothesis composition, and then group/cell
+decisions. Targeted output and Untargeted Matrix authority remain unchanged.
 
 ## Failure, Validation, And Rollback
 
