@@ -228,6 +228,58 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
     )
 
 
+def test_equivalent_numeric_integration_inputs_have_one_content_identity(
+    tmp_path: Path,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    float_integration = replace(
+        _integration(raw_scan_indices=(1, 2, 3)),
+        area_uncertainty=2.0,
+        baseline_residual_mad=3.0,
+        baseline_score=4.0,
+        area_ms1_morphology=5.0,
+        ms1_morphology_trace_window_points=7,
+        ms1_morphology_trace_effective_points=9,
+    )
+    integer_integration = replace(
+        float_integration,
+        height_raw=500,
+        height_smoothed=480,
+        area_raw_counts_seconds=42,
+        area_baseline_corrected=40,
+        area_uncertainty=2,
+        baseline_residual_mad=3,
+        baseline_score=4,
+        area_ms1_morphology=5,
+        ms1_morphology_trace_window_points=7.0,  # type: ignore[arg-type]
+        ms1_morphology_trace_effective_points=9.0,  # type: ignore[arg-type]
+    )
+
+    float_ref = mint_peak_observation_ref(
+        processing_owners=identity.owners,
+        sample=identity.sample,
+        trace=_standard_trace(identity.owners),
+        integration=float_integration,
+        resolver_mode="local_minimum",
+        proposal_sources=("local_minimum",),
+    )
+    integer_ref = mint_peak_observation_ref(
+        processing_owners=identity.owners,
+        sample=identity.sample,
+        trace=_standard_trace(identity.owners),
+        integration=integer_integration,
+        resolver_mode="local_minimum",
+        proposal_sources=("local_minimum",),
+    )
+
+    assert integer_integration == float_integration
+    assert integer_ref.content == float_ref.content
+    assert integer_ref.content.peak_observation_content_id == (
+        float_ref.content.peak_observation_content_id
+    )
+    assert integer_ref.artifact.content_identity == float_ref.artifact.content_identity
+
+
 def test_mint_rejects_sample_outside_request_and_trace_sample_substitution(
     tmp_path: Path,
 ) -> None:

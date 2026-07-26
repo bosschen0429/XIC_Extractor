@@ -14,14 +14,18 @@ The evidence spine is the shared layer that converts chromatographic observation
   by Targeted `MS2ProductEvidence` and Untargeted direct `DiscoverySeed` as
   `CidNlEvidenceRef`. Target/Discovery-only fields remain in thin adapters;
   both adapters must match the request-bound acquisition source, Targeted must
-  also match the exact request-pinned target snapshot and scan number, and
+  also match the exact request-pinned target snapshot and scan number, and its
+  measured scan precursor must remain within that exact target's ppm tolerance;
   direct Discovery must carry a finite measured `scan_precursor_mz` equal to
   the canonical evidence precursor;
   neither projection artifact is a selection or delivery decision.
 - The existing `peak_detection` owner now exposes a bounded
   `PeakObservationRef`. Its physical content is canonical sample identity, m/z,
-  one contiguous selected RT/intensity subtrace, and its normalized
-  `IntegrationResult`. Exact request-bound acquisition source plus full-trace/
+  one contiguous selected RT/intensity subtrace, and its owner-normalized
+  `IntegrationResult`. Semantically equal present integer/float numeric inputs
+  receive one canonical representation before identity hashing while existing
+  null semantics remain unchanged. Exact request-bound
+  acquisition source plus full-trace/
   query/resolver provenance and producer request/attempt remain explicit
   without becoming physical-content identity.
 - For the lab's current Untargeted acquisition method, the CID-NL owner now
@@ -73,8 +77,10 @@ new lineage package and not a second feature/sample owner. The first owner API
 closes the following bounded rules:
 
 1. Physical content identity includes canonical sample identity, m/z, the
-   contiguous selected RT/intensity points, peak bounds/apex, and all normalized
-   `IntegrationResult` facts.
+   contiguous selected RT/intensity points, peak bounds/apex, and all
+   owner-normalized `IntegrationResult` facts. Numeric representation alone
+   cannot split content identity, and normalization does not turn a null into a
+   numeric observation.
 2. Request-bound acquisition-source identity, full trace digest, query RT/ppm,
    trace source, source-relative indices, resolver mode, and proposal sources
    are generation provenance. Changing
@@ -140,10 +146,11 @@ bounded rules:
    identity tamper fail closed.
 
 This still models only the one-observation DDA CID-NL method hypothesis. The
-next design loop must define role-bearing multi-observation composition for the
-existing Pt/Delta Mass owner before the same `PeakHypothesis` can represent
-that method; array order or an unlabeled tuple must not be guessed into method
-semantics.
+current vertical tracer therefore proceeds to an explicit diagnostic
+selection/externalization handoff and then shared group/cell decisions. Pt/Delta
+Mass multi-observation composition remains deferred until its Discovery method
+and owner-backed position roles are stable; array order or an unlabeled tuple
+must not be guessed into method semantics.
 
 ## Surfaces
 

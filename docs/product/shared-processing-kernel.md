@@ -233,9 +233,11 @@ and the Targeted `MS2ProductEvidence` plus Untargeted direct `DiscoverySeed`
 adapters both validate and reference that same immutable artifact. The focused
 fixture proves exact content, owner/sample/acquisition-source/request/attempt
 binding, request-pinned Targeted target/scan binding, finite direct Discovery
-scan-precursor binding, integration-bounds scan-to-peak matching, shared
-upstream closure, review supersession, zero acquisition-source reopen, and zero
-product write. Inferred `product_plus_neutral_loss` Discovery evidence remains
+scan-precursor binding, exact-target precursor tolerance, owner-level numeric
+canonicalization of present `IntegrationResult` values without changing null
+semantics, integration-bounds scan-to-peak matching, shared upstream closure,
+review supersession, zero acquisition-source reopen, and zero product write.
+Inferred `product_plus_neutral_loss` Discovery evidence remains
 outside this first slice and fails closed.
 
 For the lab's current DDA/ddMS2 Untargeted method, `peak_detection` also owns a
@@ -314,11 +316,13 @@ and owner-backed `PeakHypothesis` fixtures now satisfy the first
 direct-evidence → physical-observation → applicability → method-hypothesis
 chain. The same `peak_detection` owner composes the existing hypothesis model;
 lineage and provider-local `DetectedFeature` do not mint another one.
-Completion still requires role-bearing multi-observation Pt/Delta Mass
-composition and then group/cell decisions. Runtime candidate-universe
-completeness and DDA co-isolation remain evidence unknowns; DIA is explicitly
-outside the current lab method. Targeted output and Untargeted Matrix authority
-remain unchanged.
+Role-bearing multi-observation Pt/Delta Mass composition remains required before
+that separate method can claim the same seam, but Pt is deferred and does not
+block the current CID-NL tracer. CID-NL completion proceeds through explicit
+diagnostic selection/externalization and then group/cell decisions. Runtime
+candidate-universe completeness and DDA co-isolation remain evidence unknowns;
+DIA is explicitly outside the current lab method. Targeted output and Untargeted
+Matrix authority remain unchanged.
 
 ## Failure, Validation, And Rollback
 

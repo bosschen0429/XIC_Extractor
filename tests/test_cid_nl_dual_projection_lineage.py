@@ -418,6 +418,90 @@ def test_sample_target_request_and_attempt_substitution_fail_closed(
         )
 
 
+def test_targeted_projection_binds_scan_precursor_to_the_exact_target(
+    tmp_path: Path,
+) -> None:
+    nearby_target = Target(
+        label="Nearby NL116 ISTD",
+        mz=_PRECURSOR_MZ + 0.0200005,
+        rt_min=8.5,
+        rt_max=9.5,
+        ppm_tol=10.0,
+        neutral_loss_da=_NEUTRAL_LOSS_DA,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    fixture = _fixture(tmp_path, additional_targets=(nearby_target,))
+    processing_owners = _processing_owners(fixture)
+    exact_target = fixture.target.definition.target
+    exact_product_mz = exact_target.mz - _NEUTRAL_LOSS_DA
+    nearby_product_mz = nearby_target.mz - _NEUTRAL_LOSS_DA
+    observed_product_mz = (
+        2.0
+        * exact_product_mz
+        * nearby_product_mz
+        / (exact_product_mz + nearby_product_mz)
+    )
+    target_product_ppm = (
+        abs(observed_product_mz - exact_product_mz)
+        / exact_product_mz
+        * 1_000_000.0
+    )
+    observed_loss_da = _PRECURSOR_MZ - observed_product_mz
+    observed_loss_error_ppm = (
+        abs(observed_loss_da - _NEUTRAL_LOSS_DA)
+        / _NEUTRAL_LOSS_DA
+        * 1_000_000.0
+    )
+    source_id = fixture.request.acquisition_sources[0].acquisition_source_id
+    evidence = mint_cid_nl_evidence_ref(
+        processing_owners=processing_owners,
+        sample=fixture.sample,
+        scan_number=42,
+        precursor_mz=_PRECURSOR_MZ,
+        product_mz=observed_product_mz,
+        configured_neutral_loss_da=_NEUTRAL_LOSS_DA,
+        observed_neutral_loss_da=observed_loss_da,
+        observed_loss_error_ppm=observed_loss_error_ppm,
+        scan_rt_min=9.0,
+        product_intensity=400.0,
+    )
+    targeted_evidence = MS2ProductEvidence(
+        scan_rt=9.0,
+        precursor_mz=_PRECURSOR_MZ,
+        product_mz=observed_product_mz,
+        product_intensity=400.0,
+        product_base_ratio=0.4,
+        target_product_ppm=target_product_ppm,
+        observed_loss_da=observed_loss_da,
+        observed_loss_error_ppm=observed_loss_error_ppm,
+        scan_number=42,
+        acquisition_source_id=source_id,
+    )
+
+    mint_targeted_cid_nl_projection_ref(
+        processing_owners=processing_owners,
+        sample=fixture.sample,
+        target=fixture.target,
+        canonical_evidence=evidence,
+        targeted_evidence=targeted_evidence,
+    )
+    wrong_target = resolve_target_definition(
+        fixture.target_snapshot,
+        nearby_target.label,
+    )
+    with pytest.raises(TargetedCidNlProjectionError, match="precursor"):
+        mint_targeted_cid_nl_projection_ref(
+            processing_owners=processing_owners,
+            sample=fixture.sample,
+            target=wrong_target,
+            canonical_evidence=evidence,
+            targeted_evidence=targeted_evidence,
+        )
+
+
 def test_projection_reorder_is_neutral_but_missing_shared_evidence_is_rejected(
     tmp_path: Path,
 ) -> None:
@@ -531,6 +615,7 @@ def _fixture(
     tmp_path: Path,
     *,
     source_name: str = "qc1",
+    additional_targets: tuple[Target, ...] = (),
 ) -> _TracerFixture:
     source_path = tmp_path / f"{source_name}.synthetic"
     source_path.write_bytes(f"synthetic:{source_name}".encode("ascii"))
@@ -539,21 +624,20 @@ def _fixture(
         acquisition_format="synthetic_no_raw",
         observation_namespace=f"synthetic:{source_name}",
     )
+    primary_target = Target(
+        label="NL116 ISTD",
+        mz=_PRECURSOR_MZ,
+        rt_min=8.5,
+        rt_max=9.5,
+        ppm_tol=10.0,
+        neutral_loss_da=_NEUTRAL_LOSS_DA,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
     target_snapshot = mint_target_list_snapshot(
-        (
-            Target(
-                label="NL116 ISTD",
-                mz=_PRECURSOR_MZ,
-                rt_min=8.5,
-                rt_max=9.5,
-                ppm_tol=10.0,
-                neutral_loss_da=_NEUTRAL_LOSS_DA,
-                nl_ppm_warn=20.0,
-                nl_ppm_max=50.0,
-                is_istd=True,
-                istd_pair="",
-            ),
-        ),
+        (primary_target, *additional_targets),
         identity_namespace="method:cid-nl-tracer",
     )
     request = build_processing_request_identity(

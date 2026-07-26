@@ -154,6 +154,16 @@ def mint_targeted_cid_nl_projection_ref(
         raise TargetedCidNlProjectionError(
             "Targeted projection requires a configured neutral loss"
         )
+    precursor_error_ppm = (
+        abs(targeted_evidence.precursor_mz - target_value.mz)
+        / target_value.mz
+        * 1_000_000.0
+    )
+    if precursor_error_ppm > target_value.ppm_tol:
+        raise TargetedCidNlProjectionError(
+            "Targeted scan precursor is outside the exact target precursor "
+            "tolerance"
+        )
     _require_close(
         target_value.neutral_loss_da,
         observation.configured_neutral_loss_da,

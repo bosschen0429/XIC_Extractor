@@ -469,8 +469,9 @@ observed content, including the request-bound acquisition source; Targeted and
 Untargeted adapters validate their existing typed evidence and mint separate
 diagnostic projection artifacts that depend on the
 same canonical evidence artifact. The no-RAW fixture proves exact bytes,
-sample/target/request/attempt binding, mutation/substitution, order-neutral
-closure, missing-upstream rejection, immutable review supersession, zero source
+sample/target/request/attempt binding, including exact Targeted scan-precursor
+binding under the owner-defined target ppm tolerance, mutation/substitution,
+order-neutral closure, missing-upstream rejection, immutable review supersession, zero source
 reopens, and zero product writes. It deliberately rejects inferred
 `product_plus_neutral_loss` Discovery evidence until that evidence basis has its
 own owner-backed contract.
@@ -490,7 +491,10 @@ The operator selected the existing-owner alternative. A third bounded
 implementation deepens `peak_detection` with `PeakObservationRef` rather than
 creating a lineage-local or provider-local owner. The owner mints physical
 content identity from canonical sample, m/z, one contiguous selected MS1
-subtrace, and normalized integration facts. The request-bound acquisition
+subtrace, and owner-normalized integration facts. Semantically equal present
+numeric inputs are canonicalized when `IntegrationResult` is constructed,
+before any content or artifact identity is hashed; existing nulls remain null.
+The request-bound acquisition
 source, full trace/query/source indices, and resolver/proposal facts form
 generation provenance; the exact artifact also binds request and attempt.
 Target/provider labels and method interpretation do not enter physical content.
@@ -557,9 +561,11 @@ model-selection, `ExtractionResult`, and Targeted result-assembly boundaries
 reject it explicitly. Missing, substituted, mutated, stale, or tampered
 bindings fail closed.
 
-The next method-hypothesis tracer is Pt/Delta Mass multi-observation
-composition. It must first obtain explicit owner-backed position roles; tuple
-order must not silently become method semantics. If that needs a second
+The current method tracer proceeds from this diagnostic CID-NL hypothesis to an
+explicit selection/externalization boundary and then shared group/cell
+decisions. Pt/Delta Mass multi-observation composition is deferred until its
+Discovery method can supply explicit owner-backed position roles; tuple order
+must not silently become method semantics. If either route needs a second
 hypothesis model or workflow-selection flags, stop and redraw the seam.
 
 The tracer must consume the sample identity owner and review-record owner
