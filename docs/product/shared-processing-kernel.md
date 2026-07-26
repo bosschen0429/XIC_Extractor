@@ -227,8 +227,40 @@ the bounded tracer and must have an explicit retirement or kill decision.
 
 ## Current Gaps
 
-1. `build_peak_hypotheses` hard-codes `analysis_mode="targeted"` and converts
-   evidence through `common_evidence_from_targeted_candidate`.
+The first no-write scientific-reference seam is executable:
+`peak_detection.cid_nl_evidence` owns one direct measured CID-NL observation,
+and the Targeted `MS2ProductEvidence` plus Untargeted direct `DiscoverySeed`
+adapters both validate and reference that same immutable artifact. The focused
+fixture proves exact content, owner/sample/acquisition-source/request/attempt
+binding, request-pinned Targeted target/scan binding, finite direct Discovery
+scan-precursor binding, exact-target precursor tolerance, owner-level numeric
+canonicalization of present `IntegrationResult` values without changing null
+semantics, integration-bounds scan-to-peak matching, shared upstream closure,
+review supersession, zero acquisition-source reopen, and zero product write.
+Inferred `product_plus_neutral_loss` Discovery evidence remains
+outside this first slice and fails closed.
+
+For the lab's current DDA/ddMS2 Untargeted method, `peak_detection` also owns a
+bounded `DdaCidNlPeakSupportRef`: one exact DDA scan and strict direct CID-NL
+artifact must resolve to exactly one owner-backed physical MS1 observation in
+the exact supplied candidate universe. Reorder is neutral; substitution,
+mutation, missing, or ambiguous matches fail closed. This is not a DIA model,
+candidate generator, or selection decision.
+
+The same owner also exposes a bounded `CidNlChromatographicSupportRef`. It
+retains every exact strict scan relation but canonicalizes scan order and fixes
+`chromatographic_support_event_count=1` for one physical peak. Duplicate scans
+and mixed peak, candidate-universe, policy, sample, request, or attempt inputs
+fail closed. This prevents repeated DDA triggers from becoming repeated
+hypothesis support without creating another `PeakHypothesis` type.
+
+This is not the complete kernel tracer. The remaining gaps are:
+
+1. Legacy `build_peak_hypotheses` still hard-codes
+   `analysis_mode="targeted"` and converts evidence through
+   `common_evidence_from_targeted_candidate`. A separate composition function
+   now deepens the same `PeakHypothesis` model for one workflow-neutral DDA
+   CID-NL case, but no production Targeted or Untargeted caller consumes it.
 2. `EvidenceVector` contains many Targeted/MS2-specific fields. Shared facts
    exist, but the whole current dataclass is not yet a minimal kernel
    interface.
@@ -242,7 +274,17 @@ the bounded tracer and must have an explicit retirement or kill decision.
 6. Targeted CLI baseline/support/final orchestration is not shared by GUI or
    direct API. Issue #134 owns that entry-point parity defect; fixing it must
    not create a second permanent kernel.
-7. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
+7. `peak_detection.observations` owns a bounded canonical physical
+   MS1-observation reference over an exact raw/selection trace plus a
+   signal-validated `IntegrationResult`; a typed but independently assembled
+   result is rejected when its apex, heights, area, baseline, or morphology
+   contradict the supplied signals.
+   The DDA CID-NL owner composes exact scan refs, aggregates repeated in-peak
+   scans into one event, and the existing `PeakHypothesis` now consumes that
+   typed event through a diagnostic owner-backed branch. It still has no
+   cross-sample group, `CellObservation`, Backfill, selection, or product
+   authority, and Pt/Delta Mass multi-observation roles remain undefined.
+8. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
    `group_hypothesis_id` is the successor cross-sample identity.
 
 These are migration facts, not permission for a repo-wide rewrite.
@@ -252,21 +294,38 @@ These are migration facts, not permission for a repo-wide rewrite.
 The bounded tracer is sufficient only when one set of kernel decisions can be
 projected both ways:
 
-1. The same input trace observations and CID-NL evidence produce sample-local
-   hypotheses through the shared interface.
-2. Targeted constraints narrow the candidate/group context without changing
-   the underlying observation facts.
-3. Cross-sample membership and missing-cell state are represented by shared
+1. The same physical MS1 observation is referenced, rather than re-minted, when
+   Targeted and Untargeted methods interpret it.
+2. Provider generation provenance is explicit: CID-NL may constrain the MS1
+   query/candidate universe before peak evaluation, while other methods may
+   compose several MS1 observations into one hypothesis.
+3. Targeted constraints narrow the candidate/group context without changing
+   the underlying physical observation facts.
+4. Cross-sample membership and missing-cell state are represented by shared
    group/cell contracts.
-4. Backfill returns the same typed observation/provenance contract regardless
+5. Backfill returns the same typed observation/provenance contract regardless
    of projection.
-5. Targeted output remains protected by its hard-exact/expected-diff contract.
-6. Untargeted Matrix authority remains separate and fail-closed.
-7. A no-RAW fixture proves both projections consume the same kernel decisions
+6. Targeted output remains protected by its hard-exact/expected-diff contract.
+7. Untargeted Matrix authority remains separate and fail-closed.
+8. A no-RAW fixture proves both projections consume the same kernel decisions
    without requiring identical output schemas or product policy.
 
 The tracer does not need to migrate every Discovery provider, Alignment
 diagnostic, or Backfill authority path.
+
+The scientific-reference fixture, identity-decomposition characterization,
+bounded `PeakObservationRef`, DDA CID-NL scan support, chromatographic event,
+and owner-backed `PeakHypothesis` fixtures now satisfy the first
+direct-evidence → physical-observation → applicability → method-hypothesis
+chain. The same `peak_detection` owner composes the existing hypothesis model;
+lineage and provider-local `DetectedFeature` do not mint another one.
+Role-bearing multi-observation Pt/Delta Mass composition remains required before
+that separate method can claim the same seam, but Pt is deferred and does not
+block the current CID-NL tracer. CID-NL completion proceeds through explicit
+diagnostic selection/externalization and then group/cell decisions. Runtime
+candidate-universe completeness and DDA co-isolation remain evidence unknowns;
+DIA is explicitly outside the current lab method. Targeted output and Untargeted
+Matrix authority remain unchanged.
 
 ## Failure, Validation, And Rollback
 

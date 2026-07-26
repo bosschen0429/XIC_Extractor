@@ -104,6 +104,7 @@ labels until an adapter binds them to the contract above.
 | `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata_v1` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
 | `immutable_review_record_ref` | Review-owner subject from canonical sample + stable target key; exact target definition + processing request; schema/version; canonical content digest; exact artifact bindings; optional same-subject predecessor and supersession reason | Bare sample/target labels, caller-provided ID/digest, mutable latest row, private rationale, or review truth inferred by lineage |
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
+| owner-backed CID-NL `peak_hypothesis_id` | Hypothesis method + canonical sample identity + physical peak content ID + chromatographic-support artifact content ID | Target label, ISTD role/pairing, trace-group ID, selection status, attempt token, or output position |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
 | `delivery_cell_key` | Projection kind + `sample_metadata_v1`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
 | `delivery_revision_id` | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state |
@@ -205,12 +206,15 @@ If the bounded tracer cannot obtain an unambiguous stable sample key from the
 sample-metadata owner, it must stop rather than derive one independently from a
 filename, display label, or row order.
 
-Current `TraceGroup`, `PeakHypothesis`, and
+Current `TraceGroup`, legacy `build_peak_hypotheses`, and
 `CrossSamplePeakGroupHypothesis` IDs are scientific working identities. They
 must be namespaced by a processing request or replaced by normalized successor
-identity before they can serve as durable cross-attempt references. In
-particular, the current sequential `FAM000...` group label is not a stable
-delivery-cell identity.
+identity before they can serve as durable cross-attempt references. The
+bounded owner-backed CID-NL `PeakHypothesis` branch is the exception: it has a
+typed content ID plus an exact attempt artifact, but still grants no group,
+delivery-cell, revision, seal, or product authority. In particular, the
+current sequential `FAM000...` group label is not a stable delivery-cell
+identity.
 
 ## Lineage Graph And Invariants
 
@@ -412,8 +416,10 @@ The model fails and must be narrowed or redrawn if:
 1. `method_manifest.json` records useful config fragments, input/output paths,
    hashes, runtime, and replay blockers, but it has no canonical
    processing-request, attempt, delivery-revision, or delivery-seal identity.
-2. `TraceGroup` and `PeakHypothesis` carry useful working IDs in memory, but
-   they do not currently close a durable artifact chain.
+2. `TraceGroup` and legacy `PeakHypothesis` values carry useful working IDs in
+   memory but do not close a durable artifact chain. The bounded owner-backed
+   CID-NL hypothesis now closes its observation/evidence attempt artifact only;
+   it is not a cross-attempt group or delivery reference.
 3. `CrossSamplePeakGroupHypothesis.group_hypothesis_id` is the pipeline
    identity, while current `FAM000...` construction is ordinal. It is not yet a
    durable cross-attempt delivery-cell key.
@@ -457,17 +463,116 @@ typed review binding, upstream completeness, mutation/substitution, and
 same-content cross-attempt distinction without introducing storage or writer
 authority.
 
-The next scientific implementation should use that proven value-object
-contract in the CID-NL / NL116 dual-policy tracer:
+The second bounded implementation now uses that value-object contract for one
+canonical direct measured CID-NL / NL116 observation. `peak_detection` owns the
+observed content, including the request-bound acquisition source; Targeted and
+Untargeted adapters validate their existing typed evidence and mint separate
+diagnostic projection artifacts that depend on the
+same canonical evidence artifact. The no-RAW fixture proves exact bytes,
+sample/target/request/attempt binding, including exact Targeted scan-precursor
+binding under the owner-defined target ppm tolerance, mutation/substitution,
+order-neutral closure, missing-upstream rejection, immutable review supersession, zero source
+reopens, and zero product writes. It deliberately rejects inferred
+`product_plus_neutral_loss` Discovery evidence until that evidence basis has its
+own owner-backed contract.
 
-1. bind one normalized request to distinct attempts;
-2. adapt existing Pt-style artifact fingerprints and method-manifest facts
-   without importing diagnostic policy;
-3. validate a would-be seal for one Targeted and one Untargeted staged
-   projection without creating product authority;
-4. prove zero source reopens with a fail-on-open acquisition adapter and call
-   counter for retained selected/review evidence; and
-5. leave both legacy writers authoritative.
+An earlier sequencing proposal said to carry this same reference directly into
+one sample-local `PeakHypothesis` and then through group/cell decisions. The
+no-RAW identity-decomposition characterization has superseded that imperative:
+the legacy `PeakHypothesis` path is a Targeted-shaped working identity, CID-NL
+can participate in candidate generation before MS1 evaluation, and Pt
+hypotheses compose several MS1 feature observations. Directly wiring the raw
+CID-NL reference into legacy evidence fields would collapse provider evidence,
+physical observation, and method interpretation. The bounded successor branch
+therefore composes separate owner-backed observation and chromatographic-event
+refs into the same model while prohibiting legacy Targeted/selection fields.
+
+The operator selected the existing-owner alternative. A third bounded
+implementation deepens `peak_detection` with `PeakObservationRef` rather than
+creating a lineage-local or provider-local owner. The owner mints physical
+content identity from canonical sample, m/z, one contiguous selected MS1
+subtrace, and signal-validated integration facts. A freely constructed
+`IntegrationResult` is not owner evidence: before any identity is minted, raw
+apex/height/area must agree with the exact raw trace, smoothed height must agree
+with the exact selection trace, and declared AsLS/Gaussian15 values must match
+the existing deterministic helpers. Semantically equal present numeric inputs
+are canonicalized when `IntegrationResult` is constructed, before any content
+or artifact identity is hashed; existing nulls remain null. The request-bound
+acquisition source, full raw/selection-trace digests, query/source indices, and
+resolver/proposal facts form generation provenance; the exact artifact also
+binds request and attempt.
+Target/provider labels and method interpretation do not enter physical content.
+
+The no-RAW tests prove content stability across query/resolver provenance and
+retry, distinct exact artifacts where provenance or attempt differs, mutation
+invalidation, canonical source-order handling, and fail-closed missing/gapped/
+reordered/duplicate indices plus sample/request/attempt substitution. Minting
+requires an existing validated `ProcessingOwnerReferences` closure, the sample
+must belong to that request, the trace name and acquisition-source ID must
+resolve to that sample's exact request binding, and integration RT bounds must
+remain inside the supplied trace before mapping to the selected contiguous
+subtrace under the existing nearest-index/bounded-interval semantics. Stale or
+forged apex, height, area, baseline, and morphology values fail closed rather
+than merely producing a different hash. Issue #113's `PeakObservation` /
+`FeatureObservation` names did not grant authority; the implementation
+authority comes from the existing `peak_detection` owner and its explicit input
+contract.
+
+A fourth bounded implementation closes the first provider-specific
+evidence-to-observation relation for the lab's DDA/ddMS2 method. CID-NL evidence
+schema v3 binds the exact request acquisition source, positive scan number, and
+explicit `dda_ddms2` acquisition mode. `DdaCidNlPeakSupportRef` then composes that
+immutable evidence ref with exactly one `PeakObservationRef` whose physical
+integration RT bounds contain the scan RT and whose m/z satisfies the explicit
+precursor tolerance; padded selected-trace points are not peak scope. The
+relation binds the canonical content IDs of the exact supplied
+candidate universe and includes every candidate artifact as an upstream, while
+request, attempt, sample, evidence, candidate, and retry substitutions remain
+fail-closed. Candidate reorder is identity-neutral.
+
+This is still diagnostic-only. It does not prove that a runtime caller supplied
+the complete candidate universe, does not interpret DIA, and does not claim
+co-isolation fidelity because the current reader contract lacks the required
+isolation metadata. It also does not allow a Discovery `DetectedFeature`
+without a complete owner `Trace` and `IntegrationResult` to mint a substitute,
+and one scan-level relation is not yet a method hypothesis. Before the existing
+`PeakHypothesis` owner can consume the evidence, repeated in-peak DDA scans must
+collapse into one chromatographic support event without losing their exact
+lineage. That intermediate composition must retain zero source reopens and
+hard-zero public-output diff with both legacy writers authoritative.
+
+A fifth bounded implementation closes repeated-scan composition without
+inventing a second hypothesis owner. `CidNlChromatographicSupportRef` consumes
+one or more owner-backed `DdaCidNlPeakSupportRef` values for the same request,
+attempt, sample, physical peak, exact candidate universe, and support policy.
+It retains each exact scan/evidence/support content reference in canonical scan
+order but fixes one chromatographic support event. Duplicate scan refs, missing
+members, mixed owner bindings, mixed peaks, mixed universes, or mixed policies
+fail closed; retry preserves content identity and receives a new artifact
+identity. Its artifact depends on every scan-level support artifact, so lineage
+closure remains transitive and exact.
+
+This event is provider evidence, not a method-hypothesis selection or an
+independent vote per scan.
+
+A sixth bounded implementation deepens the existing `PeakHypothesis` rather
+than creating a second model. `compose_cid_nl_peak_hypothesis` consumes exactly
+one owner-backed physical peak and one chromatographic support event bound to
+the same request, attempt, sample, and physical content. Its content ID is
+stable across identical retries while its exact artifact closes the new
+attempt's observation and event artifacts. The owner-backed branch prohibits
+Targeted labels, roles, pairing, trace-group identity, selection semantics,
+selected audit, counting, and product projection. Existing selection,
+model-selection, `ExtractionResult`, and Targeted result-assembly boundaries
+reject it explicitly. Missing, substituted, mutated, stale, or tampered
+bindings fail closed.
+
+The current method tracer proceeds from this diagnostic CID-NL hypothesis to an
+explicit selection/externalization boundary and then shared group/cell
+decisions. Pt/Delta Mass multi-observation composition is deferred until its
+Discovery method can supply explicit owner-backed position roles; tuple order
+must not silently become method semantics. If either route needs a second
+hypothesis model or workflow-selection flags, stop and redraw the seam.
 
 The tracer must consume the sample identity owner and review-record owner
 through explicit references. If either owner cannot provide an unambiguous

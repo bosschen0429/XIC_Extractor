@@ -10,7 +10,11 @@ from xic_extractor.output.messages import (
     DiagnosticIssue,
     DiagnosticRecord,
 )
-from xic_extractor.peak_detection.hypotheses import IntegrationResult, PeakHypothesis
+from xic_extractor.peak_detection.hypotheses import (
+    IntegrationResult,
+    PeakHypothesis,
+    validate_peak_hypothesis_selection_authority,
+)
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecord,
     PeakModelSelectionResult,
@@ -63,6 +67,13 @@ class ExtractionResult:
     selection_decision: PeakHypothesisSelectionDecision | None = None
     model_selection_result: PeakModelSelectionResult | None = None
     targeted_product_projection: TargetedProductProjection | None = None
+
+    def __post_init__(self) -> None:
+        if self.selected_hypothesis is not None:
+            validate_peak_hypothesis_selection_authority(
+                self.selected_hypothesis,
+                consumer="ExtractionResult",
+            )
 
     @property
     def peak(self) -> PeakResult | None:

@@ -859,6 +859,48 @@ def compose_processing_owner_references(
     )
 
 
+def resolve_request_acquisition_source(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+) -> AcquisitionSourceIdentity:
+    """Resolve one sample's exact request-bound acquisition source reference."""
+
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise IdentityContractError(
+            "processing_owners must be validated ProcessingOwnerReferences"
+        )
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise IdentityContractError(
+            "sample must be an owner-resolved canonical sample identity"
+        )
+    if sample not in processing_owners.sample_resolutions:
+        raise IdentityContractError(
+            "sample references a different sample outside the processing owner "
+            "acquisition closure"
+        )
+    matching_bindings = tuple(
+        binding
+        for binding in processing_owners.request.acquisition_bindings
+        if binding.adapter_input_key == sample.lookup_token
+    )
+    if len(matching_bindings) != 1:
+        raise IdentityContractError(
+            "sample must resolve to exactly one request acquisition binding"
+        )
+    acquisition_source_id = matching_bindings[0].acquisition_source_id
+    matching_sources = tuple(
+        source
+        for source in processing_owners.request.acquisition_sources
+        if source.acquisition_source_id == acquisition_source_id
+    )
+    if len(matching_sources) != 1:
+        raise IdentityContractError(
+            "request acquisition binding must resolve to exactly one source identity"
+        )
+    return matching_sources[0]
+
+
 __all__ = [
     "AcquisitionInputBinding",
     "AcquisitionSourceIdentity",
@@ -872,4 +914,5 @@ __all__ = [
     "compose_processing_owner_references",
     "fingerprint_file_content",
     "issue_processing_attempt",
+    "resolve_request_acquisition_source",
 ]

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.evidence_semantics import (
     CommonEvidence,
     EvidenceDecisionSemantics,
@@ -19,12 +20,16 @@ from xic_extractor.peak_detection.baseline import (
     bounded_trace_interval,
     integrate_with_baseline,
 )
+from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
+    CidNlChromatographicSupportRef,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     CandidateEvidenceFacts,
     decision_semantics_from_candidate_facts,
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidateScore,
@@ -35,7 +40,11 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     gaussian15_positive_asls_residual_metrics,
 )
+from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.traces import TraceGroup
+
+OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
+OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
 
 _CONFIDENCE_RANK = {
     "HIGH": 0,
@@ -46,31 +55,8 @@ _CONFIDENCE_RANK = {
 }
 
 
-@dataclass(frozen=True)
-class IntegrationResult:
-    rt_left_min: float
-    rt_apex_min: float
-    rt_right_min: float
-    raw_apex_rt_min: float
-    rt_width_min: float
-    height_raw: float
-    height_smoothed: float
-    area_raw_counts_seconds: float
-    integration_method: str = "raw_trapezoid"
-    boundary_sources: tuple[str, ...] = ("candidate_interval",)
-    area_baseline_corrected: float | None = None
-    area_uncertainty: float | None = None
-    area_uncertainty_formula_version: str = ""
-    baseline_residual_mad: float | None = None
-    area_uncertainty_noise_source: str = ""
-    baseline_type: str = ""
-    baseline_score: float | None = None
-    raw_scan_indices: tuple[int, ...] = ()
-    area_ms1_morphology: float | None = None
-    ms1_morphology_area_source: str = ""
-    ms1_morphology_trace_method: str = ""
-    ms1_morphology_trace_window_points: int | None = None
-    ms1_morphology_trace_effective_points: int | None = None
+class PeakHypothesisAuthorityError(ValueError):
+    """Raised when diagnostic identity is passed to selection or product code."""
 
 
 @dataclass(frozen=True)
@@ -126,6 +112,7 @@ class EvidenceVector:
     baseline_score: float | None = None
     common: CommonEvidence | None = None
     decision_semantics: EvidenceDecisionSemantics | None = None
+    cid_nl_chromatographic_support_ref: CidNlChromatographicSupportRef | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +144,56 @@ class PeakHypothesis:
     integration: IntegrationResult
     evidence: EvidenceVector
     audit: AuditTrail
+    hypothesis_method: str = ""
+    peak_observation_refs: tuple[PeakObservationRef, ...] = ()
+    artifact: EvidenceArtifactRef | None = None
+
+    @property
+    def is_owner_backed(self) -> bool:
+        return bool(
+            self.hypothesis_method
+            or self.peak_observation_refs
+            or self.artifact is not None
+            or self.evidence.cid_nl_chromatographic_support_ref is not None
+            or self.analysis_mode == OWNER_BACKED_ANALYSIS_MODE
+            or self.hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX)
+        )
+
+    def __post_init__(self) -> None:
+        if not self.is_owner_backed:
+            return
+        from xic_extractor.peak_detection.peak_hypothesis_identity import (
+            validate_owner_backed_peak_hypothesis_instance,
+        )
+
+        validate_owner_backed_peak_hypothesis_instance(self)
+
+
+def validate_peak_hypothesis_selection_authority(
+    hypothesis: PeakHypothesis,
+    *,
+    consumer: str,
+) -> None:
+    """Reject diagnostic owner-backed identity at selection/product boundaries."""
+
+    if hypothesis.is_owner_backed:
+        validate_peak_hypothesis_id_selection_authority(
+            hypothesis.hypothesis_id,
+            consumer=consumer,
+        )
+
+
+def validate_peak_hypothesis_id_selection_authority(
+    hypothesis_id: str,
+    *,
+    consumer: str,
+) -> None:
+    """Reject the reserved diagnostic identity namespace without needing an object."""
+
+    if hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX):
+        raise PeakHypothesisAuthorityError(
+            f"{consumer} cannot consume diagnostic-only owner-backed PeakHypothesis"
+        )
 
 
 def hypothesis_audit_id(
@@ -193,9 +230,7 @@ def build_peak_hypotheses(
     trace_group: TraceGroup | None = None,
     baseline_integration_method: BaselineMethod = "asls",
     count_no_ms2_as_detected: bool = False,
-    ms1_morphology_smoothing_window_points: int = (
-        DEFAULT_GAUSSIAN15_WINDOW_POINTS
-    ),
+    ms1_morphology_smoothing_window_points: int = (DEFAULT_GAUSSIAN15_WINDOW_POINTS),
 ) -> tuple[PeakHypothesis, ...]:
     selected = _selected_candidate(peak_result)
     score_by_candidate = {
@@ -258,12 +293,8 @@ def build_peak_hypotheses(
                     proposal_sources=candidate.proposal_sources,
                     source_apex_rank=candidate.source_apex_rank,
                     merge_note=candidate.merge_note,
-                    safe_merge_rejection_reason=(
-                        candidate.safe_merge_rejection_reason
-                    ),
-                    safe_merge_promotion_source=(
-                        candidate.safe_merge_promotion_source
-                    ),
+                    safe_merge_rejection_reason=(candidate.safe_merge_rejection_reason),
+                    safe_merge_promotion_source=(candidate.safe_merge_promotion_source),
                     safe_merge_promotion_shadow_boundary_id=(
                         candidate.safe_merge_promotion_shadow_boundary_id
                     ),
@@ -309,9 +340,7 @@ def _integration_from_candidate(
     rt: object | None = None,
     intensity: object | None = None,
     baseline_integration_method: BaselineMethod = "asls",
-    ms1_morphology_smoothing_window_points: int = (
-        DEFAULT_GAUSSIAN15_WINDOW_POINTS
-    ),
+    ms1_morphology_smoothing_window_points: int = (DEFAULT_GAUSSIAN15_WINDOW_POINTS),
 ) -> IntegrationResult:
     baseline = None
     morphology_metrics = None
@@ -487,9 +516,7 @@ def _evidence_from_candidate(
             evidence.ms1_peak_group_rt_max if evidence is not None else None
         ),
         ms1_peak_group_trigger_scan_count=(
-            evidence.ms1_peak_group_trigger_scan_count
-            if evidence is not None
-            else None
+            evidence.ms1_peak_group_trigger_scan_count if evidence is not None else None
         ),
         ms1_peak_group_strict_nl_scan_count=(
             evidence.ms1_peak_group_strict_nl_scan_count

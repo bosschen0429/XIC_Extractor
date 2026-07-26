@@ -10,7 +10,10 @@ from xic_extractor.extraction.targeted_projection_reasons import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
 from xic_extractor.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.hypotheses import (
+    PeakHypothesis,
+    validate_peak_hypothesis_selection_authority,
+)
 from xic_extractor.peak_detection.model_selection import PeakModelSelectionResult
 from xic_extractor.peak_detection.scoring_quality import (
     candidate_quality_penalty,
@@ -49,6 +52,11 @@ def build_extraction_result(
     model_selection_result: PeakModelSelectionResult | None = None,
     sample_name: str = "",
 ) -> ExtractionResult:
+    if selected_hypothesis is not None:
+        validate_peak_hypothesis_selection_authority(
+            selected_hypothesis,
+            consumer="build_extraction_result",
+        )
     from xic_extractor import extractor
 
     resolved_selection_decision = _result_selection_decision(

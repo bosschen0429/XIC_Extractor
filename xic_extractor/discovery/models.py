@@ -181,6 +181,7 @@ class DiscoverySeed:
     tag_evidence_json: str = "{}"
     scan_precursor_mz: float | None = None
     precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
+    acquisition_source_id: str = ""
 
 
 @dataclass(frozen=True)
