@@ -97,6 +97,35 @@ def test_artifact_role_and_schema_substitution_fail_closed(tmp_path: Path) -> No
         )
 
 
+def test_targeted_artifact_rejects_missing_evidence_column(tmp_path: Path) -> None:
+    request, _, _ = _request_and_sample(tmp_path)
+    row = dict(_targeted_rows("Sample A")[0])
+    del row["reason"]
+
+    with pytest.raises(ValueError, match="exact columns.*missing.*reason"):
+        mint_targeted_ms1_shape_identity_artifact_ref(
+            processing_attempt=issue_processing_attempt(request),
+            rows=(row,),
+        )
+
+
+def test_targeted_artifact_rejects_unexpected_evidence_column(
+    tmp_path: Path,
+) -> None:
+    request, _, _ = _request_and_sample(tmp_path)
+    row = dict(_targeted_rows("Sample A")[0])
+    row["unexpected_evidence"] = "must-not-disappear"
+
+    with pytest.raises(
+        ValueError,
+        match="exact columns.*unexpected.*unexpected_evidence",
+    ):
+        mint_targeted_ms1_shape_identity_artifact_ref(
+            processing_attempt=issue_processing_attempt(request),
+            rows=(row,),
+        )
+
+
 def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(
     tmp_path: Path,
 ) -> None:

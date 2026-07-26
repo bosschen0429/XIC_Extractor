@@ -500,10 +500,17 @@ class ProcessingOwnerReferences:
                 "each request acquisition binding must resolve to a distinct "
                 "canonical sample identity"
             )
+        request_inputs: Mapping[str, object] = json.loads(
+            self.request.normalized_scientific_inputs_json
+        )
+        if "target_list_snapshot" in request_inputs and self.target_snapshot is None:
+            raise IdentityContractError(
+                "target_snapshot is required when the processing request pins one"
+            )
         if self.target_snapshot is not None:
             if not isinstance(self.target_snapshot, TargetListSnapshot):
                 raise IdentityContractError("target_snapshot must be owner-minted")
-            _validate_request_target_snapshot(self.request, self.target_snapshot)
+            _validate_request_target_snapshot(request_inputs, self.target_snapshot)
         try:
             canonical_artifacts = canonical_evidence_artifact_closure(
                 processing_request_id=self.request.processing_request_id,
@@ -595,10 +602,9 @@ class ProcessingOwnerReferences:
 
 
 def _validate_request_target_snapshot(
-    request: ProcessingRequestIdentity,
+    request_inputs: Mapping[str, object],
     target_snapshot: TargetListSnapshot,
 ) -> None:
-    request_inputs = json.loads(request.normalized_scientific_inputs_json)
     expected_payload = target_list_snapshot_payload(target_snapshot)
     if request_inputs.get("target_list_snapshot") != expected_payload:
         raise IdentityContractError(

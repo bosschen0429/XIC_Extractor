@@ -482,8 +482,37 @@ def test_review_owner_rejects_artifacts_from_a_different_request(
         replace(valid, evidence_artifacts=(foreign_artifact,))
 
 
+def test_lineage_requires_target_snapshot_pinned_by_request(tmp_path: Path) -> None:
+    target_snapshot = _target_snapshot()
+    request = _request(
+        tmp_path,
+        payload=b"request-a",
+        target_snapshot=target_snapshot,
+    )
+    sample_snapshot = _sample_snapshot(
+        SampleMetadata(sample_name="Sample A", raw_stem="request-a")
+    )
+    sample = resolve_canonical_sample_identity(sample_snapshot, "request-a")
+
+    with pytest.raises(
+        IdentityContractError,
+        match="target_snapshot is required when the processing request pins one",
+    ):
+        compose_processing_owner_references(
+            request=request,
+            attempt=issue_processing_attempt(request),
+            sample_snapshot=sample_snapshot,
+            sample_resolutions=(sample,),
+        )
+
+
 def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
-    request = _request(tmp_path, payload=b"request-a")
+    target_snapshot = _target_snapshot()
+    request = _request(
+        tmp_path,
+        payload=b"request-a",
+        target_snapshot=target_snapshot,
+    )
     attempt = issue_processing_attempt(request)
     artifacts = _artifact_refs(attempt=attempt)
     sample_snapshot = _sample_snapshot(
@@ -494,7 +523,6 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         sample_snapshot,
         "request-a",
     )
-    target_snapshot = _target_snapshot()
     target = resolve_target_definition(target_snapshot, "5-mdC")
     review_ref = _review_record(
         sample=sample,
@@ -595,12 +623,16 @@ def test_lineage_rejects_metadata_injection_order_mismatch(
 def test_lineage_rejects_review_from_different_request_or_target(
     tmp_path: Path,
 ) -> None:
-    request = _request(tmp_path, payload=b"request-a")
+    target_snapshot = _target_snapshot()
+    request = _request(
+        tmp_path,
+        payload=b"request-a",
+        target_snapshot=target_snapshot,
+    )
     sample_snapshot = _sample_snapshot(
         SampleMetadata(sample_name="Sample A", raw_stem="request-a")
     )
     sample = resolve_canonical_sample_identity(sample_snapshot, "request-a")
-    target_snapshot = _target_snapshot()
     target = resolve_target_definition(target_snapshot, "5-mdC")
     wrong_target = _resolved_target(mz=251.0)
     wrong_request_ref = _review_record(
@@ -906,18 +938,20 @@ def _request_many(
                 injection_order=injection_order,
             )
         )
+    scientific_inputs: dict[str, object] = {
+        "fixture": [payload.decode("ascii") for payload in payloads],
+    }
+    if target_snapshot is not None:
+        scientific_inputs["target_list_snapshot"] = target_list_snapshot_payload(
+            target_snapshot
+        )
     return build_processing_request_identity(
         acquisition_sources=tuple(sources),
         acquisition_bindings=tuple(bindings),
         scientific_input_schema_version="owner-reference-fixture-v1",
         processing_algorithm_version="owner-reference-fixture-v1",
         processing_contract_version="owner-reference-fixture-v1",
-        scientific_inputs={
-            "fixture": [payload.decode("ascii") for payload in payloads],
-            "target_list_snapshot": target_list_snapshot_payload(
-                target_snapshot or _target_snapshot()
-            ),
-        },
+        scientific_inputs=scientific_inputs,
     )
 
 
