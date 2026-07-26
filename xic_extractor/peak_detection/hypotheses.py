@@ -177,6 +177,20 @@ def validate_peak_hypothesis_selection_authority(
     """Reject diagnostic owner-backed identity at selection/product boundaries."""
 
     if hypothesis.is_owner_backed:
+        validate_peak_hypothesis_id_selection_authority(
+            hypothesis.hypothesis_id,
+            consumer=consumer,
+        )
+
+
+def validate_peak_hypothesis_id_selection_authority(
+    hypothesis_id: str,
+    *,
+    consumer: str,
+) -> None:
+    """Reject the reserved diagnostic identity namespace without needing an object."""
+
+    if hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX):
         raise PeakHypothesisAuthorityError(
             f"{consumer} cannot consume diagnostic-only owner-backed PeakHypothesis"
         )

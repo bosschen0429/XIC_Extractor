@@ -8,6 +8,7 @@ import pytest
 
 from xic_extractor.config import Target
 from xic_extractor.extraction.result_assembly import build_extraction_result
+from xic_extractor.extractor import ExtractionResult
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportContractError,
     compose_cid_nl_chromatographic_support_ref,
@@ -46,6 +47,7 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     validate_cid_nl_peak_hypothesis_binding,
 )
 from xic_extractor.peak_detection.selection_decision import (
+    PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import Trace
@@ -924,6 +926,14 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         model_select_peak_hypothesis((hypothesis,))
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
+        PeakHypothesisSelectionDecision(
+            selected_candidate_id=hypothesis.hypothesis_id,
+            trace_group_id="",
+            decision_class="accepted",
+            projected_confidence="HIGH",
+            projected_reason="direct-constructor-bypass",
+        )
+    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         build_extraction_result(
             peak_result=PeakDetectionResult(
                 status="PEAK_NOT_FOUND",
@@ -948,6 +958,18 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
             ),
             candidate=None,
             scoring_context_builder=None,
+            selected_hypothesis=hypothesis,
+        )
+    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
+        ExtractionResult(
+            peak_result=PeakDetectionResult(
+                status="PEAK_NOT_FOUND",
+                peak=None,
+                n_points=0,
+                max_smoothed=None,
+                n_prominent_peaks=0,
+            ),
+            nl=None,
             selected_hypothesis=hypothesis,
         )
 
