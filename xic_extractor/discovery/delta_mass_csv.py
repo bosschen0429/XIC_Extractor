@@ -31,9 +31,14 @@ from xic_extractor.discovery.detected_features import (
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
     format_pt_machine_float,
-    validate_pt_pattern_evidence_row_contract,
 )
-from xic_extractor.tabular_io import escape_excel_formula, write_delimited_rows
+from xic_extractor.discovery.pt_pattern_discovery_evidence import (
+    canonical_pt_pattern_evidence_csv_bytes,
+)
+from xic_extractor.tabular_io import (
+    escape_excel_formula,
+    write_delimited_rows,
+)
 
 DETECTED_FEATURES_COLUMNS = _DETECTED_FEATURES_COLUMNS
 load_detected_features_csv = _load_detected_features_csv
@@ -130,8 +135,6 @@ _REVIEW_ESCAPED_FIELDS = frozenset(
     }
 )
 
-_EVIDENCE_ESCAPED_FIELDS = frozenset({"trace_rule_reason"})
-
 
 @dataclass(frozen=True)
 class DeltaMassDiscoveryResult:
@@ -224,38 +227,9 @@ def write_pt_pattern_evidence_csv(
 ) -> Path:
     """Write the complete, fail-closed Pt Discovery Evidence CSV v2 contract."""
 
-    for row_index, row in enumerate(evidence_rows, start=2):
-        missing = [column for column in PT_EVIDENCE_COLUMNS if column not in row]
-        if missing:
-            raise ValueError(
-                f"evidence row {row_index} is missing required fields: "
-                + ", ".join(missing)
-            )
-        validate_pt_pattern_evidence_row_contract(
-            row,
-            side=f"evidence row {row_index}",
-        )
-        for authority_field in (
-            "matrix_write_authority",
-            "counted_detection_authority",
-            "export_activation_authority",
-        ):
-            if row[authority_field] is not False:
-                raise ValueError(
-                    f"evidence row {row_index} {authority_field} must be False"
-                )
-
+    payload_bytes = canonical_pt_pattern_evidence_csv_bytes(evidence_rows)
     path.parent.mkdir(parents=True, exist_ok=True)
-    rows = [
-        _format_pt_row(row, escaped_fields=_EVIDENCE_ESCAPED_FIELDS)
-        for row in evidence_rows
-    ]
-    write_delimited_rows(
-        path,
-        rows,
-        PT_EVIDENCE_COLUMNS,
-        extrasaction="raise",
-    )
+    path.write_bytes(payload_bytes)
     return path
 
 

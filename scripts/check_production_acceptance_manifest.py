@@ -15,7 +15,7 @@ import math
 import sys
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from xic_extractor.tabular_io import (
@@ -460,11 +460,13 @@ def _resolve_source_path(
     row_number: int,
     problems: list[str],
 ) -> Path | None:
-    path = Path(relative_path)
-    if path.is_absolute():
+    normalized_path = relative_path.replace("\\", "/")
+    path = Path(normalized_path)
+    windows_path = PureWindowsPath(relative_path)
+    if path.is_absolute() or windows_path.drive:
         problems.append(f"row {row_number}: {field} must be relative")
         return None
-    if ".." in path.parts:
+    if ".." in PurePosixPath(normalized_path).parts:
         problems.append(f"row {row_number}: {field} must stay within repo_root")
         return None
     root = repo_root.resolve()

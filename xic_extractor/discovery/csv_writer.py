@@ -1,7 +1,7 @@
 """CSV writer for untargeted discovery review candidates."""
 
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from xic_extractor.discovery.models import (
@@ -103,10 +103,18 @@ def format_discovery_csv_value(column: str, value: object) -> str:
             return ";".join(str(item) for item in value)
         return str(value)
     if isinstance(value, Path):
-        return escape_excel_formula(str(value))
+        return escape_excel_formula(_stable_path_text(value))
     if isinstance(value, float):
         return f"{value:.6g}"
     return escape_excel_formula(str(value))
+
+
+def _stable_path_text(value: Path) -> str:
+    text = str(value)
+    windows_path = PureWindowsPath(text)
+    if windows_path.drive:
+        return str(windows_path)
+    return text
 
 
 _format_csv_value = format_discovery_csv_value

@@ -15,9 +15,7 @@ from xic_extractor.configuration.parsing import (
 
 LOGGER = logging.getLogger(__name__)
 
-ISOTOPE_LABEL_TYPES = frozenset(
-    {"deuterated", "heavy_non_deuterium", "unknown"}
-)
+ISOTOPE_LABEL_TYPES = frozenset({"deuterated", "heavy_non_deuterium", "unknown"})
 PAIRED_RT_RELATIONS = frozenset(
     {"istd_not_later_than_pair", "learned_delta_only", "none"}
 )
@@ -39,6 +37,11 @@ def _read_targets(path: Path) -> list[Target]:
     if not targets:
         raise _config_error(path, 2, "label", "", "at least one target row is required")
 
+    _validate_target_relationships(path, targets)
+    return targets
+
+
+def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
     by_label = {target.label: target for target in targets}
     for row_number, target in enumerate(targets, start=2):
         if target.is_istd and target.istd_pair:
@@ -87,8 +90,6 @@ def _read_targets(path: Path) -> list[Target]:
                 target.paired_rt_relation,
                 "requires paired ISTD isotope_label_type=deuterated",
             )
-
-    return targets
 
 
 def _parse_target_row(path: Path, row_number: int, row: dict[str, str]) -> Target:

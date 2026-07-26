@@ -21,6 +21,106 @@ semantics remain with the canonical owners in the frozen-input table below; if
 this map conflicts with an owner, the owner controls and this map must be
 corrected.
 
+## Current Execution Progress
+
+Last updated: 2026-07-26
+
+Current validation status: `diagnostic_only`
+
+Current issue gate: Package 0 / Issue #149 remains open
+
+Current stack layer: `codex/package-0-identity-core` packages only the
+Package 0 identity core on `dc509f96`. Package 1 CID-NL substrate and deferred
+Pt work are excluded and remain later, separate stack layers.
+
+This section is the canonical progress tracker for this implementation wave.
+It tracks execution and consumer wiring; it does not replace the productization
+control plane, grant writer authority, or reinterpret a passing unit test as an
+end-to-end method result.
+
+Update this section after each merged logical slice, package-gate decision,
+scope change, or new evidence tier, and before a branch handoff or PR closeout.
+Do not update it for every mechanical commit. Every update must name:
+
+1. the last consumer boundary that actually ran;
+2. the strongest evidence reviewed;
+3. the first missing handoff;
+4. the next falsifiable loop;
+5. any Product, Design, Evidence, or Execution unknown that blocks mutation.
+
+Progress vocabulary:
+
+- `not_started` — no executable owner-backed path exists;
+- `contract_only` — typed owner contracts and focused tests exist, but the real
+  application consumer does not use them;
+- `wired_no_raw` — the actual application path consumes the contracts in a
+  no-RAW fixture;
+- `evidence_passed` — the package's named parity/oracle gate passed;
+- `blocked` — the next mutation requires an unresolved owner/product decision;
+- `deferred` — intentionally outside the current tracer priority.
+
+### Package checkpoint
+
+| Package | Status | What is actually complete | First missing gate |
+| --- | --- | --- | --- |
+| Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`. The first isolated stack layer implements acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. | Attempt/event lifecycle, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the frozen strangler checklist. Issue #149 remains open. |
+| Package 1 — pure runtime and observation substrates | `contract_only` / partial | Separate retained CID-NL commits reach exact DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`; they are intentionally not in the Package 0 identity layer. | Runtime reducer/resource lifecycle and actual acquisition batch observations remain missing; no application consumer traverses the complete substrate. |
+| Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
+| Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
+| Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
+| Package 4 — compare and decide | `not_started` | None. | Full tracer evidence, rollback rehearsal, and successor-versus-strangler comparison. |
+
+### CID-NL end-to-end checkpoint
+
+| Method handoff | Contract / local object | Actual consumer wiring | Strongest evidence | Status |
+| --- | --- | --- | --- | --- |
+| Canonical acquisition input → processing request/attempt | Implemented in the first isolated stack layer | Legacy `extractor.run` still consumes resolved inputs directly; it does not consume the owner-backed request/attempt through a complete runtime lifecycle | Full CI-equivalent no-RAW gates plus focused identity/adversarial tests | `contract_only` |
+| Canonical sample/target/review references | Implemented locally through existing owners | Not yet proven through both complete tracer projections | Focused missing/ambiguous/stale/superseded tests | `contract_only` |
+| Exact DDA/ddMS2 CID-NL evidence | Implemented locally | Targeted/Discovery adapters can validate bounded refs; main application path does not carry them end to end | Focused synthetic no-RAW tests | `contract_only` |
+| CID-NL evidence → physical MS1 peak | Implemented locally as owner-backed applicability refs | `run_discovery` does not yet emit the complete owner-backed chain | Focused substitution/mutation/ambiguity tests | `contract_only` |
+| Repeated strict scans → one chromatographic support event | Implemented locally | Not consumed by the real Discovery runtime | Focused no-RAW aggregation tests | `contract_only` |
+| Support event → CID-NL `PeakHypothesis` | Implemented locally as a diagnostic branch | Selection/model-selection/product boundaries intentionally reject it | Focused no-RAW identity and authority-boundary tests | `contract_only` |
+| `PeakHypothesis` → explicit selection/externalization | No authorized successor transition | None | None | `not_started` |
+| Selected sample-local hypothesis → cross-sample Alignment | Existing legacy Alignment does not consume the owner-backed hypothesis | None | None | `not_started` |
+| Alignment-supported missing cell → evidence-based Backfill | Existing legacy Backfill exists, but has no owner-backed CID-NL hypothesis/group/cell chain | None | None | `not_started` |
+| Backfill/observed states → existing table writer | Legacy writers remain authoritative; successor projection is not wired | None for the successor path | Legacy output fixtures only | `not_started` |
+| Full multi-sample no-RAW CID-NL lifecycle | No | No | No end-to-end artifact | `not_started` |
+| RAW-backed CID-NL lifecycle | No | No | No new RAW evidence | `blocked` |
+
+**Last application consumer boundary actually run:** legacy `extractor.run`
+resolves sample metadata aliases and passes them to the Targeted backend. The
+canonical request projects the same input to exact RAW-stem acquisition
+bindings in focused tests, but the runtime does not yet consume that request or
+attempt end to end. This is why the identity layer remains `contract_only`.
+
+**Current CID-NL semantic boundary:** the last completed semantic seam is exact CID-NL evidence
+→ physical MS1 peak → diagnostic `PeakHypothesis`. The first missing product
+seam is `PeakHypothesis` → explicit selection/externalization → cross-sample
+Alignment. Therefore Discovery, Alignment, Backfill, and table writing are not
+yet complete as one CID-NL method, even though the local domain objects pass
+focused tests.
+
+**Current Product decision:** Package 2 ends first at the existing Targeted
+hard-exact `xic_results.csv` writer. Untargeted Alignment Matrix/XLSX remains a
+later endpoint and receives no authority from this decision.
+
+**First missing handoff and next falsifiable loop:** compose the owner-backed
+request/attempt into the retained attempt-event lifecycle layer without
+changing legacy output behavior. After the remaining Package 0/1 gates close,
+run one bounded multi-sample no-RAW fixture through the actual application path.
+It must exercise an observed hypothesis, one eligible Backfill, true missing,
+ambiguity, and failure, and finish at the existing authorized writer without
+changing legacy bytes or Matrix authority.
+
+**Remaining unknowns:** no Product unknown blocks stack publication. The first
+Design unknown is the explicit diagnostic-hypothesis selection/externalization
+transition; the Evidence unknown is the absent complete application-consumer
+fixture. No Execution unknown blocks this Package 0 draft layer.
+
+**Deferred method note:** Pt Pattern work is related and retained, but its
+Discovery method is not stable enough to drive this vertical tracer. It is not
+the next `PeakHypothesis`, Alignment, Backfill, or writer task.
+
 ## Decision
 
 The smallest credible wave is one evidence-complete CID-NL / NL116 vertical

@@ -1,5 +1,5 @@
 import importlib
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -117,13 +117,13 @@ def test_build_validation_specs_freezes_tiers_commands_and_output_paths(
     assert "--parallel-workers 4" in manual_command
 
     tissue_command = command_to_powershell(specs[1].command)
-    assert str(DEFAULT_TISSUE_VALIDATION_DIR) in tissue_command
+    assert str(PureWindowsPath(DEFAULT_TISSUE_VALIDATION_DIR)) in tissue_command
     assert "--resolver-mode local_minimum" in tissue_command
     assert "--parallel-mode process" in tissue_command
     assert "--parallel-workers 4" in tissue_command
 
     full_command = command_to_powershell(specs[2].command)
-    assert str(DEFAULT_FULL_TISSUE_DIR) in full_command
+    assert str(PureWindowsPath(DEFAULT_FULL_TISSUE_DIR)) in full_command
     assert "--confirm-full-run" in full_command
 
 

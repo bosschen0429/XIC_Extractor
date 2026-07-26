@@ -31,9 +31,23 @@ from xic_extractor.discovery.detected_features import (
     comparable_cid_nl_identity,
     write_detected_features_csv,
 )
+from xic_extractor.discovery.pt_pattern_discovery_evidence import (
+    ARTIFACT_SEMANTIC_ROLE as PT_EVIDENCE_ARTIFACT_SEMANTIC_ROLE,
+)
+from xic_extractor.discovery.pt_pattern_discovery_evidence import (
+    canonical_pt_pattern_evidence_csv_bytes,
+    mint_pt_pattern_discovery_evidence_artifact_ref,
+)
 from xic_extractor.discovery.pt_pattern_trace_evidence import (
     load_candidate_rows,
     validate_candidate_sample_binding,
+)
+from xic_extractor.evidence_artifacts import verify_evidence_artifact_payload
+from xic_extractor.processing_identity import (
+    AcquisitionInputBinding,
+    build_acquisition_source_identity,
+    build_processing_request_identity,
+    issue_processing_attempt,
 )
 
 DETECTED_FEATURES_COLUMNS = (
@@ -169,9 +183,7 @@ PT_EVIDENCE_COLUMNS = (
 
 def _detected_features_csv_text() -> str:
     header = ",".join(DETECTED_FEATURES_COLUMNS)
-    row = (
-        "Sample_1,base-1,,500.0,10.00,9.95,10.05,1000.0,500.0,GOOD,0.9,targeted"
-    )
+    row = "Sample_1,base-1,,500.0,10.00,9.95,10.05,1000.0,500.0,GOOD,0.9,targeted"
     return f"{header}\r\n{row}\r\n"
 
 
@@ -469,9 +481,7 @@ def test_load_detected_features_csv_preserves_source_feature_row_id_provenance(
 
     features = load_detected_features_csv(csv_path)
 
-    assert features[0].source_feature_row_id == (
-        "Sample_1|DNA_dR|258.108512|7.841234"
-    )
+    assert features[0].source_feature_row_id == ("Sample_1|DNA_dR|258.108512|7.841234")
     assert comparable_cid_nl_identity(features[0]) is None
 
 
@@ -540,6 +550,52 @@ def test_pt_evidence_csv_header_order_matches_public_contract(
         assert next(reader) == list(PT_EVIDENCE_COLUMNS)
 
 
+def test_pt_evidence_owner_mints_reference_from_exact_writer_bytes(
+    tmp_path: Path,
+) -> None:
+    source_path = tmp_path / "pt-source.bin"
+    source_path.write_bytes(b"synthetic-pt-source")
+    source = build_acquisition_source_identity(
+        source_path,
+        acquisition_format="synthetic_no_raw",
+        observation_namespace="synthetic:pt-source",
+    )
+    request = build_processing_request_identity(
+        acquisition_sources=(source,),
+        acquisition_bindings=(
+            AcquisitionInputBinding(
+                acquisition_source_id=source.acquisition_source_id,
+                adapter_input_key="pt-source",
+                injection_order=1,
+            ),
+        ),
+        scientific_input_schema_version="pt-artifact-tracer-input-v1",
+        processing_algorithm_version="pt-artifact-tracer-algorithm-v1",
+        processing_contract_version="pt-artifact-tracer-contract-v1",
+        scientific_inputs={"fixture": "no-raw-pt-artifact-tracer"},
+    )
+    attempt = issue_processing_attempt(request)
+    rows = (_pt_evidence_row(),)
+    payload_bytes = canonical_pt_pattern_evidence_csv_bytes(rows)
+    output_path = tmp_path / "pt_pattern_evidence.csv"
+
+    write_pt_pattern_evidence_csv(output_path, rows)
+    artifact = mint_pt_pattern_discovery_evidence_artifact_ref(
+        processing_attempt=attempt,
+        evidence_rows=rows,
+    )
+
+    assert output_path.read_bytes() == payload_bytes
+    assert artifact.semantic_contract.semantic_role == (
+        PT_EVIDENCE_ARTIFACT_SEMANTIC_ROLE
+    )
+    assert artifact.semantic_contract.schema_version == (
+        "pt_pattern_discovery_evidence.v3"
+    )
+    assert artifact.semantic_contract.validation_status == "diagnostic_only"
+    verify_evidence_artifact_payload(artifact, payload_bytes)
+
+
 def test_pt_evidence_csv_writes_trace_rule_and_authority_fields(
     tmp_path: Path,
 ) -> None:
@@ -563,14 +619,11 @@ def test_pt_review_csv_uses_same_candidate_ordering_as_candidates_csv(
         _pt_candidate(candidate_id="high", review_priority="HIGH", evidence_score=90),
     ]
 
-    write_pt_pattern_candidates_csv(
-        tmp_path / "pt_pattern_candidates.csv", candidates
-    )
+    write_pt_pattern_candidates_csv(tmp_path / "pt_pattern_candidates.csv", candidates)
     write_pt_pattern_review_csv(tmp_path / "pt_pattern_review.csv", candidates)
 
     candidate_order = [
-        row["candidate_id"]
-        for row in _read_csv(tmp_path / "pt_pattern_candidates.csv")
+        row["candidate_id"] for row in _read_csv(tmp_path / "pt_pattern_candidates.csv")
     ]
     review_order = [
         row["candidate_id"] for row in _read_csv(tmp_path / "pt_pattern_review.csv")
@@ -811,11 +864,7 @@ def test_pt_evidence_csv_rejects_incomplete_or_wrong_version_row(
     with pytest.raises(ValueError, match=r"unsupported evidence.*schema_version"):
         write_pt_pattern_evidence_csv(
             output_path,
-            [
-                _pt_evidence_row(
-                    schema_version="pt_pattern_discovery_evidence.v1"
-                )
-            ],
+            [_pt_evidence_row(schema_version="pt_pattern_discovery_evidence.v1")],
         )
 
     with pytest.raises(ValueError, match="matrix_write_authority must be FALSE"):

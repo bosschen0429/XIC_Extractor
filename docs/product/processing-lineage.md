@@ -77,6 +77,9 @@ These are internal lineage concepts, not additional user-visible review tags.
 | Term | Meaning | Not the same as |
 | --- | --- | --- |
 | `AcquisitionSource` | One immutable source-data identity plus its acquisition format and adapter-readable observation namespace | A local file path or sample display name |
+| `TargetKey` | One target-list-owner namespace plus its stable normalized target label | An exact m/z/RT/transition definition or row number |
+| `TargetDefinition` | One exact normalized Target definition under a `TargetKey` | A mutable CSV row or label alone |
+| `TargetListSnapshot` | One immutable ordered set of owner-minted target definitions used by a processing request | `target_config_hash`, a path, or a caller-owned mutable list |
 | `ProcessingRequest` | One normalized scientific computation request over identified sources, effective method/evidence settings, workflow constraints, and contract versions | An execution, output folder, timestamp, or GUI session |
 | `ProcessingAttempt` | One execution of a `ProcessingRequest`; every retry receives a new identity | The logical request or the product delivery |
 | `EvidenceArtifact` | One immutable artifact instance identified by producer attempt, content digest, schema, semantic role, and lineage references | A mutable path, cache entry, or authority decision |
@@ -93,20 +96,111 @@ labels until an adapter binds them to the contract above.
 | Identity | Required basis | Forbidden basis |
 | --- | --- | --- |
 | `acquisition_source_id` | Capability-validated content identity or stable source fingerprint, acquisition format, and observation namespace | Path, mtime, file order, or display name alone |
+| `target_key_id` | Target-list-owner namespace + owner-normalized target label | m/z, RT window, current row order, or label without an owner namespace |
+| `target_definition_id` | Owner-minted target key + every normalized effective `Target` field | Target label or raw CSV bytes alone |
+| `target_list_snapshot_id` | Owner namespace + exact ordered target definitions + target-list schema/version | Mutable `list[Target]`, file path, truncated config hash, or unordered membership |
 | `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
 | `processing_attempt_id` | A unique execution identity referencing exactly one request; optional retry/predecessor reference | Request digest alone or a reused timestamp |
+| `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata_v1` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
+| `immutable_review_record_ref` | Review-owner subject from canonical sample + stable target key; exact target definition + processing request; schema/version; canonical content digest; exact artifact bindings; optional same-subject predecessor and supersession reason | Bare sample/target labels, caller-provided ID/digest, mutable latest row, private rationale, or review truth inferred by lineage |
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
 | `delivery_cell_key` | Projection kind + `sample_metadata_v1`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
 | `delivery_revision_id` | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state |
 | `delivery_seal_id` | Canonical sealed manifest content, including revision and output-artifact identities | Directory existence or writer exit code |
 
-The identity algorithm and serialized field names may be selected later. The
-semantic inputs above are invariant. A timestamp can describe when something
-happened; it cannot establish what happened.
+The first executable identity slice uses `processing_identity_v1`: typed IDs
+are SHA-256 digests over compact canonical JSON (`sort_keys`, UTF-8, finite JSON
+numbers), with a type/version prefix. Its current content boundary is:
 
-An acquisition source and a sample are different identities: one sample may
-have multiple acquisitions, and copying a source does not create a new sample.
+- an acquisition source binds the full-file SHA-256, byte size, acquisition
+  format, and adapter-readable observation namespace; path and file stat values
+  are used only to locate the file and detect mutation during hashing;
+- the configuration owner mints `xic.target-key.v1` from an explicitly supplied
+  owner namespace plus normalized target label, and
+  `xic.target-definition.v1` from that key plus every effective `Target`
+  field. It freezes those definitions in user-declared row order as
+  `xic.target-list-snapshot.v1`. Users may change the target list before a new
+  request; the owner never mutates an existing snapshot. A same-label content
+  change preserves the stable key but creates a new definition and snapshot;
+  reorder also creates a new snapshot because Targeted request and output order
+  currently consume that order. The namespace has no inferred path- or
+  machine-based default;
+- the Targeted processing request binds the canonical source set, the exact
+  source-to-request-local-adapter-key and injection-order binding, all effective
+  Targeted extraction settings, the exact owner-minted target-list snapshot,
+  effective RT
+  priors, approval records, optional MS1-shape support content and activation
+  policy, and the owning input-schema, algorithm, and contract versions. The
+  adapter key is part of current execution semantics but is not a canonical
+  sample identity and cannot be reused as a delivery-cell key;
+- a processing attempt binds one request, a fresh opaque 128-bit token, and an
+  optional predecessor attempt. Retry always issues a new attempt. Terminal
+  outcome and cancellation/failure events remain append-only facts owned by the
+  execution-runtime contract and never rewrite identity.
+- artifact content binds exact payload bytes through SHA-256, byte size, media
+  type, and an owner-fixed serialization format. An artifact instance separately
+  binds one producer request/attempt, the producer-owned semantic role/schema
+  contract, that content identity, and a canonical set of upstream artifact
+  references. Equal bytes across attempts preserve content equality but never
+  collapse artifact-instance identity;
+- the first two producer adapters are deliberately diagnostic-only. The
+  Targeted MS1-shape owner fixes the
+  `targeted_ms1_shape_identity_v0` UTF-8 TSV bytes and role; the Pt Discovery
+  evidence CSV owner fixes the `pt_pattern_discovery_evidence.v3` UTF-8 CSV
+  bytes and role. Callers cannot supply role/schema strings, and both owner APIs
+  require an owner-issued processing attempt;
+- the sample-metadata owner mints `xic.sample.v1` from the
+  stable owner namespace, `sample_metadata_v1` identity schema, and canonical
+  `sample_name` key. Its `raw_stem` may resolve that key but is not identity
+  content; other metadata projections do not invalidate identity, while
+  renaming the canonical key does. Resolution retains one content-digested
+  complete owner snapshot, exact lookup token, and metadata row;
+- the review-roundtrip owner currently mints `xic.review-subject.v1` from one
+  owner-resolved canonical sample plus one owner-stable target key. It mints
+  `xic.review-record.v1` only from an owner-validated typed `review_action_v1`,
+  the exact target definition and processing request, canonical exact artifact
+  references, and any complete same-subject predecessor/supersession edge. The
+  action's sample/target labels must match those owner references. Resolution
+  rejects definition/request substitution, stale content, or superseded
+  records against a content-digested immutable registry snapshot.
+
+The Targeted adapter currently names the existing Thermo MS-controller-1
+namespace explicitly. A different controller, acquisition adapter, or
+observation namespace therefore creates a different source identity rather
+than silently reusing a bare scan number. The resolver performs one sequential
+full-file read per source, but opens no vendor RAW handle and makes no XIC call.
+This slice is not wired into the production execution path until that I/O cost
+and persisted-identifier surface receive an explicit promotion decision.
+
+This freezes the acquisition-source -> processing-request ->
+processing-attempt boundary plus the sample, target-list, and review owner APIs.
+The lineage layer's `ProcessingOwnerReferences` only composes and validates a
+complete request and attempt, owner-resolved sample bindings whose exact lookup tokens
+cover every request acquisition input and share one exact metadata snapshot,
+the request-pinned target-list snapshot, a same-request/same-attempt artifact
+closure with no missing upstream dependency, and an optional owner-resolved current
+review record bound to the exact sample, target key/definition, request, and
+review registry snapshot. A review record must retain typed artifact references
+that exist in that validated closure. Lineage does not mint
+sample/target/artifact/review IDs and it
+rejects mixed sample snapshots, target/request substitution, unresolved review
+records, superseded review records, artifact content/role/schema substitution,
+missing dependencies, cross-attempt mixing, and review-snapshot substitution.
+This is a bounded diagnostic artifact-envelope tracer, not a production
+artifact registry. Cross-attempt dependency resolution, delivery-cell,
+revision, and seal identities remain incomplete later contracts. A timestamp can describe when something happened;
+it cannot establish what happened.
+
+An acquisition source and a sample remain different typed identities, but the
+current lab contract is one independent canonical analysis sample per source
+included in an XIC analysis folder. QC replicates and meaningful reinjections
+therefore keep their distinct full names, result columns, and review scopes;
+lineage must not strip suffixes or collapse them into a biological-specimen
+identity. Invalid pre-crash acquisitions are excluded before this inventory.
+Two paths containing the same exact source bytes remain one acquisition-source
+identity and are rejected as duplicate request inputs; a filename copy cannot
+mint another sample or source identity.
 If the bounded tracer cannot obtain an unambiguous stable sample key from the
 sample-metadata owner, it must stop rather than derive one independently from a
 filename, display label, or row order.
@@ -331,12 +425,16 @@ The model fails and must be narrowed or redrawn if:
    fail closed. Reuse this content-bound pattern, not the Pt-specific schema or
    diagnostic authority.
 6. Trace JSON/CSV sidecars and `source_run_id` fields exist across diagnostics,
-   but there is no shared retention class or canonical attempt binding.
+   but most have no owner adapter, shared retention class, or canonical attempt
+   binding. The two diagnostic artifact adapters above are tracer coverage, not
+   automatic promotion of other sidecars.
 7. Current writers can emit method manifests and output metadata, but no
    workflow-neutral two-phase delivery seal owns the complete output lineage.
 8. `review_action_v1` and current review artifacts provide typed actions,
-   stable-row checks, and source hashes, but they do not yet provide one
-   workflow-neutral immutable review-conclusion/supersession reference.
+   stable-row checks, and source hashes. The review owner can now mint and
+   resolve a workflow-neutral immutable review-conclusion/supersession
+   reference, but no production registry or persisted lineage integration has
+   been selected.
 
 These are migration facts. This ticket does not authorize a repository-wide
 manifest rewrite or a new persistence framework.
@@ -352,8 +450,15 @@ manifest rewrite or a new persistence framework.
 
 ## Implementation Route And Stop Rule
 
-The first implementation after this decision should be a no-write, no-RAW
-lineage model used by the CID-NL / NL116 dual-policy tracer:
+The first bounded implementation is a no-write, no-RAW diagnostic artifact
+envelope tracer over the existing Targeted MS1-shape and Pt Discovery evidence
+owners. It closes exact bytes, fixed owner role/schema, attempt-scoped identity,
+typed review binding, upstream completeness, mutation/substitution, and
+same-content cross-attempt distinction without introducing storage or writer
+authority.
+
+The next scientific implementation should use that proven value-object
+contract in the CID-NL / NL116 dual-policy tracer:
 
 1. bind one normalized request to distinct attempts;
 2. adapt existing Pt-style artifact fingerprints and method-manifest facts
@@ -369,8 +474,9 @@ through explicit references. If either owner cannot provide an unambiguous
 identity for the fixture, stop and record the missing prerequisite rather than
 creating a lineage-local substitute.
 
-Do not add a shared package or persisted production schema until at least the
-Targeted and Untargeted tracer consumers prove the same contract. Stop and
+Do not add a registry, storage package, or persisted production schema until at
+least the canonical Targeted and Untargeted scientific tracer consumers prove
+the same contract. Stop and
 route unanswered physical capability questions to #124 and runtime lifecycle
 questions to #128. Promotion, writer integration, and retention-period
 selection require later explicit contracts.

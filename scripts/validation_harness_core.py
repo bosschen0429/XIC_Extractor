@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from scripts.benchmark_parallel import _run_extraction_once
 from scripts.compare_workbooks import WorkbookCompareResult, compare_workbooks
@@ -210,7 +210,20 @@ def _validate_resolver_mode(resolver_mode: str) -> str:
 
 
 def command_to_powershell(command: Sequence[str]) -> str:
-    return " ".join(_quote_powershell_arg(part) for part in command)
+    return " ".join(
+        _quote_powershell_arg(_powershell_path_text(part)) for part in command
+    )
+
+
+def _powershell_path_text(value: str) -> str:
+    if "://" in value:
+        return value
+    windows_path = PureWindowsPath(value)
+    if windows_path.drive:
+        return str(windows_path)
+    if "/" in value and not PurePosixPath(value).is_absolute():
+        return value.replace("/", "\\")
+    return value
 
 
 def run_validation_specs(
