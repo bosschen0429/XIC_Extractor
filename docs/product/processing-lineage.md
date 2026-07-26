@@ -104,6 +104,7 @@ labels until an adapter binds them to the contract above.
 | `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata_v1` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
 | `immutable_review_record_ref` | Review-owner subject from canonical sample + stable target key; exact target definition + processing request; schema/version; canonical content digest; exact artifact bindings; optional same-subject predecessor and supersession reason | Bare sample/target labels, caller-provided ID/digest, mutable latest row, private rationale, or review truth inferred by lineage |
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
+| owner-backed CID-NL `peak_hypothesis_id` | Hypothesis method + canonical sample identity + physical peak content ID + chromatographic-support artifact content ID | Target label, ISTD role/pairing, trace-group ID, selection status, attempt token, or output position |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
 | `delivery_cell_key` | Projection kind + `sample_metadata_v1`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
 | `delivery_revision_id` | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state |
@@ -205,12 +206,15 @@ If the bounded tracer cannot obtain an unambiguous stable sample key from the
 sample-metadata owner, it must stop rather than derive one independently from a
 filename, display label, or row order.
 
-Current `TraceGroup`, `PeakHypothesis`, and
+Current `TraceGroup`, legacy `build_peak_hypotheses`, and
 `CrossSamplePeakGroupHypothesis` IDs are scientific working identities. They
 must be namespaced by a processing request or replaced by normalized successor
-identity before they can serve as durable cross-attempt references. In
-particular, the current sequential `FAM000...` group label is not a stable
-delivery-cell identity.
+identity before they can serve as durable cross-attempt references. The
+bounded owner-backed CID-NL `PeakHypothesis` branch is the exception: it has a
+typed content ID plus an exact attempt artifact, but still grants no group,
+delivery-cell, revision, seal, or product authority. In particular, the
+current sequential `FAM000...` group label is not a stable delivery-cell
+identity.
 
 ## Lineage Graph And Invariants
 
@@ -412,8 +416,10 @@ The model fails and must be narrowed or redrawn if:
 1. `method_manifest.json` records useful config fragments, input/output paths,
    hashes, runtime, and replay blockers, but it has no canonical
    processing-request, attempt, delivery-revision, or delivery-seal identity.
-2. `TraceGroup` and `PeakHypothesis` carry useful working IDs in memory, but
-   they do not currently close a durable artifact chain.
+2. `TraceGroup` and legacy `PeakHypothesis` values carry useful working IDs in
+   memory but do not close a durable artifact chain. The bounded owner-backed
+   CID-NL hypothesis now closes its observation/evidence attempt artifact only;
+   it is not a cross-attempt group or delivery reference.
 3. `CrossSamplePeakGroupHypothesis.group_hypothesis_id` is the pipeline
    identity, while current `FAM000...` construction is ordinal. It is not yet a
    durable cross-attempt delivery-cell key.
@@ -471,11 +477,13 @@ own owner-backed contract.
 An earlier sequencing proposal said to carry this same reference directly into
 one sample-local `PeakHypothesis` and then through group/cell decisions. The
 no-RAW identity-decomposition characterization has superseded that imperative:
-the current `PeakHypothesis` is a Targeted-shaped working identity, CID-NL can
-participate in candidate generation before MS1 evaluation, and Pt hypotheses
-compose several MS1 feature observations. Directly wiring the CID-NL reference
-into the current object would collapse provider evidence, physical observation,
-and method interpretation.
+the legacy `PeakHypothesis` path is a Targeted-shaped working identity, CID-NL
+can participate in candidate generation before MS1 evaluation, and Pt
+hypotheses compose several MS1 feature observations. Directly wiring the raw
+CID-NL reference into legacy evidence fields would collapse provider evidence,
+physical observation, and method interpretation. The bounded successor branch
+therefore composes separate owner-backed observation and chromatographic-event
+refs into the same model while prohibiting legacy Targeted/selection fields.
 
 The operator selected the existing-owner alternative. A third bounded
 implementation deepens `peak_detection` with `PeakObservationRef` rather than
@@ -532,10 +540,22 @@ identity. Its artifact depends on every scan-level support artifact, so lineage
 closure remains transitive and exact.
 
 This event is provider evidence, not a method-hypothesis selection or an
-independent vote per scan. The next tracer must deepen the existing
-`PeakHypothesis` owner to consume the aggregate event without requiring
-Targeted-only label, role, pairing, or known-RT fields. If that cannot be done
-without a second hypothesis model or workflow flags, stop and redraw the seam.
+independent vote per scan.
+
+A sixth bounded implementation deepens the existing `PeakHypothesis` rather
+than creating a second model. `compose_cid_nl_peak_hypothesis` consumes exactly
+one owner-backed physical peak and one chromatographic support event bound to
+the same request, attempt, sample, and physical content. Its content ID is
+stable across identical retries while its exact artifact closes the new
+attempt's observation and event artifacts. The owner-backed branch prohibits
+Targeted labels, roles, pairing, trace-group identity, selection semantics,
+selected audit, counting, and product projection. Missing, substituted,
+mutated, stale, or tampered bindings fail closed.
+
+The next method-hypothesis tracer is Pt/Delta Mass multi-observation
+composition. It must first obtain explicit owner-backed position roles; tuple
+order must not silently become method semantics. If that needs a second
+hypothesis model or workflow-selection flags, stop and redraw the seam.
 
 The tracer must consume the sample identity owner and review-record owner
 through explicit references. If either owner cannot provide an unambiguous

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -22,10 +22,15 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     resolve_dda_cid_nl_peak_support_ref,
     validate_dda_cid_nl_peak_support_binding,
 )
-from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.peak_detection.hypotheses import IntegrationResult, PeakHypothesis
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     mint_peak_observation_ref,
+)
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    PeakHypothesisContractError,
+    compose_cid_nl_peak_hypothesis,
+    validate_cid_nl_peak_hypothesis_binding,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -676,6 +681,207 @@ def test_retry_preserves_chromatographic_event_content_but_not_artifact(
     )
 
 
+def test_cid_nl_event_composes_the_existing_peak_hypothesis_owner(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    event = _event(fixture.owners, fixture.sample, peak, scan_numbers=(42, 43))
+
+    hypothesis = compose_cid_nl_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        peak_observation=peak,
+        chromatographic_support=event,
+    )
+
+    assert isinstance(hypothesis, PeakHypothesis)
+    assert hypothesis.hypothesis_id.startswith("xic.peak-hypothesis.v1:")
+    assert hypothesis.hypothesis_method == "dda_cid_nl"
+    assert hypothesis.peak_observation_refs == (peak,)
+    assert hypothesis.evidence.cid_nl_chromatographic_support_ref == event
+    assert hypothesis.integration == peak.content.integration
+    assert hypothesis.trace_group_id == ""
+    assert hypothesis.target_label == ""
+    assert hypothesis.role == ""
+    assert hypothesis.istd_pair == ""
+    assert hypothesis.analysis_mode == "workflow_neutral"
+    assert hypothesis.audit.selected is False
+    assert hypothesis.artifact is not None
+    assert hypothesis.artifact.upstream_artifact_ids == tuple(
+        sorted(
+            (
+                peak.artifact.evidence_artifact_id,
+                event.artifact.evidence_artifact_id,
+            )
+        )
+    )
+
+
+def test_cid_nl_hypothesis_retry_preserves_content_not_exact_artifact(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
+    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
+
+    first_peak = _peak(fixture.owners, fixture.sample)
+    first_event = _event(
+        fixture.owners,
+        fixture.sample,
+        first_peak,
+        scan_numbers=(42, 43),
+    )
+    retry_peak = _peak(retry_owners, fixture.sample)
+    retry_event = _event(
+        retry_owners,
+        fixture.sample,
+        retry_peak,
+        scan_numbers=(43, 42),
+    )
+    first = compose_cid_nl_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        peak_observation=first_peak,
+        chromatographic_support=first_event,
+    )
+    retried = compose_cid_nl_peak_hypothesis(
+        processing_owners=retry_owners,
+        sample=fixture.sample,
+        peak_observation=retry_peak,
+        chromatographic_support=retry_event,
+    )
+
+    assert first.hypothesis_id == retried.hypothesis_id
+    assert first.artifact is not None
+    assert retried.artifact is not None
+    assert first.artifact.content_identity == retried.artifact.content_identity
+    assert first.artifact.evidence_artifact_id != retried.artifact.evidence_artifact_id
+
+
+def test_cid_nl_hypothesis_peak_or_event_mutation_invalidates_identity(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    first_peak = _peak(fixture.owners, fixture.sample, apex_intensity=500.0)
+    first_event = _event(fixture.owners, fixture.sample, first_peak)
+    changed_peak = _peak(fixture.owners, fixture.sample, apex_intensity=501.0)
+    changed_event = _event(fixture.owners, fixture.sample, changed_peak)
+
+    first = compose_cid_nl_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        peak_observation=first_peak,
+        chromatographic_support=first_event,
+    )
+    changed = compose_cid_nl_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        peak_observation=changed_peak,
+        chromatographic_support=changed_event,
+    )
+
+    assert first.hypothesis_id != changed.hypothesis_id
+    with pytest.raises(PeakHypothesisContractError, match="physical MS1 peak"):
+        compose_cid_nl_peak_hypothesis(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            peak_observation=changed_peak,
+            chromatographic_support=first_event,
+        )
+
+
+def test_cid_nl_hypothesis_missing_and_stale_applicability_fail_closed(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    event = _event(fixture.owners, fixture.sample, peak)
+
+    with pytest.raises(PeakHypothesisContractError, match="peak observation"):
+        compose_cid_nl_peak_hypothesis(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            peak_observation=None,  # type: ignore[arg-type]
+            chromatographic_support=event,
+        )
+    with pytest.raises(PeakHypothesisContractError, match="chromatographic support"):
+        compose_cid_nl_peak_hypothesis(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            peak_observation=peak,
+            chromatographic_support=None,  # type: ignore[arg-type]
+        )
+
+    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
+    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
+    retry_peak = _peak(retry_owners, fixture.sample)
+    with pytest.raises(PeakHypothesisContractError, match="processing attempt"):
+        compose_cid_nl_peak_hypothesis(
+            processing_owners=retry_owners,
+            sample=fixture.sample,
+            peak_observation=retry_peak,
+            chromatographic_support=event,
+        )
+
+
+def test_cid_nl_hypothesis_binding_rejects_event_and_owner_substitution(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    foreign = _identity_fixture(tmp_path, sample_key="sample-b")
+    peak = _peak(fixture.owners, fixture.sample)
+    event = _event(fixture.owners, fixture.sample, peak, scan_numbers=(42, 43))
+    substituted_event = _event(
+        fixture.owners,
+        fixture.sample,
+        peak,
+        scan_numbers=(42, 44),
+    )
+    hypothesis = compose_cid_nl_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        peak_observation=peak,
+        chromatographic_support=event,
+    )
+
+    with pytest.raises(PeakHypothesisContractError, match="binding"):
+        validate_cid_nl_peak_hypothesis_binding(
+            hypothesis,
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            peak_observation=peak,
+            chromatographic_support=substituted_event,
+        )
+    with pytest.raises(PeakHypothesisContractError, match="sample"):
+        validate_cid_nl_peak_hypothesis_binding(
+            hypothesis,
+            processing_owners=fixture.owners,
+            sample=foreign.sample,
+            peak_observation=peak,
+            chromatographic_support=event,
+        )
+
+
+def test_owner_backed_hypothesis_rejects_legacy_context_and_identity_tamper(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    event = _event(fixture.owners, fixture.sample, peak)
+    hypothesis = compose_cid_nl_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        peak_observation=peak,
+        chromatographic_support=event,
+    )
+
+    with pytest.raises(PeakHypothesisContractError, match="Targeted context"):
+        replace(hypothesis, target_label="control")
+    with pytest.raises(PeakHypothesisContractError, match="hypothesis_id"):
+        replace(hypothesis, hypothesis_id=f"xic.peak-hypothesis.v1:{'0' * 64}")
+
+
 def _resolve(
     fixture: _IdentityFixture,
     evidence: CidNlEvidenceRef,
@@ -687,6 +893,33 @@ def _resolve(
         canonical_evidence=evidence,
         candidate_peaks=(peak,),
         policy=_policy(),
+    )
+
+
+def _event(
+    owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    peak: PeakObservationRef,
+    *,
+    scan_numbers: tuple[int, ...] = (42,),
+):
+    return compose_cid_nl_chromatographic_support_ref(
+        processing_owners=owners,
+        sample=sample,
+        scan_support_refs=tuple(
+            resolve_dda_cid_nl_peak_support_ref(
+                processing_owners=owners,
+                sample=sample,
+                canonical_evidence=_evidence(
+                    owners,
+                    sample,
+                    scan_number=scan_number,
+                ),
+                candidate_peaks=(peak,),
+                policy=_policy(),
+            )
+            for scan_number in scan_numbers
+        ),
     )
 
 

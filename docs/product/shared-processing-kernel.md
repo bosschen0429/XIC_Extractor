@@ -252,8 +252,11 @@ hypothesis support without creating another `PeakHypothesis` type.
 
 This is not the complete kernel tracer. The remaining gaps are:
 
-1. `build_peak_hypotheses` hard-codes `analysis_mode="targeted"` and converts
-   evidence through `common_evidence_from_targeted_candidate`.
+1. Legacy `build_peak_hypotheses` still hard-codes
+   `analysis_mode="targeted"` and converts evidence through
+   `common_evidence_from_targeted_candidate`. A separate composition function
+   now deepens the same `PeakHypothesis` model for one workflow-neutral DDA
+   CID-NL case, but no production Targeted or Untargeted caller consumes it.
 2. `EvidenceVector` contains many Targeted/MS2-specific fields. Shared facts
    exist, but the whole current dataclass is not yet a minimal kernel
    interface.
@@ -269,13 +272,11 @@ This is not the complete kernel tracer. The remaining gaps are:
    not create a second permanent kernel.
 7. `peak_detection.observations` owns a bounded canonical physical
    MS1-observation reference over an existing `Trace` plus `IntegrationResult`.
-   The DDA CID-NL owner now composes exact CID-NL scan refs with the observation
-   and aggregates repeated in-peak scans into one chromatographic support
-   event, but that event has not yet become an existing-owner method
-   hypothesis, cross-sample group, `CellObservation`, or Backfill result.
-   Carrying scan refs directly into the current `PeakHypothesis` would still
-   collapse provider evidence, physical observation, and interpretation into
-   one Targeted-shaped object.
+   The DDA CID-NL owner composes exact scan refs, aggregates repeated in-peak
+   scans into one event, and the existing `PeakHypothesis` now consumes that
+   typed event through a diagnostic owner-backed branch. It still has no
+   cross-sample group, `CellObservation`, Backfill, selection, or product
+   authority, and Pt/Delta Mass multi-observation roles remain undefined.
 8. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
    `group_hypothesis_id` is the successor cross-sample identity.
 
@@ -306,16 +307,16 @@ The tracer does not need to migrate every Discovery provider, Alignment
 diagnostic, or Backfill authority path.
 
 The scientific-reference fixture, identity-decomposition characterization,
-bounded `PeakObservationRef`, DDA CID-NL scan support, and chromatographic-event
-fixtures now satisfy the first direct-evidence, physical-observation,
-applicability, and repeated-scan aggregation preconditions. The existing
-`peak_detection` owner—not the current
-`PeakHypothesis`, lineage, or a provider-local `DetectedFeature`—mints and
-composes those references. Completion still requires deepening the existing
-`PeakHypothesis`, multi-observation Pt/Delta Mass composition, and then
-group/cell decisions. Runtime candidate-universe completeness and DDA
-co-isolation remain evidence unknowns; DIA is explicitly outside the current
-lab method. Targeted output and Untargeted Matrix authority remain unchanged.
+bounded `PeakObservationRef`, DDA CID-NL scan support, chromatographic event,
+and owner-backed `PeakHypothesis` fixtures now satisfy the first
+direct-evidence → physical-observation → applicability → method-hypothesis
+chain. The same `peak_detection` owner composes the existing hypothesis model;
+lineage and provider-local `DetectedFeature` do not mint another one.
+Completion still requires role-bearing multi-observation Pt/Delta Mass
+composition and then group/cell decisions. Runtime candidate-universe
+completeness and DDA co-isolation remain evidence unknowns; DIA is explicitly
+outside the current lab method. Targeted output and Untargeted Matrix authority
+remain unchanged.
 
 ## Failure, Validation, And Rollback
 

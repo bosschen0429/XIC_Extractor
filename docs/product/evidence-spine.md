@@ -30,10 +30,16 @@ The evidence spine is the shared layer that converts chromatographic observation
   for that physical peak. Scan reorder is identity-neutral; duplicate scans or
   mixed peak, candidate-universe, policy, sample, request, or attempt refs fail
   closed.
+- The existing `PeakHypothesis` model now has one bounded owner-backed branch.
+  `compose_cid_nl_peak_hypothesis` consumes one `PeakObservationRef` and one
+  `CidNlChromatographicSupportRef` bound to the same sample, request, attempt,
+  and physical peak. It does not mint Targeted context, selection semantics, or
+  a second hypothesis type.
 - Legacy family IDs are review and compatibility containers. Group identity
-  belongs to `CrossSamplePeakGroupHypothesis`, while current candidate IDs and
-  `PeakHypothesis` IDs remain workflow-local working identities. Neither is a
-  canonical physical MS1-observation identity. Product authority belongs to
+  belongs to `CrossSamplePeakGroupHypothesis`. Legacy candidate and
+  `build_peak_hypotheses` IDs remain workflow-local working identities; the
+  bounded owner-backed CID-NL branch instead uses a typed content ID without
+  turning it into physical-observation identity. Product authority belongs to
   workflow projection.
 
 ## Observation / Hypothesis / Evidence decomposition
@@ -100,10 +106,32 @@ owner-required full `Trace` plus `IntegrationResult` still cannot mint a
 substitute physical reference. The aggregate event closes the lab rule that
 repeated DDA/NL scans inside one selected MS1 peak are multiple scans but one
 chromatographic support event. It is not a second `PeakHypothesis` and grants
-no independent support votes. The next contract must deepen the existing
-`PeakHypothesis` owner so it can consume this aggregate without requiring
-Targeted labels/roles, then separately prove a multi-observation Pt/Delta Mass
-composition.
+no independent support votes.
+
+The owner-backed CID-NL hypothesis branch closes the next handoff under these
+bounded rules:
+
+1. Hypothesis content identity includes the method, canonical sample, physical
+   peak content ID, and chromatographic-support artifact content ID. Scan or
+   peak mutation therefore invalidates the hypothesis.
+2. Exact artifact content additionally records the peak-observation artifact
+   content ID, so generation-provenance changes invalidate the exact artifact
+   without pretending the physical peak changed.
+3. Retry with identical content preserves `hypothesis_id` and exact artifact
+   content identity, but a new attempt receives a distinct artifact identity
+   and exact upstream closure.
+4. Target label, role, ISTD pairing, trace-group identity, decision semantics,
+   selection audit, counting, and workflow projection are prohibited on this
+   branch. The legacy Targeted constructor remains unchanged.
+5. Missing refs, physical-peak/event mismatch, request/attempt/sample
+   substitution, stale cross-attempt applicability, event substitution, and
+   identity tamper fail closed.
+
+This still models only the one-observation DDA CID-NL method hypothesis. The
+next design loop must define role-bearing multi-observation composition for the
+existing Pt/Delta Mass owner before the same `PeakHypothesis` can represent
+that method; array order or an unlabeled tuple must not be guessed into method
+semantics.
 
 ## Surfaces
 
@@ -114,7 +142,8 @@ composition.
 | `PeakObservationRef` | `peak_detection`-owned physical MS1 content plus exact generation provenance and request/attempt artifact binding; diagnostic only |
 | `DdaCidNlPeakSupportRef` | CID-NL-owner DDA/ddMS2 scan-to-physical-peak relation over an exact supplied candidate universe; diagnostic only, no DIA or selection authority |
 | `CidNlChromatographicSupportRef` | One-or-more exact strict DDA scan relations aggregated as one physical-peak support event; diagnostic only, no hypothesis or counting authority |
-| `PeakHypothesis` | Current Targeted-shaped candidate working identity; not canonical physical observation identity |
+| `PeakHypothesis` | One existing model: legacy Targeted working identity plus a bounded diagnostic owner-backed CID-NL composition; neither is canonical physical-observation identity |
+| `peak_hypothesis_identity` | Same-owner content ID, exact attempt artifact, and binding validation for the bounded CID-NL composition; no selection or product authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
 | `IntegrationResult` | Integrated signal and boundary result |
 | `AuditTrail` / reason strings | Human-readable explanation and review evidence |

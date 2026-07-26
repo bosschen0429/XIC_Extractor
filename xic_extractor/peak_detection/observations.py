@@ -21,7 +21,7 @@ from xic_extractor.evidence_artifacts import (
     verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.baseline import bounded_trace_interval
-from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
