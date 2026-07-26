@@ -141,9 +141,28 @@ def canonical_targeted_ms1_shape_identity_bytes(
     """Render the exact UTF-8 TSV bytes owned by this diagnostic contract."""
 
     canonical_rows = tuple(rows)
+    expected_columns = frozenset(TARGETED_MS1_SHAPE_IDENTITY_COLUMNS)
     for row_index, row in enumerate(canonical_rows, start=2):
         if not isinstance(row, Mapping):
             raise ValueError(f"artifact row {row_index} must be a mapping")
+        missing = tuple(
+            column
+            for column in TARGETED_MS1_SHAPE_IDENTITY_COLUMNS
+            if column not in row
+        )
+        unexpected = tuple(column for column in row if column not in expected_columns)
+        if missing or unexpected:
+            details = []
+            if missing:
+                details.append("missing: " + ", ".join(missing))
+            if unexpected:
+                details.append(
+                    "unexpected: " + ", ".join(str(column) for column in unexpected)
+                )
+            raise ValueError(
+                f"artifact row {row_index} must have exact columns "
+                f"({'; '.join(details)})"
+            )
         if row.get("schema_version") != SCHEMA_VERSION:
             raise ValueError(
                 f"artifact row {row_index} schema_version must be {SCHEMA_VERSION!r}"
@@ -162,6 +181,7 @@ def canonical_targeted_ms1_shape_identity_bytes(
         canonical_rows,
         TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
         delimiter="\t",
+        extrasaction="raise",
         lineterminator="\n",
     ).encode("utf-8")
 
