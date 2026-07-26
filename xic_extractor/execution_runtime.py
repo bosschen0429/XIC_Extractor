@@ -143,6 +143,11 @@ class AttemptLifecycleHistory:
                     raise AttemptLifecycleContractError(
                         "cancellation_accepted may appear only once"
                     )
+                if manifest_preflight_failed:
+                    raise AttemptLifecycleContractError(
+                        "cancellation cannot be accepted after manifest "
+                        "preflight failure"
+                    )
                 cancellation_accepted = True
                 continue
             if event.kind is AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED:
@@ -153,6 +158,10 @@ class AttemptLifecycleHistory:
                 if started:
                     raise AttemptLifecycleContractError(
                         "manifest preflight failure must occur before attempt_started"
+                    )
+                if cancellation_accepted:
+                    raise AttemptLifecycleContractError(
+                        "manifest preflight failure cannot follow queued cancellation"
                     )
                 manifest_preflight_failed = True
                 continue

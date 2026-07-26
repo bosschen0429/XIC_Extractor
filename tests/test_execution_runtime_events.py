@@ -77,6 +77,45 @@ def test_queued_cancellation_prevents_attempt_start(tmp_path: Path) -> None:
         )
 
 
+def test_queued_cancellation_and_manifest_preflight_failure_are_exclusive(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleContractError,
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        append_attempt_lifecycle_event,
+        propose_manifest_preflight_failure,
+    )
+
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=_attempt(tmp_path)),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    cancelled = append_attempt_lifecycle_event(
+        queued,
+        AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
+    )
+    with pytest.raises(
+        AttemptLifecycleContractError,
+        match="preflight failure cannot follow queued cancellation",
+    ):
+        propose_manifest_preflight_failure(cancelled)
+
+    preflight_failed = append_attempt_lifecycle_event(
+        queued,
+        AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
+    )
+    with pytest.raises(
+        AttemptLifecycleContractError,
+        match="cancellation cannot be accepted after manifest preflight failure",
+    ):
+        append_attempt_lifecycle_event(
+            preflight_failed,
+            AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
+        )
+
+
 def test_manifest_preflight_failure_proposes_failed_terminal_without_start(
     tmp_path: Path,
 ) -> None:
