@@ -28,6 +28,21 @@ class AttemptTerminalOutcome(str, Enum):
     CANCELLED = "cancelled"
 
 
+class WorkUnitTerminalOutcome(str, Enum):
+    """Mechanical terminal result for one owner-declared work unit."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class WorkUnitSettlementIntegrityFailureKind(str, Enum):
+    """Fail-closed violations at the manifest-to-settlement boundary."""
+
+    UNDECLARED_WORK_UNIT = "undeclared_work_unit"
+    CONFLICTING_SETTLEMENT = "conflicting_settlement"
+
+
 @dataclass(frozen=True, slots=True)
 class RequiredWorkManifest:
     """Closed owner-attested work required for one processing attempt."""
@@ -58,6 +73,95 @@ class RequiredWorkManifest:
         ):
             raise AttemptLifecycleContractError(
                 "owner_completeness_attestation must be non-empty opaque text"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkUnitSettlement:
+    """One accepted terminal settlement over an opaque manifest work key."""
+
+    attempt: ProcessingAttemptIdentity
+    work_unit_key: str
+    outcome: WorkUnitTerminalOutcome
+    owner_result_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.attempt, ProcessingAttemptIdentity):
+            raise AttemptLifecycleContractError(
+                "attempt must be an owner-issued ProcessingAttemptIdentity"
+            )
+        if not isinstance(self.work_unit_key, str) or not self.work_unit_key.strip():
+            raise AttemptLifecycleContractError(
+                "work_unit_key must be non-empty opaque text"
+            )
+        if not isinstance(self.outcome, WorkUnitTerminalOutcome):
+            raise AttemptLifecycleContractError(
+                "outcome must be a WorkUnitTerminalOutcome"
+            )
+        if self.outcome is WorkUnitTerminalOutcome.SUCCEEDED:
+            if (
+                not isinstance(self.owner_result_ref, str)
+                or not self.owner_result_ref.strip()
+            ):
+                raise AttemptLifecycleContractError(
+                    "succeeded settlement requires owner_result_ref"
+                )
+        elif self.owner_result_ref is not None:
+            raise AttemptLifecycleContractError(
+                "only succeeded settlement may carry owner_result_ref"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class WorkUnitSettlementIntegrityFailure:
+    """First immutable settlement violation that prevents attempt success."""
+
+    attempt: ProcessingAttemptIdentity
+    work_unit_key: str
+    kind: WorkUnitSettlementIntegrityFailureKind
+    submitted_settlement: WorkUnitSettlement
+    accepted_settlement: WorkUnitSettlement | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.attempt, ProcessingAttemptIdentity):
+            raise AttemptLifecycleContractError(
+                "attempt must be an owner-issued ProcessingAttemptIdentity"
+            )
+        if not isinstance(self.work_unit_key, str) or not self.work_unit_key.strip():
+            raise AttemptLifecycleContractError(
+                "work_unit_key must be non-empty opaque text"
+            )
+        if not isinstance(self.kind, WorkUnitSettlementIntegrityFailureKind):
+            raise AttemptLifecycleContractError(
+                "kind must be a WorkUnitSettlementIntegrityFailureKind"
+            )
+        if not isinstance(self.submitted_settlement, WorkUnitSettlement):
+            raise AttemptLifecycleContractError(
+                "submitted_settlement must be a WorkUnitSettlement"
+            )
+        if (
+            self.submitted_settlement.attempt != self.attempt
+            or self.submitted_settlement.work_unit_key != self.work_unit_key
+        ):
+            raise AttemptLifecycleContractError(
+                "submitted settlement must bind the failure attempt and work key"
+            )
+        if self.kind is WorkUnitSettlementIntegrityFailureKind.UNDECLARED_WORK_UNIT:
+            if self.accepted_settlement is not None:
+                raise AttemptLifecycleContractError(
+                    "undeclared work failure cannot carry accepted settlement"
+                )
+        elif not isinstance(self.accepted_settlement, WorkUnitSettlement):
+            raise AttemptLifecycleContractError(
+                "conflicting settlement requires accepted settlement"
+            )
+        elif (
+            self.accepted_settlement.attempt != self.attempt
+            or self.accepted_settlement.work_unit_key != self.work_unit_key
+            or self.accepted_settlement == self.submitted_settlement
+        ):
+            raise AttemptLifecycleContractError(
+                "accepted settlement must be a different result for the same work key"
             )
 
 
@@ -259,6 +363,92 @@ class RequiredWorkManifestPreflight:
         return self.manifest is not None
 
 
+@dataclass(frozen=True, slots=True)
+class AttemptRuntime:
+    """Pure in-memory reducer state for one accepted required-work manifest."""
+
+    manifest: RequiredWorkManifest
+    history: AttemptLifecycleHistory
+    settlements: tuple[WorkUnitSettlement, ...] = ()
+    integrity_failure: WorkUnitSettlementIntegrityFailure | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.manifest, RequiredWorkManifest):
+            raise AttemptLifecycleContractError(
+                "manifest must be a RequiredWorkManifest"
+            )
+        if not isinstance(self.history, AttemptLifecycleHistory):
+            raise AttemptLifecycleContractError(
+                "history must be an AttemptLifecycleHistory"
+            )
+        if self.history.attempt != self.manifest.attempt:
+            raise AttemptLifecycleContractError(
+                "runtime history must reference the manifest attempt"
+            )
+        if not any(
+            event.kind is AttemptLifecycleEventKind.ATTEMPT_STARTED
+            for event in self.history.events
+        ):
+            raise AttemptLifecycleContractError(
+                "runtime history must contain attempt_started"
+            )
+        if not isinstance(self.settlements, tuple):
+            raise AttemptLifecycleContractError("settlements must be a tuple")
+        if any(
+            not isinstance(settlement, WorkUnitSettlement)
+            for settlement in self.settlements
+        ):
+            raise AttemptLifecycleContractError(
+                "settlements must contain WorkUnitSettlement values"
+            )
+        work_unit_keys = tuple(
+            settlement.work_unit_key for settlement in self.settlements
+        )
+        if len(set(work_unit_keys)) != len(work_unit_keys):
+            raise AttemptLifecycleContractError(
+                "each work unit may have only one accepted settlement"
+            )
+        manifest_keys = set(self.manifest.work_unit_keys)
+        if any(
+            settlement.attempt != self.manifest.attempt
+            or settlement.work_unit_key not in manifest_keys
+            for settlement in self.settlements
+        ):
+            raise AttemptLifecycleContractError(
+                "accepted settlements must bind declared manifest work"
+            )
+        if any(
+            settlement.outcome is WorkUnitTerminalOutcome.CANCELLED
+            for settlement in self.settlements
+        ) and not self.history.cancellation_accepted:
+            raise AttemptLifecycleContractError(
+                "cancelled settlement requires accepted cancellation"
+            )
+        if self.integrity_failure is not None:
+            if not isinstance(
+                self.integrity_failure, WorkUnitSettlementIntegrityFailure
+            ):
+                raise AttemptLifecycleContractError(
+                    "integrity_failure must be a WorkUnitSettlementIntegrityFailure"
+                )
+            if self.integrity_failure.attempt != self.manifest.attempt:
+                raise AttemptLifecycleContractError(
+                    "integrity failure must reference the manifest attempt"
+                )
+
+    @property
+    def all_manifest_work_settled(self) -> bool:
+        settled_keys = {settlement.work_unit_key for settlement in self.settlements}
+        return settled_keys == set(self.manifest.work_unit_keys)
+
+    @property
+    def must_fail(self) -> bool:
+        return self.integrity_failure is not None or any(
+            settlement.outcome is WorkUnitTerminalOutcome.FAILED
+            for settlement in self.settlements
+        )
+
+
 def append_attempt_lifecycle_event(
     history: AttemptLifecycleHistory,
     kind: AttemptLifecycleEventKind,
@@ -345,7 +535,95 @@ def preflight_required_work_manifest(
     return RequiredWorkManifestPreflight(history=history, manifest=manifest)
 
 
+def start_attempt_runtime(
+    preflight: RequiredWorkManifestPreflight,
+) -> AttemptRuntime:
+    """Consume an accepted manifest and start its pure runtime reducer."""
+
+    if not isinstance(preflight, RequiredWorkManifestPreflight):
+        raise AttemptLifecycleContractError(
+            "preflight must be a RequiredWorkManifestPreflight"
+        )
+    if not preflight.accepted or preflight.manifest is None:
+        raise AttemptLifecycleContractError(
+            "cannot start runtime from rejected manifest preflight"
+        )
+    started = append_attempt_lifecycle_event(
+        preflight.history,
+        AttemptLifecycleEventKind.ATTEMPT_STARTED,
+    )
+    return AttemptRuntime(manifest=preflight.manifest, history=started)
+
+
+def settle_work_unit(
+    runtime: AttemptRuntime,
+    *,
+    work_unit_key: str,
+    outcome: WorkUnitTerminalOutcome,
+    owner_result_ref: str | None = None,
+) -> AttemptRuntime:
+    """Accept one settlement exactly once; record conflicts fail closed."""
+
+    if not isinstance(runtime, AttemptRuntime):
+        raise AttemptLifecycleContractError("runtime must be an AttemptRuntime")
+    submitted = WorkUnitSettlement(
+        attempt=runtime.manifest.attempt,
+        work_unit_key=work_unit_key,
+        outcome=outcome,
+        owner_result_ref=owner_result_ref,
+    )
+    if (
+        submitted.outcome is WorkUnitTerminalOutcome.CANCELLED
+        and not runtime.history.cancellation_accepted
+    ):
+        raise AttemptLifecycleContractError(
+            "cancelled settlement requires accepted cancellation"
+        )
+    accepted = next(
+        (
+            settlement
+            for settlement in runtime.settlements
+            if settlement.work_unit_key == work_unit_key
+        ),
+        None,
+    )
+    failure: WorkUnitSettlementIntegrityFailure | None = None
+    if work_unit_key not in runtime.manifest.work_unit_keys:
+        failure = WorkUnitSettlementIntegrityFailure(
+            attempt=runtime.manifest.attempt,
+            work_unit_key=work_unit_key,
+            kind=WorkUnitSettlementIntegrityFailureKind.UNDECLARED_WORK_UNIT,
+            submitted_settlement=submitted,
+        )
+    elif accepted is not None:
+        if accepted == submitted:
+            return runtime
+        failure = WorkUnitSettlementIntegrityFailure(
+            attempt=runtime.manifest.attempt,
+            work_unit_key=work_unit_key,
+            kind=WorkUnitSettlementIntegrityFailureKind.CONFLICTING_SETTLEMENT,
+            submitted_settlement=submitted,
+            accepted_settlement=accepted,
+        )
+    if failure is not None:
+        if runtime.integrity_failure is not None:
+            return runtime
+        return AttemptRuntime(
+            manifest=runtime.manifest,
+            history=runtime.history,
+            settlements=runtime.settlements,
+            integrity_failure=failure,
+        )
+    return AttemptRuntime(
+        manifest=runtime.manifest,
+        history=runtime.history,
+        settlements=(*runtime.settlements, submitted),
+        integrity_failure=runtime.integrity_failure,
+    )
+
+
 __all__ = [
+    "AttemptRuntime",
     "AttemptLifecycleContractError",
     "AttemptLifecycleEvent",
     "AttemptLifecycleEventKind",
@@ -353,7 +631,13 @@ __all__ = [
     "AttemptTerminalOutcome",
     "RequiredWorkManifest",
     "RequiredWorkManifestPreflight",
+    "WorkUnitSettlement",
+    "WorkUnitSettlementIntegrityFailure",
+    "WorkUnitSettlementIntegrityFailureKind",
+    "WorkUnitTerminalOutcome",
     "append_attempt_lifecycle_event",
     "preflight_required_work_manifest",
     "propose_manifest_preflight_failure",
+    "settle_work_unit",
+    "start_attempt_runtime",
 ]

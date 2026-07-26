@@ -435,11 +435,15 @@ committed outcome. The Package 0 runtime owner now consumes owner-supplied
 manifest content into an attempt-bound immutable `RequiredWorkManifest` with
 closed unique opaque work-unit keys. Missing completeness attestation, duplicate
 or blank keys, and attempt substitution drive that existing queued-to-failed
-proposal instead of relying on a caller to declare failure manually. This
-remains `contract_only`: no Targeted or Alignment application caller consumes
-the validated manifest, and the runtime does not yet record monotonic offsets
-or metric availability, settle work/resources/artifacts, or durably acknowledge
-a terminal outcome.
+proposal instead of relying on a caller to declare failure manually. An accepted
+manifest now starts one pure `AttemptRuntime`; terminal work settlements are
+accepted exactly once per declared opaque key, identical replay is idempotent,
+and conflicting or undeclared settlement records one immutable integrity
+failure that prevents attempt success. Failed work also prevents success. This
+remains `contract_only`: no Targeted or Alignment application caller supplies
+the manifest or settlement, and the runtime does not yet record work events,
+monotonic offsets or metric availability, settle resources/artifacts, or durably
+acknowledge a terminal outcome.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.

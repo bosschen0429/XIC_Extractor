@@ -195,11 +195,13 @@ def test_invalid_required_work_manifest_drives_existing_failed_proposal(
     owner_completeness_attestation: str | None,
 ) -> None:
     from xic_extractor.execution_runtime import (
+        AttemptLifecycleContractError,
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
         AttemptTerminalOutcome,
         append_attempt_lifecycle_event,
         preflight_required_work_manifest,
+        start_attempt_runtime,
     )
 
     attempt = _attempt(tmp_path)
@@ -226,6 +228,11 @@ def test_invalid_required_work_manifest_drives_existing_failed_proposal(
         preflight.history.events[-1].proposed_outcome
         is AttemptTerminalOutcome.FAILED
     )
+    with pytest.raises(
+        AttemptLifecycleContractError,
+        match="cannot start runtime from rejected",
+    ):
+        start_attempt_runtime(preflight)
 
 
 def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) -> None:
@@ -257,6 +264,220 @@ def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) ->
         preflight.history.events[-1].kind
         is AttemptLifecycleEventKind.TERMINAL_PROPOSAL
     )
+
+
+def test_attempt_runtime_settles_manifest_work_exactly_once(tmp_path: Path) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        WorkUnitTerminalOutcome,
+        append_attempt_lifecycle_event,
+        preflight_required_work_manifest,
+        settle_work_unit,
+        start_attempt_runtime,
+    )
+
+    attempt = _attempt(tmp_path)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    preflight = preflight_required_work_manifest(
+        queued,
+        attempt=attempt,
+        work_unit_keys=("sample-a:target-1", "sample-a:target-2"),
+        owner_completeness_attestation="targeted:v1",
+    )
+
+    runtime = start_attempt_runtime(preflight)
+    first = settle_work_unit(
+        runtime,
+        work_unit_key="sample-a:target-1",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref="owner-result:target-1:v1",
+    )
+    identical_replay = settle_work_unit(
+        first,
+        work_unit_key="sample-a:target-1",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref="owner-result:target-1:v1",
+    )
+    complete = settle_work_unit(
+        identical_replay,
+        work_unit_key="sample-a:target-2",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref="owner-result:target-2:v1",
+    )
+
+    assert runtime.history.events[-1].kind is AttemptLifecycleEventKind.ATTEMPT_STARTED
+    assert identical_replay is first
+    assert [item.work_unit_key for item in complete.settlements] == [
+        "sample-a:target-1",
+        "sample-a:target-2",
+    ]
+    assert complete.all_manifest_work_settled is True
+    assert complete.must_fail is False
+
+
+def test_conflicting_work_settlement_is_recorded_and_fails_attempt(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        WorkUnitSettlementIntegrityFailureKind,
+        WorkUnitTerminalOutcome,
+        append_attempt_lifecycle_event,
+        preflight_required_work_manifest,
+        settle_work_unit,
+        start_attempt_runtime,
+    )
+
+    attempt = _attempt(tmp_path)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    runtime = start_attempt_runtime(
+        preflight_required_work_manifest(
+            queued,
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-1",),
+            owner_completeness_attestation="targeted:v1",
+        )
+    )
+    accepted = settle_work_unit(
+        runtime,
+        work_unit_key="sample-a:target-1",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref="owner-result:first",
+    )
+    conflicted = settle_work_unit(
+        accepted,
+        work_unit_key="sample-a:target-1",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref="owner-result:different",
+    )
+    repeated_conflict = settle_work_unit(
+        conflicted,
+        work_unit_key="sample-a:target-1",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref="owner-result:different",
+    )
+
+    assert conflicted.settlements == accepted.settlements
+    assert conflicted.integrity_failure is not None
+    assert (
+        conflicted.integrity_failure.kind
+        is WorkUnitSettlementIntegrityFailureKind.CONFLICTING_SETTLEMENT
+    )
+    assert conflicted.must_fail is True
+    assert repeated_conflict is conflicted
+
+
+def test_undeclared_work_settlement_fails_attempt_without_accepting_result(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        WorkUnitSettlementIntegrityFailureKind,
+        WorkUnitTerminalOutcome,
+        append_attempt_lifecycle_event,
+        preflight_required_work_manifest,
+        settle_work_unit,
+        start_attempt_runtime,
+    )
+
+    attempt = _attempt(tmp_path)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    runtime = start_attempt_runtime(
+        preflight_required_work_manifest(
+            queued,
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-1",),
+            owner_completeness_attestation="targeted:v1",
+        )
+    )
+
+    rejected = settle_work_unit(
+        runtime,
+        work_unit_key="sample-a:target-late",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref="owner-result:late",
+    )
+
+    assert rejected.settlements == ()
+    assert rejected.integrity_failure is not None
+    assert (
+        rejected.integrity_failure.kind
+        is WorkUnitSettlementIntegrityFailureKind.UNDECLARED_WORK_UNIT
+    )
+    assert rejected.must_fail is True
+
+
+def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleContractError,
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        WorkUnitTerminalOutcome,
+        append_attempt_lifecycle_event,
+        preflight_required_work_manifest,
+        settle_work_unit,
+        start_attempt_runtime,
+    )
+
+    attempt = _attempt(tmp_path)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    runtime = start_attempt_runtime(
+        preflight_required_work_manifest(
+            queued,
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-1",),
+            owner_completeness_attestation="targeted:v1",
+        )
+    )
+
+    with pytest.raises(
+        AttemptLifecycleContractError,
+        match="requires owner_result_ref",
+    ):
+        settle_work_unit(
+            runtime,
+            work_unit_key="sample-a:target-1",
+            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        )
+    with pytest.raises(AttemptLifecycleContractError, match="only succeeded"):
+        settle_work_unit(
+            runtime,
+            work_unit_key="sample-a:target-1",
+            outcome=WorkUnitTerminalOutcome.FAILED,
+            owner_result_ref="owner-result:not-allowed",
+        )
+    with pytest.raises(
+        AttemptLifecycleContractError,
+        match="requires accepted cancellation",
+    ):
+        settle_work_unit(
+            runtime,
+            work_unit_key="sample-a:target-1",
+            outcome=WorkUnitTerminalOutcome.CANCELLED,
+        )
+
+    failed = settle_work_unit(
+        runtime,
+        work_unit_key="sample-a:target-1",
+        outcome=WorkUnitTerminalOutcome.FAILED,
+    )
+    assert failed.all_manifest_work_settled is True
+    assert failed.must_fail is True
 
 
 def test_manifest_preflight_failure_path_fails_closed(

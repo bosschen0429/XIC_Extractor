@@ -97,7 +97,7 @@ Progress vocabulary:
 
 | Package | Status | What is actually complete | First missing gate |
 | --- | --- | --- | --- |
-| Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering through mutually exclusive queued cancellation and queued manifest-preflight failure paths, with the latter ending at a non-acknowledged `failed` terminal proposal. Its review closeout also rejects lineage composition that omits a request-pinned target snapshot and rejects missing/extra columns before targeted diagnostic artifact minting. The current Package 0 branch consumes owner-supplied manifest content into an attempt-bound immutable `RequiredWorkManifest`; missing attestation, duplicate/blank keys, and attempt substitution drive the existing failed proposal. | A real Targeted/Alignment caller of the validated manifest, accepted work settlement, offsets/metrics, durable terminal acknowledgement, resource lifecycle/cleanup, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
+| Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering through mutually exclusive queued cancellation and queued manifest-preflight failure paths, with the latter ending at a non-acknowledged `failed` terminal proposal. Its review closeout also rejects lineage composition that omits a request-pinned target snapshot and rejects missing/extra columns before targeted diagnostic artifact minting. The current Package 0 branch consumes owner-supplied manifest content into an attempt-bound immutable `RequiredWorkManifest`, starts a pure `AttemptRuntime`, and accepts one terminal settlement per declared key; identical replay is idempotent, while conflicts, undeclared keys, and failed work prevent success. | A real Targeted/Alignment application caller that supplies and settles the validated manifest, work events/offsets/metrics, durable terminal acknowledgement, resource lifecycle/cleanup, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
 | Package 1 — pure runtime and observation substrates | `contract_only` / partial | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`, with review-driven fail-closed exact-target precursor/scan/source/direct-precursor/integration-scope/policy/boundary/model-selection checks, owner-level signed-zero/numeric canonicalization, and exact raw/selection-signal validation of every declared signal-derived integration fact, including a true selected-trace apex. | Runtime reducer/resource lifecycle and actual acquisition batch observations remain missing; no application consumer traverses the complete substrate. |
 | Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
@@ -108,7 +108,7 @@ Progress vocabulary:
 
 | Method handoff | Contract / local object | Actual consumer wiring | Strongest evidence | Status |
 | --- | --- | --- | --- | --- |
-| Canonical acquisition input → processing request/attempt → coordinator lifecycle prefix | Implemented across the first two isolated stack layers; events require the owner-issued attempt and cover queued cancellation plus owner-content-driven manifest-preflight failure to a `failed` proposal without `attempt_started` | The runtime owner validates an attempt-bound `RequiredWorkManifest`, but legacy `extractor.run` still consumes resolved inputs directly; no Targeted or Alignment application runtime consumes the manifest, attempt history, or durable finalizer | Historical full CI-equivalent no-RAW gates plus the current direct no-RAW manifest consumer probe; focused pytest is not yet runnable in this worktree | `contract_only` |
+| Canonical acquisition input → processing request/attempt → coordinator lifecycle prefix | Implemented across the first two isolated stack layers; events require the owner-issued attempt and cover queued cancellation plus owner-content-driven manifest-preflight failure to a `failed` proposal without `attempt_started` | The runtime owner validates an attempt-bound `RequiredWorkManifest`, starts `AttemptRuntime`, and settles declared keys exactly once; legacy `extractor.run` still consumes resolved inputs directly, so no Targeted or Alignment application runtime supplies these facts or reaches durable finalization | Historical full CI-equivalent no-RAW gates plus current direct no-RAW manifest and settlement probes; focused pytest is not yet runnable in this worktree | `contract_only` |
 | Canonical sample/target/review references | Implemented locally through existing owners | Not yet proven through both complete tracer projections | Focused missing/ambiguous/stale/superseded tests | `contract_only` |
 | Exact DDA/ddMS2 CID-NL evidence | Implemented in the third stack layer with exact request acquisition-source and scan identity; Targeted projection also binds the measured scan precursor to the exact target's ppm tolerance, while direct Discovery projection requires its finite measured scan precursor | Targeted/Discovery adapters can validate bounded refs; main application path does not carry them end to end | Focused synthetic no-RAW source/target/scan/direct-precursor substitution tests | `contract_only` |
 | CID-NL evidence → physical MS1 peak | Implemented in the third stack layer as owner-backed applicability refs with request-source-bound raw/selection-trace provenance, in-trace observation bounds, signal-validated true apex/heights/raw area/AsLS/Gaussian15 facts, signed-zero-stable identity, and DDA support matched to physical integration bounds rather than padded trace points | `run_discovery` does not yet emit the complete owner-backed chain | Focused stale-integration, false-apex, signed-zero, field-mutation, substitution, ambiguity, and boundary tests | `contract_only` |
@@ -128,13 +128,14 @@ bindings in focused tests, but the runtime does not yet consume that request or
 attempt end to end. This is why the identity layer remains `contract_only`.
 
 **Last Package 0 runtime consumer boundary actually run:** the
-`execution_runtime` owner consumed owner-supplied work keys and completeness
-attestation into an attempt-bound `RequiredWorkManifest`. A direct no-RAW probe
-passed the accepted path and proved that missing attestation, duplicate keys,
-blank keys, and retry-attempt substitution reuse the existing queued-to-failed
-proposal without `attempt_started`. Focused pytest remains unexecuted because
-the clean worktree dev bootstrap requires external PyPI access that was not
-authorized; Python compile and direct assertions passed.
+`execution_runtime` owner consumed an accepted `RequiredWorkManifest`, appended
+`attempt_started`, and accepted terminal work settlement exactly once per
+declared opaque key. Direct no-RAW probes passed successful completion,
+idempotent identical replay, conflicting-result and undeclared-key integrity
+failure, failed work, plus the earlier missing-attestation/duplicate/blank/
+attempt-substitution cases. Focused pytest remains unexecuted because the clean
+worktree dev bootstrap requires external PyPI access that was not authorized;
+Python compile and direct assertions passed.
 
 **Current CID-NL semantic boundary:** the last completed semantic seam is exact CID-NL evidence
 → physical MS1 peak → diagnostic `PeakHypothesis`. The first missing product
@@ -148,14 +149,14 @@ Targeted-first Package 2 endpoint is hard-exact `xic_results.csv`. Untargeted
 Alignment Matrix/XLSX remains Package 3B and keeps separate authority; this
 decision does not skip Package 0/1 gates or authorize Package 2 mutation early.
 
-**First missing handoff and next falsifiable loop:** a real application owner
-does not yet supply the validated manifest, and accepted work keys do not settle
-exactly once. The next Package 0 loop is the smallest pure no-RAW
-`RequiredWorkManifest` -> accepted settlement reducer: identical replay is
-idempotent, conflicting success fails the attempt, and no process scheduler,
-resource owner, scientific state, or artifact/writer authority enters the
-contract. Stop if settlement requires Package 1 process/resource integration or
-a new owner identity. The full multi-sample writer fixture remains Package 2.
+**First missing handoff and next falsifiable loop:** no real application owner
+supplies or settles the manifest. Gap-audit the existing
+`TargetedApplicationService` and canonical request/target job construction, then
+wire the smallest bounded no-RAW owner adapter that produces closed work keys
+and owner result refs for this reducer. It must not add an in-process production
+executor, duplicate orchestration, scientific flags, or product output. Stop if
+the first honest consumer requires Package 1 process/resource integration or a
+new owner identity. The full multi-sample writer fixture remains Package 2.
 
 **Remaining unknowns:** no Product unknown blocks stack publication. The first
 Design unknown is the explicit diagnostic-hypothesis selection/externalization
