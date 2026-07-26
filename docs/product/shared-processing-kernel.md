@@ -236,6 +236,13 @@ upstream closure, review supersession, zero acquisition-source reopen, and zero
 product write. Inferred `product_plus_neutral_loss` Discovery evidence remains
 outside this first slice and fails closed.
 
+For the lab's current DDA/ddMS2 Untargeted method, `peak_detection` also owns a
+bounded `DdaCidNlPeakSupportRef`: one exact DDA scan and strict direct CID-NL
+artifact must resolve to exactly one owner-backed physical MS1 observation in
+the exact supplied candidate universe. Reorder is neutral; substitution,
+mutation, missing, or ambiguous matches fail closed. This is not a DIA model,
+candidate generator, or selection decision.
+
 This is not the complete kernel tracer. The remaining gaps are:
 
 1. `build_peak_hypotheses` hard-codes `analysis_mode="targeted"` and converts
@@ -253,13 +260,13 @@ This is not the complete kernel tracer. The remaining gaps are:
 6. Targeted CLI baseline/support/final orchestration is not shared by GUI or
    direct API. Issue #134 owns that entry-point parity defect; fixing it must
    not create a second permanent kernel.
-7. `peak_detection.observations` now owns a bounded canonical physical
+7. `peak_detection.observations` owns a bounded canonical physical
    MS1-observation reference over an existing `Trace` plus `IntegrationResult`.
-   It has not yet been composed with the canonical CID-NL ref, a method
-   hypothesis, cross-sample group, `CellObservation`, or Backfill result.
-   Carrying CID-NL directly into the current `PeakHypothesis` would still
-   collapse provider evidence, physical observation, and interpretation into
-   one Targeted-shaped object.
+   The DDA CID-NL owner now composes it with one exact CID-NL scan ref, but that
+   relation has not yet become a method hypothesis, cross-sample group,
+   `CellObservation`, or Backfill result. Carrying it directly into the current
+   `PeakHypothesis` would still collapse provider evidence, physical
+   observation, and interpretation into one Targeted-shaped object.
 8. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
    `group_hypothesis_id` is the successor cross-sample identity.
 
@@ -289,13 +296,16 @@ projected both ways:
 The tracer does not need to migrate every Discovery provider, Alignment
 diagnostic, or Backfill authority path.
 
-The scientific-reference fixture, identity-decomposition characterization, and
-bounded `PeakObservationRef` now satisfy the first direct-evidence and physical
-observation preconditions. The existing `peak_detection` owner—not the current
-`PeakHypothesis`, lineage, or a provider-local `DetectedFeature`—mints the
-physical reference. Completion still requires explicit evidence applicability,
-single- and multi-observation hypothesis composition, and then group/cell
-decisions. Targeted output and Untargeted Matrix authority remain unchanged.
+The scientific-reference fixture, identity-decomposition characterization,
+bounded `PeakObservationRef`, and DDA CID-NL support fixture now satisfy the
+first direct-evidence, physical-observation, and single-event applicability
+preconditions. The existing `peak_detection` owner—not the current
+`PeakHypothesis`, lineage, or a provider-local `DetectedFeature`—mints and
+composes those references. Completion still requires a method-hypothesis
+contract, multi-observation Pt/Delta Mass composition, and then group/cell
+decisions. Runtime candidate-universe completeness and DDA co-isolation remain
+evidence unknowns; DIA is explicitly outside the current lab method. Targeted
+output and Untargeted Matrix authority remain unchanged.
 
 ## Failure, Validation, And Rollback
 

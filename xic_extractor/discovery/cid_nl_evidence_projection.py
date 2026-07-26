@@ -141,6 +141,10 @@ def mint_untargeted_cid_nl_projection_ref(
         )
 
     observation = canonical_evidence.observation
+    if discovery_seed.scan_number != observation.scan_number:
+        raise UntargetedCidNlProjectionError(
+            "Discovery scan_number mismatches canonical CID-NL evidence"
+        )
     _require_close(
         discovery_seed.precursor_mz,
         observation.precursor_mz,

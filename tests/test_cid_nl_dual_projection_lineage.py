@@ -233,6 +233,16 @@ def test_observation_mutation_and_workflow_evidence_substitution_fail_closed(
                 precursor_mz_basis="product_plus_neutral_loss",
             ),
         )
+    with pytest.raises(UntargetedCidNlProjectionError, match="scan_number"):
+        mint_untargeted_cid_nl_projection_ref(
+            processing_attempt=fixture.attempt,
+            sample=fixture.sample,
+            canonical_evidence=refs.evidence,
+            discovery_seed=replace(
+                fixture.discovery_seed,
+                scan_number=fixture.discovery_seed.scan_number + 1,
+            ),
+        )
 
 
 def test_retry_reuses_content_identity_but_mints_distinct_artifact_instances(
@@ -529,9 +539,17 @@ def _fixture(
 
 
 def _mint_refs(fixture: _TracerFixture) -> _TracerRefs:
+    processing_owners = compose_processing_owner_references(
+        request=fixture.request,
+        attempt=fixture.attempt,
+        sample_snapshot=fixture.sample_snapshot,
+        sample_resolutions=(fixture.sample,),
+        target_snapshot=fixture.target_snapshot,
+    )
     evidence = mint_cid_nl_evidence_ref(
-        processing_attempt=fixture.attempt,
+        processing_owners=processing_owners,
         sample=fixture.sample,
+        scan_number=fixture.discovery_seed.scan_number,
         precursor_mz=fixture.targeted_evidence.precursor_mz,
         product_mz=fixture.targeted_evidence.product_mz,
         configured_neutral_loss_da=_NEUTRAL_LOSS_DA,

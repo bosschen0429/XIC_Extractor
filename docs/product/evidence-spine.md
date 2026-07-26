@@ -19,6 +19,12 @@ The evidence spine is the shared layer that converts chromatographic observation
   one contiguous selected RT/intensity subtrace, and its normalized
   `IntegrationResult`. Exact full-trace/query/resolver provenance and producer
   request/attempt remain explicit without becoming physical-content identity.
+- For the lab's current Untargeted acquisition method, the CID-NL owner now
+  exposes one bounded DDA/ddMS2 applicability relation. A
+  `DdaCidNlPeakSupportRef` binds one exact MS2 scan and direct measured CID-NL
+  artifact to exactly one physical MS1 peak within the exact supplied candidate
+  universe. DIA is outside this contract because there is no mature lab DIA
+  analysis method.
 - Legacy family IDs are review and compatibility containers. Group identity
   belongs to `CrossSamplePeakGroupHypothesis`, while current candidate IDs and
   `PeakHypothesis` IDs remain workflow-local working identities. Neither is a
@@ -73,12 +79,23 @@ closes the following bounded rules:
    interval owner semantics. A caller cannot validate a bad mint by repeating
    the same mismatched sample or attempt.
 
-This does not yet close method-hypothesis composition. In particular, a
-provider-local Discovery `DetectedFeature` that lacks the owner-required full
-`Trace` plus `IntegrationResult` cannot mint a substitute reference. The next
-contract must show how one observation or a multi-observation Pt pattern is
-composed with provider evidence without promoting the current Targeted-shaped
-`PeakHypothesis` into the physical owner.
+This closes the first provider-specific evidence-to-observation relation, not
+method-hypothesis composition. The DDA support owner requires one exact scan,
+strict neutral-loss evidence, a unique in-scope RT/m/z match, and the complete
+candidate tuple supplied to it. Reordering that tuple is identity-neutral;
+mutation, substitution, missing candidates, no match, or multiple matches fail
+closed. The artifact depends on both the CID-NL evidence and every supplied
+candidate peak, so a caller cannot hide a non-selected candidate during later
+validation.
+
+Runtime candidate-universe completeness is not yet proven, and the current RAW
+reader does not expose enough isolation/co-isolation metadata to make that a
+contract. A provider-local Discovery `DetectedFeature` that lacks the
+owner-required full `Trace` plus `IntegrationResult` still cannot mint a
+substitute physical reference. The next contract must compose this relation
+into a single-observation method hypothesis, then separately prove a
+multi-observation Pt/Delta Mass composition, without promoting the current
+Targeted-shaped `PeakHypothesis` into the physical owner.
 
 ## Surfaces
 
@@ -87,6 +104,7 @@ composed with provider evidence without promoting the current Targeted-shaped
 | `EvidenceVector` / `EvidenceDecisionSemantics` | Shared typed evidence vocabulary |
 | `CidNlEvidenceRef` | Attempt- and sample-bound immutable direct measured CID-NL observation for the no-write dual-projection tracer |
 | `PeakObservationRef` | `peak_detection`-owned physical MS1 content plus exact generation provenance and request/attempt artifact binding; diagnostic only |
+| `DdaCidNlPeakSupportRef` | CID-NL-owner DDA/ddMS2 scan-to-physical-peak relation over an exact supplied candidate universe; diagnostic only, no DIA or selection authority |
 | `PeakHypothesis` | Current Targeted-shaped candidate working identity; not canonical physical observation identity |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
 | `IntegrationResult` | Integrated signal and boundary result |

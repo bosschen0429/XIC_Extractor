@@ -498,14 +498,27 @@ under the existing nearest-index/bounded-interval semantics. Issue #113's
 implementation authority comes from the existing `peak_detection` owner and
 its explicit input contract.
 
-This closes only the physical-observation owner boundary. It does not allow a
-Discovery `DetectedFeature` without a complete owner `Trace` and
-`IntegrationResult` to mint a substitute, and it does not define method
-hypothesis composition. The next tracer must compose owner-backed MS1 and
-provider-evidence references without wiring `CidNlEvidenceRef` directly into
-the current Targeted-shaped `PeakHypothesis`. It must retain zero source
-reopens, exact review/lineage closure, and hard-zero public-output diff with
-both legacy writers authoritative.
+A fourth bounded implementation closes the first provider-specific
+evidence-to-observation relation for the lab's DDA/ddMS2 method. CID-NL evidence
+schema v2 binds the exact positive scan number and the explicit
+`dda_ddms2` acquisition mode. `DdaCidNlPeakSupportRef` then composes that
+immutable evidence ref with exactly one `PeakObservationRef` whose selected
+MS1 scope contains the scan RT and whose m/z satisfies the explicit precursor
+tolerance. The relation binds the canonical content IDs of the exact supplied
+candidate universe and includes every candidate artifact as an upstream, while
+request, attempt, sample, evidence, candidate, and retry substitutions remain
+fail-closed. Candidate reorder is identity-neutral.
+
+This is still diagnostic-only. It does not prove that a runtime caller supplied
+the complete candidate universe, does not interpret DIA, and does not claim
+co-isolation fidelity because the current reader contract lacks the required
+isolation metadata. It also does not allow a Discovery `DetectedFeature`
+without a complete owner `Trace` and `IntegrationResult` to mint a substitute,
+and it does not define method-hypothesis composition. The next tracer must
+compose the owner-backed DDA support relation into one method hypothesis
+without wiring it directly into the current Targeted-shaped `PeakHypothesis`.
+It must retain zero source reopens, exact review/lineage closure, and hard-zero
+public-output diff with both legacy writers authoritative.
 
 The tracer must consume the sample identity owner and review-record owner
 through explicit references. If either owner cannot provide an unambiguous

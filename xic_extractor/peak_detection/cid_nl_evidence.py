@@ -18,14 +18,18 @@ from xic_extractor.evidence_artifacts import (
     _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
-from xic_extractor.processing_identity import ProcessingAttemptIdentity
+from xic_extractor.processing_identity import (
+    ProcessingAttemptIdentity,
+    ProcessingOwnerReferences,
+)
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_evidence_observation_v1"
+SCHEMA_VERSION = "cid_nl_evidence_observation_v2"
 ARTIFACT_SEMANTIC_ROLE = "canonical_cid_nl_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
+ACQUISITION_MODE = "dda_ddms2"
 
 _SAMPLE_ID_PREFIX = "xic.sample.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -48,6 +52,8 @@ class CidNlEvidenceObservation:
     """The measured neutral-loss facts shared by both workflow adapters."""
 
     canonical_sample_identity_id: str
+    acquisition_mode: str
+    scan_number: int
     precursor_mz: float
     product_mz: float
     configured_neutral_loss_da: float
@@ -62,6 +68,16 @@ class CidNlEvidenceObservation:
             prefix=_SAMPLE_ID_PREFIX,
             field="canonical_sample_identity_id",
         )
+        if self.acquisition_mode != ACQUISITION_MODE:
+            raise CidNlEvidenceContractError(
+                f"acquisition_mode must be {ACQUISITION_MODE!r}"
+            )
+        if (
+            isinstance(self.scan_number, bool)
+            or not isinstance(self.scan_number, int)
+            or self.scan_number <= 0
+        ):
+            raise CidNlEvidenceContractError("scan_number must be a positive integer")
         for field in (
             "precursor_mz",
             "product_mz",
@@ -160,8 +176,9 @@ class CidNlEvidenceRef:
 
 def mint_cid_nl_evidence_ref(
     *,
-    processing_attempt: ProcessingAttemptIdentity,
+    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
+    scan_number: int,
     precursor_mz: float,
     product_mz: float,
     configured_neutral_loss_da: float,
@@ -172,16 +189,22 @@ def mint_cid_nl_evidence_ref(
 ) -> CidNlEvidenceRef:
     """Mint one exact measured observation without reading an acquisition source."""
 
-    if not isinstance(processing_attempt, ProcessingAttemptIdentity):
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise CidNlEvidenceContractError(
-            "processing_attempt must be an owner-issued ProcessingAttemptIdentity"
+            "processing_owners must be validated ProcessingOwnerReferences"
         )
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise CidNlEvidenceContractError(
             "sample must be an owner-resolved canonical sample"
         )
+    if sample not in processing_owners.sample_resolutions:
+        raise CidNlEvidenceContractError(
+            "sample references a different sample outside the processing owner closure"
+        )
     observation = CidNlEvidenceObservation(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
+        acquisition_mode=ACQUISITION_MODE,
+        scan_number=scan_number,
         precursor_mz=precursor_mz,
         product_mz=product_mz,
         configured_neutral_loss_da=configured_neutral_loss_da,
@@ -191,8 +214,8 @@ def mint_cid_nl_evidence_ref(
         product_intensity=product_intensity,
     )
     artifact = _mint_evidence_artifact_ref(
-        producer_processing_request_id=processing_attempt.processing_request_id,
-        producer_processing_attempt_id=processing_attempt.processing_attempt_id,
+        producer_processing_request_id=processing_owners.request.processing_request_id,
+        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=canonical_cid_nl_evidence_bytes(observation),
     )
@@ -212,6 +235,8 @@ def canonical_cid_nl_evidence_bytes(
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
         "canonical_sample_identity_id": observation.canonical_sample_identity_id,
+        "acquisition_mode": observation.acquisition_mode,
+        "scan_number": observation.scan_number,
         "precursor_mz": observation.precursor_mz,
         "product_mz": observation.product_mz,
         "configured_neutral_loss_da": observation.configured_neutral_loss_da,
@@ -297,6 +322,7 @@ def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
 
 
 __all__ = [
+    "ACQUISITION_MODE",
     "ARTIFACT_SEMANTIC_ROLE",
     "CidNlEvidenceContractError",
     "CidNlEvidenceObservation",
