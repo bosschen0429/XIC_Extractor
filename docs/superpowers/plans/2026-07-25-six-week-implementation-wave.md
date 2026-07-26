@@ -29,10 +29,11 @@ Current validation status: `diagnostic_only`
 
 Current issue gate: Package 0 / Issue #149 remains open
 
-Current stack layer: `codex/package-0-attempt-lifecycle` stacks the bounded
-Package 0 attempt-event prefix on `codex/package-0-identity-core`. Package 1
-CID-NL substrate and deferred Pt work are excluded and remain later, separate
-stack layers.
+Current stack layer: PR #152 (`codex/package-0-identity-core`) squash-merged to
+`master` as `2a7c582d`. PR #153 (`codex/package-0-attempt-lifecycle`) is rebuilt
+directly on that merge and carries only the bounded Package 0 attempt-event
+prefix. PR #154 keeps the Package 1 CID-NL substrate as the next separate stack
+layer; deferred Pt work remains excluded.
 
 This section is the canonical progress tracker for this implementation wave.
 It tracks execution and consumer wiring; it does not replace the productization
@@ -64,7 +65,7 @@ Progress vocabulary:
 
 | Package | Status | What is actually complete | First missing gate |
 | --- | --- | --- | --- |
-| Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`. The first two isolated stack layers implement acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, fail-closed canonical request content, and owner-backed append-only lifecycle ordering through queued cancellation plus a queued manifest-preflight failure to a non-acknowledged `failed` terminal proposal. | Real `RequiredWorkManifest` validation, offsets/metrics, durable terminal acknowledgement, resource lifecycle/cleanup, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
+| Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. The active PR #153 layer adds owner-backed append-only lifecycle ordering through mutually exclusive queued cancellation and queued manifest-preflight failure paths, with the latter ending at a non-acknowledged `failed` terminal proposal. | Real `RequiredWorkManifest` validation, offsets/metrics, durable terminal acknowledgement, resource lifecycle/cleanup, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
 | Package 1 — pure runtime and observation substrates | `contract_only` / partial | Separate retained CID-NL commits reach exact DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`; they are intentionally not in the Package 0 layers. | Runtime reducer/resource lifecycle and actual acquisition batch observations remain missing; no application consumer traverses the complete substrate. |
 | Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
