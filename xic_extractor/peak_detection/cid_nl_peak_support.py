@@ -311,7 +311,7 @@ def _validate_evidence_binding(
     try:
         validate_cid_nl_evidence_binding(
             reference,
-            processing_attempt=processing_owners.attempt,
+            processing_owners=processing_owners,
             sample=sample,
         )
     except CidNlEvidenceContractError as exc:

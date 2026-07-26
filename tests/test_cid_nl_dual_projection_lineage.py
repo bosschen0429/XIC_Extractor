@@ -44,6 +44,7 @@ from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     IdentityContractError,
     ProcessingAttemptIdentity,
+    ProcessingOwnerReferences,
     ProcessingRequestIdentity,
     build_acquisition_source_identity,
     build_processing_request_identity,
@@ -204,7 +205,7 @@ def test_observation_mutation_and_workflow_evidence_substitution_fail_closed(
         )
     with pytest.raises(TargetedCidNlProjectionError, match="product_mz"):
         mint_targeted_cid_nl_projection_ref(
-            processing_attempt=fixture.attempt,
+            processing_owners=_processing_owners(fixture),
             sample=fixture.sample,
             target=fixture.target,
             canonical_evidence=refs.evidence,
@@ -215,7 +216,7 @@ def test_observation_mutation_and_workflow_evidence_substitution_fail_closed(
         )
     with pytest.raises(UntargetedCidNlProjectionError, match="product_mz"):
         mint_untargeted_cid_nl_projection_ref(
-            processing_attempt=fixture.attempt,
+            processing_owners=_processing_owners(fixture),
             sample=fixture.sample,
             canonical_evidence=refs.evidence,
             discovery_seed=replace(
@@ -225,7 +226,7 @@ def test_observation_mutation_and_workflow_evidence_substitution_fail_closed(
         )
     with pytest.raises(UntargetedCidNlProjectionError, match="scan_precursor"):
         mint_untargeted_cid_nl_projection_ref(
-            processing_attempt=fixture.attempt,
+            processing_owners=_processing_owners(fixture),
             sample=fixture.sample,
             canonical_evidence=refs.evidence,
             discovery_seed=replace(
@@ -235,12 +236,54 @@ def test_observation_mutation_and_workflow_evidence_substitution_fail_closed(
         )
     with pytest.raises(UntargetedCidNlProjectionError, match="scan_number"):
         mint_untargeted_cid_nl_projection_ref(
-            processing_attempt=fixture.attempt,
+            processing_owners=_processing_owners(fixture),
             sample=fixture.sample,
             canonical_evidence=refs.evidence,
             discovery_seed=replace(
                 fixture.discovery_seed,
                 scan_number=fixture.discovery_seed.scan_number + 1,
+            ),
+        )
+    with pytest.raises(TargetedCidNlProjectionError, match="scan_number"):
+        mint_targeted_cid_nl_projection_ref(
+            processing_owners=_processing_owners(fixture),
+            sample=fixture.sample,
+            target=fixture.target,
+            canonical_evidence=refs.evidence,
+            targeted_evidence=replace(
+                fixture.targeted_evidence,
+                scan_number=fixture.discovery_seed.scan_number + 1,
+            ),
+        )
+
+
+def test_projection_sources_must_match_the_request_acquisition_binding(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    foreign = _fixture(tmp_path, source_name="qc2")
+    refs = _mint_refs(fixture)
+    foreign_source_id = foreign.request.acquisition_sources[0].acquisition_source_id
+
+    with pytest.raises(TargetedCidNlProjectionError, match="acquisition source"):
+        mint_targeted_cid_nl_projection_ref(
+            processing_owners=_processing_owners(fixture),
+            sample=fixture.sample,
+            target=fixture.target,
+            canonical_evidence=refs.evidence,
+            targeted_evidence=replace(
+                fixture.targeted_evidence,
+                acquisition_source_id=foreign_source_id,
+            ),
+        )
+    with pytest.raises(UntargetedCidNlProjectionError, match="acquisition source"):
+        mint_untargeted_cid_nl_projection_ref(
+            processing_owners=_processing_owners(fixture),
+            sample=fixture.sample,
+            canonical_evidence=refs.evidence,
+            discovery_seed=replace(
+                fixture.discovery_seed,
+                acquisition_source_id=foreign_source_id,
             ),
         )
 
@@ -281,7 +324,7 @@ def test_sample_target_request_and_attempt_substitution_fail_closed(
 
     with pytest.raises(TargetedCidNlProjectionError, match="different sample"):
         mint_targeted_cid_nl_projection_ref(
-            processing_attempt=fixture.attempt,
+            processing_owners=_processing_owners(fixture),
             sample=other_sample,
             target=fixture.target,
             canonical_evidence=refs.evidence,
@@ -289,7 +332,7 @@ def test_sample_target_request_and_attempt_substitution_fail_closed(
         )
     with pytest.raises(UntargetedCidNlProjectionError, match="different sample"):
         mint_untargeted_cid_nl_projection_ref(
-            processing_attempt=fixture.attempt,
+            processing_owners=_processing_owners(fixture),
             sample=other_sample,
             canonical_evidence=refs.evidence,
             discovery_seed=fixture.discovery_seed,
@@ -303,11 +346,28 @@ def test_sample_target_request_and_attempt_substitution_fail_closed(
         changed_target_snapshot,
         fixture.target.definition.target.label,
     )
-    with pytest.raises(TargetedCidNlProjectionError, match="target definition"):
+    with pytest.raises(TargetedCidNlProjectionError, match="target-list snapshot"):
         mint_targeted_cid_nl_projection_ref(
-            processing_attempt=fixture.attempt,
+            processing_owners=_processing_owners(fixture),
             sample=fixture.sample,
             target=changed_target,
+            canonical_evidence=refs.evidence,
+            targeted_evidence=fixture.targeted_evidence,
+        )
+
+    chemically_identical_snapshot = mint_target_list_snapshot(
+        (fixture.target.definition.target,),
+        identity_namespace="method:foreign-cid-nl-tracer",
+    )
+    chemically_identical_foreign_target = resolve_target_definition(
+        chemically_identical_snapshot,
+        fixture.target.definition.target.label,
+    )
+    with pytest.raises(TargetedCidNlProjectionError, match="target-list snapshot"):
+        mint_targeted_cid_nl_projection_ref(
+            processing_owners=_processing_owners(fixture),
+            sample=fixture.sample,
+            target=chemically_identical_foreign_target,
             canonical_evidence=refs.evidence,
             targeted_evidence=fixture.targeted_evidence,
         )
@@ -318,22 +378,21 @@ def test_sample_target_request_and_attempt_substitution_fail_closed(
         match="different processing attempt",
     ):
         mint_targeted_cid_nl_projection_ref(
-            processing_attempt=retry,
+            processing_owners=_processing_owners(fixture, attempt=retry),
             sample=fixture.sample,
             target=fixture.target,
             canonical_evidence=refs.evidence,
             targeted_evidence=fixture.targeted_evidence,
         )
 
-    other_request = _fixture(tmp_path, source_name="other-source").request
-    other_attempt = issue_processing_attempt(other_request)
+    other_fixture = _fixture(tmp_path, source_name="other-source")
     with pytest.raises(
         UntargetedCidNlProjectionError,
         match="different processing request",
     ):
         mint_untargeted_cid_nl_projection_ref(
-            processing_attempt=other_attempt,
-            sample=fixture.sample,
+            processing_owners=_processing_owners(other_fixture),
+            sample=other_fixture.sample,
             canonical_evidence=refs.evidence,
             discovery_seed=fixture.discovery_seed,
         )
@@ -509,6 +568,8 @@ def _fixture(
         target_product_ppm=0.0,
         observed_loss_da=_OBSERVED_LOSS_DA,
         observed_loss_error_ppm=_OBSERVED_LOSS_ERROR_PPM,
+        scan_number=42,
+        acquisition_source_id=source.acquisition_source_id,
     )
     discovery_seed = DiscoverySeed(
         raw_file=Path(f"{source_name}.raw"),
@@ -525,6 +586,7 @@ def _fixture(
         matched_tag_names=("NL116",),
         scan_precursor_mz=_PRECURSOR_MZ,
         precursor_mz_basis="scan_precursor",
+        acquisition_source_id=source.acquisition_source_id,
     )
     return _TracerFixture(
         request=request,
@@ -559,14 +621,14 @@ def _mint_refs(fixture: _TracerFixture) -> _TracerRefs:
         product_intensity=fixture.targeted_evidence.product_intensity,
     )
     targeted = mint_targeted_cid_nl_projection_ref(
-        processing_attempt=fixture.attempt,
+        processing_owners=processing_owners,
         sample=fixture.sample,
         target=fixture.target,
         canonical_evidence=evidence,
         targeted_evidence=fixture.targeted_evidence,
     )
     untargeted = mint_untargeted_cid_nl_projection_ref(
-        processing_attempt=fixture.attempt,
+        processing_owners=processing_owners,
         sample=fixture.sample,
         canonical_evidence=evidence,
         discovery_seed=fixture.discovery_seed,
@@ -575,6 +637,20 @@ def _mint_refs(fixture: _TracerFixture) -> _TracerRefs:
         evidence=evidence,
         targeted=targeted,
         untargeted=untargeted,
+    )
+
+
+def _processing_owners(
+    fixture: _TracerFixture,
+    *,
+    attempt: ProcessingAttemptIdentity | None = None,
+) -> ProcessingOwnerReferences:
+    return compose_processing_owner_references(
+        request=fixture.request,
+        attempt=fixture.attempt if attempt is None else attempt,
+        sample_snapshot=fixture.sample_snapshot,
+        sample_resolutions=(fixture.sample,),
+        target_snapshot=fixture.target_snapshot,
     )
 
 

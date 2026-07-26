@@ -21,6 +21,7 @@ class Trace:
     rt_max: float
     ppm_tol: float
     source: str = ""
+    acquisition_source_id: str = ""
 
     def __post_init__(self) -> None:
         rt_array = np.asarray(self.rt, dtype=float)
@@ -35,6 +36,8 @@ class Trace:
             raise ValueError("rt_min must be <= rt_max")
         if self.ppm_tol <= 0:
             raise ValueError("ppm_tol must be > 0")
+        if not isinstance(self.acquisition_source_id, str):
+            raise ValueError("acquisition_source_id must be text")
         object.__setattr__(self, "rt", rt_array)
         object.__setattr__(self, "intensity", intensity_array)
 
@@ -50,6 +53,7 @@ class Trace:
         rt_max: float,
         ppm_tol: float,
         source: str = "",
+        acquisition_source_id: str = "",
     ) -> Trace:
         return cls(
             sample_name=sample_name,
@@ -60,6 +64,7 @@ class Trace:
             rt_max=rt_max,
             ppm_tol=ppm_tol,
             source=source,
+            acquisition_source_id=acquisition_source_id,
         )
 
     @property
@@ -99,6 +104,7 @@ def trace_from_xic_request(
     request: XICRequest,
     xic_trace: XICTrace,
     source: str = "",
+    acquisition_source_id: str = "",
 ) -> Trace:
     return Trace(
         sample_name=sample_name,
@@ -109,6 +115,7 @@ def trace_from_xic_request(
         rt_max=request.rt_max,
         ppm_tol=request.ppm_tol,
         source=source,
+        acquisition_source_id=acquisition_source_id,
     )
 
 

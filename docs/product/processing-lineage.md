@@ -465,8 +465,9 @@ authority.
 
 The second bounded implementation now uses that value-object contract for one
 canonical direct measured CID-NL / NL116 observation. `peak_detection` owns the
-observed content; Targeted and Untargeted adapters validate their existing typed
-evidence and mint separate diagnostic projection artifacts that depend on the
+observed content, including the request-bound acquisition source; Targeted and
+Untargeted adapters validate their existing typed evidence and mint separate
+diagnostic projection artifacts that depend on the
 same canonical evidence artifact. The no-RAW fixture proves exact bytes,
 sample/target/request/attempt binding, mutation/substitution, order-neutral
 closure, missing-upstream rejection, immutable review supersession, zero source
@@ -489,27 +490,28 @@ The operator selected the existing-owner alternative. A third bounded
 implementation deepens `peak_detection` with `PeakObservationRef` rather than
 creating a lineage-local or provider-local owner. The owner mints physical
 content identity from canonical sample, m/z, one contiguous selected MS1
-subtrace, and normalized integration facts. Full trace/query/source indices and
-resolver/proposal facts form generation provenance; the exact artifact also
-binds request and attempt. Target/provider labels and method interpretation do
-not enter physical content.
+subtrace, and normalized integration facts. The request-bound acquisition
+source, full trace/query/source indices, and resolver/proposal facts form
+generation provenance; the exact artifact also binds request and attempt.
+Target/provider labels and method interpretation do not enter physical content.
 
 The no-RAW tests prove content stability across query/resolver provenance and
 retry, distinct exact artifacts where provenance or attempt differs, mutation
 invalidation, canonical source-order handling, and fail-closed missing/gapped/
 reordered/duplicate indices plus sample/request/attempt substitution. Minting
 requires an existing validated `ProcessingOwnerReferences` closure, the sample
-must belong to that request, the trace name must resolve to that sample owner
-row, and integration RT bounds must map to the selected contiguous subtrace
-under the existing nearest-index/bounded-interval semantics. Issue #113's
+must belong to that request, the trace name and acquisition-source ID must
+resolve to that sample's exact request binding, and integration RT bounds must
+remain inside the supplied trace before mapping to the selected contiguous
+subtrace under the existing nearest-index/bounded-interval semantics. Issue #113's
 `PeakObservation` / `FeatureObservation` names did not grant authority; the
 implementation authority comes from the existing `peak_detection` owner and
 its explicit input contract.
 
 A fourth bounded implementation closes the first provider-specific
 evidence-to-observation relation for the lab's DDA/ddMS2 method. CID-NL evidence
-schema v2 binds the exact positive scan number and the explicit
-`dda_ddms2` acquisition mode. `DdaCidNlPeakSupportRef` then composes that
+schema v3 binds the exact request acquisition source, positive scan number, and
+explicit `dda_ddms2` acquisition mode. `DdaCidNlPeakSupportRef` then composes that
 immutable evidence ref with exactly one `PeakObservationRef` whose selected
 MS1 scope contains the scan RT and whose m/z satisfies the explicit precursor
 tolerance. The relation binds the canonical content IDs of the exact supplied

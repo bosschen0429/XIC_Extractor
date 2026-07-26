@@ -20,7 +20,7 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceRef,
     validate_cid_nl_evidence_binding,
 )
-from xic_extractor.processing_identity import ProcessingAttemptIdentity
+from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SCHEMA_VERSION = "targeted_cid_nl_evidence_projection_v1"
@@ -103,7 +103,7 @@ class TargetedCidNlProjectionRef:
 
 def mint_targeted_cid_nl_projection_ref(
     *,
-    processing_attempt: ProcessingAttemptIdentity,
+    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     target: ResolvedTargetDefinition,
     canonical_evidence: CidNlEvidenceRef,
@@ -115,6 +115,18 @@ def mint_targeted_cid_nl_projection_ref(
         raise TargetedCidNlProjectionError(
             "target must be an owner-resolved target definition"
         )
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise TargetedCidNlProjectionError(
+            "processing_owners must be validated ProcessingOwnerReferences"
+        )
+    if processing_owners.target_snapshot is None:
+        raise TargetedCidNlProjectionError(
+            "Targeted projection requires the request-bound target-list snapshot"
+        )
+    if target.snapshot.snapshot_id != processing_owners.target_snapshot.snapshot_id:
+        raise TargetedCidNlProjectionError(
+            "Targeted target definition comes from a different target-list snapshot"
+        )
     if not isinstance(targeted_evidence, MS2ProductEvidence):
         raise TargetedCidNlProjectionError(
             "targeted_evidence must be MS2ProductEvidence"
@@ -122,13 +134,21 @@ def mint_targeted_cid_nl_projection_ref(
     try:
         validate_cid_nl_evidence_binding(
             canonical_evidence,
-            processing_attempt=processing_attempt,
+            processing_owners=processing_owners,
             sample=sample,
         )
     except CidNlEvidenceContractError as exc:
         raise TargetedCidNlProjectionError(str(exc)) from exc
 
     observation = canonical_evidence.observation
+    if targeted_evidence.acquisition_source_id != observation.acquisition_source_id:
+        raise TargetedCidNlProjectionError(
+            "Targeted acquisition source mismatches canonical CID-NL evidence"
+        )
+    if targeted_evidence.scan_number != observation.scan_number:
+        raise TargetedCidNlProjectionError(
+            "Targeted scan_number mismatches canonical CID-NL evidence"
+        )
     target_value = target.definition.target
     if target_value.neutral_loss_da is None:
         raise TargetedCidNlProjectionError(
@@ -195,8 +215,12 @@ def mint_targeted_cid_nl_projection_ref(
             canonical_evidence.artifact.evidence_artifact_id
         ),
         artifact=_mint_evidence_artifact_ref(
-            producer_processing_request_id=processing_attempt.processing_request_id,
-            producer_processing_attempt_id=processing_attempt.processing_attempt_id,
+            producer_processing_request_id=(
+                processing_owners.request.processing_request_id
+            ),
+            producer_processing_attempt_id=(
+                processing_owners.attempt.processing_attempt_id
+            ),
             semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
             payload_bytes=_targeted_projection_bytes(
                 canonical_sample_identity_id=sample.identity.sample_identity_id,

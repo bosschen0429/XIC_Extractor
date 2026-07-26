@@ -35,7 +35,10 @@ from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     PeakHypothesisAuthorityError,
 )
-from xic_extractor.peak_detection.model_selection import model_select_peak_hypothesis
+from xic_extractor.peak_detection.model_selection import (
+    PeakModelSelectionResult,
+    model_select_peak_hypothesis,
+)
 from xic_extractor.peak_detection.models import PeakDetectionResult
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
@@ -60,6 +63,7 @@ from xic_extractor.processing_identity import (
     build_processing_request_identity,
     compose_processing_owner_references,
     issue_processing_attempt,
+    resolve_request_acquisition_source,
 )
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
@@ -554,6 +558,44 @@ def test_mixed_support_policy_cannot_form_one_event(tmp_path: Path) -> None:
         )
 
 
+def test_equivalent_numeric_policy_inputs_have_one_canonical_identity(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    evidence = _evidence(fixture.owners, fixture.sample)
+    integer_policy = DdaCidNlPeakSupportPolicy(
+        precursor_tolerance_da=1,
+        neutral_loss_tolerance_ppm=20,
+    )
+    float_policy = DdaCidNlPeakSupportPolicy(
+        precursor_tolerance_da=1.0,
+        neutral_loss_tolerance_ppm=20.0,
+    )
+
+    integer_ref = resolve_dda_cid_nl_peak_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        canonical_evidence=evidence,
+        candidate_peaks=(peak,),
+        policy=integer_policy,
+    )
+    float_ref = resolve_dda_cid_nl_peak_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        canonical_evidence=evidence,
+        candidate_peaks=(peak,),
+        policy=float_policy,
+    )
+
+    assert type(integer_policy.precursor_tolerance_da) is float
+    assert type(integer_policy.neutral_loss_tolerance_ppm) is float
+    assert integer_ref.artifact.content_identity == float_ref.artifact.content_identity
+    assert canonical_dda_cid_nl_peak_support_bytes(integer_ref) == (
+        canonical_dda_cid_nl_peak_support_bytes(float_ref)
+    )
+
+
 def test_chromatographic_event_binding_rejects_missing_and_owner_substitution(
     tmp_path: Path,
 ) -> None:
@@ -934,6 +976,24 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
             projected_reason="direct-constructor-bypass",
         )
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
+        PeakModelSelectionResult(
+            selected_candidate_id=hypothesis.hypothesis_id,
+            legacy_selected_candidate_id="legacy-candidate",
+            stable_row_id="direct-constructor-bypass",
+            trace_group_id="",
+            decision_class="accepted",
+            selection_status="expected_diff",
+            selection_reasons=(),
+            legacy_reasons=(),
+            diff_reasons=(),
+            public_projection={},
+            evidence_sources=(),
+            compatibility_oracle="legacy_peak_scoring_current_oracle",
+            policy_source="selected_hypothesis_model_selection_v1",
+            product_switch_allowed=True,
+            evidence_comparison_policy="complete_candidate_evidence",
+        )
+    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         build_extraction_result(
             peak_result=PeakDetectionResult(
                 status="PEAK_NOT_FOUND",
@@ -1074,6 +1134,10 @@ def _peak(
     mz: float = _PRECURSOR_MZ,
     apex_intensity: float = 500.0,
 ) -> PeakObservationRef:
+    acquisition_source = resolve_request_acquisition_source(
+        processing_owners=owners,
+        sample=sample,
+    )
     trace = Trace.from_arrays(
         sample_name=sample.metadata.raw_stem,
         mz=mz,
@@ -1083,6 +1147,7 @@ def _peak(
         rt_max=8.3,
         ppm_tol=10.0,
         source="synthetic_characterization",
+        acquisition_source_id=acquisition_source.acquisition_source_id,
     )
     integration = IntegrationResult(
         rt_left_min=7.9,

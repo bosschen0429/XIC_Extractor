@@ -19,12 +19,14 @@ from xic_extractor.evidence_artifacts import (
     verify_evidence_artifact_payload,
 )
 from xic_extractor.processing_identity import (
-    ProcessingAttemptIdentity,
+    AcquisitionSourceIdentity,
+    IdentityContractError,
     ProcessingOwnerReferences,
+    resolve_request_acquisition_source,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_evidence_observation_v2"
+SCHEMA_VERSION = "cid_nl_evidence_observation_v3"
 ARTIFACT_SEMANTIC_ROLE = "canonical_cid_nl_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -32,6 +34,7 @@ SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
 ACQUISITION_MODE = "dda_ddms2"
 
 _SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_evidence",
@@ -52,6 +55,7 @@ class CidNlEvidenceObservation:
     """The measured neutral-loss facts shared by both workflow adapters."""
 
     canonical_sample_identity_id: str
+    acquisition_source_id: str
     acquisition_mode: str
     scan_number: int
     precursor_mz: float
@@ -67,6 +71,11 @@ class CidNlEvidenceObservation:
             self.canonical_sample_identity_id,
             prefix=_SAMPLE_ID_PREFIX,
             field="canonical_sample_identity_id",
+        )
+        _validate_typed_id(
+            self.acquisition_source_id,
+            prefix=_ACQUISITION_SOURCE_ID_PREFIX,
+            field="acquisition_source_id",
         )
         if self.acquisition_mode != ACQUISITION_MODE:
             raise CidNlEvidenceContractError(
@@ -201,8 +210,10 @@ def mint_cid_nl_evidence_ref(
         raise CidNlEvidenceContractError(
             "sample references a different sample outside the processing owner closure"
         )
+    acquisition_source = _request_acquisition_source(processing_owners, sample)
     observation = CidNlEvidenceObservation(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
+        acquisition_source_id=acquisition_source.acquisition_source_id,
         acquisition_mode=ACQUISITION_MODE,
         scan_number=scan_number,
         precursor_mz=precursor_mz,
@@ -235,6 +246,7 @@ def canonical_cid_nl_evidence_bytes(
         "schema_version": SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
         "canonical_sample_identity_id": observation.canonical_sample_identity_id,
+        "acquisition_source_id": observation.acquisition_source_id,
         "acquisition_mode": observation.acquisition_mode,
         "scan_number": observation.scan_number,
         "precursor_mz": observation.precursor_mz,
@@ -260,7 +272,7 @@ def canonical_cid_nl_evidence_bytes(
 def validate_cid_nl_evidence_binding(
     reference: CidNlEvidenceRef,
     *,
-    processing_attempt: ProcessingAttemptIdentity,
+    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
 ) -> None:
     """Reject sample, request, attempt, or semantic-contract substitution."""
@@ -269,25 +281,26 @@ def validate_cid_nl_evidence_binding(
         raise CidNlEvidenceContractError(
             "reference must be an owner-minted CidNlEvidenceRef"
         )
-    if not isinstance(processing_attempt, ProcessingAttemptIdentity):
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise CidNlEvidenceContractError(
-            "processing_attempt must be an owner-issued ProcessingAttemptIdentity"
+            "processing_owners must be validated ProcessingOwnerReferences"
         )
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise CidNlEvidenceContractError(
             "sample must be an owner-resolved canonical sample"
         )
+    acquisition_source = _request_acquisition_source(processing_owners, sample)
     artifact = reference.artifact
     if (
         artifact.producer_processing_request_id
-        != processing_attempt.processing_request_id
+        != processing_owners.request.processing_request_id
     ):
         raise CidNlEvidenceContractError(
             "canonical CID-NL evidence references a different processing request"
         )
     if (
         artifact.producer_processing_attempt_id
-        != processing_attempt.processing_attempt_id
+        != processing_owners.attempt.processing_attempt_id
     ):
         raise CidNlEvidenceContractError(
             "canonical CID-NL evidence references a different processing attempt"
@@ -299,6 +312,26 @@ def validate_cid_nl_evidence_binding(
         raise CidNlEvidenceContractError(
             "canonical CID-NL evidence references a different sample"
         )
+    if (
+        reference.observation.acquisition_source_id
+        != acquisition_source.acquisition_source_id
+    ):
+        raise CidNlEvidenceContractError(
+            "canonical CID-NL evidence references a different acquisition source"
+        )
+
+
+def _request_acquisition_source(
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+) -> AcquisitionSourceIdentity:
+    try:
+        return resolve_request_acquisition_source(
+            processing_owners=processing_owners,
+            sample=sample,
+        )
+    except IdentityContractError as exc:
+        raise CidNlEvidenceContractError(str(exc)) from exc
 
 
 def _finite_float(value: float, *, field: str) -> float:

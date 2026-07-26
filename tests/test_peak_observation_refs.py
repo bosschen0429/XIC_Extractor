@@ -56,12 +56,14 @@ def test_query_provenance_does_not_change_selected_physical_content(
         intensity=(0.0, 50.0, 500.0, 50.0, 0.0),
         rt_min=7.7,
         rt_max=8.3,
+        acquisition_source_id=_source_id(identity.owners),
     )
     wide_trace = _trace(
         rt=(7.5, 7.7, 7.9, 8.0, 8.1, 8.3, 8.5),
         intensity=(0.0, 0.0, 50.0, 500.0, 50.0, 0.0, 0.0),
         rt_min=7.5,
         rt_max=8.5,
+        acquisition_source_id=_source_id(identity.owners),
     )
 
     narrow = mint_peak_observation_ref(
@@ -95,7 +97,7 @@ def test_binding_rejects_sample_and_attempt_substitution(tmp_path: Path) -> None
     reference = mint_peak_observation_ref(
         processing_owners=identity.owners,
         sample=identity.sample,
-        trace=_standard_trace(),
+        trace=_standard_trace(identity.owners),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
@@ -179,6 +181,7 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
         intensity=(0.0, 50.0, 501.0, 50.0, 0.0),
         rt_min=7.7,
         rt_max=8.3,
+        acquisition_source_id=_source_id(identity.owners),
     )
 
     mutated = mint_peak_observation_ref(
@@ -214,7 +217,7 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
     changed = mint_peak_observation_ref(
         processing_owners=identity.owners,
         sample=identity.sample,
-        trace=_standard_trace(),
+        trace=_standard_trace(identity.owners),
         integration=changed_integration,
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
@@ -245,6 +248,7 @@ def test_mint_rejects_sample_outside_request_and_trace_sample_substitution(
                 rt_min=7.7,
                 rt_max=8.3,
                 sample_name="sample-b",
+                acquisition_source_id=_source_id(other.owners),
             ),
             integration=_integration(raw_scan_indices=(1, 2, 3)),
             resolver_mode="local_minimum",
@@ -254,7 +258,32 @@ def test_mint_rejects_sample_outside_request_and_trace_sample_substitution(
         mint_peak_observation_ref(
             processing_owners=other.owners,
             sample=other.sample,
-            trace=_standard_trace(),
+            trace=_standard_trace(other.owners),
+            integration=_integration(raw_scan_indices=(1, 2, 3)),
+            resolver_mode="local_minimum",
+            proposal_sources=("local_minimum",),
+        )
+
+
+def test_trace_acquisition_source_must_match_the_request_binding(
+    tmp_path: Path,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    foreign = _identity_fixture(
+        tmp_path,
+        sample_key="sample-b",
+        sample_name="Sample B",
+    )
+    trace = replace(
+        _standard_trace(identity.owners),
+        acquisition_source_id=_source_id(foreign.owners),
+    )
+
+    with pytest.raises(PeakObservationContractError, match="acquisition source"):
+        mint_peak_observation_ref(
+            processing_owners=identity.owners,
+            sample=identity.sample,
+            trace=trace,
             integration=_integration(raw_scan_indices=(1, 2, 3)),
             resolver_mode="local_minimum",
             proposal_sources=("local_minimum",),
@@ -268,8 +297,30 @@ def test_contiguous_but_wrong_trace_region_fails_closed(tmp_path: Path) -> None:
         mint_peak_observation_ref(
             processing_owners=identity.owners,
             sample=identity.sample,
-            trace=_standard_trace(),
+            trace=_standard_trace(identity.owners),
             integration=_integration(raw_scan_indices=(0, 1, 2)),
+            resolver_mode="local_minimum",
+            proposal_sources=("local_minimum",),
+        )
+
+
+def test_integration_bounds_outside_the_supplied_trace_fail_closed(
+    tmp_path: Path,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    integration = replace(
+        _integration(raw_scan_indices=(0, 1, 2, 3, 4)),
+        rt_left_min=-100.0,
+        rt_right_min=100.0,
+        rt_width_min=200.0,
+    )
+
+    with pytest.raises(PeakObservationContractError, match="supplied Trace"):
+        mint_peak_observation_ref(
+            processing_owners=identity.owners,
+            sample=identity.sample,
+            trace=_standard_trace(identity.owners),
+            integration=integration,
             resolver_mode="local_minimum",
             proposal_sources=("local_minimum",),
         )
@@ -279,7 +330,7 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
     tmp_path: Path,
 ) -> None:
     identity = _identity_fixture(tmp_path)
-    trace = _standard_trace()
+    trace = _standard_trace(identity.owners)
     peak = PeakResult(
         rt=8.0,
         intensity=500.0,
@@ -353,7 +404,7 @@ def test_missing_reordered_or_duplicate_selected_indices_fail_closed(
         mint_peak_observation_ref(
             processing_owners=identity.owners,
             sample=identity.sample,
-            trace=_standard_trace(),
+            trace=_standard_trace(identity.owners),
             integration=_integration(raw_scan_indices=raw_scan_indices),
             resolver_mode="local_minimum",
             proposal_sources=("local_minimum",),
@@ -366,7 +417,7 @@ def test_proposal_source_reorder_is_canonicalized(tmp_path: Path) -> None:
     forward = mint_peak_observation_ref(
         processing_owners=identity.owners,
         sample=identity.sample,
-        trace=_standard_trace(),
+        trace=_standard_trace(identity.owners),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="consensus",
         proposal_sources=("boundary_resolver", "local_minimum"),
@@ -374,7 +425,7 @@ def test_proposal_source_reorder_is_canonicalized(tmp_path: Path) -> None:
     reversed_order = mint_peak_observation_ref(
         processing_owners=identity.owners,
         sample=identity.sample,
-        trace=_standard_trace(),
+        trace=_standard_trace(identity.owners),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="consensus",
         proposal_sources=("local_minimum", "boundary_resolver"),
@@ -392,7 +443,7 @@ def test_resolver_change_preserves_content_but_changes_generation_provenance(
     arbitrated = mint_peak_observation_ref(
         processing_owners=identity.owners,
         sample=identity.sample,
-        trace=_standard_trace(),
+        trace=_standard_trace(identity.owners),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="arbitrated",
         proposal_sources=("local_minimum",),
@@ -446,12 +497,13 @@ def _identity_fixture(
     )
 
 
-def _standard_trace() -> Trace:
+def _standard_trace(owners: ProcessingOwnerReferences) -> Trace:
     return _trace(
         rt=(7.7, 7.9, 8.0, 8.1, 8.3),
         intensity=(0.0, 50.0, 500.0, 50.0, 0.0),
         rt_min=7.7,
         rt_max=8.3,
+        acquisition_source_id=_source_id(owners),
     )
 
 
@@ -462,7 +514,7 @@ def _mint_standard_reference(
     return mint_peak_observation_ref(
         processing_owners=owners,
         sample=sample,
-        trace=_standard_trace(),
+        trace=_standard_trace(owners),
         integration=_integration(raw_scan_indices=(1, 2, 3)),
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
@@ -489,6 +541,7 @@ def _trace(
     rt_min: float,
     rt_max: float,
     sample_name: str = "sample-a",
+    acquisition_source_id: str = "",
 ) -> Trace:
     return Trace.from_arrays(
         sample_name=sample_name,
@@ -499,7 +552,13 @@ def _trace(
         rt_max=rt_max,
         ppm_tol=10.0,
         source="synthetic_characterization",
+        acquisition_source_id=acquisition_source_id,
     )
+
+
+def _source_id(owners: ProcessingOwnerReferences) -> str:
+    assert len(owners.request.acquisition_sources) == 1
+    return owners.request.acquisition_sources[0].acquisition_source_id
 
 
 def _integration(*, raw_scan_indices: tuple[int, ...]) -> IntegrationResult:

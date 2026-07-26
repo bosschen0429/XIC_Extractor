@@ -13,12 +13,15 @@ The evidence spine is the shared layer that converts chromatographic observation
 - The bounded CID-NL tracer now freezes the measured field intersection shared
   by Targeted `MS2ProductEvidence` and Untargeted direct `DiscoverySeed` as
   `CidNlEvidenceRef`. Target/Discovery-only fields remain in thin adapters;
+  both adapters must match the request-bound acquisition source, Targeted must
+  also match the exact request-pinned target snapshot and scan number, and
   neither projection artifact is a selection or delivery decision.
 - The existing `peak_detection` owner now exposes a bounded
   `PeakObservationRef`. Its physical content is canonical sample identity, m/z,
   one contiguous selected RT/intensity subtrace, and its normalized
-  `IntegrationResult`. Exact full-trace/query/resolver provenance and producer
-  request/attempt remain explicit without becoming physical-content identity.
+  `IntegrationResult`. Exact request-bound acquisition source plus full-trace/
+  query/resolver provenance and producer request/attempt remain explicit
+  without becoming physical-content identity.
 - For the lab's current Untargeted acquisition method, the CID-NL owner now
   exposes one bounded DDA/ddMS2 applicability relation. A
   `DdaCidNlPeakSupportRef` binds one exact MS2 scan and direct measured CID-NL
@@ -70,8 +73,9 @@ closes the following bounded rules:
 1. Physical content identity includes canonical sample identity, m/z, the
    contiguous selected RT/intensity points, peak bounds/apex, and all normalized
    `IntegrationResult` facts.
-2. Full trace digest, query RT/ppm, trace source, source-relative indices,
-   resolver mode, and proposal sources are generation provenance. Changing
+2. Request-bound acquisition-source identity, full trace digest, query RT/ppm,
+   trace source, source-relative indices, resolver mode, and proposal sources
+   are generation provenance. Changing
    them does not re-mint physical content when the selected signal and
    integration are unchanged, but it does change the exact artifact payload.
 3. Processing request/attempt identify the produced artifact instance. A retry
@@ -85,10 +89,11 @@ closes the following bounded rules:
    substitution fail closed.
 6. Mint and binding consume an already validated `ProcessingOwnerReferences`
    closure. The chosen sample must belong to that request, `Trace.sample_name`
-   must resolve to that owner row, and integration RT bounds must map to the
-   selected contiguous subtrace under the existing nearest-index/bounded-
-   interval owner semantics. A caller cannot validate a bad mint by repeating
-   the same mismatched sample or attempt.
+   and `Trace.acquisition_source_id` must resolve to that owner row and exact
+   acquisition binding, and integration RT bounds must remain inside the
+   supplied trace before mapping to the selected contiguous subtrace under the
+   existing nearest-index/bounded-interval owner semantics. A caller cannot
+   validate a bad mint by repeating the same mismatched sample or attempt.
 
 This closes the first provider-specific evidence-to-observation relation, not
 method-hypothesis composition. The DDA support owner requires one exact scan,
@@ -122,7 +127,8 @@ bounded rules:
    and exact upstream closure.
 4. Target label, role, ISTD pairing, trace-group identity, decision semantics,
    selection audit, counting, and workflow projection are prohibited on this
-   branch. Selection-decision, model-selection, `ExtractionResult`, and
+   branch. Selection-decision, the `PeakModelSelectionResult` value boundary,
+   model-selection, `ExtractionResult`, and
    Targeted result-assembly boundaries reject this diagnostic branch before it
    can expose RT/area or produce a counted projection. The legacy Targeted
    constructor remains unchanged.
@@ -141,8 +147,8 @@ semantics.
 | Surface | Role |
 | --- | --- |
 | `EvidenceVector` / `EvidenceDecisionSemantics` | Shared typed evidence vocabulary |
-| `CidNlEvidenceRef` | Attempt- and sample-bound immutable direct measured CID-NL observation for the no-write dual-projection tracer |
-| `PeakObservationRef` | `peak_detection`-owned physical MS1 content plus exact generation provenance and request/attempt artifact binding; diagnostic only |
+| `CidNlEvidenceRef` | Attempt-, sample-, acquisition-source-, and scan-bound immutable direct measured CID-NL observation for the no-write dual-projection tracer |
+| `PeakObservationRef` | `peak_detection`-owned physical MS1 content plus exact request-bound acquisition-source/generation provenance and request/attempt artifact binding; diagnostic only |
 | `DdaCidNlPeakSupportRef` | CID-NL-owner DDA/ddMS2 scan-to-physical-peak relation over an exact supplied candidate universe; diagnostic only, no DIA or selection authority |
 | `CidNlChromatographicSupportRef` | One-or-more exact strict DDA scan relations aggregated as one physical-peak support event; diagnostic only, no hypothesis or counting authority |
 | `PeakHypothesis` | One existing model: legacy Targeted working identity plus a bounded diagnostic owner-backed CID-NL composition; neither is canonical physical-observation identity |

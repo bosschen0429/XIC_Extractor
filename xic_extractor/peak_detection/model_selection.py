@@ -14,6 +14,7 @@ from xic_extractor.decision_policy import (
 from xic_extractor.evidence_semantics import DecisionClass
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
+    validate_peak_hypothesis_id_selection_authority,
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.selection_decision import (
@@ -142,6 +143,17 @@ class PeakModelSelectionResult:
     policy_source: ModelSelectionPolicySource
     product_switch_allowed: bool
     evidence_comparison_policy: EvidenceComparisonPolicy
+
+    def __post_init__(self) -> None:
+        validate_peak_hypothesis_id_selection_authority(
+            self.selected_candidate_id,
+            consumer="PeakModelSelectionResult",
+        )
+        if self.legacy_selected_candidate_id:
+            validate_peak_hypothesis_id_selection_authority(
+                self.legacy_selected_candidate_id,
+                consumer="PeakModelSelectionResult",
+            )
 
 
 def expected_diff_approval_for_result(

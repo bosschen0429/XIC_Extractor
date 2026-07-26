@@ -19,7 +19,7 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceRef,
     validate_cid_nl_evidence_binding,
 )
-from xic_extractor.processing_identity import ProcessingAttemptIdentity
+from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
     SampleMetadataError,
@@ -102,7 +102,7 @@ class UntargetedCidNlProjectionRef:
 
 def mint_untargeted_cid_nl_projection_ref(
     *,
-    processing_attempt: ProcessingAttemptIdentity,
+    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     canonical_evidence: CidNlEvidenceRef,
     discovery_seed: DiscoverySeed,
@@ -113,10 +113,14 @@ def mint_untargeted_cid_nl_projection_ref(
         raise UntargetedCidNlProjectionError(
             "discovery_seed must be an owner-typed DiscoverySeed"
         )
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise UntargetedCidNlProjectionError(
+            "processing_owners must be validated ProcessingOwnerReferences"
+        )
     try:
         validate_cid_nl_evidence_binding(
             canonical_evidence,
-            processing_attempt=processing_attempt,
+            processing_owners=processing_owners,
             sample=sample,
         )
     except CidNlEvidenceContractError as exc:
@@ -139,8 +143,16 @@ def mint_untargeted_cid_nl_projection_ref(
         raise UntargetedCidNlProjectionError(
             "Discovery seed references a different canonical sample"
         )
+    if discovery_seed.raw_file.stem != discovery_seed.sample_stem:
+        raise UntargetedCidNlProjectionError(
+            "Discovery raw_file mismatches its canonical sample binding"
+        )
 
     observation = canonical_evidence.observation
+    if discovery_seed.acquisition_source_id != observation.acquisition_source_id:
+        raise UntargetedCidNlProjectionError(
+            "Discovery acquisition source mismatches canonical CID-NL evidence"
+        )
     if discovery_seed.scan_number != observation.scan_number:
         raise UntargetedCidNlProjectionError(
             "Discovery scan_number mismatches canonical CID-NL evidence"
@@ -189,8 +201,12 @@ def mint_untargeted_cid_nl_projection_ref(
             canonical_evidence.artifact.evidence_artifact_id
         ),
         artifact=_mint_evidence_artifact_ref(
-            producer_processing_request_id=processing_attempt.processing_request_id,
-            producer_processing_attempt_id=processing_attempt.processing_attempt_id,
+            producer_processing_request_id=(
+                processing_owners.request.processing_request_id
+            ),
+            producer_processing_attempt_id=(
+                processing_owners.attempt.processing_attempt_id
+            ),
             semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
             payload_bytes=_untargeted_projection_bytes(
                 canonical_sample_identity_id=sample.identity.sample_identity_id,

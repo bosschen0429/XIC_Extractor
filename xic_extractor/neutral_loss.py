@@ -54,6 +54,8 @@ class MS2ProductEvidence:
     target_product_ppm: float
     observed_loss_da: float
     observed_loss_error_ppm: float
+    scan_number: int | None = None
+    acquisition_source_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -606,6 +608,7 @@ def _best_product_probe(
                 ),
                 observed_loss_da=observed_loss_da,
                 observed_loss_error_ppm=observed_loss_error_ppm,
+                scan_number=scan.scan_number,
             )
         )
 

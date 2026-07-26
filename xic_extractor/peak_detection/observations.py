@@ -23,7 +23,12 @@ from xic_extractor.evidence_artifacts import (
 from xic_extractor.peak_detection.baseline import bounded_trace_interval
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.traces import Trace
-from xic_extractor.processing_identity import ProcessingOwnerReferences
+from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
+    IdentityContractError,
+    ProcessingOwnerReferences,
+    resolve_request_acquisition_source,
+)
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SCHEMA_VERSION = "ms1_peak_observation_v1"
@@ -34,6 +39,7 @@ SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
 
 _CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
 _SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.observations",
@@ -111,6 +117,7 @@ class PeakObservationGenerationProvenance:
     """Exact trace/query and peak-generation context for one observation ref."""
 
     full_trace_sha256: str
+    acquisition_source_id: str
     query_rt_min: float
     query_rt_max: float
     query_ppm_tol: float
@@ -121,6 +128,11 @@ class PeakObservationGenerationProvenance:
 
     def __post_init__(self) -> None:
         _validate_sha256(self.full_trace_sha256, field="full_trace_sha256")
+        _validate_typed_digest_id(
+            self.acquisition_source_id,
+            prefix=_ACQUISITION_SOURCE_ID_PREFIX,
+            field="acquisition_source_id",
+        )
         rt_min = _finite_float(self.query_rt_min, field="query_rt_min")
         rt_max = _finite_float(self.query_rt_max, field="query_rt_max")
         ppm_tol = _finite_float(self.query_ppm_tol, field="query_ppm_tol")
@@ -214,6 +226,11 @@ def mint_peak_observation_ref(
         sample.lookup_token,
     }:
         raise PeakObservationContractError("Trace references a different sample")
+    acquisition_source = _request_acquisition_source(processing_owners, sample)
+    if trace.acquisition_source_id != acquisition_source.acquisition_source_id:
+        raise PeakObservationContractError(
+            "Trace acquisition source mismatches the request binding"
+        )
     if not isinstance(integration, IntegrationResult):
         raise PeakObservationContractError(
             "integration must be an owner-produced IntegrationResult"
@@ -253,6 +270,7 @@ def mint_peak_observation_ref(
     )
     generation_provenance = PeakObservationGenerationProvenance(
         full_trace_sha256=hashlib.sha256(_canonical_trace_bytes(trace)).hexdigest(),
+        acquisition_source_id=acquisition_source.acquisition_source_id,
         query_rt_min=float(trace.rt_min),
         query_rt_max=float(trace.rt_max),
         query_ppm_tol=float(trace.ppm_tol),
@@ -323,6 +341,7 @@ def validate_peak_observation_binding(
             "reference must be an owner-minted PeakObservationRef"
         )
     _validate_processing_owner_sample(processing_owners, sample)
+    acquisition_source = _request_acquisition_source(processing_owners, sample)
     artifact = reference.artifact
     if (
         artifact.producer_processing_request_id
@@ -345,6 +364,13 @@ def validate_peak_observation_binding(
         raise PeakObservationContractError(
             "peak observation references a different sample"
         )
+    if (
+        reference.generation_provenance.acquisition_source_id
+        != acquisition_source.acquisition_source_id
+    ):
+        raise PeakObservationContractError(
+            "peak observation references a different acquisition source"
+        )
 
 
 def _canonical_trace_bytes(trace: Trace) -> bytes:
@@ -358,6 +384,7 @@ def _canonical_trace_bytes(trace: Trace) -> bytes:
             "query_rt_max": float(trace.rt_max),
             "query_ppm_tol": float(trace.ppm_tol),
             "trace_source": trace.source,
+            "acquisition_source_id": trace.acquisition_source_id,
         }
     )
 
@@ -450,6 +477,15 @@ def _validate_trace_region_binding(
         raise PeakObservationContractError(
             "Trace must contain at least two scans for an integrated observation"
         )
+    trace_rt_min = float(trace.rt[0])
+    trace_rt_max = float(trace.rt[-1])
+    if not (
+        trace_rt_min <= integration.rt_left_min <= trace_rt_max
+        and trace_rt_min <= integration.rt_right_min <= trace_rt_max
+    ):
+        raise PeakObservationContractError(
+            "integration RT bounds must remain inside the supplied Trace"
+        )
     left_index = _nearest_trace_index(trace, integration.rt_left_min)
     right_index = _nearest_trace_index(trace, integration.rt_right_min) + 1
     expected_left, expected_right = bounded_trace_interval(
@@ -486,6 +522,19 @@ def _validate_processing_owner_sample(
         raise PeakObservationContractError(
             "sample references a different sample outside the processing owner closure"
         )
+
+
+def _request_acquisition_source(
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+) -> AcquisitionSourceIdentity:
+    try:
+        return resolve_request_acquisition_source(
+            processing_owners=processing_owners,
+            sample=sample,
+        )
+    except IdentityContractError as exc:
+        raise PeakObservationContractError(str(exc)) from exc
 
 
 def _validate_selected_indices(values: object) -> tuple[int, ...]:

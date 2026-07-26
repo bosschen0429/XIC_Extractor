@@ -231,7 +231,8 @@ The first no-write scientific-reference seam is executable:
 `peak_detection.cid_nl_evidence` owns one direct measured CID-NL observation,
 and the Targeted `MS2ProductEvidence` plus Untargeted direct `DiscoverySeed`
 adapters both validate and reference that same immutable artifact. The focused
-fixture proves exact content, owner/sample/request/attempt binding, shared
+fixture proves exact content, owner/sample/acquisition-source/request/attempt
+binding, request-pinned Targeted target/scan binding, shared
 upstream closure, review supersession, zero acquisition-source reopen, and zero
 product write. Inferred `product_plus_neutral_loss` Discovery evidence remains
 outside this first slice and fails closed.

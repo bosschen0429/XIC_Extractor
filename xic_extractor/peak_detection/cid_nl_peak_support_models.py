@@ -63,6 +63,12 @@ class DdaCidNlPeakSupportPolicy:
             raise DdaCidNlPeakSupportContractError(
                 "neutral_loss_tolerance_ppm must be positive"
             )
+        object.__setattr__(self, "precursor_tolerance_da", precursor_tolerance)
+        object.__setattr__(
+            self,
+            "neutral_loss_tolerance_ppm",
+            neutral_loss_tolerance,
+        )
 
 
 @dataclass(frozen=True, slots=True)
