@@ -10,6 +10,10 @@ The evidence spine is the shared layer that converts chromatographic observation
 - Untargeted workflows add alignment/Backfill policy: owner construction, same-peak anchor, cell-level Backfill decision, authority manifest, and quant-matrix activation.
 - A shared evidence provider may serve both workflows only if its output is a typed fact, not a hidden product decision.
 - The shared-spine direction is to preserve and adapt existing typed evidence objects rather than replace workflow policies.
+- The bounded CID-NL tracer now freezes the measured field intersection shared
+  by Targeted `MS2ProductEvidence` and Untargeted direct `DiscoverySeed` as
+  `CidNlEvidenceRef`. Target/Discovery-only fields remain in thin adapters;
+  neither projection artifact is a selection or delivery decision.
 - Legacy family IDs are review and compatibility containers. Group identity
   belongs to `CrossSamplePeakGroupHypothesis`, candidate-peak identity belongs
   to `PeakHypothesis`, and product authority belongs to workflow projection.
@@ -19,6 +23,7 @@ The evidence spine is the shared layer that converts chromatographic observation
 | Surface | Role |
 | --- | --- |
 | `EvidenceVector` / `EvidenceDecisionSemantics` | Shared typed evidence vocabulary |
+| `CidNlEvidenceRef` | Attempt- and sample-bound immutable direct measured CID-NL observation for the no-write dual-projection tracer |
 | `PeakHypothesis` | Candidate chromatographic identity unit |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
 | `IntegrationResult` | Integrated signal and boundary result |

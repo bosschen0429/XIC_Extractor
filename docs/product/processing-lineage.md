@@ -457,17 +457,25 @@ typed review binding, upstream completeness, mutation/substitution, and
 same-content cross-attempt distinction without introducing storage or writer
 authority.
 
-The next scientific implementation should use that proven value-object
-contract in the CID-NL / NL116 dual-policy tracer:
+The second bounded implementation now uses that value-object contract for one
+canonical direct measured CID-NL / NL116 observation. `peak_detection` owns the
+observed content; Targeted and Untargeted adapters validate their existing typed
+evidence and mint separate diagnostic projection artifacts that depend on the
+same canonical evidence artifact. The no-RAW fixture proves exact bytes,
+sample/target/request/attempt binding, mutation/substitution, order-neutral
+closure, missing-upstream rejection, immutable review supersession, zero source
+reopens, and zero product writes. It deliberately rejects inferred
+`product_plus_neutral_loss` Discovery evidence until that evidence basis has its
+own owner-backed contract.
 
-1. bind one normalized request to distinct attempts;
-2. adapt existing Pt-style artifact fingerprints and method-manifest facts
-   without importing diagnostic policy;
-3. validate a would-be seal for one Targeted and one Untargeted staged
-   projection without creating product authority;
-4. prove zero source reopens with a fail-on-open acquisition adapter and call
-   counter for retained selected/review evidence; and
-5. leave both legacy writers authoritative.
+The next scientific implementation must carry this same reference through the
+actual shared-kernel decisions rather than adding another artifact model:
+
+1. build one sample-local `PeakHypothesis` from the canonical observation;
+2. carry it into shared group/cell observation contracts;
+3. feed both no-write workflow projections from those same decisions;
+4. retain zero source reopens and exact review/lineage closure; and
+5. leave both legacy writers authoritative with hard-zero public-output diff.
 
 The tracer must consume the sample identity owner and review-record owner
 through explicit references. If either owner cannot provide an unambiguous

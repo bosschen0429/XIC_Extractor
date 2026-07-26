@@ -227,6 +227,17 @@ the bounded tracer and must have an explicit retirement or kill decision.
 
 ## Current Gaps
 
+The first no-write scientific-reference seam is executable:
+`peak_detection.cid_nl_evidence` owns one direct measured CID-NL observation,
+and the Targeted `MS2ProductEvidence` plus Untargeted direct `DiscoverySeed`
+adapters both validate and reference that same immutable artifact. The focused
+fixture proves exact content, owner/sample/request/attempt binding, shared
+upstream closure, review supersession, zero acquisition-source reopen, and zero
+product write. Inferred `product_plus_neutral_loss` Discovery evidence remains
+outside this first slice and fails closed.
+
+This is not the complete kernel tracer. The remaining gaps are:
+
 1. `build_peak_hypotheses` hard-codes `analysis_mode="targeted"` and converts
    evidence through `common_evidence_from_targeted_candidate`.
 2. `EvidenceVector` contains many Targeted/MS2-specific fields. Shared facts
@@ -242,7 +253,9 @@ the bounded tracer and must have an explicit retirement or kill decision.
 6. Targeted CLI baseline/support/final orchestration is not shared by GUI or
    direct API. Issue #134 owns that entry-point parity defect; fixing it must
    not create a second permanent kernel.
-7. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
+7. The canonical CID-NL ref has not yet been carried through one shared
+   `PeakHypothesis`, cross-sample group, `CellObservation`, or Backfill result.
+8. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
    `group_hypothesis_id` is the successor cross-sample identity.
 
 These are migration facts, not permission for a repo-wide rewrite.
@@ -267,6 +280,11 @@ projected both ways:
 
 The tracer does not need to migrate every Discovery provider, Alignment
 diagnostic, or Backfill authority path.
+
+The current scientific-reference fixture satisfies only the first observation
+precondition. Completion still requires the same shared hypothesis/group/cell
+decisions to feed both workflow projections without changing Targeted output or
+Untargeted Matrix authority.
 
 ## Failure, Validation, And Rollback
 
