@@ -550,6 +550,48 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         )
 
 
+def test_lineage_rejects_metadata_injection_order_mismatch(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path, payload=b"request-a")
+    matching_snapshot = _sample_snapshot(
+        SampleMetadata(
+            sample_name="Sample A",
+            raw_stem="request-a",
+            injection_order=1,
+        )
+    )
+    matching_sample = resolve_canonical_sample_identity(
+        matching_snapshot,
+        "request-a",
+    )
+    matching = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=matching_snapshot,
+        sample_resolutions=(matching_sample,),
+    )
+
+    assert matching.sample_resolutions == (matching_sample,)
+
+    sample_snapshot = _sample_snapshot(
+        SampleMetadata(
+            sample_name="Sample A",
+            raw_stem="request-a",
+            injection_order=9,
+        )
+    )
+    sample = resolve_canonical_sample_identity(sample_snapshot, "request-a")
+
+    with pytest.raises(IdentityContractError, match="injection_order.*request binding"):
+        compose_processing_owner_references(
+            request=request,
+            attempt=issue_processing_attempt(request),
+            sample_snapshot=sample_snapshot,
+            sample_resolutions=(sample,),
+        )
+
+
 def test_lineage_rejects_review_from_different_request_or_target(
     tmp_path: Path,
 ) -> None:

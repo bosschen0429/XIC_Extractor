@@ -478,6 +478,19 @@ class ProcessingOwnerReferences:
             raise IdentityContractError(
                 "sample resolutions must cover each request acquisition binding"
             )
+        binding_orders_by_key = {
+            binding.adapter_input_key: binding.injection_order
+            for binding in self.request.acquisition_bindings
+        }
+        for resolution in self.sample_resolutions:
+            metadata_order = resolution.metadata.injection_order
+            if (
+                metadata_order is not None
+                and metadata_order != binding_orders_by_key[resolution.lookup_token]
+            ):
+                raise IdentityContractError(
+                    "sample metadata injection_order must match request binding"
+                )
         sample_ids = tuple(
             resolution.identity.sample_identity_id
             for resolution in self.sample_resolutions
