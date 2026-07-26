@@ -423,15 +423,19 @@ scientific parity.
 
 ## Current Implementation Gaps
 
-The first Package 0 event-contract slice is executable in
-`xic_extractor.execution_runtime`: it binds `attempt_queued`,
+The first Package 0 event-contract slices are executable in
+`xic_extractor.execution_runtime`: they bind `attempt_queued`,
 `attempt_started`, and `cancellation_accepted` to one owner-issued
-`ProcessingAttemptIdentity`, enforces contiguous append-only ordering, and
-prevents an accepted queued cancellation from later becoming a started
-attempt. This remains `contract_only`: no Targeted or Alignment runtime caller
-consumes it, and it does not implement manifest settlement, terminal outcome,
-resources, failures, cleanup, artifacts, metrics, retry tokens, or durable
-finalization.
+`ProcessingAttemptIdentity`, enforce contiguous append-only ordering, and
+prevent an accepted queued cancellation from later becoming a started attempt.
+They also encode the coordinator-only
+`attempt_queued` -> `manifest_preflight_failed` ->
+`terminal_proposal(failed)` path without fabricating `attempt_started` or a
+committed outcome. This remains `contract_only`: no Targeted or Alignment
+runtime caller consumes it, and it does not yet validate a real
+`RequiredWorkManifest` or completeness attestation, record monotonic offsets or
+metric availability, settle work/resources/artifacts, or durably acknowledge a
+terminal outcome.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.

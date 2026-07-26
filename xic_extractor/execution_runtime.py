@@ -16,6 +16,16 @@ class AttemptLifecycleEventKind(str, Enum):
     ATTEMPT_QUEUED = "attempt_queued"
     ATTEMPT_STARTED = "attempt_started"
     CANCELLATION_ACCEPTED = "cancellation_accepted"
+    MANIFEST_PREFLIGHT_FAILED = "manifest_preflight_failed"
+    TERMINAL_PROPOSAL = "terminal_proposal"
+
+
+class AttemptTerminalOutcome(str, Enum):
+    """Canonical proposed outcomes; acknowledgement is a later contract."""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +35,7 @@ class AttemptLifecycleEvent:
     attempt: ProcessingAttemptIdentity
     sequence: int
     kind: AttemptLifecycleEventKind
+    proposed_outcome: AttemptTerminalOutcome | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.attempt, ProcessingAttemptIdentity):
@@ -40,6 +51,15 @@ class AttemptLifecycleEvent:
         if not isinstance(self.kind, AttemptLifecycleEventKind):
             raise AttemptLifecycleContractError(
                 "kind must be an AttemptLifecycleEventKind"
+            )
+        if self.kind is AttemptLifecycleEventKind.TERMINAL_PROPOSAL:
+            if not isinstance(self.proposed_outcome, AttemptTerminalOutcome):
+                raise AttemptLifecycleContractError(
+                    "terminal_proposal requires an AttemptTerminalOutcome"
+                )
+        elif self.proposed_outcome is not None:
+            raise AttemptLifecycleContractError(
+                "only terminal_proposal may carry a proposed outcome"
             )
 
 
@@ -71,6 +91,8 @@ class AttemptLifecycleHistory:
         queued = False
         started = False
         cancellation_accepted = False
+        manifest_preflight_failed = False
+        terminal_proposed = False
         for expected_sequence, event in enumerate(self.events, start=1):
             if not isinstance(event, AttemptLifecycleEvent):
                 raise AttemptLifecycleContractError(
@@ -83,6 +105,10 @@ class AttemptLifecycleHistory:
             if event.sequence != expected_sequence:
                 raise AttemptLifecycleContractError(
                     "event sequences must be contiguous starting at 1"
+                )
+            if terminal_proposed:
+                raise AttemptLifecycleContractError(
+                    "terminal proposal is final in the coordinator history"
                 )
 
             if event.kind is AttemptLifecycleEventKind.ATTEMPT_QUEUED:
@@ -102,6 +128,10 @@ class AttemptLifecycleHistory:
                     raise AttemptLifecycleContractError(
                         "attempt_started may appear only once"
                     )
+                if manifest_preflight_failed:
+                    raise AttemptLifecycleContractError(
+                        "attempt cannot start after manifest preflight failure"
+                    )
                 if cancellation_accepted:
                     raise AttemptLifecycleContractError(
                         "attempt cannot start after queued cancellation"
@@ -114,6 +144,28 @@ class AttemptLifecycleHistory:
                         "cancellation_accepted may appear only once"
                     )
                 cancellation_accepted = True
+                continue
+            if event.kind is AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED:
+                if manifest_preflight_failed:
+                    raise AttemptLifecycleContractError(
+                        "manifest_preflight_failed may appear only once"
+                    )
+                if started:
+                    raise AttemptLifecycleContractError(
+                        "manifest preflight failure must occur before attempt_started"
+                    )
+                manifest_preflight_failed = True
+                continue
+            if event.kind is AttemptLifecycleEventKind.TERMINAL_PROPOSAL:
+                if not manifest_preflight_failed:
+                    raise AttemptLifecycleContractError(
+                        "terminal proposal must follow manifest_preflight_failed"
+                    )
+                if event.proposed_outcome is not AttemptTerminalOutcome.FAILED:
+                    raise AttemptLifecycleContractError(
+                        "manifest preflight failure must propose failed"
+                    )
+                terminal_proposed = True
                 continue
             raise AttemptLifecycleContractError(
                 f"unsupported lifecycle event kind: {event.kind.value}"
@@ -130,6 +182,8 @@ class AttemptLifecycleHistory:
 def append_attempt_lifecycle_event(
     history: AttemptLifecycleHistory,
     kind: AttemptLifecycleEventKind,
+    *,
+    proposed_outcome: AttemptTerminalOutcome | None = None,
 ) -> AttemptLifecycleHistory:
     """Return a new validated history without mutating its previous prefix."""
 
@@ -141,10 +195,27 @@ def append_attempt_lifecycle_event(
         attempt=history.attempt,
         sequence=len(history.events) + 1,
         kind=kind,
+        proposed_outcome=proposed_outcome,
     )
     return AttemptLifecycleHistory(
         attempt=history.attempt,
         events=(*history.events, event),
+    )
+
+
+def propose_manifest_preflight_failure(
+    history: AttemptLifecycleHistory,
+) -> AttemptLifecycleHistory:
+    """Append the canonical queued-to-failed proposal path atomically to a prefix."""
+
+    failed = append_attempt_lifecycle_event(
+        history,
+        AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
+    )
+    return append_attempt_lifecycle_event(
+        failed,
+        AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
+        proposed_outcome=AttemptTerminalOutcome.FAILED,
     )
 
 
@@ -153,5 +224,7 @@ __all__ = [
     "AttemptLifecycleEvent",
     "AttemptLifecycleEventKind",
     "AttemptLifecycleHistory",
+    "AttemptTerminalOutcome",
     "append_attempt_lifecycle_event",
+    "propose_manifest_preflight_failure",
 ]

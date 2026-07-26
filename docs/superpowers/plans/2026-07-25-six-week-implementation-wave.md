@@ -29,9 +29,10 @@ Current validation status: `diagnostic_only`
 
 Current issue gate: Package 0 / Issue #149 remains open
 
-Current stack layer: `codex/package-0-identity-core` packages only the
-Package 0 identity core on `dc509f96`. Package 1 CID-NL substrate and deferred
-Pt work are excluded and remain later, separate stack layers.
+Current stack layer: `codex/package-0-attempt-lifecycle` stacks the bounded
+Package 0 attempt-event prefix on `codex/package-0-identity-core`. Package 1
+CID-NL substrate and deferred Pt work are excluded and remain later, separate
+stack layers.
 
 This section is the canonical progress tracker for this implementation wave.
 It tracks execution and consumer wiring; it does not replace the productization
@@ -63,7 +64,7 @@ Progress vocabulary:
 
 | Package | Status | What is actually complete | First missing gate |
 | --- | --- | --- | --- |
-| Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`. The first two isolated stack layers implement acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, fail-closed canonical request content, and an owner-backed append-only `attempt_queued` → `attempt_started` / `cancellation_accepted` event prefix. | Manifest/failure/terminal/resource lifecycle and cleanup, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
+| Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`. The first two isolated stack layers implement acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, fail-closed canonical request content, and owner-backed append-only lifecycle ordering through queued cancellation plus a queued manifest-preflight failure to a non-acknowledged `failed` terminal proposal. | Real `RequiredWorkManifest` validation, offsets/metrics, durable terminal acknowledgement, resource lifecycle/cleanup, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
 | Package 1 — pure runtime and observation substrates | `contract_only` / partial | Separate retained CID-NL commits reach exact DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`; they are intentionally not in the Package 0 layers. | Runtime reducer/resource lifecycle and actual acquisition batch observations remain missing; no application consumer traverses the complete substrate. |
 | Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
@@ -74,7 +75,7 @@ Progress vocabulary:
 
 | Method handoff | Contract / local object | Actual consumer wiring | Strongest evidence | Status |
 | --- | --- | --- | --- | --- |
-| Canonical acquisition input → processing request/attempt → initial lifecycle event prefix | Implemented across the first two isolated stack layers; lifecycle events require the owner-issued attempt | Legacy `extractor.run` still consumes resolved inputs directly; no Targeted or Alignment runtime consumes the owner-backed attempt history | Full CI-equivalent no-RAW gates plus focused identity, adversarial, and event-ordering tests | `contract_only` |
+| Canonical acquisition input → processing request/attempt → coordinator lifecycle prefix | Implemented across the first two isolated stack layers; events require the owner-issued attempt and cover queued cancellation plus manifest-preflight failure to a `failed` proposal without `attempt_started` | Legacy `extractor.run` still consumes resolved inputs directly; no Targeted or Alignment runtime consumes the owner-backed attempt history, and no real manifest validator or durable finalizer is wired | Full CI-equivalent no-RAW gates plus focused identity, adversarial, and event-ordering tests | `contract_only` |
 | Canonical sample/target/review references | Implemented locally through existing owners | Not yet proven through both complete tracer projections | Focused missing/ambiguous/stale/superseded tests | `contract_only` |
 | Exact DDA/ddMS2 CID-NL evidence | Implemented locally | Targeted/Discovery adapters can validate bounded refs; main application path does not carry them end to end | Focused synthetic no-RAW tests | `contract_only` |
 | CID-NL evidence → physical MS1 peak | Implemented locally as owner-backed applicability refs | `run_discovery` does not yet emit the complete owner-backed chain | Focused substitution/mutation/ambiguity tests | `contract_only` |
@@ -105,12 +106,15 @@ Targeted-first Package 2 endpoint is hard-exact `xic_results.csv`. Untargeted
 Alignment Matrix/XLSX remains Package 3B and keeps separate authority; this
 decision does not skip Package 0/1 gates or authorize Package 2 mutation early.
 
-**First missing handoff and next falsifiable loop:** extend the same
-owner-backed attempt history through one queued manifest-preflight failure to a
-failed terminal proposal, proving that no `attempt_started` or artifact
-disposition is fabricated. Keep this pure and no-RAW; scheduler/resource
-integration remains Package 1 and the full multi-sample writer fixture remains
-Package 2.
+**First missing handoff and next falsifiable loop:** gap-audit and freeze only
+the owner-supplied `RequiredWorkManifest` content needed for a missing
+completeness attestation to drive the existing queued-to-failed proposal path
+rather than a caller manually declaring failure. It must bind to the existing
+attempt, use closed unique opaque work-unit keys, and must not mint a
+runtime-local owner or identity. Stop if the attestation requires an immutable
+owner reference that current code/docs/issues do not define. Keep this pure and
+no-RAW; scheduler/resource integration remains Package 1 and the full
+multi-sample writer fixture remains Package 2.
 
 **Remaining unknowns:** no Product unknown blocks stack publication. The first
 Design unknown is the explicit diagnostic-hypothesis selection/externalization

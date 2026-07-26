@@ -77,6 +77,114 @@ def test_queued_cancellation_prevents_attempt_start(tmp_path: Path) -> None:
         )
 
 
+def test_manifest_preflight_failure_proposes_failed_terminal_without_start(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        AttemptTerminalOutcome,
+        append_attempt_lifecycle_event,
+        propose_manifest_preflight_failure,
+    )
+
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=_attempt(tmp_path)),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    proposed = propose_manifest_preflight_failure(queued)
+
+    assert [event.kind for event in proposed.events] == [
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+        AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
+        AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
+    ]
+    assert AttemptLifecycleEventKind.ATTEMPT_STARTED not in {
+        event.kind for event in proposed.events
+    }
+    assert proposed.events[-1].proposed_outcome is AttemptTerminalOutcome.FAILED
+
+
+def test_manifest_preflight_failure_path_fails_closed(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleContractError,
+        AttemptLifecycleEvent,
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        AttemptTerminalOutcome,
+        append_attempt_lifecycle_event,
+        propose_manifest_preflight_failure,
+    )
+
+    attempt = _attempt(tmp_path)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    with pytest.raises(
+        AttemptLifecycleContractError, match="requires an AttemptTerminalOutcome"
+    ):
+        AttemptLifecycleEvent(
+            attempt=attempt,
+            sequence=2,
+            kind=AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
+        )
+    with pytest.raises(AttemptLifecycleContractError, match="only terminal_proposal"):
+        AttemptLifecycleEvent(
+            attempt=attempt,
+            sequence=2,
+            kind=AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
+            proposed_outcome=AttemptTerminalOutcome.FAILED,
+        )
+    with pytest.raises(AttemptLifecycleContractError, match="AttemptTerminalOutcome"):
+        AttemptLifecycleEvent(
+            attempt=attempt,
+            sequence=2,
+            kind=AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
+            proposed_outcome="failed",  # type: ignore[arg-type]
+        )
+    with pytest.raises(AttemptLifecycleContractError, match="must follow"):
+        append_attempt_lifecycle_event(
+            queued,
+            AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
+            proposed_outcome=AttemptTerminalOutcome.FAILED,
+        )
+
+    failed = append_attempt_lifecycle_event(
+        queued,
+        AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
+    )
+    with pytest.raises(AttemptLifecycleContractError, match="must propose failed"):
+        append_attempt_lifecycle_event(
+            failed,
+            AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
+            proposed_outcome=AttemptTerminalOutcome.SUCCEEDED,
+        )
+    with pytest.raises(AttemptLifecycleContractError, match="may appear only once"):
+        append_attempt_lifecycle_event(
+            failed,
+            AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
+        )
+
+    started = append_attempt_lifecycle_event(
+        queued,
+        AttemptLifecycleEventKind.ATTEMPT_STARTED,
+    )
+    with pytest.raises(AttemptLifecycleContractError, match="before attempt_started"):
+        propose_manifest_preflight_failure(started)
+
+    proposed = propose_manifest_preflight_failure(queued)
+    with pytest.raises(
+        AttemptLifecycleContractError, match="terminal proposal is final"
+    ):
+        append_attempt_lifecycle_event(
+            proposed,
+            AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
+        )
+
+
 def test_history_rejects_forged_attempt_sequence_and_transition(
     tmp_path: Path,
 ) -> None:
