@@ -15,6 +15,8 @@ The evidence spine is the shared layer that converts chromatographic observation
   `CidNlEvidenceRef`. Target/Discovery-only fields remain in thin adapters;
   both adapters must match the request-bound acquisition source, Targeted must
   also match the exact request-pinned target snapshot and scan number, and
+  direct Discovery must carry a finite measured `scan_precursor_mz` equal to
+  the canonical evidence precursor;
   neither projection artifact is a selection or delivery decision.
 - The existing `peak_detection` owner now exposes a bounded
   `PeakObservationRef`. Its physical content is canonical sample identity, m/z,
@@ -97,8 +99,9 @@ closes the following bounded rules:
 
 This closes the first provider-specific evidence-to-observation relation, not
 method-hypothesis composition. The DDA support owner requires one exact scan,
-strict neutral-loss evidence, a unique in-scope RT/m/z match, and the complete
-candidate tuple supplied to it. Reordering that tuple is identity-neutral;
+strict neutral-loss evidence, a unique integration-bounds RT/m/z match, and the
+complete candidate tuple supplied to it. Selected trace padding is provenance,
+not physical peak scope. Reordering that tuple is identity-neutral;
 mutation, substitution, missing candidates, no match, or multiple matches fail
 closed. The artifact depends on both the CID-NL evidence and every supplied
 candidate peak, so a caller cannot hide a non-selected candidate during later

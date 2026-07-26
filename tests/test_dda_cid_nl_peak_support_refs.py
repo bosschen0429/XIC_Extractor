@@ -203,6 +203,44 @@ def test_missing_peak_match_fails_closed(tmp_path: Path) -> None:
         )
 
 
+def test_dda_matching_uses_integration_bounds_not_padded_trace_points(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(
+        fixture.owners,
+        fixture.sample,
+        rt_left_min=7.94,
+        rt_right_min=8.06,
+    )
+    outside_evidence = _evidence(
+        fixture.owners,
+        fixture.sample,
+        scan_number=43,
+        scan_rt_min=8.08,
+    )
+
+    with pytest.raises(DdaCidNlPeakSupportContractError, match="missing"):
+        resolve_dda_cid_nl_peak_support_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            canonical_evidence=outside_evidence,
+            candidate_peaks=(peak,),
+            policy=_policy(),
+        )
+
+    inside_evidence = _evidence(fixture.owners, fixture.sample, scan_rt_min=8.0)
+    support = resolve_dda_cid_nl_peak_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        canonical_evidence=inside_evidence,
+        candidate_peaks=(peak,),
+        policy=_policy(),
+    )
+    assert support.content.peak_rt_min == pytest.approx(7.94)
+    assert support.content.peak_rt_max == pytest.approx(8.06)
+
+
 def test_multiple_matching_peaks_are_ambiguous(tmp_path: Path) -> None:
     fixture = _identity_fixture(tmp_path)
     evidence = _evidence(fixture.owners, fixture.sample)
@@ -1133,6 +1171,8 @@ def _peak(
     *,
     mz: float = _PRECURSOR_MZ,
     apex_intensity: float = 500.0,
+    rt_left_min: float = 7.9,
+    rt_right_min: float = 8.1,
 ) -> PeakObservationRef:
     acquisition_source = resolve_request_acquisition_source(
         processing_owners=owners,
@@ -1150,11 +1190,11 @@ def _peak(
         acquisition_source_id=acquisition_source.acquisition_source_id,
     )
     integration = IntegrationResult(
-        rt_left_min=7.9,
+        rt_left_min=rt_left_min,
         rt_apex_min=8.0,
-        rt_right_min=8.1,
+        rt_right_min=rt_right_min,
         raw_apex_rt_min=8.0,
-        rt_width_min=0.2,
+        rt_width_min=rt_right_min - rt_left_min,
         height_raw=apex_intensity,
         height_smoothed=apex_intensity - 20.0,
         area_raw_counts_seconds=42.0,

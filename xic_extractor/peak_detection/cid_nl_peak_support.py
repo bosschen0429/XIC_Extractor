@@ -192,6 +192,7 @@ def _support_content(
 ) -> DdaCidNlPeakSupportContent:
     observation = canonical_evidence.observation
     peak_content = peak_observation.content
+    integration = peak_content.integration
     return DdaCidNlPeakSupportContent(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
         cid_nl_evidence_content_id=(
@@ -204,8 +205,8 @@ def _support_content(
         acquisition_mode=observation.acquisition_mode,
         dda_scan_number=observation.scan_number,
         scan_rt_min=observation.scan_rt_min,
-        peak_rt_min=peak_content.rt[0],
-        peak_rt_max=peak_content.rt[-1],
+        peak_rt_min=integration.rt_left_min,
+        peak_rt_max=integration.rt_right_min,
         precursor_mz=observation.precursor_mz,
         peak_mz=peak_content.mz,
         precursor_delta_da=observation.precursor_mz - peak_content.mz,
@@ -223,8 +224,11 @@ def _matches_observation(
 ) -> bool:
     observation = canonical_evidence.observation
     peak_content = peak_observation.content
+    integration = peak_content.integration
     return (
-        peak_content.rt[0] <= observation.scan_rt_min <= peak_content.rt[-1]
+        integration.rt_left_min
+        <= observation.scan_rt_min
+        <= integration.rt_right_min
         and abs(observation.precursor_mz - peak_content.mz) <= precursor_tolerance_da
     )
 

@@ -129,6 +129,15 @@ def mint_untargeted_cid_nl_projection_ref(
         raise UntargetedCidNlProjectionError(
             "first tracer accepts only directly measured scan_precursor evidence"
         )
+    scan_precursor_mz = discovery_seed.scan_precursor_mz
+    if (
+        isinstance(scan_precursor_mz, bool)
+        or not isinstance(scan_precursor_mz, (int, float))
+        or not math.isfinite(float(scan_precursor_mz))
+    ):
+        raise UntargetedCidNlProjectionError(
+            "Discovery scan_precursor_mz must be a finite measured value"
+        )
     try:
         resolved_seed_sample = resolve_canonical_sample_identity(
             sample.snapshot,
@@ -157,6 +166,11 @@ def mint_untargeted_cid_nl_projection_ref(
         raise UntargetedCidNlProjectionError(
             "Discovery scan_number mismatches canonical CID-NL evidence"
         )
+    _require_close(
+        float(scan_precursor_mz),
+        observation.precursor_mz,
+        field="scan_precursor_mz",
+    )
     _require_close(
         discovery_seed.precursor_mz,
         observation.precursor_mz,

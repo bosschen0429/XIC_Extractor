@@ -288,6 +288,26 @@ def test_projection_sources_must_match_the_request_acquisition_binding(
         )
 
 
+@pytest.mark.parametrize("scan_precursor_mz", [None, _PRECURSOR_MZ + 50.0])
+def test_direct_discovery_projection_binds_the_measured_scan_precursor(
+    tmp_path: Path,
+    scan_precursor_mz: float | None,
+) -> None:
+    fixture = _fixture(tmp_path)
+    refs = _mint_refs(fixture)
+
+    with pytest.raises(UntargetedCidNlProjectionError, match="scan_precursor_mz"):
+        mint_untargeted_cid_nl_projection_ref(
+            processing_owners=_processing_owners(fixture),
+            sample=fixture.sample,
+            canonical_evidence=refs.evidence,
+            discovery_seed=replace(
+                fixture.discovery_seed,
+                scan_precursor_mz=scan_precursor_mz,
+            ),
+        )
+
+
 def test_retry_reuses_content_identity_but_mints_distinct_artifact_instances(
     tmp_path: Path,
 ) -> None:

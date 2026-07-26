@@ -512,9 +512,10 @@ A fourth bounded implementation closes the first provider-specific
 evidence-to-observation relation for the lab's DDA/ddMS2 method. CID-NL evidence
 schema v3 binds the exact request acquisition source, positive scan number, and
 explicit `dda_ddms2` acquisition mode. `DdaCidNlPeakSupportRef` then composes that
-immutable evidence ref with exactly one `PeakObservationRef` whose selected
-MS1 scope contains the scan RT and whose m/z satisfies the explicit precursor
-tolerance. The relation binds the canonical content IDs of the exact supplied
+immutable evidence ref with exactly one `PeakObservationRef` whose physical
+integration RT bounds contain the scan RT and whose m/z satisfies the explicit
+precursor tolerance; padded selected-trace points are not peak scope. The
+relation binds the canonical content IDs of the exact supplied
 candidate universe and includes every candidate artifact as an upstream, while
 request, attempt, sample, evidence, candidate, and retry substitutions remain
 fail-closed. Candidate reorder is identity-neutral.

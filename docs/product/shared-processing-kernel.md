@@ -232,7 +232,8 @@ The first no-write scientific-reference seam is executable:
 and the Targeted `MS2ProductEvidence` plus Untargeted direct `DiscoverySeed`
 adapters both validate and reference that same immutable artifact. The focused
 fixture proves exact content, owner/sample/acquisition-source/request/attempt
-binding, request-pinned Targeted target/scan binding, shared
+binding, request-pinned Targeted target/scan binding, finite direct Discovery
+scan-precursor binding, integration-bounds scan-to-peak matching, shared
 upstream closure, review supersession, zero acquisition-source reopen, and zero
 product write. Inferred `product_plus_neutral_loss` Discovery evidence remains
 outside this first slice and fails closed.
