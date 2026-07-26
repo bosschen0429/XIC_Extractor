@@ -117,6 +117,7 @@ where files live; this section owns the reason each package changes.
 | `xic_extractor/extraction/` | Targeted extraction orchestration, target jobs, anchor windowing, drift handling, and backend coordination | Workbook rendering, GUI, alignment matrix decisions |
 | `xic_extractor/peak_detection/` | Trace models, hypotheses, resolver implementations, boundary selection, baseline/integration audit, and region logic | Cross-sample ownership, workbook output, GUI, RAW IO orchestration |
 | `xic_extractor/configuration/` | Settings schema, config/target CSV loading, validation, and normalization into typed runtime settings | Extraction behavior or output rendering |
+| `xic_extractor/processing_identity.py` | Workflow-neutral acquisition-source, processing-request, and processing-attempt identity composition | Runtime events, storage, scientific selection, projection, or writer authority |
 | `xic_extractor/output/` | Workbook sheet rendering, TSV/HTML/XLSX writers, and output schema presentation | Domain evidence recomputation or RAW scanning |
 | `xic_extractor/diagnostics/` | Reusable diagnostic models, summaries, and classification helpers used by diagnostic CLIs | CLI argument parsing, one-off file-system orchestration, production behavior changes |
 | Root facades such as `extractor.py`, `signal_processing.py`, and `peak_scoring.py` | Public compatibility imports and thin orchestration while behavior is migrated | Permanent home for new implementation detail |

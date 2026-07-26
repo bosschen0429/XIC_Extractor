@@ -101,9 +101,38 @@ labels until an adapter binds them to the contract above.
 | `delivery_revision_id` | Cell key + producer attempt + selected decision/null payload + projection policy/contract version | Mutable “latest” state |
 | `delivery_seal_id` | Canonical sealed manifest content, including revision and output-artifact identities | Directory existence or writer exit code |
 
-The identity algorithm and serialized field names may be selected later. The
-semantic inputs above are invariant. A timestamp can describe when something
-happened; it cannot establish what happened.
+The first executable identity slice uses `processing_identity_v1`: typed IDs
+are SHA-256 digests over compact canonical JSON (`sort_keys`, UTF-8, finite JSON
+numbers), with a type/version prefix. Its current content boundary is:
+
+- an acquisition source binds the full-file SHA-256, byte size, acquisition
+  format, and adapter-readable observation namespace; path and file stat values
+  are used only to locate the file and detect mutation during hashing;
+- the Targeted processing request binds the canonical source set, the exact
+  source-to-request-local-adapter-key and injection-order binding, all effective
+  Targeted extraction settings, ordered Target definitions, effective RT
+  priors, approval records, optional MS1-shape support content and activation
+  policy, and the owning input-schema, algorithm, and contract versions. The
+  adapter key is part of current execution semantics but is not a canonical
+  sample identity and cannot be reused as a delivery-cell key;
+- a processing attempt binds one request, a fresh opaque 128-bit token, and an
+  optional predecessor attempt. Retry always issues a new attempt. Terminal
+  outcome and cancellation/failure events remain append-only facts owned by the
+  execution-runtime contract and never rewrite identity.
+
+The Targeted adapter currently names the existing Thermo MS-controller-1
+namespace explicitly. A different controller, acquisition adapter, or
+observation namespace therefore creates a different source identity rather
+than silently reusing a bare scan number. The resolver performs one sequential
+full-file read per source, but opens no vendor RAW handle and makes no XIC call.
+This slice is not wired into the production execution path until that I/O cost
+and persisted-identifier surface receive an explicit promotion decision.
+
+This freezes only the acquisition-source -> processing-request ->
+processing-attempt boundary. Evidence-artifact, sample, review-record,
+delivery-cell, revision, and seal identity remain separate incomplete owner
+contracts. A timestamp can describe when something happened; it cannot
+establish what happened.
 
 An acquisition source and a sample are different identities: one sample may
 have multiple acquisitions, and copying a source does not create a new sample.
