@@ -165,6 +165,34 @@ def test_source_path_replacement_during_hash_fails_closed(
         _source_identity(path)
 
 
+def test_source_identity_allows_path_stat_metadata_lag_for_same_file(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = _raw(tmp_path / "sample.raw", b"stable-content")
+    original_stat = Path.stat
+
+    class SameFileWithLaggingMetadata:
+        def __init__(self, observed) -> None:
+            self.st_dev = observed.st_dev
+            self.st_ino = observed.st_ino
+            self.st_size = observed.st_size
+            self.st_mtime_ns = observed.st_mtime_ns + 1
+            self.st_ctime_ns = observed.st_ctime_ns + 1
+
+    def lagging_stat(self, *args, **kwargs):
+        observed = original_stat(self, *args, **kwargs)
+        if self == path:
+            return SameFileWithLaggingMetadata(observed)
+        return observed
+
+    monkeypatch.setattr(Path, "stat", lagging_stat)
+
+    identity = _source_identity(path)
+
+    assert identity.byte_size == len(b"stable-content")
+
+
 def test_source_inventory_enumeration_reorder_does_not_change_request(
     tmp_path: Path,
 ) -> None:
