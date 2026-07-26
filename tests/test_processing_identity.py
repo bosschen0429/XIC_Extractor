@@ -1,5 +1,4 @@
 import ast
-import os
 from dataclasses import fields, replace
 from pathlib import Path
 from uuid import UUID
@@ -126,42 +125,22 @@ def test_source_path_replacement_during_hash_fails_closed(
     monkeypatch,
 ) -> None:
     path = _raw(tmp_path / "sample.raw", b"original-content")
-    displaced = tmp_path / "displaced.raw"
-    original_open = Path.open
+    original_stat = Path.stat
 
-    class ReplacingHandle:
-        def __init__(self, handle) -> None:
-            self._handle = handle
-            self._replaced = False
+    class DifferentFileIdentity:
+        def __init__(self, observed) -> None:
+            self.st_dev = observed.st_dev
+            self.st_ino = observed.st_ino + 1
 
-        def __enter__(self):
-            self._handle.__enter__()
-            return self
+    def replaced_path_stat(self, *args, **kwargs):
+        observed = original_stat(self, *args, **kwargs)
+        if self == path:
+            return DifferentFileIdentity(observed)
+        return observed
 
-        def __exit__(self, *args):
-            return self._handle.__exit__(*args)
+    monkeypatch.setattr(Path, "stat", replaced_path_stat)
 
-        def fileno(self):
-            return self._handle.fileno()
-
-        def read(self, size=-1):
-            chunk = self._handle.read(size)
-            if not self._replaced:
-                self._replaced = True
-                os.replace(path, displaced)
-                with original_open(path, "wb") as replacement:
-                    replacement.write(b"replacement-content")
-            return chunk
-
-    def replacing_open(self, *args, **kwargs):
-        handle = original_open(self, *args, **kwargs)
-        if self == path and args and args[0] == "rb":
-            return ReplacingHandle(handle)
-        return handle
-
-    monkeypatch.setattr(Path, "open", replacing_open)
-
-    with pytest.raises(IdentityContractError, match="mutated|replaced"):
+    with pytest.raises(IdentityContractError, match="replaced"):
         _source_identity(path)
 
 
