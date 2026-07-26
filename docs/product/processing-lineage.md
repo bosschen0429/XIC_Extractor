@@ -514,11 +514,28 @@ the complete candidate universe, does not interpret DIA, and does not claim
 co-isolation fidelity because the current reader contract lacks the required
 isolation metadata. It also does not allow a Discovery `DetectedFeature`
 without a complete owner `Trace` and `IntegrationResult` to mint a substitute,
-and it does not define method-hypothesis composition. The next tracer must
-compose the owner-backed DDA support relation into one method hypothesis
-without wiring it directly into the current Targeted-shaped `PeakHypothesis`.
-It must retain zero source reopens, exact review/lineage closure, and hard-zero
-public-output diff with both legacy writers authoritative.
+and one scan-level relation is not yet a method hypothesis. Before the existing
+`PeakHypothesis` owner can consume the evidence, repeated in-peak DDA scans must
+collapse into one chromatographic support event without losing their exact
+lineage. That intermediate composition must retain zero source reopens and
+hard-zero public-output diff with both legacy writers authoritative.
+
+A fifth bounded implementation closes repeated-scan composition without
+inventing a second hypothesis owner. `CidNlChromatographicSupportRef` consumes
+one or more owner-backed `DdaCidNlPeakSupportRef` values for the same request,
+attempt, sample, physical peak, exact candidate universe, and support policy.
+It retains each exact scan/evidence/support content reference in canonical scan
+order but fixes one chromatographic support event. Duplicate scan refs, missing
+members, mixed owner bindings, mixed peaks, mixed universes, or mixed policies
+fail closed; retry preserves content identity and receives a new artifact
+identity. Its artifact depends on every scan-level support artifact, so lineage
+closure remains transitive and exact.
+
+This event is provider evidence, not a method-hypothesis selection or an
+independent vote per scan. The next tracer must deepen the existing
+`PeakHypothesis` owner to consume the aggregate event without requiring
+Targeted-only label, role, pairing, or known-RT fields. If that cannot be done
+without a second hypothesis model or workflow flags, stop and redraw the seam.
 
 The tracer must consume the sample identity owner and review-record owner
 through explicit references. If either owner cannot provide an unambiguous

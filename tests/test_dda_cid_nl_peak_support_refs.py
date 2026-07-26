@@ -5,6 +5,11 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
+    CidNlChromatographicSupportContractError,
+    compose_cid_nl_chromatographic_support_ref,
+    validate_cid_nl_chromatographic_support_binding,
+)
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
     CidNlEvidenceRef,
@@ -370,6 +375,305 @@ def test_retry_preserves_support_content_but_mints_distinct_artifact(
     assert first.content == retried.content
     assert first.artifact.content_identity == retried.artifact.content_identity
     assert first.artifact.evidence_artifact_id != retried.artifact.evidence_artifact_id
+
+
+def test_repeated_dda_scans_compose_one_order_neutral_chromatographic_event(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    first = _resolve(
+        fixture,
+        _evidence(fixture.owners, fixture.sample, scan_number=42, scan_rt_min=7.98),
+        peak,
+    )
+    second = _resolve(
+        fixture,
+        _evidence(fixture.owners, fixture.sample, scan_number=43, scan_rt_min=8.02),
+        peak,
+    )
+
+    forward = compose_cid_nl_chromatographic_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        scan_support_refs=(first, second),
+    )
+    reverse = compose_cid_nl_chromatographic_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        scan_support_refs=(second, first),
+    )
+
+    assert forward == reverse
+    assert tuple(
+        member.dda_scan_number for member in forward.content.scan_supports
+    ) == (
+        42,
+        43,
+    )
+    assert forward.content.strict_nl_scan_count == 2
+    assert forward.content.chromatographic_support_event_count == 1
+    assert forward.artifact.upstream_artifact_ids == tuple(
+        sorted(
+            (
+                first.artifact.evidence_artifact_id,
+                second.artifact.evidence_artifact_id,
+            )
+        )
+    )
+
+
+def test_missing_or_duplicate_scan_support_fails_closed(tmp_path: Path) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    support = _resolve(fixture, _evidence(fixture.owners, fixture.sample), peak)
+
+    with pytest.raises(CidNlChromatographicSupportContractError, match="missing"):
+        compose_cid_nl_chromatographic_support_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            scan_support_refs=(),
+        )
+    with pytest.raises(CidNlChromatographicSupportContractError, match="duplicate"):
+        compose_cid_nl_chromatographic_support_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            scan_support_refs=(support, support),
+        )
+
+
+def test_mixed_peak_or_candidate_universe_cannot_form_one_event(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    first_peak = _peak(fixture.owners, fixture.sample, apex_intensity=500.0)
+    second_peak = _peak(fixture.owners, fixture.sample, apex_intensity=501.0)
+    first = _resolve(
+        fixture,
+        _evidence(fixture.owners, fixture.sample, scan_number=42),
+        first_peak,
+    )
+    mixed_peak = _resolve(
+        fixture,
+        _evidence(fixture.owners, fixture.sample, scan_number=43),
+        second_peak,
+    )
+
+    with pytest.raises(
+        CidNlChromatographicSupportContractError,
+        match="physical MS1 peak",
+    ):
+        compose_cid_nl_chromatographic_support_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            scan_support_refs=(first, mixed_peak),
+        )
+
+    nonmatching = _peak(
+        fixture.owners,
+        fixture.sample,
+        mz=600.0,
+        apex_intensity=300.0,
+    )
+    different_universe = resolve_dda_cid_nl_peak_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        canonical_evidence=_evidence(
+            fixture.owners,
+            fixture.sample,
+            scan_number=43,
+        ),
+        candidate_peaks=(first_peak, nonmatching),
+        policy=_policy(),
+    )
+    with pytest.raises(
+        CidNlChromatographicSupportContractError,
+        match="candidate universe",
+    ):
+        compose_cid_nl_chromatographic_support_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            scan_support_refs=(first, different_universe),
+        )
+
+
+def test_mixed_support_policy_cannot_form_one_event(tmp_path: Path) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    first = _resolve(
+        fixture,
+        _evidence(fixture.owners, fixture.sample, scan_number=42),
+        peak,
+    )
+    changed_policy = resolve_dda_cid_nl_peak_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        canonical_evidence=_evidence(
+            fixture.owners,
+            fixture.sample,
+            scan_number=43,
+        ),
+        candidate_peaks=(peak,),
+        policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.02,
+            neutral_loss_tolerance_ppm=20.0,
+        ),
+    )
+
+    with pytest.raises(
+        CidNlChromatographicSupportContractError,
+        match="support policy",
+    ):
+        compose_cid_nl_chromatographic_support_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            scan_support_refs=(first, changed_policy),
+        )
+
+
+def test_chromatographic_event_binding_rejects_missing_and_owner_substitution(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    foreign = _identity_fixture(tmp_path, sample_key="sample-b")
+    peak = _peak(fixture.owners, fixture.sample)
+    first = _resolve(
+        fixture,
+        _evidence(fixture.owners, fixture.sample, scan_number=42),
+        peak,
+    )
+    second = _resolve(
+        fixture,
+        _evidence(fixture.owners, fixture.sample, scan_number=43),
+        peak,
+    )
+    event = compose_cid_nl_chromatographic_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        scan_support_refs=(first, second),
+    )
+
+    with pytest.raises(
+        CidNlChromatographicSupportContractError,
+        match="support set",
+    ):
+        validate_cid_nl_chromatographic_support_binding(
+            event,
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            scan_support_refs=(first,),
+        )
+
+    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
+    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
+    with pytest.raises(
+        CidNlChromatographicSupportContractError,
+        match="processing attempt",
+    ):
+        validate_cid_nl_chromatographic_support_binding(
+            event,
+            processing_owners=retry_owners,
+            sample=fixture.sample,
+            scan_support_refs=(first, second),
+        )
+
+    with pytest.raises(CidNlChromatographicSupportContractError, match="sample"):
+        validate_cid_nl_chromatographic_support_binding(
+            event,
+            processing_owners=fixture.owners,
+            sample=foreign.sample,
+            scan_support_refs=(first, second),
+        )
+    with pytest.raises(
+        CidNlChromatographicSupportContractError,
+        match="processing request",
+    ):
+        validate_cid_nl_chromatographic_support_binding(
+            event,
+            processing_owners=foreign.owners,
+            sample=foreign.sample,
+            scan_support_refs=(first, second),
+        )
+
+
+def test_scan_mutation_invalidates_chromatographic_event_content(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    first = compose_cid_nl_chromatographic_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        scan_support_refs=(
+            _resolve(
+                fixture,
+                _evidence(fixture.owners, fixture.sample, scan_number=42),
+                peak,
+            ),
+        ),
+    )
+    changed = compose_cid_nl_chromatographic_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        scan_support_refs=(
+            _resolve(
+                fixture,
+                _evidence(fixture.owners, fixture.sample, scan_number=43),
+                peak,
+            ),
+        ),
+    )
+
+    assert first.artifact.content_identity != changed.artifact.content_identity
+
+
+def test_retry_preserves_chromatographic_event_content_but_not_artifact(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
+    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
+    first_peak = _peak(fixture.owners, fixture.sample)
+    retry_peak = _peak(retry_owners, fixture.sample)
+
+    first_event = compose_cid_nl_chromatographic_support_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        scan_support_refs=tuple(
+            _resolve(
+                fixture,
+                _evidence(fixture.owners, fixture.sample, scan_number=scan_number),
+                first_peak,
+            )
+            for scan_number in (42, 43)
+        ),
+    )
+    retry_event = compose_cid_nl_chromatographic_support_ref(
+        processing_owners=retry_owners,
+        sample=fixture.sample,
+        scan_support_refs=tuple(
+            resolve_dda_cid_nl_peak_support_ref(
+                processing_owners=retry_owners,
+                sample=fixture.sample,
+                canonical_evidence=_evidence(
+                    retry_owners,
+                    fixture.sample,
+                    scan_number=scan_number,
+                ),
+                candidate_peaks=(retry_peak,),
+                policy=_policy(),
+            )
+            for scan_number in (42, 43)
+        ),
+    )
+
+    assert first_event.content == retry_event.content
+    assert (
+        first_event.artifact.content_identity == retry_event.artifact.content_identity
+    )
+    assert first_event.artifact.evidence_artifact_id != (
+        retry_event.artifact.evidence_artifact_id
+    )
 
 
 def _resolve(

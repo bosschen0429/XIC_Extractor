@@ -1,0 +1,246 @@
+"""Collapse repeated strict DDA scans into one chromatographic support event.
+
+The CID-NL owner composes already validated scan-to-peak relations. Multiple
+scans inside one physical MS1 peak remain distinct scan evidence but count as
+one chromatographic support event. This module grants no hypothesis selection
+or product authority.
+"""
+
+from __future__ import annotations
+
+from xic_extractor.evidence_artifacts import _mint_evidence_artifact_ref
+from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
+    _ARTIFACT_SEMANTIC_CONTRACT,
+    ARTIFACT_SEMANTIC_ROLE,
+    RELATIONSHIP,
+    SCHEMA_VERSION,
+    CidNlChromatographicSupportContent,
+    CidNlChromatographicSupportContractError,
+    CidNlChromatographicSupportRef,
+    DdaCidNlScanSupportMember,
+    _member_sort_key,
+    canonical_cid_nl_chromatographic_support_bytes,
+)
+from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
+from xic_extractor.peak_detection.cid_nl_peak_support import (
+    DdaCidNlPeakSupportRef,
+)
+from xic_extractor.processing_identity import ProcessingOwnerReferences
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+
+
+def compose_cid_nl_chromatographic_support_ref(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    scan_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
+) -> CidNlChromatographicSupportRef:
+    """Compose repeated strict scan support into one physical-peak event."""
+
+    _validate_owner_sample(processing_owners, sample)
+    supports = _validated_scan_supports(
+        scan_support_refs,
+        processing_owners=processing_owners,
+        sample=sample,
+    )
+    content = _content_from_supports(sample=sample, supports=supports)
+    artifact = _mint_evidence_artifact_ref(
+        producer_processing_request_id=processing_owners.request.processing_request_id,
+        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
+        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        payload_bytes=canonical_cid_nl_chromatographic_support_bytes(content),
+        upstream_artifacts=tuple(support.artifact for support in supports),
+    )
+    return CidNlChromatographicSupportRef(content=content, artifact=artifact)
+
+
+def validate_cid_nl_chromatographic_support_binding(
+    reference: CidNlChromatographicSupportRef,
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    scan_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
+) -> None:
+    """Reject owner, sample, scan-set, peak, policy, or universe substitution."""
+
+    if not isinstance(reference, CidNlChromatographicSupportRef):
+        raise CidNlChromatographicSupportContractError(
+            "reference must be owner-minted chromatographic support"
+        )
+    _validate_owner_sample(processing_owners, sample)
+    supports = _validated_scan_supports(
+        scan_support_refs,
+        processing_owners=processing_owners,
+        sample=sample,
+    )
+    expected_content = _content_from_supports(sample=sample, supports=supports)
+    if reference.content != expected_content:
+        raise CidNlChromatographicSupportContractError(
+            "chromatographic event references a different scan support set"
+        )
+    expected_upstream_ids = tuple(
+        sorted(support.artifact.evidence_artifact_id for support in supports)
+    )
+    if reference.artifact.upstream_artifact_ids != expected_upstream_ids:
+        raise CidNlChromatographicSupportContractError(
+            "chromatographic event upstream scan support was substituted"
+        )
+    if (
+        reference.artifact.producer_processing_request_id
+        != processing_owners.request.processing_request_id
+    ):
+        raise CidNlChromatographicSupportContractError(
+            "chromatographic event references a different processing request"
+        )
+    if (
+        reference.artifact.producer_processing_attempt_id
+        != processing_owners.attempt.processing_attempt_id
+    ):
+        raise CidNlChromatographicSupportContractError(
+            "chromatographic event references a different processing attempt"
+        )
+
+
+def _content_from_supports(
+    *,
+    sample: ResolvedCanonicalSampleIdentity,
+    supports: tuple[DdaCidNlPeakSupportRef, ...],
+) -> CidNlChromatographicSupportContent:
+    first = supports[0].content
+    members = tuple(
+        sorted(
+            (
+                DdaCidNlScanSupportMember(
+                    dda_scan_number=support.content.dda_scan_number,
+                    cid_nl_evidence_content_id=(
+                        support.content.cid_nl_evidence_content_id
+                    ),
+                    dda_peak_support_content_id=(
+                        support.artifact.content_identity.artifact_content_id
+                    ),
+                )
+                for support in supports
+            ),
+            key=_member_sort_key,
+        )
+    )
+    return CidNlChromatographicSupportContent(
+        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        peak_observation_content_id=first.peak_observation_content_id,
+        candidate_peak_content_ids=first.candidate_peak_content_ids,
+        acquisition_mode=first.acquisition_mode,
+        policy=first.policy,
+        scan_supports=members,
+        strict_nl_scan_count=len(members),
+        chromatographic_support_event_count=1,
+        relationship=RELATIONSHIP,
+    )
+
+
+def _validated_scan_supports(
+    scan_support_refs: object,
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+) -> tuple[DdaCidNlPeakSupportRef, ...]:
+    if not isinstance(scan_support_refs, tuple) or not scan_support_refs:
+        raise CidNlChromatographicSupportContractError(
+            "missing strict DDA scan support"
+        )
+    if any(
+        not isinstance(reference, DdaCidNlPeakSupportRef)
+        for reference in scan_support_refs
+    ):
+        raise CidNlChromatographicSupportContractError(
+            "scan_support_refs must contain owner-backed DDA peak support"
+        )
+    supports = scan_support_refs
+    for support in supports:
+        if (
+            support.artifact.producer_processing_request_id
+            != processing_owners.request.processing_request_id
+        ):
+            raise CidNlChromatographicSupportContractError(
+                "DDA scan support references a different processing request"
+            )
+        if (
+            support.artifact.producer_processing_attempt_id
+            != processing_owners.attempt.processing_attempt_id
+        ):
+            raise CidNlChromatographicSupportContractError(
+                "DDA scan support references a different processing attempt"
+            )
+        if (
+            support.content.canonical_sample_identity_id
+            != sample.identity.sample_identity_id
+        ):
+            raise CidNlChromatographicSupportContractError(
+                "DDA scan support references a different sample"
+            )
+    artifact_ids = tuple(support.artifact.evidence_artifact_id for support in supports)
+    scan_numbers = tuple(support.content.dda_scan_number for support in supports)
+    if len(set(artifact_ids)) != len(artifact_ids) or len(set(scan_numbers)) != len(
+        scan_numbers
+    ):
+        raise CidNlChromatographicSupportContractError(
+            "duplicate DDA scan support cannot multiply one event"
+        )
+    if len({support.content.peak_observation_content_id for support in supports}) != 1:
+        raise CidNlChromatographicSupportContractError(
+            "DDA scan support references more than one physical MS1 peak"
+        )
+    if len({support.content.candidate_peak_content_ids for support in supports}) != 1:
+        raise CidNlChromatographicSupportContractError(
+            "DDA scan support references a different candidate universe"
+        )
+    if len({support.content.policy for support in supports}) != 1:
+        raise CidNlChromatographicSupportContractError(
+            "DDA scan support references a different support policy"
+        )
+    if any(
+        support.content.acquisition_mode != ACQUISITION_MODE for support in supports
+    ):
+        raise CidNlChromatographicSupportContractError(
+            f"DDA scan support acquisition mode must be {ACQUISITION_MODE!r}"
+        )
+    return tuple(
+        sorted(
+            supports,
+            key=lambda support: (
+                support.content.dda_scan_number,
+                support.artifact.content_identity.artifact_content_id,
+            ),
+        )
+    )
+
+
+def _validate_owner_sample(
+    processing_owners: object,
+    sample: object,
+) -> None:
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise CidNlChromatographicSupportContractError(
+            "processing_owners must be validated ProcessingOwnerReferences"
+        )
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise CidNlChromatographicSupportContractError(
+            "sample must be an owner-resolved canonical sample"
+        )
+    if sample not in processing_owners.sample_resolutions:
+        raise CidNlChromatographicSupportContractError(
+            "chromatographic support references a different sample"
+        )
+
+
+__all__ = [
+    "ARTIFACT_SEMANTIC_ROLE",
+    "CidNlChromatographicSupportContent",
+    "CidNlChromatographicSupportContractError",
+    "CidNlChromatographicSupportRef",
+    "DdaCidNlScanSupportMember",
+    "RELATIONSHIP",
+    "SCHEMA_VERSION",
+    "canonical_cid_nl_chromatographic_support_bytes",
+    "compose_cid_nl_chromatographic_support_ref",
+    "validate_cid_nl_chromatographic_support_binding",
+]

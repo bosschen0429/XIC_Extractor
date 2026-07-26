@@ -25,6 +25,11 @@ The evidence spine is the shared layer that converts chromatographic observation
   artifact to exactly one physical MS1 peak within the exact supplied candidate
   universe. DIA is outside this contract because there is no mature lab DIA
   analysis method.
+- `CidNlChromatographicSupportRef` then preserves one or more exact strict DDA
+  scan relations while collapsing them to one chromatographic support event
+  for that physical peak. Scan reorder is identity-neutral; duplicate scans or
+  mixed peak, candidate-universe, policy, sample, request, or attempt refs fail
+  closed.
 - Legacy family IDs are review and compatibility containers. Group identity
   belongs to `CrossSamplePeakGroupHypothesis`, while current candidate IDs and
   `PeakHypothesis` IDs remain workflow-local working identities. Neither is a
@@ -92,10 +97,13 @@ Runtime candidate-universe completeness is not yet proven, and the current RAW
 reader does not expose enough isolation/co-isolation metadata to make that a
 contract. A provider-local Discovery `DetectedFeature` that lacks the
 owner-required full `Trace` plus `IntegrationResult` still cannot mint a
-substitute physical reference. The next contract must compose this relation
-into a single-observation method hypothesis, then separately prove a
-multi-observation Pt/Delta Mass composition, without promoting the current
-Targeted-shaped `PeakHypothesis` into the physical owner.
+substitute physical reference. The aggregate event closes the lab rule that
+repeated DDA/NL scans inside one selected MS1 peak are multiple scans but one
+chromatographic support event. It is not a second `PeakHypothesis` and grants
+no independent support votes. The next contract must deepen the existing
+`PeakHypothesis` owner so it can consume this aggregate without requiring
+Targeted labels/roles, then separately prove a multi-observation Pt/Delta Mass
+composition.
 
 ## Surfaces
 
@@ -105,6 +113,7 @@ Targeted-shaped `PeakHypothesis` into the physical owner.
 | `CidNlEvidenceRef` | Attempt- and sample-bound immutable direct measured CID-NL observation for the no-write dual-projection tracer |
 | `PeakObservationRef` | `peak_detection`-owned physical MS1 content plus exact generation provenance and request/attempt artifact binding; diagnostic only |
 | `DdaCidNlPeakSupportRef` | CID-NL-owner DDA/ddMS2 scan-to-physical-peak relation over an exact supplied candidate universe; diagnostic only, no DIA or selection authority |
+| `CidNlChromatographicSupportRef` | One-or-more exact strict DDA scan relations aggregated as one physical-peak support event; diagnostic only, no hypothesis or counting authority |
 | `PeakHypothesis` | Current Targeted-shaped candidate working identity; not canonical physical observation identity |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
 | `IntegrationResult` | Integrated signal and boundary result |
