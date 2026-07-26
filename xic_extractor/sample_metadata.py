@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +45,9 @@ SAMPLE_ROLES: frozenset[str] = frozenset(
         "unknown",
     }
 )
+_CANONICAL_SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_SAMPLE_METADATA_SNAPSHOT_PREFIX = "xic.sample-metadata-snapshot.v1:"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,113 @@ class SampleMetadata:
 
 class SampleMetadataError(ValueError):
     """Raised when sample metadata cannot be treated as a shared contract."""
+
+
+@dataclass(frozen=True, slots=True)
+class SampleMetadataSnapshot:
+    """Owner-minted immutable snapshot for one sample identity namespace."""
+
+    snapshot_id: str
+    content_sha256: str
+    identity_namespace: str
+    rows: tuple[SampleMetadata, ...]
+
+    def __post_init__(self) -> None:
+        namespace = _owner_normalized_text(
+            self.identity_namespace,
+            field="identity_namespace",
+        )
+        content_sha256 = _validate_sha256(
+            self.content_sha256,
+            field="content_sha256",
+        )
+        rows = _validated_snapshot_rows(self.rows)
+        if rows != self.rows:
+            raise SampleMetadataError(
+                "sample metadata snapshot rows must be canonical-sorted"
+            )
+        expected_content_sha256 = _sample_metadata_snapshot_content_sha256(
+            rows,
+            identity_namespace=namespace,
+        )
+        if content_sha256 != expected_content_sha256:
+            raise SampleMetadataError(
+                "sample metadata snapshot content digest mismatches owner rows"
+            )
+        expected_id = _sample_metadata_snapshot_id(content_sha256)
+        if self.snapshot_id != expected_id:
+            raise SampleMetadataError(
+                "sample metadata snapshot ID mismatches owner content"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class CanonicalSampleIdentity:
+    """Owner-minted sample identity; aliases and projections are not its basis."""
+
+    sample_identity_id: str
+    sample_metadata_schema_version: str
+    identity_namespace: str
+    sample_key: str
+
+    def __post_init__(self) -> None:
+        if self.sample_metadata_schema_version != SAMPLE_METADATA_SCHEMA_VERSION:
+            raise SampleMetadataError(
+                "sample identity schema does not match sample_metadata_v1"
+            )
+        namespace = _owner_normalized_text(
+            self.identity_namespace,
+            field="identity_namespace",
+        )
+        sample_key = _canonical_sample_key(self.sample_key)
+        expected_id = _canonical_sample_identity_id(
+            sample_key,
+            identity_namespace=namespace,
+        )
+        if self.sample_identity_id != expected_id:
+            raise SampleMetadataError(
+                "sample_identity_id mismatches the owner-minted sample key"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedCanonicalSampleIdentity:
+    """Self-validating owner resolution of one current metadata lookup token."""
+
+    identity: CanonicalSampleIdentity
+    snapshot: SampleMetadataSnapshot
+    metadata: SampleMetadata
+    lookup_token: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.identity, CanonicalSampleIdentity):
+            raise SampleMetadataError(
+                "identity must be an owner-minted canonical sample identity"
+            )
+        if not isinstance(self.snapshot, SampleMetadataSnapshot):
+            raise SampleMetadataError(
+                "snapshot must be an owner-minted SampleMetadataSnapshot"
+            )
+        if not isinstance(self.metadata, SampleMetadata):
+            raise SampleMetadataError(
+                "metadata must be the owner row used for sample resolution"
+            )
+        if self.metadata not in self.snapshot.rows:
+            raise SampleMetadataError(
+                "resolved metadata row is not present in the owner snapshot"
+            )
+        token = _owner_normalized_text(self.lookup_token, field="lookup_token")
+        if token not in {self.metadata.sample_name, self.metadata.raw_stem}:
+            raise SampleMetadataError(
+                "lookup_token does not bind the resolved sample metadata row"
+            )
+        if self.identity != mint_canonical_sample_identity(
+            self.metadata,
+            identity_namespace=self.snapshot.identity_namespace,
+        ):
+            raise SampleMetadataError(
+                "resolved sample identity mismatches its owner metadata row"
+            )
 
 
 def load_sample_metadata(path: Path) -> tuple[SampleMetadata, ...]:
@@ -113,6 +226,102 @@ def parse_sample_metadata(
             )
         parsed.append(item)
     return tuple(parsed)
+
+
+def mint_canonical_sample_identity(
+    row: SampleMetadata,
+    *,
+    identity_namespace: str,
+) -> CanonicalSampleIdentity:
+    """Mint the v1 canonical identity from the owner-declared primary key."""
+
+    if not isinstance(row, SampleMetadata):
+        raise SampleMetadataError("sample identity must be minted from SampleMetadata")
+    namespace = _owner_normalized_text(
+        identity_namespace,
+        field="identity_namespace",
+    )
+    sample_key = _canonical_sample_key(row.sample_name)
+    return CanonicalSampleIdentity(
+        sample_identity_id=_canonical_sample_identity_id(
+            sample_key,
+            identity_namespace=namespace,
+        ),
+        sample_metadata_schema_version=SAMPLE_METADATA_SCHEMA_VERSION,
+        identity_namespace=namespace,
+        sample_key=sample_key,
+    )
+
+
+def mint_sample_metadata_snapshot(
+    rows: Sequence[SampleMetadata],
+    *,
+    identity_namespace: str,
+) -> SampleMetadataSnapshot:
+    """Mint one immutable, order-neutral owner snapshot without persistence."""
+
+    namespace = _owner_normalized_text(
+        identity_namespace,
+        field="identity_namespace",
+    )
+    canonical_rows = _validated_snapshot_rows(tuple(rows))
+    content_sha256 = _sample_metadata_snapshot_content_sha256(
+        canonical_rows,
+        identity_namespace=namespace,
+    )
+    return SampleMetadataSnapshot(
+        snapshot_id=_sample_metadata_snapshot_id(content_sha256),
+        content_sha256=content_sha256,
+        identity_namespace=namespace,
+        rows=canonical_rows,
+    )
+
+
+def resolve_canonical_sample_identity(
+    snapshot: SampleMetadataSnapshot,
+    token: str,
+    *,
+    expected_identity: CanonicalSampleIdentity | None = None,
+) -> ResolvedCanonicalSampleIdentity:
+    """Resolve one exact owner alias and optionally reject stale rebinding."""
+
+    if not isinstance(snapshot, SampleMetadataSnapshot):
+        raise SampleMetadataError(
+            "sample resolution requires an owner-minted SampleMetadataSnapshot"
+        )
+    clean_token = _owner_normalized_text(token, field="sample identity token")
+    matches = [
+        row
+        for row in snapshot.rows
+        if clean_token == row.sample_name or clean_token == row.raw_stem
+    ]
+    if not matches:
+        raise SampleMetadataError(
+            f"sample identity token {clean_token!r} is not owned by sample metadata"
+        )
+    if len(matches) != 1:
+        raise SampleMetadataError(
+            f"sample identity token {clean_token!r} is ambiguous"
+        )
+    resolved = mint_canonical_sample_identity(
+        matches[0],
+        identity_namespace=snapshot.identity_namespace,
+    )
+    if expected_identity is not None:
+        if not isinstance(expected_identity, CanonicalSampleIdentity):
+            raise SampleMetadataError(
+                "expected_identity must be an owner-minted sample identity"
+            )
+        if resolved != expected_identity:
+            raise SampleMetadataError(
+                f"sample identity token {clean_token!r} resolved to a stale binding"
+            )
+    return ResolvedCanonicalSampleIdentity(
+        identity=resolved,
+        snapshot=snapshot,
+        metadata=matches[0],
+        lookup_token=clean_token,
+    )
 
 
 def sample_metadata_to_injection_order(
@@ -306,3 +515,130 @@ def _add_injection_order(out: dict[str, int], sample: str, order: int) -> None:
             f"conflicting injection_order for sample {sample!r}: {existing} != {order}"
         )
     out[sample] = order
+
+
+def _canonical_sample_key(value: object) -> str:
+    return _owner_normalized_text(value, field="sample_key")
+
+
+def _owner_normalized_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise SampleMetadataError(
+            f"{field} must be non-empty owner-normalized text"
+        )
+    return value
+
+
+def _canonical_sample_identity_id(
+    sample_key: str,
+    *,
+    identity_namespace: str,
+) -> str:
+    digest = _canonical_json_sha256(
+        {
+            "identity_namespace": identity_namespace,
+            "sample_key": sample_key,
+            "sample_metadata_schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
+            "schema": "canonical_sample_identity_v1",
+        }
+    )
+    return f"{_CANONICAL_SAMPLE_ID_PREFIX}{digest}"
+
+
+def _validated_snapshot_rows(
+    rows: tuple[SampleMetadata, ...],
+) -> tuple[SampleMetadata, ...]:
+    if not rows:
+        raise SampleMetadataError("sample metadata snapshot must contain rows")
+    if any(not isinstance(row, SampleMetadata) for row in rows):
+        raise SampleMetadataError(
+            "sample metadata snapshot rows must be SampleMetadata"
+        )
+    serialized = [
+        {
+            "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
+            "sample_name": row.sample_name,
+            "raw_stem": row.raw_stem,
+            "injection_order": row.injection_order,
+            "sample_role": row.sample_role,
+            "batch_id": row.batch_id,
+            "prep_batch_id": row.prep_batch_id,
+            "matrix_type": row.matrix_type,
+            "group": row.group,
+            "excluded": "TRUE" if row.excluded else "FALSE",
+            "exclusion_reason": row.exclusion_reason,
+        }
+        for row in rows
+    ]
+    parsed = parse_sample_metadata(
+        serialized,
+        source="<sample-metadata-snapshot>",
+    )
+    canonical_input = tuple(
+        sorted(rows, key=lambda row: (row.sample_name, row.raw_stem))
+    )
+    canonical_parsed = tuple(
+        sorted(parsed, key=lambda row: (row.sample_name, row.raw_stem))
+    )
+    if canonical_input != canonical_parsed:
+        raise SampleMetadataError(
+            "sample metadata snapshot rows must be owner-normalized"
+        )
+    return canonical_parsed
+
+
+def _sample_metadata_snapshot_content_sha256(
+    rows: tuple[SampleMetadata, ...],
+    *,
+    identity_namespace: str,
+) -> str:
+    return _canonical_json_sha256(
+        {
+            "schema": "sample_metadata_snapshot_v1",
+            "sample_metadata_schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
+            "identity_namespace": identity_namespace,
+            "rows": [
+                {
+                    "sample_name": row.sample_name,
+                    "raw_stem": row.raw_stem,
+                    "injection_order": row.injection_order,
+                    "sample_role": row.sample_role,
+                    "batch_id": row.batch_id,
+                    "prep_batch_id": row.prep_batch_id,
+                    "matrix_type": row.matrix_type,
+                    "group": row.group,
+                    "excluded": row.excluded,
+                    "exclusion_reason": row.exclusion_reason,
+                }
+                for row in rows
+            ],
+        }
+    )
+
+
+def _sample_metadata_snapshot_id(content_sha256: str) -> str:
+    return f"{_SAMPLE_METADATA_SNAPSHOT_PREFIX}{content_sha256}"
+
+
+def _canonical_json_sha256(value: Mapping[str, object]) -> str:
+    try:
+        payload = json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise SampleMetadataError(
+            "sample identity content must be canonical JSON"
+        ) from exc
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _validate_sha256(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
+        raise SampleMetadataError(
+            f"{field} must be a lower-case SHA-256 digest"
+        )
+    return value

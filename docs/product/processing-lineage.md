@@ -95,6 +95,8 @@ labels until an adapter binds them to the contract above.
 | `acquisition_source_id` | Capability-validated content identity or stable source fingerprint, acquisition format, and observation namespace | Path, mtime, file order, or display name alone |
 | `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
 | `processing_attempt_id` | A unique execution identity referencing exactly one request; optional retry/predecessor reference | Request digest alone or a reused timestamp |
+| `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata_v1` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
+| `immutable_review_record_ref` | Review-owner subject + schema/version + canonical content digest + exact artifact bindings + optional same-subject predecessor and supersession reason | Caller-provided ID/digest, mutable latest row, private rationale, or review truth inferred by lineage |
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
 | `delivery_cell_key` | Projection kind + `sample_metadata_v1`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
@@ -119,6 +121,17 @@ numbers), with a type/version prefix. Its current content boundary is:
   optional predecessor attempt. Retry always issues a new attempt. Terminal
   outcome and cancellation/failure events remain append-only facts owned by the
   execution-runtime contract and never rewrite identity.
+- the sample-metadata owner mints `xic.sample.v1` from the
+  stable owner namespace, `sample_metadata_v1` identity schema, and canonical
+  `sample_name` key. Its `raw_stem` may resolve that key but is not identity
+  content; other metadata projections do not invalidate identity, while
+  renaming the canonical key does. Resolution retains one content-digested
+  complete owner snapshot, exact lookup token, and metadata row;
+- the review-roundtrip owner currently mints `xic.review-record.v1` only from
+  an owner-validated typed `review_action_v1`, canonical exact artifact
+  bindings, an owner-derived subject, and any complete same-subject
+  predecessor/supersession edge. It resolves against a content-digested
+  immutable registry snapshot and rejects stale or superseded references.
 
 The Targeted adapter currently names the existing Thermo MS-controller-1
 namespace explicitly. A different controller, acquisition adapter, or
@@ -128,11 +141,17 @@ full-file read per source, but opens no vendor RAW handle and makes no XIC call.
 This slice is not wired into the production execution path until that I/O cost
 and persisted-identifier surface receive an explicit promotion decision.
 
-This freezes only the acquisition-source -> processing-request ->
-processing-attempt boundary. Evidence-artifact, sample, review-record,
-delivery-cell, revision, and seal identity remain separate incomplete owner
-contracts. A timestamp can describe when something happened; it cannot
-establish what happened.
+This freezes the acquisition-source -> processing-request ->
+processing-attempt boundary plus the two prerequisite owner APIs. The lineage
+layer's `ProcessingOwnerReferences` only composes and validates a complete
+request and attempt, owner-resolved sample bindings whose exact lookup tokens
+cover every request acquisition input and share one exact metadata snapshot,
+and an optional owner-resolved current review record bound to one exact review
+registry snapshot. It does not mint sample/review IDs and it rejects mixed
+sample snapshots, unresolved review records, superseded review records, and
+review-snapshot substitution. Evidence-artifact, delivery-cell, revision, and
+seal identities remain incomplete later contracts. A timestamp can describe
+when something happened; it cannot establish what happened.
 
 An acquisition source and a sample are different identities: one sample may
 have multiple acquisitions, and copying a source does not create a new sample.
@@ -364,8 +383,10 @@ The model fails and must be narrowed or redrawn if:
 7. Current writers can emit method manifests and output metadata, but no
    workflow-neutral two-phase delivery seal owns the complete output lineage.
 8. `review_action_v1` and current review artifacts provide typed actions,
-   stable-row checks, and source hashes, but they do not yet provide one
-   workflow-neutral immutable review-conclusion/supersession reference.
+   stable-row checks, and source hashes. The review owner can now mint and
+   resolve a workflow-neutral immutable review-conclusion/supersession
+   reference, but no production registry or persisted lineage integration has
+   been selected.
 
 These are migration facts. This ticket does not authorize a repository-wide
 manifest rewrite or a new persistence framework.

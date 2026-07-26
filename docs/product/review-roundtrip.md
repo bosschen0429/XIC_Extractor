@@ -8,6 +8,27 @@ approved product changes.
 
 - Review queues, candidate tables, lockbox packets, and labels are review
   evidence. They do not change product outputs by themselves.
+- An immutable retained review conclusion is referenced through
+  `xic_extractor.review_records`, an implementation surface of this owner.
+  This first slice accepts only an owner-validated typed `ReviewAction` under
+  `review_action_v1`; arbitrary schema labels or JSON mappings cannot mint a
+  record. The owner computes canonical JSON SHA-256 content identity and
+  derives a typed `xic.review-record.v1:<sha256>` ID; callers cannot supply
+  either ID or digest.
+- A review-record identity binds its record schema version, full content
+  digest, owner-derived review subject (`sample_name` plus `target_label`),
+  canonical set of exact evidence-artifact IDs, and any predecessor plus
+  non-empty supersession reason. Artifact enumeration order is neutral;
+  substitution or content mutation invalidates the identity. A successor must
+  retain the same review subject.
+- Corrections are append-only successors. Resolution rejects missing,
+  ambiguous, stale, rebound, orphaned, forked, or superseded records rather
+  than treating a mutable "latest" row as identity. It returns a
+  `ResolvedReviewRecordRef` that retains and revalidates the immutable registry
+  snapshot; that snapshot has its own content-derived ID and canonical record
+  ordering, so omission or substitution produces a different bound snapshot.
+  Lineage accepts this resolved-current type plus its exact snapshot, not a
+  freshly minted unresolved record or a tuple of caller-selected records.
 - Typed review actions must be validated and planned before any mutation.
   Apply steps require stable identifiers, recompute rules, sidecar contracts,
   and approved expected-diff evidence.
@@ -30,6 +51,9 @@ approved product changes.
 | --- | --- |
 | Review Queue | Worklist and triage surface |
 | `review_action_v1` | Typed action import schema |
+| `ImmutableReviewRecordRef` | Owner-minted immutable content/artifact/supersession reference for retained conclusions |
+| `ReviewRecordRegistrySnapshot` | Content-digested immutable owner snapshot used for current/superseded resolution |
+| `ResolvedReviewRecordRef` | Owner-validated current reference within an immutable registry snapshot |
 | Dry-run application plan | Non-mutating audit of possible changes |
 | Expected-diff approval rows | Gate before product-impacting changes |
 | Lockbox sampling and label logs | Structured evidence-acquisition artifacts |
@@ -50,6 +74,9 @@ approved product changes.
 
 - Schema validation tests for actions or labels.
 - Stale-source/hash checks for imported review artifacts.
+- Owner-reference tests for deterministic minting, content/artifact
+  invalidation, missing/ambiguous/stale resolution, and append-only
+  supersession.
 - Expected-diff packet for any selected peak, area, counted detection,
   workbook, or matrix change.
 - Productization authority review before writer behavior changes.

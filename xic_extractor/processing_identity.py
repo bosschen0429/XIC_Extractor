@@ -13,6 +13,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.review_records import (
+    ResolvedReviewRecordRef,
+    ReviewRecordRegistrySnapshot,
+)
+from xic_extractor.sample_metadata import (
+    ResolvedCanonicalSampleIdentity,
+    SampleMetadataSnapshot,
+)
+
 
 class IdentityContractError(ValueError):
     """Raised when an immutable identity cannot satisfy its contract."""
@@ -384,6 +393,81 @@ class ProcessingAttemptIdentity:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class ProcessingOwnerReferences:
+    """Validated composition of lineage and owner-minted identity references."""
+
+    request: ProcessingRequestIdentity
+    attempt: ProcessingAttemptIdentity
+    sample_snapshot: SampleMetadataSnapshot
+    sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...]
+    review_snapshot: ReviewRecordRegistrySnapshot | None = None
+    review_record: ResolvedReviewRecordRef | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.request, ProcessingRequestIdentity):
+            raise IdentityContractError(
+                "request must be a ProcessingRequestIdentity"
+            )
+        if not isinstance(self.attempt, ProcessingAttemptIdentity):
+            raise IdentityContractError(
+                "attempt must be a ProcessingAttemptIdentity"
+            )
+        if self.attempt.processing_request_id != self.request.processing_request_id:
+            raise IdentityContractError(
+                "attempt references a different processing request"
+            )
+        if not isinstance(self.sample_snapshot, SampleMetadataSnapshot):
+            raise IdentityContractError(
+                "sample_snapshot must be owner-minted"
+            )
+        if not isinstance(self.sample_resolutions, tuple) or any(
+            not isinstance(resolution, ResolvedCanonicalSampleIdentity)
+            for resolution in self.sample_resolutions
+        ):
+            raise IdentityContractError(
+                "sample_resolutions must contain owner-resolved sample identities"
+            )
+        if any(
+            resolution.snapshot.snapshot_id != self.sample_snapshot.snapshot_id
+            for resolution in self.sample_resolutions
+        ):
+            raise IdentityContractError(
+                "sample resolutions must come from the same sample metadata snapshot"
+            )
+        expected_tokens = sorted(
+            binding.adapter_input_key
+            for binding in self.request.acquisition_bindings
+        )
+        resolved_tokens = sorted(
+            resolution.lookup_token for resolution in self.sample_resolutions
+        )
+        if resolved_tokens != expected_tokens:
+            raise IdentityContractError(
+                "sample resolutions must cover each request acquisition binding"
+            )
+        if (self.review_snapshot is None) != (self.review_record is None):
+            raise IdentityContractError(
+                "review snapshot and resolved record must be provided together"
+            )
+        if self.review_snapshot is not None:
+            if not isinstance(self.review_snapshot, ReviewRecordRegistrySnapshot):
+                raise IdentityContractError(
+                    "review_snapshot must be owner-minted"
+                )
+            if not isinstance(self.review_record, ResolvedReviewRecordRef):
+                raise IdentityContractError(
+                    "review_record must be an owner-resolved current review record"
+                )
+            if (
+                self.review_record.registry_snapshot.snapshot_id
+                != self.review_snapshot.snapshot_id
+            ):
+                raise IdentityContractError(
+                    "review record must come from the bound review registry snapshot"
+                )
+
+
 def build_acquisition_source_identity(
     path: str | Path,
     *,
@@ -591,15 +675,38 @@ def issue_processing_attempt(
     )
 
 
+def compose_processing_owner_references(
+    *,
+    request: ProcessingRequestIdentity,
+    attempt: ProcessingAttemptIdentity,
+    sample_snapshot: SampleMetadataSnapshot,
+    sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...],
+    review_snapshot: ReviewRecordRegistrySnapshot | None = None,
+    review_record: ResolvedReviewRecordRef | None = None,
+) -> ProcessingOwnerReferences:
+    """Compose owner references without minting or inferring either identity."""
+
+    return ProcessingOwnerReferences(
+        request=request,
+        attempt=attempt,
+        sample_snapshot=sample_snapshot,
+        sample_resolutions=sample_resolutions,
+        review_snapshot=review_snapshot,
+        review_record=review_record,
+    )
+
+
 __all__ = [
     "AcquisitionInputBinding",
     "AcquisitionSourceIdentity",
     "FileContentFingerprint",
     "IdentityContractError",
     "ProcessingAttemptIdentity",
+    "ProcessingOwnerReferences",
     "ProcessingRequestIdentity",
     "build_acquisition_source_identity",
     "build_processing_request_identity",
+    "compose_processing_owner_references",
     "fingerprint_file_content",
     "issue_processing_attempt",
 ]
