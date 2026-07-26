@@ -423,6 +423,16 @@ scientific parity.
 
 ## Current Implementation Gaps
 
+The first Package 0 event-contract slice is executable in
+`xic_extractor.execution_runtime`: it binds `attempt_queued`,
+`attempt_started`, and `cancellation_accepted` to one owner-issued
+`ProcessingAttemptIdentity`, enforces contiguous append-only ordering, and
+prevents an accepted queued cancellation from later becoming a started
+attempt. This remains `contract_only`: no Targeted or Alignment runtime caller
+consumes it, and it does not implement manifest settlement, terminal outcome,
+resources, failures, cleanup, artifacts, metrics, retry tokens, or durable
+finalization.
+
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.
 2. Targeted GUI cancellation can suppress later workbook/summary work after
