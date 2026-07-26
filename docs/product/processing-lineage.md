@@ -77,6 +77,9 @@ These are internal lineage concepts, not additional user-visible review tags.
 | Term | Meaning | Not the same as |
 | --- | --- | --- |
 | `AcquisitionSource` | One immutable source-data identity plus its acquisition format and adapter-readable observation namespace | A local file path or sample display name |
+| `TargetKey` | One target-list-owner namespace plus its stable normalized target label | An exact m/z/RT/transition definition or row number |
+| `TargetDefinition` | One exact normalized Target definition under a `TargetKey` | A mutable CSV row or label alone |
+| `TargetListSnapshot` | One immutable ordered set of owner-minted target definitions used by a processing request | `target_config_hash`, a path, or a caller-owned mutable list |
 | `ProcessingRequest` | One normalized scientific computation request over identified sources, effective method/evidence settings, workflow constraints, and contract versions | An execution, output folder, timestamp, or GUI session |
 | `ProcessingAttempt` | One execution of a `ProcessingRequest`; every retry receives a new identity | The logical request or the product delivery |
 | `EvidenceArtifact` | One immutable artifact instance identified by producer attempt, content digest, schema, semantic role, and lineage references | A mutable path, cache entry, or authority decision |
@@ -93,6 +96,9 @@ labels until an adapter binds them to the contract above.
 | Identity | Required basis | Forbidden basis |
 | --- | --- | --- |
 | `acquisition_source_id` | Capability-validated content identity or stable source fingerprint, acquisition format, and observation namespace | Path, mtime, file order, or display name alone |
+| `target_key_id` | Target-list-owner namespace + target-list schema/version + owner-normalized target label | m/z, RT window, current row order, or label without an owner namespace |
+| `target_definition_id` | Owner-minted target key + every normalized effective `Target` field | Target label or raw CSV bytes alone |
+| `target_list_snapshot_id` | Owner namespace + exact ordered target definitions + target-list schema/version | Mutable `list[Target]`, file path, truncated config hash, or unordered membership |
 | `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
 | `processing_attempt_id` | A unique execution identity referencing exactly one request; optional retry/predecessor reference | Request digest alone or a reused timestamp |
 | `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata_v1` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
@@ -110,9 +116,20 @@ numbers), with a type/version prefix. Its current content boundary is:
 - an acquisition source binds the full-file SHA-256, byte size, acquisition
   format, and adapter-readable observation namespace; path and file stat values
   are used only to locate the file and detect mutation during hashing;
+- the configuration owner mints `xic.target-key.v1` from an explicitly supplied
+  owner namespace plus normalized target label, and
+  `xic.target-definition.v1` from that key plus every effective `Target`
+  fields. It freezes those definitions in user-declared row order as
+  `xic.target-list-snapshot.v1`. Users may change the target list before a new
+  request; the owner never mutates an existing snapshot. A same-label content
+  change preserves the stable key but creates a new definition and snapshot;
+  reorder also creates a new snapshot because Targeted request and output order
+  currently consume that order. The namespace has no inferred path- or
+  machine-based default;
 - the Targeted processing request binds the canonical source set, the exact
   source-to-request-local-adapter-key and injection-order binding, all effective
-  Targeted extraction settings, ordered Target definitions, effective RT
+  Targeted extraction settings, the exact owner-minted target-list snapshot,
+  effective RT
   priors, approval records, optional MS1-shape support content and activation
   policy, and the owning input-schema, algorithm, and contract versions. The
   adapter key is part of current execution semantics but is not a canonical

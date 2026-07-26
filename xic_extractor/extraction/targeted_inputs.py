@@ -4,7 +4,11 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.config import ConfigError, ExtractionConfig
+from xic_extractor.configuration.target_identity import (
+    TargetListSnapshot,
+    target_list_snapshot_payload,
+)
 from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecord,
@@ -103,7 +107,7 @@ def resolve_targeted_raw_paths(config: ExtractionConfig) -> list[Path]:
 def build_targeted_processing_request_identity(
     config: ExtractionConfig,
     *,
-    targets: Sequence[Target],
+    target_snapshot: TargetListSnapshot,
     raw_paths: Sequence[Path],
     resolved_inputs: ResolvedTargetedInputs,
 ) -> ProcessingRequestIdentity:
@@ -143,7 +147,7 @@ def build_targeted_processing_request_identity(
             field: getattr(config, field)
             for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
         },
-        "targets": [asdict(target) for target in targets],
+        "target_list_snapshot": target_list_snapshot_payload(target_snapshot),
         "rt_prior_library": _rt_prior_snapshot(resolved_inputs.rt_prior_library),
         "model_selection_expected_diff_approvals": _approval_snapshot(
             resolved_inputs.model_selection_expected_diff_approvals

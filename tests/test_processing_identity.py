@@ -7,6 +7,7 @@ from uuid import UUID
 import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_PROCESSING_ALGORITHM_VERSION,
     TARGETED_PROCESSING_CONTRACT_VERSION,
@@ -272,6 +273,34 @@ def test_request_invalidates_changed_source_target_rt_prior_or_approval(
     assert len(changed_ids) == 4
 
 
+def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    first_target = _target()
+    second_target = replace(_target(), label="Other", mz=300.0)
+    raw_path = _raw(tmp_path / "sample_a.raw", b"source-a")
+    resolved = ResolvedTargetedInputs(
+        injection_order={"sample_a": 1},
+        rt_prior_library={},
+        model_selection_expected_diff_approvals=None,
+    )
+
+    forward = _request(
+        config,
+        [raw_path],
+        resolved=resolved,
+        targets=(first_target, second_target),
+    )
+    reordered = _request(
+        config,
+        [raw_path],
+        resolved=resolved,
+        targets=(second_target, first_target),
+    )
+
+    assert reordered.processing_request_id != forward.processing_request_id
+    assert "target_list_snapshot" in forward.normalized_scientific_inputs_json
+
+
 def test_request_invalidates_ms1_shape_support_content_or_policy(
     tmp_path: Path,
 ) -> None:
@@ -528,7 +557,10 @@ def _request(
 ):
     return build_targeted_processing_request_identity(
         config,
-        targets=targets or (_target(),),
+        target_snapshot=mint_target_list_snapshot(
+            targets or (_target(),),
+            identity_namespace="target-list:package-0-test",
+        ),
         raw_paths=paths,
         resolved_inputs=resolved or _resolved_inputs(),
     )
