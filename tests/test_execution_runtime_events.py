@@ -144,6 +144,121 @@ def test_manifest_preflight_failure_proposes_failed_terminal_without_start(
     assert proposed.events[-1].proposed_outcome is AttemptTerminalOutcome.FAILED
 
 
+def test_required_work_manifest_preflight_accepts_owner_attested_closed_work(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        append_attempt_lifecycle_event,
+        preflight_required_work_manifest,
+    )
+
+    attempt = _attempt(tmp_path)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+
+    preflight = preflight_required_work_manifest(
+        queued,
+        attempt=attempt,
+        work_unit_keys=("sample-a:target-1", "sample-a:target-2"),
+        owner_completeness_attestation="targeted-application-service:v1",
+    )
+
+    assert preflight.accepted is True
+    assert preflight.history == queued
+    assert preflight.manifest is not None
+    assert preflight.manifest.attempt == attempt
+    assert preflight.manifest.work_unit_keys == (
+        "sample-a:target-1",
+        "sample-a:target-2",
+    )
+    assert (
+        preflight.manifest.owner_completeness_attestation
+        == "targeted-application-service:v1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("work_unit_keys", "owner_completeness_attestation"),
+    [
+        (("sample-a:target-1",), None),
+        (("sample-a:target-1", "sample-a:target-1"), "targeted:v1"),
+        (("",), "targeted:v1"),
+    ],
+)
+def test_invalid_required_work_manifest_drives_existing_failed_proposal(
+    tmp_path: Path,
+    work_unit_keys: tuple[str, ...],
+    owner_completeness_attestation: str | None,
+) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        AttemptTerminalOutcome,
+        append_attempt_lifecycle_event,
+        preflight_required_work_manifest,
+    )
+
+    attempt = _attempt(tmp_path)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+
+    preflight = preflight_required_work_manifest(
+        queued,
+        attempt=attempt,
+        work_unit_keys=work_unit_keys,
+        owner_completeness_attestation=owner_completeness_attestation,
+    )
+
+    assert preflight.accepted is False
+    assert preflight.manifest is None
+    assert [event.kind for event in preflight.history.events] == [
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+        AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
+        AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
+    ]
+    assert (
+        preflight.history.events[-1].proposed_outcome
+        is AttemptTerminalOutcome.FAILED
+    )
+
+
+def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        append_attempt_lifecycle_event,
+        preflight_required_work_manifest,
+    )
+
+    request = _request(tmp_path)
+    attempt = issue_processing_attempt(request)
+    other_attempt = issue_processing_attempt(request, retry_of=attempt)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+
+    preflight = preflight_required_work_manifest(
+        queued,
+        attempt=other_attempt,
+        work_unit_keys=("sample-a:target-1",),
+        owner_completeness_attestation="targeted:v1",
+    )
+
+    assert preflight.accepted is False
+    assert preflight.manifest is None
+    assert (
+        preflight.history.events[-1].kind
+        is AttemptLifecycleEventKind.TERMINAL_PROPOSAL
+    )
+
+
 def test_manifest_preflight_failure_path_fails_closed(
     tmp_path: Path,
 ) -> None:

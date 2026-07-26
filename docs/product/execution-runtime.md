@@ -431,11 +431,15 @@ prevent an accepted queued cancellation from later becoming a started attempt.
 They also encode the coordinator-only
 `attempt_queued` -> `manifest_preflight_failed` ->
 `terminal_proposal(failed)` path without fabricating `attempt_started` or a
-committed outcome. This remains `contract_only`: no Targeted or Alignment
-runtime caller consumes it, and it does not yet validate a real
-`RequiredWorkManifest` or completeness attestation, record monotonic offsets or
-metric availability, settle work/resources/artifacts, or durably acknowledge a
-terminal outcome.
+committed outcome. The Package 0 runtime owner now consumes owner-supplied
+manifest content into an attempt-bound immutable `RequiredWorkManifest` with
+closed unique opaque work-unit keys. Missing completeness attestation, duplicate
+or blank keys, and attempt substitution drive that existing queued-to-failed
+proposal instead of relying on a caller to declare failure manually. This
+remains `contract_only`: no Targeted or Alignment application caller consumes
+the validated manifest, and the runtime does not yet record monotonic offsets
+or metric availability, settle work/resources/artifacts, or durably acknowledge
+a terminal outcome.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.

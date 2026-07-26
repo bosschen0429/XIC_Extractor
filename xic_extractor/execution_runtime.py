@@ -29,6 +29,39 @@ class AttemptTerminalOutcome(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class RequiredWorkManifest:
+    """Closed owner-attested work required for one processing attempt."""
+
+    attempt: ProcessingAttemptIdentity
+    work_unit_keys: tuple[str, ...]
+    owner_completeness_attestation: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.attempt, ProcessingAttemptIdentity):
+            raise AttemptLifecycleContractError(
+                "attempt must be an owner-issued ProcessingAttemptIdentity"
+            )
+        if not isinstance(self.work_unit_keys, tuple):
+            raise AttemptLifecycleContractError("work_unit_keys must be a tuple")
+        if any(
+            not isinstance(key, str) or not key.strip()
+            for key in self.work_unit_keys
+        ):
+            raise AttemptLifecycleContractError(
+                "work_unit_keys must contain non-empty opaque text keys"
+            )
+        if len(set(self.work_unit_keys)) != len(self.work_unit_keys):
+            raise AttemptLifecycleContractError("work_unit_keys must be unique")
+        if (
+            not isinstance(self.owner_completeness_attestation, str)
+            or not self.owner_completeness_attestation.strip()
+        ):
+            raise AttemptLifecycleContractError(
+                "owner_completeness_attestation must be non-empty opaque text"
+            )
+
+
+@dataclass(frozen=True, slots=True)
 class AttemptLifecycleEvent:
     """One ordered runtime fact bound to an owner-issued processing attempt."""
 
@@ -188,6 +221,44 @@ class AttemptLifecycleHistory:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class RequiredWorkManifestPreflight:
+    """Accepted manifest or the existing queued-to-failed runtime proposal."""
+
+    history: AttemptLifecycleHistory
+    manifest: RequiredWorkManifest | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.history, AttemptLifecycleHistory):
+            raise AttemptLifecycleContractError(
+                "history must be an AttemptLifecycleHistory"
+            )
+        if self.manifest is not None:
+            if not isinstance(self.manifest, RequiredWorkManifest):
+                raise AttemptLifecycleContractError(
+                    "manifest must be a RequiredWorkManifest"
+                )
+            if self.manifest.attempt != self.history.attempt:
+                raise AttemptLifecycleContractError(
+                    "manifest must reference the history attempt"
+                )
+            return
+        if (
+            not self.history.events
+            or self.history.events[-1].kind
+            is not AttemptLifecycleEventKind.TERMINAL_PROPOSAL
+            or self.history.events[-1].proposed_outcome
+            is not AttemptTerminalOutcome.FAILED
+        ):
+            raise AttemptLifecycleContractError(
+                "rejected manifest preflight must carry a failed terminal proposal"
+            )
+
+    @property
+    def accepted(self) -> bool:
+        return self.manifest is not None
+
+
 def append_attempt_lifecycle_event(
     history: AttemptLifecycleHistory,
     kind: AttemptLifecycleEventKind,
@@ -228,12 +299,61 @@ def propose_manifest_preflight_failure(
     )
 
 
+def preflight_required_work_manifest(
+    history: AttemptLifecycleHistory,
+    *,
+    attempt: ProcessingAttemptIdentity,
+    work_unit_keys: tuple[str, ...],
+    owner_completeness_attestation: str | None,
+) -> RequiredWorkManifestPreflight:
+    """Consume owner manifest content before dispatch, failing the attempt closed."""
+
+    if not isinstance(history, AttemptLifecycleHistory):
+        raise AttemptLifecycleContractError(
+            "history must be an AttemptLifecycleHistory"
+        )
+    if (
+        len(history.events) != 1
+        or history.events[0].kind is not AttemptLifecycleEventKind.ATTEMPT_QUEUED
+    ):
+        raise AttemptLifecycleContractError(
+            "manifest preflight requires exactly the attempt_queued history"
+        )
+    if (
+        not isinstance(owner_completeness_attestation, str)
+        or not owner_completeness_attestation.strip()
+    ):
+        return RequiredWorkManifestPreflight(
+            history=propose_manifest_preflight_failure(history),
+            manifest=None,
+        )
+    try:
+        manifest = RequiredWorkManifest(
+            attempt=attempt,
+            work_unit_keys=work_unit_keys,
+            owner_completeness_attestation=owner_completeness_attestation,
+        )
+        if manifest.attempt != history.attempt:
+            raise AttemptLifecycleContractError(
+                "manifest must reference the queued history attempt"
+            )
+    except AttemptLifecycleContractError:
+        return RequiredWorkManifestPreflight(
+            history=propose_manifest_preflight_failure(history),
+            manifest=None,
+        )
+    return RequiredWorkManifestPreflight(history=history, manifest=manifest)
+
+
 __all__ = [
     "AttemptLifecycleContractError",
     "AttemptLifecycleEvent",
     "AttemptLifecycleEventKind",
     "AttemptLifecycleHistory",
     "AttemptTerminalOutcome",
+    "RequiredWorkManifest",
+    "RequiredWorkManifestPreflight",
     "append_attempt_lifecycle_event",
+    "preflight_required_work_manifest",
     "propose_manifest_preflight_failure",
 ]
