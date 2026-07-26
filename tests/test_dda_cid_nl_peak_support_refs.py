@@ -22,7 +22,11 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     resolve_dda_cid_nl_peak_support_ref,
     validate_dda_cid_nl_peak_support_binding,
 )
-from xic_extractor.peak_detection.hypotheses import IntegrationResult, PeakHypothesis
+from xic_extractor.peak_detection.hypotheses import (
+    EvidenceVector,
+    IntegrationResult,
+    PeakHypothesis,
+)
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     mint_peak_observation_ref,
@@ -880,6 +884,14 @@ def test_owner_backed_hypothesis_rejects_legacy_context_and_identity_tamper(
         replace(hypothesis, target_label="control")
     with pytest.raises(PeakHypothesisContractError, match="hypothesis_id"):
         replace(hypothesis, hypothesis_id=f"xic.peak-hypothesis.v1:{'0' * 64}")
+    with pytest.raises(PeakHypothesisContractError, match="hypothesis_method"):
+        replace(
+            hypothesis,
+            hypothesis_method="",
+            peak_observation_refs=(),
+            artifact=None,
+            evidence=EvidenceVector(),
+        )
 
 
 def _resolve(

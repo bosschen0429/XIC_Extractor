@@ -21,6 +21,8 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     CidNlChromatographicSupportRef,
 )
 from xic_extractor.peak_detection.hypotheses import (
+    OWNER_BACKED_ANALYSIS_MODE,
+    OWNER_BACKED_HYPOTHESIS_ID_PREFIX,
     AuditTrail,
     EvidenceVector,
     PeakHypothesis,
@@ -35,13 +37,13 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SCHEMA_VERSION = "peak_hypothesis_v1"
 HYPOTHESIS_METHOD_DDA_CID_NL = "dda_cid_nl"
-ANALYSIS_MODE_WORKFLOW_NEUTRAL = "workflow_neutral"
+ANALYSIS_MODE_WORKFLOW_NEUTRAL = OWNER_BACKED_ANALYSIS_MODE
 ARTIFACT_SEMANTIC_ROLE = "owner_backed_peak_hypothesis"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
 
-_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
+_HYPOTHESIS_ID_PREFIX = OWNER_BACKED_HYPOTHESIS_ID_PREFIX
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.peak_hypothesis_identity",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,

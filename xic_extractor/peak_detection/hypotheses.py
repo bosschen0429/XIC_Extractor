@@ -46,6 +46,9 @@ if TYPE_CHECKING:
     )
     from xic_extractor.peak_detection.observations import PeakObservationRef
 
+OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
+OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
+
 _CONFIDENCE_RANK = {
     "HIGH": 0,
     "MEDIUM": 1,
@@ -150,6 +153,8 @@ class PeakHypothesis:
             or self.peak_observation_refs
             or self.artifact is not None
             or self.evidence.cid_nl_chromatographic_support_ref is not None
+            or self.analysis_mode == OWNER_BACKED_ANALYSIS_MODE
+            or self.hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX)
         ):
             return
         from xic_extractor.peak_detection.peak_hypothesis_identity import (
