@@ -184,11 +184,28 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
         acquisition_source_id=_source_id(identity.owners),
     )
 
+    with pytest.raises(
+        PeakObservationContractError,
+        match="height_raw|area_raw_counts_seconds",
+    ):
+        mint_peak_observation_ref(
+            processing_owners=identity.owners,
+            sample=identity.sample,
+            trace=mutated_trace,
+            integration=_integration(raw_scan_indices=(1, 2, 3)),
+            resolver_mode="local_minimum",
+            proposal_sources=("local_minimum",),
+        )
+
     mutated = mint_peak_observation_ref(
         processing_owners=identity.owners,
         sample=identity.sample,
         trace=mutated_trace,
-        integration=_integration(raw_scan_indices=(1, 2, 3)),
+        integration=_integration(
+            raw_scan_indices=(1, 2, 3),
+            apex_intensity=501.0,
+            area_raw_counts_seconds=3306.0,
+        ),
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
@@ -203,6 +220,39 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
         replace(
             original.content,
             intensity=(50.0, 501.0, 50.0),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "contradiction", "message"),
+    [
+        ("height_raw", 999999.0, "height_raw"),
+        ("height_smoothed", 999999.0, "height_smoothed"),
+        ("raw_apex_rt_min", 7.9, "raw_apex_rt_min"),
+        ("rt_apex_min", 7.9, "height_smoothed"),
+        ("area_raw_counts_seconds", 999999.0, "area_raw_counts_seconds"),
+    ],
+)
+def test_mint_rejects_integration_facts_that_contradict_the_selected_trace(
+    tmp_path: Path,
+    field_name: str,
+    contradiction: float,
+    message: str,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    integration = replace(
+        _integration(raw_scan_indices=(1, 2, 3)),
+        **{field_name: contradiction},
+    )
+
+    with pytest.raises(PeakObservationContractError, match=message):
+        mint_peak_observation_ref(
+            processing_owners=identity.owners,
+            sample=identity.sample,
+            trace=_standard_trace(identity.owners),
+            integration=integration,
+            resolver_mode="local_minimum",
+            proposal_sources=("local_minimum",),
         )
 
 
@@ -228,31 +278,51 @@ def test_integration_fact_mutation_changes_content_identity(tmp_path: Path) -> N
     )
 
 
+def test_selection_trace_mutation_changes_provenance_not_physical_content(
+    tmp_path: Path,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    trace = _standard_trace(identity.owners)
+    integration = _integration(raw_scan_indices=(1, 2, 3))
+
+    first = mint_peak_observation_ref(
+        processing_owners=identity.owners,
+        sample=identity.sample,
+        trace=trace,
+        integration=integration,
+        selection_intensity=(0.0, 40.0, 500.0, 40.0, 0.0),
+        resolver_mode="smoothed",
+        proposal_sources=("synthetic_selection_trace",),
+    )
+    changed = mint_peak_observation_ref(
+        processing_owners=identity.owners,
+        sample=identity.sample,
+        trace=trace,
+        integration=integration,
+        selection_intensity=(0.0, 45.0, 500.0, 45.0, 0.0),
+        resolver_mode="smoothed",
+        proposal_sources=("synthetic_selection_trace",),
+    )
+
+    assert first.content == changed.content
+    assert first.generation_provenance.selection_trace_sha256 != (
+        changed.generation_provenance.selection_trace_sha256
+    )
+    assert first.artifact.content_identity != changed.artifact.content_identity
+
+
 def test_equivalent_numeric_integration_inputs_have_one_content_identity(
     tmp_path: Path,
 ) -> None:
     identity = _identity_fixture(tmp_path)
     float_integration = replace(
         _integration(raw_scan_indices=(1, 2, 3)),
-        area_uncertainty=2.0,
-        baseline_residual_mad=3.0,
-        baseline_score=4.0,
-        area_ms1_morphology=5.0,
-        ms1_morphology_trace_window_points=7,
-        ms1_morphology_trace_effective_points=9,
     )
     integer_integration = replace(
         float_integration,
         height_raw=500,
-        height_smoothed=480,
-        area_raw_counts_seconds=42,
-        area_baseline_corrected=40,
-        area_uncertainty=2,
-        baseline_residual_mad=3,
-        baseline_score=4,
-        area_ms1_morphology=5,
-        ms1_morphology_trace_window_points=7.0,  # type: ignore[arg-type]
-        ms1_morphology_trace_effective_points=9.0,  # type: ignore[arg-type]
+        height_smoothed=500,
+        area_raw_counts_seconds=3300,
     )
 
     float_ref = mint_peak_observation_ref(
@@ -387,7 +457,7 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
         rt=8.0,
         intensity=500.0,
         intensity_smoothed=480.0,
-        area=42.0,
+        area=3300.0,
         peak_start=7.94,
         peak_end=8.06,
     )
@@ -426,6 +496,7 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
         sample=identity.sample,
         trace=trace,
         integration=integration,
+        selection_intensity=(0.0, 40.0, 480.0, 40.0, 0.0),
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
@@ -434,6 +505,52 @@ def test_owner_boundary_between_scan_points_maps_to_selected_trace(
     assert reference.content.rt == (7.9, 8.0, 8.1)
     assert reference.content.integration.rt_left_min == 7.94
     assert reference.content.integration.rt_right_min == 8.06
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "area_baseline_corrected",
+        "area_uncertainty",
+        "area_uncertainty_formula_version",
+        "baseline_residual_mad",
+        "area_uncertainty_noise_source",
+        "baseline_type",
+        "baseline_score",
+        "area_ms1_morphology",
+        "ms1_morphology_area_source",
+        "ms1_morphology_trace_method",
+        "ms1_morphology_trace_effective_points",
+    ],
+)
+def test_mint_rejects_derived_integration_fact_mutation(
+    tmp_path: Path,
+    field_name: str,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    trace = _standard_trace(identity.owners)
+    integration = _integration_with_derived_facts(trace)
+    original = getattr(integration, field_name)
+    if isinstance(original, str):
+        contradiction: object = f"{original}-forged"
+    elif isinstance(original, int):
+        contradiction = original + 2
+    else:
+        assert isinstance(original, float)
+        contradiction = original + 1.0
+
+    with pytest.raises(PeakObservationContractError, match=field_name):
+        mint_peak_observation_ref(
+            processing_owners=identity.owners,
+            sample=identity.sample,
+            trace=trace,
+            integration=replace(
+                integration,
+                **{field_name: contradiction},
+            ),
+            resolver_mode="local_minimum",
+            proposal_sources=("local_minimum",),
+        )
 
 
 @pytest.mark.parametrize(
@@ -613,19 +730,62 @@ def _source_id(owners: ProcessingOwnerReferences) -> str:
     return owners.request.acquisition_sources[0].acquisition_source_id
 
 
-def _integration(*, raw_scan_indices: tuple[int, ...]) -> IntegrationResult:
+def _integration(
+    *,
+    raw_scan_indices: tuple[int, ...],
+    apex_intensity: float = 500.0,
+    area_raw_counts_seconds: float = 3300.0,
+) -> IntegrationResult:
     return IntegrationResult(
         rt_left_min=7.9,
         rt_apex_min=8.0,
         rt_right_min=8.1,
         raw_apex_rt_min=8.0,
         rt_width_min=0.2,
-        height_raw=500.0,
-        height_smoothed=480.0,
-        area_raw_counts_seconds=42.0,
+        height_raw=apex_intensity,
+        height_smoothed=apex_intensity,
+        area_raw_counts_seconds=area_raw_counts_seconds,
         integration_method="raw_trapezoid",
         boundary_sources=("candidate_interval",),
-        area_baseline_corrected=40.0,
-        baseline_type="asls",
         raw_scan_indices=raw_scan_indices,
     )
+
+
+def _integration_with_derived_facts(trace: Trace) -> IntegrationResult:
+    peak = PeakResult(
+        rt=8.0,
+        intensity=500.0,
+        intensity_smoothed=500.0,
+        area=3300.0,
+        peak_start=7.9,
+        peak_end=8.1,
+    )
+    candidate = PeakCandidate(
+        peak=peak,
+        selection_apex_rt=8.0,
+        selection_apex_intensity=500.0,
+        selection_apex_index=2,
+        raw_apex_rt=8.0,
+        raw_apex_intensity=500.0,
+        raw_apex_index=2,
+        prominence=450.0,
+        proposal_sources=("local_minimum",),
+    )
+    result = PeakDetectionResult(
+        status="OK",
+        peak=peak,
+        n_points=trace.scan_count,
+        max_smoothed=500.0,
+        n_prominent_peaks=1,
+        candidates=(candidate,),
+    )
+    return build_peak_hypotheses(
+        sample_name=trace.sample_name,
+        target_label="test-only-target",
+        role="",
+        istd_pair="",
+        resolver_mode="local_minimum",
+        peak_result=result,
+        rt=trace.rt,
+        intensity=trace.intensity,
+    )[0].integration

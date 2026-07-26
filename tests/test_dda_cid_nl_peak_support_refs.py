@@ -1196,12 +1196,10 @@ def _peak(
         raw_apex_rt_min=8.0,
         rt_width_min=rt_right_min - rt_left_min,
         height_raw=apex_intensity,
-        height_smoothed=apex_intensity - 20.0,
-        area_raw_counts_seconds=42.0,
+        height_smoothed=apex_intensity,
+        area_raw_counts_seconds=6.0 * (apex_intensity + 50.0),
         integration_method="raw_trapezoid",
         boundary_sources=("candidate_interval",),
-        area_baseline_corrected=40.0,
-        baseline_type="asls",
         raw_scan_indices=(1, 2, 3),
     )
     return mint_peak_observation_ref(

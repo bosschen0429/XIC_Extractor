@@ -23,7 +23,7 @@ corrected.
 
 ## Current Execution Progress
 
-Last updated: 2026-07-26
+Last updated: 2026-07-27
 
 Current validation status: `diagnostic_only`
 
@@ -44,14 +44,20 @@ exact scan, requires a finite direct Discovery scan precursor, normalizes policy
 numbers before identity serialization, requires the Targeted scan precursor to
 fall within the exact target's owner-defined ppm tolerance, canonicalizes
 semantically equal `IntegrationResult` numeric inputs at owner construction,
-without changing existing null semantics, rejects out-of-trace integration
-bounds,
+without changing existing null semantics, and closes the review-system root
+cause where a freely constructed `IntegrationResult` could be paired with an
+unrelated trace. Observation minting now validates raw apex/height/area against
+the exact raw trace, smoothed height against the exact selection trace, and any
+declared AsLS/Gaussian15 facts against the existing deterministic owner helpers;
+stale or forged integration values fail before identity minting. It also rejects
+out-of-trace integration bounds,
 uses physical integration bounds rather than padded trace points for DDA
 support, and closes direct diagnostic-hypothesis construction at the
-model-selection value boundary. Its no-RAW closeout gate
-passes all seven CI shards (5,915 passed, 4 skipped) plus Ruff, Import Linter,
-architecture census, diagnostics index, docs audit, and full-package mypy.
-Deferred Pt work remains excluded.
+model-selection value boundary. The previous remote head passed all seven CI
+shards (5,915 passed, 4 skipped) plus Ruff, Import Linter, architecture census,
+diagnostics index, docs audit, and full-package mypy; the corrective local head
+has 79 focused no-RAW tracer tests passing and still requires the final complete
+gate before push. Deferred Pt work remains excluded.
 
 This section is the canonical progress tracker for this implementation wave.
 It tracks execution and consumer wiring; it does not replace the productization
@@ -84,7 +90,7 @@ Progress vocabulary:
 | Package | Status | What is actually complete | First missing gate |
 | --- | --- | --- | --- |
 | Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering through mutually exclusive queued cancellation and queued manifest-preflight failure paths, with the latter ending at a non-acknowledged `failed` terminal proposal. Its review closeout also rejects lineage composition that omits a request-pinned target snapshot and rejects missing/extra columns before targeted diagnostic artifact minting. | Real `RequiredWorkManifest` validation, offsets/metrics, durable terminal acknowledgement, resource lifecycle/cleanup, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
-| Package 1 — pure runtime and observation substrates | `contract_only` / partial | Active PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`, with review-driven fail-closed exact-target precursor/scan/source/direct-precursor/integration-scope/policy/boundary/model-selection checks and owner-level numeric canonicalization of integration identity. | Runtime reducer/resource lifecycle and actual acquisition batch observations remain missing; no application consumer traverses the complete substrate. |
+| Package 1 — pure runtime and observation substrates | `contract_only` / partial | Active PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`, with review-driven fail-closed exact-target precursor/scan/source/direct-precursor/integration-scope/policy/boundary/model-selection checks, owner-level numeric canonicalization, and exact raw/selection-signal validation of every declared signal-derived integration fact. | Runtime reducer/resource lifecycle and actual acquisition batch observations remain missing; no application consumer traverses the complete substrate. |
 | Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
@@ -97,9 +103,9 @@ Progress vocabulary:
 | Canonical acquisition input → processing request/attempt → coordinator lifecycle prefix | Implemented across the first two isolated stack layers; events require the owner-issued attempt and cover queued cancellation plus manifest-preflight failure to a `failed` proposal without `attempt_started` | Legacy `extractor.run` still consumes resolved inputs directly; no Targeted or Alignment runtime consumes the owner-backed attempt history, and no real manifest validator or durable finalizer is wired | Full CI-equivalent no-RAW gates plus focused identity, adversarial, and event-ordering tests | `contract_only` |
 | Canonical sample/target/review references | Implemented locally through existing owners | Not yet proven through both complete tracer projections | Focused missing/ambiguous/stale/superseded tests | `contract_only` |
 | Exact DDA/ddMS2 CID-NL evidence | Implemented in the third stack layer with exact request acquisition-source and scan identity; Targeted projection also binds the measured scan precursor to the exact target's ppm tolerance, while direct Discovery projection requires its finite measured scan precursor | Targeted/Discovery adapters can validate bounded refs; main application path does not carry them end to end | Focused synthetic no-RAW source/target/scan/direct-precursor substitution tests | `contract_only` |
-| CID-NL evidence → physical MS1 peak | Implemented in the third stack layer as owner-backed applicability refs with request-source-bound trace provenance, in-trace observation bounds, and DDA support matched to physical integration bounds rather than padded trace points | `run_discovery` does not yet emit the complete owner-backed chain | Focused substitution/mutation/ambiguity/boundary tests | `contract_only` |
+| CID-NL evidence → physical MS1 peak | Implemented in the third stack layer as owner-backed applicability refs with request-source-bound raw/selection-trace provenance, in-trace observation bounds, signal-validated apex/heights/raw area/AsLS/Gaussian15 facts, and DDA support matched to physical integration bounds rather than padded trace points | `run_discovery` does not yet emit the complete owner-backed chain | Focused stale-integration, field-mutation, substitution, ambiguity, and boundary tests | `contract_only` |
 | Repeated strict scans → one chromatographic support event | Implemented in the third stack layer | Not consumed by the real Discovery runtime | Focused no-RAW aggregation tests | `contract_only` |
-| Support event → CID-NL `PeakHypothesis` | Implemented in the third stack layer as a diagnostic branch; semantically equal integration numbers preserve one physical content/artifact identity | Selection/model-selection/product boundaries, including direct `PeakModelSelectionResult` construction, intentionally reject it | 62 focused no-RAW identity, aggregation, downgrade, source/target/scan/direct-precursor/integration-scope, numeric-canonicalization, and authority-boundary tests | `contract_only` |
+| Support event → CID-NL `PeakHypothesis` | Implemented in the third stack layer as a diagnostic branch; semantically equal signal-consistent integration numbers preserve one physical content/artifact identity | Selection/model-selection/product boundaries, including direct `PeakModelSelectionResult` construction, intentionally reject it | 79 focused no-RAW identity, signal/integration consistency, aggregation, downgrade, source/target/scan/direct-precursor/integration-scope, numeric-canonicalization, and authority-boundary tests | `contract_only` |
 | `PeakHypothesis` → explicit selection/externalization | No authorized successor transition | None | None | `not_started` |
 | Selected sample-local hypothesis → cross-sample Alignment | Existing legacy Alignment does not consume the owner-backed hypothesis | None | None | `not_started` |
 | Alignment-supported missing cell → evidence-based Backfill | Existing legacy Backfill exists, but has no owner-backed CID-NL hypothesis/group/cell chain | None | None | `not_started` |

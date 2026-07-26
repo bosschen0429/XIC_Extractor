@@ -275,7 +275,10 @@ This is not the complete kernel tracer. The remaining gaps are:
    direct API. Issue #134 owns that entry-point parity defect; fixing it must
    not create a second permanent kernel.
 7. `peak_detection.observations` owns a bounded canonical physical
-   MS1-observation reference over an existing `Trace` plus `IntegrationResult`.
+   MS1-observation reference over an exact raw/selection trace plus a
+   signal-validated `IntegrationResult`; a typed but independently assembled
+   result is rejected when its apex, heights, area, baseline, or morphology
+   contradict the supplied signals.
    The DDA CID-NL owner composes exact scan refs, aggregates repeated in-peak
    scans into one event, and the existing `PeakHypothesis` now consumes that
    typed event through a diagnostic owner-backed branch. It still has no

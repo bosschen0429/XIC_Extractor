@@ -21,13 +21,15 @@ The evidence spine is the shared layer that converts chromatographic observation
   neither projection artifact is a selection or delivery decision.
 - The existing `peak_detection` owner now exposes a bounded
   `PeakObservationRef`. Its physical content is canonical sample identity, m/z,
-  one contiguous selected RT/intensity subtrace, and its owner-normalized
-  `IntegrationResult`. Semantically equal present integer/float numeric inputs
-  receive one canonical representation before identity hashing while existing
-  null semantics remain unchanged. Exact request-bound
-  acquisition source plus full-trace/
-  query/resolver provenance and producer request/attempt remain explicit
-  without becoming physical-content identity.
+  one contiguous selected RT/intensity subtrace, and its signal-validated
+  `IntegrationResult`. The owner checks raw apex/height/area against that exact
+  subtrace, smoothed height against the exact selection trace, and any declared
+  AsLS/Gaussian15 facts against the deterministic existing helpers before
+  minting. Semantically equal present integer/float numeric inputs receive one
+  canonical representation before identity hashing while existing null
+  semantics remain unchanged. Exact request-bound acquisition source plus full
+  raw/selection-trace, query, and resolver provenance and producer
+  request/attempt remain explicit without becoming physical-content identity.
 - For the lab's current Untargeted acquisition method, the CID-NL owner now
   exposes one bounded DDA/ddMS2 applicability relation. A
   `DdaCidNlPeakSupportRef` binds one exact MS2 scan and direct measured CID-NL
@@ -78,12 +80,15 @@ closes the following bounded rules:
 
 1. Physical content identity includes canonical sample identity, m/z, the
    contiguous selected RT/intensity points, peak bounds/apex, and all
-   owner-normalized `IntegrationResult` facts. Numeric representation alone
-   cannot split content identity, and normalization does not turn a null into a
-   numeric observation.
-2. Request-bound acquisition-source identity, full trace digest, query RT/ppm,
-   trace source, source-relative indices, resolver mode, and proposal sources
-   are generation provenance. Changing
+   signal-validated `IntegrationResult` facts. A typed value or content hash is
+   not proof that independently assembled integration numbers came from the
+   trace: minting first verifies the raw apex/height/area, exact selection-trace
+   apex/height, and any declared AsLS/Gaussian15 facts. Numeric representation
+   alone cannot split content identity, and normalization does not turn a null
+   into a numeric observation.
+2. Request-bound acquisition-source identity, full raw- and selection-trace
+   digests, query RT/ppm, trace source, source-relative indices, resolver mode,
+   and proposal sources are generation provenance. Changing
    them does not re-mint physical content when the selected signal and
    integration are unchanged, but it does change the exact artifact payload.
 3. Processing request/attempt identify the produced artifact instance. A retry
@@ -92,16 +97,21 @@ closes the following bounded rules:
 4. Target label, Targeted/Untargeted role, ISTD policy, CID-NL status, and Pt
    membership are not physical-observation content. They belong to evidence
    applicability or later hypothesis composition.
-5. Selected-signal mutation changes content identity. Missing, gapped,
-   reordered, or duplicate selected indices and sample/request/attempt
-   substitution fail closed.
+5. Selected raw-signal mutation invalidates a stale integration before identity
+   minting; a re-integrated signal receives new physical content identity.
+   Selection-transform mutation with unchanged physical facts preserves
+   physical content but changes generation provenance and exact artifact
+   identity. Missing, gapped, reordered, or duplicate selected indices and
+   sample/request/attempt substitution fail closed.
 6. Mint and binding consume an already validated `ProcessingOwnerReferences`
    closure. The chosen sample must belong to that request, `Trace.sample_name`
    and `Trace.acquisition_source_id` must resolve to that owner row and exact
    acquisition binding, and integration RT bounds must remain inside the
    supplied trace before mapping to the selected contiguous subtrace under the
-   existing nearest-index/bounded-interval owner semantics. A caller cannot
-   validate a bad mint by repeating the same mismatched sample or attempt.
+   existing nearest-index/bounded-interval owner semantics. The exact selection
+   trace defaults to the raw trace only when no separate transform is supplied.
+   A caller cannot validate a bad mint by repeating the same mismatched sample,
+   attempt, or internally contradictory integration facts.
 
 This closes the first provider-specific evidence-to-observation relation, not
 method-hypothesis composition. The DDA support owner requires one exact scan,

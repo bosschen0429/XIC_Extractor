@@ -491,12 +491,16 @@ The operator selected the existing-owner alternative. A third bounded
 implementation deepens `peak_detection` with `PeakObservationRef` rather than
 creating a lineage-local or provider-local owner. The owner mints physical
 content identity from canonical sample, m/z, one contiguous selected MS1
-subtrace, and owner-normalized integration facts. Semantically equal present
-numeric inputs are canonicalized when `IntegrationResult` is constructed,
-before any content or artifact identity is hashed; existing nulls remain null.
-The request-bound acquisition
-source, full trace/query/source indices, and resolver/proposal facts form
-generation provenance; the exact artifact also binds request and attempt.
+subtrace, and signal-validated integration facts. A freely constructed
+`IntegrationResult` is not owner evidence: before any identity is minted, raw
+apex/height/area must agree with the exact raw trace, smoothed height must agree
+with the exact selection trace, and declared AsLS/Gaussian15 values must match
+the existing deterministic helpers. Semantically equal present numeric inputs
+are canonicalized when `IntegrationResult` is constructed, before any content
+or artifact identity is hashed; existing nulls remain null. The request-bound
+acquisition source, full raw/selection-trace digests, query/source indices, and
+resolver/proposal facts form generation provenance; the exact artifact also
+binds request and attempt.
 Target/provider labels and method interpretation do not enter physical content.
 
 The no-RAW tests prove content stability across query/resolver provenance and
@@ -507,10 +511,12 @@ requires an existing validated `ProcessingOwnerReferences` closure, the sample
 must belong to that request, the trace name and acquisition-source ID must
 resolve to that sample's exact request binding, and integration RT bounds must
 remain inside the supplied trace before mapping to the selected contiguous
-subtrace under the existing nearest-index/bounded-interval semantics. Issue #113's
-`PeakObservation` / `FeatureObservation` names did not grant authority; the
-implementation authority comes from the existing `peak_detection` owner and
-its explicit input contract.
+subtrace under the existing nearest-index/bounded-interval semantics. Stale or
+forged apex, height, area, baseline, and morphology values fail closed rather
+than merely producing a different hash. Issue #113's `PeakObservation` /
+`FeatureObservation` names did not grant authority; the implementation
+authority comes from the existing `peak_detection` owner and its explicit input
+contract.
 
 A fourth bounded implementation closes the first provider-specific
 evidence-to-observation relation for the lab's DDA/ddMS2 method. CID-NL evidence
