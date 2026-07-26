@@ -53,11 +53,10 @@ stale or forged integration values fail before identity minting. It also rejects
 out-of-trace integration bounds,
 uses physical integration bounds rather than padded trace points for DDA
 support, and closes direct diagnostic-hypothesis construction at the
-model-selection value boundary. The previous remote head passed all seven CI
-shards (5,915 passed, 4 skipped) plus Ruff, Import Linter, architecture census,
-diagnostics index, docs audit, and full-package mypy; the corrective local head
-has 79 focused no-RAW tracer tests passing and still requires the final complete
-gate before push. Deferred Pt work remains excluded.
+model-selection value boundary. The corrective local head passes all seven CI
+shards (5,932 passed, 4 skipped) plus Ruff, Import Linter, architecture census,
+diagnostics index, docs audit, full-package mypy, and 79 focused no-RAW tracer
+tests. Deferred Pt work remains excluded.
 
 This section is the canonical progress tracker for this implementation wave.
 It tracks execution and consumer wiring; it does not replace the productization
