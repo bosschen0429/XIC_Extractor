@@ -21,10 +21,12 @@ approved product changes.
   cannot mint the subject by themselves.
 - A review-record identity separately binds its record schema version, full
   content digest, exact target-definition identity, exact processing-request
-  identity, canonical set of evidence-artifact IDs, and any predecessor plus
-  non-empty supersession reason. Artifact enumeration order is neutral;
-  substitution or content mutation invalidates the identity. A successor must
-  retain the same review subject.
+  identity, canonical set of owner-minted typed evidence-artifact references,
+  and any predecessor plus non-empty supersession reason. The record derives
+  artifact IDs from those immutable references instead of accepting caller
+  strings. Artifact enumeration order is neutral; substitution or content
+  mutation invalidates the identity. A successor must retain the same review
+  subject.
 - A user may legally change a target definition before creating a new
   processing request. The stable target key keeps that history under the same
   review subject, but the previous review is stale for the new definition or

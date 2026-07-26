@@ -6,6 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.diagnostics.diagnostic_io import format_diagnostic_value, write_tsv
+from xic_extractor.evidence_artifacts import (
+    EvidenceArtifactRef,
+    _mint_artifact_semantic_contract_ref,
+    _mint_evidence_artifact_ref,
+)
 from xic_extractor.extraction.targeted_projection_reasons import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
@@ -18,12 +23,17 @@ from xic_extractor.peak_detection.ms1_shape_identity import (
     competing_peak_summary,
     local_own_max_shape_similarity,
 )
+from xic_extractor.tabular_io import render_delimited_rows
 
 SCHEMA_VERSION = "targeted_ms1_shape_identity_v0"
 VALIDATION_LABEL = "diagnostic_only"
 DECISION_AUTHORITY = "diagnostic_only_no_product_write"
 DEFAULT_MIN_OWN_MAX_SIMILARITY = 0.80
 DEFAULT_STRONG_COMPETING_PEAK_RATIO = 0.65
+ARTIFACT_OWNER_NAMESPACE = "xic_extractor.diagnostics.targeted_ms1_shape_identity"
+ARTIFACT_SEMANTIC_ROLE = "targeted_ms1_shape_identity_evidence"
+ARTIFACT_MEDIA_TYPE = "text/tab-separated-values; charset=utf-8"
+ARTIFACT_SERIALIZATION_FORMAT = "targeted_ms1_shape_identity_tsv_v0"
 
 TARGETED_MS1_SHAPE_IDENTITY_COLUMNS = (
     "schema_version",
@@ -53,6 +63,15 @@ TARGETED_MS1_SHAPE_IDENTITY_COLUMNS = (
     "strongest_competing_peak_own_max_ratio",
     "competing_peak_status",
     "reason",
+)
+
+_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace=ARTIFACT_OWNER_NAMESPACE,
+    semantic_role=ARTIFACT_SEMANTIC_ROLE,
+    schema_version=SCHEMA_VERSION,
+    validation_status=VALIDATION_LABEL,
+    media_type=ARTIFACT_MEDIA_TYPE,
+    serialization_format=ARTIFACT_SERIALIZATION_FORMAT,
 )
 
 
@@ -113,6 +132,60 @@ def write_targeted_ms1_shape_identity_tsv(
         rows,
         TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
         lineterminator="\n",
+    )
+
+
+def canonical_targeted_ms1_shape_identity_bytes(
+    rows: Sequence[Mapping[str, Any]],
+) -> bytes:
+    """Render the exact UTF-8 TSV bytes owned by this diagnostic contract."""
+
+    canonical_rows = tuple(rows)
+    for row_index, row in enumerate(canonical_rows, start=2):
+        if not isinstance(row, Mapping):
+            raise ValueError(f"artifact row {row_index} must be a mapping")
+        if row.get("schema_version") != SCHEMA_VERSION:
+            raise ValueError(
+                f"artifact row {row_index} schema_version must be {SCHEMA_VERSION!r}"
+            )
+        if row.get("validation_label") != VALIDATION_LABEL:
+            raise ValueError(
+                f"artifact row {row_index} validation_label must be "
+                f"{VALIDATION_LABEL!r}"
+            )
+        if row.get("decision_authority") != DECISION_AUTHORITY:
+            raise ValueError(
+                f"artifact row {row_index} decision_authority must be "
+                f"{DECISION_AUTHORITY!r}"
+            )
+    return render_delimited_rows(
+        canonical_rows,
+        TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
+        delimiter="\t",
+        lineterminator="\n",
+    ).encode("utf-8")
+
+
+def mint_targeted_ms1_shape_identity_artifact_ref(
+    *,
+    processing_attempt: object,
+    rows: Sequence[Mapping[str, Any]],
+    upstream_artifacts: Sequence[EvidenceArtifactRef] = (),
+) -> EvidenceArtifactRef:
+    """Mint this owner's fixed-role artifact reference without writing output."""
+
+    from xic_extractor.processing_identity import ProcessingAttemptIdentity
+
+    if not isinstance(processing_attempt, ProcessingAttemptIdentity):
+        raise ValueError(
+            "processing_attempt must be an owner-issued ProcessingAttemptIdentity"
+        )
+    return _mint_evidence_artifact_ref(
+        producer_processing_request_id=processing_attempt.processing_request_id,
+        producer_processing_attempt_id=processing_attempt.processing_attempt_id,
+        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        payload_bytes=canonical_targeted_ms1_shape_identity_bytes(rows),
+        upstream_artifacts=upstream_artifacts,
     )
 
 
@@ -214,9 +287,7 @@ def _identity_row(
         "own_max_compared_point_count": compared_count,
         "strongest_peak_rt_min": competing.strongest_peak_rt_min,
         "strongest_peak_own_max_ratio": competing.strongest_peak_own_max_ratio,
-        "strongest_competing_peak_rt_min": (
-            competing.strongest_competing_peak_rt_min
-        ),
+        "strongest_competing_peak_rt_min": (competing.strongest_competing_peak_rt_min),
         "strongest_competing_peak_own_max_ratio": (
             competing.strongest_competing_peak_own_max_ratio
         ),

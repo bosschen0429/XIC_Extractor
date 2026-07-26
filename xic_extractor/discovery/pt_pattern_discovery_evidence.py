@@ -13,11 +13,14 @@ from pathlib import Path
 from xic_extractor.discovery.delta_mass_patterns import PtPatternCandidate
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
+    PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
     PT_PATTERN_EVIDENCE_SCHEMA_VERSION,
     PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
     PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION,
+    format_pt_machine_float,
     pt_pattern_candidate_assignment_fingerprint,
     validate_pt_candidate_trace_summary_identity,
+    validate_pt_pattern_evidence_row_contract,
 )
 from xic_extractor.discovery.pt_pattern_evidence_rule import (
     DEFAULT_THRESHOLDS,
@@ -32,12 +35,33 @@ from xic_extractor.discovery.pt_pattern_trace_manifest import (
     VerifiedTraceSummaryBundle,
     load_verified_trace_summary_bundle,
 )
+from xic_extractor.evidence_artifacts import (
+    EvidenceArtifactRef,
+    _mint_artifact_semantic_contract_ref,
+    _mint_evidence_artifact_ref,
+)
+from xic_extractor.tabular_io import escape_excel_formula, render_delimited_rows
 
 SCHEMA_VERSION = PT_PATTERN_EVIDENCE_SCHEMA_VERSION
 TRACE_EVIDENCE_NOT_EVALUATED = "not_evaluated"
 TRACE_EVIDENCE_EVALUATED = "evaluated"
 NO_WRITE_AUTHORITY = False
+ARTIFACT_OWNER_NAMESPACE = "xic_extractor.discovery.pt_pattern_discovery_evidence"
+ARTIFACT_SEMANTIC_ROLE = "pt_pattern_discovery_evidence"
+ARTIFACT_VALIDATION_STATUS = "diagnostic_only"
+ARTIFACT_MEDIA_TYPE = "text/csv; charset=utf-8"
+ARTIFACT_SERIALIZATION_FORMAT = "pt_pattern_discovery_evidence_csv_v3"
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+_ARTIFACT_ESCAPED_FIELDS = frozenset({"trace_rule_reason"})
+
+_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace=ARTIFACT_OWNER_NAMESPACE,
+    semantic_role=ARTIFACT_SEMANTIC_ROLE,
+    schema_version=SCHEMA_VERSION,
+    validation_status=ARTIFACT_VALIDATION_STATUS,
+    media_type=ARTIFACT_MEDIA_TYPE,
+    serialization_format=ARTIFACT_SERIALIZATION_FORMAT,
+)
 
 
 def load_pt_discovery_trace_bundle(
@@ -97,6 +121,93 @@ def build_pt_pattern_evidence_rows(
     )
 
 
+def canonical_pt_pattern_evidence_csv_bytes(
+    evidence_rows: Sequence[Mapping[str, object]],
+) -> bytes:
+    """Render exact CSV bytes owned by the Pt Discovery evidence contract."""
+
+    canonical_rows = tuple(evidence_rows)
+    for row_index, row in enumerate(canonical_rows, start=2):
+        missing = [
+            column
+            for column in PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS
+            if column not in row
+        ]
+        if missing:
+            raise ValueError(
+                f"evidence row {row_index} is missing required fields: "
+                + ", ".join(missing)
+            )
+        validate_pt_pattern_evidence_row_contract(
+            row,
+            side=f"evidence row {row_index}",
+        )
+        for authority_field in (
+            "matrix_write_authority",
+            "counted_detection_authority",
+            "export_activation_authority",
+        ):
+            if row[authority_field] is not False:
+                raise ValueError(
+                    f"evidence row {row_index} {authority_field} must be False"
+                )
+    formatted_rows = tuple(
+        {
+            column: _format_pt_evidence_value(
+                value,
+                escape_formula=column in _ARTIFACT_ESCAPED_FIELDS,
+            )
+            for column, value in row.items()
+        }
+        for row in canonical_rows
+    )
+    return render_delimited_rows(
+        formatted_rows,
+        PT_PATTERN_EVIDENCE_CONTRACT_COLUMNS,
+        extrasaction="raise",
+    ).encode("utf-8")
+
+
+def mint_pt_pattern_discovery_evidence_artifact_ref(
+    *,
+    processing_attempt: object,
+    evidence_rows: Sequence[Mapping[str, object]],
+    upstream_artifacts: Sequence[EvidenceArtifactRef] = (),
+) -> EvidenceArtifactRef:
+    """Mint this owner's fixed-role artifact reference without writing output."""
+
+    from xic_extractor.processing_identity import ProcessingAttemptIdentity
+
+    if not isinstance(processing_attempt, ProcessingAttemptIdentity):
+        raise ValueError(
+            "processing_attempt must be an owner-issued ProcessingAttemptIdentity"
+        )
+    return _mint_evidence_artifact_ref(
+        producer_processing_request_id=processing_attempt.processing_request_id,
+        producer_processing_attempt_id=processing_attempt.processing_attempt_id,
+        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        payload_bytes=canonical_pt_pattern_evidence_csv_bytes(evidence_rows),
+        upstream_artifacts=upstream_artifacts,
+    )
+
+
+def _format_pt_evidence_value(
+    value: object,
+    *,
+    escape_formula: bool,
+) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "TRUE" if value else "FALSE"
+    if isinstance(value, float):
+        return format_pt_machine_float(value)
+    if isinstance(value, int):
+        return str(value)
+    text = str(value)
+    return escape_excel_formula(text) if escape_formula else text
+
+
 def _trace_source_fields(
     rows: Sequence[Mapping[str, object]] | None,
     *,
@@ -104,9 +215,7 @@ def _trace_source_fields(
 ) -> dict[str, str]:
     if rows is None:
         if trace_manifest_sha256 is not None:
-            raise ValueError(
-                "trace_manifest_sha256 requires trace_summary_rows"
-            )
+            raise ValueError("trace_manifest_sha256 requires trace_summary_rows")
         return {}
     if not rows:
         raise ValueError("trace summary rows must not be empty")
@@ -116,17 +225,10 @@ def _trace_source_fields(
             "trace_manifest_sha256 must be a lowercase SHA-256 digest when "
             "trace summary rows are provided"
         )
-    schemas = {
-        str(row.get("schema_version", "")).strip()
-        for row in rows
-    }
-    roles = {
-        str(row.get("trace_artifact_role", "")).strip()
-        for row in rows
-    }
+    schemas = {str(row.get("schema_version", "")).strip() for row in rows}
+    roles = {str(row.get("trace_artifact_role", "")).strip() for row in rows}
     extraction_sha256_values = {
-        str(row.get("trace_extraction_sha256", "")).strip()
-        for row in rows
+        str(row.get("trace_extraction_sha256", "")).strip() for row in rows
     }
     if schemas != {PT_PATTERN_TRACE_SUMMARY_SCHEMA_VERSION}:
         raise ValueError(
@@ -253,12 +355,8 @@ def _evidence_row(
             "non_base_positions_supported": _trace_value(
                 trace_row, "non_base_positions_supported"
             ),
-            "max_abs_apex_delta_sec": _trace_value(
-                trace_row, "max_abs_apex_delta_sec"
-            ),
-            "min_pearson_r_to_base": _trace_value(
-                trace_row, "min_pearson_r_to_base"
-            ),
+            "max_abs_apex_delta_sec": _trace_value(trace_row, "max_abs_apex_delta_sec"),
+            "min_pearson_r_to_base": _trace_value(trace_row, "min_pearson_r_to_base"),
             "min_active_overlap_fraction": _trace_value(
                 trace_row, "min_active_overlap_fraction"
             ),
@@ -268,12 +366,8 @@ def _evidence_row(
             "max_abs_shape_shift_sec_to_base": _trace_value(
                 trace_row, "max_abs_shape_shift_sec_to_base"
             ),
-            "trace_ambiguity_status": _trace_value(
-                trace_row, "trace_ambiguity_status"
-            ),
-            "trace_ambiguity_flags": _trace_value(
-                trace_row, "trace_ambiguity_flags"
-            ),
+            "trace_ambiguity_status": _trace_value(trace_row, "trace_ambiguity_status"),
+            "trace_ambiguity_flags": _trace_value(trace_row, "trace_ambiguity_flags"),
             "shifted_only_position_labels": _trace_value(
                 trace_row, "shifted_only_position_labels"
             ),

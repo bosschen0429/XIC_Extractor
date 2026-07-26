@@ -13,11 +13,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.artifact_lineage import (
+    EvidenceArtifactClosureError,
+    canonical_evidence_artifact_closure,
+)
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     TargetListSnapshot,
     target_list_snapshot_payload,
 )
+from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.review_records import (
     ResolvedReviewRecordRef,
     ReviewRecordRegistrySnapshot,
@@ -412,6 +417,7 @@ class ProcessingOwnerReferences:
     sample_snapshot: SampleMetadataSnapshot
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...]
     target_snapshot: TargetListSnapshot | None = None
+    evidence_artifacts: tuple[EvidenceArtifactRef, ...] = ()
     review_target: ResolvedTargetDefinition | None = None
     review_snapshot: ReviewRecordRegistrySnapshot | None = None
     review_record: ResolvedReviewRecordRef | None = None
@@ -464,6 +470,16 @@ class ProcessingOwnerReferences:
             if not isinstance(self.target_snapshot, TargetListSnapshot):
                 raise IdentityContractError("target_snapshot must be owner-minted")
             _validate_request_target_snapshot(self.request, self.target_snapshot)
+        try:
+            canonical_artifacts = canonical_evidence_artifact_closure(
+                processing_request_id=self.request.processing_request_id,
+                processing_attempt_id=self.attempt.processing_attempt_id,
+                artifacts=self.evidence_artifacts,
+            )
+        except EvidenceArtifactClosureError as exc:
+            raise IdentityContractError(str(exc)) from exc
+        if canonical_artifacts != self.evidence_artifacts:
+            raise IdentityContractError("evidence_artifacts must be canonical-sorted")
         if self.review_target is not None:
             if not isinstance(self.review_target, ResolvedTargetDefinition):
                 raise IdentityContractError(
@@ -523,6 +539,17 @@ class ProcessingOwnerReferences:
             if reference.processing_request_id != self.request.processing_request_id:
                 raise IdentityContractError(
                     "review record references a different processing request"
+                )
+            available_artifact_ids = {
+                artifact.evidence_artifact_id for artifact in self.evidence_artifacts
+            }
+            missing_artifact_ids = sorted(
+                set(reference.evidence_artifact_ids) - available_artifact_ids
+            )
+            if missing_artifact_ids:
+                raise IdentityContractError(
+                    "review record references evidence outside the validated "
+                    f"artifact closure: {', '.join(missing_artifact_ids)}"
                 )
         elif self.review_target is not None:
             raise IdentityContractError(
@@ -756,18 +783,31 @@ def compose_processing_owner_references(
     sample_snapshot: SampleMetadataSnapshot,
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...],
     target_snapshot: TargetListSnapshot | None = None,
+    evidence_artifacts: tuple[EvidenceArtifactRef, ...] = (),
     review_target: ResolvedTargetDefinition | None = None,
     review_snapshot: ReviewRecordRegistrySnapshot | None = None,
     review_record: ResolvedReviewRecordRef | None = None,
 ) -> ProcessingOwnerReferences:
     """Compose owner references without minting or inferring either identity."""
 
+    try:
+        canonical_artifacts = tuple(
+            sorted(
+                evidence_artifacts,
+                key=lambda artifact: artifact.evidence_artifact_id,
+            )
+        )
+    except (AttributeError, TypeError) as exc:
+        raise IdentityContractError(
+            "evidence_artifacts must contain owner-minted EvidenceArtifactRef values"
+        ) from exc
     return ProcessingOwnerReferences(
         request=request,
         attempt=attempt,
         sample_snapshot=sample_snapshot,
         sample_resolutions=sample_resolutions,
         target_snapshot=target_snapshot,
+        evidence_artifacts=canonical_artifacts,
         review_target=review_target,
         review_snapshot=review_snapshot,
         review_record=review_record,

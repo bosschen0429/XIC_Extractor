@@ -138,6 +138,18 @@ numbers), with a type/version prefix. Its current content boundary is:
   optional predecessor attempt. Retry always issues a new attempt. Terminal
   outcome and cancellation/failure events remain append-only facts owned by the
   execution-runtime contract and never rewrite identity.
+- artifact content binds exact payload bytes through SHA-256, byte size, media
+  type, and an owner-fixed serialization format. An artifact instance separately
+  binds one producer request/attempt, the producer-owned semantic role/schema
+  contract, that content identity, and a canonical set of upstream artifact
+  references. Equal bytes across attempts preserve content equality but never
+  collapse artifact-instance identity;
+- the first two producer adapters are deliberately diagnostic-only. The
+  Targeted MS1-shape owner fixes the
+  `targeted_ms1_shape_identity_v0` UTF-8 TSV bytes and role; the Pt Discovery
+  evidence CSV owner fixes the `pt_pattern_discovery_evidence.v3` UTF-8 CSV
+  bytes and role. Callers cannot supply role/schema strings, and both owner APIs
+  require an owner-issued processing attempt;
 - the sample-metadata owner mints `xic.sample.v1` from the
   stable owner namespace, `sample_metadata_v1` identity schema, and canonical
   `sample_name` key. Its `raw_stem` may resolve that key but is not identity
@@ -148,7 +160,7 @@ numbers), with a type/version prefix. Its current content boundary is:
   owner-resolved canonical sample plus one owner-stable target key. It mints
   `xic.review-record.v1` only from an owner-validated typed `review_action_v1`,
   the exact target definition and processing request, canonical exact artifact
-  bindings, and any complete same-subject predecessor/supersession edge. The
+  references, and any complete same-subject predecessor/supersession edge. The
   action's sample/target labels must match those owner references. Resolution
   rejects definition/request substitution, stale content, or superseded
   records against a content-digested immutable registry snapshot.
@@ -166,13 +178,18 @@ processing-attempt boundary plus the sample, target-list, and review owner APIs.
 The lineage layer's `ProcessingOwnerReferences` only composes and validates a
 complete request and attempt, owner-resolved sample bindings whose exact lookup tokens
 cover every request acquisition input and share one exact metadata snapshot,
-the request-pinned target-list snapshot, and an optional owner-resolved current
+the request-pinned target-list snapshot, a same-request/same-attempt artifact
+closure with no missing upstream dependency, and an optional owner-resolved current
 review record bound to the exact sample, target key/definition, request, and
-review registry snapshot. It does not mint sample/target/review IDs and it
+review registry snapshot. A review record must retain typed artifact references
+that exist in that validated closure. Lineage does not mint
+sample/target/artifact/review IDs and it
 rejects mixed sample snapshots, target/request substitution, unresolved review
-records, superseded review records, and review-snapshot substitution.
-Evidence-artifact, delivery-cell, revision, and seal identities remain
-incomplete later contracts. A timestamp can describe when something happened;
+records, superseded review records, artifact content/role/schema substitution,
+missing dependencies, cross-attempt mixing, and review-snapshot substitution.
+This is a bounded diagnostic artifact-envelope tracer, not a production
+artifact registry. Cross-attempt dependency resolution, delivery-cell,
+revision, and seal identities remain incomplete later contracts. A timestamp can describe when something happened;
 it cannot establish what happened.
 
 An acquisition source and a sample remain different typed identities, but the
@@ -408,7 +425,9 @@ The model fails and must be narrowed or redrawn if:
    fail closed. Reuse this content-bound pattern, not the Pt-specific schema or
    diagnostic authority.
 6. Trace JSON/CSV sidecars and `source_run_id` fields exist across diagnostics,
-   but there is no shared retention class or canonical attempt binding.
+   but most have no owner adapter, shared retention class, or canonical attempt
+   binding. The two diagnostic artifact adapters above are tracer coverage, not
+   automatic promotion of other sidecars.
 7. Current writers can emit method manifests and output metadata, but no
    workflow-neutral two-phase delivery seal owns the complete output lineage.
 8. `review_action_v1` and current review artifacts provide typed actions,
@@ -431,8 +450,15 @@ manifest rewrite or a new persistence framework.
 
 ## Implementation Route And Stop Rule
 
-The first implementation after this decision should be a no-write, no-RAW
-lineage model used by the CID-NL / NL116 dual-policy tracer:
+The first bounded implementation is a no-write, no-RAW diagnostic artifact
+envelope tracer over the existing Targeted MS1-shape and Pt Discovery evidence
+owners. It closes exact bytes, fixed owner role/schema, attempt-scoped identity,
+typed review binding, upstream completeness, mutation/substitution, and
+same-content cross-attempt distinction without introducing storage or writer
+authority.
+
+The next scientific implementation should use that proven value-object
+contract in the CID-NL / NL116 dual-policy tracer:
 
 1. bind one normalized request to distinct attempts;
 2. adapt existing Pt-style artifact fingerprints and method-manifest facts
@@ -448,8 +474,9 @@ through explicit references. If either owner cannot provide an unambiguous
 identity for the fixture, stop and record the missing prerequisite rather than
 creating a lineage-local substitute.
 
-Do not add a shared package or persisted production schema until at least the
-Targeted and Untargeted tracer consumers prove the same contract. Stop and
+Do not add a registry, storage package, or persisted production schema until at
+least the canonical Targeted and Untargeted scientific tracer consumers prove
+the same contract. Stop and
 route unanswered physical capability questions to #124 and runtime lifecycle
 questions to #128. Promotion, writer integration, and retention-period
 selection require later explicit contracts.

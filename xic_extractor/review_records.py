@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.review_actions import parse_review_actions
 from xic_extractor.review_actions_models import ReviewAction, ReviewActionError
 from xic_extractor.review_actions_schema import REVIEW_ACTION_SCHEMA_VERSION
@@ -41,9 +42,17 @@ class ImmutableReviewRecordRef:
     processing_request_id: str
     schema_version: str
     content_sha256: str
-    evidence_artifact_ids: tuple[str, ...]
+    evidence_artifacts: tuple[EvidenceArtifactRef, ...]
     supersedes_review_record_id: str = ""
     supersession_reason: str = ""
+
+    @property
+    def evidence_artifact_ids(self) -> tuple[str, ...]:
+        """Canonical IDs derived from retained typed artifact references."""
+
+        return tuple(
+            artifact.evidence_artifact_id for artifact in self.evidence_artifacts
+        )
 
     def __post_init__(self) -> None:
         if self.schema_version != REVIEW_ACTION_SCHEMA_VERSION:
@@ -84,11 +93,14 @@ class ImmutableReviewRecordRef:
             self.content_sha256,
             field="content_sha256",
         )
-        artifact_ids = _canonical_artifact_ids(self.evidence_artifact_ids)
-        if artifact_ids != self.evidence_artifact_ids:
+        artifact_refs = _canonical_artifact_refs(self.evidence_artifacts)
+        if artifact_refs != self.evidence_artifacts:
             raise ReviewRecordReferenceError(
-                "evidence_artifact_ids must be unique and canonical-sorted"
+                "evidence_artifacts must be unique and canonical-sorted"
             )
+        artifact_ids = tuple(
+            artifact.evidence_artifact_id for artifact in artifact_refs
+        )
         predecessor_id = self.supersedes_review_record_id
         reason = self.supersession_reason
         if predecessor_id:
@@ -170,7 +182,14 @@ class ResolvedReviewRecordRef:
     expected_sample: ResolvedCanonicalSampleIdentity
     expected_target: ResolvedTargetDefinition
     expected_processing_request_id: str
-    expected_evidence_artifact_ids: tuple[str, ...]
+    expected_evidence_artifacts: tuple[EvidenceArtifactRef, ...]
+
+    @property
+    def expected_evidence_artifact_ids(self) -> tuple[str, ...]:
+        return tuple(
+            artifact.evidence_artifact_id
+            for artifact in self.expected_evidence_artifacts
+        )
 
     def __post_init__(self) -> None:
         if not isinstance(self.reference, ImmutableReviewRecordRef):
@@ -192,11 +211,14 @@ class ResolvedReviewRecordRef:
             processing_request_id=self.expected_processing_request_id,
         )
         subject_id = _review_subject_id(sample_id, target_key_id)
-        artifact_ids = _canonical_artifact_ids(self.expected_evidence_artifact_ids)
-        if artifact_ids != self.expected_evidence_artifact_ids:
+        artifact_refs = _canonical_artifact_refs(self.expected_evidence_artifacts)
+        if artifact_refs != self.expected_evidence_artifacts:
             raise ReviewRecordReferenceError(
-                "expected_evidence_artifact_ids must be canonical-sorted"
+                "expected_evidence_artifacts must be canonical-sorted"
             )
+        artifact_ids = tuple(
+            artifact.evidence_artifact_id for artifact in artifact_refs
+        )
         resolved = _resolve_current_reference(
             self.registry_snapshot.records,
             review_record_id=self.reference.review_record_id,
@@ -220,7 +242,7 @@ def mint_review_record_reference(
     sample: ResolvedCanonicalSampleIdentity,
     target: ResolvedTargetDefinition,
     processing_request_id: str,
-    evidence_artifact_ids: Sequence[str],
+    evidence_artifacts: Sequence[EvidenceArtifactRef],
     supersedes: ImmutableReviewRecordRef | None = None,
     supersession_reason: str = "",
 ) -> ImmutableReviewRecordRef:
@@ -240,7 +262,8 @@ def mint_review_record_reference(
     )
     subject_id = _review_subject_id(sample_id, target_key_id)
     schema_version = REVIEW_ACTION_SCHEMA_VERSION
-    artifact_ids = _canonical_artifact_ids(evidence_artifact_ids)
+    artifact_refs = _canonical_artifact_refs(evidence_artifacts)
+    artifact_ids = tuple(artifact.evidence_artifact_id for artifact in artifact_refs)
     if supersedes is None:
         if supersession_reason:
             raise ReviewRecordReferenceError(
@@ -285,7 +308,7 @@ def mint_review_record_reference(
         processing_request_id=processing_request_id,
         schema_version=schema_version,
         content_sha256=content_sha256,
-        evidence_artifact_ids=artifact_ids,
+        evidence_artifacts=artifact_refs,
         supersedes_review_record_id=predecessor_id,
         supersession_reason=reason,
     )
@@ -335,7 +358,7 @@ def resolve_current_review_record(
     expected_sample: ResolvedCanonicalSampleIdentity,
     expected_target: ResolvedTargetDefinition,
     expected_processing_request_id: str,
-    expected_evidence_artifact_ids: Sequence[str],
+    expected_evidence_artifacts: Sequence[EvidenceArtifactRef],
 ) -> ResolvedReviewRecordRef:
     """Resolve one current record and reject stale, rebound, or superseded input."""
 
@@ -360,7 +383,10 @@ def resolve_current_review_record(
         expected_sample_id,
         expected_target_key_id,
     )
-    expected_artifact_ids = _canonical_artifact_ids(expected_evidence_artifact_ids)
+    expected_artifact_refs = _canonical_artifact_refs(expected_evidence_artifacts)
+    expected_artifact_ids = tuple(
+        artifact.evidence_artifact_id for artifact in expected_artifact_refs
+    )
     record = _resolve_current_reference(
         snapshot.records,
         review_record_id=review_record_id,
@@ -379,7 +405,7 @@ def resolve_current_review_record(
         expected_sample=expected_sample,
         expected_target=expected_target,
         expected_processing_request_id=expected_processing_request_id,
-        expected_evidence_artifact_ids=expected_artifact_ids,
+        expected_evidence_artifacts=expected_artifact_refs,
     )
 
 
@@ -677,30 +703,31 @@ def _review_registry_content_sha256(
     ).hexdigest()
 
 
-def _canonical_artifact_ids(values: Sequence[str]) -> tuple[str, ...]:
+def _canonical_artifact_refs(
+    values: Sequence[EvidenceArtifactRef],
+) -> tuple[EvidenceArtifactRef, ...]:
     if isinstance(values, (str, bytes)):
         raise ReviewRecordReferenceError(
-            "evidence_artifact_ids must be a sequence of immutable IDs"
+            "evidence_artifacts must contain immutable typed references"
         )
     try:
         items = tuple(values)
     except TypeError as exc:
         raise ReviewRecordReferenceError(
-            "evidence_artifact_ids must be a sequence of immutable IDs"
+            "evidence_artifacts must contain immutable typed references"
         ) from exc
     if not items:
         raise ReviewRecordReferenceError(
-            "evidence_artifact_ids must bind at least one immutable artifact"
+            "evidence_artifacts must bind at least one immutable artifact"
         )
-    for item in items:
-        _required_text(item, field="evidence_artifact_id")
-        if item != item.strip():
-            raise ReviewRecordReferenceError(
-                "evidence_artifact_ids must be owner-normalized text"
-            )
-    if len(set(items)) != len(items):
-        raise ReviewRecordReferenceError("evidence_artifact_ids must be unique")
-    return tuple(sorted(items))
+    if any(not isinstance(item, EvidenceArtifactRef) for item in items):
+        raise ReviewRecordReferenceError(
+            "evidence_artifacts must contain owner-minted EvidenceArtifactRef values"
+        )
+    ids = tuple(item.evidence_artifact_id for item in items)
+    if len(set(ids)) != len(ids):
+        raise ReviewRecordReferenceError("evidence_artifacts must be unique")
+    return tuple(sorted(items, key=lambda item: item.evidence_artifact_id))
 
 
 def _canonical_json(value: Any, *, field: str) -> str:

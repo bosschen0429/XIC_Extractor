@@ -12,9 +12,15 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
     target_list_snapshot_payload,
 )
+from xic_extractor.evidence_artifacts import (
+    EvidenceArtifactRef,
+    _mint_artifact_semantic_contract_ref,
+    _mint_evidence_artifact_ref,
+)
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     IdentityContractError,
+    ProcessingAttemptIdentity,
     build_acquisition_source_identity,
     build_processing_request_identity,
     compose_processing_owner_references,
@@ -42,6 +48,15 @@ from xic_extractor.sample_metadata import (
 )
 
 _REVIEW_REQUEST_ID = "xic.processing-request.v1:" + "a" * 64
+_TEST_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="tests.review_roundtrip.artifact_owner",
+    semantic_role="review_fixture_evidence",
+    schema_version="review_fixture_evidence_v1",
+    validation_status="diagnostic_only",
+    media_type="application/octet-stream",
+    serialization_format="review_fixture_bytes_v1",
+)
+_TEST_ARTIFACT_ATTEMPT_ID = "xic.processing-attempt.v1:" + "d" * 64
 
 
 def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None:
@@ -193,23 +208,31 @@ def test_review_owner_mints_digest_and_typed_id_from_immutable_content() -> None
     )
     assert first.review_record_id == (
         "xic.review-record.v1:"
-        "0671dd0b984f495d0cbd6392f4c865c5a6d82a57de7880136ca46f382e1ec4a6"
+        "5b6c7157545737d89aac4ef1fa39216bf7490f9caeae93806ca00c11ec570164"
     )
     assert _review_snapshot(first).snapshot_id == (
         "xic.review-record-snapshot.v1:"
-        "d8fb961e4c1d0545d7b7e15ed46a239871929e847c6123e90b10663b2c256673"
+        "c27445e245f608b276443cd3c23e7eba57533042093ca7fc684e0478143f2ae3"
     )
     assert changed.review_record_id != first.review_record_id
     assert changed.content_sha256 != first.content_sha256
 
 
 def test_review_artifact_reorder_is_neutral_but_substitution_invalidates() -> None:
-    first = _review_record(evidence_artifact_ids=("artifact-b", "artifact-a"))
-    reordered = _review_record(evidence_artifact_ids=("artifact-a", "artifact-b"))
-    substituted = _review_record(evidence_artifact_ids=("artifact-a", "artifact-c"))
+    artifact_a = _artifact_ref("artifact-a")
+    artifact_b = _artifact_ref("artifact-b")
+    artifact_c = _artifact_ref("artifact-c")
+    first = _review_record(evidence_artifacts=(artifact_b, artifact_a))
+    reordered = _review_record(evidence_artifacts=(artifact_a, artifact_b))
+    substituted = _review_record(evidence_artifacts=(artifact_a, artifact_c))
 
     assert first == reordered
-    assert first.evidence_artifact_ids == ("artifact-a", "artifact-b")
+    assert first.evidence_artifacts == tuple(
+        sorted(
+            (artifact_a, artifact_b),
+            key=lambda artifact: artifact.evidence_artifact_id,
+        )
+    )
     assert substituted.review_record_id != first.review_record_id
 
 
@@ -268,14 +291,20 @@ def test_review_resolver_rejects_missing_ambiguous_stale_and_rebound_inputs() ->
             expected_sample=_resolved_sample(),
             expected_target=_resolved_target(),
             expected_processing_request_id=_REVIEW_REQUEST_ID,
-            expected_evidence_artifact_ids=record.evidence_artifact_ids,
+            expected_evidence_artifacts=record.evidence_artifacts,
         )
     with pytest.raises(ReviewRecordReferenceError, match="ambiguous"):
         _review_snapshot(record, record)
     with pytest.raises(ReviewRecordReferenceError, match="digest.*stale"):
         _resolve_review(record, action=_review_action(comment="changed conclusion"))
     with pytest.raises(ReviewRecordReferenceError, match="binding mismatch"):
-        _resolve_review(record, evidence_artifact_ids=("artifact-a", "artifact-c"))
+        _resolve_review(
+            record,
+            evidence_artifacts=(
+                _artifact_ref("artifact-a"),
+                _artifact_ref("artifact-c"),
+            ),
+        )
 
 
 def test_review_supersession_is_append_only_and_current_only() -> None:
@@ -368,7 +397,7 @@ def test_review_snapshot_rejects_deserialized_cross_subject_successor() -> None:
         processing_request_id=other_subject.processing_request_id,
         schema_version=other_subject.schema_version,
         content_sha256=other_subject.content_sha256,
-        evidence_artifact_ids=other_subject.evidence_artifact_ids,
+        evidence_artifacts=other_subject.evidence_artifacts,
         supersedes_review_record_id=original.review_record_id,
         supersession_reason=reason,
     )
@@ -390,13 +419,17 @@ def test_review_registry_snapshot_is_order_neutral_and_content_bound() -> None:
 
 
 def test_review_mint_accepts_only_owner_typed_and_validated_actions() -> None:
+    with pytest.raises(ReviewRecordReferenceError, match="owner-minted"):
+        _review_record(
+            evidence_artifacts=("artifact-a",),  # type: ignore[arg-type]
+        )
     with pytest.raises(ReviewRecordReferenceError, match="typed ReviewAction"):
         mint_review_record_reference(  # type: ignore[arg-type]
             record={"verdict": "accept"},
             sample=_resolved_sample(),
             target=_resolved_target(),
             processing_request_id=_REVIEW_REQUEST_ID,
-            evidence_artifact_ids=("artifact-a",),
+            evidence_artifacts=(_artifact_ref("artifact-a"),),
         )
     invalid = ReviewAction(
         sample_name="Sample A",
@@ -409,13 +442,14 @@ def test_review_mint_accepts_only_owner_typed_and_validated_actions() -> None:
             sample=_resolved_sample(),
             target=_resolved_target(),
             processing_request_id=_REVIEW_REQUEST_ID,
-            evidence_artifact_ids=("artifact-a",),
+            evidence_artifacts=(_artifact_ref("artifact-a"),),
         )
 
 
 def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
     request = _request(tmp_path, payload=b"request-a")
     attempt = issue_processing_attempt(request)
+    artifacts = _artifact_refs(attempt=attempt)
     sample_snapshot = _sample_snapshot(
         SampleMetadata(sample_name="Sample A", raw_stem="request-a"),
         SampleMetadata(sample_name="Sample B", raw_stem="request-b"),
@@ -430,6 +464,7 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         sample=sample,
         target=target,
         processing_request_id=request.processing_request_id,
+        evidence_artifacts=artifacts,
     )
     review_snapshot = _review_snapshot(review_ref)
     review = _resolve_review(
@@ -438,6 +473,7 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         sample=sample,
         target=target,
         processing_request_id=request.processing_request_id,
+        evidence_artifacts=artifacts,
     )
 
     references = compose_processing_owner_references(
@@ -446,6 +482,7 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         sample_snapshot=sample_snapshot,
         sample_resolutions=(sample,),
         target_snapshot=target_snapshot,
+        evidence_artifacts=artifacts,
         review_target=target,
         review_snapshot=review_snapshot,
         review_record=review,
@@ -456,9 +493,25 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
     assert references.sample_snapshot is sample_snapshot
     assert references.sample_resolutions == (sample,)
     assert references.target_snapshot is target_snapshot
+    assert references.evidence_artifacts == tuple(
+        sorted(artifacts, key=lambda artifact: artifact.evidence_artifact_id)
+    )
     assert references.review_target is target
     assert references.review_snapshot is review_snapshot
     assert references.review_record is review
+
+    with pytest.raises(IdentityContractError, match="outside.*artifact closure"):
+        compose_processing_owner_references(
+            request=request,
+            attempt=attempt,
+            sample_snapshot=sample_snapshot,
+            sample_resolutions=(sample,),
+            target_snapshot=target_snapshot,
+            evidence_artifacts=(artifacts[0],),
+            review_target=target,
+            review_snapshot=review_snapshot,
+            review_record=review,
+        )
 
 
 def test_lineage_rejects_review_from_different_request_or_target(
@@ -635,7 +688,7 @@ def _review_record(
     sample: ResolvedCanonicalSampleIdentity | None = None,
     target: ResolvedTargetDefinition | None = None,
     processing_request_id: str = _REVIEW_REQUEST_ID,
-    evidence_artifact_ids: tuple[str, ...] = ("artifact-a", "artifact-b"),
+    evidence_artifacts: tuple[EvidenceArtifactRef, ...] | None = None,
     supersedes: ImmutableReviewRecordRef | None = None,
     supersession_reason: str = "",
 ) -> ImmutableReviewRecordRef:
@@ -645,7 +698,7 @@ def _review_record(
         sample=sample or _resolved_sample(review_action.sample_name),
         target=target or _resolved_target(review_action.target_label),
         processing_request_id=processing_request_id,
-        evidence_artifact_ids=evidence_artifact_ids,
+        evidence_artifacts=evidence_artifacts or _artifact_refs(),
         supersedes=supersedes,
         supersession_reason=supersession_reason,
     )
@@ -659,7 +712,7 @@ def _resolve_review(
     sample: ResolvedCanonicalSampleIdentity | None = None,
     target: ResolvedTargetDefinition | None = None,
     processing_request_id: str | None = None,
-    evidence_artifact_ids: tuple[str, ...] | None = None,
+    evidence_artifacts: tuple[EvidenceArtifactRef, ...] | None = None,
 ) -> ResolvedReviewRecordRef:
     expected_action = action or _review_action()
     return resolve_current_review_record(
@@ -671,9 +724,38 @@ def _resolve_review(
         expected_processing_request_id=(
             processing_request_id or record.processing_request_id
         ),
-        expected_evidence_artifact_ids=(
-            evidence_artifact_ids or record.evidence_artifact_ids
+        expected_evidence_artifacts=(evidence_artifacts or record.evidence_artifacts),
+    )
+
+
+def _artifact_ref(
+    label: str,
+    *,
+    attempt: ProcessingAttemptIdentity | None = None,
+    upstream_artifacts: tuple[EvidenceArtifactRef, ...] = (),
+) -> EvidenceArtifactRef:
+    return _mint_evidence_artifact_ref(
+        producer_processing_request_id=(
+            attempt.processing_request_id if attempt is not None else _REVIEW_REQUEST_ID
         ),
+        producer_processing_attempt_id=(
+            attempt.processing_attempt_id
+            if attempt is not None
+            else _TEST_ARTIFACT_ATTEMPT_ID
+        ),
+        semantic_contract=_TEST_ARTIFACT_SEMANTIC_CONTRACT,
+        payload_bytes=label.encode("utf-8"),
+        upstream_artifacts=upstream_artifacts,
+    )
+
+
+def _artifact_refs(
+    *,
+    attempt: ProcessingAttemptIdentity | None = None,
+) -> tuple[EvidenceArtifactRef, ...]:
+    return (
+        _artifact_ref("artifact-a", attempt=attempt),
+        _artifact_ref("artifact-b", attempt=attempt),
     )
 
 
