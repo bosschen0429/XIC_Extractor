@@ -2,13 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
+from xic_extractor.config import Target
+from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportContractError,
     compose_cid_nl_chromatographic_support_ref,
     validate_cid_nl_chromatographic_support_binding,
+)
+from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
+    CidNlChromatographicSupportRef,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
@@ -26,7 +32,10 @@ from xic_extractor.peak_detection.hypotheses import (
     EvidenceVector,
     IntegrationResult,
     PeakHypothesis,
+    PeakHypothesisAuthorityError,
 )
+from xic_extractor.peak_detection.model_selection import model_select_peak_hypothesis
+from xic_extractor.peak_detection.models import PeakDetectionResult
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     mint_peak_observation_ref,
@@ -35,6 +44,9 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     PeakHypothesisContractError,
     compose_cid_nl_peak_hypothesis,
     validate_cid_nl_peak_hypothesis_binding,
+)
+from xic_extractor.peak_detection.selection_decision import (
+    selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -892,6 +904,62 @@ def test_owner_backed_hypothesis_rejects_legacy_context_and_identity_tamper(
             artifact=None,
             evidence=EvidenceVector(),
         )
+
+
+def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    peak = _peak(fixture.owners, fixture.sample)
+    event = _event(fixture.owners, fixture.sample, peak)
+    hypothesis = compose_cid_nl_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=fixture.sample,
+        peak_observation=peak,
+        chromatographic_support=event,
+    )
+
+    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
+        selection_decision_from_hypothesis(hypothesis)
+    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
+        model_select_peak_hypothesis((hypothesis,))
+    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
+        build_extraction_result(
+            peak_result=PeakDetectionResult(
+                status="PEAK_NOT_FOUND",
+                peak=None,
+                n_points=0,
+                max_smoothed=None,
+                n_prominent_peaks=0,
+            ),
+            nl_result=None,
+            candidate_ms2_evidence=None,
+            target=Target(
+                label="control",
+                mz=_PRECURSOR_MZ,
+                rt_min=7.5,
+                rt_max=8.5,
+                ppm_tol=10.0,
+                neutral_loss_da=_NEUTRAL_LOSS_DA,
+                nl_ppm_warn=20.0,
+                nl_ppm_max=50.0,
+                is_istd=False,
+                istd_pair="",
+            ),
+            candidate=None,
+            scoring_context_builder=None,
+            selected_hypothesis=hypothesis,
+        )
+
+
+def test_owner_backed_peak_hypothesis_type_hints_resolve_at_runtime() -> None:
+    evidence_hints = get_type_hints(EvidenceVector)
+    hypothesis_hints = get_type_hints(PeakHypothesis)
+
+    assert evidence_hints["cid_nl_chromatographic_support_ref"] == (
+        CidNlChromatographicSupportRef | None
+    )
+    assert hypothesis_hints["peak_observation_refs"] == tuple[PeakObservationRef, ...]
 
 
 def _resolve(

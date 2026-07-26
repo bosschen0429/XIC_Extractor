@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.evidence_semantics import DecisionClass
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.hypotheses import (
+    PeakHypothesis,
+    validate_peak_hypothesis_selection_authority,
+)
 from xic_extractor.peak_detection.models import PeakDetectionResult
 
 LegacyProjectionStatus = Literal["active_policy_remaining", "successor_owned"]
@@ -44,6 +47,10 @@ def selection_decision_from_hypothesis(
     fallback_confidence: str = "",
     fallback_reason: str = "",
 ) -> PeakHypothesisSelectionDecision:
+    validate_peak_hypothesis_selection_authority(
+        hypothesis,
+        consumer="selection_decision_from_hypothesis",
+    )
     if peak_result is not None:
         fallback_confidence = _fallback_confidence(peak_result)
         fallback_reason = _fallback_reason(peak_result)

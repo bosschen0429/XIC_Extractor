@@ -549,8 +549,10 @@ the same request, attempt, sample, and physical content. Its content ID is
 stable across identical retries while its exact artifact closes the new
 attempt's observation and event artifacts. The owner-backed branch prohibits
 Targeted labels, roles, pairing, trace-group identity, selection semantics,
-selected audit, counting, and product projection. Missing, substituted,
-mutated, stale, or tampered bindings fail closed.
+selected audit, counting, and product projection. Existing selection,
+model-selection, `ExtractionResult`, and Targeted result-assembly boundaries
+reject it explicitly. Missing, substituted, mutated, stale, or tampered
+bindings fail closed.
 
 The next method-hypothesis tracer is Pt/Delta Mass multi-observation
 composition. It must first obtain explicit owner-backed position roles; tuple

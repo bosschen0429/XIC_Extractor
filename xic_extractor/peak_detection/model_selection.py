@@ -12,7 +12,10 @@ from xic_extractor.decision_policy import (
     decision_gate_terms,
 )
 from xic_extractor.evidence_semantics import DecisionClass
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.hypotheses import (
+    PeakHypothesis,
+    validate_peak_hypothesis_selection_authority,
+)
 from xic_extractor.peak_detection.selection_decision import (
     SelectionDecisionCompatibilityOracle,
 )
@@ -216,6 +219,11 @@ def model_select_peak_hypothesis(
     diff_reasons: tuple[str, ...] = (),
     evidence_comparison_policy: EvidenceComparisonPolicy = "limited_evidence_shadow",
 ) -> PeakModelSelectionResult:
+    for hypothesis in hypotheses:
+        validate_peak_hypothesis_selection_authority(
+            hypothesis,
+            consumer="model_select_peak_hypothesis",
+        )
     legacy_selected = _legacy_selected_hypothesis(hypotheses)
     if legacy_selected is None:
         return _blocked_result(

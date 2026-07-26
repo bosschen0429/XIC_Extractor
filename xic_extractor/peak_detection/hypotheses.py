@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -21,6 +20,9 @@ from xic_extractor.peak_detection.baseline import (
     bounded_trace_interval,
     integrate_with_baseline,
 )
+from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
+    CidNlChromatographicSupportRef,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     CandidateEvidenceFacts,
     decision_semantics_from_candidate_facts,
@@ -38,13 +40,8 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     gaussian15_positive_asls_residual_metrics,
 )
+from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.traces import TraceGroup
-
-if TYPE_CHECKING:
-    from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
-        CidNlChromatographicSupportRef,
-    )
-    from xic_extractor.peak_detection.observations import PeakObservationRef
 
 OWNER_BACKED_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
 OWNER_BACKED_ANALYSIS_MODE = "workflow_neutral"
@@ -56,6 +53,10 @@ _CONFIDENCE_RANK = {
     "VERY_LOW": 3,
     "": 4,
 }
+
+
+class PeakHypothesisAuthorityError(ValueError):
+    """Raised when diagnostic identity is passed to selection or product code."""
 
 
 @dataclass(frozen=True)
@@ -147,21 +148,38 @@ class PeakHypothesis:
     peak_observation_refs: tuple[PeakObservationRef, ...] = ()
     artifact: EvidenceArtifactRef | None = None
 
-    def __post_init__(self) -> None:
-        if not (
+    @property
+    def is_owner_backed(self) -> bool:
+        return bool(
             self.hypothesis_method
             or self.peak_observation_refs
             or self.artifact is not None
             or self.evidence.cid_nl_chromatographic_support_ref is not None
             or self.analysis_mode == OWNER_BACKED_ANALYSIS_MODE
             or self.hypothesis_id.startswith(OWNER_BACKED_HYPOTHESIS_ID_PREFIX)
-        ):
+        )
+
+    def __post_init__(self) -> None:
+        if not self.is_owner_backed:
             return
         from xic_extractor.peak_detection.peak_hypothesis_identity import (
             validate_owner_backed_peak_hypothesis_instance,
         )
 
         validate_owner_backed_peak_hypothesis_instance(self)
+
+
+def validate_peak_hypothesis_selection_authority(
+    hypothesis: PeakHypothesis,
+    *,
+    consumer: str,
+) -> None:
+    """Reject diagnostic owner-backed identity at selection/product boundaries."""
+
+    if hypothesis.is_owner_backed:
+        raise PeakHypothesisAuthorityError(
+            f"{consumer} cannot consume diagnostic-only owner-backed PeakHypothesis"
+        )
 
 
 def hypothesis_audit_id(
