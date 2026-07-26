@@ -4,6 +4,14 @@ from pathlib import Path
 import pytest
 
 from xic_extractor import review_records
+from xic_extractor.config import Target
+from xic_extractor.configuration.target_identity import (
+    ResolvedTargetDefinition,
+    TargetListSnapshot,
+    mint_target_list_snapshot,
+    resolve_target_definition,
+    target_list_snapshot_payload,
+)
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     IdentityContractError,
@@ -33,6 +41,8 @@ from xic_extractor.sample_metadata import (
     resolve_canonical_sample_identity,
 )
 
+_REVIEW_REQUEST_ID = "xic.processing-request.v1:" + "a" * 64
+
 
 def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None:
     row = SampleMetadata(
@@ -54,8 +64,7 @@ def test_sample_owner_mints_canonical_identity_from_primary_sample_key() -> None
         "a5c133f3c37c7e2988747f99a1f0a491a1024795a806ef015b0129b951990787"
     )
     assert identity.sample_identity_id == (
-        "xic.sample.v1:"
-        "c6eb17e155ab6d78368c18428f6cc967e9b7762cde9d3d792e6c598f7c87b592"
+        "xic.sample.v1:c6eb17e155ab6d78368c18428f6cc967e9b7762cde9d3d792e6c598f7c87b592"
     )
     assert identity.sample_key == "Sample A"
     assert identity.sample_metadata_schema_version == "sample_metadata_v1"
@@ -158,9 +167,7 @@ def test_sample_snapshot_is_order_neutral_and_content_bound() -> None:
 def test_sample_resolution_rejects_non_snapshot_owner_input() -> None:
     with pytest.raises(SampleMetadataError, match="SampleMetadataSnapshot"):
         resolve_canonical_sample_identity(  # type: ignore[arg-type]
-            (
-                SampleMetadata(sample_name="Sample A", raw_stem="shared"),
-            ),
+            (SampleMetadata(sample_name="Sample A", raw_stem="shared"),),
             "shared",
         )
 
@@ -186,11 +193,11 @@ def test_review_owner_mints_digest_and_typed_id_from_immutable_content() -> None
     )
     assert first.review_record_id == (
         "xic.review-record.v1:"
-        "cf47c33ad7b85a47074964d0ea2abe326a424d73bdf38295a38d83c5251ea174"
+        "ba948d555d51b5cacf70bcb0f252e664efe0ec113ddf485a825c91c925c3fe83"
     )
     assert _review_snapshot(first).snapshot_id == (
         "xic.review-record-snapshot.v1:"
-        "20ce6f0e42e9bc16c8d116159f5a9900f1fdbda6b7fd69bff665669ba0c5c89e"
+        "4023dbda2509e8d0247c7922844e9b6149990fb0a60d05a0f127778c36fe2932"
     )
     assert changed.review_record_id != first.review_record_id
     assert changed.content_sha256 != first.content_sha256
@@ -204,6 +211,42 @@ def test_review_artifact_reorder_is_neutral_but_substitution_invalidates() -> No
     assert first == reordered
     assert first.evidence_artifact_ids == ("artifact-a", "artifact-b")
     assert substituted.review_record_id != first.review_record_id
+
+
+def test_review_subject_is_stable_while_definition_and_request_bind_exactly() -> None:
+    original_target = _resolved_target(mz=250.0)
+    changed_target = _resolved_target(mz=251.0)
+    original = _review_record(target=original_target)
+    successor = _review_record(
+        action=_review_action(comment="reviewed changed definition"),
+        target=changed_target,
+        processing_request_id="xic.processing-request.v1:" + "b" * 64,
+        supersedes=original,
+        supersession_reason="target definition changed before a new request",
+    )
+
+    assert successor.review_subject_id == original.review_subject_id
+    assert successor.target_key_id == original.target_key_id
+    assert successor.target_definition_id != original.target_definition_id
+    assert successor.processing_request_id != original.processing_request_id
+    with pytest.raises(ReviewRecordReferenceError, match="target definition.*stale"):
+        _resolve_review(original, target=changed_target)
+    with pytest.raises(ReviewRecordReferenceError, match="processing request.*stale"):
+        _resolve_review(
+            original,
+            processing_request_id="xic.processing-request.v1:" + "b" * 64,
+        )
+
+
+def test_review_owner_rejects_bare_label_rebinding_across_owner_references() -> None:
+    action = _review_action()
+
+    with pytest.raises(ReviewRecordReferenceError, match="sample_name mismatches"):
+        _review_record(action=action, sample=_resolved_sample("Sample B"))
+    with pytest.raises(ReviewRecordReferenceError, match="target_label mismatches"):
+        _review_record(action=action, target=_resolved_target("Other"))
+    with pytest.raises(ReviewRecordReferenceError, match="processing_request_id"):
+        _review_record(action=action, processing_request_id="caller-run-id")
 
 
 def test_review_record_rejects_caller_rebinding() -> None:
@@ -222,6 +265,9 @@ def test_review_resolver_rejects_missing_ambiguous_stale_and_rebound_inputs() ->
             snapshot,
             review_record_id="xic.review-record.v1:" + "f" * 64,
             expected_record=_review_action(),
+            expected_sample=_resolved_sample(),
+            expected_target=_resolved_target(),
+            expected_processing_request_id=_REVIEW_REQUEST_ID,
             expected_evidence_artifact_ids=record.evidence_artifact_ids,
         )
     with pytest.raises(ReviewRecordReferenceError, match="ambiguous"):
@@ -299,6 +345,10 @@ def test_review_snapshot_rejects_deserialized_cross_subject_successor() -> None:
     reason = "forged cross-subject edge"
     forged_id = review_records._review_record_id(  # noqa: SLF001
         review_subject_id=other_subject.review_subject_id,
+        canonical_sample_identity_id=other_subject.canonical_sample_identity_id,
+        target_key_id=other_subject.target_key_id,
+        target_definition_id=other_subject.target_definition_id,
+        processing_request_id=other_subject.processing_request_id,
         schema_version=other_subject.schema_version,
         content_sha256=other_subject.content_sha256,
         evidence_artifact_ids=other_subject.evidence_artifact_ids,
@@ -308,6 +358,10 @@ def test_review_snapshot_rejects_deserialized_cross_subject_successor() -> None:
     forged = ImmutableReviewRecordRef(
         review_record_id=forged_id,
         review_subject_id=other_subject.review_subject_id,
+        canonical_sample_identity_id=other_subject.canonical_sample_identity_id,
+        target_key_id=other_subject.target_key_id,
+        target_definition_id=other_subject.target_definition_id,
+        processing_request_id=other_subject.processing_request_id,
         schema_version=other_subject.schema_version,
         content_sha256=other_subject.content_sha256,
         evidence_artifact_ids=other_subject.evidence_artifact_ids,
@@ -335,6 +389,9 @@ def test_review_mint_accepts_only_owner_typed_and_validated_actions() -> None:
     with pytest.raises(ReviewRecordReferenceError, match="typed ReviewAction"):
         mint_review_record_reference(  # type: ignore[arg-type]
             record={"verdict": "accept"},
+            sample=_resolved_sample(),
+            target=_resolved_target(),
+            processing_request_id=_REVIEW_REQUEST_ID,
             evidence_artifact_ids=("artifact-a",),
         )
     invalid = ReviewAction(
@@ -345,6 +402,9 @@ def test_review_mint_accepts_only_owner_typed_and_validated_actions() -> None:
     with pytest.raises(ReviewRecordReferenceError, match="valid review_action_v1"):
         mint_review_record_reference(
             record=invalid,
+            sample=_resolved_sample(),
+            target=_resolved_target(),
+            processing_request_id=_REVIEW_REQUEST_ID,
             evidence_artifact_ids=("artifact-a",),
         )
 
@@ -360,15 +420,29 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
         sample_snapshot,
         "request-a",
     )
-    review_ref = _review_record()
+    target_snapshot = _target_snapshot()
+    target = resolve_target_definition(target_snapshot, "5-mdC")
+    review_ref = _review_record(
+        sample=sample,
+        target=target,
+        processing_request_id=request.processing_request_id,
+    )
     review_snapshot = _review_snapshot(review_ref)
-    review = _resolve_review(review_ref, snapshot=review_snapshot)
+    review = _resolve_review(
+        review_ref,
+        snapshot=review_snapshot,
+        sample=sample,
+        target=target,
+        processing_request_id=request.processing_request_id,
+    )
 
     references = compose_processing_owner_references(
         request=request,
         attempt=attempt,
         sample_snapshot=sample_snapshot,
         sample_resolutions=(sample,),
+        target_snapshot=target_snapshot,
+        review_target=target,
         review_snapshot=review_snapshot,
         review_record=review,
     )
@@ -377,8 +451,76 @@ def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
     assert references.attempt is attempt
     assert references.sample_snapshot is sample_snapshot
     assert references.sample_resolutions == (sample,)
+    assert references.target_snapshot is target_snapshot
+    assert references.review_target is target
     assert references.review_snapshot is review_snapshot
     assert references.review_record is review
+
+
+def test_lineage_rejects_review_from_different_request_or_target(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path, payload=b"request-a")
+    sample_snapshot = _sample_snapshot(
+        SampleMetadata(sample_name="Sample A", raw_stem="request-a")
+    )
+    sample = resolve_canonical_sample_identity(sample_snapshot, "request-a")
+    target_snapshot = _target_snapshot()
+    target = resolve_target_definition(target_snapshot, "5-mdC")
+    wrong_target = _resolved_target(mz=251.0)
+    wrong_request_ref = _review_record(
+        sample=sample,
+        target=target,
+        processing_request_id="xic.processing-request.v1:" + "b" * 64,
+    )
+    wrong_request_snapshot = _review_snapshot(wrong_request_ref)
+    wrong_request = _resolve_review(
+        wrong_request_ref,
+        snapshot=wrong_request_snapshot,
+        sample=sample,
+        target=target,
+    )
+
+    with pytest.raises(IdentityContractError, match="different processing request"):
+        compose_processing_owner_references(
+            request=request,
+            attempt=issue_processing_attempt(request),
+            sample_snapshot=sample_snapshot,
+            sample_resolutions=(sample,),
+            target_snapshot=target_snapshot,
+            review_target=target,
+            review_snapshot=wrong_request_snapshot,
+            review_record=wrong_request,
+        )
+
+    changed_request = _request(
+        tmp_path,
+        payload=b"request-a",
+        target_snapshot=wrong_target.snapshot,
+    )
+    wrong_target_ref = _review_record(
+        sample=sample,
+        target=target,
+        processing_request_id=changed_request.processing_request_id,
+    )
+    wrong_target_snapshot = _review_snapshot(wrong_target_ref)
+    wrong_target_review = _resolve_review(
+        wrong_target_ref,
+        snapshot=wrong_target_snapshot,
+        sample=sample,
+        target=target,
+    )
+    with pytest.raises(IdentityContractError, match="different target definition"):
+        compose_processing_owner_references(
+            request=changed_request,
+            attempt=issue_processing_attempt(changed_request),
+            sample_snapshot=sample_snapshot,
+            sample_resolutions=(sample,),
+            target_snapshot=wrong_target.snapshot,
+            review_target=wrong_target,
+            review_snapshot=wrong_target_snapshot,
+            review_record=wrong_target_review,
+        )
 
 
 def test_lineage_composition_rejects_raw_or_cross_request_references(
@@ -467,12 +609,19 @@ def test_lineage_rejects_resolutions_mixed_across_owner_snapshots(
 def _review_record(
     *,
     action: ReviewAction | None = None,
+    sample: ResolvedCanonicalSampleIdentity | None = None,
+    target: ResolvedTargetDefinition | None = None,
+    processing_request_id: str = _REVIEW_REQUEST_ID,
     evidence_artifact_ids: tuple[str, ...] = ("artifact-a", "artifact-b"),
     supersedes: ImmutableReviewRecordRef | None = None,
     supersession_reason: str = "",
 ) -> ImmutableReviewRecordRef:
+    review_action = action or _review_action()
     return mint_review_record_reference(
-        record=action or _review_action(),
+        record=review_action,
+        sample=sample or _resolved_sample(review_action.sample_name),
+        target=target or _resolved_target(review_action.target_label),
+        processing_request_id=processing_request_id,
         evidence_artifact_ids=evidence_artifact_ids,
         supersedes=supersedes,
         supersession_reason=supersession_reason,
@@ -484,12 +633,21 @@ def _resolve_review(
     *,
     snapshot: ReviewRecordRegistrySnapshot | None = None,
     action: ReviewAction | None = None,
+    sample: ResolvedCanonicalSampleIdentity | None = None,
+    target: ResolvedTargetDefinition | None = None,
+    processing_request_id: str | None = None,
     evidence_artifact_ids: tuple[str, ...] | None = None,
 ) -> ResolvedReviewRecordRef:
+    expected_action = action or _review_action()
     return resolve_current_review_record(
         snapshot or _review_snapshot(record),
         review_record_id=record.review_record_id,
-        expected_record=action or _review_action(),
+        expected_record=expected_action,
+        expected_sample=sample or _resolved_sample(expected_action.sample_name),
+        expected_target=target or _resolved_target(expected_action.target_label),
+        expected_processing_request_id=(
+            processing_request_id or record.processing_request_id
+        ),
         expected_evidence_artifact_ids=(
             evidence_artifact_ids or record.evidence_artifact_ids
         ),
@@ -512,11 +670,25 @@ def _review_action(
     )
 
 
-def _request(tmp_path: Path, *, payload: bytes):
-    return _request_many(tmp_path, payloads=(payload,))
+def _request(
+    tmp_path: Path,
+    *,
+    payload: bytes,
+    target_snapshot: TargetListSnapshot | None = None,
+):
+    return _request_many(
+        tmp_path,
+        payloads=(payload,),
+        target_snapshot=target_snapshot,
+    )
 
 
-def _request_many(tmp_path: Path, *, payloads: tuple[bytes, ...]):
+def _request_many(
+    tmp_path: Path,
+    *,
+    payloads: tuple[bytes, ...],
+    target_snapshot: TargetListSnapshot | None = None,
+):
     sources = []
     bindings = []
     for injection_order, payload in enumerate(payloads, start=1):
@@ -542,7 +714,10 @@ def _request_many(tmp_path: Path, *, payloads: tuple[bytes, ...]):
         processing_algorithm_version="owner-reference-fixture-v1",
         processing_contract_version="owner-reference-fixture-v1",
         scientific_inputs={
-            "fixture": [payload.decode("ascii") for payload in payloads]
+            "fixture": [payload.decode("ascii") for payload in payloads],
+            "target_list_snapshot": target_list_snapshot_payload(
+                target_snapshot or _target_snapshot()
+            ),
         },
     )
 
@@ -555,6 +730,46 @@ def _sample_snapshot(
         rows,
         identity_namespace=identity_namespace,
     )
+
+
+def _resolved_sample(sample_name: str = "Sample A") -> ResolvedCanonicalSampleIdentity:
+    snapshot = _sample_snapshot(
+        SampleMetadata(sample_name=sample_name, raw_stem=sample_name)
+    )
+    return resolve_canonical_sample_identity(snapshot, sample_name)
+
+
+def _target_snapshot(
+    *,
+    target_label: str = "5-mdC",
+    mz: float = 250.0,
+) -> TargetListSnapshot:
+    return mint_target_list_snapshot(
+        (
+            Target(
+                label=target_label,
+                mz=mz,
+                rt_min=1.0,
+                rt_max=3.0,
+                ppm_tol=10.0,
+                neutral_loss_da=116.0,
+                nl_ppm_warn=20.0,
+                nl_ppm_max=40.0,
+                is_istd=False,
+                istd_pair="",
+            ),
+        ),
+        identity_namespace="target-list:package-0-test",
+    )
+
+
+def _resolved_target(
+    target_label: str = "5-mdC",
+    *,
+    mz: float = 250.0,
+) -> ResolvedTargetDefinition:
+    snapshot = _target_snapshot(target_label=target_label, mz=mz)
+    return resolve_target_definition(snapshot, target_label)
 
 
 def _review_snapshot(

@@ -9,13 +9,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.review_actions import parse_review_actions
 from xic_extractor.review_actions_models import ReviewAction, ReviewActionError
 from xic_extractor.review_actions_schema import REVIEW_ACTION_SCHEMA_VERSION
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 _REVIEW_RECORD_ID_PREFIX = "xic.review-record.v1:"
 _REVIEW_RECORD_SNAPSHOT_PREFIX = "xic.review-record-snapshot.v1:"
 _REVIEW_SUBJECT_ID_PREFIX = "xic.review-subject.v1:"
+_CANONICAL_SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_TARGET_KEY_ID_PREFIX = "xic.target-key.v1:"
+_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition.v1:"
+_PROCESSING_REQUEST_ID_PREFIX = "xic.processing-request.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -29,6 +35,10 @@ class ImmutableReviewRecordRef:
 
     review_record_id: str
     review_subject_id: str
+    canonical_sample_identity_id: str
+    target_key_id: str
+    target_definition_id: str
+    processing_request_id: str
     schema_version: str
     content_sha256: str
     evidence_artifact_ids: tuple[str, ...]
@@ -46,6 +56,30 @@ class ImmutableReviewRecordRef:
             prefix=_REVIEW_SUBJECT_ID_PREFIX,
             field="review_subject_id",
         )
+        sample_id = _validate_typed_digest_id(
+            self.canonical_sample_identity_id,
+            prefix=_CANONICAL_SAMPLE_ID_PREFIX,
+            field="canonical_sample_identity_id",
+        )
+        target_key_id = _validate_typed_digest_id(
+            self.target_key_id,
+            prefix=_TARGET_KEY_ID_PREFIX,
+            field="target_key_id",
+        )
+        target_definition_id = _validate_typed_digest_id(
+            self.target_definition_id,
+            prefix=_TARGET_DEFINITION_ID_PREFIX,
+            field="target_definition_id",
+        )
+        processing_request_id = _validate_typed_digest_id(
+            self.processing_request_id,
+            prefix=_PROCESSING_REQUEST_ID_PREFIX,
+            field="processing_request_id",
+        )
+        if subject_id != _review_subject_id(sample_id, target_key_id):
+            raise ReviewRecordReferenceError(
+                "review_subject_id mismatches owner-backed sample and target key"
+            )
         content_sha256 = _validate_sha256(
             self.content_sha256,
             field="content_sha256",
@@ -69,6 +103,10 @@ class ImmutableReviewRecordRef:
             )
         expected_id = _review_record_id(
             review_subject_id=subject_id,
+            canonical_sample_identity_id=sample_id,
+            target_key_id=target_key_id,
+            target_definition_id=target_definition_id,
+            processing_request_id=processing_request_id,
             schema_version=schema_version,
             content_sha256=content_sha256,
             evidence_artifact_ids=artifact_ids,
@@ -80,9 +118,7 @@ class ImmutableReviewRecordRef:
                 "review_record_id mismatches immutable review-record content"
             )
         if predecessor_id == self.review_record_id:
-            raise ReviewRecordReferenceError(
-                "a review record cannot supersede itself"
-            )
+            raise ReviewRecordReferenceError("a review record cannot supersede itself")
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,8 +135,7 @@ class ReviewRecordRegistrySnapshot:
             field="content_sha256",
         )
         if any(
-            not isinstance(record, ImmutableReviewRecordRef)
-            for record in self.records
+            not isinstance(record, ImmutableReviewRecordRef) for record in self.records
         ):
             raise ReviewRecordReferenceError(
                 "registry snapshot must contain owner-minted review records"
@@ -113,9 +148,7 @@ class ReviewRecordRegistrySnapshot:
                 "review registry snapshot records must be canonical-sorted"
             )
         _validate_review_record_graph(canonical_records)
-        expected_content_sha256 = _review_registry_content_sha256(
-            canonical_records
-        )
+        expected_content_sha256 = _review_registry_content_sha256(canonical_records)
         if content_sha256 != expected_content_sha256:
             raise ReviewRecordReferenceError(
                 "review registry snapshot digest mismatches owner records"
@@ -134,6 +167,9 @@ class ResolvedReviewRecordRef:
     reference: ImmutableReviewRecordRef
     registry_snapshot: ReviewRecordRegistrySnapshot
     expected_record: ReviewAction
+    expected_sample: ResolvedCanonicalSampleIdentity
+    expected_target: ResolvedTargetDefinition
+    expected_processing_request_id: str
     expected_evidence_artifact_ids: tuple[str, ...]
 
     def __post_init__(self) -> None:
@@ -142,14 +178,21 @@ class ResolvedReviewRecordRef:
                 "reference must be an owner-minted review record"
             )
         if not isinstance(self.registry_snapshot, ReviewRecordRegistrySnapshot):
-            raise ReviewRecordReferenceError(
-                "registry_snapshot must be owner-minted"
-            )
+            raise ReviewRecordReferenceError("registry_snapshot must be owner-minted")
         content_sha256 = _review_action_content_sha256(self.expected_record)
-        subject_id = _review_subject_id(self.expected_record)
-        artifact_ids = _canonical_artifact_ids(
-            self.expected_evidence_artifact_ids
+        (
+            sample_id,
+            target_key_id,
+            target_definition_id,
+            processing_request_id,
+        ) = _review_owner_binding_ids(
+            self.expected_record,
+            sample=self.expected_sample,
+            target=self.expected_target,
+            processing_request_id=self.expected_processing_request_id,
         )
+        subject_id = _review_subject_id(sample_id, target_key_id)
+        artifact_ids = _canonical_artifact_ids(self.expected_evidence_artifact_ids)
         if artifact_ids != self.expected_evidence_artifact_ids:
             raise ReviewRecordReferenceError(
                 "expected_evidence_artifact_ids must be canonical-sorted"
@@ -158,6 +201,10 @@ class ResolvedReviewRecordRef:
             self.registry_snapshot.records,
             review_record_id=self.reference.review_record_id,
             expected_review_subject_id=subject_id,
+            expected_canonical_sample_identity_id=sample_id,
+            expected_target_key_id=target_key_id,
+            expected_target_definition_id=target_definition_id,
+            expected_processing_request_id=processing_request_id,
             expected_content_sha256=content_sha256,
             expected_evidence_artifact_ids=artifact_ids,
         )
@@ -170,6 +217,9 @@ class ResolvedReviewRecordRef:
 def mint_review_record_reference(
     *,
     record: ReviewAction,
+    sample: ResolvedCanonicalSampleIdentity,
+    target: ResolvedTargetDefinition,
+    processing_request_id: str,
     evidence_artifact_ids: Sequence[str],
     supersedes: ImmutableReviewRecordRef | None = None,
     supersession_reason: str = "",
@@ -177,7 +227,18 @@ def mint_review_record_reference(
     """Mint a content-bound review reference without storing or publishing it."""
 
     content_sha256 = _review_action_content_sha256(record)
-    subject_id = _review_subject_id(record)
+    (
+        sample_id,
+        target_key_id,
+        target_definition_id,
+        processing_request_id,
+    ) = _review_owner_binding_ids(
+        record,
+        sample=sample,
+        target=target,
+        processing_request_id=processing_request_id,
+    )
+    subject_id = _review_subject_id(sample_id, target_key_id)
     schema_version = REVIEW_ACTION_SCHEMA_VERSION
     artifact_ids = _canonical_artifact_ids(evidence_artifact_ids)
     if supersedes is None:
@@ -193,9 +254,7 @@ def mint_review_record_reference(
                 "supersedes must be an owner-minted review record"
             )
         if not supersession_reason:
-            raise ReviewRecordReferenceError(
-                "supersession requires a non-empty reason"
-            )
+            raise ReviewRecordReferenceError("supersession requires a non-empty reason")
         reason = _required_text(
             supersession_reason,
             field="supersession_reason",
@@ -207,6 +266,10 @@ def mint_review_record_reference(
             )
     record_id = _review_record_id(
         review_subject_id=subject_id,
+        canonical_sample_identity_id=sample_id,
+        target_key_id=target_key_id,
+        target_definition_id=target_definition_id,
+        processing_request_id=processing_request_id,
         schema_version=schema_version,
         content_sha256=content_sha256,
         evidence_artifact_ids=artifact_ids,
@@ -216,6 +279,10 @@ def mint_review_record_reference(
     return ImmutableReviewRecordRef(
         review_record_id=record_id,
         review_subject_id=subject_id,
+        canonical_sample_identity_id=sample_id,
+        target_key_id=target_key_id,
+        target_definition_id=target_definition_id,
+        processing_request_id=processing_request_id,
         schema_version=schema_version,
         content_sha256=content_sha256,
         evidence_artifact_ids=artifact_ids,
@@ -246,8 +313,7 @@ def mint_review_record_registry_snapshot(
             "review registry snapshot must contain records"
         )
     if any(
-        not isinstance(record, ImmutableReviewRecordRef)
-        for record in canonical_records
+        not isinstance(record, ImmutableReviewRecordRef) for record in canonical_records
     ):
         raise ReviewRecordReferenceError(
             "review registry snapshot requires owner-minted review records"
@@ -266,6 +332,9 @@ def resolve_current_review_record(
     *,
     review_record_id: str,
     expected_record: ReviewAction,
+    expected_sample: ResolvedCanonicalSampleIdentity,
+    expected_target: ResolvedTargetDefinition,
+    expected_processing_request_id: str,
     expected_evidence_artifact_ids: Sequence[str],
 ) -> ResolvedReviewRecordRef:
     """Resolve one current record and reject stale, rebound, or superseded input."""
@@ -276,14 +345,30 @@ def resolve_current_review_record(
         )
     _validate_review_record_id(review_record_id, field="review_record_id")
     expected_content_sha256 = _review_action_content_sha256(expected_record)
-    expected_subject_id = _review_subject_id(expected_record)
-    expected_artifact_ids = _canonical_artifact_ids(
-        expected_evidence_artifact_ids
+    (
+        expected_sample_id,
+        expected_target_key_id,
+        expected_target_definition_id,
+        expected_processing_request_id,
+    ) = _review_owner_binding_ids(
+        expected_record,
+        sample=expected_sample,
+        target=expected_target,
+        processing_request_id=expected_processing_request_id,
     )
+    expected_subject_id = _review_subject_id(
+        expected_sample_id,
+        expected_target_key_id,
+    )
+    expected_artifact_ids = _canonical_artifact_ids(expected_evidence_artifact_ids)
     record = _resolve_current_reference(
         snapshot.records,
         review_record_id=review_record_id,
         expected_review_subject_id=expected_subject_id,
+        expected_canonical_sample_identity_id=expected_sample_id,
+        expected_target_key_id=expected_target_key_id,
+        expected_target_definition_id=expected_target_definition_id,
+        expected_processing_request_id=expected_processing_request_id,
         expected_content_sha256=expected_content_sha256,
         expected_evidence_artifact_ids=expected_artifact_ids,
     )
@@ -291,6 +376,9 @@ def resolve_current_review_record(
         reference=record,
         registry_snapshot=snapshot,
         expected_record=expected_record,
+        expected_sample=expected_sample,
+        expected_target=expected_target,
+        expected_processing_request_id=expected_processing_request_id,
         expected_evidence_artifact_ids=expected_artifact_ids,
     )
 
@@ -300,14 +388,16 @@ def _resolve_current_reference(
     *,
     review_record_id: str,
     expected_review_subject_id: str,
+    expected_canonical_sample_identity_id: str,
+    expected_target_key_id: str,
+    expected_target_definition_id: str,
+    expected_processing_request_id: str,
     expected_content_sha256: str,
     expected_evidence_artifact_ids: tuple[str, ...],
 ) -> ImmutableReviewRecordRef:
     _validate_review_record_graph(records)
     matches = [
-        record
-        for record in records
-        if record.review_record_id == review_record_id
+        record for record in records if record.review_record_id == review_record_id
     ]
     if not matches:
         raise ReviewRecordReferenceError(
@@ -331,6 +421,22 @@ def _resolve_current_reference(
     if record.review_subject_id != expected_review_subject_id:
         raise ReviewRecordReferenceError(
             f"review record {review_record_id!r} subject binding is stale"
+        )
+    if record.canonical_sample_identity_id != expected_canonical_sample_identity_id:
+        raise ReviewRecordReferenceError(
+            f"review record {review_record_id!r} sample binding is stale"
+        )
+    if record.target_key_id != expected_target_key_id:
+        raise ReviewRecordReferenceError(
+            f"review record {review_record_id!r} target key binding is stale"
+        )
+    if record.target_definition_id != expected_target_definition_id:
+        raise ReviewRecordReferenceError(
+            f"review record {review_record_id!r} target definition binding is stale"
+        )
+    if record.processing_request_id != expected_processing_request_id:
+        raise ReviewRecordReferenceError(
+            f"review record {review_record_id!r} processing request binding is stale"
         )
     if record.content_sha256 != expected_content_sha256:
         raise ReviewRecordReferenceError(
@@ -387,11 +493,45 @@ def _validate_review_record_graph(
             current_id = successor_by_predecessor[current_id]
 
 
+def _review_owner_binding_ids(
+    record: ReviewAction,
+    *,
+    sample: ResolvedCanonicalSampleIdentity,
+    target: ResolvedTargetDefinition,
+    processing_request_id: str,
+) -> tuple[str, str, str, str]:
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise ReviewRecordReferenceError(
+            "sample must be an owner-resolved canonical sample identity"
+        )
+    if not isinstance(target, ResolvedTargetDefinition):
+        raise ReviewRecordReferenceError(
+            "target must be an owner-resolved target definition"
+        )
+    request_id = _validate_typed_digest_id(
+        processing_request_id,
+        prefix=_PROCESSING_REQUEST_ID_PREFIX,
+        field="processing_request_id",
+    )
+    if record.sample_name != sample.metadata.sample_name:
+        raise ReviewRecordReferenceError(
+            "review action sample_name mismatches canonical sample identity"
+        )
+    if record.target_label != target.definition.target_key.target_label:
+        raise ReviewRecordReferenceError(
+            "review action target_label mismatches owner target key"
+        )
+    return (
+        sample.identity.sample_identity_id,
+        target.definition.target_key.target_key_id,
+        target.definition.target_definition_id,
+        request_id,
+    )
+
+
 def _review_action_content_sha256(record: ReviewAction) -> str:
     if not isinstance(record, ReviewAction):
-        raise ReviewRecordReferenceError(
-            "record must be an owner-typed ReviewAction"
-        )
+        raise ReviewRecordReferenceError("record must be an owner-typed ReviewAction")
     content: dict[str, object] = {
         "schema_version": REVIEW_ACTION_SCHEMA_VERSION,
         "sample_name": record.sample_name,
@@ -444,6 +584,10 @@ def _content_sha256(content: Mapping[str, object]) -> str:
 def _review_record_id(
     *,
     review_subject_id: str,
+    canonical_sample_identity_id: str,
+    target_key_id: str,
+    target_definition_id: str,
+    processing_request_id: str,
     schema_version: str,
     content_sha256: str,
     evidence_artifact_ids: tuple[str, ...],
@@ -453,6 +597,10 @@ def _review_record_id(
     basis = {
         "schema": "immutable_review_record_reference_v1",
         "review_subject_id": review_subject_id,
+        "canonical_sample_identity_id": canonical_sample_identity_id,
+        "target_key_id": target_key_id,
+        "target_definition_id": target_definition_id,
+        "processing_request_id": processing_request_id,
         "record_schema_version": schema_version,
         "content_sha256": content_sha256,
         "evidence_artifact_ids": list(evidence_artifact_ids),
@@ -465,20 +613,27 @@ def _review_record_id(
     return f"{_REVIEW_RECORD_ID_PREFIX}{digest}"
 
 
-def _review_subject_id(record: ReviewAction) -> str:
-    if not isinstance(record, ReviewAction):
-        raise ReviewRecordReferenceError(
-            "record must be an owner-typed ReviewAction"
-        )
-    sample_name = _required_text(record.sample_name, field="sample_name")
-    target_label = _required_text(record.target_label, field="target_label")
+def _review_subject_id(
+    canonical_sample_identity_id: str,
+    target_key_id: str,
+) -> str:
+    sample_id = _validate_typed_digest_id(
+        canonical_sample_identity_id,
+        prefix=_CANONICAL_SAMPLE_ID_PREFIX,
+        field="canonical_sample_identity_id",
+    )
+    stable_target_key_id = _validate_typed_digest_id(
+        target_key_id,
+        prefix=_TARGET_KEY_ID_PREFIX,
+        field="target_key_id",
+    )
     digest = hashlib.sha256(
         _canonical_json(
             {
-                "schema": "review_action_subject_identity_v1",
+                "schema": "review_subject_identity_v1",
                 "review_action_schema_version": REVIEW_ACTION_SCHEMA_VERSION,
-                "sample_name": sample_name,
-                "target_label": target_label,
+                "canonical_sample_identity_id": sample_id,
+                "target_key_id": stable_target_key_id,
             },
             field="review subject identity",
         ).encode("utf-8")
@@ -495,12 +650,14 @@ def _review_registry_content_sha256(
             {
                 "review_record_id": record.review_record_id,
                 "review_subject_id": record.review_subject_id,
+                "canonical_sample_identity_id": (record.canonical_sample_identity_id),
+                "target_key_id": record.target_key_id,
+                "target_definition_id": record.target_definition_id,
+                "processing_request_id": record.processing_request_id,
                 "schema_version": record.schema_version,
                 "content_sha256": record.content_sha256,
                 "evidence_artifact_ids": list(record.evidence_artifact_ids),
-                "supersedes_review_record_id": (
-                    record.supersedes_review_record_id
-                ),
+                "supersedes_review_record_id": (record.supersedes_review_record_id),
                 "supersession_reason": record.supersession_reason,
             }
             for record in records
@@ -533,9 +690,7 @@ def _canonical_artifact_ids(values: Sequence[str]) -> tuple[str, ...]:
                 "evidence_artifact_ids must be owner-normalized text"
             )
     if len(set(items)) != len(items):
-        raise ReviewRecordReferenceError(
-            "evidence_artifact_ids must be unique"
-        )
+        raise ReviewRecordReferenceError("evidence_artifact_ids must be unique")
     return tuple(sorted(items))
 
 
@@ -549,9 +704,7 @@ def _canonical_json(value: Any, *, field: str) -> str:
             allow_nan=False,
         )
     except (TypeError, ValueError) as exc:
-        raise ReviewRecordReferenceError(
-            f"{field} must be canonical JSON"
-        ) from exc
+        raise ReviewRecordReferenceError(f"{field} must be canonical JSON") from exc
 
 
 def _required_text(value: object, *, field: str) -> str:
@@ -564,9 +717,7 @@ def _required_text(value: object, *, field: str) -> str:
 
 def _validate_sha256(value: object, *, field: str) -> str:
     if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise ReviewRecordReferenceError(
-            f"{field} must be a lower-case SHA-256 digest"
-        )
+        raise ReviewRecordReferenceError(f"{field} must be a lower-case SHA-256 digest")
     return value
 
 
@@ -585,9 +736,7 @@ def _validate_typed_digest_id(
     field: str,
 ) -> str:
     if not isinstance(value, str) or not value.startswith(prefix):
-        raise ReviewRecordReferenceError(
-            f"{field} must use the {prefix!r} prefix"
-        )
+        raise ReviewRecordReferenceError(f"{field} must use the {prefix!r} prefix")
     _validate_sha256(value[len(prefix) :], field=field)
     return value
 

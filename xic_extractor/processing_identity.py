@@ -13,6 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.configuration.target_identity import (
+    ResolvedTargetDefinition,
+    TargetListSnapshot,
+    target_list_snapshot_payload,
+)
 from xic_extractor.review_records import (
     ResolvedReviewRecordRef,
     ReviewRecordRegistrySnapshot,
@@ -401,26 +406,22 @@ class ProcessingOwnerReferences:
     attempt: ProcessingAttemptIdentity
     sample_snapshot: SampleMetadataSnapshot
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...]
+    target_snapshot: TargetListSnapshot | None = None
+    review_target: ResolvedTargetDefinition | None = None
     review_snapshot: ReviewRecordRegistrySnapshot | None = None
     review_record: ResolvedReviewRecordRef | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.request, ProcessingRequestIdentity):
-            raise IdentityContractError(
-                "request must be a ProcessingRequestIdentity"
-            )
+            raise IdentityContractError("request must be a ProcessingRequestIdentity")
         if not isinstance(self.attempt, ProcessingAttemptIdentity):
-            raise IdentityContractError(
-                "attempt must be a ProcessingAttemptIdentity"
-            )
+            raise IdentityContractError("attempt must be a ProcessingAttemptIdentity")
         if self.attempt.processing_request_id != self.request.processing_request_id:
             raise IdentityContractError(
                 "attempt references a different processing request"
             )
         if not isinstance(self.sample_snapshot, SampleMetadataSnapshot):
-            raise IdentityContractError(
-                "sample_snapshot must be owner-minted"
-            )
+            raise IdentityContractError("sample_snapshot must be owner-minted")
         if not isinstance(self.sample_resolutions, tuple) or any(
             not isinstance(resolution, ResolvedCanonicalSampleIdentity)
             for resolution in self.sample_resolutions
@@ -436,8 +437,7 @@ class ProcessingOwnerReferences:
                 "sample resolutions must come from the same sample metadata snapshot"
             )
         expected_tokens = sorted(
-            binding.adapter_input_key
-            for binding in self.request.acquisition_bindings
+            binding.adapter_input_key for binding in self.request.acquisition_bindings
         )
         resolved_tokens = sorted(
             resolution.lookup_token for resolution in self.sample_resolutions
@@ -446,15 +446,33 @@ class ProcessingOwnerReferences:
             raise IdentityContractError(
                 "sample resolutions must cover each request acquisition binding"
             )
+        if self.target_snapshot is not None:
+            if not isinstance(self.target_snapshot, TargetListSnapshot):
+                raise IdentityContractError("target_snapshot must be owner-minted")
+            _validate_request_target_snapshot(self.request, self.target_snapshot)
+        if self.review_target is not None:
+            if not isinstance(self.review_target, ResolvedTargetDefinition):
+                raise IdentityContractError(
+                    "review_target must be an owner-resolved target definition"
+                )
+            if self.target_snapshot is None:
+                raise IdentityContractError(
+                    "review target requires its owner target-list snapshot"
+                )
+            if (
+                self.review_target.snapshot.snapshot_id
+                != self.target_snapshot.snapshot_id
+            ):
+                raise IdentityContractError(
+                    "review target must come from the bound target-list snapshot"
+                )
         if (self.review_snapshot is None) != (self.review_record is None):
             raise IdentityContractError(
                 "review snapshot and resolved record must be provided together"
             )
         if self.review_snapshot is not None:
             if not isinstance(self.review_snapshot, ReviewRecordRegistrySnapshot):
-                raise IdentityContractError(
-                    "review_snapshot must be owner-minted"
-                )
+                raise IdentityContractError("review_snapshot must be owner-minted")
             if not isinstance(self.review_record, ResolvedReviewRecordRef):
                 raise IdentityContractError(
                     "review_record must be an owner-resolved current review record"
@@ -466,6 +484,48 @@ class ProcessingOwnerReferences:
                 raise IdentityContractError(
                     "review record must come from the bound review registry snapshot"
                 )
+            if self.review_target is None or self.target_snapshot is None:
+                raise IdentityContractError(
+                    "review record requires an owner-resolved target definition"
+                )
+            reference = self.review_record.reference
+            sample_ids = {
+                resolution.identity.sample_identity_id
+                for resolution in self.sample_resolutions
+            }
+            if reference.canonical_sample_identity_id not in sample_ids:
+                raise IdentityContractError(
+                    "review record references a sample outside this processing request"
+                )
+            if (
+                reference.target_key_id
+                != self.review_target.definition.target_key.target_key_id
+                or reference.target_definition_id
+                != self.review_target.definition.target_definition_id
+            ):
+                raise IdentityContractError(
+                    "review record references a different target definition"
+                )
+            if reference.processing_request_id != self.request.processing_request_id:
+                raise IdentityContractError(
+                    "review record references a different processing request"
+                )
+        elif self.review_target is not None:
+            raise IdentityContractError(
+                "review_target is valid only with an owner-resolved review record"
+            )
+
+
+def _validate_request_target_snapshot(
+    request: ProcessingRequestIdentity,
+    target_snapshot: TargetListSnapshot,
+) -> None:
+    request_inputs = json.loads(request.normalized_scientific_inputs_json)
+    expected_payload = target_list_snapshot_payload(target_snapshot)
+    if request_inputs.get("target_list_snapshot") != expected_payload:
+        raise IdentityContractError(
+            "processing request does not pin the bound target-list snapshot"
+        )
 
 
 def build_acquisition_source_identity(
@@ -681,6 +741,8 @@ def compose_processing_owner_references(
     attempt: ProcessingAttemptIdentity,
     sample_snapshot: SampleMetadataSnapshot,
     sample_resolutions: tuple[ResolvedCanonicalSampleIdentity, ...],
+    target_snapshot: TargetListSnapshot | None = None,
+    review_target: ResolvedTargetDefinition | None = None,
     review_snapshot: ReviewRecordRegistrySnapshot | None = None,
     review_record: ResolvedReviewRecordRef | None = None,
 ) -> ProcessingOwnerReferences:
@@ -691,6 +753,8 @@ def compose_processing_owner_references(
         attempt=attempt,
         sample_snapshot=sample_snapshot,
         sample_resolutions=sample_resolutions,
+        target_snapshot=target_snapshot,
+        review_target=review_target,
         review_snapshot=review_snapshot,
         review_record=review_record,
     )

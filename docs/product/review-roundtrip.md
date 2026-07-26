@@ -15,12 +15,20 @@ approved product changes.
   record. The owner computes canonical JSON SHA-256 content identity and
   derives a typed `xic.review-record.v1:<sha256>` ID; callers cannot supply
   either ID or digest.
-- A review-record identity binds its record schema version, full content
-  digest, owner-derived review subject (`sample_name` plus `target_label`),
-  canonical set of exact evidence-artifact IDs, and any predecessor plus
+- A review subject is owner-derived from one resolved canonical sample identity
+  plus one owner-stable target key. Bare `sample_name` and `target_label` remain
+  fields in `review_action_v1`, but they must match those owner references and
+  cannot mint the subject by themselves.
+- A review-record identity separately binds its record schema version, full
+  content digest, exact target-definition identity, exact processing-request
+  identity, canonical set of evidence-artifact IDs, and any predecessor plus
   non-empty supersession reason. Artifact enumeration order is neutral;
   substitution or content mutation invalidates the identity. A successor must
   retain the same review subject.
+- A user may legally change a target definition before creating a new
+  processing request. The stable target key keeps that history under the same
+  review subject, but the previous review is stale for the new definition or
+  request until an explicit same-subject successor binds the new identities.
 - Corrections are append-only successors. Resolution rejects missing,
   ambiguous, stale, rebound, orphaned, forked, or superseded records rather
   than treating a mutable "latest" row as identity. It returns a
@@ -51,7 +59,7 @@ approved product changes.
 | --- | --- |
 | Review Queue | Worklist and triage surface |
 | `review_action_v1` | Typed action import schema |
-| `ImmutableReviewRecordRef` | Owner-minted immutable content/artifact/supersession reference for retained conclusions |
+| `ImmutableReviewRecordRef` | Owner-minted immutable sample/target/request/content/artifact/supersession reference for retained conclusions |
 | `ReviewRecordRegistrySnapshot` | Content-digested immutable owner snapshot used for current/superseded resolution |
 | `ResolvedReviewRecordRef` | Owner-validated current reference within an immutable registry snapshot |
 | Dry-run application plan | Non-mutating audit of possible changes |
@@ -74,9 +82,9 @@ approved product changes.
 
 - Schema validation tests for actions or labels.
 - Stale-source/hash checks for imported review artifacts.
-- Owner-reference tests for deterministic minting, content/artifact
-  invalidation, missing/ambiguous/stale resolution, and append-only
-  supersession.
+- Owner-reference tests for deterministic minting, sample/target/request and
+  content/artifact invalidation, missing/ambiguous/stale resolution, and
+  append-only supersession.
 - Expected-diff packet for any selected peak, area, counted detection,
   workbook, or matrix change.
 - Productization authority review before writer behavior changes.

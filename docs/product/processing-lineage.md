@@ -102,7 +102,7 @@ labels until an adapter binds them to the contract above.
 | `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
 | `processing_attempt_id` | A unique execution identity referencing exactly one request; optional retry/predecessor reference | Request digest alone or a reused timestamp |
 | `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata_v1` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
-| `immutable_review_record_ref` | Review-owner subject + schema/version + canonical content digest + exact artifact bindings + optional same-subject predecessor and supersession reason | Caller-provided ID/digest, mutable latest row, private rationale, or review truth inferred by lineage |
+| `immutable_review_record_ref` | Review-owner subject from canonical sample + stable target key; exact target definition + processing request; schema/version; canonical content digest; exact artifact bindings; optional same-subject predecessor and supersession reason | Bare sample/target labels, caller-provided ID/digest, mutable latest row, private rationale, or review truth inferred by lineage |
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
 | `delivery_cell_key` | Projection kind + `sample_metadata_v1`-owned stable sample identity + projection-owned target/row identity | Acquisition-source identity, display name alone, current row number, column position, `FAM000...` ordinal, or output path |
@@ -119,7 +119,7 @@ numbers), with a type/version prefix. Its current content boundary is:
 - the configuration owner mints `xic.target-key.v1` from an explicitly supplied
   owner namespace plus normalized target label, and
   `xic.target-definition.v1` from that key plus every effective `Target`
-  fields. It freezes those definitions in user-declared row order as
+  field. It freezes those definitions in user-declared row order as
   `xic.target-list-snapshot.v1`. Users may change the target list before a new
   request; the owner never mutates an existing snapshot. A same-label content
   change preserves the stable key but creates a new definition and snapshot;
@@ -144,11 +144,14 @@ numbers), with a type/version prefix. Its current content boundary is:
   content; other metadata projections do not invalidate identity, while
   renaming the canonical key does. Resolution retains one content-digested
   complete owner snapshot, exact lookup token, and metadata row;
-- the review-roundtrip owner currently mints `xic.review-record.v1` only from
-  an owner-validated typed `review_action_v1`, canonical exact artifact
-  bindings, an owner-derived subject, and any complete same-subject
-  predecessor/supersession edge. It resolves against a content-digested
-  immutable registry snapshot and rejects stale or superseded references.
+- the review-roundtrip owner currently mints `xic.review-subject.v1` from one
+  owner-resolved canonical sample plus one owner-stable target key. It mints
+  `xic.review-record.v1` only from an owner-validated typed `review_action_v1`,
+  the exact target definition and processing request, canonical exact artifact
+  bindings, and any complete same-subject predecessor/supersession edge. The
+  action's sample/target labels must match those owner references. Resolution
+  rejects definition/request substitution, stale content, or superseded
+  records against a content-digested immutable registry snapshot.
 
 The Targeted adapter currently names the existing Thermo MS-controller-1
 namespace explicitly. A different controller, acquisition adapter, or
@@ -159,19 +162,25 @@ This slice is not wired into the production execution path until that I/O cost
 and persisted-identifier surface receive an explicit promotion decision.
 
 This freezes the acquisition-source -> processing-request ->
-processing-attempt boundary plus the two prerequisite owner APIs. The lineage
-layer's `ProcessingOwnerReferences` only composes and validates a complete
-request and attempt, owner-resolved sample bindings whose exact lookup tokens
+processing-attempt boundary plus the sample, target-list, and review owner APIs.
+The lineage layer's `ProcessingOwnerReferences` only composes and validates a
+complete request and attempt, owner-resolved sample bindings whose exact lookup tokens
 cover every request acquisition input and share one exact metadata snapshot,
-and an optional owner-resolved current review record bound to one exact review
-registry snapshot. It does not mint sample/review IDs and it rejects mixed
-sample snapshots, unresolved review records, superseded review records, and
-review-snapshot substitution. Evidence-artifact, delivery-cell, revision, and
-seal identities remain incomplete later contracts. A timestamp can describe
-when something happened; it cannot establish what happened.
+the request-pinned target-list snapshot, and an optional owner-resolved current
+review record bound to the exact sample, target key/definition, request, and
+review registry snapshot. It does not mint sample/target/review IDs and it
+rejects mixed sample snapshots, target/request substitution, unresolved review
+records, superseded review records, and review-snapshot substitution.
+Evidence-artifact, delivery-cell, revision, and seal identities remain
+incomplete later contracts. A timestamp can describe when something happened;
+it cannot establish what happened.
 
-An acquisition source and a sample are different identities: one sample may
-have multiple acquisitions, and copying a source does not create a new sample.
+An acquisition source and a sample remain different typed identities, but the
+current lab contract is one independent canonical analysis sample per source
+included in an XIC analysis folder. QC replicates and meaningful reinjections
+therefore keep their distinct full names, result columns, and review scopes;
+lineage must not strip suffixes or collapse them into a biological-specimen
+identity. Invalid pre-crash acquisitions are excluded before this inventory.
 If the bounded tracer cannot obtain an unambiguous stable sample key from the
 sample-metadata owner, it must stop rather than derive one independently from a
 filename, display label, or row order.
