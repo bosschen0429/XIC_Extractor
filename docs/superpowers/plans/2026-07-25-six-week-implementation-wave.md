@@ -21,6 +21,91 @@ semantics remain with the canonical owners in the frozen-input table below; if
 this map conflicts with an owner, the owner controls and this map must be
 corrected.
 
+## Current Execution Progress
+
+Last updated: 2026-07-26
+
+Current validation status: `diagnostic_only`
+
+Current issue gate: Package 0 / Issue #149 remains open
+
+This section is the canonical progress tracker for this implementation wave.
+It tracks execution and consumer wiring; it does not replace the productization
+control plane, grant writer authority, or reinterpret a passing unit test as an
+end-to-end method result.
+
+Update this section after each merged logical slice, package-gate decision,
+scope change, or new evidence tier, and before a branch handoff or PR closeout.
+Do not update it for every mechanical commit. Every update must name:
+
+1. the last consumer boundary that actually ran;
+2. the strongest evidence reviewed;
+3. the first missing handoff;
+4. the next falsifiable loop;
+5. any Product, Design, Evidence, or Execution unknown that blocks mutation.
+
+Progress vocabulary:
+
+- `not_started` — no executable owner-backed path exists;
+- `contract_only` — typed owner contracts and focused tests exist, but the real
+  application consumer does not use them;
+- `wired_no_raw` — the actual application path consumes the contracts in a
+  no-RAW fixture;
+- `evidence_passed` — the package's named parity/oracle gate passed;
+- `blocked` — the next mutation requires an unresolved owner/product decision;
+- `deferred` — intentionally outside the current tracer priority.
+
+### Package checkpoint
+
+| Package | Status | What is actually complete | First missing gate |
+| --- | --- | --- | --- |
+| Package 0 — executable no-RAW contracts | `contract_only` / in progress | PR #151 merged the legacy comparator and shared `TargetedApplicationService`. Local unmerged work implements acquisition-source/request/attempt identity, canonical sample/target/review references, and diagnostic evidence-artifact identity. | Attempt/event lifecycle, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the frozen strangler checklist. Issue #149 remains open. |
+| Package 1 — pure runtime and observation substrates | `contract_only` / partial | Local unmerged CID-NL work reaches exact DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. | Runtime reducer/resource lifecycle and actual acquisition batch observations remain missing; no application consumer traverses the complete substrate. |
+| Package 2 — complete Targeted CID-NL method | `not_started` | None. Legacy stages exist, but the successor owner-backed chain is not wired through them. | Confirm the intended table endpoint, then wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
+| Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
+| Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
+| Package 4 — compare and decide | `not_started` | None. | Full tracer evidence, rollback rehearsal, and successor-versus-strangler comparison. |
+
+### CID-NL end-to-end checkpoint
+
+| Method handoff | Contract / local object | Actual consumer wiring | Strongest evidence | Status |
+| --- | --- | --- | --- | --- |
+| Canonical acquisition input → processing request/attempt | Implemented locally | No complete runtime lifecycle consumer | Focused synthetic no-RAW identity tests | `contract_only` |
+| Canonical sample/target/review references | Implemented locally through existing owners | Not yet proven through both complete tracer projections | Focused missing/ambiguous/stale/superseded tests | `contract_only` |
+| Exact DDA/ddMS2 CID-NL evidence | Implemented locally | Targeted/Discovery adapters can validate bounded refs; main application path does not carry them end to end | Focused synthetic no-RAW tests | `contract_only` |
+| CID-NL evidence → physical MS1 peak | Implemented locally as owner-backed applicability refs | `run_discovery` does not yet emit the complete owner-backed chain | Focused substitution/mutation/ambiguity tests | `contract_only` |
+| Repeated strict scans → one chromatographic support event | Implemented locally | Not consumed by the real Discovery runtime | Focused no-RAW aggregation tests | `contract_only` |
+| Support event → CID-NL `PeakHypothesis` | Implemented locally as a diagnostic branch | Selection/model-selection/product boundaries intentionally reject it | Focused no-RAW identity and authority-boundary tests | `contract_only` |
+| `PeakHypothesis` → explicit selection/externalization | No authorized successor transition | None | None | `not_started` |
+| Selected sample-local hypothesis → cross-sample Alignment | Existing legacy Alignment does not consume the owner-backed hypothesis | None | None | `not_started` |
+| Alignment-supported missing cell → evidence-based Backfill | Existing legacy Backfill exists, but has no owner-backed CID-NL hypothesis/group/cell chain | None | None | `not_started` |
+| Backfill/observed states → existing table writer | Legacy writers remain authoritative; successor projection is not wired | None for the successor path | Legacy output fixtures only | `not_started` |
+| Full multi-sample no-RAW CID-NL lifecycle | No | No | No end-to-end artifact | `not_started` |
+| RAW-backed CID-NL lifecycle | No | No | No new RAW evidence | `blocked` |
+
+**Current boundary:** the last completed semantic seam is exact CID-NL evidence
+→ physical MS1 peak → diagnostic `PeakHypothesis`. The first missing product
+seam is `PeakHypothesis` → explicit selection/externalization → cross-sample
+Alignment. Therefore Discovery, Alignment, Backfill, and table writing are not
+yet complete as one CID-NL method, even though the local domain objects pass
+focused tests.
+
+**Current Product unknown:** this plan specifies a Targeted-first Package 2
+ending in hard-exact `xic_results.csv`. The operator's phrase "write the table"
+must be confirmed before Package 2 mutation if it instead means the Untargeted
+Alignment Matrix/XLSX analytical handoff; those surfaces have different package
+order and authority.
+
+**Current next evidence loop:** after the table endpoint is confirmed and
+Package 0/1 gaps are closed, run one bounded multi-sample no-RAW fixture through
+the actual application path. It must exercise an observed hypothesis, one
+eligible Backfill, true missing, ambiguity, and failure, and finish at the
+existing authorized writer without changing legacy bytes or Matrix authority.
+
+**Deferred method note:** Pt Pattern work is related and retained, but its
+Discovery method is not stable enough to drive this vertical tracer. It is not
+the next `PeakHypothesis`, Alignment, Backfill, or writer task.
+
 ## Decision
 
 The smallest credible wave is one evidence-complete CID-NL / NL116 vertical
