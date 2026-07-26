@@ -468,14 +468,32 @@ reopens, and zero product writes. It deliberately rejects inferred
 `product_plus_neutral_loss` Discovery evidence until that evidence basis has its
 own owner-backed contract.
 
-The next scientific implementation must carry this same reference through the
-actual shared-kernel decisions rather than adding another artifact model:
+An earlier sequencing proposal said to carry this same reference directly into
+one sample-local `PeakHypothesis` and then through group/cell decisions. The
+no-RAW identity-decomposition characterization has superseded that imperative:
+the current `PeakHypothesis` is a Targeted-shaped working identity, CID-NL can
+participate in candidate generation before MS1 evaluation, and Pt hypotheses
+compose several MS1 feature observations. Directly wiring the CID-NL reference
+into the current object would collapse provider evidence, physical observation,
+and method interpretation.
 
-1. build one sample-local `PeakHypothesis` from the canonical observation;
-2. carry it into shared group/cell observation contracts;
-3. feed both no-write workflow projections from those same decisions;
-4. retain zero source reopens and exact review/lineage closure; and
-5. leave both legacy writers authoritative with hard-zero public-output diff.
+Before another scientific identity API is implemented or frozen, the operator
+must explicitly accept a shared-kernel architecture decision that records:
+
+1. whether existing `peak_detection` observation facts are deepened behind one
+   owner-backed reference or provider-local owner references remain explicitly
+   composed without a universal observation ID;
+2. which trace/query/boundary/integration/sample/attempt facts are content,
+   provenance, or applicability; and
+3. which generation, evidence, and method-context changes invalidate an
+   observation, hypothesis, evidence application, or selection decision.
+
+Issue #113's `PeakObservation` / `FeatureObservation` names remain provisional
+vocabulary, not implementation authority. Until the decision above is closed,
+do not mint a lineage-local substitute, a second `PeakHypothesis`, or a generic
+workflow runtime. Any later tracer must still retain zero source reopens, exact
+review/lineage closure, and hard-zero public-output diff with both legacy
+writers authoritative.
 
 The tracer must consume the sample identity owner and review-record owner
 through explicit references. If either owner cannot provide an unambiguous
