@@ -37,6 +37,9 @@ approved product changes.
   ordering, so omission or substitution produces a different bound snapshot.
   Lineage accepts this resolved-current type plus its exact snapshot, not a
   freshly minted unresolved record or a tuple of caller-selected records.
+- Within one registry snapshot, every review subject has exactly one decision
+  root and at most one current head. A second same-subject root is an ambiguous
+  competing chain, not another current conclusion.
 - Typed review actions must be validated and planned before any mutation.
   Apply steps require stable identifiers, recompute rules, sidecar contracts,
   and approved expected-diff evidence.

@@ -28,7 +28,7 @@ from xic_extractor.rt_prior_library import LibraryEntry, load_library
 from xic_extractor.sample_metadata import (
     is_sample_metadata_source,
     load_sample_metadata,
-    sample_metadata_to_injection_order,
+    sample_metadata_to_raw_stem_injection_order,
 )
 from xic_extractor.target_pair_rt_calibration import (
     load_target_pair_rt_calibration,
@@ -231,7 +231,7 @@ def resolve_injection_order(
 
 def _read_injection_order_source(path: Path) -> dict[str, int]:
     if is_sample_metadata_source(path):
-        return sample_metadata_to_injection_order(load_sample_metadata(path))
+        return sample_metadata_to_raw_stem_injection_order(load_sample_metadata(path))
     return read_injection_order(path)
 
 

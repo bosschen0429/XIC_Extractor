@@ -96,7 +96,7 @@ labels until an adapter binds them to the contract above.
 | Identity | Required basis | Forbidden basis |
 | --- | --- | --- |
 | `acquisition_source_id` | Capability-validated content identity or stable source fingerprint, acquisition format, and observation namespace | Path, mtime, file order, or display name alone |
-| `target_key_id` | Target-list-owner namespace + target-list schema/version + owner-normalized target label | m/z, RT window, current row order, or label without an owner namespace |
+| `target_key_id` | Target-list-owner namespace + owner-normalized target label | m/z, RT window, current row order, or label without an owner namespace |
 | `target_definition_id` | Owner-minted target key + every normalized effective `Target` field | Target label or raw CSV bytes alone |
 | `target_list_snapshot_id` | Owner namespace + exact ordered target definitions + target-list schema/version | Mutable `list[Target]`, file path, truncated config hash, or unordered membership |
 | `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
@@ -181,6 +181,9 @@ included in an XIC analysis folder. QC replicates and meaningful reinjections
 therefore keep their distinct full names, result columns, and review scopes;
 lineage must not strip suffixes or collapse them into a biological-specimen
 identity. Invalid pre-crash acquisitions are excluded before this inventory.
+Two paths containing the same exact source bytes remain one acquisition-source
+identity and are rejected as duplicate request inputs; a filename copy cannot
+mint another sample or source identity.
 If the bounded tracer cannot obtain an unambiguous stable sample key from the
 sample-metadata owner, it must stop rather than derive one independently from a
 filename, display label, or row order.

@@ -265,6 +265,11 @@ class ProcessingRequestIdentity:
         )
         if bindings_key != tuple(sorted(bindings_key)):
             raise IdentityContractError("acquisition_bindings must be canonical-sorted")
+        adapter_input_keys = tuple(
+            binding.adapter_input_key for binding in self.acquisition_bindings
+        )
+        if len(set(adapter_input_keys)) != len(adapter_input_keys):
+            raise IdentityContractError("adapter_input_key values must be unique")
         orders = tuple(binding.injection_order for binding in self.acquisition_bindings)
         if len(set(orders)) != len(orders):
             raise IdentityContractError("injection_order values must be unique")
@@ -446,6 +451,15 @@ class ProcessingOwnerReferences:
             raise IdentityContractError(
                 "sample resolutions must cover each request acquisition binding"
             )
+        sample_ids = tuple(
+            resolution.identity.sample_identity_id
+            for resolution in self.sample_resolutions
+        )
+        if len(set(sample_ids)) != len(sample_ids):
+            raise IdentityContractError(
+                "each request acquisition binding must resolve to a distinct "
+                "canonical sample identity"
+            )
         if self.target_snapshot is not None:
             if not isinstance(self.target_snapshot, TargetListSnapshot):
                 raise IdentityContractError("target_snapshot must be owner-minted")
@@ -489,11 +503,11 @@ class ProcessingOwnerReferences:
                     "review record requires an owner-resolved target definition"
                 )
             reference = self.review_record.reference
-            sample_ids = {
+            request_sample_ids = {
                 resolution.identity.sample_identity_id
                 for resolution in self.sample_resolutions
             }
-            if reference.canonical_sample_identity_id not in sample_ids:
+            if reference.canonical_sample_identity_id not in request_sample_ids:
                 raise IdentityContractError(
                     "review record references a sample outside this processing request"
                 )

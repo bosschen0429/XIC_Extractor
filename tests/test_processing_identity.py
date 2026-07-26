@@ -14,6 +14,7 @@ from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
     ResolvedTargetedInputs,
     build_targeted_processing_request_identity,
+    resolve_targeted_inputs,
 )
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecord,
@@ -27,6 +28,10 @@ from xic_extractor.processing_identity import (
     issue_processing_attempt,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
+from xic_extractor.sample_metadata import (
+    SAMPLE_METADATA_COLUMNS,
+    SAMPLE_METADATA_SCHEMA_VERSION,
+)
 
 
 def test_canonical_typed_identity_golden_vectors(monkeypatch) -> None:
@@ -474,6 +479,72 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
     )
     with pytest.raises(IdentityContractError, match="rebind"):
         replace(request, normalized_scientific_inputs_json='{"changed":true}')
+
+
+def test_request_rejects_duplicate_adapter_input_keys(tmp_path: Path) -> None:
+    first = _source_identity(_raw(tmp_path / "first.raw", b"first"))
+    second = _source_identity(_raw(tmp_path / "second.raw", b"second"))
+
+    with pytest.raises(IdentityContractError, match="adapter_input_key.*unique"):
+        build_processing_request_identity(
+            acquisition_sources=(first, second),
+            acquisition_bindings=(
+                AcquisitionInputBinding(
+                    acquisition_source_id=first.acquisition_source_id,
+                    adapter_input_key="shared",
+                    injection_order=1,
+                ),
+                AcquisitionInputBinding(
+                    acquisition_source_id=second.acquisition_source_id,
+                    adapter_input_key="shared",
+                    injection_order=2,
+                ),
+            ),
+            scientific_input_schema_version="fixture-v1",
+            processing_algorithm_version="fixture-v1",
+            processing_contract_version="fixture-v1",
+            scientific_inputs={"fixture": True},
+        )
+
+
+def test_sample_metadata_alias_projection_builds_targeted_request(
+    tmp_path: Path,
+) -> None:
+    raw_path = _raw(
+        tmp_path / "Breast_Cancer_Tissue_pooled_QC1.raw",
+        b"qc-source",
+    )
+    metadata_path = tmp_path / "sample_metadata.tsv"
+    row = {column: "" for column in SAMPLE_METADATA_COLUMNS}
+    row.update(
+        {
+            "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
+            "sample_name": "QC1",
+            "raw_stem": raw_path.stem,
+            "injection_order": "1",
+            "sample_role": "pooled_qc",
+        }
+    )
+    metadata_path.write_text(
+        "\t".join(SAMPLE_METADATA_COLUMNS)
+        + "\n"
+        + "\t".join(row[column] for column in SAMPLE_METADATA_COLUMNS)
+        + "\n",
+        encoding="utf-8",
+    )
+    config = replace(_config(tmp_path), injection_order_source=metadata_path)
+    resolved = resolve_targeted_inputs(
+        config,
+        raw_paths=[raw_path],
+        injection_order=None,
+        rt_prior_library={},
+        model_selection_expected_diff_approvals=None,
+    )
+
+    request = _request(config, [raw_path], resolved=resolved)
+
+    assert resolved.injection_order == {raw_path.stem: 1}
+    assert request.acquisition_bindings[0].adapter_input_key == raw_path.stem
 
 
 def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(

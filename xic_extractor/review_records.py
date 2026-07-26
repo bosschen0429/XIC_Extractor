@@ -461,9 +461,13 @@ def _validate_review_record_graph(
         by_id[record.review_record_id] = record
 
     successor_by_predecessor: dict[str, str] = {}
+    roots_by_subject: dict[str, list[str]] = {}
     for record in records:
         predecessor_id = record.supersedes_review_record_id
         if not predecessor_id:
+            roots_by_subject.setdefault(record.review_subject_id, []).append(
+                record.review_record_id
+            )
             continue
         if predecessor_id not in by_id:
             raise ReviewRecordReferenceError(
@@ -480,6 +484,12 @@ def _validate_review_record_graph(
                 f"review record {predecessor_id!r} has multiple successors"
             )
         successor_by_predecessor[predecessor_id] = record.review_record_id
+
+    for subject_id, root_ids in roots_by_subject.items():
+        if len(root_ids) > 1:
+            raise ReviewRecordReferenceError(
+                f"review subject {subject_id!r} has multiple decision roots"
+            )
 
     for start_id in by_id:
         seen: set[str] = set()
@@ -631,7 +641,6 @@ def _review_subject_id(
         _canonical_json(
             {
                 "schema": "review_subject_identity_v1",
-                "review_action_schema_version": REVIEW_ACTION_SCHEMA_VERSION,
                 "canonical_sample_identity_id": sample_id,
                 "target_key_id": stable_target_key_id,
             },

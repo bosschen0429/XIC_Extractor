@@ -15,6 +15,10 @@ def test_target_owner_mints_stable_key_and_exact_definition() -> None:
     resolved = resolve_target_definition(snapshot, "Analyte")
 
     assert resolved.definition.target_key.target_label == "Analyte"
+    assert resolved.definition.target_key.target_key_id == (
+        "xic.target-key.v1:"
+        "bb3ec3fc7728d46eb2c1b9a56f13a0cc3eea40a228951c6cc887c15a2e65043d"
+    )
     assert resolved.definition.target == _target()
     assert resolved.snapshot is snapshot
     assert resolved.lookup_label == "Analyte"

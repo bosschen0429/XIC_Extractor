@@ -300,9 +300,7 @@ def resolve_canonical_sample_identity(
             f"sample identity token {clean_token!r} is not owned by sample metadata"
         )
     if len(matches) != 1:
-        raise SampleMetadataError(
-            f"sample identity token {clean_token!r} is ambiguous"
-        )
+        raise SampleMetadataError(f"sample identity token {clean_token!r} is ambiguous")
     resolved = mint_canonical_sample_identity(
         matches[0],
         identity_namespace=snapshot.identity_namespace,
@@ -334,6 +332,20 @@ def sample_metadata_to_injection_order(
         _add_injection_order(out, row.sample_name, row.injection_order)
         if row.raw_stem and row.raw_stem != row.sample_name:
             _add_injection_order(out, row.raw_stem, row.injection_order)
+    return out
+
+
+def sample_metadata_to_raw_stem_injection_order(
+    rows: Sequence[SampleMetadata],
+) -> dict[str, int]:
+    """Project exactly one request-local RAW stem key for each ordered sample."""
+
+    out: dict[str, int] = {}
+    for row in rows:
+        if row.injection_order is None:
+            continue
+        raw_stem = row.raw_stem or row.sample_name
+        _add_injection_order(out, raw_stem, row.injection_order)
     return out
 
 
@@ -421,8 +433,7 @@ def _parse_sample_metadata_row(
 
 def _normalize_row(row: Mapping[str, object]) -> dict[str, str]:
     return {
-        header: _clean_text(row.get(header, ""))
-        for header in SAMPLE_METADATA_COLUMNS
+        header: _clean_text(row.get(header, "")) for header in SAMPLE_METADATA_COLUMNS
     }
 
 
@@ -523,9 +534,7 @@ def _canonical_sample_key(value: object) -> str:
 
 def _owner_normalized_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
-        raise SampleMetadataError(
-            f"{field} must be non-empty owner-normalized text"
-        )
+        raise SampleMetadataError(f"{field} must be non-empty owner-normalized text")
     return value
 
 
@@ -638,7 +647,5 @@ def _canonical_json_sha256(value: Mapping[str, object]) -> str:
 
 def _validate_sha256(value: object, *, field: str) -> str:
     if not isinstance(value, str) or _SHA256_RE.fullmatch(value) is None:
-        raise SampleMetadataError(
-            f"{field} must be a lower-case SHA-256 digest"
-        )
+        raise SampleMetadataError(f"{field} must be a lower-case SHA-256 digest")
     return value

@@ -42,7 +42,6 @@ class TargetKey:
             _TARGET_KEY_PREFIX,
             {
                 "schema": "target_key_identity_v1",
-                "target_list_schema_version": TARGET_LIST_SCHEMA_VERSION,
                 "identity_namespace": namespace,
                 "target_label": label,
             },
@@ -161,7 +160,6 @@ def mint_target_key(
             _TARGET_KEY_PREFIX,
             {
                 "schema": "target_key_identity_v1",
-                "target_list_schema_version": TARGET_LIST_SCHEMA_VERSION,
                 "identity_namespace": namespace,
                 "target_label": label,
             },

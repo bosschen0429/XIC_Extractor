@@ -193,11 +193,11 @@ def test_review_owner_mints_digest_and_typed_id_from_immutable_content() -> None
     )
     assert first.review_record_id == (
         "xic.review-record.v1:"
-        "ba948d555d51b5cacf70bcb0f252e664efe0ec113ddf485a825c91c925c3fe83"
+        "0671dd0b984f495d0cbd6392f4c865c5a6d82a57de7880136ca46f382e1ec4a6"
     )
     assert _review_snapshot(first).snapshot_id == (
         "xic.review-record-snapshot.v1:"
-        "4023dbda2509e8d0247c7922844e9b6149990fb0a60d05a0f127778c36fe2932"
+        "d8fb961e4c1d0545d7b7e15ed46a239871929e847c6123e90b10663b2c256673"
     )
     assert changed.review_record_id != first.review_record_id
     assert changed.content_sha256 != first.content_sha256
@@ -326,6 +326,10 @@ def test_review_supersession_rejects_incomplete_or_invalid_graphs() -> None:
     )
     with pytest.raises(ReviewRecordReferenceError, match="multiple successors"):
         _review_snapshot(original, successor_a, successor_b)
+
+    competing_root = _review_record(action=_review_action(comment="competing root"))
+    with pytest.raises(ReviewRecordReferenceError, match="multiple decision roots"):
+        _review_snapshot(original, competing_root)
 
 
 def test_review_supersession_requires_the_same_owner_subject() -> None:
@@ -603,6 +607,25 @@ def test_lineage_rejects_resolutions_mixed_across_owner_snapshots(
             attempt=issue_processing_attempt(request),
             sample_snapshot=complete,
             sample_resolutions=(first, mixed_second),
+        )
+
+
+def test_lineage_rejects_two_sources_collapsed_to_one_canonical_sample(
+    tmp_path: Path,
+) -> None:
+    request = _request_many(tmp_path, payloads=(b"request-a", b"request-b"))
+    collapsed = _sample_snapshot(
+        SampleMetadata(sample_name="request-a", raw_stem="request-b")
+    )
+    first = resolve_canonical_sample_identity(collapsed, "request-a")
+    second = resolve_canonical_sample_identity(collapsed, "request-b")
+
+    with pytest.raises(IdentityContractError, match="distinct canonical sample"):
+        compose_processing_owner_references(
+            request=request,
+            attempt=issue_processing_attempt(request),
+            sample_snapshot=collapsed,
+            sample_resolutions=(first, second),
         )
 
 
