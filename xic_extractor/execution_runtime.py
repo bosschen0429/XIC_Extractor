@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
@@ -83,7 +84,7 @@ class WorkUnitSettlement:
     attempt: ProcessingAttemptIdentity
     work_unit_key: str
     outcome: WorkUnitTerminalOutcome
-    owner_result_ref: str | None = None
+    owner_result_ref: EvidenceArtifactRef | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.attempt, ProcessingAttemptIdentity):
@@ -99,12 +100,19 @@ class WorkUnitSettlement:
                 "outcome must be a WorkUnitTerminalOutcome"
             )
         if self.outcome is WorkUnitTerminalOutcome.SUCCEEDED:
+            if not isinstance(self.owner_result_ref, EvidenceArtifactRef):
+                raise AttemptLifecycleContractError(
+                    "succeeded settlement requires an owner-minted "
+                    "EvidenceArtifactRef"
+                )
             if (
-                not isinstance(self.owner_result_ref, str)
-                or not self.owner_result_ref.strip()
+                self.owner_result_ref.producer_processing_request_id
+                != self.attempt.processing_request_id
+                or self.owner_result_ref.producer_processing_attempt_id
+                != self.attempt.processing_attempt_id
             ):
                 raise AttemptLifecycleContractError(
-                    "succeeded settlement requires owner_result_ref"
+                    "owner_result_ref must bind the settlement request and attempt"
                 )
         elif self.owner_result_ref is not None:
             raise AttemptLifecycleContractError(
@@ -560,7 +568,7 @@ def settle_work_unit(
     *,
     work_unit_key: str,
     outcome: WorkUnitTerminalOutcome,
-    owner_result_ref: str | None = None,
+    owner_result_ref: EvidenceArtifactRef | None = None,
 ) -> AttemptRuntime:
     """Accept one settlement exactly once; record conflicts fail closed."""
 

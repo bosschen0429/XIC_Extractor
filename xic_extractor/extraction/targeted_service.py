@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.execution_runtime import AttemptRuntime
 from xic_extractor.rt_prior_library import LibraryEntry
 
 from .targeted_inputs import resolve_model_selection_expected_diff_approvals
+from .targeted_runtime_adapter import (
+    TargetedProcessWorkerResultEnvelope,
+    TargetedRuntimeAdapterError,
+    TargetedRuntimeApplicationResult,
+    settle_targeted_process_worker_results,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.extractor import RunOutput
@@ -31,6 +38,14 @@ class TargetedRunner(Protocol):
     ) -> RunOutput: ...
 
 
+class TargetedRuntimeRunner(Protocol):
+    def __call__(
+        self,
+        request: TargetedApplicationRequest,
+        runtime: AttemptRuntime,
+    ) -> Sequence[TargetedProcessWorkerResultEnvelope]: ...
+
+
 @dataclass(frozen=True)
 class TargetedApplicationRequest:
     """Headless application input; callbacks are lifecycle adapters, not science."""
@@ -48,21 +63,37 @@ class TargetedApplicationRequest:
 @dataclass(frozen=True)
 class TargetedApplicationService:
     runner: TargetedRunner
+    runtime_runner: TargetedRuntimeRunner | None = None
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
-        resolved_approvals = resolve_model_selection_expected_diff_approvals(
-            request.config,
-            request.model_selection_expected_diff_approvals,
-        )
+        resolved_request = _resolve_application_request(request)
         return self.runner(
-            request.config,
-            list(request.targets),
-            progress_callback=request.progress_callback,
-            should_stop=request.should_stop,
-            injection_order=request.injection_order,
-            rt_prior_library=request.rt_prior_library,
-            model_selection_expected_diff_approvals=resolved_approvals,
+            resolved_request.config,
+            list(resolved_request.targets),
+            progress_callback=resolved_request.progress_callback,
+            should_stop=resolved_request.should_stop,
+            injection_order=resolved_request.injection_order,
+            rt_prior_library=resolved_request.rt_prior_library,
+            model_selection_expected_diff_approvals=(
+                resolved_request.model_selection_expected_diff_approvals
+            ),
         )
+
+    def execute_runtime(
+        self,
+        request: TargetedApplicationRequest,
+        runtime: AttemptRuntime,
+    ) -> TargetedRuntimeApplicationResult:
+        """Run the bounded no-RAW process-result settlement consumer."""
+
+        if self.runtime_runner is None:
+            raise TargetedRuntimeAdapterError(
+                "TargetedApplicationService requires runtime_runner for "
+                "execute_runtime"
+            )
+        resolved_request = _resolve_application_request(request)
+        envelopes = self.runtime_runner(resolved_request, runtime)
+        return settle_targeted_process_worker_results(runtime, envelopes)
 
 
 def build_targeted_application_request(
@@ -87,4 +118,19 @@ def build_targeted_application_request(
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
+    )
+
+
+def _resolve_application_request(
+    request: TargetedApplicationRequest,
+) -> TargetedApplicationRequest:
+    if not isinstance(request, TargetedApplicationRequest):
+        raise TypeError("request must be a TargetedApplicationRequest")
+    resolved_approvals = resolve_model_selection_expected_diff_approvals(
+        request.config,
+        request.model_selection_expected_diff_approvals,
+    )
+    return replace(
+        request,
+        model_selection_expected_diff_approvals=resolved_approvals,
     )

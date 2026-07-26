@@ -440,10 +440,25 @@ manifest now starts one pure `AttemptRuntime`; terminal work settlements are
 accepted exactly once per declared opaque key, identical replay is idempotent,
 and conflicting or undeclared settlement records one immutable integrity
 failure that prevents attempt success. Failed work also prevents success. This
-remains `contract_only`: no Targeted or Alignment application caller supplies
-the manifest or settlement, and the runtime does not yet record work events,
-monotonic offsets or metric availability, settle resources/artifacts, or durably
-acknowledge a terminal outcome.
+settlement now accepts only an owner-minted `EvidenceArtifactRef` bound to the
+same processing request and attempt; an opaque string is no longer sufficient.
+
+The bounded Package 1 Targeted adapter in
+`xic_extractor.extraction.targeted_runtime_adapter` owns one canonical
+process-result identity payload over the closed work key and exact digest/size
+of owner-supplied result bytes. It does not serialize or hash legacy
+`RawFileExtractionResult` / `RunOutput`. `TargetedProcessResultRef` binds that
+work key and owner-payload identity to the underlying `EvidenceArtifactRef`, so
+an artifact minted for one work key cannot settle another. A pickleable
+worker-result envelope carries that producer-owned reference across a true
+spawned process, and
+`TargetedApplicationService.execute_runtime` consumes reordered envelopes and
+settles the existing runtime in manifest order. This boundary is
+`wired_no_raw` and remains `diagnostic_only`; default legacy execution and all
+product outputs are unchanged. Alignment is not yet a second consumer, and the
+runtime still does not record work events, monotonic offsets or metric
+availability, settle resources/artifact dispositions, or durably acknowledge a
+terminal outcome.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.
