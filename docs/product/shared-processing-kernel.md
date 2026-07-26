@@ -253,8 +253,11 @@ This is not the complete kernel tracer. The remaining gaps are:
 6. Targeted CLI baseline/support/final orchestration is not shared by GUI or
    direct API. Issue #134 owns that entry-point parity defect; fixing it must
    not create a second permanent kernel.
-7. The canonical CID-NL ref has not yet been carried through one shared
-   `PeakHypothesis`, cross-sample group, `CellObservation`, or Backfill result.
+7. The canonical CID-NL ref has not yet been composed with a canonical physical
+   MS1-observation reference, method hypothesis, cross-sample group,
+   `CellObservation`, or Backfill result. Carrying it directly into the current
+   `PeakHypothesis` would collapse provider evidence, physical observation, and
+   interpretation into one Targeted-shaped object.
 8. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
    `group_hypothesis_id` is the successor cross-sample identity.
 
@@ -265,26 +268,34 @@ These are migration facts, not permission for a repo-wide rewrite.
 The bounded tracer is sufficient only when one set of kernel decisions can be
 projected both ways:
 
-1. The same input trace observations and CID-NL evidence produce sample-local
-   hypotheses through the shared interface.
-2. Targeted constraints narrow the candidate/group context without changing
-   the underlying observation facts.
-3. Cross-sample membership and missing-cell state are represented by shared
+1. The same physical MS1 observation is referenced, rather than re-minted, when
+   Targeted and Untargeted methods interpret it.
+2. Provider generation provenance is explicit: CID-NL may constrain the MS1
+   query/candidate universe before peak evaluation, while other methods may
+   compose several MS1 observations into one hypothesis.
+3. Targeted constraints narrow the candidate/group context without changing
+   the underlying physical observation facts.
+4. Cross-sample membership and missing-cell state are represented by shared
    group/cell contracts.
-4. Backfill returns the same typed observation/provenance contract regardless
+5. Backfill returns the same typed observation/provenance contract regardless
    of projection.
-5. Targeted output remains protected by its hard-exact/expected-diff contract.
-6. Untargeted Matrix authority remains separate and fail-closed.
-7. A no-RAW fixture proves both projections consume the same kernel decisions
+6. Targeted output remains protected by its hard-exact/expected-diff contract.
+7. Untargeted Matrix authority remains separate and fail-closed.
+8. A no-RAW fixture proves both projections consume the same kernel decisions
    without requiring identical output schemas or product policy.
 
 The tracer does not need to migrate every Discovery provider, Alignment
 diagnostic, or Backfill authority path.
 
-The current scientific-reference fixture satisfies only the first observation
-precondition. Completion still requires the same shared hypothesis/group/cell
-decisions to feed both workflow projections without changing Targeted output or
-Untargeted Matrix authority.
+The current scientific-reference fixture and identity-decomposition
+characterization satisfy only the direct evidence-reference and boundary
+preconditions. They show that current `PeakHypothesis` cannot be promoted as
+the physical observation owner: its builder hard-codes Targeted mode, its ID
+changes with interpretation labels, and its ID does not change when CID-NL
+evidence content changes. Completion first requires an owner/content/
+invalidation contract for immutable physical MS1 observations, then explicit
+hypothesis composition and group/cell decisions. Targeted output and Untargeted
+Matrix authority remain unchanged.
 
 ## Failure, Validation, And Rollback
 

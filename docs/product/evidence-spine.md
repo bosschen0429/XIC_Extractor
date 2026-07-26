@@ -15,8 +15,47 @@ The evidence spine is the shared layer that converts chromatographic observation
   `CidNlEvidenceRef`. Target/Discovery-only fields remain in thin adapters;
   neither projection artifact is a selection or delivery decision.
 - Legacy family IDs are review and compatibility containers. Group identity
-  belongs to `CrossSamplePeakGroupHypothesis`, candidate-peak identity belongs
-  to `PeakHypothesis`, and product authority belongs to workflow projection.
+  belongs to `CrossSamplePeakGroupHypothesis`, while current candidate IDs and
+  `PeakHypothesis` IDs remain workflow-local working identities. Neither is a
+  canonical physical MS1-observation identity. Product authority belongs to
+  workflow projection.
+
+## Observation / Hypothesis / Evidence decomposition
+
+The no-RAW characterization in
+`tests/test_peak_identity_decomposition.py` closes one design unknown and
+rejects promoting the current Targeted-shaped `PeakHypothesis` as the single
+cross-workflow identity object:
+
+- A physical MS1 trace/integration can remain unchanged while Targeted or
+  Untargeted interpretation context produces different working hypothesis and
+  trace-group IDs.
+- Changing direct CID-NL/MS2 evidence can leave the MS1 integration and current
+  working hypothesis ID unchanged. Evidence content therefore needs its own
+  immutable reference and applicability validation.
+- In CID-NL Discovery, an MS2 seed selects the precursor XIC and RT search
+  window before MS1 peak evaluation. Provider evidence can participate in
+  candidate generation as well as candidate evaluation; generation provenance
+  is part of invalidation, not merely an annotation added after selection.
+- A Pt/Delta Mass hypothesis composes four sample-local MS1 feature
+  observations. It cannot be represented as one evidence field attached to one
+  peak.
+
+The next contract must resolve, rather than assume:
+
+1. whether an existing peak/feature owner can expose the required immutable
+   physical-observation reference, or whether existing owner-backed references
+   should be composed without another owner;
+2. which trace, query, boundary, integration, sample, and attempt facts belong
+   to observation content versus generation provenance and applicability;
+3. how a single-observation interpretation and a multi-observation Pt pattern
+   express hypothesis composition without inheriting provider-specific fields;
+4. which generation/evaluation changes invalidate an observation, hypothesis,
+   evidence application, or selection decision.
+
+No attempt binding, content boundary, invalidation rule, new observation ID, or
+final owner is established here. The test-local comparison tuples are
+characterization probes only.
 
 ## Surfaces
 
@@ -24,7 +63,7 @@ The evidence spine is the shared layer that converts chromatographic observation
 | --- | --- |
 | `EvidenceVector` / `EvidenceDecisionSemantics` | Shared typed evidence vocabulary |
 | `CidNlEvidenceRef` | Attempt- and sample-bound immutable direct measured CID-NL observation for the no-write dual-projection tracer |
-| `PeakHypothesis` | Candidate chromatographic identity unit |
+| `PeakHypothesis` | Current Targeted-shaped candidate working identity; not canonical physical observation identity |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
 | `IntegrationResult` | Integrated signal and boundary result |
 | `AuditTrail` / reason strings | Human-readable explanation and review evidence |
