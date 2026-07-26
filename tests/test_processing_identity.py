@@ -507,6 +507,50 @@ def test_request_rejects_duplicate_adapter_input_keys(tmp_path: Path) -> None:
         )
 
 
+def test_request_rejects_nested_non_string_json_keys(tmp_path: Path) -> None:
+    source = _source_identity(_raw(tmp_path / "source.raw", b"source"))
+
+    with pytest.raises(IdentityContractError, match="JSON object keys must be strings"):
+        build_processing_request_identity(
+            acquisition_sources=(source,),
+            acquisition_bindings=(
+                AcquisitionInputBinding(
+                    acquisition_source_id=source.acquisition_source_id,
+                    adapter_input_key="source",
+                    injection_order=1,
+                ),
+            ),
+            scientific_input_schema_version="fixture-v1",
+            processing_algorithm_version="fixture-v1",
+            processing_contract_version="fixture-v1",
+            scientific_inputs={"nested": {1: "integer-key"}},  # type: ignore[dict-item]
+        )
+
+
+@pytest.mark.parametrize("non_finite", [float("nan"), float("inf"), float("-inf")])
+def test_request_rejects_non_finite_json_numbers(
+    tmp_path: Path,
+    non_finite: float,
+) -> None:
+    source = _source_identity(_raw(tmp_path / "source.raw", b"source"))
+
+    with pytest.raises(IdentityContractError, match="not canonical JSON"):
+        build_processing_request_identity(
+            acquisition_sources=(source,),
+            acquisition_bindings=(
+                AcquisitionInputBinding(
+                    acquisition_source_id=source.acquisition_source_id,
+                    adapter_input_key="source",
+                    injection_order=1,
+                ),
+            ),
+            scientific_input_schema_version="fixture-v1",
+            processing_algorithm_version="fixture-v1",
+            processing_contract_version="fixture-v1",
+            scientific_inputs={"nested": {"value": non_finite}},
+        )
+
+
 def test_sample_metadata_alias_projection_builds_targeted_request(
     tmp_path: Path,
 ) -> None:
@@ -543,7 +587,8 @@ def test_sample_metadata_alias_projection_builds_targeted_request(
 
     request = _request(config, [raw_path], resolved=resolved)
 
-    assert resolved.injection_order == {raw_path.stem: 1}
+    assert resolved.injection_order == {"QC1": 1, raw_path.stem: 1}
+    assert resolved.acquisition_injection_order == {raw_path.stem: 1}
     assert request.acquisition_bindings[0].adapter_input_key == raw_path.stem
 
 

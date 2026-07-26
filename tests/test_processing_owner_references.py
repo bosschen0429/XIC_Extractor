@@ -269,7 +269,11 @@ def test_review_owner_rejects_bare_label_rebinding_across_owner_references() -> 
     with pytest.raises(ReviewRecordReferenceError, match="target_label mismatches"):
         _review_record(action=action, target=_resolved_target("Other"))
     with pytest.raises(ReviewRecordReferenceError, match="processing_request_id"):
-        _review_record(action=action, processing_request_id="caller-run-id")
+        _review_record(
+            action=action,
+            processing_request_id="caller-run-id",
+            evidence_artifacts=_artifact_refs(),
+        )
 
 
 def test_review_record_rejects_caller_rebinding() -> None:
@@ -444,6 +448,38 @@ def test_review_mint_accepts_only_owner_typed_and_validated_actions() -> None:
             processing_request_id=_REVIEW_REQUEST_ID,
             evidence_artifacts=(_artifact_ref("artifact-a"),),
         )
+
+
+def test_review_owner_rejects_artifacts_from_a_different_request(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path, payload=b"request-a")
+    other_request = _request(tmp_path, payload=b"request-b")
+    foreign_artifact = _artifact_ref(
+        "foreign",
+        attempt=issue_processing_attempt(other_request),
+    )
+
+    with pytest.raises(
+        ReviewRecordReferenceError,
+        match="artifact references a different processing request",
+    ):
+        _review_record(
+            processing_request_id=request.processing_request_id,
+            evidence_artifacts=(foreign_artifact,),
+        )
+
+    valid = _review_record(
+        processing_request_id=request.processing_request_id,
+        evidence_artifacts=(
+            _artifact_ref("valid", attempt=issue_processing_attempt(request)),
+        ),
+    )
+    with pytest.raises(
+        ReviewRecordReferenceError,
+        match="artifact references a different processing request",
+    ):
+        replace(valid, evidence_artifacts=(foreign_artifact,))
 
 
 def test_lineage_only_composes_owner_minted_references(tmp_path: Path) -> None:
@@ -698,7 +734,11 @@ def _review_record(
         sample=sample or _resolved_sample(review_action.sample_name),
         target=target or _resolved_target(review_action.target_label),
         processing_request_id=processing_request_id,
-        evidence_artifacts=evidence_artifacts or _artifact_refs(),
+        evidence_artifacts=(
+            evidence_artifacts
+            if evidence_artifacts is not None
+            else _artifact_refs(processing_request_id=processing_request_id)
+        ),
         supersedes=supersedes,
         supersession_reason=supersession_reason,
     )
@@ -732,11 +772,14 @@ def _artifact_ref(
     label: str,
     *,
     attempt: ProcessingAttemptIdentity | None = None,
+    processing_request_id: str | None = None,
     upstream_artifacts: tuple[EvidenceArtifactRef, ...] = (),
 ) -> EvidenceArtifactRef:
     return _mint_evidence_artifact_ref(
         producer_processing_request_id=(
-            attempt.processing_request_id if attempt is not None else _REVIEW_REQUEST_ID
+            attempt.processing_request_id
+            if attempt is not None
+            else processing_request_id or _REVIEW_REQUEST_ID
         ),
         producer_processing_attempt_id=(
             attempt.processing_attempt_id
@@ -752,10 +795,19 @@ def _artifact_ref(
 def _artifact_refs(
     *,
     attempt: ProcessingAttemptIdentity | None = None,
+    processing_request_id: str | None = None,
 ) -> tuple[EvidenceArtifactRef, ...]:
     return (
-        _artifact_ref("artifact-a", attempt=attempt),
-        _artifact_ref("artifact-b", attempt=attempt),
+        _artifact_ref(
+            "artifact-a",
+            attempt=attempt,
+            processing_request_id=processing_request_id,
+        ),
+        _artifact_ref(
+            "artifact-b",
+            attempt=attempt,
+            processing_request_id=processing_request_id,
+        ),
     )
 
 

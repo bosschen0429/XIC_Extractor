@@ -145,6 +145,39 @@ def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(
         rows=_targeted_rows("Sample A"),
     )
     assert retry_artifact.content_identity == upstream_a.content_identity
+    retry_child = mint_targeted_ms1_shape_identity_artifact_ref(
+        processing_attempt=retry,
+        rows=_targeted_rows("Sample C"),
+        upstream_artifacts=(upstream_a,),
+    )
+    retry_references = compose_processing_owner_references(
+        request=request,
+        attempt=retry,
+        sample_snapshot=sample_snapshot,
+        sample_resolutions=(sample,),
+        evidence_artifacts=(retry_child, upstream_a),
+    )
+    assert retry_references.evidence_artifacts == tuple(
+        sorted(
+            (retry_child, upstream_a),
+            key=lambda artifact: artifact.evidence_artifact_id,
+        )
+    )
+
+    ancestor_with_future_dependency = mint_targeted_ms1_shape_identity_artifact_ref(
+        processing_attempt=attempt,
+        rows=_targeted_rows("Sample D"),
+        upstream_artifacts=(retry_artifact,),
+    )
+    with pytest.raises(IdentityContractError, match="later processing attempt"):
+        compose_processing_owner_references(
+            request=request,
+            attempt=retry,
+            sample_snapshot=sample_snapshot,
+            sample_resolutions=(sample,),
+            evidence_artifacts=(ancestor_with_future_dependency, retry_artifact),
+        )
+
     with pytest.raises(IdentityContractError, match="different processing attempt"):
         compose_processing_owner_references(
             request=request,
@@ -152,6 +185,20 @@ def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(
             sample_snapshot=sample_snapshot,
             sample_resolutions=(sample,),
             evidence_artifacts=(retry_artifact,),
+        )
+
+    sibling_retry = issue_processing_attempt(request, retry_of=attempt)
+    sibling_artifact = mint_targeted_ms1_shape_identity_artifact_ref(
+        processing_attempt=sibling_retry,
+        rows=_targeted_rows("Sample A"),
+    )
+    with pytest.raises(IdentityContractError, match="different processing attempt"):
+        compose_processing_owner_references(
+            request=request,
+            attempt=retry,
+            sample_snapshot=sample_snapshot,
+            sample_resolutions=(sample,),
+            evidence_artifacts=(sibling_artifact,),
         )
 
 

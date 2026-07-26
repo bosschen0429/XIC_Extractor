@@ -62,8 +62,7 @@ def _canonical_json(value: Any) -> str:
 def _canonical_object_json(value: Mapping[str, object]) -> str:
     if not isinstance(value, Mapping):
         raise IdentityContractError("scientific_inputs must be a JSON object")
-    if any(not isinstance(key, str) for key in value):
-        raise IdentityContractError("JSON object keys must be strings")
+    _validate_json_object_keys(value)
     try:
         snapshot = _canonical_json(dict(value))
         parsed = json.loads(snapshot)
@@ -72,6 +71,17 @@ def _canonical_object_json(value: Mapping[str, object]) -> str:
     if not isinstance(parsed, dict):
         raise IdentityContractError("scientific_inputs must be a JSON object")
     return snapshot
+
+
+def _validate_json_object_keys(value: object) -> None:
+    if isinstance(value, Mapping):
+        for key, nested_value in value.items():
+            if not isinstance(key, str):
+                raise IdentityContractError("JSON object keys must be strings")
+            _validate_json_object_keys(nested_value)
+    elif isinstance(value, (list, tuple)):
+        for nested_value in value:
+            _validate_json_object_keys(nested_value)
 
 
 def _validate_digest(value: object, *, field: str) -> str:
@@ -408,6 +418,17 @@ class ProcessingAttemptIdentity:
             )
 
 
+def _retry_predecessor_attempt_ids(
+    attempt: ProcessingAttemptIdentity,
+) -> tuple[str, ...]:
+    predecessor_ids: list[str] = []
+    predecessor = attempt.retry_of
+    while predecessor is not None:
+        predecessor_ids.append(predecessor.processing_attempt_id)
+        predecessor = predecessor.retry_of
+    return tuple(predecessor_ids)
+
+
 @dataclass(frozen=True, slots=True)
 class ProcessingOwnerReferences:
     """Validated composition of lineage and owner-minted identity references."""
@@ -474,6 +495,9 @@ class ProcessingOwnerReferences:
             canonical_artifacts = canonical_evidence_artifact_closure(
                 processing_request_id=self.request.processing_request_id,
                 processing_attempt_id=self.attempt.processing_attempt_id,
+                dependency_processing_attempt_ids=_retry_predecessor_attempt_ids(
+                    self.attempt
+                ),
                 artifacts=self.evidence_artifacts,
             )
         except EvidenceArtifactClosureError as exc:

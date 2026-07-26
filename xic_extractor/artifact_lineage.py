@@ -13,9 +13,10 @@ def canonical_evidence_artifact_closure(
     *,
     processing_request_id: str,
     processing_attempt_id: str,
+    dependency_processing_attempt_ids: tuple[str, ...] = (),
     artifacts: tuple[EvidenceArtifactRef, ...],
 ) -> tuple[EvidenceArtifactRef, ...]:
-    """Validate one same-attempt closure and return canonical artifact order."""
+    """Validate current-attempt artifacts plus owner-backed retry dependencies."""
 
     if not isinstance(artifacts, tuple) or any(
         not isinstance(artifact, EvidenceArtifactRef) for artifact in artifacts
@@ -23,6 +24,31 @@ def canonical_evidence_artifact_closure(
         raise EvidenceArtifactClosureError(
             "evidence_artifacts must contain owner-minted EvidenceArtifactRef values"
         )
+    if not isinstance(dependency_processing_attempt_ids, tuple) or any(
+        not isinstance(attempt_id, str)
+        for attempt_id in dependency_processing_attempt_ids
+    ):
+        raise EvidenceArtifactClosureError(
+            "dependency_processing_attempt_ids must be an owner-backed tuple"
+        )
+    allowed_attempt_ids = {
+        processing_attempt_id,
+        *dependency_processing_attempt_ids,
+    }
+    if len(allowed_attempt_ids) != len(dependency_processing_attempt_ids) + 1:
+        raise EvidenceArtifactClosureError(
+            "dependency processing attempts must be unique predecessors"
+        )
+    attempt_rank = {
+        processing_attempt_id: 0,
+        **{
+            attempt_id: rank
+            for rank, attempt_id in enumerate(
+                dependency_processing_attempt_ids,
+                start=1,
+            )
+        },
+    }
     by_id: dict[str, EvidenceArtifactRef] = {}
     for artifact in artifacts:
         artifact_id = artifact.evidence_artifact_id
@@ -34,7 +60,7 @@ def canonical_evidence_artifact_closure(
             raise EvidenceArtifactClosureError(
                 "evidence artifact references a different processing request"
             )
-        if artifact.producer_processing_attempt_id != processing_attempt_id:
+        if artifact.producer_processing_attempt_id not in allowed_attempt_ids:
             raise EvidenceArtifactClosureError(
                 "evidence artifact references a different processing attempt"
             )
@@ -48,6 +74,14 @@ def canonical_evidence_artifact_closure(
                 f"evidence artifact {artifact.evidence_artifact_id!r} has missing "
                 f"upstream dependencies: {', '.join(missing)}"
             )
+        producer_rank = attempt_rank[artifact.producer_processing_attempt_id]
+        for upstream_id in artifact.upstream_artifact_ids:
+            upstream = by_id[upstream_id]
+            upstream_rank = attempt_rank[upstream.producer_processing_attempt_id]
+            if upstream_rank < producer_rank:
+                raise EvidenceArtifactClosureError(
+                    "evidence artifact cannot depend on a later processing attempt"
+                )
 
     visiting: set[str] = set()
     visited: set[str] = set()

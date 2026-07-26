@@ -94,6 +94,7 @@ class ImmutableReviewRecordRef:
             field="content_sha256",
         )
         artifact_refs = _canonical_artifact_refs(self.evidence_artifacts)
+        _validate_artifact_request_binding(artifact_refs, processing_request_id)
         if artifact_refs != self.evidence_artifacts:
             raise ReviewRecordReferenceError(
                 "evidence_artifacts must be unique and canonical-sorted"
@@ -212,6 +213,7 @@ class ResolvedReviewRecordRef:
         )
         subject_id = _review_subject_id(sample_id, target_key_id)
         artifact_refs = _canonical_artifact_refs(self.expected_evidence_artifacts)
+        _validate_artifact_request_binding(artifact_refs, processing_request_id)
         if artifact_refs != self.expected_evidence_artifacts:
             raise ReviewRecordReferenceError(
                 "expected_evidence_artifacts must be canonical-sorted"
@@ -728,6 +730,19 @@ def _canonical_artifact_refs(
     if len(set(ids)) != len(ids):
         raise ReviewRecordReferenceError("evidence_artifacts must be unique")
     return tuple(sorted(items, key=lambda item: item.evidence_artifact_id))
+
+
+def _validate_artifact_request_binding(
+    artifacts: tuple[EvidenceArtifactRef, ...],
+    processing_request_id: str,
+) -> None:
+    if any(
+        artifact.producer_processing_request_id != processing_request_id
+        for artifact in artifacts
+    ):
+        raise ReviewRecordReferenceError(
+            "evidence artifact references a different processing request"
+        )
 
 
 def _canonical_json(value: Any, *, field: str) -> str:

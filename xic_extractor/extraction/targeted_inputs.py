@@ -28,6 +28,7 @@ from xic_extractor.rt_prior_library import LibraryEntry, load_library
 from xic_extractor.sample_metadata import (
     is_sample_metadata_source,
     load_sample_metadata,
+    sample_metadata_to_injection_order,
     sample_metadata_to_raw_stem_injection_order,
 )
 from xic_extractor.target_pair_rt_calibration import (
@@ -75,6 +76,7 @@ class ResolvedTargetedInputs:
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     )
+    acquisition_injection_order: dict[str, int] | None = None
 
 
 def resolve_targeted_inputs(
@@ -87,16 +89,18 @@ def resolve_targeted_inputs(
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ),
 ) -> ResolvedTargetedInputs:
+    resolved_injection_order, acquisition_injection_order = _resolve_injection_orders(
+        config,
+        raw_paths,
+        injection_order,
+    )
     return ResolvedTargetedInputs(
-        injection_order=resolve_injection_order(
-            config,
-            raw_paths,
-            injection_order,
-        ),
+        injection_order=resolved_injection_order,
         rt_prior_library=resolve_rt_prior_library(config, rt_prior_library),
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
+        acquisition_injection_order=acquisition_injection_order,
     )
 
 
@@ -124,8 +128,13 @@ def build_targeted_processing_request_identity(
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         )
 
+    identity_injection_order = (
+        resolved_inputs.acquisition_injection_order
+        if resolved_inputs.acquisition_injection_order is not None
+        else resolved_inputs.injection_order
+    )
     expected_stems = set(sources_by_stem)
-    actual_stems = set(resolved_inputs.injection_order)
+    actual_stems = set(identity_injection_order)
     if actual_stems != expected_stems:
         missing = sorted(expected_stems - actual_stems)
         unexpected = sorted(actual_stems - expected_stems)
@@ -138,7 +147,7 @@ def build_targeted_processing_request_identity(
         AcquisitionInputBinding(
             acquisition_source_id=source.acquisition_source_id,
             adapter_input_key=stem,
-            injection_order=resolved_inputs.injection_order[stem],
+            injection_order=identity_injection_order[stem],
         )
         for stem, source in sources_by_stem.items()
     )
@@ -222,17 +231,38 @@ def resolve_injection_order(
     raw_paths: list[Path],
     injection_order: dict[str, int] | None,
 ) -> dict[str, int]:
+    resolved_injection_order, _ = _resolve_injection_orders(
+        config,
+        raw_paths,
+        injection_order,
+    )
+    return resolved_injection_order
+
+
+def _resolve_injection_orders(
+    config: ExtractionConfig,
+    raw_paths: list[Path],
+    injection_order: dict[str, int] | None,
+) -> tuple[dict[str, int], dict[str, int]]:
     if injection_order is not None:
-        return injection_order
+        return injection_order, injection_order
     if config.injection_order_source is not None:
         return _read_injection_order_source(config.injection_order_source)
-    return fallback_injection_order_from_mtime(raw_paths)
+    fallback = fallback_injection_order_from_mtime(raw_paths)
+    return fallback, fallback
 
 
-def _read_injection_order_source(path: Path) -> dict[str, int]:
+def _read_injection_order_source(
+    path: Path,
+) -> tuple[dict[str, int], dict[str, int]]:
     if is_sample_metadata_source(path):
-        return sample_metadata_to_raw_stem_injection_order(load_sample_metadata(path))
-    return read_injection_order(path)
+        rows = load_sample_metadata(path)
+        return (
+            sample_metadata_to_injection_order(rows),
+            sample_metadata_to_raw_stem_injection_order(rows),
+        )
+    injection_order = read_injection_order(path)
+    return injection_order, injection_order
 
 
 def resolve_rt_prior_library(
