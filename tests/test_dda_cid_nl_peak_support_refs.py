@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import get_type_hints
@@ -631,6 +632,30 @@ def test_equivalent_numeric_policy_inputs_have_one_canonical_identity(
     assert integer_ref.artifact.content_identity == float_ref.artifact.content_identity
     assert canonical_dda_cid_nl_peak_support_bytes(integer_ref) == (
         canonical_dda_cid_nl_peak_support_bytes(float_ref)
+    )
+
+
+def test_signed_zero_support_content_has_one_canonical_identity(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    reference = _resolve(
+        fixture,
+        _evidence(fixture.owners, fixture.sample),
+        _peak(fixture.owners, fixture.sample),
+    )
+    signed_zero_content = replace(
+        reference.content,
+        precursor_delta_da=-0.0,
+        observed_loss_error_ppm=-0.0,
+    )
+    signed_zero_reference = replace(reference, content=signed_zero_content)
+
+    assert math.copysign(1.0, signed_zero_content.precursor_delta_da) == 1.0
+    assert math.copysign(1.0, signed_zero_content.observed_loss_error_ppm) == 1.0
+    assert signed_zero_reference == reference
+    assert canonical_dda_cid_nl_peak_support_bytes(signed_zero_reference) == (
+        canonical_dda_cid_nl_peak_support_bytes(reference)
     )
 
 

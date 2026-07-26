@@ -111,6 +111,9 @@ class PeakObservationContent:
                 "content integration indices must address the selected subtrace"
             )
         _validate_integration(self.integration, selected_rt=rt)
+        object.__setattr__(self, "mz", mz)
+        object.__setattr__(self, "rt", rt)
+        object.__setattr__(self, "intensity", intensity)
         expected_id = _content_id(
             canonical_sample_identity_id=self.canonical_sample_identity_id,
             mz=mz,
@@ -157,6 +160,9 @@ class PeakObservationGenerationProvenance:
             raise PeakObservationContractError("query_rt_min must be <= query_rt_max")
         if ppm_tol <= 0.0:
             raise PeakObservationContractError("query_ppm_tol must be positive")
+        object.__setattr__(self, "query_rt_min", rt_min)
+        object.__setattr__(self, "query_rt_max", rt_max)
+        object.__setattr__(self, "query_ppm_tol", ppm_tol)
         if not isinstance(self.trace_source, str):
             raise PeakObservationContractError("trace_source must be text")
         _validate_selected_indices(self.selected_trace_indices)
@@ -274,9 +280,13 @@ def mint_peak_observation_ref(
         integration,
         selected_indices,
     )
-    selected_rt = tuple(float(trace.rt[index]) for index in selected_indices)
+    selected_rt = tuple(
+        _finite_float(float(trace.rt[index]), field="selected_rt")
+        for index in selected_indices
+    )
     selected_intensity = tuple(
-        float(trace.intensity[index]) for index in selected_indices
+        _finite_float(float(trace.intensity[index]), field="selected_intensity")
+        for index in selected_indices
     )
     normalized_integration = replace(
         integration,
@@ -412,12 +422,23 @@ def _canonical_trace_bytes(trace: Trace) -> bytes:
     return _canonical_json_bytes(
         {
             "schema": "ms1_trace_generation_provenance_v1",
-            "mz": float(trace.mz),
-            "rt": [float(value) for value in trace.rt],
-            "intensity": [float(value) for value in trace.intensity],
-            "query_rt_min": float(trace.rt_min),
-            "query_rt_max": float(trace.rt_max),
-            "query_ppm_tol": float(trace.ppm_tol),
+            "mz": _finite_float(float(trace.mz), field="trace.mz"),
+            "rt": [
+                _finite_float(float(value), field="trace.rt") for value in trace.rt
+            ],
+            "intensity": [
+                _finite_float(float(value), field="trace.intensity")
+                for value in trace.intensity
+            ],
+            "query_rt_min": _finite_float(
+                float(trace.rt_min), field="trace.rt_min"
+            ),
+            "query_rt_max": _finite_float(
+                float(trace.rt_max), field="trace.rt_max"
+            ),
+            "query_ppm_tol": _finite_float(
+                float(trace.ppm_tol), field="trace.ppm_tol"
+            ),
             "trace_source": trace.source,
             "acquisition_source_id": trace.acquisition_source_id,
         }
@@ -431,8 +452,14 @@ def _canonical_selection_trace_bytes(
     return _canonical_json_bytes(
         {
             "schema": "ms1_peak_selection_trace_v1",
-            "rt": [float(value) for value in trace.rt],
-            "intensity": [float(value) for value in selection_intensity],
+            "rt": [
+                _finite_float(float(value), field="selection.rt")
+                for value in trace.rt
+            ],
+            "intensity": [
+                _finite_float(float(value), field="selection.intensity")
+                for value in selection_intensity
+            ],
         }
     )
 
@@ -602,10 +629,17 @@ def _validate_signal_integration_binding(
         float(trace.rt[selection_apex_index]),
         field="rt_apex_min",
     )
+    selection_segment = selection_intensity[left_index:right_index]
+    expected_selection_height = float(np.max(selection_segment))
     _require_close(
         integration.height_smoothed,
-        float(selection_intensity[selection_apex_index]),
+        expected_selection_height,
         field="height_smoothed",
+    )
+    _require_close(
+        float(selection_intensity[selection_apex_index]),
+        expected_selection_height,
+        field="rt_apex_min",
     )
 
     expected_area = integrate_area_counts_seconds(
@@ -861,7 +895,7 @@ def _finite_float(value: object, *, field: str) -> float:
     normalized = float(value)
     if not math.isfinite(normalized):
         raise PeakObservationContractError(f"{field} must be a finite number")
-    return normalized
+    return 0.0 if normalized == 0.0 else normalized
 
 
 def _typed_digest(prefix: str, basis: dict[str, object]) -> str:

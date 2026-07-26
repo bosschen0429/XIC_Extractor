@@ -85,9 +85,10 @@ def _canonical_float(value: Any, *, field: str) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{field} must be numeric")
     try:
-        return float(value)
+        normalized = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(f"{field} must be numeric") from exc
+    return 0.0 if normalized == 0.0 else normalized
 
 
 def _canonical_int(value: Any, *, field: str) -> int:

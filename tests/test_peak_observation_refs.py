@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -229,7 +230,7 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
         ("height_raw", 999999.0, "height_raw"),
         ("height_smoothed", 999999.0, "height_smoothed"),
         ("raw_apex_rt_min", 7.9, "raw_apex_rt_min"),
-        ("rt_apex_min", 7.9, "height_smoothed"),
+        ("rt_apex_min", 7.9, "rt_apex_min"),
         ("area_raw_counts_seconds", 999999.0, "area_raw_counts_seconds"),
     ],
 )
@@ -253,6 +254,26 @@ def test_mint_rejects_integration_facts_that_contradict_the_selected_trace(
             integration=integration,
             resolver_mode="local_minimum",
             proposal_sources=("local_minimum",),
+        )
+
+
+def test_mint_rejects_selection_point_that_is_not_a_true_apex(
+    tmp_path: Path,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+
+    with pytest.raises(
+        PeakObservationContractError,
+        match="height_smoothed|apex",
+    ):
+        mint_peak_observation_ref(
+            processing_owners=identity.owners,
+            sample=identity.sample,
+            trace=_standard_trace(identity.owners),
+            integration=_integration(raw_scan_indices=(1, 2, 3)),
+            selection_intensity=(0.0, 900.0, 500.0, 900.0, 0.0),
+            resolver_mode="smoothed",
+            proposal_sources=("synthetic_selection_trace",),
         )
 
 
@@ -348,6 +369,57 @@ def test_equivalent_numeric_integration_inputs_have_one_content_identity(
         float_ref.content.peak_observation_content_id
     )
     assert integer_ref.artifact.content_identity == float_ref.artifact.content_identity
+
+
+def test_integration_result_collapses_signed_zero() -> None:
+    positive = replace(
+        _integration(raw_scan_indices=(1, 2, 3)),
+        area_uncertainty=0.0,
+    )
+    negative = replace(positive, area_uncertainty=-0.0)
+
+    assert negative == positive
+    assert negative.area_uncertainty is not None
+    assert math.copysign(1.0, negative.area_uncertainty) == 1.0
+
+
+def test_signed_zero_trace_values_have_one_observation_identity(
+    tmp_path: Path,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    integration = replace(
+        _integration(raw_scan_indices=(0, 1, 2, 3, 4)),
+        rt_left_min=7.7,
+        rt_right_min=8.3,
+        rt_width_min=0.6,
+        area_raw_counts_seconds=3900.0,
+    )
+    positive_trace = _standard_trace(identity.owners)
+    signed_zero_intensity = positive_trace.intensity.copy()
+    signed_zero_intensity[0] = -0.0
+    signed_zero_trace = replace(
+        positive_trace,
+        intensity=signed_zero_intensity,
+    )
+
+    positive = mint_peak_observation_ref(
+        processing_owners=identity.owners,
+        sample=identity.sample,
+        trace=positive_trace,
+        integration=integration,
+        resolver_mode="local_minimum",
+        proposal_sources=("local_minimum",),
+    )
+    negative = mint_peak_observation_ref(
+        processing_owners=identity.owners,
+        sample=identity.sample,
+        trace=signed_zero_trace,
+        integration=integration,
+        resolver_mode="local_minimum",
+        proposal_sources=("local_minimum",),
+    )
+
+    assert negative == positive
 
 
 def test_mint_rejects_sample_outside_request_and_trace_sample_substitution(

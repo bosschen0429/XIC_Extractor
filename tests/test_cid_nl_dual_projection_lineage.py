@@ -189,6 +189,39 @@ def test_same_canonical_evidence_feeds_both_projections_without_source_reopen(
     )
 
 
+def test_signed_zero_cid_nl_evidence_has_one_canonical_identity(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture(tmp_path)
+    processing_owners = _processing_owners(fixture)
+    inputs = {
+        "processing_owners": processing_owners,
+        "sample": fixture.sample,
+        "scan_number": 42,
+        "precursor_mz": 500.0,
+        "product_mz": 384.0,
+        "configured_neutral_loss_da": 116.0,
+        "observed_neutral_loss_da": 116.0,
+        "scan_rt_min": 9.0,
+        "product_intensity": 400.0,
+    }
+
+    positive = mint_cid_nl_evidence_ref(
+        **inputs,
+        observed_loss_error_ppm=0.0,
+    )
+    negative = mint_cid_nl_evidence_ref(
+        **inputs,
+        observed_loss_error_ppm=-0.0,
+    )
+
+    assert negative.observation == positive.observation
+    assert canonical_cid_nl_evidence_bytes(negative.observation) == (
+        canonical_cid_nl_evidence_bytes(positive.observation)
+    )
+    assert negative.artifact.content_identity == positive.artifact.content_identity
+
+
 def test_observation_mutation_and_workflow_evidence_substitution_fail_closed(
     tmp_path: Path,
 ) -> None:

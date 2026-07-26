@@ -192,6 +192,16 @@ class DdaCidNlPeakSupportContent:
             raise DdaCidNlPeakSupportContractError(
                 f"relationship must be {RELATIONSHIP!r}"
             )
+        for field_name, value in (
+            ("scan_rt_min", scan_rt),
+            ("peak_rt_min", peak_rt_min),
+            ("peak_rt_max", peak_rt_max),
+            ("precursor_mz", precursor_mz),
+            ("peak_mz", peak_mz),
+            ("precursor_delta_da", precursor_delta),
+            ("observed_loss_error_ppm", observed_loss_error),
+        ):
+            object.__setattr__(self, field_name, value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,7 +281,7 @@ def _finite_float(value: object, *, field: str) -> float:
     normalized = float(value)
     if not math.isfinite(normalized):
         raise DdaCidNlPeakSupportContractError(f"{field} must be a finite number")
-    return normalized
+    return 0.0 if normalized == 0.0 else normalized
 
 
 def _validate_typed_digest_id(value: object, *, prefix: str, field: str) -> str:

@@ -343,7 +343,7 @@ def _finite_float(value: float, *, field: str) -> float:
         raise CidNlEvidenceContractError(f"{field} must be a finite number") from exc
     if not math.isfinite(normalized):
         raise CidNlEvidenceContractError(f"{field} must be a finite number")
-    return normalized
+    return 0.0 if normalized == 0.0 else normalized
 
 
 def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
