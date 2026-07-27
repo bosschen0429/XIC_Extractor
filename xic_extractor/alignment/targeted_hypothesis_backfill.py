@@ -83,13 +83,13 @@ def build_targeted_hypothesis_cells(
             )
 
     group_by_owner: dict[str, CrossSamplePeakGroupHypothesis] = {}
-    for group in groups:
-        for owner_id in group.owner_ids:
+    for alignment_group in groups:
+        for owner_id in alignment_group.owner_ids:
             if owner_id in group_by_owner:
                 raise TargetedHypothesisBackfillError(
                     "selected hypothesis appears in multiple Alignment groups"
                 )
-            group_by_owner[owner_id] = group
+            group_by_owner[owner_id] = alignment_group
 
     cells: list[TargetedHypothesisCell] = []
     for item in sorted(inputs, key=lambda value: value.sample.metadata.raw_stem):
