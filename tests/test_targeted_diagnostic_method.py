@@ -569,6 +569,7 @@ def _method_request(
         targets=(target,),
         processing_attempt=fixture.attempt,
         authoritative_legacy_output=_legacy_output(target),
+        prior_current_delivery_id="legacy-seal:prior-current",
     )
     return request, fixture
 

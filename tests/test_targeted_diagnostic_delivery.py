@@ -84,6 +84,18 @@ def test_true_spawned_runtime_writes_and_stages_exact_candidate(
         fixture.attempt,
     )
     legacy_bytes = _legacy_csv_bytes(tmp_path, request)
+    for output in (
+        request.authoritative_legacy_output,
+        result.authoritative_legacy_output,
+    ):
+        legacy_observed = next(
+            item for item in output.file_results if item.sample_name == "observed-a"
+        )
+        legacy_observed.results["Analyte"] = replace(
+            legacy_observed.results["Analyte"],
+            reported_rt=999.0,
+            nl_token="tampered-legacy-token",
+        )
 
     delivery = settle_targeted_diagnostic_delivery_candidate(
         result,

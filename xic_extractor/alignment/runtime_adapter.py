@@ -298,6 +298,7 @@ def execute_alignment_process_runtime(
     *,
     worker: Callable[[Any], AlignmentRuntimeProcessResult],
     error_factory: Callable[[Any, Exception], AlignmentRuntimeProcessResult],
+    cancellation_factory: Callable[[Any], AlignmentRuntimeProcessResult] | None = None,
     max_workers: int,
     resource_reservations: Sequence[RuntimeResourceReservation],
     telemetry_provider: RuntimeTelemetryProvider,
@@ -318,6 +319,7 @@ def execute_alignment_process_runtime(
         or max_workers < 1
     ):
         raise AlignmentRuntimeAdapterError("max_workers must be a positive integer")
+    normalized_jobs = tuple(jobs)
     recovery_marker.record_launch(runtime)
     successful_observation_batches: dict[str, PeakObservationBatch] = {}
     successful_cross_sample_peak_groups: dict[
@@ -329,13 +331,24 @@ def execute_alignment_process_runtime(
         _aggregate: RuntimeAttemptAggregate,
     ) -> RuntimeWorkerBatchReceipt:
         nonlocal observed_results
-        observed = run_process_jobs(
-            jobs,
-            worker=worker,
-            error_factory=error_factory,
-            max_workers=max_workers,
-            executor_factory=executor_factory,
-        )
+        if runtime.history.cancellation_accepted:
+            if cancellation_factory is None:
+                raise AlignmentRuntimeAdapterError(
+                    "cancelled Alignment runtime requires cancellation_factory"
+                )
+            observed = tuple(
+                cancellation_factory(job) for job in normalized_jobs
+            )
+        else:
+            observed = tuple(
+                run_process_jobs(
+                    normalized_jobs,
+                    worker=worker,
+                    error_factory=error_factory,
+                    max_workers=max_workers,
+                    executor_factory=executor_factory,
+                )
+            )
         if any(
             not isinstance(item, AlignmentRuntimeProcessResult) for item in observed
         ):

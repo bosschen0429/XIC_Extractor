@@ -19,6 +19,7 @@ from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptLifecycleHistory,
     AttemptRuntime,
+    AttemptTerminalOutcome,
     append_attempt_lifecycle_event,
     preflight_required_work_manifest,
     start_attempt_runtime,
@@ -29,9 +30,12 @@ from xic_extractor.execution_runtime_finalization import (
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import RuntimeTelemetryProvider
+from xic_extractor.extraction.targeted_diagnostic_delivery import (
+    settle_targeted_diagnostic_delivery_candidate,
+)
 from xic_extractor.extraction.targeted_diagnostic_method import (
+    TargetedDiagnosticMethodParityError,
     TargetedDiagnosticMethodRequest,
-    TargetedDiagnosticMethodResult,
     targeted_attempt_namespace_component,
 )
 from xic_extractor.extraction.targeted_method_runtime import (
@@ -46,6 +50,7 @@ from xic_extractor.extraction.targeted_method_runtime import (
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationRequest,
     TargetedApplicationService,
+    TargetedDiagnosticApplicationOutcome,
     TargetedRunner,
 )
 from xic_extractor.extractor import RunOutput
@@ -101,6 +106,20 @@ def targeted_diagnostic_request_provider(
         _REQUEST_PROVIDER.reset(request_token)
 
 
+def capture_targeted_diagnostic_request_provider(
+) -> TargetedDiagnosticRequestProvider | None:
+    """Capture the scoped provider for explicit propagation into a GUI thread."""
+
+    return _REQUEST_PROVIDER.get()
+
+
+def capture_targeted_diagnostic_telemetry_provider(
+) -> RuntimeTelemetryProvider | None:
+    """Capture scoped telemetry for explicit propagation into a GUI thread."""
+
+    return _TELEMETRY_PROVIDER.get()
+
+
 def build_canonical_targeted_application_service(
     runner: TargetedRunner,
 ) -> TargetedApplicationService:
@@ -115,7 +134,9 @@ def build_canonical_targeted_application_service(
 
 def _execute_scoped_targeted_diagnostic_method(
     request: TargetedDiagnosticMethodRequest,
-) -> TargetedDiagnosticMethodResult:
+    *,
+    should_stop: Callable[[], bool] | None = None,
+) -> TargetedDiagnosticApplicationOutcome:
     telemetry_provider = _TELEMETRY_PROVIDER.get()
     if telemetry_provider is None:
         raise TargetedMethodRuntimeError(
@@ -124,6 +145,7 @@ def _execute_scoped_targeted_diagnostic_method(
     return execute_spawned_targeted_diagnostic_method(
         request,
         telemetry_provider=telemetry_provider,
+        should_stop=should_stop,
     )
 
 
@@ -154,7 +176,8 @@ def execute_spawned_targeted_diagnostic_method(
     request: TargetedDiagnosticMethodRequest,
     *,
     telemetry_provider: RuntimeTelemetryProvider,
-) -> TargetedDiagnosticMethodResult:
+    should_stop: Callable[[], bool] | None = None,
+) -> TargetedDiagnosticApplicationOutcome:
     """Run real Alignment then Targeted process consumers for one request."""
 
     attempt = request.processing_attempt
@@ -174,13 +197,31 @@ def execute_spawned_targeted_diagnostic_method(
         upstream_artifacts=alignment_upstream_artifacts_for_request(request),
     )
     alignment = execute_targeted_method_alignment_runtime(
-        _runtime(attempt, (_ALIGNMENT_WORK_UNIT_KEY,)),
+        _runtime(
+            attempt,
+            (_ALIGNMENT_WORK_UNIT_KEY,),
+            cancelled=_stop_requested(should_stop),
+        ),
         (alignment_job,),
         max_workers=1,
         resource_reservations=_reservations((alignment_job,)),
         telemetry_provider=telemetry_provider,
         recovery_marker=_marker(attempt_dir, "alignment"),
     )
+    if (
+        alignment.finalization_record.terminal_outcome
+        is not AttemptTerminalOutcome.SUCCEEDED
+    ):
+        return TargetedDiagnosticApplicationOutcome(
+            status="quarantined",
+            method_result=None,
+            delivery_candidate=None,
+            quarantine_reason=(
+                "Alignment runtime attempt "
+                f"{alignment.finalization_record.terminal_outcome.value}; "
+                "legacy remains active"
+            ),
+        )
     jobs = build_targeted_method_completion_jobs(
         alignment,
         (
@@ -193,7 +234,11 @@ def execute_spawned_targeted_diagnostic_method(
         ),
     )
     targeted = execute_targeted_method_completion_runtime(
-        _runtime(attempt, (_TARGETED_WORK_UNIT_KEY,)),
+        _runtime(
+            attempt,
+            (_TARGETED_WORK_UNIT_KEY,),
+            cancelled=_stop_requested(should_stop),
+        ),
         jobs,
         max_workers=1,
         resource_reservations=_reservations(jobs),
@@ -201,22 +246,71 @@ def execute_spawned_targeted_diagnostic_method(
         recovery_marker=_marker(attempt_dir, "targeted"),
     )
     results = targeted.settlement.successful_targeted_method_results
+    if (
+        targeted.finalization_record.terminal_outcome
+        is not AttemptTerminalOutcome.SUCCEEDED
+    ):
+        return TargetedDiagnosticApplicationOutcome(
+            status="quarantined",
+            method_result=None,
+            delivery_candidate=None,
+            quarantine_reason=(
+                "Targeted runtime attempt "
+                f"{targeted.finalization_record.terminal_outcome.value}; "
+                "legacy remains active"
+            ),
+        )
     if len(results) != 1 or results[0][0] != _TARGETED_WORK_UNIT_KEY:
         raise TargetedMethodRuntimeError(
             "Targeted diagnostic runtime did not produce one canonical result"
         )
-    return results[0][1]
+    result = results[0][1]
+    if _stop_requested(should_stop):
+        return TargetedDiagnosticApplicationOutcome(
+            status="quarantined",
+            method_result=result,
+            delivery_candidate=None,
+            quarantine_reason=(
+                "cancellation accepted after Targeted settlement; "
+                "delivery not staged and legacy remains active"
+            ),
+        )
+    legacy_csv_path = request.peak_config.output_csv
+    if not legacy_csv_path.is_file():
+        raise TargetedMethodRuntimeError(
+            "authoritative legacy xic_results.csv is missing after legacy execution"
+        )
+    delivery = settle_targeted_diagnostic_delivery_candidate(
+        result,
+        request=request,
+        alignment_runtime=alignment,
+        targeted_runtime=targeted,
+        authoritative_legacy_csv_bytes=legacy_csv_path.read_bytes(),
+        prior_current_delivery_id=request.prior_current_delivery_id,
+    )
+    if delivery.status != "staged_candidate":
+        raise TargetedDiagnosticMethodParityError(
+            delivery.quarantine_reason
+            or "successful successor attempt did not reach exact delivery"
+        )
+    return TargetedDiagnosticApplicationOutcome(
+        status="staged_candidate",
+        method_result=result,
+        delivery_candidate=delivery,
+    )
 
 
 def _runtime(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
+    *,
+    cancelled: bool,
 ) -> AttemptRuntime:
     history = append_attempt_lifecycle_event(
         AttemptLifecycleHistory(attempt=attempt),
         AttemptLifecycleEventKind.ATTEMPT_QUEUED,
     )
-    return start_attempt_runtime(
+    runtime = start_attempt_runtime(
         preflight_required_work_manifest(
             history,
             attempt=attempt,
@@ -224,6 +318,23 @@ def _runtime(
             owner_completeness_attestation=_RUNTIME_CONTRACT,
         )
     )
+    if cancelled:
+        runtime = replace(
+            runtime,
+            history=append_attempt_lifecycle_event(
+                runtime.history,
+                AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
+            ),
+        )
+    return runtime
+
+
+def _stop_requested(should_stop: Callable[[], bool] | None) -> bool:
+    if should_stop is None:
+        return False
+    if not callable(should_stop):
+        raise TypeError("should_stop must be callable or None")
+    return bool(should_stop())
 
 
 def _reservations(
@@ -251,6 +362,8 @@ def _marker(attempt_dir: Path, phase: str) -> OwnerPathRuntimeMarker:
 
 __all__ = [
     "build_canonical_targeted_application_service",
+    "capture_targeted_diagnostic_request_provider",
+    "capture_targeted_diagnostic_telemetry_provider",
     "execute_spawned_targeted_diagnostic_method",
     "targeted_diagnostic_request_provider",
 ]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -53,6 +53,7 @@ class TargetedDiagnosticProjection:
     confidence: str
     reason: str
     counted_detection: bool
+    nl_token: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +65,7 @@ class TargetedDiagnosticMethodRequest:
     targets: tuple[Target, ...]
     processing_attempt: ProcessingAttemptIdentity
     authoritative_legacy_output: RunOutput
+    prior_current_delivery_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +112,8 @@ def targeted_attempt_namespace_component(processing_attempt_id: str) -> str:
 
 def run_targeted_diagnostic_method(
     request: TargetedDiagnosticMethodRequest,
+    *,
+    should_stop: Callable[[], bool] | None = None,
 ) -> TargetedDiagnosticMethodResult:
     """Run selection → Alignment → Backfill and verify legacy projection."""
 
@@ -117,6 +121,8 @@ def run_targeted_diagnostic_method(
         raise TargetedDiagnosticMethodError(
             "request must be TargetedDiagnosticMethodRequest"
         )
+    if should_stop is not None and not callable(should_stop):
+        raise TargetedDiagnosticMethodError("should_stop must be callable or None")
     if len(request.targets) != 1:
         raise TargetedDiagnosticMethodError(
             "bounded Package 2 method requires exactly one Targeted definition"
@@ -241,6 +247,7 @@ def canonical_targeted_diagnostic_method_bytes(
                 "confidence": projection.confidence,
                 "reason": projection.reason,
                 "counted_detection": projection.counted_detection,
+                "nl_token": projection.nl_token,
             }
             for projection in result.projections
         ],
@@ -379,6 +386,7 @@ def _validate_and_project_legacy(
                     confidence=successor_confidence,
                     reason=successor_reason,
                     counted_detection=False,
+                    nl_token=None,
                 )
             )
             continue
@@ -393,12 +401,14 @@ def _validate_and_project_legacy(
                 "legacy result is missing counted-state projection"
             )
         successor_confidence, successor_reason = _successor_output_semantics(cell)
+        successor_nl_token = _successor_output_nl_token(cell)
         if (
             legacy_result.confidence != successor_confidence
             or legacy_result.reason != successor_reason
+            or legacy_result.nl_token != successor_nl_token
         ):
             raise TargetedDiagnosticMethodParityError(
-                "successor confidence/reason differs from legacy"
+                "successor confidence/reason/NL token differs from legacy"
             )
         values = (
             legacy_result.reported_rt,
@@ -449,6 +459,7 @@ def _validate_and_project_legacy(
                 confidence=successor_confidence,
                 reason=successor_reason,
                 counted_detection=product_projection.counted_detection,
+                nl_token=successor_nl_token,
             )
         )
     return tuple(projections)
@@ -533,6 +544,23 @@ def _successor_output_semantics(
     raise TargetedDiagnosticMethodParityError(
         f"unsupported successor semantic status: {cell.status}"
     )
+
+
+def _successor_output_nl_token(cell: TargetedHypothesisCell) -> str | None:
+    """Project the frozen bounded writer token without consulting legacy DTOs."""
+
+    if cell.status not in {
+        "observed",
+        "backfilled",
+        "ambiguous",
+        "true_missing",
+        "unassessable",
+        "unchecked",
+    }:
+        raise TargetedDiagnosticMethodParityError(
+            f"unsupported successor NL-token status: {cell.status}"
+        )
+    return None
 
 
 def _require_successor_reason(

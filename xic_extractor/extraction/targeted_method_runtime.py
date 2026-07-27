@@ -271,6 +271,31 @@ def failed_targeted_method_alignment_job(
     )
 
 
+def cancelled_targeted_method_alignment_job(
+    job: TargetedMethodAlignmentJob,
+) -> AlignmentRuntimeProcessResult:
+    """Settle accepted pre-dispatch cancellation without opening a worker."""
+
+    if not isinstance(job, TargetedMethodAlignmentJob):
+        raise TargetedMethodRuntimeError("job must be TargetedMethodAlignmentJob")
+    return AlignmentRuntimeProcessResult(
+        settlement=mint_work_unit_settlement(
+            attempt=job.attempt,
+            work_unit_key=job.work_unit_key,
+            outcome=WorkUnitTerminalOutcome.CANCELLED,
+            failure_detail=WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.CANCELLATION,
+                stage="alignment-process-worker",
+                source_reference=f"no-raw:{job.work_unit_key}",
+                message="attempt cancellation accepted before Alignment dispatch",
+            ),
+        ),
+        resource_key=job.resource_key,
+        open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+
+
 def execute_targeted_method_alignment_runtime(
     runtime: AttemptRuntime,
     jobs: Iterable[TargetedMethodAlignmentJob],
@@ -288,6 +313,7 @@ def execute_targeted_method_alignment_runtime(
         jobs,
         worker=execute_targeted_method_alignment_job,
         error_factory=failed_targeted_method_alignment_job,
+        cancellation_factory=cancelled_targeted_method_alignment_job,
         max_workers=max_workers,
         resource_reservations=resource_reservations,
         telemetry_provider=telemetry_provider,
@@ -695,6 +721,7 @@ __all__ = [
     "TargetedMethodRuntimeError",
     "alignment_upstream_artifacts_for_request",
     "build_targeted_method_completion_jobs",
+    "cancelled_targeted_method_alignment_job",
     "execute_targeted_method_alignment_job",
     "execute_targeted_method_alignment_runtime",
     "execute_targeted_method_completion_job",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from typing import Literal
+from typing import Literal, cast
 
 from xic_extractor.alignment.runtime_adapter import (
     AlignmentRuntimeAdapterError,
@@ -46,7 +46,7 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
     resolve_targeted_application_method_result,
 )
 from xic_extractor.extractor import RunOutput
-from xic_extractor.output.csv_writers import write_wide_csv
+from xic_extractor.output.csv_writers import FileResultLike, write_wide_csv
 from xic_extractor.processing_identity import (
     ProcessingAttemptIdentity,
     canonical_current_attempt_artifact_closure,
@@ -79,6 +79,36 @@ _CSV_OUTPUT_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 class TargetedDiagnosticDeliveryError(ValueError):
     """Raised when diagnostic delivery evidence cannot close exactly."""
+
+
+@dataclass(frozen=True, slots=True)
+class _SuccessorCountedProjection:
+    counted_detection: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _SuccessorWriterResult:
+    reported_rt: float | None
+    reported_peak_area: float | None
+    reported_peak_intensity: float | None
+    reported_peak_start: float | None
+    reported_peak_end: float | None
+    reported_peak_width: float | None
+    confidence: str
+    reason: str
+    nl_token: str | None
+    targeted_product_projection: _SuccessorCountedProjection
+
+
+@dataclass(frozen=True, slots=True)
+class _SuccessorWriterFileResult:
+    sample_name: str
+    results: dict[str, _SuccessorWriterResult]
+    error: str | None
+
+    @property
+    def extraction_results(self) -> tuple[_SuccessorWriterResult, ...]:
+        return tuple(self.results.values())
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,7 +327,10 @@ def settle_targeted_diagnostic_delivery_candidate(
     write_wide_csv(
         replace(request.peak_config, output_csv=output_path),
         request.targets,
-        result.authoritative_legacy_output.file_results,
+        _successor_writer_file_results(
+            result.projections,
+            target_label=request.targets[0].label,
+        ),
     )
     candidate_csv_bytes = output_path.read_bytes()
     if candidate_csv_bytes != authoritative_legacy_csv_bytes:
@@ -355,6 +388,49 @@ def settle_targeted_diagnostic_delivery_candidate(
         stage_candidate=stage,
         seal_candidate=seal,
     )
+
+
+def _successor_writer_file_results(
+    projections: tuple[TargetedDiagnosticProjection, ...],
+    *,
+    target_label: str,
+) -> tuple[FileResultLike, ...]:
+    """Build render-only DTOs solely from successor scientific projections."""
+
+    files: list[_SuccessorWriterFileResult] = []
+    for projection in projections:
+        if projection.status == "failed":
+            files.append(
+                _SuccessorWriterFileResult(
+                    sample_name=projection.sample_stem,
+                    results={},
+                    error=projection.reason,
+                )
+            )
+            continue
+        files.append(
+            _SuccessorWriterFileResult(
+                sample_name=projection.sample_stem,
+                results={
+                    target_label: _SuccessorWriterResult(
+                        reported_rt=projection.rt,
+                        reported_peak_area=projection.area,
+                        reported_peak_intensity=projection.intensity,
+                        reported_peak_start=projection.peak_start,
+                        reported_peak_end=projection.peak_end,
+                        reported_peak_width=projection.peak_width,
+                        confidence=projection.confidence,
+                        reason=projection.reason,
+                        nl_token=projection.nl_token,
+                        targeted_product_projection=_SuccessorCountedProjection(
+                            projection.counted_detection
+                        ),
+                    )
+                },
+                error=None,
+            )
+        )
+    return cast(tuple[FileResultLike, ...], tuple(files))
 
 
 def rollback_targeted_diagnostic_delivery_candidate(

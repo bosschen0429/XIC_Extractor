@@ -174,6 +174,32 @@ The exact-zero manifest remains 13/13 with the same 403-byte CSV and unchanged
 writer blob. Validation packet/inventory digests are being refreshed before
 fresh independent QA and review.
 
+Fresh independent QA at frozen `ce2dd277` passed, but fresh review returned
+`REQUEST_CHANGES` after exercising the real GUI thread boundary and production
+call graph. Four P1 shapes remain: the scoped diagnostic provider is not copied
+into the actual `QThread`; production composition stops after Targeted runtime
+instead of settling delivery; the delivery writer still receives legacy DTOs
+rather than a successor-owned render projection; and adapter cancellation is
+not accepted by the successor runtime. Candidate completeness, scientific
+carrier binding, unchanged writer placement inside delivery, successor
+confidence/reason comparison, Backfill states, and exact Target equality passed
+review. The next repair is limited to internal application/thread mechanics,
+successor render DTOs, and existing runtime cancellation; no public or product
+authority change is authorized.
+
+The bounded thread/delivery repair is now integrated locally. `PipelineWorker`
+captures the scoped diagnostic provider before crossing the real `QThread`
+boundary and reinstalls it only for the canonical service call. The production
+composition now accepts cancellation before each spawned consumer and after
+Targeted settlement, quarantines any non-successful or late-cancelled attempt,
+and settles delivery only from integrity-clean typed runtime carriers. The
+unchanged writer receives render-only DTOs constructed solely from successor
+projections; an executable tampered-legacy regression proves the candidate CSV
+does not consult legacy result DTOs. Nine affected/adjacent files report 65
+tests passed; Ruff, focused production mypy, `py_compile`, Import Linter (4
+kept/0 broken), architecture census, and diff checks pass. Expanded evidence,
+packet digest refresh, fresh QA, and fresh reviewer `APPROVE` remain required.
+
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
 counted-state, Matrix, or CSV value/byte difference stops this migration and
@@ -248,7 +274,7 @@ Progress vocabulary:
 | --- | --- | --- | --- |
 | Package 0 — executable no-RAW contracts | `evidence_passed` / complete | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering. This branch closes manifest/work/resource/artifact/finalization and recovery-marker behavior for Targeted plus Alignment, then adds executable work-event/offset/metric availability, capability-aware trace coordinates, Targeted delivery-cell/revision/stage/seal candidates, CLI/GUI equal-adapter receipts, and the frozen successor receipt comparator. All remain no-RAW and `diagnostic_only`. | None inside Package 0. Remote Issue #149 state is unchanged because no GitHub mutation was authorized. |
 | Package 1 — pure runtime and observation substrates | `evidence_passed` / complete | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed runtime slices add a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, manifest-ordered application consumption, resource lifecycle, supervisor finalization, and the narrow recovery marker consumed by both Targeted and Alignment without serializing legacy DTOs or adding storage. Slice 2 now composes both real process consumers with the existing capability-aware batch acquisition and physical-observation owners: true spawned serial/reordered runs preserve immutable signal snapshots, source/kind coordinate truth, request/call/point counts, exact owner/observation lineage, replay idempotence, conflict quarantine, terminal dispositions, and byte-identical canonical receipts without invoking a writer. Its executable `DifferenceManifest` binds the explained internal carrier change to the immutable frozen comparator and one comparator-owned experiment entry that overwrites output paths, pins root identity, accepts only exact primitive no-RAW jobs, runs fixed Targeted/Alignment workers to synchronous drain, inventories final-state paths/bytes, and privately mints the receipt. | None inside Package 1. Package 2 selection/externalization and downstream method wiring remain inactive. |
-| Package 2 — complete Targeted CID-NL method | `active` / `diagnostic_only` / no-RAW / review repair integrated | The five fresh-review P1 shapes now have bounded internal repairs: shared production composition, Discovery-owned bounded completion, owner-validated runtime content, unchanged-writer delivery, and successor semantic comparison. The focused repair gate is 30 passed with Ruff and affected-production mypy green; the earlier expanded evidence and `REQUEST_CHANGES` verdict remain stale until rerun. Backfill terminal states and exact Target equality remain closed. | Rerun the affected and expanded evidence against the repaired head, refresh packet/inventory digests, then obtain fresh QA and `APPROVE`. Stop on any unexpected selected peak/boundary/area/confidence/reason/counting/CSV-byte/Matrix/writer difference or any required public CLI/config/schema/writer-contract change. |
+| Package 2 — complete Targeted CID-NL method | `active` / `diagnostic_only` / no-RAW / thread-delivery repair integrated | The second fresh review's four application/thread findings have bounded internal repairs: real `QThread` provider propagation, canonical production delivery/quarantine outcome, successor-only writer DTO projection, and accepted pre-dispatch/late cancellation. The affected gate is 65 passed with static architecture checks green. | Rerun expanded evidence, refresh packet/inventory digests, then obtain fresh QA and reviewer `APPROVE`. Stop on any unexpected selected peak/boundary/area/confidence/reason/counting/CSV-byte/Matrix/writer difference or any required public CLI/config/schema/writer-contract change. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
 | Package 4 — compare and decide | `not_started` | None. | Full tracer evidence, rollback rehearsal, and successor-versus-strangler comparison. |
