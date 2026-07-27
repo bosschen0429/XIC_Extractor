@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import json
+import re
 from dataclasses import dataclass
 from typing import Literal
 
+from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.evidence_artifacts import (
+    EvidenceArtifactRef,
+    _mint_artifact_semantic_contract_ref,
+    _mint_evidence_artifact_ref,
+    verify_evidence_artifact_payload,
+)
 from xic_extractor.evidence_semantics import DecisionClass
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
@@ -10,6 +19,11 @@ from xic_extractor.peak_detection.hypotheses import (
     validate_peak_hypothesis_selection_authority,
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    validate_owner_backed_peak_hypothesis_instance,
+)
+from xic_extractor.processing_identity import ProcessingOwnerReferences
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 LegacyProjectionStatus = Literal["active_policy_remaining", "successor_owned"]
 SelectionDecisionPolicySource = Literal["selected_hypothesis_decision_v1"]
@@ -17,6 +31,195 @@ SelectionDecisionCompatibilityOracle = Literal[
     "legacy_peak_scoring_current_oracle",
     "successor_evidence_decision_semantics",
 ]
+DiagnosticSelectionStatus = Literal[
+    "selected",
+    "ambiguous",
+    "no_candidate",
+    "failed",
+]
+
+DIAGNOSTIC_SELECTION_SCHEMA_VERSION = "diagnostic_peak_hypothesis_selection_v1"
+DIAGNOSTIC_SELECTION_VALIDATION_STATUS = "diagnostic_only"
+DIAGNOSTIC_SELECTION_POLICY = "unique_owner_backed_hypothesis_v1"
+_DIAGNOSTIC_SELECTION_SEMANTIC_ROLE = "diagnostic_peak_hypothesis_selection"
+_DIAGNOSTIC_SELECTION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.peak_detection.selection_decision",
+    semantic_role=_DIAGNOSTIC_SELECTION_SEMANTIC_ROLE,
+    schema_version=DIAGNOSTIC_SELECTION_SCHEMA_VERSION,
+    validation_status=DIAGNOSTIC_SELECTION_VALIDATION_STATUS,
+    media_type="application/json",
+    serialization_format="canonical-json-utf8-lf-v1",
+)
+_SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_TARGET_KEY_PREFIX = "xic.target-key.v1:"
+_TARGET_DEFINITION_PREFIX = "xic.target-definition.v1:"
+_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
+_ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content.v1:"
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+class DiagnosticPeakHypothesisSelectionError(ValueError):
+    """Raised when diagnostic selection externalization is not owner-closed."""
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticPeakHypothesisSelectionRef:
+    """Immutable no-product-authority selection over one complete candidate set."""
+
+    canonical_sample_identity_id: str
+    target_key_id: str
+    target_definition_id: str
+    candidate_hypothesis_ids: tuple[str, ...]
+    candidate_hypothesis_content_ids: tuple[str, ...]
+    status: DiagnosticSelectionStatus
+    selected_hypothesis_id: str | None
+    reasons: tuple[str, ...]
+    artifact: EvidenceArtifactRef
+
+    def __post_init__(self) -> None:
+        _validate_typed_id(
+            self.canonical_sample_identity_id,
+            prefix=_SAMPLE_ID_PREFIX,
+            field="canonical_sample_identity_id",
+        )
+        _validate_typed_id(
+            self.target_key_id,
+            prefix=_TARGET_KEY_PREFIX,
+            field="target_key_id",
+        )
+        _validate_typed_id(
+            self.target_definition_id,
+            prefix=_TARGET_DEFINITION_PREFIX,
+            field="target_definition_id",
+        )
+        candidate_ids = _validate_candidate_ids(self.candidate_hypothesis_ids)
+        content_ids = _validate_content_ids(self.candidate_hypothesis_content_ids)
+        if len(candidate_ids) != len(content_ids):
+            raise DiagnosticPeakHypothesisSelectionError(
+                "candidate hypothesis and content identities must be one-to-one"
+            )
+        _validate_diagnostic_selection_state(
+            status=self.status,
+            candidate_hypothesis_ids=candidate_ids,
+            selected_hypothesis_id=self.selected_hypothesis_id,
+            reasons=self.reasons,
+        )
+        if not isinstance(self.artifact, EvidenceArtifactRef):
+            raise DiagnosticPeakHypothesisSelectionError(
+                "artifact must be an owner-minted EvidenceArtifactRef"
+            )
+        if self.artifact.semantic_contract != _DIAGNOSTIC_SELECTION_ARTIFACT_CONTRACT:
+            raise DiagnosticPeakHypothesisSelectionError(
+                "artifact semantic contract is not owned by diagnostic selection"
+            )
+        try:
+            verify_evidence_artifact_payload(
+                self.artifact,
+                canonical_diagnostic_peak_hypothesis_selection_bytes(self),
+            )
+        except ValueError as exc:
+            raise DiagnosticPeakHypothesisSelectionError(
+                "diagnostic selection content mismatches its immutable artifact"
+            ) from exc
+
+
+def mint_diagnostic_peak_hypothesis_selection_ref(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    target: ResolvedTargetDefinition,
+    candidate_hypotheses: tuple[PeakHypothesis, ...],
+    failure_reason: str = "",
+) -> DiagnosticPeakHypothesisSelectionRef:
+    """Externalize one complete diagnostic candidate set without product switching."""
+
+    _validate_diagnostic_selection_context(
+        processing_owners=processing_owners,
+        sample=sample,
+        target=target,
+    )
+    if not isinstance(candidate_hypotheses, tuple):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate_hypotheses must be an immutable complete tuple"
+        )
+    normalized_failure = _optional_reason(failure_reason)
+    candidates = _canonical_candidates(
+        candidate_hypotheses,
+        processing_owners=processing_owners,
+        sample=sample,
+    )
+    if normalized_failure:
+        status: DiagnosticSelectionStatus = "failed"
+        selected_hypothesis_id = None
+        reasons = (normalized_failure,)
+    elif not candidates:
+        status = "no_candidate"
+        selected_hypothesis_id = None
+        reasons = ("no_owner_backed_candidate",)
+    elif len(candidates) == 1:
+        status = "selected"
+        selected_hypothesis_id = candidates[0].hypothesis_id
+        reasons = ("unique_owner_backed_candidate",)
+    else:
+        status = "ambiguous"
+        selected_hypothesis_id = None
+        reasons = ("multiple_owner_backed_candidates",)
+
+    candidate_ids = tuple(item.hypothesis_id for item in candidates)
+    candidate_content_ids = tuple(
+        _candidate_artifact(item).content_identity.artifact_content_id
+        for item in candidates
+    )
+    payload = _diagnostic_selection_bytes(
+        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        target_key_id=target.definition.target_key.target_key_id,
+        target_definition_id=target.definition.target_definition_id,
+        candidate_hypothesis_ids=candidate_ids,
+        candidate_hypothesis_content_ids=candidate_content_ids,
+        status=status,
+        selected_hypothesis_id=selected_hypothesis_id,
+        reasons=reasons,
+    )
+    return DiagnosticPeakHypothesisSelectionRef(
+        canonical_sample_identity_id=sample.identity.sample_identity_id,
+        target_key_id=target.definition.target_key.target_key_id,
+        target_definition_id=target.definition.target_definition_id,
+        candidate_hypothesis_ids=candidate_ids,
+        candidate_hypothesis_content_ids=candidate_content_ids,
+        status=status,
+        selected_hypothesis_id=selected_hypothesis_id,
+        reasons=reasons,
+        artifact=_mint_evidence_artifact_ref(
+            producer_processing_request_id=(
+                processing_owners.request.processing_request_id
+            ),
+            producer_processing_attempt_id=(
+                processing_owners.attempt.processing_attempt_id
+            ),
+            semantic_contract=_DIAGNOSTIC_SELECTION_ARTIFACT_CONTRACT,
+            payload_bytes=payload,
+            upstream_artifacts=tuple(_candidate_artifact(item) for item in candidates),
+        ),
+    )
+
+
+def canonical_diagnostic_peak_hypothesis_selection_bytes(
+    reference: DiagnosticPeakHypothesisSelectionRef,
+) -> bytes:
+    if not isinstance(reference, DiagnosticPeakHypothesisSelectionRef):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "canonical serialization requires DiagnosticPeakHypothesisSelectionRef"
+        )
+    return _diagnostic_selection_bytes(
+        canonical_sample_identity_id=reference.canonical_sample_identity_id,
+        target_key_id=reference.target_key_id,
+        target_definition_id=reference.target_definition_id,
+        candidate_hypothesis_ids=reference.candidate_hypothesis_ids,
+        candidate_hypothesis_content_ids=reference.candidate_hypothesis_content_ids,
+        status=reference.status,
+        selected_hypothesis_id=reference.selected_hypothesis_id,
+        reasons=reference.reasons,
+    )
 
 
 @dataclass(frozen=True)
@@ -72,9 +275,7 @@ def selection_decision_from_hypothesis(
         not_counted_reasons: tuple[str, ...] = ()
         exclusion_reasons: tuple[str, ...] = ()
         ambiguity_reasons: tuple[str, ...] = ()
-        compatibility_labels: tuple[str, ...] = _legacy_compatibility_labels(
-            hypothesis
-        )
+        compatibility_labels: tuple[str, ...] = _legacy_compatibility_labels(hypothesis)
     else:
         decision_class = semantics.decision_class
         support_reasons = semantics.support_reasons
@@ -99,14 +300,10 @@ def selection_decision_from_hypothesis(
         trace_group_id=hypothesis.trace_group_id,
         decision_class=decision_class,
         projected_confidence=(
-            evidence.projected_confidence
-            or evidence.confidence
-            or fallback_confidence
+            evidence.projected_confidence or evidence.confidence or fallback_confidence
         ),
         projected_reason=(
-            evidence.projected_reason
-            or evidence.reason
-            or fallback_reason
+            evidence.projected_reason or evidence.reason or fallback_reason
         ),
         support_reasons=support_reasons,
         conflict_reasons=conflict_reasons,
@@ -224,3 +421,235 @@ def _evidence_sources(hypothesis: PeakHypothesis) -> tuple[str, ...]:
     ):
         sources.append("legacy_compatibility_projection")
     return tuple(dict.fromkeys(sources))
+
+
+def _validate_diagnostic_selection_context(
+    *,
+    processing_owners: object,
+    sample: object,
+    target: object,
+) -> None:
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "processing_owners must be validated ProcessingOwnerReferences"
+        )
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "sample must be an owner-resolved canonical identity"
+        )
+    if sample not in processing_owners.sample_resolutions:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "sample is outside the processing request closure"
+        )
+    if not isinstance(target, ResolvedTargetDefinition):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "target must be an owner-resolved target definition"
+        )
+    if processing_owners.target_snapshot is None:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "diagnostic selection requires the request-bound target snapshot"
+        )
+    if target.snapshot.snapshot_id != processing_owners.target_snapshot.snapshot_id:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "target comes from a different target-list snapshot"
+        )
+
+
+def _canonical_candidates(
+    candidates: tuple[PeakHypothesis, ...],
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+) -> tuple[PeakHypothesis, ...]:
+    validated: list[PeakHypothesis] = []
+    for hypothesis in candidates:
+        if not isinstance(hypothesis, PeakHypothesis):
+            raise DiagnosticPeakHypothesisSelectionError(
+                "candidate_hypotheses must contain PeakHypothesis values"
+            )
+        try:
+            validate_owner_backed_peak_hypothesis_instance(hypothesis)
+        except ValueError as exc:
+            raise DiagnosticPeakHypothesisSelectionError(str(exc)) from exc
+        artifact = _candidate_artifact(hypothesis)
+        if (
+            artifact.producer_processing_request_id
+            != processing_owners.request.processing_request_id
+            or artifact.producer_processing_attempt_id
+            != processing_owners.attempt.processing_attempt_id
+        ):
+            raise DiagnosticPeakHypothesisSelectionError(
+                "candidate hypothesis references a different processing attempt"
+            )
+        observation = hypothesis.peak_observation_refs[0]
+        if (
+            observation.content.canonical_sample_identity_id
+            != sample.identity.sample_identity_id
+        ):
+            raise DiagnosticPeakHypothesisSelectionError(
+                "candidate hypothesis references a different canonical sample"
+            )
+        validated.append(hypothesis)
+    ordered = tuple(sorted(validated, key=lambda item: item.hypothesis_id))
+    candidate_ids = tuple(item.hypothesis_id for item in ordered)
+    if len(candidate_ids) != len(set(candidate_ids)):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate hypothesis universe contains duplicate identities"
+        )
+    return ordered
+
+
+def _candidate_artifact(hypothesis: PeakHypothesis) -> EvidenceArtifactRef:
+    if not isinstance(hypothesis.artifact, EvidenceArtifactRef):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate hypothesis must carry its immutable artifact"
+        )
+    return hypothesis.artifact
+
+
+def _validate_candidate_ids(values: object) -> tuple[str, ...]:
+    if not isinstance(values, tuple):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate_hypothesis_ids must be an immutable tuple"
+        )
+    normalized = tuple(
+        _validate_typed_id(value, prefix=_HYPOTHESIS_ID_PREFIX, field="hypothesis_id")
+        for value in values
+    )
+    if normalized != tuple(sorted(normalized)) or len(normalized) != len(
+        set(normalized)
+    ):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate_hypothesis_ids must be unique and canonical-sorted"
+        )
+    return normalized
+
+
+def _validate_content_ids(values: object) -> tuple[str, ...]:
+    if not isinstance(values, tuple):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate_hypothesis_content_ids must be an immutable tuple"
+        )
+    return tuple(
+        _validate_typed_id(
+            value,
+            prefix=_ARTIFACT_CONTENT_ID_PREFIX,
+            field="candidate_hypothesis_content_id",
+        )
+        for value in values
+    )
+
+
+def _validate_diagnostic_selection_state(
+    *,
+    status: object,
+    candidate_hypothesis_ids: tuple[str, ...],
+    selected_hypothesis_id: object,
+    reasons: object,
+) -> None:
+    if status not in {"selected", "ambiguous", "no_candidate", "failed"}:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "status must be selected, ambiguous, no_candidate, or failed"
+        )
+    if not isinstance(reasons, tuple) or not reasons:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "diagnostic selection requires immutable reasons"
+        )
+    normalized_reasons = tuple(_required_reason(value) for value in reasons)
+    if normalized_reasons != reasons or len(reasons) != len(set(reasons)):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "diagnostic selection reasons must be normalized and unique"
+        )
+    if status == "selected":
+        if len(candidate_hypothesis_ids) != 1:
+            raise DiagnosticPeakHypothesisSelectionError(
+                "selected status requires exactly one candidate hypothesis"
+            )
+        if selected_hypothesis_id != candidate_hypothesis_ids[0]:
+            raise DiagnosticPeakHypothesisSelectionError(
+                "selected hypothesis must be the unique candidate"
+            )
+        return
+    if selected_hypothesis_id is not None:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "non-selected diagnostic status cannot carry a selected hypothesis"
+        )
+    if status == "ambiguous" and len(candidate_hypothesis_ids) < 2:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "ambiguous status requires at least two candidate hypotheses"
+        )
+    if status == "no_candidate" and candidate_hypothesis_ids:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "no_candidate status requires an empty candidate universe"
+        )
+
+
+def _diagnostic_selection_bytes(
+    *,
+    canonical_sample_identity_id: str,
+    target_key_id: str,
+    target_definition_id: str,
+    candidate_hypothesis_ids: tuple[str, ...],
+    candidate_hypothesis_content_ids: tuple[str, ...],
+    status: DiagnosticSelectionStatus,
+    selected_hypothesis_id: str | None,
+    reasons: tuple[str, ...],
+) -> bytes:
+    payload = {
+        "schema_version": DIAGNOSTIC_SELECTION_SCHEMA_VERSION,
+        "validation_status": DIAGNOSTIC_SELECTION_VALIDATION_STATUS,
+        "selection_policy": DIAGNOSTIC_SELECTION_POLICY,
+        "canonical_sample_identity_id": canonical_sample_identity_id,
+        "target_key_id": target_key_id,
+        "target_definition_id": target_definition_id,
+        "candidate_hypotheses": [
+            {
+                "hypothesis_id": hypothesis_id,
+                "artifact_content_id": content_id,
+            }
+            for hypothesis_id, content_id in zip(
+                candidate_hypothesis_ids,
+                candidate_hypothesis_content_ids,
+                strict=True,
+            )
+        ],
+        "status": status,
+        "selected_hypothesis_id": selected_hypothesis_id,
+        "reasons": list(reasons),
+    }
+    return (
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
+    if not isinstance(value, str) or not value.startswith(prefix):
+        raise DiagnosticPeakHypothesisSelectionError(
+            f"{field} must use the {prefix!r} prefix"
+        )
+    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
+        raise DiagnosticPeakHypothesisSelectionError(
+            f"{field} must contain a SHA-256 digest"
+        )
+    return value
+
+
+def _optional_reason(value: object) -> str:
+    if value == "":
+        return ""
+    return _required_reason(value)
+
+
+def _required_reason(value: object) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise DiagnosticPeakHypothesisSelectionError(
+            "selection reason must be non-empty normalized text"
+        )
+    return value
