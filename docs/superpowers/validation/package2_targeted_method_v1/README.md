@@ -50,9 +50,11 @@ repository shards pass with 6,050 passed and 4 skipped: docs-config 464/1, GUI
 over 480 source files, Import Linter 4 kept/0 broken, architecture census,
 diagnostics index, docs audit with zero blockers, worktree bootstrap, shard
 coverage, validation retention, hook fixtures/assertions, secret/private-path
-scan, and diff hygiene pass. Fresh independent QA and review are recorded in the
-branch tracker before Package 2 closure rather than treated as implied by this
-engineering packet.
+scan, and diff hygiene pass. Fresh independent QA at frozen product-code head
+`c25da8bb` reports 79/79 changed-set and 27/27 real-surface tests passing with a
+clean tracked worktree before and after. Final independent fixed-diff review at
+docs-coherent head `a945692a` returned `APPROVE` with no blocking finding. These
+are recorded explicitly rather than inferred from the engineering packet.
 
 [`artifact_inventory.tsv`](artifact_inventory.tsv) names every retained oracle
 and owner dependency. [`difference_manifest.tsv`](difference_manifest.tsv) is
@@ -64,4 +66,5 @@ authoritative legacy bytes; all 13 old/new value pairs remain exact-zero.
 
 This packet grants no RAW/DLL, 8RAW/85RAW, Matrix/XLSX, publication, product
 writer, schema, public CLI/config, maturity-tier, or production-readiness
-authority. Package 3 remains inactive.
+authority. Package 2 is closed only as a `diagnostic_only` no-RAW engineering
+migration. Package 3 remains inactive.
