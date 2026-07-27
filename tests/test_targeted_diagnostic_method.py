@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
@@ -70,6 +71,34 @@ _FROZEN_LEGACY_CSV_SIZE = 403
 _FROZEN_LEGACY_CSV_SHA256 = (
     "f0a471bd81046cefaa924d619b934957505ee22591b17820a73143f7b4126937"
 )
+_VALIDATION_PACKET = Path("docs/superpowers/validation/package2_targeted_method_v1")
+_FROZEN_DIFFERENCE_MANIFEST_SHA256 = (
+    "377932de8bac5a929467a108658a3f9c5899a8b0e78fb7c05e277cacec0f2755"
+)
+_FROZEN_TRACE_ORACLE = {
+    "observed-a": (
+        "xic.peak-observation-content.v1:"
+        "7f4d0a7d42744145df0548360c287f3216e2048115b30a160eba8401d4572b01",
+        "d2231dd5dfa0fc8bffaef64012e348659e8fea7a23f3eaa5912c9b77e789ff70",
+        "191de630bb7e9817ced1934ea374671a075e9426c5b32973752db7b0294b9145",
+    ),
+    "observed-b": (
+        "xic.peak-observation-content.v1:"
+        "3409c591788409f9c20ea74e733cf34cfc12a660d62638e83e3d0a990b631a98",
+        "46c4378c16bf340417a72c2e93afd816534244e428416573806af80f39932777",
+        "6b7a814a0149b4d23ddc66e1563fa8b3720cccf6d69298f19ec3c200cf47da9b",
+    ),
+}
+_FROZEN_HYPOTHESIS_ORACLE = {
+    "observed-a": (
+        "xic.peak-hypothesis.v1:"
+        "87675a5a6d51d22519a8fabbe877b0c26d060672ec2a7ea542c0e71059ad3d7b"
+    ),
+    "observed-b": (
+        "xic.peak-hypothesis.v1:"
+        "30779caaa6d08f18c0dc72ec7d80ec293767cb7a59abaceb7b0fac0c21b60a5b"
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -177,6 +206,16 @@ def test_complete_method_is_hard_exact_and_rollback_preserves_legacy_current(
         "observed",
         "true_missing",
     ]
+    assert _trace_oracle(request) == _FROZEN_TRACE_ORACLE
+    assert _hypothesis_oracle(request) == _FROZEN_HYPOTHESIS_ORACLE
+    assert result.groups[0].owner_ids == tuple(_FROZEN_HYPOTHESIS_ORACLE.values())
+    backfilled = next(cell for cell in result.cells if cell.status == "backfilled")
+    assert backfilled.selected_integration is not None
+    assert (
+        backfilled.selected_integration.rt_apex_min,
+        backfilled.selected_integration.area_raw_counts_seconds,
+        backfilled.selected_integration.area_ms1_morphology,
+    ) == (8.01, 2951.9999999999864, 2835.100474933266)
     target = request.targets[0]
     baseline_config = replace(
         request.peak_config,
@@ -412,6 +451,40 @@ def test_exact_byte_difference_is_retained_in_attempt_namespace(tmp_path: Path) 
     assert difference_path.read_bytes() != b"different\n"
 
 
+def test_package2_validation_packet_is_exact_zero_and_complete() -> None:
+    manifest_path = _VALIDATION_PACKET / "difference_manifest.tsv"
+    manifest_bytes = manifest_path.read_bytes()
+    assert hashlib.sha256(manifest_bytes).hexdigest() == (
+        _FROZEN_DIFFERENCE_MANIFEST_SHA256
+    )
+    with manifest_path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle, delimiter="\t"))
+
+    assert len(rows) == 13
+    assert all(row["old_value"] == row["new_value"] for row in rows)
+    assert all(row["classification"].startswith("exact_zero_") for row in rows)
+    assert {row["stage"] for row in rows} == {
+        "trace",
+        "hypothesis",
+        "alignment",
+        "backfill",
+        "selection",
+        "selected_result",
+        "xic_results_csv",
+        "matrix",
+        "writer",
+    }
+    assert any(_FROZEN_LEGACY_CSV_SHA256 in row["old_value"] for row in rows)
+    assert any(
+        "6792d0fcd4d15b3cf23f2ce9e174fdbf96ed8399" in row["old_value"] for row in rows
+    )
+    inventory = (_VALIDATION_PACKET / "artifact_inventory.tsv").read_text(
+        encoding="utf-8"
+    )
+    assert _FROZEN_DIFFERENCE_MANIFEST_SHA256 in inventory
+    assert _FROZEN_LEGACY_CSV_SHA256 in inventory
+
+
 def _method_request(
     tmp_path: Path,
 ) -> tuple[TargetedDiagnosticMethodRequest, Package2NoRawFixture]:
@@ -432,6 +505,32 @@ def _method_request(
         authoritative_legacy_output=_legacy_output(target),
     )
     return request, fixture
+
+
+def _trace_oracle(request: TargetedDiagnosticMethodRequest):
+    return {
+        item.sample.metadata.raw_stem: (
+            item.candidate_hypotheses[0]
+            .peak_observation_refs[0]
+            .content.peak_observation_content_id,
+            item.candidate_hypotheses[0]
+            .peak_observation_refs[0]
+            .generation_provenance.full_trace_sha256,
+            item.candidate_hypotheses[0]
+            .peak_observation_refs[0]
+            .generation_provenance.selection_trace_sha256,
+        )
+        for item in request.alignment_inputs
+        if item.sample.metadata.raw_stem in _FROZEN_TRACE_ORACLE
+    }
+
+
+def _hypothesis_oracle(request: TargetedDiagnosticMethodRequest):
+    return {
+        item.sample.metadata.raw_stem: item.candidate_hypotheses[0].hypothesis_id
+        for item in request.alignment_inputs
+        if item.sample.metadata.raw_stem in _FROZEN_HYPOTHESIS_ORACLE
+    }
 
 
 def _legacy_output(_target: Target) -> RunOutput:
