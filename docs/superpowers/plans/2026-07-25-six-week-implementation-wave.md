@@ -27,15 +27,15 @@ Last updated: 2026-07-27
 
 Current validation status: `diagnostic_only`
 
-Current issue gate: the activated Package 0 / Issue #149 closure slice is
-complete for exactly two runtime surfaces: a concrete owner-path-supplied
-durable launch/finalization marker with coordinator-loss recovery, and
-Alignment's existing no-RAW process runner as the second consumer of the shared
-`AttemptRuntime`/finalization lifecycle. Package 0 remains open because its
-other canonical exits are not bundled into this slice. This section is the
-canonical local write-scope record; it does not authorize GitHub publication.
-No later Package 0 slice, Package 1 batch `PeakObservation`, or Package 2
-mutation is currently activated.
+Current issue gate: full Package 0 / Issue #149 closure is explicitly activated
+through every remaining canonical exit: work events/offsets/metrics,
+acquisition capability/trace coordinates, delivery-cell/revision/seal,
+equal-adapter CLI/GUI `cid-dR` parity, and the executable successor comparator.
+Execution continues across integrated logical slices without returning for
+administrative reactivation. This section is the canonical local write-scope
+record; it does not authorize GitHub publication, Package 1 batch
+`PeakObservation`, Package 2, RAW/DLL, product activation, Matrix/XLSX writing,
+or behavior change.
 
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
