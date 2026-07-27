@@ -331,7 +331,7 @@ Progress vocabulary:
 | Package 0 — executable no-RAW contracts | `evidence_passed` / complete | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering. This branch closes manifest/work/resource/artifact/finalization and recovery-marker behavior for Targeted plus Alignment, then adds executable work-event/offset/metric availability, capability-aware trace coordinates, Targeted delivery-cell/revision/stage/seal candidates, CLI/GUI equal-adapter receipts, and the frozen successor receipt comparator. All remain no-RAW and `diagnostic_only`. | None inside Package 0. Remote Issue #149 state is unchanged because no GitHub mutation was authorized. |
 | Package 1 — pure runtime and observation substrates | `evidence_passed` / complete | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed runtime slices add a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, manifest-ordered application consumption, resource lifecycle, supervisor finalization, and the narrow recovery marker consumed by both Targeted and Alignment without serializing legacy DTOs or adding storage. Slice 2 now composes both real process consumers with the existing capability-aware batch acquisition and physical-observation owners: true spawned serial/reordered runs preserve immutable signal snapshots, source/kind coordinate truth, request/call/point counts, exact owner/observation lineage, replay idempotence, conflict quarantine, terminal dispositions, and byte-identical canonical receipts without invoking a writer. Its executable `DifferenceManifest` binds the explained internal carrier change to the immutable frozen comparator and one comparator-owned experiment entry that overwrites output paths, pins root identity, accepts only exact primitive no-RAW jobs, runs fixed Targeted/Alignment workers to synchronous drain, inventories final-state paths/bytes, and privately mints the receipt. | None inside Package 1. Package 2 selection/externalization and downstream method wiring remain inactive. |
 | Package 2 — complete Targeted CID-NL method | `evidence_passed` / complete / `diagnostic_only` / no-RAW | At frozen product-code head `c25da8bb`, the full six-sample method, spawned consumers, typed delivery, failure quarantine, rollback, successor-only projection, and full scientific carrier binding pass. Fresh QA reports 79/79 changed-set and 27/27 real-surface tests; seven shards report 6,050 passed/4 skipped. Final independent fixed-diff review at docs-coherent head `a945692a` returned `APPROVE` with no blocking finding. | None inside Package 2. Any future RAW, Matrix/XLSX, public-contract, maturity, writer-authority, or Package 3 work requires a separate authorized scope. |
-| Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
+| Package 3A — bounded real-data lifecycle | `active` / corrected-preflight-third-review-pending / `diagnostic_only` | Operator authorization was received on 2026-07-27 and the isolated local lane is active on `codex/package-3a-real-data-lifecycle`. The frozen eight-sample RAW inventory, exact Thermo net8 DLL hashes, canonical comparator workbook hash, formal manifests, WSL CoreCLR Trace canary, and task runtime budget are sealed without launching the full Discovery run. Local commits `747f07d1` and `3b4a894a` fix batch-index BOM compatibility and live timing/WSL runner authority. Two fresh validation/science reviews found output-root, runner, executable budget, then exact DLL-identity gaps; all findings now have focused no-RAW corrections and tests. | Obtain a third fresh `APPROVE` on the corrected packet, then run only the foreground frozen 8RAW constrained Discovery. Validate current owner-produced candidate identity/lineage before any real-data Targeted adapter mutation. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
 | Package 4 — compare and decide | `not_started` | None. | Full tracer evidence, rollback rehearsal, and successor-versus-strangler comparison. |
 
@@ -678,6 +678,40 @@ A trace-only, Discovery-only, or single-sample extraction smoke does not satisfy
 this milestone.
 
 ### Package 3A — Run The Smallest Bounded Real-Data Targeted Lifecycle
+
+**Active local scope (2026-07-27):** this task owns only the isolated
+`codex/package-3a-real-data-lifecycle` tracker, diagnostic tracer handoff, and
+validation packet needed to prove or falsify the existing frozen 8RAW
+Targeted lifecycle. The lane remains `diagnostic_only`: legacy output is
+authoritative and successor artifacts use a separate attempt namespace. The
+task does not include 85RAW, widened Untargeted Discovery, Matrix/XLSX,
+promotion, or any public CLI/config/schema/writer-authority change.
+
+The exact RAW/DLL stat-only inventory, comparator hash, proposal/reference/
+sampling/review/lineage/parameter manifests, WSL CoreCLR canary, and elapsed/RSS
+budget are now sealed. The first independent preflight reviewer stopped launch
+because the command omitted its task-specific output root, the WSL runner
+exception was absent from the parameter owner, and timing/RSS/timeout controls
+were not executable. The corrected packet binds a fresh attempt root, reuses
+the existing `--timing-output` as `TimingRecorder.live_output_path`, records the
+narrow WSL runner exception, and quarantines the whole attempt on timeout, RSS,
+or child-process failure. A second fresh reviewer found that same-name Thermo
+DLLs were not yet bound to the canary-approved binaries; the guard now requires
+both exact `8.0.37.0` SHA-256 values before child launch. Focused no-RAW evidence
+is 19 Discovery CLI tests and 6 guard tests plus Ruff/diff and actual stat/hash-
+only input checks; a third fresh review is still required.
+
+Historical runtimes are not a comparable performance baseline: operator
+evidence places Targeted 85RAW around 5–10 minutes and Untargeted 85RAW around
+30 minutes, while the older 22–25 minute observation covered a different
+single-RAW/window workload. Performance therefore remains `baseline_needed /
+diagnostic_only`; four hours is only a safety timeout, not an expected runtime
+or acceptance threshold. After fresh approval, the only authorized run is the
+bounded frozen 8RAW lifecycle. Any unexpected selected peak, boundary, area,
+confidence/reason, counted state, CSV byte, Matrix, or writer-behavior
+difference is an immediate stop with preserved difference evidence. The
+repeated-failure rule remains two identical failures without new evidence
+before switching to diagnosis, and three before runtime-Goal blocked handling.
 
 No RAW run is automatic. Before each run:
 
