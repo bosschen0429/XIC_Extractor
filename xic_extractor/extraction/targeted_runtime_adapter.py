@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from xic_extractor.evidence_artifacts import (
@@ -26,6 +26,21 @@ from xic_extractor.execution_runtime import (
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
     settle_work_unit,
+)
+from xic_extractor.execution_runtime_finalization import (
+    AttemptFinalizationState,
+    CoordinatorTerminalRecord,
+    RuntimeResourceCleanupOutcome,
+    RuntimeResourceOpenOutcome,
+    RuntimeResourceReservation,
+    SupervisorFinalizationRecord,
+    accept_supervisor_finalization,
+    begin_attempt_finalization,
+    mint_supervisor_finalization,
+    propose_attempt_terminal,
+    register_runtime_artifact,
+    reserve_runtime_resource,
+    settle_runtime_resource,
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
@@ -114,8 +129,7 @@ class TargetedProcessWorkerResultEnvelope:
         if self.outcome is WorkUnitTerminalOutcome.SUCCEEDED:
             if not isinstance(self.owner_result_ref, TargetedProcessResultRef):
                 raise TargetedRuntimeAdapterError(
-                    "succeeded result envelope requires a "
-                    "TargetedProcessResultRef"
+                    "succeeded result envelope requires a TargetedProcessResultRef"
                 )
             if self.owner_result_ref.work_unit_key != self.work_unit_key:
                 raise TargetedRuntimeAdapterError(
@@ -183,6 +197,109 @@ class TargetedRuntimeApplicationResult:
                 raise TargetedRuntimeAdapterError(
                     "successful result ref must match the accepted settlement"
                 )
+
+
+@dataclass(frozen=True, slots=True)
+class TargetedProcessResourceReport:
+    """Pickleable child report for one parent-reserved runtime resource."""
+
+    attempt: ProcessingAttemptIdentity
+    resource_key: str
+    open_outcome: RuntimeResourceOpenOutcome
+    cleanup_outcome: RuntimeResourceCleanupOutcome
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.attempt, ProcessingAttemptIdentity):
+            raise TargetedRuntimeAdapterError(
+                "attempt must be an owner-issued ProcessingAttemptIdentity"
+            )
+        _required_text(self.resource_key, field="resource_key")
+        if not isinstance(self.open_outcome, RuntimeResourceOpenOutcome):
+            raise TargetedRuntimeAdapterError(
+                "open_outcome must be a RuntimeResourceOpenOutcome"
+            )
+        if not isinstance(self.cleanup_outcome, RuntimeResourceCleanupOutcome):
+            raise TargetedRuntimeAdapterError(
+                "cleanup_outcome must be a RuntimeResourceCleanupOutcome"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class TargetedRuntimeWorkerBatch:
+    """Closed worker batch with work, resource, and temporary-artifact facts."""
+
+    result_envelopes: tuple[TargetedProcessWorkerResultEnvelope, ...]
+    resource_reports: tuple[TargetedProcessResourceReport, ...]
+    runtime_artifact_refs: tuple[TargetedProcessResultRef, ...]
+
+    def __post_init__(self) -> None:
+        _require_tuple_of(
+            self.result_envelopes,
+            TargetedProcessWorkerResultEnvelope,
+            field="result_envelopes",
+        )
+        _require_tuple_of(
+            self.resource_reports,
+            TargetedProcessResourceReport,
+            field="resource_reports",
+        )
+        _require_tuple_of(
+            self.runtime_artifact_refs,
+            TargetedProcessResultRef,
+            field="runtime_artifact_refs",
+        )
+        artifact_ids = tuple(
+            reference.artifact.evidence_artifact_id
+            for reference in self.runtime_artifact_refs
+        )
+        if len(artifact_ids) != len(set(artifact_ids)):
+            raise TargetedRuntimeAdapterError(
+                "runtime_artifact_refs must contain unique artifacts"
+            )
+        registered_ids = set(artifact_ids)
+        missing_success_refs = tuple(
+            envelope.owner_result_ref.artifact.evidence_artifact_id
+            for envelope in self.result_envelopes
+            if envelope.outcome is WorkUnitTerminalOutcome.SUCCEEDED
+            and envelope.owner_result_ref is not None
+            and envelope.owner_result_ref.artifact.evidence_artifact_id
+            not in registered_ids
+        )
+        if missing_success_refs:
+            raise TargetedRuntimeAdapterError(
+                "every successful result ref must be a registered runtime artifact"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class TargetedRuntimeLifecycleApplicationResult:
+    """Targeted settlement plus an accepted atomic terminal acknowledgement."""
+
+    settlement: TargetedRuntimeApplicationResult
+    coordinator_record: CoordinatorTerminalRecord
+    finalization_record: SupervisorFinalizationRecord
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.settlement, TargetedRuntimeApplicationResult):
+            raise TargetedRuntimeAdapterError(
+                "settlement must be a TargetedRuntimeApplicationResult"
+            )
+        if not isinstance(self.coordinator_record, CoordinatorTerminalRecord):
+            raise TargetedRuntimeAdapterError(
+                "coordinator_record must be a CoordinatorTerminalRecord"
+            )
+        if not isinstance(self.finalization_record, SupervisorFinalizationRecord):
+            raise TargetedRuntimeAdapterError(
+                "finalization_record must be a SupervisorFinalizationRecord"
+            )
+        if (
+            self.coordinator_record.state.runtime != self.settlement.runtime
+            or self.finalization_record.attempt
+            != self.settlement.runtime.manifest.attempt
+        ):
+            raise TargetedRuntimeAdapterError(
+                "lifecycle result must bind one settled runtime attempt"
+            )
 
 
 def canonical_targeted_process_result_identity_bytes(
@@ -331,6 +448,89 @@ def settle_targeted_process_worker_results(
     )
 
 
+def prepare_targeted_runtime_lifecycle(
+    runtime: AttemptRuntime,
+    reservations: Sequence[RuntimeResourceReservation],
+) -> AttemptFinalizationState:
+    """Reserve every declared resource before the Targeted runner is invoked."""
+
+    state = begin_attempt_finalization(runtime)
+    if isinstance(reservations, (str, bytes)):
+        raise TargetedRuntimeAdapterError(
+            "reservations must contain RuntimeResourceReservation values"
+        )
+    try:
+        reservation_batch = tuple(reservations)
+    except TypeError as exc:
+        raise TargetedRuntimeAdapterError(
+            "reservations must contain RuntimeResourceReservation values"
+        ) from exc
+    for reservation in reservation_batch:
+        if not isinstance(reservation, RuntimeResourceReservation):
+            raise TargetedRuntimeAdapterError(
+                "reservations must contain RuntimeResourceReservation values"
+            )
+        state = reserve_runtime_resource(state, reservation)
+    return state
+
+
+def finalize_targeted_runtime_worker_batch(
+    state: AttemptFinalizationState,
+    batch: TargetedRuntimeWorkerBatch,
+    *,
+    supervisor_finalizer: Callable[
+        [CoordinatorTerminalRecord, SupervisorFinalizationRecord],
+        SupervisorFinalizationRecord,
+    ],
+) -> TargetedRuntimeLifecycleApplicationResult:
+    """Close one Targeted worker batch and require supervisor acknowledgement."""
+
+    if not isinstance(state, AttemptFinalizationState):
+        raise TargetedRuntimeAdapterError("state must be an AttemptFinalizationState")
+    if not isinstance(batch, TargetedRuntimeWorkerBatch):
+        raise TargetedRuntimeAdapterError("batch must be a TargetedRuntimeWorkerBatch")
+    if not callable(supervisor_finalizer):
+        raise TargetedRuntimeAdapterError("supervisor_finalizer must be callable")
+    attempt = state.runtime.manifest.attempt
+    if any(report.attempt != attempt for report in batch.resource_reports):
+        raise TargetedRuntimeAdapterError(
+            "resource report references a different runtime attempt"
+        )
+    settlement = settle_targeted_process_worker_results(
+        state.runtime,
+        batch.result_envelopes,
+    )
+    current = AttemptFinalizationState(
+        runtime=settlement.runtime,
+        resources=state.resources,
+        artifacts=state.artifacts,
+        events=state.events,
+        failures=state.failures,
+    )
+    for reference in batch.runtime_artifact_refs:
+        current = register_runtime_artifact(
+            current,
+            work_unit_key=reference.work_unit_key,
+            artifact=reference.artifact,
+        )
+    for report in batch.resource_reports:
+        current = settle_runtime_resource(
+            current,
+            resource_key=report.resource_key,
+            open_outcome=report.open_outcome,
+            cleanup_outcome=report.cleanup_outcome,
+        )
+    coordinator = propose_attempt_terminal(current)
+    proposed = mint_supervisor_finalization(coordinator)
+    submitted = supervisor_finalizer(coordinator, proposed)
+    accepted = accept_supervisor_finalization(coordinator, submitted)
+    return TargetedRuntimeLifecycleApplicationResult(
+        settlement=settlement,
+        coordinator_record=coordinator,
+        finalization_record=accepted,
+    )
+
+
 def _required_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise TargetedRuntimeAdapterError(
@@ -339,12 +539,26 @@ def _required_text(value: object, *, field: str) -> str:
     return value
 
 
+def _require_tuple_of(value: object, item_type: type, *, field: str) -> None:
+    if not isinstance(value, tuple) or any(
+        not isinstance(item, item_type) for item in value
+    ):
+        raise TargetedRuntimeAdapterError(
+            f"{field} must be a tuple of {item_type.__name__} values"
+        )
+
+
 __all__ = [
+    "TargetedProcessResourceReport",
     "TargetedProcessResultRef",
     "TargetedProcessWorkerResultEnvelope",
     "TargetedRuntimeAdapterError",
     "TargetedRuntimeApplicationResult",
+    "TargetedRuntimeLifecycleApplicationResult",
+    "TargetedRuntimeWorkerBatch",
     "canonical_targeted_process_result_identity_bytes",
+    "finalize_targeted_runtime_worker_batch",
     "mint_targeted_process_result_ref",
+    "prepare_targeted_runtime_lifecycle",
     "settle_targeted_process_worker_results",
 ]

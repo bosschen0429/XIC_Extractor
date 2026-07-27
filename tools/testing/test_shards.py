@@ -66,6 +66,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_excel_*.py",
             "tests/test_extraction_*.py",
             "tests/test_execution_runtime_events.py",
+            "tests/test_execution_runtime_finalization.py",
             "tests/test_extractor*.py",
             "tests/test_gaussian15_area_pressure_audit.py",
             "tests/test_injection_rolling.py",

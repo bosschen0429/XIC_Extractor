@@ -6,6 +6,12 @@ from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime import AttemptRuntime
+from xic_extractor.execution_runtime_finalization import (
+    AttemptFinalizationState,
+    CoordinatorTerminalRecord,
+    RuntimeResourceReservation,
+    SupervisorFinalizationRecord,
+)
 from xic_extractor.rt_prior_library import LibraryEntry
 
 from .targeted_inputs import resolve_model_selection_expected_diff_approvals
@@ -13,6 +19,10 @@ from .targeted_runtime_adapter import (
     TargetedProcessWorkerResultEnvelope,
     TargetedRuntimeAdapterError,
     TargetedRuntimeApplicationResult,
+    TargetedRuntimeLifecycleApplicationResult,
+    TargetedRuntimeWorkerBatch,
+    finalize_targeted_runtime_worker_batch,
+    prepare_targeted_runtime_lifecycle,
     settle_targeted_process_worker_results,
 )
 
@@ -46,6 +56,22 @@ class TargetedRuntimeRunner(Protocol):
     ) -> Sequence[TargetedProcessWorkerResultEnvelope]: ...
 
 
+class TargetedRuntimeLifecycleRunner(Protocol):
+    def __call__(
+        self,
+        request: TargetedApplicationRequest,
+        state: AttemptFinalizationState,
+    ) -> TargetedRuntimeWorkerBatch: ...
+
+
+class TargetedRuntimeSupervisorFinalizer(Protocol):
+    def __call__(
+        self,
+        coordinator: CoordinatorTerminalRecord,
+        proposed: SupervisorFinalizationRecord,
+    ) -> SupervisorFinalizationRecord: ...
+
+
 @dataclass(frozen=True)
 class TargetedApplicationRequest:
     """Headless application input; callbacks are lifecycle adapters, not science."""
@@ -60,10 +86,13 @@ class TargetedApplicationRequest:
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None
 
+
 @dataclass(frozen=True)
 class TargetedApplicationService:
     runner: TargetedRunner
     runtime_runner: TargetedRuntimeRunner | None = None
+    runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
+    runtime_supervisor_finalizer: TargetedRuntimeSupervisorFinalizer | None = None
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
         resolved_request = _resolve_application_request(request)
@@ -88,12 +117,39 @@ class TargetedApplicationService:
 
         if self.runtime_runner is None:
             raise TargetedRuntimeAdapterError(
-                "TargetedApplicationService requires runtime_runner for "
-                "execute_runtime"
+                "TargetedApplicationService requires runtime_runner for execute_runtime"
             )
         resolved_request = _resolve_application_request(request)
         envelopes = self.runtime_runner(resolved_request, runtime)
         return settle_targeted_process_worker_results(runtime, envelopes)
+
+    def execute_runtime_lifecycle(
+        self,
+        request: TargetedApplicationRequest,
+        runtime: AttemptRuntime,
+        *,
+        resource_reservations: Sequence[RuntimeResourceReservation],
+    ) -> TargetedRuntimeLifecycleApplicationResult:
+        """Reserve, dispatch, settle, and require one supervisor acknowledgement."""
+
+        if self.runtime_lifecycle_runner is None:
+            raise TargetedRuntimeAdapterError(
+                "TargetedApplicationService requires runtime_lifecycle_runner "
+                "for execute_runtime_lifecycle"
+            )
+        if self.runtime_supervisor_finalizer is None:
+            raise TargetedRuntimeAdapterError(
+                "TargetedApplicationService requires runtime_supervisor_finalizer "
+                "for execute_runtime_lifecycle"
+            )
+        resolved_request = _resolve_application_request(request)
+        state = prepare_targeted_runtime_lifecycle(runtime, resource_reservations)
+        batch = self.runtime_lifecycle_runner(resolved_request, state)
+        return finalize_targeted_runtime_worker_batch(
+            state,
+            batch,
+            supervisor_finalizer=self.runtime_supervisor_finalizer,
+        )
 
 
 def build_targeted_application_request(

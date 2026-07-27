@@ -455,10 +455,30 @@ spawned process, and
 `TargetedApplicationService.execute_runtime` consumes reordered envelopes and
 settles the existing runtime in manifest order. This boundary is
 `wired_no_raw` and remains `diagnostic_only`; default legacy execution and all
-product outputs are unchanged. Alignment is not yet a second consumer, and the
-runtime still does not record work events, monotonic offsets or metric
-availability, settle resources/artifact dispositions, or durably acknowledge a
-terminal outcome.
+product outputs are unchanged.
+
+The next bounded Targeted lifecycle seam is also executable no-RAW. The focused
+`execution_runtime_finalization` owner companions reserve resources before the
+process runner, accept exactly one open and cleanup outcome per reservation,
+close worker loss conservatively, register current-attempt immutable artifacts,
+and freeze a content-bound `CoordinatorTerminalRecord`. The supervisor layer
+mints one atomic acknowledgement batch containing `terminal_acknowledged`, one
+committed disposition per registered artifact, and `terminal_outcome`.
+`TargetedApplicationService.execute_runtime_lifecycle` supplies the first real
+consumer: a true spawned process returns work/resource/artifact facts, and an
+owner-supplied supervisor callback must return the exact canonical
+`SupervisorFinalizationRecord` before the application result exists. Success
+offers every registered artifact only to its owner; failure, cancellation, or
+worker-loss cleanup unknown quarantines the whole registered current-attempt
+set. Conflicting or missing cleanup and acknowledgement fail closed.
+
+This is still `diagnostic_only`. The callback is the explicit physical
+persistence seam; the repo has not selected a storage schema, path, CAS,
+current pointer, product seal, or publication mechanism, and the no-RAW fixture
+does not claim that an in-memory callback is durable storage. Alignment is not
+yet a second consumer, and work events, monotonic offsets, metric availability,
+the concrete durable launch/finalization marker integration, and
+coordinator-loss recovery around that marker remain open.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.

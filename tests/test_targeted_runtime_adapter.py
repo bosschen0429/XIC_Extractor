@@ -18,10 +18,20 @@ from xic_extractor.execution_runtime import (
     preflight_required_work_manifest,
     start_attempt_runtime,
 )
+from xic_extractor.execution_runtime_finalization import (
+    RuntimeArtifactDisposition,
+    RuntimeFinalizationContractError,
+    RuntimeLifecycleEventKind,
+    RuntimeResourceCleanupOutcome,
+    RuntimeResourceOpenOutcome,
+    RuntimeResourceReservation,
+)
 from xic_extractor.extraction.targeted_runtime_adapter import (
+    TargetedProcessResourceReport,
     TargetedProcessResultRef,
     TargetedProcessWorkerResultEnvelope,
     TargetedRuntimeAdapterError,
+    TargetedRuntimeWorkerBatch,
     canonical_targeted_process_result_identity_bytes,
     mint_targeted_process_result_ref,
     settle_targeted_process_worker_results,
@@ -45,6 +55,55 @@ def _build_spawned_envelope(
         attempt,
         work_unit_key,
         _result_ref(attempt, work_unit_key, payload),
+    )
+
+
+def _build_spawned_lifecycle_batch(
+    attempt: ProcessingAttemptIdentity,
+    work_unit_key: str,
+    payload: bytes,
+) -> TargetedRuntimeWorkerBatch:
+    reference = _result_ref(attempt, work_unit_key, payload)
+    return TargetedRuntimeWorkerBatch(
+        result_envelopes=(_success(attempt, work_unit_key, reference),),
+        resource_reports=(
+            TargetedProcessResourceReport(
+                attempt=attempt,
+                resource_key="session:a",
+                open_outcome=RuntimeResourceOpenOutcome.OPENED,
+                cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+            ),
+        ),
+        runtime_artifact_refs=(reference,),
+    )
+
+
+def _build_spawned_worker_loss_batch(
+    attempt: ProcessingAttemptIdentity,
+) -> TargetedRuntimeWorkerBatch:
+    partial = _result_ref(attempt, "raw:a", b"partial-before-worker-loss")
+    return TargetedRuntimeWorkerBatch(
+        result_envelopes=(
+            TargetedProcessWorkerResultEnvelope(
+                attempt=attempt,
+                work_unit_key="raw:a",
+                outcome=WorkUnitTerminalOutcome.FAILED,
+                failure_message="worker lost",
+            ),
+        ),
+        resource_reports=(
+            TargetedProcessResourceReport(
+                attempt=attempt,
+                resource_key="session:a",
+                open_outcome=(
+                    RuntimeResourceOpenOutcome.OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS
+                ),
+                cleanup_outcome=(
+                    RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS
+                ),
+            ),
+        ),
+        runtime_artifact_refs=(partial,),
     )
 
 
@@ -101,6 +160,161 @@ def test_targeted_application_service_settles_reordered_process_results(
     assert result.successful_result_refs == (
         ("raw:a", _result_ref(attempt, "raw:a", b"owner-a")),
         ("raw:b", _result_ref(attempt, "raw:b", b"owner-b")),
+    )
+
+
+def test_targeted_application_service_closes_true_process_lifecycle(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.extraction.targeted_service import (
+        TargetedApplicationService,
+        build_targeted_application_request,
+    )
+
+    attempt = _attempt(tmp_path)
+    runtime = _runtime(attempt, ("raw:a",))
+    observed_states = []
+    finalized = []
+
+    def legacy_runner(*_args, **_kwargs):
+        raise AssertionError("runtime lifecycle must not call the legacy runner")
+
+    def lifecycle_runner(_request, state):
+        observed_states.append(state)
+        assert len(state.resources) == 1
+        assert state.resources[0].open_outcome is None
+        assert state.events[-1].kind is RuntimeLifecycleEventKind.RESOURCE_RESERVED
+        with ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=get_context("spawn"),
+        ) as executor:
+            return executor.submit(
+                _build_spawned_lifecycle_batch,
+                attempt,
+                "raw:a",
+                b"spawned-lifecycle-result",
+            ).result(timeout=15)
+
+    def supervisor_finalizer(coordinator, proposed):
+        finalized.append((coordinator, proposed))
+        return proposed
+
+    service = TargetedApplicationService(
+        legacy_runner,
+        runtime_lifecycle_runner=lifecycle_runner,
+        runtime_supervisor_finalizer=supervisor_finalizer,
+    )
+    result = service.execute_runtime_lifecycle(
+        build_targeted_application_request(_config(), [_target()]),
+        runtime,
+        resource_reservations=(_reservation(attempt),),
+    )
+
+    assert len(observed_states) == 1
+    assert len(finalized) == 1
+    assert result.settlement.runtime.all_manifest_work_settled is True
+    assert result.finalization_record.artifact_dispositions == (
+        (
+            _result_ref(
+                attempt,
+                "raw:a",
+                b"spawned-lifecycle-result",
+            ).artifact.evidence_artifact_id,
+            RuntimeArtifactDisposition.OFFERED_TO_OWNER,
+        ),
+    )
+
+
+def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    from xic_extractor.extraction.targeted_service import (
+        TargetedApplicationService,
+        build_targeted_application_request,
+    )
+
+    attempt = _attempt(tmp_path)
+    reference = _result_ref(attempt, "raw:a", b"result")
+    batch = TargetedRuntimeWorkerBatch(
+        result_envelopes=(_success(attempt, "raw:a", reference),),
+        resource_reports=(
+            TargetedProcessResourceReport(
+                attempt=attempt,
+                resource_key="session:a",
+                open_outcome=RuntimeResourceOpenOutcome.OPENED,
+                cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+            ),
+        ),
+        runtime_artifact_refs=(reference,),
+    )
+
+    def legacy_runner(*_args, **_kwargs):
+        raise AssertionError("runtime lifecycle must not call the legacy runner")
+
+    service = TargetedApplicationService(
+        legacy_runner,
+        runtime_lifecycle_runner=lambda _request, _state: batch,
+        runtime_supervisor_finalizer=lambda _coordinator, proposed: replace(
+            proposed,
+            coordinator_record_sha256="0" * 64,
+        ),
+    )
+
+    with pytest.raises(RuntimeFinalizationContractError, match="conflicts"):
+        service.execute_runtime_lifecycle(
+            build_targeted_application_request(_config(), [_target()]),
+            _runtime(attempt, ("raw:a",)),
+            resource_reservations=(_reservation(attempt),),
+        )
+
+
+def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.execution_runtime import AttemptTerminalOutcome
+    from xic_extractor.extraction.targeted_service import (
+        TargetedApplicationService,
+        build_targeted_application_request,
+    )
+
+    attempt = _attempt(tmp_path)
+
+    def legacy_runner(*_args, **_kwargs):
+        raise AssertionError("runtime lifecycle must not call the legacy runner")
+
+    def lifecycle_runner(_request, _state):
+        with ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=get_context("spawn"),
+        ) as executor:
+            return executor.submit(
+                _build_spawned_worker_loss_batch,
+                attempt,
+            ).result(timeout=15)
+
+    service = TargetedApplicationService(
+        legacy_runner,
+        runtime_lifecycle_runner=lifecycle_runner,
+        runtime_supervisor_finalizer=lambda _coordinator, proposed: proposed,
+    )
+    result = service.execute_runtime_lifecycle(
+        build_targeted_application_request(_config(), [_target()]),
+        _runtime(attempt, ("raw:a",)),
+        resource_reservations=(_reservation(attempt),),
+    )
+
+    assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert result.finalization_record.artifact_dispositions == (
+        (
+            _result_ref(
+                attempt,
+                "raw:a",
+                b"partial-before-worker-loss",
+            ).artifact.evidence_artifact_id,
+            RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC,
+        ),
     )
 
 
@@ -272,6 +486,16 @@ def _runtime(
             work_unit_keys=work_unit_keys,
             owner_completeness_attestation="targeted-runtime-adapter:v1",
         )
+    )
+
+
+def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservation:
+    return RuntimeResourceReservation(
+        attempt=attempt,
+        resource_key="session:a",
+        worker_key="worker:1",
+        source_reference="source:a",
+        compatibility_token="targeted-runtime-test:v1",
     )
 
 
