@@ -27,14 +27,14 @@ Last updated: 2026-07-27
 
 Current validation status: `diagnostic_only`
 
-Current issue gate: the explicitly activated Package 1 resource-lifecycle,
-exactly-once terminal cleanup, runtime-artifact disposition, coordinator
-terminal proposal, and supervisor acknowledgement slice is complete through
-the existing Targeted runtime adapter. No later Package 1 observation slice or
-Package 2 mutation is currently activated. This section is the canonical
-write-scope record; Package 0 / Issue #149 remains open. A proposed dedicated
-GitHub issue body is retained under ignored task output because external
-publication was not authorized for that exact payload.
+Current issue gate: Package 0 / Issue #149 closure is explicitly activated for
+exactly two remaining runtime surfaces: a concrete owner-path-supplied durable
+launch/finalization marker with coordinator-loss recovery, and Alignment's
+existing no-RAW process runner as the second consumer of the shared
+`AttemptRuntime`/finalization lifecycle. This section is the canonical local
+write-scope record; it does not authorize GitHub publication. The completed
+Package 1 result-envelope/resource-lifecycle slices remain available for reuse,
+but no Package 1 batch `PeakObservation` or Package 2 mutation is activated.
 
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
