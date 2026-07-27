@@ -33,14 +33,14 @@ class PipelineWorker(QThread):
     def run(self) -> None:
         try:
             config, targets = config_module.load_config(self._config_dir)
-            output = TargetedApplicationService(extractor.run).execute(
+            output = TargetedApplicationService(extractor.run).execute_application(
                 build_targeted_application_request(
                     config,
                     targets,
                     progress_callback=self.progress.emit,
                     should_stop=self.isInterruptionRequested,
                 )
-            )
+            ).active_output
             if self.isInterruptionRequested():
                 self.cancelled.emit()
                 return

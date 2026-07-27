@@ -133,13 +133,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ) from exc
             output, excel_config = auto_result
         else:
-            output = TargetedApplicationService(extractor.run).execute(
+            output = TargetedApplicationService(extractor.run).execute_application(
                 build_targeted_application_request(
                     run_config,
                     targets,
                     progress_callback=_print_progress,
                 )
-            )
+            ).active_output
             write_method_manifest(
                 run_config,
                 targets,
@@ -386,14 +386,14 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited baseline output: {baseline_output_dir}")
-    TargetedApplicationService(extractor.run).execute(
+    TargetedApplicationService(extractor.run).execute_application(
         build_targeted_application_request(
             baseline_config,
             targets,
             progress_callback=_print_progress,
             model_selection_expected_diff_approvals=approval_snapshot,
         )
-    )
+    ).active_output
     write_method_manifest(
         baseline_config,
         targets,
@@ -431,14 +431,14 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited unverified final output: {final_staging_output_dir}")
-    final_output = TargetedApplicationService(extractor.run).execute(
+    final_output = TargetedApplicationService(extractor.run).execute_application(
         build_targeted_application_request(
             final_staging_config,
             targets,
             progress_callback=_print_progress,
             model_selection_expected_diff_approvals=approval_snapshot,
         )
-    )
+    ).active_output
     diff_outputs = write_targeted_ms1_shape_identity_auto_diff_artifacts(
         baseline_output_dir=baseline_output_dir,
         optin_output_dir=final_staging_output_dir,

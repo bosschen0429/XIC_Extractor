@@ -73,6 +73,14 @@ class TargetedDiagnosticMethodRunner(Protocol):
     ) -> TargetedDiagnosticMethodResult: ...
 
 
+class TargetedDiagnosticMethodRequestFactory(Protocol):
+    def __call__(
+        self,
+        request: TargetedApplicationRequest,
+        authoritative_legacy_output: RunOutput,
+    ) -> TargetedDiagnosticMethodRequest: ...
+
+
 @dataclass(frozen=True)
 class TargetedApplicationRequest:
     """Headless application input; callbacks are lifecycle adapters, not science."""
@@ -89,16 +97,37 @@ class TargetedApplicationRequest:
 
 
 @dataclass(frozen=True)
+class TargetedApplicationExecution:
+    """One adapter-neutral run; legacy remains active during diagnostic migration."""
+
+    active_output: RunOutput
+    diagnostic_method_result: TargetedDiagnosticMethodResult | None = None
+
+
+@dataclass(frozen=True)
 class TargetedApplicationService:
     runner: TargetedRunner
     runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
     runtime_finalization_persister: TargetedRuntimeFinalizationPersister | None = None
     runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
     diagnostic_method_runner: TargetedDiagnosticMethodRunner | None = None
+    diagnostic_method_request_factory: TargetedDiagnosticMethodRequestFactory | None = (
+        None
+    )
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
+        """Preserve the existing application API while using the canonical path."""
+
+        return self.execute_application(request).active_output
+
+    def execute_application(
+        self,
+        request: TargetedApplicationRequest,
+    ) -> TargetedApplicationExecution:
+        """Run legacy authority and an optional bounded diagnostic successor once."""
+
         resolved_request = _resolve_application_request(request)
-        return self.runner(
+        active_output = self.runner(
             resolved_request.config,
             list(resolved_request.targets),
             progress_callback=resolved_request.progress_callback,
@@ -108,6 +137,21 @@ class TargetedApplicationService:
             model_selection_expected_diff_approvals=(
                 resolved_request.model_selection_expected_diff_approvals
             ),
+        )
+        diagnostic_runner = self.diagnostic_method_runner
+        diagnostic_factory = self.diagnostic_method_request_factory
+        if diagnostic_runner is None and diagnostic_factory is None:
+            return TargetedApplicationExecution(active_output=active_output)
+        if diagnostic_runner is None or diagnostic_factory is None:
+            raise TargetedRuntimeAdapterError(
+                "diagnostic method runner and request factory must be "
+                "configured together"
+            )
+        diagnostic_request = diagnostic_factory(resolved_request, active_output)
+        diagnostic_result = diagnostic_runner(diagnostic_request)
+        return TargetedApplicationExecution(
+            active_output=active_output,
+            diagnostic_method_result=diagnostic_result,
         )
 
     def execute_runtime_lifecycle(
