@@ -188,7 +188,7 @@ def _read_csv_rows(
     path: Path,
 ) -> tuple[list[tuple[int, dict[str, str]]], tuple[str, ...]]:
     try:
-        with path.open(newline="", encoding="utf-8") as handle:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle)
             fieldnames = tuple(reader.fieldnames or ())
             return (

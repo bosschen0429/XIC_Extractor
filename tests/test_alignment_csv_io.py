@@ -47,6 +47,25 @@ def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths
     assert batch.review_csvs["Sample_A"] is None
 
 
+def test_read_discovery_batch_index_accepts_utf8_bom(tmp_path: Path) -> None:
+    from xic_extractor.alignment.csv_io import read_discovery_batch_index
+
+    index_path = tmp_path / "discovery_batch_index.csv"
+    index_path.write_text(
+        "\ufeffsample_stem,raw_file,candidate_csv,review_csv\n"
+        "Sample_A,Sample_A.raw,Sample_A/candidates.csv,Sample_A/review.csv\n",
+        encoding="utf-8",
+    )
+
+    batch = read_discovery_batch_index(index_path)
+
+    assert batch.sample_order == ("Sample_A",)
+    assert batch.raw_files["Sample_A"] == Path("Sample_A.raw")
+    assert batch.candidate_csvs["Sample_A"] == (
+        tmp_path / "Sample_A" / "candidates.csv"
+    )
+
+
 def test_read_discovery_batch_index_unescapes_known_formula_fields(
     tmp_path: Path,
 ) -> None:
