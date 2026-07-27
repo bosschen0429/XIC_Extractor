@@ -36,14 +36,17 @@ cancellation, worker loss, partial artifacts, or conflicting replay quarantine
 the attempt; rollback retains diagnostic evidence and the prior legacy current.
 The unchanged writer receives render-only DTOs built solely from successor
 scientific projections, and an executable tampered-legacy regression proves the
-candidate CSV does not consult legacy result DTOs.
+candidate CSV does not consult legacy result DTOs. Equal-but-distinct legacy
+numeric objects are used only for comparison and never propagated. Canonical
+Targeted runtime bytes bind complete selected integrations and Backfill cells,
+so Backfill-only scientific mutation is rejected after spawn.
 
-Fresh verification after removal of the obsolete delivery bypass records 77
+Fresh verification after the final owner-projection/carrier repair records 79
 changed Package 2 method,
 adapter, runtime, delivery, and failure-semantics tests passing. All seven
-repository shards pass with 6,048 passed and 4 skipped: docs-config 464/1, GUI
+repository shards pass with 6,050 passed and 4 skipped: docs-config 464/1, GUI
 110, targeted-core 1,090/1, alignment-core 2,492, product-gates-activation
-872/1, product-gates-evidence 664, and diagnostics-tools 356/1. Ruff, full mypy
+872/1, product-gates-evidence 666, and diagnostics-tools 356/1. Ruff, full mypy
 over 480 source files, Import Linter 4 kept/0 broken, architecture census,
 diagnostics index, docs audit with zero blockers, worktree bootstrap, shard
 coverage, validation retention, hook fixtures/assertions, secret/private-path

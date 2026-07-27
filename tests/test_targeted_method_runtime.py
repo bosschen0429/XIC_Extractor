@@ -46,8 +46,10 @@ from xic_extractor.extraction.targeted_method_runtime import (
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
     TargetedProcessWorkerResultEnvelope,
+    TargetedRuntimeAdapterError,
     TargetedRuntimeWorkerBatch,
     mint_targeted_process_result_ref,
+    resolve_targeted_application_method_result,
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
@@ -207,6 +209,28 @@ def test_true_spawned_alignment_to_targeted_is_canonical_when_reordered(
     assert all(
         result.groups == completion_groups[key] for key, result in results
     )
+    result = results[0][1]
+    backfilled_index = next(
+        index for index, cell in enumerate(result.cells) if cell.status == "backfilled"
+    )
+    backfilled = result.cells[backfilled_index]
+    assert backfilled.selected_integration is not None
+    tampered_cells = list(result.cells)
+    tampered_cells[backfilled_index] = replace(
+        backfilled,
+        selected_integration=replace(
+            backfilled.selected_integration,
+            area_raw_counts_seconds=(
+                backfilled.selected_integration.area_raw_counts_seconds + 1.0
+            ),
+        ),
+    )
+    tampered = replace(result, cells=tuple(tampered_cells))
+    with pytest.raises(
+        TargetedRuntimeAdapterError,
+        match="exactly one matching method result",
+    ):
+        resolve_targeted_application_method_result(targeted.settlement, tampered)
 
 
 def test_failed_alignment_carrier_cannot_enter_targeted_stage(tmp_path: Path) -> None:

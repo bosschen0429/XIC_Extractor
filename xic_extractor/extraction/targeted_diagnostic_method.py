@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -199,12 +199,20 @@ def canonical_targeted_diagnostic_method_bytes(
         ],
         "cells": [
             {
+                "canonical_sample_identity_id": cell.canonical_sample_identity_id,
                 "sample_stem": cell.sample_stem,
+                "target_definition_id": cell.target_definition_id,
                 "selection_evidence_artifact_id": (cell.selection_evidence_artifact_id),
                 "status": cell.status,
                 "group_hypothesis_id": cell.group_hypothesis_id,
                 "alignment_owner_ids": cell.alignment_owner_ids,
                 "source_hypothesis_id": cell.source_hypothesis_id,
+                "selected_integration": (
+                    None
+                    if cell.selected_integration is None
+                    else asdict(cell.selected_integration)
+                ),
+                "backfill_cell": _canonical_backfill_cell(cell),
                 "reason": cell.reason,
             }
             for cell in result.cells
@@ -307,7 +315,7 @@ def _validate_and_project_legacy(
             raise TargetedDiagnosticMethodParityError(
                 "successor confidence/reason/NL token differs from legacy"
             )
-        values = (
+        legacy_values = (
             legacy_result.reported_rt,
             legacy_result.reported_peak_area,
             legacy_result.reported_peak_intensity,
@@ -315,13 +323,21 @@ def _validate_and_project_legacy(
             legacy_result.reported_peak_end,
             legacy_result.reported_peak_width,
         )
+        successor_values: tuple[
+            float | None,
+            float | None,
+            float | None,
+            float | None,
+            float | None,
+            float | None,
+        ]
         if cell.status in {"observed", "backfilled"}:
             integration = cell.selected_integration
             if integration is None:
                 raise TargetedDiagnosticMethodParityError(
                     "selected successor cell is missing integration"
                 )
-            expected = (
+            successor_values = (
                 integration.rt_apex_min,
                 (
                     integration.area_ms1_morphology
@@ -333,33 +349,55 @@ def _validate_and_project_legacy(
                 integration.rt_right_min,
                 abs(integration.rt_width_min),
             )
-            if values != expected or not product_projection.counted_detection:
+            successor_counted_detection = True
+            if (
+                legacy_values != successor_values
+                or product_projection.counted_detection
+                != successor_counted_detection
+            ):
                 raise TargetedDiagnosticMethodParityError(
                     "selected peak/boundary/area/count differs from legacy"
                 )
-        elif any(value is not None for value in values) or (
-            product_projection.counted_detection
-        ):
-            raise TargetedDiagnosticMethodParityError(
-                "non-selected successor cell differs from legacy counted state"
-            )
+        else:
+            successor_values = (None, None, None, None, None, None)
+            successor_counted_detection = False
+            if legacy_values != successor_values or (
+                product_projection.counted_detection
+                != successor_counted_detection
+            ):
+                raise TargetedDiagnosticMethodParityError(
+                    "non-selected successor cell differs from legacy counted state"
+                )
         projections.append(
             TargetedDiagnosticProjection(
                 sample_stem=cell.sample_stem,
                 status=cell.status,
-                rt=values[0],
-                area=values[1],
-                intensity=values[2],
-                peak_start=values[3],
-                peak_end=values[4],
-                peak_width=values[5],
+                rt=successor_values[0],
+                area=successor_values[1],
+                intensity=successor_values[2],
+                peak_start=successor_values[3],
+                peak_end=successor_values[4],
+                peak_width=successor_values[5],
                 confidence=successor_confidence,
                 reason=successor_reason,
-                counted_detection=product_projection.counted_detection,
+                counted_detection=successor_counted_detection,
                 nl_token=successor_nl_token,
             )
         )
     return tuple(projections)
+
+
+def _canonical_backfill_cell(cell: TargetedHypothesisCell) -> dict[str, object] | None:
+    """Bind the complete owner Backfill result without inventing another model."""
+
+    if cell.backfill_cell is None:
+        return None
+    payload = asdict(cell.backfill_cell)
+    source_raw_file = cell.backfill_cell.source_raw_file
+    payload["source_raw_file"] = (
+        None if source_raw_file is None else source_raw_file.as_posix()
+    )
+    return payload
 
 
 def _validate_request_attempt(

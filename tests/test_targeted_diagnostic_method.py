@@ -112,6 +112,10 @@ class _FrozenLegacyResult:
     nl_token: str | None = None
 
 
+class _EqualLegacyFloat(float):
+    """Equal comparator value whose type reveals accidental legacy propagation."""
+
+
 @dataclass(frozen=True)
 class _MethodProcessJob:
     attempt: object
@@ -327,6 +331,103 @@ def test_semantic_area_difference_stops_before_delivery(tmp_path: Path) -> None:
         match="selected peak/boundary/area/count",
     ):
         run_targeted_diagnostic_method(changed_request)
+
+
+def test_projection_values_come_from_successor_owner_not_equal_legacy_objects(
+    tmp_path: Path,
+) -> None:
+    request, _fixture = _method_request(tmp_path)
+    legacy = request.authoritative_legacy_output
+    files = list(legacy.file_results)
+    index = next(
+        index
+        for index, file_result in enumerate(files)
+        if file_result.sample_name == "observed-a"
+    )
+    file_result = files[index]
+    original = file_result.results["Analyte"]
+    assert isinstance(original, _FrozenLegacyResult)
+    legacy_values = (
+        original.reported_rt,
+        original.reported_peak_area,
+        original.reported_peak_intensity,
+        original.reported_peak_start,
+        original.reported_peak_end,
+        original.reported_peak_width,
+    )
+    assert all(value is not None for value in legacy_values)
+    substituted = replace(
+        original,
+        reported_rt=_EqualLegacyFloat(original.reported_rt),
+        reported_peak_area=_EqualLegacyFloat(original.reported_peak_area),
+        reported_peak_intensity=_EqualLegacyFloat(original.reported_peak_intensity),
+        reported_peak_start=_EqualLegacyFloat(original.reported_peak_start),
+        reported_peak_end=_EqualLegacyFloat(original.reported_peak_end),
+        reported_peak_width=_EqualLegacyFloat(original.reported_peak_width),
+    )
+    files[index] = FileResult(
+        sample_name=file_result.sample_name,
+        results={"Analyte": substituted},
+    )
+
+    result = run_targeted_diagnostic_method(
+        replace(request, authoritative_legacy_output=RunOutput(files, []))
+    )
+    projection = next(
+        item for item in result.projections if item.sample_stem == "observed-a"
+    )
+    cell = next(item for item in result.cells if item.sample_stem == "observed-a")
+    assert cell.selected_integration is not None
+    assert projection.rt is cell.selected_integration.rt_apex_min
+    assert all(
+        type(value) is float
+        for value in (
+            projection.rt,
+            projection.area,
+            projection.intensity,
+            projection.peak_start,
+            projection.peak_end,
+            projection.peak_width,
+        )
+    )
+    assert projection.counted_detection is True
+
+
+def test_canonical_method_bytes_bind_full_backfill_scientific_content(
+    tmp_path: Path,
+) -> None:
+    request, _fixture = _method_request(tmp_path)
+    result = run_targeted_diagnostic_method(request)
+    index = next(
+        index for index, cell in enumerate(result.cells) if cell.status == "backfilled"
+    )
+    cell = result.cells[index]
+    assert cell.selected_integration is not None
+    assert cell.backfill_cell is not None
+    changed_integration = replace(
+        cell.selected_integration,
+        area_raw_counts_seconds=(
+            cell.selected_integration.area_raw_counts_seconds + 1.0
+        ),
+    )
+    changed_cells = list(result.cells)
+    changed_cells[index] = replace(cell, selected_integration=changed_integration)
+    integration_tampered = replace(result, cells=tuple(changed_cells))
+    assert canonical_targeted_diagnostic_method_bytes(integration_tampered) != (
+        canonical_targeted_diagnostic_method_bytes(result)
+    )
+
+    changed_cells[index] = replace(
+        cell,
+        backfill_cell=replace(
+            cell.backfill_cell,
+            trace_quality="tampered-owner-backfill-trace-quality",
+        ),
+    )
+    backfill_tampered = replace(result, cells=tuple(changed_cells))
+    assert canonical_targeted_diagnostic_method_bytes(backfill_tampered) != (
+        canonical_targeted_diagnostic_method_bytes(result)
+    )
 
 
 def test_legacy_writer_target_must_match_exact_owner_definition(
