@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -96,6 +97,92 @@ def test_backfill_source_cannot_bypass_ambiguity_or_failure(tmp_path: Path) -> N
             peak_config=_peak_config(tmp_path),
         )
     assert source.calls == []
+
+
+def test_missing_source_remains_unchecked_instead_of_becoming_true_missing(
+    tmp_path: Path,
+) -> None:
+    fixture, inputs = _complete_inputs(tmp_path)
+    groups = align_selected_targeted_hypotheses(
+        inputs,
+        target=fixture.target,
+        config=AlignmentConfig(),
+    )
+
+    cells = build_targeted_hypothesis_cells(
+        inputs,
+        groups,
+        backfill_sources={
+            "eligible-backfill": FrozenNoRawBackfillSource(
+                center=8.01,
+                height=600.0,
+            ),
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+    )
+
+    missing = next(cell for cell in cells if cell.sample_stem == "true-missing")
+    assert missing.status == "unchecked"
+    assert missing.backfill_cell is None
+    assert missing.reason == (
+        "no local evidence source was supplied for the missing cell"
+    )
+
+
+def test_non_unique_alignment_correspondence_remains_ambiguous(
+    tmp_path: Path,
+) -> None:
+    fixture, inputs = _complete_inputs(tmp_path)
+    groups = align_selected_targeted_hypotheses(
+        inputs,
+        target=fixture.target,
+        config=AlignmentConfig(),
+    )
+    assert len(groups) == 1
+
+    cells = build_targeted_hypothesis_cells(
+        inputs,
+        (
+            groups[0],
+            replace(
+                groups[0],
+                group_hypothesis_id="FAM000002",
+                owner_ids=(f"xic.peak-hypothesis.v1:{'0' * 64}",),
+            ),
+        ),
+        backfill_sources={},
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+    )
+
+    gap = next(cell for cell in cells if cell.sample_stem == "eligible-backfill")
+    assert gap.status == "ambiguous"
+    assert gap.reason == "Alignment correspondence is not unique for Backfill"
+
+
+def test_unassessable_owner_trace_remains_unassessable(tmp_path: Path) -> None:
+    fixture, inputs = _complete_inputs(tmp_path)
+    groups = align_selected_targeted_hypotheses(
+        inputs,
+        target=fixture.target,
+        config=AlignmentConfig(),
+    )
+    source = FrozenNoRawBackfillSource(center=8.01, height=600.0)
+    source.rt[-1] = np.nan
+
+    cells = build_targeted_hypothesis_cells(
+        inputs,
+        groups,
+        backfill_sources={"eligible-backfill": source},
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+    )
+
+    cell = next(item for item in cells if item.sample_stem == "eligible-backfill")
+    assert cell.status == "unassessable"
+    assert cell.backfill_cell is not None
+    assert cell.backfill_cell.trace_quality == "owner_backfill_unassessable"
 
 
 def _complete_inputs(tmp_path: Path):

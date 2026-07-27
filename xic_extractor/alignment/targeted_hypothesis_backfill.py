@@ -28,6 +28,8 @@ TargetedHypothesisCellStatus = Literal[
     "observed",
     "backfilled",
     "true_missing",
+    "unchecked",
+    "unassessable",
     "ambiguous",
     "failed",
 ]
@@ -156,20 +158,20 @@ def _backfill_no_candidate(
     if len(groups) != 1:
         return _cell(
             item,
-            status="true_missing",
+            status="ambiguous",
             reason="Alignment correspondence is not unique for Backfill",
         )
     group = groups[0]
     if not group.owner_ids:
         return _cell(
             item,
-            status="true_missing",
+            status="unchecked",
             reason="Alignment has no discovered hypothesis to authorize Backfill",
         )
     if source is None:
         return _cell(
             item,
-            status="true_missing",
+            status="unchecked",
             group=group,
             reason="no local evidence source was supplied for the missing cell",
         )
@@ -185,13 +187,42 @@ def _backfill_no_candidate(
             "existing Backfill owner returned a non-canonical cell count"
         )
     backfill_cell = result.cells[0]
-    if backfill_cell.status != "rescued":
+    if backfill_cell.status == "unchecked":
+        if backfill_cell.trace_quality == "owner_backfill_not_detected":
+            return _cell(
+                item,
+                status="true_missing",
+                group=group,
+                backfill_cell=backfill_cell,
+                reason=backfill_cell.reason,
+            )
+        if backfill_cell.trace_quality == "owner_backfill_unassessable":
+            return _cell(
+                item,
+                status="unassessable",
+                group=group,
+                backfill_cell=backfill_cell,
+                reason=backfill_cell.reason,
+            )
         return _cell(
             item,
-            status="true_missing",
+            status="unchecked",
             group=group,
             backfill_cell=backfill_cell,
-            reason="local Backfill evidence did not contain an accepted peak",
+            reason=backfill_cell.reason,
+        )
+    if backfill_cell.status in {"ambiguous_ms1_owner", "duplicate_assigned"}:
+        return _cell(
+            item,
+            status="ambiguous",
+            group=group,
+            backfill_cell=backfill_cell,
+            reason=backfill_cell.reason,
+        )
+    if backfill_cell.status != "rescued":
+        raise TargetedHypothesisBackfillError(
+            "existing Backfill owner returned an unsupported terminal status: "
+            f"{backfill_cell.status}"
         )
     if backfill_cell.selected_integration is None:
         raise TargetedHypothesisBackfillError(
