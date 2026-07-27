@@ -12,6 +12,7 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
     SupervisorFinalizationRecord,
 )
+from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.rt_prior_library import LibraryEntry
 
 from .targeted_inputs import resolve_model_selection_expected_diff_approvals
@@ -93,6 +94,7 @@ class TargetedApplicationService:
     runtime_runner: TargetedRuntimeRunner | None = None
     runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
     runtime_supervisor_finalizer: TargetedRuntimeSupervisorFinalizer | None = None
+    runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
         resolved_request = _resolve_application_request(request)
@@ -137,18 +139,44 @@ class TargetedApplicationService:
                 "TargetedApplicationService requires runtime_lifecycle_runner "
                 "for execute_runtime_lifecycle"
             )
-        if self.runtime_supervisor_finalizer is None:
+        if (
+            self.runtime_supervisor_finalizer is None
+            and self.runtime_recovery_marker is None
+        ):
             raise TargetedRuntimeAdapterError(
                 "TargetedApplicationService requires runtime_supervisor_finalizer "
-                "for execute_runtime_lifecycle"
+                "or runtime_recovery_marker for execute_runtime_lifecycle"
             )
         resolved_request = _resolve_application_request(request)
         state = prepare_targeted_runtime_lifecycle(runtime, resource_reservations)
+        if self.runtime_recovery_marker is not None:
+            self.runtime_recovery_marker.record_launch(runtime)
         batch = self.runtime_lifecycle_runner(resolved_request, state)
+        supervisor_finalizer = self.runtime_supervisor_finalizer
+        if self.runtime_recovery_marker is not None:
+            marker = self.runtime_recovery_marker
+            delegated_finalizer = supervisor_finalizer
+
+            def durable_finalizer(
+                coordinator: CoordinatorTerminalRecord,
+                proposed: SupervisorFinalizationRecord,
+            ) -> SupervisorFinalizationRecord:
+                submitted = (
+                    proposed
+                    if delegated_finalizer is None
+                    else delegated_finalizer(coordinator, proposed)
+                )
+                return marker(coordinator, submitted)
+
+            supervisor_finalizer = durable_finalizer
+        if supervisor_finalizer is None:
+            raise TargetedRuntimeAdapterError(
+                "Targeted runtime finalizer unexpectedly remained unresolved"
+            )
         return finalize_targeted_runtime_worker_batch(
             state,
             batch,
-            supervisor_finalizer=self.runtime_supervisor_finalizer,
+            supervisor_finalizer=supervisor_finalizer,
         )
 
 

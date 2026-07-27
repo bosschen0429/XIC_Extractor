@@ -26,6 +26,7 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
 )
+from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
     TargetedProcessResultRef,
@@ -222,6 +223,47 @@ def test_targeted_application_service_closes_true_process_lifecycle(
             ).artifact.evidence_artifact_id,
             RuntimeArtifactDisposition.OFFERED_TO_OWNER,
         ),
+    )
+
+
+def test_targeted_lifecycle_uses_owner_path_marker_as_durable_finalizer(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.extraction.targeted_service import (
+        TargetedApplicationService,
+        build_targeted_application_request,
+    )
+
+    attempt = _attempt(tmp_path)
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "targeted.runtime.json",
+        "targeted-runtime-artifacts:test",
+    )
+    batch = _build_spawned_lifecycle_batch(
+        attempt,
+        "raw:a",
+        b"durable-targeted-result",
+    )
+
+    def legacy_runner(*_args, **_kwargs):
+        raise AssertionError("runtime lifecycle must not call the legacy runner")
+
+    service = TargetedApplicationService(
+        legacy_runner,
+        runtime_lifecycle_runner=lambda _request, _state: batch,
+        runtime_recovery_marker=marker,
+    )
+    result = service.execute_runtime_lifecycle(
+        build_targeted_application_request(_config(), [_target()]),
+        _runtime(attempt, ("raw:a",)),
+        resource_reservations=(_reservation(attempt),),
+    )
+
+    recovered = marker.recover_after_coordinator_loss(attempt)
+    assert recovered.finalization_acknowledged is True
+    assert recovered.terminal_outcome is result.finalization_record.terminal_outcome
+    assert recovered.artifact_dispositions == (
+        result.finalization_record.artifact_dispositions
     )
 
 
