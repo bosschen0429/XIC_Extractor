@@ -43,20 +43,12 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import (
-    RuntimeArtifactRegistrationReceipt,
-    RuntimeWorkerBatchReceipt,
-    execute_runtime_attempt,
-    mint_work_unit_settlement,
-)
+from xic_extractor.execution_runtime_owner import mint_work_unit_settlement
 from xic_extractor.extraction.targeted_diagnostic_method import (
     TargetedDiagnosticMethodParityError,
     TargetedDiagnosticMethodRequest,
     canonical_targeted_diagnostic_method_bytes,
-    rollback_targeted_diagnostic_delivery,
     run_targeted_diagnostic_method,
-    settle_targeted_diagnostic_delivery,
-    targeted_attempt_namespace_component,
 )
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
@@ -69,18 +61,16 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.extractor import FileResult, RunOutput
-from xic_extractor.output.csv_writers import write_wide_csv
 from xic_extractor.peak_detection.targeted_product_projection import (
     TargetedProductProjection,
 )
 
-_FROZEN_LEGACY_CSV_SIZE = 403
 _FROZEN_LEGACY_CSV_SHA256 = (
     "f0a471bd81046cefaa924d619b934957505ee22591b17820a73143f7b4126937"
 )
 _VALIDATION_PACKET = Path("docs/superpowers/validation/package2_targeted_method_v1")
 _FROZEN_DIFFERENCE_MANIFEST_SHA256 = (
-    "377932de8bac5a929467a108658a3f9c5899a8b0e78fb7c05e277cacec0f2755"
+    "213bf92f5f237cdedf61abc9435d675c63831774004bb2153952c2322a3dabcd"
 )
 _FROZEN_TRACE_ORACLE = {
     "observed-a": (
@@ -194,10 +184,10 @@ def _alignment_method_error(
     )
 
 
-def test_complete_method_is_hard_exact_and_rollback_preserves_legacy_current(
+def test_complete_method_projection_is_serial_reorder_exact(
     tmp_path: Path,
 ) -> None:
-    request, fixture = _method_request(tmp_path)
+    request, _fixture = _method_request(tmp_path)
     service = TargetedApplicationService(
         _legacy_runner_must_not_be_called,
         diagnostic_method_runner=run_targeted_diagnostic_method,
@@ -229,58 +219,6 @@ def test_complete_method_is_hard_exact_and_rollback_preserves_legacy_current(
         backfilled.selected_integration.area_raw_counts_seconds,
         backfilled.selected_integration.area_ms1_morphology,
     ) == (8.01, 2951.9999999999864, 2835.100474933266)
-    target = request.targets[0]
-    baseline_config = replace(
-        request.peak_config,
-        output_csv=tmp_path / "legacy" / "xic_results.csv",
-    )
-    write_wide_csv(
-        baseline_config,
-        request.targets,
-        request.authoritative_legacy_output.file_results,
-    )
-    legacy_bytes = baseline_config.output_csv.read_bytes()
-    assert len(legacy_bytes) == _FROZEN_LEGACY_CSV_SIZE
-    assert hashlib.sha256(legacy_bytes).hexdigest() == _FROZEN_LEGACY_CSV_SHA256
-    targeted_finalization = _finalization(
-        fixture,
-        owner="targeted",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        payload=canonical_targeted_diagnostic_method_bytes(result),
-    )
-    alignment_finalization = _finalization(
-        fixture,
-        owner="alignment",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        payload=canonical_targeted_diagnostic_method_bytes(result),
-    )
-
-    delivery = settle_targeted_diagnostic_delivery(
-        result,
-        targeted_finalization=targeted_finalization,
-        alignment_finalization=alignment_finalization,
-        config=request.peak_config,
-        targets=(target,),
-        authoritative_legacy_csv_bytes=legacy_bytes,
-        prior_current_delivery_id="legacy-seal:prior-current",
-    )
-
-    assert delivery.status == "sealed_diagnostic"
-    assert delivery.diagnostic_csv_path is not None
-    assert delivery.diagnostic_csv_path.read_bytes() == legacy_bytes
-    assert delivery.diagnostic_csv_path.parent.name.startswith("attempt-")
-    assert ":" not in delivery.diagnostic_csv_path.parent.name
-    assert delivery.diagnostic_csv_sha256 == hashlib.sha256(legacy_bytes).hexdigest()
-    assert delivery.active_output is request.authoritative_legacy_output
-    assert delivery.prior_current_delivery_id == "legacy-seal:prior-current"
-    assert not tuple(tmp_path.rglob("*.xlsx"))
-    assert not tuple(tmp_path.rglob("*matrix*"))
-
-    rolled_back = rollback_targeted_diagnostic_delivery(delivery, result)
-    assert rolled_back.status == "rolled_back"
-    assert rolled_back.active_output is request.authoritative_legacy_output
-    assert rolled_back.prior_current_delivery_id == "legacy-seal:prior-current"
-    assert rolled_back.diagnostic_csv_path == delivery.diagnostic_csv_path
 
 
 def test_targeted_scheduler_and_alignment_process_runner_consume_method_receipt(
@@ -356,46 +294,6 @@ def test_targeted_scheduler_and_alignment_process_runner_consume_method_receipt(
         1
     ].owner_result_content_sha256 == (hashlib.sha256(payload).hexdigest())
     assert alignment.runtime.settlements[0].owner_result_ref is not None
-
-
-@pytest.mark.parametrize(
-    "outcome",
-    [WorkUnitTerminalOutcome.FAILED, WorkUnitTerminalOutcome.CANCELLED],
-)
-def test_failed_or_cancelled_successor_attempt_is_quarantined_before_writer(
-    tmp_path: Path,
-    outcome: WorkUnitTerminalOutcome,
-) -> None:
-    request, fixture = _method_request(tmp_path)
-    result = run_targeted_diagnostic_method(request)
-    successful = _finalization(
-        fixture,
-        owner="alignment",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        payload=canonical_targeted_diagnostic_method_bytes(result),
-    )
-    unsuccessful = _finalization(
-        fixture,
-        owner="targeted",
-        outcome=outcome,
-        payload=b"",
-    )
-
-    delivery = settle_targeted_diagnostic_delivery(
-        result,
-        targeted_finalization=unsuccessful,
-        alignment_finalization=successful,
-        config=request.peak_config,
-        targets=request.targets,
-        authoritative_legacy_csv_bytes=b"must-not-be-read",
-        prior_current_delivery_id="legacy-seal:prior-current",
-    )
-
-    assert delivery.status == "quarantined"
-    assert delivery.active_output is request.authoritative_legacy_output
-    assert delivery.diagnostic_csv_path is None
-    assert delivery.prior_current_delivery_id == "legacy-seal:prior-current"
-    assert not (request.peak_config.output_csv.parent / "successor_attempts").exists()
 
 
 def test_semantic_area_difference_stops_before_delivery(tmp_path: Path) -> None:
@@ -477,43 +375,6 @@ def test_successor_reason_difference_stops_before_projection(
         match="non-canonical owner reason",
     ):
         run_targeted_diagnostic_method(request)
-
-
-def test_exact_byte_difference_is_retained_in_attempt_namespace(tmp_path: Path) -> None:
-    request, fixture = _method_request(tmp_path)
-    result = run_targeted_diagnostic_method(request)
-    payload = canonical_targeted_diagnostic_method_bytes(result)
-    targeted = _finalization(
-        fixture,
-        owner="targeted",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        payload=payload,
-    )
-    alignment = _finalization(
-        fixture,
-        owner="alignment",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        payload=payload,
-    )
-
-    with pytest.raises(TargetedDiagnosticMethodParityError, match="bytes differ"):
-        settle_targeted_diagnostic_delivery(
-            result,
-            targeted_finalization=targeted,
-            alignment_finalization=alignment,
-            config=request.peak_config,
-            targets=request.targets,
-            authoritative_legacy_csv_bytes=b"different\n",
-            prior_current_delivery_id="legacy-seal:prior-current",
-        )
-    difference_path = (
-        request.peak_config.output_csv.parent
-        / "successor_attempts"
-        / targeted_attempt_namespace_component(result.processing_attempt_id)
-        / "xic_results.csv"
-    )
-    assert difference_path.is_file()
-    assert difference_path.read_bytes() != b"different\n"
 
 
 def test_package2_validation_packet_is_exact_zero_and_complete() -> None:
@@ -698,97 +559,6 @@ def _projection(*, counted: bool) -> TargetedProductProjection:
         review_state="none" if counted else "review_required",
         projection_reason="legacy authoritative projection",
     )
-
-
-def _finalization(
-    fixture: Package2NoRawFixture,
-    *,
-    owner: str,
-    outcome: WorkUnitTerminalOutcome,
-    payload: bytes,
-):
-    work_unit_key = f"package2:{owner}"
-    history = append_attempt_lifecycle_event(
-        AttemptLifecycleHistory(attempt=fixture.attempt),
-        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
-    )
-    runtime = start_attempt_runtime(
-        preflight_required_work_manifest(
-            history,
-            attempt=fixture.attempt,
-            work_unit_keys=(work_unit_key,),
-            owner_completeness_attestation="package2-targeted-method:v1",
-        )
-    )
-    if outcome is WorkUnitTerminalOutcome.CANCELLED:
-        runtime = replace(
-            runtime,
-            history=append_attempt_lifecycle_event(
-                runtime.history,
-                AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
-            ),
-        )
-    artifact = None
-    if outcome is WorkUnitTerminalOutcome.SUCCEEDED:
-        if owner == "targeted":
-            artifact = mint_targeted_process_result_ref(
-                processing_attempt=fixture.attempt,
-                work_unit_key=work_unit_key,
-                owner_result_payload=payload,
-            ).artifact
-        else:
-            artifact = mint_alignment_process_result_artifact(
-                processing_attempt=fixture.attempt,
-                work_unit_key=work_unit_key,
-                owner_result_payload=payload,
-            )
-    settlement = mint_work_unit_settlement(
-        attempt=fixture.attempt,
-        work_unit_key=work_unit_key,
-        outcome=outcome,
-        owner_result_ref=artifact,
-        failure_detail=(
-            None
-            if outcome is WorkUnitTerminalOutcome.SUCCEEDED
-            else WorkUnitFailureDetail(
-                category=(
-                    WorkUnitFailureCategory.CANCELLATION
-                    if outcome is WorkUnitTerminalOutcome.CANCELLED
-                    else WorkUnitFailureCategory.EXECUTION_ERROR
-                ),
-                stage=f"{owner}-process-worker",
-                source_reference=f"no-raw:{work_unit_key}",
-                message=f"simulated {outcome.value}",
-            )
-        ),
-    )
-    receipt = execute_runtime_attempt(
-        runtime,
-        (),
-        worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
-            settlements=(settlement,),
-            artifact_registrations=(
-                ()
-                if artifact is None
-                else (
-                    RuntimeArtifactRegistrationReceipt(
-                        work_unit_key=work_unit_key,
-                        artifact=artifact,
-                    ),
-                )
-            ),
-        ),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        persister=lambda proposed: proposed,
-    )
-    finalization = receipt.supervisor
-    expected = {
-        WorkUnitTerminalOutcome.SUCCEEDED: AttemptTerminalOutcome.SUCCEEDED,
-        WorkUnitTerminalOutcome.FAILED: AttemptTerminalOutcome.FAILED,
-        WorkUnitTerminalOutcome.CANCELLED: AttemptTerminalOutcome.CANCELLED,
-    }[outcome]
-    assert finalization.terminal_outcome is expected
-    return finalization
 
 
 def _runtime(fixture: Package2NoRawFixture, work_unit_key: str):

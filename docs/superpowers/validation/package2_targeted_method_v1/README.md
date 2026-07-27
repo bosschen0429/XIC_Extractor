@@ -38,11 +38,12 @@ The unchanged writer receives render-only DTOs built solely from successor
 scientific projections, and an executable tampered-legacy regression proves the
 candidate CSV does not consult legacy result DTOs.
 
-Fresh verification at code head `9f79ad4c` records 80 changed Package 2 method,
+Fresh verification after removal of the obsolete delivery bypass records 77
+changed Package 2 method,
 adapter, runtime, delivery, and failure-semantics tests passing. All seven
-repository shards pass with 6,051 passed and 4 skipped: docs-config 464/1, GUI
+repository shards pass with 6,048 passed and 4 skipped: docs-config 464/1, GUI
 110, targeted-core 1,090/1, alignment-core 2,492, product-gates-activation
-872/1, product-gates-evidence 667, and diagnostics-tools 356/1. Ruff, full mypy
+872/1, product-gates-evidence 664, and diagnostics-tools 356/1. Ruff, full mypy
 over 480 source files, Import Linter 4 kept/0 broken, architecture census,
 diagnostics index, docs audit with zero blockers, worktree bootstrap, shard
 coverage, validation retention, hook fixtures/assertions, secret/private-path
@@ -53,7 +54,10 @@ engineering packet.
 [`artifact_inventory.tsv`](artifact_inventory.tsv) names every retained oracle
 and owner dependency. [`difference_manifest.tsv`](difference_manifest.tsv) is
 machine-checked by the Package 2 method tests. The canonical manifest SHA-256 is
-`377932de8bac5a929467a108658a3f9c5899a8b0e78fb7c05e277cacec0f2755`.
+`213bf92f5f237cdedf61abc9435d675c63831774004bb2153952c2322a3dabcd`.
+Its only change from the earlier digest is the truthful render-path description:
+the unchanged writer consumes successor projection DTOs and produces the same
+authoritative legacy bytes; all 13 old/new value pairs remain exact-zero.
 
 This packet grants no RAW/DLL, 8RAW/85RAW, Matrix/XLSX, publication, product
 writer, schema, public CLI/config, maturity-tier, or production-readiness

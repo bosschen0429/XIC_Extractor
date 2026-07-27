@@ -5,9 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
-from pathlib import Path
-from typing import Literal
+from dataclasses import dataclass
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -23,12 +21,7 @@ from xic_extractor.alignment.targeted_hypothesis_backfill import (
     build_targeted_hypothesis_cells,
 )
 from xic_extractor.config import ExtractionConfig, Target
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
-from xic_extractor.execution_runtime_finalization_models import (
-    SupervisorFinalizationRecord,
-)
 from xic_extractor.extractor import RunOutput
-from xic_extractor.output.csv_writers import write_wide_csv
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
@@ -76,24 +69,6 @@ class TargetedDiagnosticMethodResult:
     cells: tuple[TargetedHypothesisCell, ...]
     projections: tuple[TargetedDiagnosticProjection, ...]
     authoritative_legacy_output: RunOutput
-
-
-TargetedDiagnosticDeliveryStatus = Literal[
-    "sealed_diagnostic",
-    "quarantined",
-    "rolled_back",
-]
-
-
-@dataclass(frozen=True, slots=True)
-class TargetedDiagnosticDelivery:
-    status: TargetedDiagnosticDeliveryStatus
-    processing_attempt_id: str
-    diagnostic_csv_path: Path | None
-    diagnostic_csv_sha256: str | None
-    prior_current_delivery_id: str
-    active_output: RunOutput
-    quarantine_reason: str = ""
 
 
 def targeted_attempt_namespace_component(processing_attempt_id: str) -> str:
@@ -262,84 +237,6 @@ def canonical_targeted_diagnostic_method_bytes(
         )
         + "\n"
     ).encode("utf-8")
-
-
-def settle_targeted_diagnostic_delivery(
-    result: TargetedDiagnosticMethodResult,
-    *,
-    targeted_finalization: SupervisorFinalizationRecord,
-    alignment_finalization: SupervisorFinalizationRecord,
-    config: ExtractionConfig,
-    targets: tuple[Target, ...],
-    authoritative_legacy_csv_bytes: bytes,
-    prior_current_delivery_id: str,
-) -> TargetedDiagnosticDelivery:
-    """Write only after both real runtime consumers close the exact attempt."""
-
-    finalizations = (targeted_finalization, alignment_finalization)
-    for finalization in finalizations:
-        if finalization.attempt.processing_attempt_id != result.processing_attempt_id:
-            raise TargetedDiagnosticMethodError(
-                "runtime finalization references a different method attempt"
-            )
-    failed = tuple(
-        finalization.terminal_outcome.value
-        for finalization in finalizations
-        if finalization.terminal_outcome is not AttemptTerminalOutcome.SUCCEEDED
-    )
-    if failed:
-        return TargetedDiagnosticDelivery(
-            status="quarantined",
-            processing_attempt_id=result.processing_attempt_id,
-            diagnostic_csv_path=None,
-            diagnostic_csv_sha256=None,
-            prior_current_delivery_id=prior_current_delivery_id,
-            active_output=result.authoritative_legacy_output,
-            quarantine_reason="runtime attempt did not close successfully: "
-            + ",".join(failed),
-        )
-    output_path = (
-        config.output_csv.parent
-        / "successor_attempts"
-        / targeted_attempt_namespace_component(result.processing_attempt_id)
-        / "xic_results.csv"
-    )
-    attempt_config = replace(config, output_csv=output_path)
-    write_wide_csv(
-        attempt_config,
-        targets,
-        result.authoritative_legacy_output.file_results,
-    )
-    observed = output_path.read_bytes()
-    if observed != authoritative_legacy_csv_bytes:
-        raise TargetedDiagnosticMethodParityError(
-            "successor attempt xic_results.csv bytes differ from authoritative legacy"
-        )
-    return TargetedDiagnosticDelivery(
-        status="sealed_diagnostic",
-        processing_attempt_id=result.processing_attempt_id,
-        diagnostic_csv_path=output_path,
-        diagnostic_csv_sha256=hashlib.sha256(observed).hexdigest(),
-        prior_current_delivery_id=prior_current_delivery_id,
-        active_output=result.authoritative_legacy_output,
-    )
-
-
-def rollback_targeted_diagnostic_delivery(
-    delivery: TargetedDiagnosticDelivery,
-    result: TargetedDiagnosticMethodResult,
-) -> TargetedDiagnosticDelivery:
-    """Roll back the whole attempt without deleting its diagnostic evidence."""
-
-    if delivery.processing_attempt_id != result.processing_attempt_id:
-        raise TargetedDiagnosticMethodError(
-            "delivery and method result reference different attempts"
-        )
-    return replace(
-        delivery,
-        status="rolled_back",
-        active_output=result.authoritative_legacy_output,
-    )
 
 
 def _validate_and_project_legacy(
