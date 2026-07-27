@@ -29,6 +29,7 @@ from xic_extractor.execution_runtime_finalization_models import (
 )
 from xic_extractor.extractor import RunOutput
 from xic_extractor.output.csv_writers import write_wide_csv
+from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
 class TargetedDiagnosticMethodError(ValueError):
@@ -61,6 +62,7 @@ class TargetedDiagnosticMethodRequest:
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
     targets: tuple[Target, ...]
+    processing_attempt: ProcessingAttemptIdentity
     authoritative_legacy_output: RunOutput
 
 
@@ -140,6 +142,7 @@ def run_targeted_diagnostic_method(
         raise TargetedDiagnosticMethodError(
             "all method inputs must bind one processing request and attempt"
         )
+    _validate_request_attempt(request, requests=requests, attempts=attempts)
     groups = align_selected_targeted_hypotheses(
         request.alignment_inputs,
         target=target,
@@ -176,6 +179,7 @@ def complete_targeted_diagnostic_method(
         raise TargetedDiagnosticMethodError(
             "all method inputs must bind one processing request and attempt"
         )
+    _validate_request_attempt(request, requests=requests, attempts=attempts)
     cells = build_targeted_hypothesis_cells(
         request.alignment_inputs,
         groups,
@@ -354,6 +358,14 @@ def _validate_and_project_legacy(
                 raise TargetedDiagnosticMethodParityError(
                     "failed successor cell does not match legacy file failure"
                 )
+            successor_confidence, successor_reason = _successor_output_semantics(cell)
+            if (
+                successor_confidence != "ERROR"
+                or successor_reason != file_result.error
+            ):
+                raise TargetedDiagnosticMethodParityError(
+                    "successor confidence/reason differs from legacy"
+                )
             projections.append(
                 TargetedDiagnosticProjection(
                     sample_stem=cell.sample_stem,
@@ -364,8 +376,8 @@ def _validate_and_project_legacy(
                     peak_start=None,
                     peak_end=None,
                     peak_width=None,
-                    confidence="ERROR",
-                    reason=file_result.error,
+                    confidence=successor_confidence,
+                    reason=successor_reason,
                     counted_detection=False,
                 )
             )
@@ -379,6 +391,14 @@ def _validate_and_project_legacy(
         if product_projection is None:
             raise TargetedDiagnosticMethodParityError(
                 "legacy result is missing counted-state projection"
+            )
+        successor_confidence, successor_reason = _successor_output_semantics(cell)
+        if (
+            legacy_result.confidence != successor_confidence
+            or legacy_result.reason != successor_reason
+        ):
+            raise TargetedDiagnosticMethodParityError(
+                "successor confidence/reason differs from legacy"
             )
         values = (
             legacy_result.reported_rt,
@@ -426,9 +446,100 @@ def _validate_and_project_legacy(
                 peak_start=values[3],
                 peak_end=values[4],
                 peak_width=values[5],
-                confidence=legacy_result.confidence,
-                reason=legacy_result.reason,
+                confidence=successor_confidence,
+                reason=successor_reason,
                 counted_detection=product_projection.counted_detection,
             )
         )
     return tuple(projections)
+
+
+def _validate_request_attempt(
+    request: TargetedDiagnosticMethodRequest,
+    *,
+    requests: set[str],
+    attempts: set[str],
+) -> None:
+    attempt = request.processing_attempt
+    if not isinstance(attempt, ProcessingAttemptIdentity):
+        raise TargetedDiagnosticMethodError(
+            "processing_attempt must be an owner-issued identity"
+        )
+    if (
+        requests != {attempt.processing_request_id}
+        or attempts != {attempt.processing_attempt_id}
+    ):
+        raise TargetedDiagnosticMethodError(
+            "processing_attempt does not match the method input lineage"
+        )
+
+
+def _successor_output_semantics(
+    cell: TargetedHypothesisCell,
+) -> tuple[str, str]:
+    """Project bounded successor semantics before consulting legacy output.
+
+    The reason preconditions keep this comparator sensitive to the actual
+    Selection/Alignment/Backfill terminal explanation.  The returned wording is
+    the frozen legacy writer contract for this migration fixture; it is not a
+    new product decision owner.
+    """
+
+    if cell.status == "failed":
+        if not cell.reason:
+            raise TargetedDiagnosticMethodParityError(
+                "failed successor cell is missing its owner reason"
+            )
+        return "ERROR", cell.reason
+    if cell.status == "observed":
+        _require_successor_reason(
+            cell,
+            "unique Discovery hypothesis preserved by Alignment",
+        )
+        return "HIGH", "legacy authoritative selected result"
+    if cell.status == "backfilled":
+        _require_successor_reason(
+            cell,
+            "Alignment correspondence and local evidence authorized Backfill",
+        )
+        return "BACKFILLED", "legacy authoritative selected result"
+    if cell.status == "ambiguous":
+        if cell.reason not in {
+            "multiple Discovery hypotheses cannot authorize Backfill",
+            "Alignment correspondence is not unique for Backfill",
+        }:
+            raise TargetedDiagnosticMethodParityError(
+                "ambiguous successor cell has a non-canonical owner reason"
+            )
+        return "AMBIGUOUS", "legacy authoritative non-selected result"
+    if cell.status == "true_missing":
+        _require_successor_reason(
+            cell,
+            "owner-centered MS1 backfill query found no accepted peak",
+        )
+        return "NOT_DETECTED", "legacy authoritative non-selected result"
+    if cell.status == "unassessable":
+        if not cell.reason:
+            raise TargetedDiagnosticMethodParityError(
+                "unassessable successor cell is missing its owner reason"
+            )
+        return "NOT_DETECTED", "legacy authoritative non-selected result"
+    if cell.status == "unchecked":
+        if not cell.reason:
+            raise TargetedDiagnosticMethodParityError(
+                "unchecked successor cell is missing its owner reason"
+            )
+        return "NOT_DETECTED", "legacy authoritative non-selected result"
+    raise TargetedDiagnosticMethodParityError(
+        f"unsupported successor semantic status: {cell.status}"
+    )
+
+
+def _require_successor_reason(
+    cell: TargetedHypothesisCell,
+    expected: str,
+) -> None:
+    if cell.reason != expected:
+        raise TargetedDiagnosticMethodParityError(
+            f"{cell.status} successor cell has a non-canonical owner reason"
+        )

@@ -10,6 +10,9 @@ from pathlib import Path
 import pytest
 
 from tests.package2_no_raw_fixture import Package2NoRawFixture
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
+)
 from tests.test_targeted_hypothesis_backfill import (
     FrozenNoRawBackfillSource,
     _complete_inputs,
@@ -26,23 +29,26 @@ from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptLifecycleHistory,
     AttemptTerminalOutcome,
-    WorkUnitSettlement,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
     preflight_required_work_manifest,
-    settle_work_unit,
     start_attempt_runtime,
 )
 from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
-    begin_attempt_finalization,
-    mint_supervisor_finalization,
-    propose_attempt_terminal,
-    register_runtime_artifact,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import (
+    RuntimeArtifactRegistrationReceipt,
+    RuntimeWorkerBatchReceipt,
+    execute_runtime_attempt,
+    mint_work_unit_settlement,
+)
 from xic_extractor.extraction.targeted_diagnostic_method import (
     TargetedDiagnosticMethodParityError,
     TargetedDiagnosticMethodRequest,
@@ -153,7 +159,7 @@ def _alignment_method_worker(job: _MethodProcessJob) -> AlignmentRuntimeProcessR
         owner_result_payload=job.payload,
     )
     return AlignmentRuntimeProcessResult(
-        settlement=WorkUnitSettlement(
+        settlement=mint_work_unit_settlement(
             attempt=job.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
@@ -168,13 +174,19 @@ def _alignment_method_worker(job: _MethodProcessJob) -> AlignmentRuntimeProcessR
 
 def _alignment_method_error(
     job: _MethodProcessJob,
-    _error: Exception,
+    error: Exception,
 ) -> AlignmentRuntimeProcessResult:
     return AlignmentRuntimeProcessResult(
-        settlement=WorkUnitSettlement(
+        settlement=mint_work_unit_settlement(
             attempt=job.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.FAILED,
+            failure_detail=WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                stage="alignment-process-worker",
+                source_reference=f"no-raw:{job.work_unit_key}",
+                message=str(error),
+            ),
         ),
         resource_key=job.resource_key,
         open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
@@ -318,6 +330,7 @@ def test_targeted_scheduler_and_alignment_process_runner_consume_method_receipt(
         build_targeted_application_request(request.peak_config, list(request.targets)),
         _runtime(fixture, targeted_job.work_unit_key),
         resource_reservations=(_reservation(fixture, targeted_job),),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
     alignment = execute_alignment_process_runtime(
         _runtime(fixture, alignment_job.work_unit_key),
@@ -326,6 +339,7 @@ def test_targeted_scheduler_and_alignment_process_runner_consume_method_receipt(
         error_factory=_alignment_method_error,
         max_workers=1,
         resource_reservations=(_reservation(fixture, alignment_job),),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-runtime-marker.json",
             "package2-alignment-method:test",
@@ -435,6 +449,36 @@ def test_legacy_writer_target_must_match_exact_owner_definition(
         )
 
 
+def test_successor_reason_difference_stops_before_projection(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import xic_extractor.extraction.targeted_diagnostic_method as method_module
+
+    request, _fixture = _method_request(tmp_path)
+    original_builder = method_module.build_targeted_hypothesis_cells
+
+    def tampered_builder(*args, **kwargs):
+        cells = original_builder(*args, **kwargs)
+        return tuple(
+            replace(cell, reason="caller-substituted-successor-reason")
+            if cell.status == "observed"
+            else cell
+            for cell in cells
+        )
+
+    monkeypatch.setattr(
+        method_module,
+        "build_targeted_hypothesis_cells",
+        tampered_builder,
+    )
+    with pytest.raises(
+        TargetedDiagnosticMethodParityError,
+        match="non-canonical owner reason",
+    ):
+        run_targeted_diagnostic_method(request)
+
+
 def test_exact_byte_difference_is_retained_in_attempt_namespace(tmp_path: Path) -> None:
     request, fixture = _method_request(tmp_path)
     result = run_targeted_diagnostic_method(request)
@@ -523,6 +567,7 @@ def _method_request(
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(tmp_path),
         targets=(target,),
+        processing_attempt=fixture.attempt,
         authoritative_legacy_output=_legacy_output(target),
     )
     return request, fixture
@@ -696,21 +741,46 @@ def _finalization(
                 work_unit_key=work_unit_key,
                 owner_result_payload=payload,
             )
-    runtime = settle_work_unit(
-        runtime,
+    settlement = mint_work_unit_settlement(
+        attempt=fixture.attempt,
         work_unit_key=work_unit_key,
         outcome=outcome,
         owner_result_ref=artifact,
+        failure_detail=(
+            None
+            if outcome is WorkUnitTerminalOutcome.SUCCEEDED
+            else WorkUnitFailureDetail(
+                category=(
+                    WorkUnitFailureCategory.CANCELLATION
+                    if outcome is WorkUnitTerminalOutcome.CANCELLED
+                    else WorkUnitFailureCategory.EXECUTION_ERROR
+                ),
+                stage=f"{owner}-process-worker",
+                source_reference=f"no-raw:{work_unit_key}",
+                message=f"simulated {outcome.value}",
+            )
+        ),
     )
-    state = begin_attempt_finalization(runtime)
-    if artifact is not None:
-        state = register_runtime_artifact(
-            state,
-            work_unit_key=work_unit_key,
-            artifact=artifact,
-        )
-    coordinator = propose_attempt_terminal(state)
-    finalization = mint_supervisor_finalization(coordinator)
+    receipt = execute_runtime_attempt(
+        runtime,
+        (),
+        worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
+            settlements=(settlement,),
+            artifact_registrations=(
+                ()
+                if artifact is None
+                else (
+                    RuntimeArtifactRegistrationReceipt(
+                        work_unit_key=work_unit_key,
+                        artifact=artifact,
+                    ),
+                )
+            ),
+        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=lambda proposed: proposed,
+    )
+    finalization = receipt.supervisor
     expected = {
         WorkUnitTerminalOutcome.SUCCEEDED: AttemptTerminalOutcome.SUCCEEDED,
         WorkUnitTerminalOutcome.FAILED: AttemptTerminalOutcome.FAILED,
@@ -741,6 +811,7 @@ def _reservation(
 ) -> RuntimeResourceReservation:
     return RuntimeResourceReservation(
         attempt=fixture.attempt,
+        kind=RuntimeResourceKind.PROCESS_WORKER,
         resource_key=job.resource_key,
         worker_key=f"worker:{job.work_unit_key}",
         source_reference=f"synthetic-no-raw:{job.work_unit_key}",

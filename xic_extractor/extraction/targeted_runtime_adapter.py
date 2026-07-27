@@ -499,6 +499,56 @@ def mint_targeted_process_result_ref(
     )
 
 
+def resolve_targeted_application_method_result(
+    application: TargetedRuntimeApplicationResult,
+    result: TargetedDiagnosticMethodResult,
+) -> tuple[str, TargetedProcessResultRef]:
+    """Resolve one exact owner-validated method carrier from runtime output."""
+
+    from xic_extractor.extraction.targeted_diagnostic_method import (
+        TargetedDiagnosticMethodResult,
+        canonical_targeted_diagnostic_method_bytes,
+    )
+
+    if not isinstance(application, TargetedRuntimeApplicationResult):
+        raise TargetedRuntimeAdapterError(
+            "application must be TargetedRuntimeApplicationResult"
+        )
+    if not isinstance(result, TargetedDiagnosticMethodResult):
+        raise TargetedRuntimeAdapterError(
+            "result must be TargetedDiagnosticMethodResult"
+        )
+    if application.runtime.integrity_failure is not None:
+        raise TargetedRuntimeAdapterError(
+            "integrity-failed Targeted runtime cannot resolve scientific results"
+        )
+    expected = canonical_targeted_diagnostic_method_bytes(result)
+    matches = tuple(
+        (work_unit_key, observed)
+        for work_unit_key, observed in application.successful_targeted_method_results
+        if canonical_targeted_diagnostic_method_bytes(observed) == expected
+    )
+    if len(matches) != 1:
+        raise TargetedRuntimeAdapterError(
+            "Targeted application must contain exactly one matching method result"
+        )
+    work_unit_key, observed = matches[0]
+    references = dict(application.successful_result_refs)
+    reference = references.get(work_unit_key)
+    if reference is None:
+        raise TargetedRuntimeAdapterError(
+            "matching Targeted method result is missing its owner ref"
+        )
+    _validate_targeted_method_result_binding(
+        reference,
+        observed,
+        attempt=application.runtime.manifest.attempt,
+        work_unit_key=work_unit_key,
+        upstream_artifact_ids=reference.artifact.upstream_artifact_ids,
+    )
+    return work_unit_key, reference
+
+
 def execute_targeted_runtime_lifecycle(
     runtime: AttemptRuntime,
     resource_reservations: Sequence[RuntimeResourceReservation],
@@ -882,4 +932,5 @@ __all__ = [
     "canonical_targeted_process_result_identity_bytes",
     "execute_targeted_runtime_lifecycle",
     "mint_targeted_process_result_ref",
+    "resolve_targeted_application_method_result",
 ]

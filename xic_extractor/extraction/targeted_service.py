@@ -78,7 +78,7 @@ class TargetedDiagnosticMethodRequestFactory(Protocol):
         self,
         request: TargetedApplicationRequest,
         authoritative_legacy_output: RunOutput,
-    ) -> TargetedDiagnosticMethodRequest: ...
+    ) -> TargetedDiagnosticMethodRequest | None: ...
 
 
 @dataclass(frozen=True)
@@ -148,6 +148,8 @@ class TargetedApplicationService:
                 "configured together"
             )
         diagnostic_request = diagnostic_factory(resolved_request, active_output)
+        if diagnostic_request is None:
+            return TargetedApplicationExecution(active_output=active_output)
         diagnostic_result = diagnostic_runner(diagnostic_request)
         return TargetedApplicationExecution(
             active_output=active_output,

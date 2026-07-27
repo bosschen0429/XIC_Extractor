@@ -35,7 +35,8 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
     AttemptTerminalOutcome,
-    WorkUnitSettlement,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution_runtime_finalization import (
@@ -44,6 +45,11 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import (
+    RuntimeAttemptAggregate,
+    RuntimeTelemetryProvider,
+    mint_work_unit_settlement,
+)
 from xic_extractor.extraction.targeted_diagnostic_method import (
     TargetedDiagnosticMethodRequest,
     canonical_targeted_diagnostic_method_bytes,
@@ -54,9 +60,8 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessWorkerResultEnvelope,
     TargetedRuntimeLifecycleApplicationResult,
     TargetedRuntimeWorkerBatch,
-    finalize_targeted_runtime_worker_batch,
+    execute_targeted_runtime_lifecycle,
     mint_targeted_process_result_ref,
-    prepare_targeted_runtime_lifecycle,
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
@@ -219,7 +224,7 @@ def execute_targeted_method_alignment_job(
         upstream_artifacts=job.upstream_artifacts,
     )
     return AlignmentRuntimeProcessResult(
-        settlement=WorkUnitSettlement(
+        settlement=mint_work_unit_settlement(
             attempt=job.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
@@ -245,10 +250,16 @@ def failed_targeted_method_alignment_job(
     if not isinstance(job, TargetedMethodAlignmentJob):
         raise TargetedMethodRuntimeError("job must be TargetedMethodAlignmentJob")
     return AlignmentRuntimeProcessResult(
-        settlement=WorkUnitSettlement(
+        settlement=mint_work_unit_settlement(
             attempt=job.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.FAILED,
+            failure_detail=WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                stage="alignment-process-worker",
+                source_reference=f"no-raw:{job.work_unit_key}",
+                message=f"{type(error).__name__}: {error}",
+            ),
         ),
         resource_key=job.resource_key,
         open_outcome=(
@@ -266,6 +277,7 @@ def execute_targeted_method_alignment_runtime(
     *,
     max_workers: int,
     resource_reservations: Sequence[RuntimeResourceReservation],
+    telemetry_provider: RuntimeTelemetryProvider,
     recovery_marker: OwnerPathRuntimeMarker,
     executor_factory: Callable[..., Any] | None = None,
 ) -> AlignmentRuntimeApplicationResult:
@@ -278,6 +290,7 @@ def execute_targeted_method_alignment_runtime(
         error_factory=failed_targeted_method_alignment_job,
         max_workers=max_workers,
         resource_reservations=resource_reservations,
+        telemetry_provider=telemetry_provider,
         recovery_marker=recovery_marker,
         executor_factory=executor_factory,
     )
@@ -404,7 +417,12 @@ def targeted_method_worker_loss_batch(
                 attempt=job.attempt,
                 work_unit_key=job.work_unit_key,
                 outcome=WorkUnitTerminalOutcome.FAILED,
-                failure_message=f"{type(error).__name__}: {error}",
+                failure_detail=WorkUnitFailureDetail(
+                    category=WorkUnitFailureCategory.WORKER_LOSS,
+                    stage="targeted-process-worker",
+                    source_reference=f"no-raw:{job.work_unit_key}",
+                    message=f"{type(error).__name__}: {error}",
+                ),
             ),
         ),
         resource_reports=(
@@ -429,6 +447,7 @@ def execute_targeted_method_completion_runtime(
     *,
     max_workers: int,
     resource_reservations: Sequence[RuntimeResourceReservation],
+    telemetry_provider: RuntimeTelemetryProvider,
     recovery_marker: OwnerPathRuntimeMarker,
     error_factory: TargetedMethodCompletionErrorFactory = (
         targeted_method_worker_loss_batch
@@ -474,22 +493,30 @@ def execute_targeted_method_completion_runtime(
     for job in normalized_jobs:
         _validate_spawn_payload(job)
 
-    state = prepare_targeted_runtime_lifecycle(runtime, resource_reservations)
     recovery_marker.record_launch(runtime)
-    if runtime.history.cancellation_accepted:
-        observed = tuple(_cancelled_completion_batch(job) for job in normalized_jobs)
-    else:
-        observed = _run_spawned_completion_jobs(
-            normalized_jobs,
-            max_workers=max_workers,
-            error_factory=error_factory,
-            executor_factory=executor_factory,
-        )
-    batch = _merge_targeted_worker_batches(observed)
-    return finalize_targeted_runtime_worker_batch(
-        state,
-        batch,
-        supervisor_finalizer=recovery_marker,
+
+    def provide_worker_batch(
+        _aggregate: RuntimeAttemptAggregate,
+    ) -> TargetedRuntimeWorkerBatch:
+        if runtime.history.cancellation_accepted:
+            observed = tuple(
+                _cancelled_completion_batch(job) for job in normalized_jobs
+            )
+        else:
+            observed = _run_spawned_completion_jobs(
+                normalized_jobs,
+                max_workers=max_workers,
+                error_factory=error_factory,
+                executor_factory=executor_factory,
+            )
+        return _merge_targeted_worker_batches(observed)
+
+    return execute_targeted_runtime_lifecycle(
+        runtime,
+        resource_reservations,
+        worker_batch_provider=provide_worker_batch,
+        telemetry_provider=telemetry_provider,
+        finalization_persister=recovery_marker,
     )
 
 
@@ -530,8 +557,13 @@ def _cancelled_completion_batch(
                 attempt=job.attempt,
                 work_unit_key=job.work_unit_key,
                 outcome=WorkUnitTerminalOutcome.CANCELLED,
-                failure_message=(
-                    "attempt cancellation accepted before Targeted dispatch"
+                failure_detail=WorkUnitFailureDetail(
+                    category=WorkUnitFailureCategory.CANCELLATION,
+                    stage="targeted-process-worker",
+                    source_reference=f"no-raw:{job.work_unit_key}",
+                    message=(
+                        "attempt cancellation accepted before Targeted dispatch"
+                    ),
                 ),
             ),
         ),

@@ -8,8 +8,10 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from xic_extractor import config as config_module
 from xic_extractor import extractor
 from xic_extractor.config import ConfigError, ExtractionConfig, Target
+from xic_extractor.extraction.targeted_diagnostic_application import (
+    build_canonical_targeted_application_service,
+)
 from xic_extractor.extraction.targeted_service import (
-    TargetedApplicationService,
     build_targeted_application_request,
 )
 from xic_extractor.extractor import ExtractionResult, RunOutput
@@ -33,7 +35,9 @@ class PipelineWorker(QThread):
     def run(self) -> None:
         try:
             config, targets = config_module.load_config(self._config_dir)
-            output = TargetedApplicationService(extractor.run).execute_application(
+            output = build_canonical_targeted_application_service(
+                extractor.run
+            ).execute_application(
                 build_targeted_application_request(
                     config,
                     targets,

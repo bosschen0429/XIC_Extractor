@@ -6,10 +6,14 @@ import json
 from dataclasses import dataclass, replace
 from typing import Literal
 
+from xic_extractor.alignment.runtime_adapter import (
+    AlignmentRuntimeAdapterError,
+    AlignmentRuntimeApplicationResult,
+    resolve_alignment_application_peak_group_result,
+)
 from xic_extractor.alignment.targeted_hypothesis_alignment import (
     TargetedHypothesisAlignmentInput,
 )
-from xic_extractor.artifact_lineage import canonical_evidence_artifact_closure
 from xic_extractor.delivery_lineage import (
     TargetedDeliveryRevisionCandidate,
     TargetedDeliverySealCandidate,
@@ -27,15 +31,26 @@ from xic_extractor.evidence_artifacts import (
 from xic_extractor.execution_runtime import AttemptTerminalOutcome
 from xic_extractor.execution_runtime_finalization_models import (
     RuntimeArtifactDisposition,
-    SupervisorFinalizationRecord,
+    RuntimeArtifactRecord,
 )
 from xic_extractor.extraction.targeted_diagnostic_method import (
+    TargetedDiagnosticMethodRequest,
     TargetedDiagnosticMethodResult,
     TargetedDiagnosticProjection,
     canonical_targeted_diagnostic_method_bytes,
+    targeted_attempt_namespace_component,
+)
+from xic_extractor.extraction.targeted_runtime_adapter import (
+    TargetedRuntimeAdapterError,
+    TargetedRuntimeLifecycleApplicationResult,
+    resolve_targeted_application_method_result,
 )
 from xic_extractor.extractor import RunOutput
-from xic_extractor.processing_identity import ProcessingAttemptIdentity
+from xic_extractor.output.csv_writers import write_wide_csv
+from xic_extractor.processing_identity import (
+    ProcessingAttemptIdentity,
+    canonical_current_attempt_artifact_closure,
+)
 
 TargetedDiagnosticDeliveryCandidateStatus = Literal[
     "staged_candidate",
@@ -60,8 +75,6 @@ _CSV_OUTPUT_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type="text/csv",
     serialization_format="exact-bytes-v1",
 )
-_TARGETED_RUNTIME_OWNER = "xic_extractor.extraction.targeted_runtime_adapter"
-_ALIGNMENT_RUNTIME_OWNER = "xic_extractor.alignment.runtime_adapter"
 
 
 class TargetedDiagnosticDeliveryError(ValueError):
@@ -98,9 +111,8 @@ class TargetedDiagnosticDeliveryCandidate:
                 "active_output must remain the authoritative legacy RunOutput"
             )
         try:
-            closure = canonical_evidence_artifact_closure(
-                processing_request_id=self.attempt.processing_request_id,
-                processing_attempt_id=self.attempt.processing_attempt_id,
+            closure = canonical_current_attempt_artifact_closure(
+                producer_attempt=self.attempt,
                 artifacts=self.lineage_artifacts,
             )
         except ValueError as exc:
@@ -138,37 +150,72 @@ class TargetedDiagnosticDeliveryCandidate:
 def settle_targeted_diagnostic_delivery_candidate(
     result: TargetedDiagnosticMethodResult,
     *,
-    alignment_inputs: tuple[TargetedHypothesisAlignmentInput, ...],
-    attempt: ProcessingAttemptIdentity,
-    targeted_finalization: SupervisorFinalizationRecord,
-    alignment_finalization: SupervisorFinalizationRecord,
-    targeted_runtime_artifacts: tuple[EvidenceArtifactRef, ...],
-    alignment_runtime_artifacts: tuple[EvidenceArtifactRef, ...],
-    candidate_csv_bytes: bytes,
+    request: TargetedDiagnosticMethodRequest,
+    alignment_runtime: AlignmentRuntimeApplicationResult,
+    targeted_runtime: TargetedRuntimeLifecycleApplicationResult,
     authoritative_legacy_csv_bytes: bytes,
     prior_current_delivery_id: str,
 ) -> TargetedDiagnosticDeliveryCandidate:
     """Mint delivery candidates only after exact runtime and legacy parity gates."""
 
+    if not isinstance(request, TargetedDiagnosticMethodRequest):
+        raise TargetedDiagnosticDeliveryError(
+            "request must be TargetedDiagnosticMethodRequest"
+        )
+    if not isinstance(alignment_runtime, AlignmentRuntimeApplicationResult):
+        raise TargetedDiagnosticDeliveryError(
+            "alignment_runtime must be AlignmentRuntimeApplicationResult"
+        )
+    if not isinstance(
+        targeted_runtime,
+        TargetedRuntimeLifecycleApplicationResult,
+    ):
+        raise TargetedDiagnosticDeliveryError(
+            "targeted_runtime must be TargetedRuntimeLifecycleApplicationResult"
+        )
+    attempt = alignment_runtime.runtime.manifest.attempt
+    alignment_inputs = request.alignment_inputs
+    if request.processing_attempt != attempt:
+        raise TargetedDiagnosticDeliveryError(
+            "request references a different processing attempt"
+        )
+    if result.authoritative_legacy_output != request.authoritative_legacy_output:
+        raise TargetedDiagnosticDeliveryError(
+            "method result does not retain the request's authoritative legacy output"
+        )
+    if (
+        len(request.targets) != 1
+        or not alignment_inputs
+        or any(
+            item.target.definition.target != request.targets[0]
+            for item in alignment_inputs
+        )
+    ):
+        raise TargetedDiagnosticDeliveryError(
+            "legacy writer target does not match the exact owner-resolved definition"
+        )
     input_by_sample = _validate_method_context(
         result,
         alignment_inputs=alignment_inputs,
         attempt=attempt,
     )
     _required_text(prior_current_delivery_id, field="prior_current_delivery_id")
-    _require_exact_bytes(candidate_csv_bytes, field="candidate_csv_bytes")
     _require_exact_bytes(
         authoritative_legacy_csv_bytes,
         field="authoritative_legacy_csv_bytes",
     )
 
     candidate_lineage = _candidate_lineage(alignment_inputs, attempt=attempt)
+    alignment_runtime_artifacts = _registered_runtime_artifacts(
+        alignment_runtime.coordinator_record.state.artifacts
+    )
+    targeted_runtime_artifacts = _registered_runtime_artifacts(
+        targeted_runtime.coordinator_record.state.artifacts
+    )
     gate_reason = _runtime_gate_reason(
         attempt=attempt,
-        targeted_finalization=targeted_finalization,
-        alignment_finalization=alignment_finalization,
-        targeted_runtime_artifacts=targeted_runtime_artifacts,
-        alignment_runtime_artifacts=alignment_runtime_artifacts,
+        alignment_runtime=alignment_runtime,
+        targeted_runtime=targeted_runtime,
     )
     runtime_lineage = _canonical_lineage(
         attempt,
@@ -187,6 +234,44 @@ def settle_targeted_diagnostic_delivery_candidate(
             reason=gate_reason,
         )
 
+    try:
+        _alignment_work_key, alignment_result_artifact = (
+            resolve_alignment_application_peak_group_result(
+                alignment_runtime,
+                result.groups,
+            )
+        )
+        _targeted_work_key, targeted_result_ref = (
+            resolve_targeted_application_method_result(
+                targeted_runtime.settlement,
+                result,
+            )
+        )
+    except (AlignmentRuntimeAdapterError, TargetedRuntimeAdapterError) as exc:
+        raise TargetedDiagnosticDeliveryError(str(exc)) from exc
+    expected_alignment_upstreams = tuple(
+        sorted(
+            {
+                artifact.evidence_artifact_id
+                for item in alignment_inputs
+                for artifact in (item.candidate_set.artifact, item.selection.artifact)
+            }
+        )
+    )
+    if (
+        alignment_result_artifact.upstream_artifact_ids
+        != expected_alignment_upstreams
+    ):
+        raise TargetedDiagnosticDeliveryError(
+            "Alignment result does not close the exact candidate-set inputs"
+        )
+    if targeted_result_ref.artifact.upstream_artifact_ids != (
+        alignment_result_artifact.evidence_artifact_id,
+    ):
+        raise TargetedDiagnosticDeliveryError(
+            "Targeted result does not consume the exact Alignment owner artifact"
+        )
+
     method_payload = canonical_targeted_diagnostic_method_bytes(result)
     method_result_artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=attempt.processing_request_id,
@@ -195,14 +280,26 @@ def settle_targeted_diagnostic_delivery_candidate(
         payload_bytes=method_payload,
         upstream_artifacts=_method_roots(
             alignment_inputs,
-            targeted_runtime_artifacts=targeted_runtime_artifacts,
-            alignment_runtime_artifacts=alignment_runtime_artifacts,
+            targeted_result_artifact=targeted_result_ref.artifact,
+            alignment_result_artifact=alignment_result_artifact,
         ),
     )
     method_lineage = _canonical_lineage(
         attempt,
         (*runtime_lineage, method_result_artifact),
     )
+    output_path = (
+        request.peak_config.output_csv.parent
+        / "successor_attempts"
+        / targeted_attempt_namespace_component(attempt.processing_attempt_id)
+        / "xic_results.csv"
+    )
+    write_wide_csv(
+        replace(request.peak_config, output_csv=output_path),
+        request.targets,
+        result.authoritative_legacy_output.file_results,
+    )
+    candidate_csv_bytes = output_path.read_bytes()
     if candidate_csv_bytes != authoritative_legacy_csv_bytes:
         return _quarantined(
             result,
@@ -375,47 +472,44 @@ def _candidate_lineage(
 def _runtime_gate_reason(
     *,
     attempt: ProcessingAttemptIdentity,
-    targeted_finalization: object,
-    alignment_finalization: object,
-    targeted_runtime_artifacts: object,
-    alignment_runtime_artifacts: object,
+    alignment_runtime: AlignmentRuntimeApplicationResult,
+    targeted_runtime: TargetedRuntimeLifecycleApplicationResult,
 ) -> str:
     lanes = (
         (
             "targeted",
-            targeted_finalization,
-            targeted_runtime_artifacts,
-            _TARGETED_RUNTIME_OWNER,
+            targeted_runtime.settlement.runtime,
+            targeted_runtime.finalization_record,
+            _registered_runtime_artifacts(
+                targeted_runtime.coordinator_record.state.artifacts
+            ),
         ),
         (
             "alignment",
-            alignment_finalization,
-            alignment_runtime_artifacts,
-            _ALIGNMENT_RUNTIME_OWNER,
+            alignment_runtime.runtime,
+            alignment_runtime.finalization_record,
+            _registered_runtime_artifacts(
+                alignment_runtime.coordinator_record.state.artifacts
+            ),
         ),
     )
     observed_ids: set[str] = set()
-    for lane, finalization, artifacts, owner_namespace in lanes:
-        if not isinstance(finalization, SupervisorFinalizationRecord):
-            return f"partial {lane} runtime finalization"
+    for lane, runtime, finalization, artifacts in lanes:
         if finalization.attempt != attempt:
             return f"conflicting {lane} runtime finalization attempt"
+        if runtime.manifest.attempt != attempt:
+            return f"conflicting {lane} runtime attempt"
+        if runtime.integrity_failure is not None:
+            return f"conflicting {lane} runtime settlement replay"
+        if not runtime.all_manifest_work_settled:
+            return f"partial {lane} runtime settlement"
         if finalization.terminal_outcome is not AttemptTerminalOutcome.SUCCEEDED:
             return (
                 f"{lane} runtime attempt {finalization.terminal_outcome.value}; "
                 "delivery quarantined"
             )
-        if not isinstance(artifacts, tuple) or any(
-            not isinstance(artifact, EvidenceArtifactRef) for artifact in artifacts
-        ):
-            return f"partial {lane} runtime owner artifacts"
         if not artifacts:
             return f"partial {lane} runtime owner artifacts"
-        if any(
-            artifact.semantic_contract.owner_namespace != owner_namespace
-            for artifact in artifacts
-        ):
-            return f"conflicting {lane} runtime owner artifact role"
         dispositions: dict[str, RuntimeArtifactDisposition] = {}
         for item in finalization.artifact_dispositions:
             if (
@@ -455,16 +549,28 @@ def _runtime_gate_reason(
 def _method_roots(
     inputs: tuple[TargetedHypothesisAlignmentInput, ...],
     *,
-    targeted_runtime_artifacts: tuple[EvidenceArtifactRef, ...],
-    alignment_runtime_artifacts: tuple[EvidenceArtifactRef, ...],
+    targeted_result_artifact: EvidenceArtifactRef,
+    alignment_result_artifact: EvidenceArtifactRef,
 ) -> tuple[EvidenceArtifactRef, ...]:
     values = (
         *(item.candidate_set.artifact for item in inputs),
-        *targeted_runtime_artifacts,
-        *alignment_runtime_artifacts,
+        targeted_result_artifact,
+        alignment_result_artifact,
     )
     by_id = {item.evidence_artifact_id: item for item in values}
     return tuple(by_id[artifact_id] for artifact_id in sorted(by_id))
+
+
+def _registered_runtime_artifacts(
+    records: object,
+) -> tuple[EvidenceArtifactRef, ...]:
+    if not isinstance(records, tuple) or any(
+        not isinstance(record, RuntimeArtifactRecord) for record in records
+    ):
+        raise TargetedDiagnosticDeliveryError(
+            "runtime artifact records must be RuntimeArtifactRecord values"
+        )
+    return tuple(record.artifact for record in records)
 
 
 def _canonical_lineage(
@@ -484,9 +590,8 @@ def _canonical_lineage(
             )
         by_id[artifact.evidence_artifact_id] = artifact
     try:
-        return canonical_evidence_artifact_closure(
-            processing_request_id=attempt.processing_request_id,
-            processing_attempt_id=attempt.processing_attempt_id,
+        return canonical_current_attempt_artifact_closure(
+            producer_attempt=attempt,
             artifacts=tuple(by_id.values()),
         )
     except ValueError as exc:

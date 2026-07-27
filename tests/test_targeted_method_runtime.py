@@ -5,12 +5,17 @@ from pathlib import Path
 
 import pytest
 
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
+)
 from tests.test_targeted_diagnostic_method import _method_request
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptLifecycleHistory,
     AttemptRuntime,
     AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
     preflight_required_work_manifest,
@@ -19,6 +24,7 @@ from xic_extractor.execution_runtime import (
 from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
 )
@@ -72,7 +78,12 @@ def _partial_worker_loss_batch(
                 attempt=job.attempt,
                 work_unit_key=job.work_unit_key,
                 outcome=WorkUnitTerminalOutcome.FAILED,
-                failure_message=f"{type(error).__name__}: {error}",
+                failure_detail=WorkUnitFailureDetail(
+                    category=WorkUnitFailureCategory.WORKER_LOSS,
+                    stage="targeted-process-worker",
+                    source_reference=f"no-raw:{job.work_unit_key}",
+                    message=f"{type(error).__name__}: {error}",
+                ),
             ),
         ),
         resource_reports=(
@@ -112,6 +123,7 @@ def test_true_spawned_alignment_to_targeted_is_canonical_when_reordered(
         serial_alignment_jobs,
         max_workers=1,
         resource_reservations=_reservations(serial_alignment_jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "alignment-serial"),
     )
     alignment = execute_targeted_method_alignment_runtime(
@@ -119,6 +131,7 @@ def test_true_spawned_alignment_to_targeted_is_canonical_when_reordered(
         tuple(reversed(serial_alignment_jobs)),
         max_workers=2,
         resource_reservations=_reservations(serial_alignment_jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "alignment-reordered"),
     )
 
@@ -158,6 +171,7 @@ def test_true_spawned_alignment_to_targeted_is_canonical_when_reordered(
         serial_jobs,
         max_workers=1,
         resource_reservations=_reservations(serial_jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "targeted-serial"),
     )
     jobs = build_targeted_method_completion_jobs(
@@ -169,6 +183,7 @@ def test_true_spawned_alignment_to_targeted_is_canonical_when_reordered(
         jobs,
         max_workers=2,
         resource_reservations=_reservations(serial_jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "targeted-reordered"),
     )
 
@@ -206,6 +221,7 @@ def test_failed_alignment_carrier_cannot_enter_targeted_stage(tmp_path: Path) ->
         (job,),
         max_workers=1,
         resource_reservations=_reservations((job,)),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "alignment-failed"),
     )
 
@@ -239,6 +255,7 @@ def test_cancellation_stops_before_targeted_spawn(tmp_path: Path) -> None:
         jobs,
         max_workers=1,
         resource_reservations=_reservations(jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "targeted-cancelled"),
         executor_factory=_ForbiddenExecutor,
     )
@@ -272,6 +289,7 @@ def test_worker_loss_and_partial_artifact_fail_closed(tmp_path: Path) -> None:
         jobs,
         max_workers=1,
         resource_reservations=_reservations(jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "targeted-worker-loss"),
     )
     assert worker_loss.finalization_record.terminal_outcome is (
@@ -288,6 +306,7 @@ def test_worker_loss_and_partial_artifact_fail_closed(tmp_path: Path) -> None:
         jobs,
         max_workers=1,
         resource_reservations=_reservations(jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "targeted-partial"),
         error_factory=_partial_worker_loss_batch,
     )
@@ -313,6 +332,7 @@ def test_conflicting_targeted_replay_clears_scientific_carrier(
         alignment_jobs,
         max_workers=2,
         resource_reservations=_reservations(alignment_jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "alignment-conflict-source"),
     )
     jobs = build_targeted_method_completion_jobs(
@@ -337,6 +357,7 @@ def test_conflicting_targeted_replay_clears_scientific_carrier(
         jobs,
         max_workers=2,
         resource_reservations=_reservations(jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "targeted-conflict"),
     )
 
@@ -358,6 +379,7 @@ def _successful_alignment(
         (job,),
         max_workers=1,
         resource_reservations=_reservations((job,)),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "alignment-success"),
     )
 
@@ -422,6 +444,7 @@ def _reservations(jobs) -> tuple[RuntimeResourceReservation, ...]:
     return tuple(
         RuntimeResourceReservation(
             attempt=job.attempt,
+            kind=RuntimeResourceKind.PROCESS_WORKER,
             resource_key=job.resource_key,
             worker_key=f"worker:{index}",
             source_reference=f"no-raw:{job.work_unit_key}:{index}",

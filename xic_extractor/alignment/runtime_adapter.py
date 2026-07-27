@@ -488,6 +488,53 @@ def canonical_alignment_peak_group_result_bytes(
     ).encode("utf-8")
 
 
+def resolve_alignment_application_peak_group_result(
+    application: AlignmentRuntimeApplicationResult,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+) -> tuple[str, EvidenceArtifactRef]:
+    """Resolve one exact owner-validated group carrier from an application result."""
+
+    if not isinstance(application, AlignmentRuntimeApplicationResult):
+        raise AlignmentRuntimeAdapterError(
+            "application must be AlignmentRuntimeApplicationResult"
+        )
+    if application.runtime.integrity_failure is not None:
+        raise AlignmentRuntimeAdapterError(
+            "integrity-failed Alignment runtime cannot resolve scientific results"
+        )
+    expected = canonical_alignment_peak_group_result_bytes(groups)
+    matches = tuple(
+        (work_unit_key, observed_groups)
+        for work_unit_key, observed_groups in (
+            application.successful_cross_sample_peak_groups
+        )
+        if canonical_alignment_peak_group_result_bytes(observed_groups) == expected
+    )
+    if len(matches) != 1:
+        raise AlignmentRuntimeAdapterError(
+            "Alignment application must contain exactly one matching group result"
+        )
+    work_unit_key, observed_groups = matches[0]
+    settlement = next(
+        (
+            item
+            for item in application.runtime.settlements
+            if item.work_unit_key == work_unit_key
+        ),
+        None,
+    )
+    if settlement is None or settlement.owner_result_ref is None:
+        raise AlignmentRuntimeAdapterError(
+            "matching Alignment group result is missing its owner artifact"
+        )
+    _validate_cross_sample_peak_group_binding(
+        settlement=settlement,
+        groups=observed_groups,
+        upstream_artifact_ids=settlement.owner_result_ref.upstream_artifact_ids,
+    )
+    return work_unit_key, settlement.owner_result_ref
+
+
 def _canonical_result_identity_bytes(
     *,
     work_unit_key: str,
@@ -758,4 +805,5 @@ __all__ = [
     "canonical_alignment_peak_group_result_bytes",
     "execute_alignment_process_runtime",
     "mint_alignment_process_result_artifact",
+    "resolve_alignment_application_peak_group_result",
 ]

@@ -14,6 +14,7 @@ from tests.package2_no_raw_fixture import (
 from xic_extractor.discovery.targeted_candidate_set import (
     TargetedCandidateSetError,
     canonical_targeted_candidate_set_bytes,
+    complete_targeted_candidate_discovery,
     mint_targeted_candidate_set_ref,
 )
 
@@ -87,11 +88,15 @@ def test_duplicate_projection_swap_and_missing_ancestor_fail_closed(
     second_member = package2_candidate_member(fixture, second)
 
     with pytest.raises(TargetedCandidateSetError, match="duplicate"):
-        mint_targeted_candidate_set_ref(
+        complete_targeted_candidate_discovery(
             processing_owners=fixture.owners,
             sample=fixture.sample("sample-a"),
             target=fixture.target,
-            candidates=(first_member, first_member),
+            hypotheses=(first, first),
+            targeted_cid_nl_projections=(
+                first_member.targeted_cid_nl_projection,
+                first_member.targeted_cid_nl_projection,
+            ),
             lineage_artifacts=fixture.lineage_for((first_member,)),
         )
     swapped_member = replace(
@@ -99,20 +104,26 @@ def test_duplicate_projection_swap_and_missing_ancestor_fail_closed(
         targeted_cid_nl_projection=second_member.targeted_cid_nl_projection,
     )
     with pytest.raises(TargetedCandidateSetError, match="projection.*hypothesis"):
-        mint_targeted_candidate_set_ref(
+        complete_targeted_candidate_discovery(
             processing_owners=fixture.owners,
             sample=fixture.sample("sample-a"),
             target=fixture.target,
-            candidates=(swapped_member,),
+            hypotheses=(first,),
+            targeted_cid_nl_projections=(
+                swapped_member.targeted_cid_nl_projection,
+            ),
             lineage_artifacts=fixture.lineage_for((swapped_member,)),
         )
     assert first.artifact is not None
     with pytest.raises(TargetedCandidateSetError, match="missing upstream"):
-        mint_targeted_candidate_set_ref(
+        complete_targeted_candidate_discovery(
             processing_owners=fixture.owners,
             sample=fixture.sample("sample-a"),
             target=fixture.target,
-            candidates=(first_member,),
+            hypotheses=(first,),
+            targeted_cid_nl_projections=(
+                first_member.targeted_cid_nl_projection,
+            ),
             lineage_artifacts=(first.artifact,),
         )
 
@@ -133,21 +144,27 @@ def test_mixed_sample_target_attempt_and_tamper_fail_closed(tmp_path: Path) -> N
     foreign_member = package2_candidate_member(fixture, foreign_sample)
 
     with pytest.raises(TargetedCandidateSetError, match="different canonical sample"):
-        mint_targeted_candidate_set_ref(
+        complete_targeted_candidate_discovery(
             processing_owners=fixture.owners,
             sample=fixture.sample("sample-a"),
             target=fixture.target,
-            candidates=(foreign_member,),
+            hypotheses=(foreign_sample,),
+            targeted_cid_nl_projections=(
+                foreign_member.targeted_cid_nl_projection,
+            ),
             lineage_artifacts=fixture.lineage_for((foreign_member,)),
         )
 
     wrong_target = fixture.other_target
     with pytest.raises(TargetedCandidateSetError, match="different target"):
-        mint_targeted_candidate_set_ref(
+        complete_targeted_candidate_discovery(
             processing_owners=fixture.owners,
             sample=fixture.sample("sample-a"),
             target=wrong_target,
-            candidates=(first_member,),
+            hypotheses=(first,),
+            targeted_cid_nl_projections=(
+                first_member.targeted_cid_nl_projection,
+            ),
             lineage_artifacts=fixture.lineage_for((first_member,)),
         )
 
@@ -160,14 +177,63 @@ def test_mixed_sample_target_attempt_and_tamper_fail_closed(tmp_path: Path) -> N
     )
     retry_member = package2_candidate_member(retry_fixture, retry_hypothesis)
     with pytest.raises(TargetedCandidateSetError, match="different processing attempt"):
-        mint_targeted_candidate_set_ref(
+        complete_targeted_candidate_discovery(
             processing_owners=fixture.owners,
             sample=fixture.sample("sample-a"),
             target=fixture.target,
-            candidates=(retry_member,),
+            hypotheses=(retry_hypothesis,),
+            targeted_cid_nl_projections=(
+                retry_member.targeted_cid_nl_projection,
+            ),
             lineage_artifacts=retry_fixture.lineage_for((retry_member,)),
         )
 
     receipt = package2_candidate_set(fixture, "sample-a", (first,))
     with pytest.raises(TargetedCandidateSetError, match="failure_reason"):
         replace(receipt, failure_reason="caller_tamper")
+
+
+def test_two_discovered_candidates_cannot_be_recast_as_one_complete_candidate(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("sample-a",))
+    first = package2_hypothesis(fixture, "sample-a", apex_rt=8.0, scan_number=42)
+    second = package2_hypothesis(fixture, "sample-a", apex_rt=8.3, scan_number=52)
+    members = tuple(
+        package2_candidate_member(fixture, hypothesis)
+        for hypothesis in (first, second)
+    )
+    completion = complete_targeted_candidate_discovery(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("sample-a"),
+        target=fixture.target,
+        hypotheses=(first, second),
+        targeted_cid_nl_projections=tuple(
+            member.targeted_cid_nl_projection for member in members
+        ),
+        lineage_artifacts=fixture.lineage_for(members),
+    )
+
+    with pytest.raises(
+        TargetedCandidateSetError,
+        match="outside the exact candidate closure",
+    ):
+        replace(completion, candidates=(completion.candidates[0],))
+    with pytest.raises(TypeError, match="unexpected keyword argument 'candidates'"):
+        mint_targeted_candidate_set_ref(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("sample-a"),
+            target=fixture.target,
+            completion=completion,
+            candidates=(completion.candidates[0],),  # type: ignore[call-arg]
+        )
+
+    receipt = mint_targeted_candidate_set_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("sample-a"),
+        target=fixture.target,
+        completion=completion,
+    )
+    assert receipt.candidate_hypothesis_ids == tuple(
+        sorted((first.hypothesis_id, second.hypothesis_id))
+    )

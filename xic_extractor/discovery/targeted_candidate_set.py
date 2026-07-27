@@ -32,12 +32,22 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 TargetedCandidateSetStatus = Literal["complete", "failed"]
 
 SCHEMA_VERSION = "targeted_candidate_set_v1"
+COMPLETION_SCHEMA_VERSION = "targeted_candidate_discovery_completion_v1"
 VALIDATION_STATUS = "diagnostic_only"
 ARTIFACT_SEMANTIC_ROLE = "targeted_candidate_set_receipt"
+COMPLETION_ARTIFACT_SEMANTIC_ROLE = "targeted_candidate_discovery_completion"
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.discovery.targeted_candidate_set",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
+    validation_status=VALIDATION_STATUS,
+    media_type="application/json",
+    serialization_format="canonical-json-utf8-lf-v1",
+)
+_COMPLETION_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.discovery.targeted_candidate_set",
+    semantic_role=COMPLETION_ARTIFACT_SEMANTIC_ROLE,
+    schema_version=COMPLETION_SCHEMA_VERSION,
     validation_status=VALIDATION_STATUS,
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf-v1",
@@ -77,6 +87,110 @@ class TargetedCandidateSetMember:
 
 
 @dataclass(frozen=True, slots=True)
+class TargetedCandidateDiscoveryCompletion:
+    """Immutable result of exhausting one explicitly bounded Discovery input."""
+
+    processing_attempt: ProcessingAttemptIdentity
+    processing_request_id: str
+    processing_attempt_id: str
+    canonical_sample_identity_id: str
+    target_snapshot_id: str
+    target_key_id: str
+    target_definition_id: str
+    status: TargetedCandidateSetStatus
+    failure_reason: str
+    candidates: tuple[TargetedCandidateSetMember, ...]
+    lineage_artifacts: tuple[EvidenceArtifactRef, ...]
+    artifact: EvidenceArtifactRef
+
+    def __post_init__(self) -> None:
+        _validate_processing_attempt_binding(
+            processing_attempt=self.processing_attempt,
+            processing_request_id=self.processing_request_id,
+            processing_attempt_id=self.processing_attempt_id,
+        )
+        _validate_bound_identity_ids(
+            processing_request_id=self.processing_request_id,
+            processing_attempt_id=self.processing_attempt_id,
+            canonical_sample_identity_id=self.canonical_sample_identity_id,
+            target_snapshot_id=self.target_snapshot_id,
+            target_key_id=self.target_key_id,
+            target_definition_id=self.target_definition_id,
+        )
+        candidates = _canonical_member_tuple(self.candidates)
+        if candidates != self.candidates:
+            raise TargetedCandidateSetError(
+                "bounded completion candidates must be unique and canonical-sorted"
+            )
+        _validate_terminal_state(
+            status=self.status,
+            failure_reason=self.failure_reason,
+            candidates=candidates,
+        )
+        if not isinstance(self.artifact, EvidenceArtifactRef):
+            raise TargetedCandidateSetError(
+                "completion artifact must be an owner-minted EvidenceArtifactRef"
+            )
+        if self.artifact.semantic_contract != _COMPLETION_ARTIFACT_SEMANTIC_CONTRACT:
+            raise TargetedCandidateSetError(
+                "completion artifact semantic contract is not owned by Discovery"
+            )
+        if (
+            self.artifact.producer_processing_request_id
+            != self.processing_request_id
+            or self.artifact.producer_processing_attempt_id
+            != self.processing_attempt_id
+        ):
+            raise TargetedCandidateSetError(
+                "completion artifact references a different processing attempt"
+            )
+        closure = _canonical_lineage(
+            processing_attempt=self.processing_attempt,
+            artifacts=self.lineage_artifacts,
+        )
+        if closure != self.lineage_artifacts:
+            raise TargetedCandidateSetError(
+                "completion lineage_artifacts must be unique and canonical-sorted"
+            )
+        by_id = {item.evidence_artifact_id: item for item in closure}
+        if by_id.get(self.artifact.evidence_artifact_id) != self.artifact:
+            raise TargetedCandidateSetError(
+                "completion lineage must contain the completion artifact"
+            )
+        upstream = tuple(
+            item
+            for item in closure
+            if item.evidence_artifact_id != self.artifact.evidence_artifact_id
+        )
+        if self.artifact.upstream_artifact_ids != tuple(
+            item.evidence_artifact_id for item in upstream
+        ):
+            raise TargetedCandidateSetError(
+                "completion artifact must bind every candidate lineage artifact"
+            )
+        _validate_exact_candidate_lineage(candidates, upstream)
+        try:
+            verify_evidence_artifact_payload(
+                self.artifact,
+                _targeted_candidate_completion_bytes(
+                    processing_request_id=self.processing_request_id,
+                    processing_attempt_id=self.processing_attempt_id,
+                    canonical_sample_identity_id=self.canonical_sample_identity_id,
+                    target_snapshot_id=self.target_snapshot_id,
+                    target_key_id=self.target_key_id,
+                    target_definition_id=self.target_definition_id,
+                    status=self.status,
+                    failure_reason=self.failure_reason,
+                    candidates=candidates,
+                ),
+            )
+        except ValueError as exc:
+            raise TargetedCandidateSetError(
+                "bounded Discovery completion content mismatches its immutable artifact"
+            ) from exc
+
+
+@dataclass(frozen=True, slots=True)
 class TargetedCandidateSetRef:
     """Immutable Discovery completion receipt with full in-memory lineage closure."""
 
@@ -94,48 +208,18 @@ class TargetedCandidateSetRef:
     artifact: EvidenceArtifactRef
 
     def __post_init__(self) -> None:
-        if not isinstance(self.processing_attempt, ProcessingAttemptIdentity):
-            raise TargetedCandidateSetError(
-                "processing_attempt must be an owner-issued ProcessingAttemptIdentity"
-            )
-        _validate_typed_id(
-            self.processing_request_id,
-            prefix=_PROCESSING_REQUEST_PREFIX,
-            field="processing_request_id",
+        _validate_processing_attempt_binding(
+            processing_attempt=self.processing_attempt,
+            processing_request_id=self.processing_request_id,
+            processing_attempt_id=self.processing_attempt_id,
         )
-        _validate_typed_id(
-            self.processing_attempt_id,
-            prefix=_PROCESSING_ATTEMPT_PREFIX,
-            field="processing_attempt_id",
-        )
-        if (
-            self.processing_request_id
-            != self.processing_attempt.processing_request_id
-            or self.processing_attempt_id
-            != self.processing_attempt.processing_attempt_id
-        ):
-            raise TargetedCandidateSetError(
-                "candidate-set processing IDs must bind the owner-issued attempt"
-            )
-        _validate_typed_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
-        _validate_typed_id(
-            self.target_snapshot_id,
-            prefix=_TARGET_SNAPSHOT_PREFIX,
-            field="target_snapshot_id",
-        )
-        _validate_typed_id(
-            self.target_key_id,
-            prefix=_TARGET_KEY_PREFIX,
-            field="target_key_id",
-        )
-        _validate_typed_id(
-            self.target_definition_id,
-            prefix=_TARGET_DEFINITION_PREFIX,
-            field="target_definition_id",
+        _validate_bound_identity_ids(
+            processing_request_id=self.processing_request_id,
+            processing_attempt_id=self.processing_attempt_id,
+            canonical_sample_identity_id=self.canonical_sample_identity_id,
+            target_snapshot_id=self.target_snapshot_id,
+            target_key_id=self.target_key_id,
+            target_definition_id=self.target_definition_id,
         )
         candidates = _canonical_member_tuple(self.candidates)
         if candidates != self.candidates:
@@ -191,7 +275,18 @@ class TargetedCandidateSetRef:
             raise TargetedCandidateSetError(
                 "candidate-set artifact must bind every upstream lineage artifact"
             )
-        _validate_exact_candidate_lineage(candidates, upstream)
+        _validate_completion_backed_candidate_lineage(
+            processing_request_id=self.processing_request_id,
+            processing_attempt_id=self.processing_attempt_id,
+            canonical_sample_identity_id=self.canonical_sample_identity_id,
+            target_snapshot_id=self.target_snapshot_id,
+            target_key_id=self.target_key_id,
+            target_definition_id=self.target_definition_id,
+            status=self.status,
+            failure_reason=self.failure_reason,
+            candidates=candidates,
+            artifacts=upstream,
+        )
         try:
             verify_evidence_artifact_payload(
                 self.artifact,
@@ -234,25 +329,44 @@ class TargetedCandidateSetRef:
         self.__post_init__()
 
 
-def mint_targeted_candidate_set_ref(
+def complete_targeted_candidate_discovery(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     target: ResolvedTargetDefinition,
-    candidates: tuple[TargetedCandidateSetMember, ...],
+    hypotheses: tuple[PeakHypothesis, ...],
+    targeted_cid_nl_projections: tuple[TargetedCidNlProjectionRef, ...],
     lineage_artifacts: tuple[EvidenceArtifactRef, ...],
     failure_reason: str = "",
-) -> TargetedCandidateSetRef:
-    """Mint the sole Discovery-owned completeness receipt for one sample-target."""
+) -> TargetedCandidateDiscoveryCompletion:
+    """Exhaust and seal all candidates in one explicit no-RAW bounded input."""
 
     _validate_owner_context(
         processing_owners=processing_owners,
         sample=sample,
         target=target,
     )
-    members = _canonical_member_tuple(candidates)
+    bounded_hypotheses = _canonical_hypothesis_tuple(hypotheses)
+    bounded_projections = _canonical_projection_tuple(targeted_cid_nl_projections)
     normalized_failure = _optional_reason(failure_reason)
     status: TargetedCandidateSetStatus = "failed" if normalized_failure else "complete"
+    if normalized_failure and (bounded_hypotheses or bounded_projections):
+        raise TargetedCandidateSetError(
+            "failed bounded Discovery completion cannot carry candidate inputs"
+        )
+    upstream = _canonical_lineage(
+        processing_attempt=processing_owners.attempt,
+        artifacts=lineage_artifacts,
+    )
+    members = (
+        ()
+        if normalized_failure
+        else _pair_bounded_candidate_inputs(
+            hypotheses=bounded_hypotheses,
+            projections=bounded_projections,
+            artifacts=upstream,
+        )
+    )
     _validate_terminal_state(
         status=status,
         failure_reason=normalized_failure,
@@ -265,16 +379,9 @@ def mint_targeted_candidate_set_ref(
             sample=sample,
             target=target,
         )
-    try:
-        upstream = canonical_current_attempt_artifact_closure(
-            producer_attempt=processing_owners.attempt,
-            artifacts=lineage_artifacts,
-        )
-    except EvidenceArtifactClosureError as exc:
-        raise TargetedCandidateSetError(str(exc)) from exc
     _validate_exact_candidate_lineage(members, upstream)
 
-    payload = _targeted_candidate_set_bytes(
+    payload = _targeted_candidate_completion_bytes(
         processing_request_id=processing_owners.request.processing_request_id,
         processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         canonical_sample_identity_id=sample.identity.sample_identity_id,
@@ -288,18 +395,15 @@ def mint_targeted_candidate_set_ref(
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        semantic_contract=_COMPLETION_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=payload,
         upstream_artifacts=upstream,
     )
-    try:
-        full_closure = canonical_current_attempt_artifact_closure(
-            producer_attempt=processing_owners.attempt,
-            artifacts=(*upstream, artifact),
-        )
-    except EvidenceArtifactClosureError as exc:  # pragma: no cover - owner invariant
-        raise TargetedCandidateSetError(str(exc)) from exc
-    return TargetedCandidateSetRef(
+    full_closure = _canonical_lineage(
+        processing_attempt=processing_owners.attempt,
+        artifacts=(*upstream, artifact),
+    )
+    return TargetedCandidateDiscoveryCompletion(
         processing_attempt=processing_owners.attempt,
         processing_request_id=processing_owners.request.processing_request_id,
         processing_attempt_id=processing_owners.attempt.processing_attempt_id,
@@ -310,6 +414,87 @@ def mint_targeted_candidate_set_ref(
         status=status,
         failure_reason=normalized_failure,
         candidates=members,
+        lineage_artifacts=full_closure,
+        artifact=artifact,
+    )
+
+
+def mint_targeted_candidate_set_ref(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    target: ResolvedTargetDefinition,
+    completion: TargetedCandidateDiscoveryCompletion,
+) -> TargetedCandidateSetRef:
+    """Mint a receipt from one intact Discovery-owned bounded completion."""
+
+    _validate_owner_context(
+        processing_owners=processing_owners,
+        sample=sample,
+        target=target,
+    )
+    if not isinstance(completion, TargetedCandidateDiscoveryCompletion):
+        raise TargetedCandidateSetError(
+            "completion must be a Discovery-owned bounded completion result"
+        )
+    completion.__post_init__()
+    if (
+        completion.processing_attempt != processing_owners.attempt
+        or completion.processing_request_id
+        != processing_owners.request.processing_request_id
+        or completion.processing_attempt_id
+        != processing_owners.attempt.processing_attempt_id
+    ):
+        raise TargetedCandidateSetError(
+            "bounded completion references a different processing attempt"
+        )
+    if completion.canonical_sample_identity_id != sample.identity.sample_identity_id:
+        raise TargetedCandidateSetError(
+            "bounded completion references a different canonical sample"
+        )
+    if (
+        completion.target_snapshot_id != target.snapshot.snapshot_id
+        or completion.target_key_id != target.definition.target_key.target_key_id
+        or completion.target_definition_id
+        != target.definition.target_definition_id
+    ):
+        raise TargetedCandidateSetError(
+            "bounded completion references a different target definition"
+        )
+
+    payload = _targeted_candidate_set_bytes(
+        processing_request_id=completion.processing_request_id,
+        processing_attempt_id=completion.processing_attempt_id,
+        canonical_sample_identity_id=completion.canonical_sample_identity_id,
+        target_snapshot_id=completion.target_snapshot_id,
+        target_key_id=completion.target_key_id,
+        target_definition_id=completion.target_definition_id,
+        status=completion.status,
+        failure_reason=completion.failure_reason,
+        candidates=completion.candidates,
+    )
+    artifact = _mint_evidence_artifact_ref(
+        producer_processing_request_id=completion.processing_request_id,
+        producer_processing_attempt_id=completion.processing_attempt_id,
+        semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
+        payload_bytes=payload,
+        upstream_artifacts=completion.lineage_artifacts,
+    )
+    full_closure = _canonical_lineage(
+        processing_attempt=completion.processing_attempt,
+        artifacts=(*completion.lineage_artifacts, artifact),
+    )
+    return TargetedCandidateSetRef(
+        processing_attempt=completion.processing_attempt,
+        processing_request_id=completion.processing_request_id,
+        processing_attempt_id=completion.processing_attempt_id,
+        canonical_sample_identity_id=completion.canonical_sample_identity_id,
+        target_snapshot_id=completion.target_snapshot_id,
+        target_key_id=completion.target_key_id,
+        target_definition_id=completion.target_definition_id,
+        status=completion.status,
+        failure_reason=completion.failure_reason,
+        candidates=completion.candidates,
         lineage_artifacts=full_closure,
         artifact=artifact,
     )
@@ -433,6 +618,145 @@ def _validate_attempt(
         )
 
 
+def _canonical_lineage(
+    *,
+    processing_attempt: ProcessingAttemptIdentity,
+    artifacts: tuple[EvidenceArtifactRef, ...],
+) -> tuple[EvidenceArtifactRef, ...]:
+    try:
+        return canonical_current_attempt_artifact_closure(
+            producer_attempt=processing_attempt,
+            artifacts=artifacts,
+        )
+    except EvidenceArtifactClosureError as exc:
+        raise TargetedCandidateSetError(str(exc)) from exc
+
+
+def _validate_processing_attempt_binding(
+    *,
+    processing_attempt: object,
+    processing_request_id: str,
+    processing_attempt_id: str,
+) -> None:
+    if not isinstance(processing_attempt, ProcessingAttemptIdentity):
+        raise TargetedCandidateSetError(
+            "processing_attempt must be an owner-issued ProcessingAttemptIdentity"
+        )
+    if (
+        processing_request_id != processing_attempt.processing_request_id
+        or processing_attempt_id != processing_attempt.processing_attempt_id
+    ):
+        raise TargetedCandidateSetError(
+            "candidate-set processing IDs must bind the owner-issued attempt"
+        )
+
+
+def _canonical_hypothesis_tuple(values: object) -> tuple[PeakHypothesis, ...]:
+    if not isinstance(values, tuple):
+        raise TargetedCandidateSetError("hypotheses must be an immutable tuple")
+    if any(not isinstance(item, PeakHypothesis) for item in values):
+        raise TargetedCandidateSetError(
+            "hypotheses must contain existing PeakHypothesis values"
+        )
+    ordered = tuple(sorted(values, key=lambda item: item.hypothesis_id))
+    hypothesis_ids = tuple(item.hypothesis_id for item in ordered)
+    if len(hypothesis_ids) != len(set(hypothesis_ids)):
+        raise TargetedCandidateSetError(
+            "bounded Discovery input contains duplicate hypothesis identities"
+        )
+    return ordered
+
+
+def _canonical_projection_tuple(
+    values: object,
+) -> tuple[TargetedCidNlProjectionRef, ...]:
+    if not isinstance(values, tuple):
+        raise TargetedCandidateSetError(
+            "targeted_cid_nl_projections must be an immutable tuple"
+        )
+    if any(not isinstance(item, TargetedCidNlProjectionRef) for item in values):
+        raise TargetedCandidateSetError(
+            "targeted_cid_nl_projections must contain owner-minted refs"
+        )
+    ordered = tuple(
+        sorted(values, key=lambda item: item.artifact.evidence_artifact_id)
+    )
+    projection_ids = tuple(
+        item.artifact.evidence_artifact_id for item in ordered
+    )
+    if len(projection_ids) != len(set(projection_ids)):
+        raise TargetedCandidateSetError(
+            "bounded Discovery input contains duplicate projection identities"
+        )
+    return ordered
+
+
+def _pair_bounded_candidate_inputs(
+    *,
+    hypotheses: tuple[PeakHypothesis, ...],
+    projections: tuple[TargetedCidNlProjectionRef, ...],
+    artifacts: tuple[EvidenceArtifactRef, ...],
+) -> tuple[TargetedCandidateSetMember, ...]:
+    if len(hypotheses) != len(projections):
+        raise TargetedCandidateSetError(
+            "bounded Discovery completion requires one projection per hypothesis"
+        )
+    by_id = {artifact.evidence_artifact_id: artifact for artifact in artifacts}
+    projection_matches: dict[str, list[PeakHypothesis]] = {
+        projection.artifact.evidence_artifact_id: [] for projection in projections
+    }
+    for hypothesis in hypotheses:
+        hypothesis_artifact = _hypothesis_artifact(hypothesis)
+        ancestors = _artifact_ancestor_ids(
+            hypothesis_artifact.evidence_artifact_id,
+            by_id=by_id,
+        )
+        for projection in projections:
+            if projection.canonical_evidence_artifact_id in ancestors:
+                projection_matches[projection.artifact.evidence_artifact_id].append(
+                    hypothesis
+                )
+
+    members: list[TargetedCandidateSetMember] = []
+    for projection in projections:
+        matches = projection_matches[projection.artifact.evidence_artifact_id]
+        if len(matches) != 1:
+            raise TargetedCandidateSetError(
+                "each bounded projection must belong to exactly one discovered "
+                "hypothesis"
+            )
+        members.append(
+            TargetedCandidateSetMember(
+                hypothesis=matches[0],
+                targeted_cid_nl_projection=projection,
+            )
+        )
+    return _canonical_member_tuple(tuple(members))
+
+
+def _artifact_ancestor_ids(
+    artifact_id: str,
+    *,
+    by_id: dict[str, EvidenceArtifactRef],
+) -> set[str]:
+    ancestors: set[str] = set()
+
+    def visit(current_id: str) -> None:
+        if current_id in ancestors:
+            return
+        artifact = by_id.get(current_id)
+        if artifact is None:
+            raise TargetedCandidateSetError(
+                "candidate lineage has a missing upstream dependency"
+            )
+        ancestors.add(current_id)
+        for upstream_id in artifact.upstream_artifact_ids:
+            visit(upstream_id)
+
+    visit(artifact_id)
+    return ancestors
+
+
 def _canonical_member_tuple(
     values: object,
 ) -> tuple[TargetedCandidateSetMember, ...]:
@@ -476,6 +800,64 @@ def _validate_terminal_state(
         raise TargetedCandidateSetError(
             "failed candidate set requires zero candidates and one failure_reason"
         )
+
+
+def _validate_completion_backed_candidate_lineage(
+    *,
+    processing_request_id: str,
+    processing_attempt_id: str,
+    canonical_sample_identity_id: str,
+    target_snapshot_id: str,
+    target_key_id: str,
+    target_definition_id: str,
+    status: TargetedCandidateSetStatus,
+    failure_reason: str,
+    candidates: tuple[TargetedCandidateSetMember, ...],
+    artifacts: tuple[EvidenceArtifactRef, ...],
+) -> None:
+    completion_artifacts = tuple(
+        artifact
+        for artifact in artifacts
+        if artifact.semantic_contract == _COMPLETION_ARTIFACT_SEMANTIC_CONTRACT
+    )
+    if len(completion_artifacts) != 1:
+        raise TargetedCandidateSetError(
+            "candidate-set receipt requires exactly one bounded Discovery "
+            "completion artifact"
+        )
+    completion_artifact = completion_artifacts[0]
+    candidate_lineage = tuple(
+        artifact
+        for artifact in artifacts
+        if artifact.evidence_artifact_id
+        != completion_artifact.evidence_artifact_id
+    )
+    if completion_artifact.upstream_artifact_ids != tuple(
+        artifact.evidence_artifact_id for artifact in candidate_lineage
+    ):
+        raise TargetedCandidateSetError(
+            "bounded Discovery completion must close the exact candidate lineage"
+        )
+    _validate_exact_candidate_lineage(candidates, candidate_lineage)
+    try:
+        verify_evidence_artifact_payload(
+            completion_artifact,
+            _targeted_candidate_completion_bytes(
+                processing_request_id=processing_request_id,
+                processing_attempt_id=processing_attempt_id,
+                canonical_sample_identity_id=canonical_sample_identity_id,
+                target_snapshot_id=target_snapshot_id,
+                target_key_id=target_key_id,
+                target_definition_id=target_definition_id,
+                status=status,
+                failure_reason=failure_reason,
+                candidates=candidates,
+            ),
+        )
+    except ValueError as exc:
+        raise TargetedCandidateSetError(
+            "candidate-set receipt mismatches its bounded completion content"
+        ) from exc
 
 
 def _validate_exact_candidate_lineage(
@@ -559,8 +941,61 @@ def _targeted_candidate_set_bytes(
     failure_reason: str,
     candidates: tuple[TargetedCandidateSetMember, ...],
 ) -> bytes:
+    return _targeted_candidate_payload_bytes(
+        schema_version=SCHEMA_VERSION,
+        processing_request_id=processing_request_id,
+        processing_attempt_id=processing_attempt_id,
+        canonical_sample_identity_id=canonical_sample_identity_id,
+        target_snapshot_id=target_snapshot_id,
+        target_key_id=target_key_id,
+        target_definition_id=target_definition_id,
+        status=status,
+        failure_reason=failure_reason,
+        candidates=candidates,
+    )
+
+
+def _targeted_candidate_completion_bytes(
+    *,
+    processing_request_id: str,
+    processing_attempt_id: str,
+    canonical_sample_identity_id: str,
+    target_snapshot_id: str,
+    target_key_id: str,
+    target_definition_id: str,
+    status: TargetedCandidateSetStatus,
+    failure_reason: str,
+    candidates: tuple[TargetedCandidateSetMember, ...],
+) -> bytes:
+    return _targeted_candidate_payload_bytes(
+        schema_version=COMPLETION_SCHEMA_VERSION,
+        processing_request_id=processing_request_id,
+        processing_attempt_id=processing_attempt_id,
+        canonical_sample_identity_id=canonical_sample_identity_id,
+        target_snapshot_id=target_snapshot_id,
+        target_key_id=target_key_id,
+        target_definition_id=target_definition_id,
+        status=status,
+        failure_reason=failure_reason,
+        candidates=candidates,
+    )
+
+
+def _targeted_candidate_payload_bytes(
+    *,
+    schema_version: str,
+    processing_request_id: str,
+    processing_attempt_id: str,
+    canonical_sample_identity_id: str,
+    target_snapshot_id: str,
+    target_key_id: str,
+    target_definition_id: str,
+    status: TargetedCandidateSetStatus,
+    failure_reason: str,
+    candidates: tuple[TargetedCandidateSetMember, ...],
+) -> bytes:
     payload = {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": schema_version,
         "validation_status": VALIDATION_STATUS,
         "processing_request_id": processing_request_id,
         "processing_attempt_id": processing_attempt_id,
@@ -599,6 +1034,47 @@ def _targeted_candidate_set_bytes(
     ).encode("utf-8")
 
 
+def _validate_bound_identity_ids(
+    *,
+    processing_request_id: object,
+    processing_attempt_id: object,
+    canonical_sample_identity_id: object,
+    target_snapshot_id: object,
+    target_key_id: object,
+    target_definition_id: object,
+) -> None:
+    _validate_typed_id(
+        processing_request_id,
+        prefix=_PROCESSING_REQUEST_PREFIX,
+        field="processing_request_id",
+    )
+    _validate_typed_id(
+        processing_attempt_id,
+        prefix=_PROCESSING_ATTEMPT_PREFIX,
+        field="processing_attempt_id",
+    )
+    _validate_typed_id(
+        canonical_sample_identity_id,
+        prefix=_SAMPLE_ID_PREFIX,
+        field="canonical_sample_identity_id",
+    )
+    _validate_typed_id(
+        target_snapshot_id,
+        prefix=_TARGET_SNAPSHOT_PREFIX,
+        field="target_snapshot_id",
+    )
+    _validate_typed_id(
+        target_key_id,
+        prefix=_TARGET_KEY_PREFIX,
+        field="target_key_id",
+    )
+    _validate_typed_id(
+        target_definition_id,
+        prefix=_TARGET_DEFINITION_PREFIX,
+        field="target_definition_id",
+    )
+
+
 def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
     if not isinstance(value, str) or not value.startswith(prefix):
         raise TargetedCandidateSetError(f"{field} must use the {prefix!r} prefix")
@@ -619,12 +1095,16 @@ def _optional_reason(value: object) -> str:
 
 __all__ = [
     "ARTIFACT_SEMANTIC_ROLE",
+    "COMPLETION_ARTIFACT_SEMANTIC_ROLE",
+    "COMPLETION_SCHEMA_VERSION",
     "SCHEMA_VERSION",
+    "TargetedCandidateDiscoveryCompletion",
     "TargetedCandidateSetError",
     "TargetedCandidateSetMember",
     "TargetedCandidateSetRef",
     "TargetedCandidateSetStatus",
     "VALIDATION_STATUS",
     "canonical_targeted_candidate_set_bytes",
+    "complete_targeted_candidate_discovery",
     "mint_targeted_candidate_set_ref",
 ]

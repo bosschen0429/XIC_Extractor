@@ -15,11 +15,13 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_support_producer import (
     run_build_targeted_ms1_shape_identity_supports,
 )
+from xic_extractor.extraction.targeted_diagnostic_application import (
+    build_canonical_targeted_application_service,
+)
 from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )
 from xic_extractor.extraction.targeted_service import (
-    TargetedApplicationService,
     build_targeted_application_request,
 )
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
@@ -133,7 +135,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ) from exc
             output, excel_config = auto_result
         else:
-            output = TargetedApplicationService(extractor.run).execute_application(
+            output = build_canonical_targeted_application_service(
+                extractor.run
+            ).execute_application(
                 build_targeted_application_request(
                     run_config,
                     targets,
@@ -386,7 +390,7 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited baseline output: {baseline_output_dir}")
-    TargetedApplicationService(extractor.run).execute_application(
+    build_canonical_targeted_application_service(extractor.run).execute_application(
         build_targeted_application_request(
             baseline_config,
             targets,
@@ -431,7 +435,9 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
         "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     }
     print(f"Auto limited unverified final output: {final_staging_output_dir}")
-    final_output = TargetedApplicationService(extractor.run).execute_application(
+    final_output = build_canonical_targeted_application_service(
+        extractor.run
+    ).execute_application(
         build_targeted_application_request(
             final_staging_config,
             targets,

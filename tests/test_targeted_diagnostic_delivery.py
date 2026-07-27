@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
+)
 from tests.test_targeted_diagnostic_method import _method_request
 from tests.test_targeted_method_runtime import (
     _alignment_job,
@@ -14,32 +17,34 @@ from tests.test_targeted_method_runtime import (
     _runtime,
 )
 from xic_extractor.alignment.runtime_adapter import (
+    AlignmentRuntimeApplicationResult,
     mint_alignment_process_result_artifact,
 )
-from xic_extractor.evidence_artifacts import (
-    EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
-)
+from xic_extractor.evidence_artifacts import verify_evidence_artifact_payload
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptLifecycleHistory,
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
     preflight_required_work_manifest,
-    settle_work_unit,
     start_attempt_runtime,
 )
-from xic_extractor.execution_runtime_finalization import (
+from xic_extractor.execution_runtime_finalization_models import (
     RuntimeArtifactDisposition,
+    RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
+    RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
-    begin_attempt_finalization,
-    mark_worker_lost,
-    mint_supervisor_finalization,
-    propose_attempt_terminal,
-    register_runtime_artifact,
-    reserve_runtime_resource,
+)
+from xic_extractor.execution_runtime_owner import (
+    RuntimeArtifactRegistrationReceipt,
+    RuntimeWorkerBatchReceipt,
+    execute_runtime_attempt,
+    mint_work_unit_settlement,
 )
 from xic_extractor.extraction.targeted_diagnostic_delivery import (
     TargetedDiagnosticDeliveryError,
@@ -47,36 +52,247 @@ from xic_extractor.extraction.targeted_diagnostic_delivery import (
     settle_targeted_diagnostic_delivery_candidate,
 )
 from xic_extractor.extraction.targeted_diagnostic_method import (
-    canonical_targeted_diagnostic_method_bytes,
+    TargetedDiagnosticMethodResult,
     run_targeted_diagnostic_method,
+    targeted_attempt_namespace_component,
 )
 from xic_extractor.extraction.targeted_method_runtime import (
+    alignment_upstream_artifacts_for_request,
     build_targeted_method_completion_jobs,
     execute_targeted_method_alignment_runtime,
     execute_targeted_method_completion_runtime,
 )
 from xic_extractor.extraction.targeted_runtime_adapter import (
+    TargetedProcessResourceReport,
+    TargetedProcessWorkerResultEnvelope,
+    TargetedRuntimeLifecycleApplicationResult,
+    TargetedRuntimeWorkerBatch,
+    execute_targeted_runtime_lifecycle,
     mint_targeted_process_result_ref,
 )
 from xic_extractor.output.csv_writers import write_wide_csv
+from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
-_CSV_BYTES = b"legacy,current,remains,authoritative\n"
 
-
-def test_true_spawned_method_stages_hard_exact_candidate_and_rolls_back(
+def test_true_spawned_runtime_writes_and_stages_exact_candidate(
     tmp_path: Path,
 ) -> None:
     request, fixture = _method_request(tmp_path)
-    alignment_job = _alignment_job(
+    alignment, targeted, result = _true_runtime_path(
+        tmp_path,
         request,
         fixture.attempt,
-        "alignment:method",
     )
+    legacy_bytes = _legacy_csv_bytes(tmp_path, request)
+
+    delivery = settle_targeted_diagnostic_delivery_candidate(
+        result,
+        request=request,
+        alignment_runtime=alignment,
+        targeted_runtime=targeted,
+        authoritative_legacy_csv_bytes=legacy_bytes,
+        prior_current_delivery_id="legacy-seal:prior-current",
+    )
+
+    candidate_path = (
+        request.peak_config.output_csv.parent
+        / "successor_attempts"
+        / targeted_attempt_namespace_component(result.processing_attempt_id)
+        / "xic_results.csv"
+    )
+    assert delivery.status == "staged_candidate"
+    assert candidate_path.read_bytes() == legacy_bytes
+    assert delivery.diagnostic_csv_artifact is not None
+    verify_evidence_artifact_payload(delivery.diagnostic_csv_artifact, legacy_bytes)
+    assert delivery.stage_candidate is not None
+    assert delivery.seal_candidate is not None
+    assert delivery.seal_candidate.stage == delivery.stage_candidate
+    assert len(delivery.revisions) == len(request.alignment_inputs)
+    rolled_back = rollback_targeted_diagnostic_delivery_candidate(delivery)
+    assert rolled_back.status == "rolled_back"
+    assert rolled_back.active_output == request.authoritative_legacy_output
+    assert rolled_back.prior_current_delivery_id == "legacy-seal:prior-current"
+    assert rolled_back.lineage_artifacts == delivery.lineage_artifacts
+    assert not tuple(tmp_path.rglob("*.xlsx"))
+    assert not tuple(tmp_path.rglob("*matrix*"))
+
+
+def test_arbitrary_targeted_owner_payload_cannot_stage(tmp_path: Path) -> None:
+    request, fixture = _method_request(tmp_path)
+    alignment, _targeted, result = _true_runtime_path(
+        tmp_path,
+        request,
+        fixture.attempt,
+    )
+    alignment_artifact = alignment.runtime.settlements[0].owner_result_ref
+    assert alignment_artifact is not None
+    arbitrary = _arbitrary_targeted_runtime(
+        fixture.attempt,
+        alignment_artifact=alignment_artifact,
+    )
+
+    with pytest.raises(
+        TargetedDiagnosticDeliveryError,
+        match="exactly one matching method result",
+    ):
+        settle_targeted_diagnostic_delivery_candidate(
+            result,
+            request=request,
+            alignment_runtime=alignment,
+            targeted_runtime=arbitrary,
+            authoritative_legacy_csv_bytes=b"must-not-be-written",
+            prior_current_delivery_id="legacy-seal:prior-current",
+        )
+
+
+def test_arbitrary_alignment_owner_payload_cannot_stage(tmp_path: Path) -> None:
+    request, fixture = _method_request(tmp_path)
+    alignment, _targeted, result = _true_runtime_path(
+        tmp_path,
+        request,
+        fixture.attempt,
+    )
+    arbitrary = _arbitrary_alignment_runtime(
+        fixture.attempt,
+        upstream_artifacts=alignment_upstream_artifacts_for_request(request),
+    )
+    arbitrary_artifact = arbitrary.runtime.settlements[0].owner_result_ref
+    assert arbitrary_artifact is not None
+    targeted = _arbitrary_targeted_runtime(
+        fixture.attempt,
+        alignment_artifact=arbitrary_artifact,
+    )
+
+    with pytest.raises(
+        TargetedDiagnosticDeliveryError,
+        match="exactly one matching group result",
+    ):
+        settle_targeted_diagnostic_delivery_candidate(
+            result,
+            request=request,
+            alignment_runtime=arbitrary,
+            targeted_runtime=targeted,
+            authoritative_legacy_csv_bytes=b"must-not-be-written",
+            prior_current_delivery_id="legacy-seal:prior-current",
+        )
+    assert alignment.finalization_record.terminal_outcome is (
+        AttemptTerminalOutcome.SUCCEEDED
+    )
+
+
+def test_mismatched_alignment_groups_cannot_stage(tmp_path: Path) -> None:
+    request, fixture = _method_request(tmp_path)
+    alignment, targeted, result = _true_runtime_path(
+        tmp_path,
+        request,
+        fixture.attempt,
+    )
+    mismatched = replace(result, groups=())
+
+    with pytest.raises(
+        TargetedDiagnosticDeliveryError,
+        match="exactly one matching group result",
+    ):
+        settle_targeted_diagnostic_delivery_candidate(
+            mismatched,
+            request=request,
+            alignment_runtime=alignment,
+            targeted_runtime=targeted,
+            authoritative_legacy_csv_bytes=b"must-not-be-written",
+            prior_current_delivery_id="legacy-seal:prior-current",
+        )
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["failed", "cancelled", "worker_loss", "partial", "conflict"],
+)
+def test_unsuccessful_runtime_evidence_is_quarantined_without_writer(
+    tmp_path: Path,
+    scenario: str,
+) -> None:
+    request, fixture = _method_request(tmp_path)
+    result = run_targeted_diagnostic_method(request)
+    alignment_job = _alignment_job(request, fixture.attempt, "alignment:method")
     alignment = execute_targeted_method_alignment_runtime(
         _runtime(fixture.attempt, ("alignment:method",)),
         (alignment_job,),
         max_workers=1,
         resource_reservations=_reservations((alignment_job,)),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=_marker(tmp_path, f"delivery-alignment-{scenario}"),
+    )
+    alignment_artifact = alignment.runtime.settlements[0].owner_result_ref
+    assert alignment_artifact is not None
+    targeted = _unsuccessful_targeted_runtime(
+        fixture.attempt,
+        alignment_artifact=alignment_artifact,
+        scenario=scenario,
+    )
+
+    delivery = settle_targeted_diagnostic_delivery_candidate(
+        result,
+        request=request,
+        alignment_runtime=alignment,
+        targeted_runtime=targeted,
+        authoritative_legacy_csv_bytes=b"must-not-be-compared",
+        prior_current_delivery_id="legacy-seal:prior-current",
+    )
+
+    assert delivery.status == "quarantined"
+    assert delivery.stage_candidate is None
+    assert delivery.seal_candidate is None
+    assert delivery.diagnostic_csv_artifact is None
+    assert delivery.active_output is request.authoritative_legacy_output
+    assert not (request.peak_config.output_csv.parent / "successor_attempts").exists()
+    if scenario == "partial":
+        assert any(
+            artifact.semantic_contract.owner_namespace
+            == "xic_extractor.extraction.targeted_runtime_adapter"
+            for artifact in delivery.lineage_artifacts
+        )
+
+
+def test_internal_writer_conflict_quarantines_and_preserves_prior_current(
+    tmp_path: Path,
+) -> None:
+    request, fixture = _method_request(tmp_path)
+    alignment, targeted, result = _true_runtime_path(
+        tmp_path,
+        request,
+        fixture.attempt,
+    )
+    delivery = settle_targeted_diagnostic_delivery_candidate(
+        result,
+        request=request,
+        alignment_runtime=alignment,
+        targeted_runtime=targeted,
+        authoritative_legacy_csv_bytes=b"different-authoritative-bytes\n",
+        prior_current_delivery_id="legacy-seal:prior-current",
+    )
+
+    assert delivery.status == "quarantined"
+    assert delivery.method_result_artifact is not None
+    assert delivery.diagnostic_csv_artifact is None
+    assert delivery.prior_current_delivery_id == "legacy-seal:prior-current"
+
+
+def _true_runtime_path(
+    tmp_path: Path,
+    request,
+    attempt: ProcessingAttemptIdentity,
+) -> tuple[
+    AlignmentRuntimeApplicationResult,
+    TargetedRuntimeLifecycleApplicationResult,
+    TargetedDiagnosticMethodResult,
+]:
+    alignment_job = _alignment_job(request, attempt, "alignment:method")
+    alignment = execute_targeted_method_alignment_runtime(
+        _runtime(attempt, ("alignment:method",)),
+        (alignment_job,),
+        max_workers=1,
+        resource_reservations=_reservations((alignment_job,)),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "delivery-alignment"),
     )
     completion_jobs = build_targeted_method_completion_jobs(
@@ -84,18 +300,18 @@ def test_true_spawned_method_stages_hard_exact_candidate_and_rolls_back(
         (_completion_spec(request),),
     )
     targeted = execute_targeted_method_completion_runtime(
-        _runtime(fixture.attempt, ("targeted:method",)),
+        _runtime(attempt, ("targeted:method",)),
         completion_jobs,
         max_workers=1,
         resource_reservations=_reservations(completion_jobs),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=_marker(tmp_path, "delivery-targeted"),
     )
     result = targeted.settlement.successful_targeted_method_results[0][1]
-    alignment_artifact = alignment.runtime.settlements[0].owner_result_ref
-    targeted_artifact = targeted.settlement.runtime.settlements[0].owner_result_ref
-    assert alignment_artifact is not None
-    assert targeted_artifact is not None
+    return alignment, targeted, result
 
+
+def _legacy_csv_bytes(tmp_path: Path, request) -> bytes:
     output_config = replace(
         request.peak_config,
         output_csv=tmp_path / "legacy" / "xic_results.csv",
@@ -105,367 +321,95 @@ def test_true_spawned_method_stages_hard_exact_candidate_and_rolls_back(
         request.targets,
         request.authoritative_legacy_output.file_results,
     )
-    legacy_bytes = output_config.output_csv.read_bytes()
-    delivery = settle_targeted_diagnostic_delivery_candidate(
-        result,
-        alignment_inputs=request.alignment_inputs,
-        attempt=fixture.attempt,
-        targeted_finalization=targeted.finalization_record,
-        alignment_finalization=alignment.finalization_record,
-        targeted_runtime_artifacts=(targeted_artifact,),
-        alignment_runtime_artifacts=(alignment_artifact,),
-        candidate_csv_bytes=legacy_bytes,
-        authoritative_legacy_csv_bytes=legacy_bytes,
-        prior_current_delivery_id="legacy-seal:prior-current",
+    return output_config.output_csv.read_bytes()
+
+
+def _arbitrary_alignment_runtime(
+    attempt: ProcessingAttemptIdentity,
+    *,
+    upstream_artifacts,
+) -> AlignmentRuntimeApplicationResult:
+    work_unit_key = "alignment:method"
+    artifact = mint_alignment_process_result_artifact(
+        processing_attempt=attempt,
+        work_unit_key=work_unit_key,
+        owner_result_payload=b"runtime-owner-result",
+        upstream_artifacts=upstream_artifacts,
     )
-
-    assert delivery.status == "staged_candidate"
-    assert delivery.diagnostic_csv_artifact is not None
-    verify_evidence_artifact_payload(delivery.diagnostic_csv_artifact, legacy_bytes)
-    rolled_back = rollback_targeted_diagnostic_delivery_candidate(delivery)
-    assert rolled_back.status == "rolled_back"
-    assert rolled_back.active_output == request.authoritative_legacy_output
-    assert rolled_back.prior_current_delivery_id == "legacy-seal:prior-current"
-    assert rolled_back.lineage_artifacts == delivery.lineage_artifacts
-    assert rolled_back.stage_candidate == delivery.stage_candidate
-    assert not tuple(tmp_path.rglob("*.xlsx"))
-    assert not tuple(tmp_path.rglob("*matrix*"))
-
-
-def test_success_stages_only_delivery_lineage_candidates(tmp_path: Path) -> None:
-    request, fixture = _method_request(tmp_path)
-    result = run_targeted_diagnostic_method(request)
-    targeted, alignment = _runtime_owner_artifacts(request.alignment_inputs, fixture)
-    targeted_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:targeted-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=targeted,
-    )
-    alignment_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:alignment-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=alignment,
-    )
-
-    delivery = settle_targeted_diagnostic_delivery_candidate(
-        result,
-        alignment_inputs=request.alignment_inputs,
-        attempt=fixture.attempt,
-        targeted_finalization=targeted_finalization,
-        alignment_finalization=alignment_finalization,
-        targeted_runtime_artifacts=(targeted,),
-        alignment_runtime_artifacts=(alignment,),
-        candidate_csv_bytes=_CSV_BYTES,
-        authoritative_legacy_csv_bytes=_CSV_BYTES,
-        prior_current_delivery_id="legacy-seal:prior-current",
-    )
-
-    assert delivery.status == "staged_candidate"
-    assert delivery.active_output is request.authoritative_legacy_output
-    assert delivery.prior_current_delivery_id == "legacy-seal:prior-current"
-    assert delivery.stage_candidate is not None
-    assert delivery.seal_candidate is not None
-    assert delivery.seal_candidate.stage == delivery.stage_candidate
-    assert len(delivery.revisions) == len(request.alignment_inputs)
-    assert delivery.method_result_artifact is not None
-    assert delivery.diagnostic_csv_artifact is not None
-    verify_evidence_artifact_payload(delivery.diagnostic_csv_artifact, _CSV_BYTES)
-    lineage_ids = {
-        artifact.evidence_artifact_id for artifact in delivery.lineage_artifacts
-    }
-    for item in request.alignment_inputs:
-        assert {
-            artifact.evidence_artifact_id
-            for artifact in item.candidate_set.lineage_artifacts
-        }.issubset(lineage_ids)
-
-
-@pytest.mark.parametrize(
-    "outcome",
-    [WorkUnitTerminalOutcome.FAILED, WorkUnitTerminalOutcome.CANCELLED],
-)
-def test_failed_or_cancelled_attempt_is_quarantined(
-    tmp_path: Path,
-    outcome: WorkUnitTerminalOutcome,
-) -> None:
-    request, fixture = _method_request(tmp_path)
-    result = run_targeted_diagnostic_method(request)
-    _targeted, alignment = _runtime_owner_artifacts(request.alignment_inputs, fixture)
-    unsuccessful = _finalization(
-        fixture,
-        work_unit_key="package2:targeted-delivery",
-        outcome=outcome,
-    )
-    alignment_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:alignment-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=alignment,
-    )
-
-    delivery = settle_targeted_diagnostic_delivery_candidate(
-        result,
-        alignment_inputs=request.alignment_inputs,
-        attempt=fixture.attempt,
-        targeted_finalization=unsuccessful,
-        alignment_finalization=alignment_finalization,
-        targeted_runtime_artifacts=(),
-        alignment_runtime_artifacts=(alignment,),
-        candidate_csv_bytes=b"must-not-be-compared",
-        authoritative_legacy_csv_bytes=b"different",
-        prior_current_delivery_id="legacy-seal:prior-current",
-    )
-
-    assert delivery.status == "quarantined"
-    assert delivery.stage_candidate is None
-    assert delivery.seal_candidate is None
-    assert delivery.diagnostic_csv_artifact is None
-    assert delivery.active_output is request.authoritative_legacy_output
-
-
-def test_worker_loss_is_quarantined_with_runtime_evidence(tmp_path: Path) -> None:
-    request, fixture = _method_request(tmp_path)
-    result = run_targeted_diagnostic_method(request)
-    targeted, alignment = _runtime_owner_artifacts(request.alignment_inputs, fixture)
-    worker_loss = _finalization(
-        fixture,
-        work_unit_key="package2:targeted-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=targeted,
-        worker_loss=True,
-    )
-    alignment_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:alignment-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=alignment,
-    )
-
-    delivery = settle_targeted_diagnostic_delivery_candidate(
-        result,
-        alignment_inputs=request.alignment_inputs,
-        attempt=fixture.attempt,
-        targeted_finalization=worker_loss,
-        alignment_finalization=alignment_finalization,
-        targeted_runtime_artifacts=(targeted,),
-        alignment_runtime_artifacts=(alignment,),
-        candidate_csv_bytes=_CSV_BYTES,
-        authoritative_legacy_csv_bytes=_CSV_BYTES,
-        prior_current_delivery_id="legacy-seal:prior-current",
-    )
-
-    assert delivery.status == "quarantined"
-    assert "failed" in delivery.quarantine_reason
-    assert targeted in delivery.lineage_artifacts
-
-
-def test_partial_and_conflicting_replay_never_stage(tmp_path: Path) -> None:
-    request, fixture = _method_request(tmp_path)
-    result = run_targeted_diagnostic_method(request)
-    targeted, alignment = _runtime_owner_artifacts(request.alignment_inputs, fixture)
-    targeted_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:targeted-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=targeted,
-    )
-    alignment_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:alignment-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=alignment,
-    )
-    kwargs = dict(
-        alignment_inputs=request.alignment_inputs,
-        attempt=fixture.attempt,
-        targeted_finalization=targeted_finalization,
-        alignment_finalization=alignment_finalization,
-        alignment_runtime_artifacts=(alignment,),
-        candidate_csv_bytes=_CSV_BYTES,
-        authoritative_legacy_csv_bytes=_CSV_BYTES,
-        prior_current_delivery_id="legacy-seal:prior-current",
-    )
-
-    partial = settle_targeted_diagnostic_delivery_candidate(
-        result,
-        targeted_runtime_artifacts=(),
-        **kwargs,
-    )
-    assert partial.status == "quarantined"
-    assert "partial" in partial.quarantine_reason
-
-    conflicting = replace(
-        targeted_finalization,
-        artifact_dispositions=(
-            *targeted_finalization.artifact_dispositions,
-            (
-                targeted.evidence_artifact_id,
-                RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC,
+    receipt = execute_runtime_attempt(
+        _base_runtime(attempt, work_unit_key),
+        (),
+        worker_batch_provider=lambda _aggregate: RuntimeWorkerBatchReceipt(
+            settlements=(
+                mint_work_unit_settlement(
+                    attempt=attempt,
+                    work_unit_key=work_unit_key,
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                    owner_result_ref=artifact,
+                ),
+            ),
+            artifact_registrations=(
+                RuntimeArtifactRegistrationReceipt(
+                    work_unit_key=work_unit_key,
+                    artifact=artifact,
+                ),
             ),
         ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=lambda proposed: proposed,
     )
-    conflict_kwargs = {
-        key: value
-        for key, value in kwargs.items()
-        if key != "targeted_finalization"
-    }
-    conflict = settle_targeted_diagnostic_delivery_candidate(
-        result,
-        targeted_finalization=conflicting,
-        targeted_runtime_artifacts=(targeted,),
-        **conflict_kwargs,
-    )
-    assert conflict.status == "quarantined"
-    assert "conflicting" in conflict.quarantine_reason
-
-
-def test_csv_conflict_and_rollback_preserve_legacy_current_and_evidence(
-    tmp_path: Path,
-) -> None:
-    request, fixture = _method_request(tmp_path)
-    result = run_targeted_diagnostic_method(request)
-    targeted, alignment = _runtime_owner_artifacts(request.alignment_inputs, fixture)
-    targeted_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:targeted-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=targeted,
-    )
-    alignment_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:alignment-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=alignment,
-    )
-    kwargs = dict(
-        alignment_inputs=request.alignment_inputs,
-        attempt=fixture.attempt,
-        targeted_finalization=targeted_finalization,
-        alignment_finalization=alignment_finalization,
-        targeted_runtime_artifacts=(targeted,),
-        alignment_runtime_artifacts=(alignment,),
-        prior_current_delivery_id="legacy-seal:prior-current",
+    return AlignmentRuntimeApplicationResult(
+        runtime=receipt.coordinator.state.runtime,
+        finalization=receipt,
     )
 
-    mismatch = settle_targeted_diagnostic_delivery_candidate(
-        result,
-        candidate_csv_bytes=b"candidate\n",
-        authoritative_legacy_csv_bytes=b"legacy\n",
-        **kwargs,
-    )
-    assert mismatch.status == "quarantined"
-    assert mismatch.diagnostic_csv_artifact is None
 
-    staged = settle_targeted_diagnostic_delivery_candidate(
-        result,
-        candidate_csv_bytes=_CSV_BYTES,
-        authoritative_legacy_csv_bytes=_CSV_BYTES,
-        **kwargs,
-    )
-    rolled_back = rollback_targeted_diagnostic_delivery_candidate(staged)
-
-    assert rolled_back.status == "rolled_back"
-    assert rolled_back.active_output is request.authoritative_legacy_output
-    assert rolled_back.prior_current_delivery_id == "legacy-seal:prior-current"
-    assert rolled_back.lineage_artifacts == staged.lineage_artifacts
-    assert rolled_back.method_result_artifact == staged.method_result_artifact
-    assert rolled_back.diagnostic_csv_artifact == staged.diagnostic_csv_artifact
-
-
-def test_missing_runtime_upstream_is_lineage_tamper(tmp_path: Path) -> None:
-    request, fixture = _method_request(tmp_path)
-    result = run_targeted_diagnostic_method(request)
-    roots = _candidate_roots(request.alignment_inputs)
-    omitted = _opaque_artifact(fixture.attempt, b"omitted-runtime-ancestor")
-    targeted = mint_targeted_process_result_ref(
-        processing_attempt=fixture.attempt,
-        work_unit_key="package2:targeted-delivery",
-        owner_result_payload=canonical_targeted_diagnostic_method_bytes(result),
-        upstream_artifacts=(*roots, omitted),
-    ).artifact
-    alignment = mint_alignment_process_result_artifact(
-        processing_attempt=fixture.attempt,
-        work_unit_key="package2:alignment-delivery",
-        owner_result_payload=canonical_targeted_diagnostic_method_bytes(result),
-        upstream_artifacts=roots,
-    )
-    targeted_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:targeted-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=targeted,
-    )
-    alignment_finalization = _finalization(
-        fixture,
-        work_unit_key="package2:alignment-delivery",
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        artifact=alignment,
-    )
-
-    with pytest.raises(TargetedDiagnosticDeliveryError, match="missing upstream"):
-        settle_targeted_diagnostic_delivery_candidate(
-            result,
-            alignment_inputs=request.alignment_inputs,
-            attempt=fixture.attempt,
-            targeted_finalization=targeted_finalization,
-            alignment_finalization=alignment_finalization,
-            targeted_runtime_artifacts=(targeted,),
-            alignment_runtime_artifacts=(alignment,),
-            candidate_csv_bytes=_CSV_BYTES,
-            authoritative_legacy_csv_bytes=_CSV_BYTES,
-            prior_current_delivery_id="legacy-seal:prior-current",
-        )
-
-
-def _runtime_owner_artifacts(alignment_inputs, fixture):
-    roots = _candidate_roots(alignment_inputs)
-    payload = b"runtime-owner-result"
-    targeted = mint_targeted_process_result_ref(
-        processing_attempt=fixture.attempt,
-        work_unit_key="package2:targeted-delivery",
-        owner_result_payload=payload,
-        upstream_artifacts=roots,
-    ).artifact
-    alignment = mint_alignment_process_result_artifact(
-        processing_attempt=fixture.attempt,
-        work_unit_key="package2:alignment-delivery",
-        owner_result_payload=payload,
-        upstream_artifacts=roots,
-    )
-    return targeted, alignment
-
-
-def _candidate_roots(alignment_inputs) -> tuple[EvidenceArtifactRef, ...]:
-    by_id = {
-        item.candidate_set.artifact.evidence_artifact_id: item.candidate_set.artifact
-        for item in alignment_inputs
-    }
-    return tuple(by_id[artifact_id] for artifact_id in sorted(by_id))
-
-
-def _finalization(
-    fixture,
+def _arbitrary_targeted_runtime(
+    attempt: ProcessingAttemptIdentity,
     *,
-    work_unit_key: str,
-    outcome: WorkUnitTerminalOutcome,
-    artifact: EvidenceArtifactRef | None = None,
-    worker_loss: bool = False,
-):
-    history = append_attempt_lifecycle_event(
-        AttemptLifecycleHistory(attempt=fixture.attempt),
-        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    alignment_artifact,
+) -> TargetedRuntimeLifecycleApplicationResult:
+    work_unit_key = "targeted:method"
+    reference = mint_targeted_process_result_ref(
+        processing_attempt=attempt,
+        work_unit_key=work_unit_key,
+        owner_result_payload=b"runtime-owner-result",
+        upstream_artifacts=(alignment_artifact,),
     )
-    runtime = start_attempt_runtime(
-        preflight_required_work_manifest(
-            history,
-            attempt=fixture.attempt,
-            work_unit_keys=(work_unit_key,),
-            owner_completeness_attestation="package2-delivery:test",
-        )
+    batch = TargetedRuntimeWorkerBatch(
+        result_envelopes=(
+            TargetedProcessWorkerResultEnvelope(
+                attempt=attempt,
+                work_unit_key=work_unit_key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                owner_result_ref=reference,
+            ),
+        ),
+        resource_reports=(),
+        runtime_artifact_refs=(reference,),
     )
-    if outcome is WorkUnitTerminalOutcome.CANCELLED:
+    return execute_targeted_runtime_lifecycle(
+        _base_runtime(attempt, work_unit_key),
+        (),
+        worker_batch_provider=lambda _aggregate: batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        finalization_persister=lambda proposed: proposed,
+    )
+
+
+def _unsuccessful_targeted_runtime(
+    attempt: ProcessingAttemptIdentity,
+    *,
+    alignment_artifact,
+    scenario: str,
+) -> TargetedRuntimeLifecycleApplicationResult:
+    work_unit_key = "targeted:method"
+    runtime = _base_runtime(attempt, work_unit_key)
+    envelopes: list[TargetedProcessWorkerResultEnvelope] = []
+    registered = []
+    reservations: tuple[RuntimeResourceReservation, ...] = ()
+    resource_reports: tuple[TargetedProcessResourceReport, ...] = ()
+    if scenario == "cancelled":
         runtime = replace(
             runtime,
             history=append_attempt_lifecycle_event(
@@ -473,44 +417,133 @@ def _finalization(
                 AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
             ),
         )
-    runtime = settle_work_unit(
-        runtime,
-        work_unit_key=work_unit_key,
-        outcome=outcome,
-        owner_result_ref=artifact,
-    )
-    state = begin_attempt_finalization(runtime)
-    if artifact is not None:
-        state = register_runtime_artifact(
-            state,
+        envelopes.append(
+            TargetedProcessWorkerResultEnvelope(
+                attempt=attempt,
+                work_unit_key=work_unit_key,
+                outcome=WorkUnitTerminalOutcome.CANCELLED,
+                failure_detail=WorkUnitFailureDetail(
+                    category=WorkUnitFailureCategory.CANCELLATION,
+                    stage="targeted-process-worker",
+                    source_reference="no-raw:targeted:method",
+                    message="cancellation accepted before dispatch",
+                ),
+            )
+        )
+    elif scenario == "conflict":
+        first = mint_targeted_process_result_ref(
+            processing_attempt=attempt,
             work_unit_key=work_unit_key,
-            artifact=artifact,
+            owner_result_payload=b"runtime-owner-result:first",
+            upstream_artifacts=(alignment_artifact,),
         )
-    if worker_loss:
+        second = mint_targeted_process_result_ref(
+            processing_attempt=attempt,
+            work_unit_key=work_unit_key,
+            owner_result_payload=b"runtime-owner-result:conflict",
+            upstream_artifacts=(alignment_artifact,),
+        )
+        envelopes.append(
+            TargetedProcessWorkerResultEnvelope(
+                attempt=attempt,
+                work_unit_key=work_unit_key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                owner_result_ref=first,
+            )
+        )
+        envelopes.append(
+            TargetedProcessWorkerResultEnvelope(
+                attempt=attempt,
+                work_unit_key=work_unit_key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                owner_result_ref=second,
+            )
+        )
+        registered.extend((first, second))
+    else:
+        category = (
+            WorkUnitFailureCategory.WORKER_LOSS
+            if scenario in {"worker_loss", "partial"}
+            else WorkUnitFailureCategory.EXECUTION_ERROR
+        )
+        envelopes.append(
+            TargetedProcessWorkerResultEnvelope(
+                attempt=attempt,
+                work_unit_key=work_unit_key,
+                outcome=WorkUnitTerminalOutcome.FAILED,
+                failure_detail=WorkUnitFailureDetail(
+                    category=category,
+                    stage="targeted-process-worker",
+                    source_reference="no-raw:targeted:method",
+                    message=f"simulated {scenario}",
+                ),
+            )
+        )
+        if scenario == "partial":
+            partial = mint_targeted_process_result_ref(
+                processing_attempt=attempt,
+                work_unit_key=work_unit_key,
+                owner_result_payload=b"partial-before-worker-loss",
+                upstream_artifacts=(alignment_artifact,),
+            )
+            registered.append(partial)
+    if scenario == "worker_loss":
         reservation = RuntimeResourceReservation(
-            attempt=fixture.attempt,
-            resource_key=f"resource:{work_unit_key}",
-            worker_key=f"worker:{work_unit_key}",
-            source_reference="synthetic:no-raw",
-            compatibility_token="package2-delivery:test",
+            attempt=attempt,
+            kind=RuntimeResourceKind.PROCESS_WORKER,
+            resource_key="process:targeted:method",
+            worker_key="worker:targeted:method",
+            source_reference="no-raw:targeted:method",
+            compatibility_token="targeted-delivery-test:v1",
         )
-        state = reserve_runtime_resource(state, reservation)
-        state = mark_worker_lost(state, worker_key=reservation.worker_key)
-    return mint_supervisor_finalization(propose_attempt_terminal(state))
-
-
-def _opaque_artifact(attempt, payload: bytes) -> EvidenceArtifactRef:
-    contract = _mint_artifact_semantic_contract_ref(
-        owner_namespace="tests.targeted_diagnostic_delivery",
-        semantic_role="omitted_runtime_ancestor",
-        schema_version="test_v1",
-        validation_status="diagnostic_only",
-        media_type="application/octet-stream",
-        serialization_format="exact-bytes-v1",
+        reservations = (reservation,)
+        resource_reports = (
+            TargetedProcessResourceReport(
+                attempt=attempt,
+                resource_key=reservation.resource_key,
+                open_outcome=(
+                    RuntimeResourceOpenOutcome.OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS
+                ),
+                cleanup_outcome=(
+                    RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS
+                ),
+            ),
+        )
+    batch = TargetedRuntimeWorkerBatch(
+        result_envelopes=tuple(envelopes),
+        resource_reports=resource_reports,
+        runtime_artifact_refs=tuple(registered),
     )
-    return _mint_evidence_artifact_ref(
-        producer_processing_request_id=attempt.processing_request_id,
-        producer_processing_attempt_id=attempt.processing_attempt_id,
-        semantic_contract=contract,
-        payload_bytes=payload,
+    lifecycle = execute_targeted_runtime_lifecycle(
+        runtime,
+        reservations,
+        worker_batch_provider=lambda _aggregate: batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        finalization_persister=lambda proposed: proposed,
+    )
+    if scenario == "partial":
+        assert tuple(
+            disposition
+            for _artifact_id, disposition in (
+                lifecycle.finalization_record.artifact_dispositions
+            )
+        ) == (RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC,)
+    return lifecycle
+
+
+def _base_runtime(
+    attempt: ProcessingAttemptIdentity,
+    work_unit_key: str,
+) -> AttemptRuntime:
+    history = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    return start_attempt_runtime(
+        preflight_required_work_manifest(
+            history,
+            attempt=attempt,
+            work_unit_keys=(work_unit_key,),
+            owner_completeness_attestation="targeted-delivery-test:v1",
+        )
     )

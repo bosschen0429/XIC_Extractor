@@ -13,6 +13,7 @@ from xic_extractor.configuration.target_identity import (
 from xic_extractor.discovery.targeted_candidate_set import (
     TargetedCandidateSetMember,
     TargetedCandidateSetRef,
+    complete_targeted_candidate_discovery,
     mint_targeted_candidate_set_ref,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
@@ -356,13 +357,22 @@ def package2_candidate_set(
     kwargs = {}
     if failure_reason is not None:
         kwargs["failure_reason"] = failure_reason
+    completion = complete_targeted_candidate_discovery(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        target=fixture.target,
+        hypotheses=hypotheses,
+        targeted_cid_nl_projections=tuple(
+            member.targeted_cid_nl_projection for member in members
+        ),
+        lineage_artifacts=fixture.lineage_for(members),
+        **kwargs,
+    )
     return mint_targeted_candidate_set_ref(
         processing_owners=fixture.owners,
         sample=fixture.sample(sample_stem),
         target=fixture.target,
-        candidates=members,
-        lineage_artifacts=fixture.lineage_for(members),
-        **kwargs,
+        completion=completion,
     )
 
 
