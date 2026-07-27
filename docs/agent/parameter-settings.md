@@ -36,6 +36,7 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
 | --- | --- | --- |
 | `python` | no-RAW 的窄範圍 pytest shard | Python 3.14 launcher；有 `pytest`；沒有 `pythonnet` |
 | `.venv\Scripts\python.exe` | Thermo RAW / RawFileReader / `pythonnet` run | Python 3.13.7；有 `pythonnet`；沒有 `pytest` |
+| `.venv/bin/python` | WSL 內、已有 task-specific CoreCLR/Thermo net8 canary 的 bounded RAW run | Package 3A canary 使用 Python 3.12.3、`PYTHONNET_RUNTIME=coreclr` 與官方 Thermo net8 `8.0.37` assemblies 通過；不是未經 canary 的通用替代 runner |
 
 專案契約是 Python `>=3.11,<3.14`。Python 3.14 不是有效 RAW runtime，因為
 目前沒有可用的 `pythonnet`。
@@ -43,7 +44,10 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
 規則：
 
 - 會讀 `.raw`、呼叫 Thermo DLL、或 import `xic_extractor.raw_reader` 的命令，
-  一律用 `.venv\Scripts\python.exe`。
+  預設用 `.venv\Scripts\python.exe`。WSL 只有在 task-specific packet 已封存
+  current `.venv/bin/python`、`PYTHONNET_RUNTIME=coreclr`、官方 Thermo net8 DLL
+  identity 與同 lane RAW canary 時才可使用；Package 3A 的 bounded canary owner
+  是 `output/package3a_trace_canary_20260727/README.md`。
 - no-RAW 的窄範圍 pytest shard 可以用 `python -m pytest ...`。
 - 不要用 bare `python` 跑 RAW validation，即使命令看起來能啟動。
 - 如果 `.venv` 之後補上 pytest，優先用 `.venv\Scripts\python.exe -m pytest`

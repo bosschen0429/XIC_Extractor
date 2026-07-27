@@ -46,7 +46,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     data_dir = raw_path.parent if raw_path is not None else raw_dir
     peak_config = _peak_config(data_dir, dll_dir, output_dir, settings)
     timing_recorder = (
-        TimingRecorder("discovery") if args.timing_output is not None else None
+        TimingRecorder(
+            "discovery",
+            live_output_path=args.timing_output.resolve(),
+        )
+        if args.timing_output is not None
+        else None
     )
     timing_kwargs = (
         {"timing_recorder": timing_recorder}
