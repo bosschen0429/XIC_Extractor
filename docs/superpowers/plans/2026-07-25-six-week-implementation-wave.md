@@ -28,13 +28,18 @@ Last updated: 2026-07-27
 Current validation status: `diagnostic_only`
 
 Current issue gate: Package 0 / Issue #149 is locally complete at its executable
-no-RAW exit. Work events/monotonic offsets/metric availability, acquisition
-capability/trace coordinates, Targeted delivery-cell/revision/stage/seal
-candidates, equal-adapter CLI/GUI parity, and the frozen successor comparator
-are all executable and fail closed. This local completion does not change the
-remote GitHub issue. Package 1 batch `PeakObservation`, Package 2, RAW/DLL,
-product activation, Matrix/XLSX writing, publication, and behavior change remain
-outside the current write scope.
+no-RAW exit. The operator explicitly activated Package 1 Slice 2 on 2026-07-27;
+this tracked checkpoint is its canonical local issue/tracker scope. The active
+write scope is application/process runtime -> capability-aware batch acquisition
+-> owner-backed `PeakObservation` only, consumed by both
+`TargetedApplicationService` and Alignment's existing process runner through the
+frozen Package 0 seams. Serial and deliberately reordered true-spawn workers
+must produce canonical-equal observations, scientific artifacts, request/call
+counts, and artifact dispositions without invoking either product writer. The
+completed envelope/ref/runtime and lifecycle contracts are reused, not rebuilt.
+No remote GitHub issue was changed. Clean `PeakHypothesis` migration and
+selection, Package 2, RAW/DLL, product activation, Matrix/XLSX writing,
+publication, and behavior change remain outside the current write scope.
 
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
@@ -109,7 +114,7 @@ Progress vocabulary:
 | Package | Status | What is actually complete | First missing gate |
 | --- | --- | --- | --- |
 | Package 0 — executable no-RAW contracts | `evidence_passed` / complete | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering. This branch closes manifest/work/resource/artifact/finalization and recovery-marker behavior for Targeted plus Alignment, then adds executable work-event/offset/metric availability, capability-aware trace coordinates, Targeted delivery-cell/revision/stage/seal candidates, CLI/GUI equal-adapter receipts, and the frozen successor receipt comparator. All remain no-RAW and `diagnostic_only`. | None inside Package 0. Remote Issue #149 state is unchanged because no GitHub mutation was authorized. |
-| Package 1 — pure runtime and observation substrates | `wired_no_raw` / partial | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The first activated slice added a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, and one manifest-ordered application consumer without serializing legacy DTOs. The completed lifecycle slice reserves resources before process dispatch, accepts exactly-once open/cleanup reports, closes worker loss conservatively, registers current-attempt artifacts, freezes a coordinator proposal, and requires exact supervisor finalization. Package 0 closure now supplies the narrow physical recovery marker to both Targeted and Alignment without adding a storage framework. | Actual acquisition batch observations and `PeakObservation` production require a later explicit Package 1 scope. |
+| Package 1 — pure runtime and observation substrates | `wired_no_raw` / active | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed runtime slices add a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, manifest-ordered application consumption, resource lifecycle, supervisor finalization, and the narrow recovery marker consumed by both Targeted and Alignment without serializing legacy DTOs or adding storage. The active Slice 2 deepens those consumers through the existing capability-aware batch acquisition and physical-observation owners. | Both real consumers must emit owner-backed `PeakObservation` artifacts from capability-bound batched traces and pass serial/reordered true-spawn parity for observations, request/call counts, and dispositions with no writer invocation. |
 | Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
@@ -174,17 +179,17 @@ Alignment Matrix/XLSX remains Package 3B and keeps separate authority; this
 decision does not skip Package 0/1 gates or authorize Package 2 mutation early.
 
 **First missing handoff and next falsifiable loop:** Package 0 has no remaining
-canonical exit. The next observation handoff is actual batch `PeakObservation`
-production in Package 1; it is not activated by this closure. The full
-multi-sample writer fixture remains Package 2.
+canonical exit. Package 1 Slice 2 is active: run one bounded no-RAW batch through
+both real runtime consumers and require capability-bound acquisition plus
+owner-backed `PeakObservation` equality under serial and deliberately reordered
+true-spawn execution. The full multi-sample writer fixture remains Package 2.
 
 **Remaining unknowns:** no Product, Design, Evidence, or Execution unknown
-blocks Package 0 closeout. No retention, product seal, current pointer, CAS,
-publication, generic storage, selected-value, Matrix, or writer authority was
-selected by these contracts. The next Design unknown is the explicit
-diagnostic-hypothesis selection/externalization transition; the next Evidence
-gap is actual batch `PeakObservation` production. Neither grants Package 1 or
-Package 2 mutation authority here.
+blocks the active Package 1 Slice 2. No retention, product seal, current pointer,
+CAS, publication, generic storage, selected-value, Matrix, or writer authority
+is selected by this activation. The next Design unknown remains the explicit
+diagnostic-hypothesis selection/externalization transition; it is outside this
+slice and does not grant later Package 1 or Package 2 mutation authority.
 
 **Deferred method note:** Pt Pattern work is related and retained, but its
 Discovery method is not stable enough to drive this vertical tracer. It is not
