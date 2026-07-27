@@ -27,13 +27,13 @@ Last updated: 2026-07-27
 
 Current validation status: `diagnostic_only`
 
-Current issue gate: Package 0 and Package 1 are complete at their executable
-no-RAW exits. The operator explicitly activated Package 2 on 2026-07-27; this
-tracked checkpoint is the canonical local tracker scope for branch
-`codex/package-2-targeted-method`. The intended write scope is one bounded
-`diagnostic_only` Targeted CID-NL method: constrained Discovery -> explicit
-diagnostic `PeakHypothesis` selection/externalization -> cross-sample Alignment
-with preserved hypothesis identity -> evidence-based Backfill -> Targeted
+Current issue gate: Package 0, Package 1, and Package 2 are complete at their
+bounded executable no-RAW exits. This tracked checkpoint is the canonical local
+closure record for branch `codex/package-2-targeted-method`; there is no active
+Package 2 write scope or remaining gate. The completed `diagnostic_only`
+Targeted CID-NL method runs constrained Discovery -> explicit diagnostic
+`PeakHypothesis` selection/externalization -> cross-sample Alignment with
+preserved hypothesis identity -> evidence-based Backfill -> Targeted
 selection/projection -> the existing hard-exact `xic_results.csv` writer.
 `TargetedApplicationService` remains the one application owner for CLI and GUI,
 while the existing Targeted process scheduler and Alignment process runner are
@@ -41,7 +41,10 @@ the runtime consumers. Package 0/1 identity, lineage, runtime, observation,
 settlement, and frozen-comparator contracts are reused, not rebuilt. No remote
 GitHub issue was changed. RAW/DLL, 8RAW/85RAW, Pt, Untargeted widening,
 Matrix/XLSX, Package 3, product activation/publication, new storage/runtime/core,
-and public CLI/config/schema/writer authority remain outside this write scope.
+and public CLI/config/schema/writer authority remain outside this completed
+scope. The implementation narrative below is chronological closure evidence;
+intermediate `REQUEST_CHANGES` statements are superseded by the current Package
+checkpoint and final reviewer approval recorded later in this section.
 The prior selection-externalization blocker is resolved: on 2026-07-27 the
 operator accepted a diagnostic-only immutable selection reference owned by
 `peak_detection.selection_decision`. The review repair now adds the missing
