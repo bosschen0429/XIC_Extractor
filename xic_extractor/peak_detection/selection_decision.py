@@ -222,6 +222,76 @@ def canonical_diagnostic_peak_hypothesis_selection_bytes(
     )
 
 
+def resolve_diagnostic_peak_hypothesis_selection(
+    reference: DiagnosticPeakHypothesisSelectionRef,
+    candidate_hypotheses: tuple[PeakHypothesis, ...],
+) -> PeakHypothesis | None:
+    """Resolve only the candidate universe already frozen by the selection ref."""
+
+    if not isinstance(reference, DiagnosticPeakHypothesisSelectionRef):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "reference must be DiagnosticPeakHypothesisSelectionRef"
+        )
+    if not isinstance(candidate_hypotheses, tuple):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate_hypotheses must be an immutable complete tuple"
+        )
+    candidates: list[PeakHypothesis] = []
+    for hypothesis in candidate_hypotheses:
+        if not isinstance(hypothesis, PeakHypothesis):
+            raise DiagnosticPeakHypothesisSelectionError(
+                "candidate_hypotheses must contain PeakHypothesis values"
+            )
+        try:
+            validate_owner_backed_peak_hypothesis_instance(hypothesis)
+        except ValueError as exc:
+            raise DiagnosticPeakHypothesisSelectionError(str(exc)) from exc
+        artifact = _candidate_artifact(hypothesis)
+        if (
+            artifact.producer_processing_request_id
+            != reference.artifact.producer_processing_request_id
+            or artifact.producer_processing_attempt_id
+            != reference.artifact.producer_processing_attempt_id
+        ):
+            raise DiagnosticPeakHypothesisSelectionError(
+                "candidate hypothesis references a different selection attempt"
+            )
+        candidates.append(hypothesis)
+    ordered = tuple(sorted(candidates, key=lambda item: item.hypothesis_id))
+    ids = tuple(item.hypothesis_id for item in ordered)
+    if len(ids) != len(set(ids)):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate hypothesis universe contains duplicate identities"
+        )
+    content_ids = tuple(
+        _candidate_artifact(item).content_identity.artifact_content_id
+        for item in ordered
+    )
+    upstream_ids = tuple(
+        sorted(_candidate_artifact(item).evidence_artifact_id for item in ordered)
+    )
+    if (
+        ids != reference.candidate_hypothesis_ids
+        or content_ids != reference.candidate_hypothesis_content_ids
+        or upstream_ids != reference.artifact.upstream_artifact_ids
+    ):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate hypothesis universe does not match the immutable selection"
+        )
+    if reference.status != "selected":
+        return None
+    selected = tuple(
+        item
+        for item in ordered
+        if item.hypothesis_id == reference.selected_hypothesis_id
+    )
+    if len(selected) != 1:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "immutable selection does not resolve exactly one hypothesis"
+        )
+    return selected[0]
+
+
 @dataclass(frozen=True)
 class PeakHypothesisSelectionDecision:
     selected_candidate_id: str

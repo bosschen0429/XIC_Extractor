@@ -33,6 +33,7 @@ from xic_extractor.peak_detection.selection_decision import (
     DiagnosticPeakHypothesisSelectionError,
     canonical_diagnostic_peak_hypothesis_selection_bytes,
     mint_diagnostic_peak_hypothesis_selection_ref,
+    resolve_diagnostic_peak_hypothesis_selection,
     selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import Trace
@@ -92,6 +93,10 @@ def test_unique_candidate_externalizes_without_product_authority(
     assert canonical_diagnostic_peak_hypothesis_selection_bytes(selection).endswith(
         b"\n"
     )
+    assert (
+        resolve_diagnostic_peak_hypothesis_selection(selection, (hypothesis,))
+        is hypothesis
+    )
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         selection_decision_from_hypothesis(hypothesis)
 
@@ -123,6 +128,9 @@ def test_candidate_order_is_canonical_and_ambiguity_cannot_select(
     assert forward.candidate_hypothesis_ids == tuple(
         sorted((first.hypothesis_id, second.hypothesis_id))
     )
+    assert (
+        resolve_diagnostic_peak_hypothesis_selection(forward, (second, first)) is None
+    )
 
 
 def test_no_candidate_and_failure_remain_distinct_terminal_facts(
@@ -149,6 +157,7 @@ def test_no_candidate_and_failure_remain_distinct_terminal_facts(
     assert failed.status == "failed"
     assert failed.reasons == ("discovery_worker_failed",)
     assert missing.artifact.content_identity != failed.artifact.content_identity
+    assert resolve_diagnostic_peak_hypothesis_selection(missing, ()) is None
 
 
 def test_retry_preserves_selection_content_but_not_attempt_artifact(
@@ -235,6 +244,11 @@ def test_attempt_duplicate_and_direct_state_bypass_fail_closed(tmp_path: Path) -
         DiagnosticPeakHypothesisSelectionError, match="immutable artifact"
     ):
         replace(selection, reasons=("caller_override",))
+    with pytest.raises(
+        DiagnosticPeakHypothesisSelectionError,
+        match="does not match the immutable selection",
+    ):
+        resolve_diagnostic_peak_hypothesis_selection(selection, ())
 
 
 def _fixture(tmp_path: Path) -> _Fixture:
