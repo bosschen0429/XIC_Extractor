@@ -28,11 +28,14 @@ Last updated: 2026-07-27
 Current validation status: `diagnostic_only`
 
 Current issue gate: Package 1 is explicitly activated for the bounded
-process-worker result envelope, owner-minted immutable result reference, and
-Targeted runtime adapter. This section is the canonical write-scope record;
-Package 0 / Issue #149 remains open. A proposed dedicated GitHub issue body is
-retained under ignored task output because external publication was not
-authorized for that exact payload.
+resource-lifecycle, exactly-once terminal cleanup, runtime-artifact
+disposition, coordinator terminal proposal, and supervisor acknowledgement
+slice through the existing Targeted runtime adapter. The previously activated
+process-worker result envelope and owner-minted immutable result-reference
+slice is complete. This section is the canonical write-scope record; Package 0
+/ Issue #149 remains open. A proposed dedicated GitHub issue body is retained
+under ignored task output because external publication was not authorized for
+that exact payload.
 
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
@@ -103,7 +106,7 @@ Progress vocabulary:
 | Package | Status | What is actually complete | First missing gate |
 | --- | --- | --- | --- |
 | Package 0 — executable no-RAW contracts | `wired_no_raw` / partial | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering through mutually exclusive queued cancellation and queued manifest-preflight failure paths. The current branch consumes owner-supplied manifest content into an attempt-bound immutable `RequiredWorkManifest`, starts `AttemptRuntime`, and accepts one terminal settlement per declared key. The Package 1 adapter now drives that reducer through `TargetedApplicationService.execute_runtime` with producer-owned immutable result refs. | Alignment as the second consumer, work events/offsets/metrics, durable terminal acknowledgement, resource lifecycle/cleanup, acquisition capability/trace coordinates, artifact disposition plus delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
-| Package 1 — pure runtime and observation substrates | `wired_no_raw` / partial | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The activated slice adds a Targeted-owned canonical result identity over an exact owner-payload digest, a pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` enforcement in runtime settlement, and one manifest-ordered `TargetedApplicationService` consumer. It deliberately does not serialize legacy `RawFileExtractionResult` / `RunOutput`. | The current activated scope is complete. Resource lifecycle, terminal acknowledgement/artifact disposition, actual acquisition batch observations, and observation production through this adapter require a later explicit Package 1 scope update. |
+| Package 1 — pure runtime and observation substrates | `wired_no_raw` / partial | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed first activated slice adds a Targeted-owned canonical result identity over an exact owner-payload digest, a pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` enforcement in runtime settlement, and one manifest-ordered `TargetedApplicationService` consumer. It deliberately does not serialize legacy `RawFileExtractionResult` / `RunOutput`. The active write scope now extends only that consumer through registered resource cleanup, runtime-artifact disposition, terminal proposal, and supervisor acknowledgement. | The active lifecycle/finalization slice must prove success/failure/cancellation/worker-loss cleanup, whole-attempt quarantine, and idempotent/conflict-safe acknowledgement with no storage engine or writer. Actual acquisition batch observations and observation production remain a later Package 1 scope. |
 | Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
@@ -153,18 +156,24 @@ Alignment Matrix/XLSX remains Package 3B and keeps separate authority; this
 decision does not skip Package 0/1 gates or authorize Package 2 mutation early.
 
 **First missing handoff and next falsifiable loop:** the activated Package 1
-result-envelope/ref/adapter slice is complete. The next runtime handoff is work
-events/metrics plus resource cleanup and terminal acknowledgement/artifact
-disposition; it is outside the current bounded write scope and requires an
-explicit Package 1 tracker update before mutation. Actual batch
-`PeakObservation` production remains a later Package 1 slice, and the full
-multi-sample writer fixture remains Package 2.
+result-envelope/ref/adapter slice is complete. The current bounded write scope
+is the next runtime handoff: registered resource lifecycle and exactly-once
+cleanup, runtime-artifact disposition, coordinator terminal proposal, and
+supervisor acknowledgement through the same Targeted application consumer.
+The first falsifiable loop is a no-RAW true-process success plus adversarial
+failure/cancellation/worker-loss fixture proving cleanup closure, atomic
+whole-attempt quarantine, and idempotent/conflict-safe acknowledgement. Actual
+batch `PeakObservation` production remains a later Package 1 slice, and the
+full multi-sample writer fixture remains Package 2.
 
 **Remaining unknowns:** no Product, Design, Evidence, or Execution unknown
-blocks the bounded result-envelope/ref/adapter slice. The next Design unknown is
-the explicit diagnostic-hypothesis selection/externalization transition; the
-next Evidence gap is actual batch `PeakObservation` production. Neither grants
-authority for another Package 1 slice or Package 2 mutation.
+blocks the bounded lifecycle/finalization slice. The supervisor acknowledgement
+is runtime recovery metadata over owner-supplied immutable records, not a new
+storage schema, product seal, current pointer, CAS, or publication mechanism.
+The next Design unknown is the explicit diagnostic-hypothesis
+selection/externalization transition; the next Evidence gap is actual batch
+`PeakObservation` production. Neither grants authority for another Package 1
+slice or Package 2 mutation.
 
 **Deferred method note:** Pt Pattern work is related and retained, but its
 Discovery method is not stable enough to drive this vertical tracer. It is not
