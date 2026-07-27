@@ -115,6 +115,17 @@ mypy, and diff check pass. All five review findings are addressed in code and
 focused evidence; expanded repository validation and fresh independent review
 remain required before completion.
 
+Expanded static validation then found one dependency-direction defect:
+inner-layer `peak_detection.selection_decision` imported the outer Discovery
+receipt class. The repair keeps ownership unchanged and inverts only the read
+boundary: Selection defines the minimal immutable receipt protocol it consumes,
+and `TargetedCandidateSetRef` re-runs its Discovery-owned full integrity check
+when crossing that boundary. No candidate model or decision logic is copied.
+Import Linter is now 4 kept/0 broken, full mypy passes over 479 source files,
+17 affected receipt/selection/Alignment/Backfill tests pass, and the complete
+110-test integration remains green. The final expanded shard rerun is still
+required on the resulting commit.
+
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
 counted-state, Matrix, or CSV value/byte difference stops this migration and

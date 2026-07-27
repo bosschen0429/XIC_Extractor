@@ -228,6 +228,11 @@ class TargetedCandidateSetRef:
             for item in self.candidates
         )
 
+    def validate_for_diagnostic_selection(self) -> None:
+        """Re-run Discovery-owned receipt integrity at the inner selection boundary."""
+
+        self.__post_init__()
+
 
 def mint_targeted_candidate_set_ref(
     *,

@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
-from xic_extractor.discovery.targeted_candidate_set import TargetedCandidateSetRef
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
@@ -57,6 +56,49 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 class DiagnosticPeakHypothesisSelectionError(ValueError):
     """Raised when diagnostic selection externalization is not owner-closed."""
+
+
+@runtime_checkable
+class TargetedCandidateSetReceipt(Protocol):
+    """Inner-layer view verified by the outer Discovery receipt owner."""
+
+    @property
+    def processing_request_id(self) -> str: ...
+
+    @property
+    def processing_attempt_id(self) -> str: ...
+
+    @property
+    def canonical_sample_identity_id(self) -> str: ...
+
+    @property
+    def target_snapshot_id(self) -> str: ...
+
+    @property
+    def target_key_id(self) -> str: ...
+
+    @property
+    def target_definition_id(self) -> str: ...
+
+    @property
+    def status(self) -> Literal["complete", "failed"]: ...
+
+    @property
+    def failure_reason(self) -> str: ...
+
+    @property
+    def artifact(self) -> EvidenceArtifactRef: ...
+
+    @property
+    def candidate_hypotheses(self) -> tuple[PeakHypothesis, ...]: ...
+
+    @property
+    def candidate_hypothesis_ids(self) -> tuple[str, ...]: ...
+
+    @property
+    def candidate_hypothesis_content_ids(self) -> tuple[str, ...]: ...
+
+    def validate_for_diagnostic_selection(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,14 +180,11 @@ class DiagnosticPeakHypothesisSelectionRef:
 
 def mint_diagnostic_peak_hypothesis_selection_ref(
     *,
-    candidate_set: TargetedCandidateSetRef,
+    candidate_set: TargetedCandidateSetReceipt,
 ) -> DiagnosticPeakHypothesisSelectionRef:
     """Select only from one Discovery-owned complete candidate-set receipt."""
 
-    if not isinstance(candidate_set, TargetedCandidateSetRef):
-        raise DiagnosticPeakHypothesisSelectionError(
-            "candidate_set must be an owner-minted TargetedCandidateSetRef"
-        )
+    _validate_candidate_set_receipt(candidate_set)
     candidates = candidate_set.candidate_hypotheses
     if candidate_set.status == "failed":
         status: DiagnosticSelectionStatus = "failed"
@@ -229,7 +268,7 @@ def canonical_diagnostic_peak_hypothesis_selection_bytes(
 
 def resolve_diagnostic_peak_hypothesis_selection(
     reference: DiagnosticPeakHypothesisSelectionRef,
-    candidate_set: TargetedCandidateSetRef,
+    candidate_set: TargetedCandidateSetReceipt,
 ) -> PeakHypothesis | None:
     """Resolve only the exact Discovery receipt consumed by the selection ref."""
 
@@ -237,10 +276,7 @@ def resolve_diagnostic_peak_hypothesis_selection(
         raise DiagnosticPeakHypothesisSelectionError(
             "reference must be DiagnosticPeakHypothesisSelectionRef"
         )
-    if not isinstance(candidate_set, TargetedCandidateSetRef):
-        raise DiagnosticPeakHypothesisSelectionError(
-            "candidate_set must be an owner-minted TargetedCandidateSetRef"
-        )
+    _validate_candidate_set_receipt(candidate_set)
     candidates = candidate_set.candidate_hypotheses
     if (
         candidate_set.processing_request_id
@@ -485,6 +521,19 @@ def _candidate_artifact(hypothesis: PeakHypothesis) -> EvidenceArtifactRef:
             "candidate hypothesis must carry its immutable artifact"
         )
     return hypothesis.artifact
+
+
+def _validate_candidate_set_receipt(candidate_set: object) -> None:
+    if not isinstance(candidate_set, TargetedCandidateSetReceipt):
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate_set must be an owner-verified Targeted candidate receipt"
+        )
+    try:
+        candidate_set.validate_for_diagnostic_selection()
+    except ValueError as exc:
+        raise DiagnosticPeakHypothesisSelectionError(
+            "candidate_set failed its Discovery-owned integrity check"
+        ) from exc
 
 
 def _validate_candidate_ids(values: object) -> tuple[str, ...]:
