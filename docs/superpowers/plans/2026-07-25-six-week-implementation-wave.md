@@ -327,7 +327,7 @@ Progress vocabulary:
 | --- | --- | --- | --- |
 | Package 0 — executable no-RAW contracts | `evidence_passed` / complete | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering. This branch closes manifest/work/resource/artifact/finalization and recovery-marker behavior for Targeted plus Alignment, then adds executable work-event/offset/metric availability, capability-aware trace coordinates, Targeted delivery-cell/revision/stage/seal candidates, CLI/GUI equal-adapter receipts, and the frozen successor receipt comparator. All remain no-RAW and `diagnostic_only`. | None inside Package 0. Remote Issue #149 state is unchanged because no GitHub mutation was authorized. |
 | Package 1 — pure runtime and observation substrates | `evidence_passed` / complete | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed runtime slices add a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, manifest-ordered application consumption, resource lifecycle, supervisor finalization, and the narrow recovery marker consumed by both Targeted and Alignment without serializing legacy DTOs or adding storage. Slice 2 now composes both real process consumers with the existing capability-aware batch acquisition and physical-observation owners: true spawned serial/reordered runs preserve immutable signal snapshots, source/kind coordinate truth, request/call/point counts, exact owner/observation lineage, replay idempotence, conflict quarantine, terminal dispositions, and byte-identical canonical receipts without invoking a writer. Its executable `DifferenceManifest` binds the explained internal carrier change to the immutable frozen comparator and one comparator-owned experiment entry that overwrites output paths, pins root identity, accepts only exact primitive no-RAW jobs, runs fixed Targeted/Alignment workers to synchronous drain, inventories final-state paths/bytes, and privately mints the receipt. | None inside Package 1. Package 2 selection/externalization and downstream method wiring remain inactive. |
-| Package 2 — complete Targeted CID-NL method | `active` / `diagnostic_only` / no-RAW / code evidence passed, closure review pending | At frozen code head `c25da8bb`, the duplicate delivery is gone; successor cells solely supply writer values/counting; full selected integration and Backfill cells are runtime-bound; substitution regressions pass. The changed set is 79 passed and seven shards are 6,050 passed/4 skipped. Fresh code review found no product correctness blocker; its sole P1 was tracker/handoff state drift, now repaired through `5cfa1e09` plus the current correction. | Obtain a fresh independent reviewer `APPROVE` at the docs-coherent frozen head. Stop on any unexpected selected peak/boundary/area/confidence/reason/counting/CSV-byte/Matrix/writer difference or any required public CLI/config/schema/writer-contract change. |
+| Package 2 — complete Targeted CID-NL method | `active` / `diagnostic_only` / no-RAW / code evidence passed, closure review pending | At frozen code head `c25da8bb`, the duplicate delivery is gone; successor cells solely supply writer values/counting; full selected integration and Backfill cells are runtime-bound; substitution regressions pass. The changed set is 79 passed and seven shards are 6,050 passed/4 skipped. Fresh code review found no product correctness blocker; all reported tracker/handoff state drift is repaired in the current head. | Obtain a fresh independent reviewer `APPROVE` at the docs-coherent frozen head. Stop on any unexpected selected peak/boundary/area/confidence/reason/counting/CSV-byte/Matrix/writer difference or any required public CLI/config/schema/writer-contract change. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
 | Package 4 — compare and decide | `not_started` | None. | Full tracer evidence, rollback rehearsal, and successor-versus-strangler comparison. |
@@ -393,9 +393,9 @@ numeric/counting projections; legacy values are comparison-only. Canonical
 Targeted runtime bytes bind the complete selected integration and Backfill cell,
 and post-spawn carrier validation detects Backfill scientific-field
 substitution. Fresh code review found no product correctness blocker. Its sole
-P1 was that this tracker and the active handoff still described those completed
-repairs as open work; Package 2 remains active until that docs-only coherence
-repair is committed and a reviewer approves the new frozen head.
+P1 was that this tracker and the active handoff still described completed work
+as pending. All reported docs-only coherence drift is repaired in the current
+head; Package 2 remains active only until a reviewer approves that frozen head.
 
 **Current Product decision:** on 2026-07-26 the operator confirmed the
 Targeted-first Package 2 endpoint is hard-exact `xic_results.csv`. Untargeted
@@ -406,12 +406,12 @@ decision does not skip Package 0/1 gates or authorize Package 2 mutation early.
 have no remaining canonical exit. Package 2 is active at `diagnostic_only`;
 CLI/GUI, Discovery, Alignment, Targeted runtime, typed delivery, quarantine,
 rollback, successor-only projection, and complete runtime scientific binding
-have passed code review. The next loop is docs-only: commit the canonical
-tracker/active-handoff correction, verify retained packet/inventory/difference
-evidence is unchanged, and obtain a fresh independent reviewer `APPROVE` at the
-new frozen head. Any unexpected scientific, counting, CSV-byte, Matrix, or
-writer difference is a stop condition and must be preserved as difference
-evidence before further mutation.
+have passed code review. Canonical tracker/active-handoff corrections are
+present in the current head, and retained packet/inventory/difference evidence
+is unchanged. The only next loop is a fresh independent reviewer `APPROVE` at
+the new frozen head, followed by closure. Any unexpected scientific, counting,
+CSV-byte, Matrix, or writer difference is a stop condition and must be preserved
+as difference evidence before further mutation.
 
 **Remaining unknowns:** no Product, Design, or scientific-correctness unknown
 remains inside Package 2's bounded no-RAW scope. The only open Execution gate is
