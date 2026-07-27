@@ -164,6 +164,16 @@ successor terminal state and owner reason, then compared with legacy. The
 modules pass. Expanded evidence and a fresh independent review remain required;
 the prior `REQUEST_CHANGES` verdict is not yet superseded.
 
+Expanded evidence at code head `64b716c8` is green: the 77-test changed Package
+2 set passes, and all seven repository shards report 6,048 passed/4 skipped
+(464/1, 110, 1,090/1, 2,492, 872/1, 664, 356/1). Full mypy passes over 480
+source files, Import Linter reports 4 kept/0 broken, and CI-scoped Ruff,
+architecture census, diagnostics index, docs audit with zero blockers,
+bootstrap, shard coverage, retention, hook assertions, and diff checks pass.
+The exact-zero manifest remains 13/13 with the same 403-byte CSV and unchanged
+writer blob. Validation packet/inventory digests are being refreshed before
+fresh independent QA and review.
+
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
 counted-state, Matrix, or CSV value/byte difference stops this migration and
