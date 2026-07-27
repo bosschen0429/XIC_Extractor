@@ -92,6 +92,20 @@ class TargetedDiagnosticDelivery:
     quarantine_reason: str = ""
 
 
+def targeted_attempt_namespace_component(processing_attempt_id: str) -> str:
+    """Return a deterministic filesystem-safe component for one exact attempt ID."""
+
+    if (
+        not isinstance(processing_attempt_id, str)
+        or not processing_attempt_id.startswith("xic.processing-attempt.v1:")
+    ):
+        raise TargetedDiagnosticMethodError(
+            "processing_attempt_id must be an owner-issued typed identity"
+        )
+    digest = hashlib.sha256(processing_attempt_id.encode("utf-8")).hexdigest()
+    return f"attempt-{digest}"
+
+
 def run_targeted_diagnostic_method(
     request: TargetedDiagnosticMethodRequest,
 ) -> TargetedDiagnosticMethodResult:
@@ -110,9 +124,9 @@ def run_targeted_diagnostic_method(
             "bounded Package 2 method requires multi-sample inputs"
         )
     target = request.alignment_inputs[0].target
-    if request.targets[0].label != target.definition.target.label:
+    if request.targets[0] != target.definition.target:
         raise TargetedDiagnosticMethodError(
-            "legacy writer target does not match the owner-resolved target"
+            "legacy writer target does not match the exact owner-resolved definition"
         )
     attempts = {
         item.selection.artifact.producer_processing_attempt_id
@@ -131,6 +145,37 @@ def run_targeted_diagnostic_method(
         target=target,
         config=request.alignment_config,
     )
+    return complete_targeted_diagnostic_method(request, groups)
+
+
+def complete_targeted_diagnostic_method(
+    request: TargetedDiagnosticMethodRequest,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+) -> TargetedDiagnosticMethodResult:
+    """Consume Alignment's exact groups without recomputing correspondence."""
+
+    if not isinstance(request, TargetedDiagnosticMethodRequest):
+        raise TargetedDiagnosticMethodError(
+            "request must be TargetedDiagnosticMethodRequest"
+        )
+    if not isinstance(groups, tuple) or any(
+        not isinstance(group, CrossSamplePeakGroupHypothesis) for group in groups
+    ):
+        raise TargetedDiagnosticMethodError(
+            "groups must be an immutable Alignment-owned tuple"
+        )
+    attempts = {
+        item.selection.artifact.producer_processing_attempt_id
+        for item in request.alignment_inputs
+    }
+    requests = {
+        item.selection.artifact.producer_processing_request_id
+        for item in request.alignment_inputs
+    }
+    if len(attempts) != 1 or len(requests) != 1:
+        raise TargetedDiagnosticMethodError(
+            "all method inputs must bind one processing request and attempt"
+        )
     cells = build_targeted_hypothesis_cells(
         request.alignment_inputs,
         groups,
@@ -245,7 +290,7 @@ def settle_targeted_diagnostic_delivery(
     output_path = (
         config.output_csv.parent
         / "successor_attempts"
-        / result.processing_attempt_id
+        / targeted_attempt_namespace_component(result.processing_attempt_id)
         / "xic_results.csv"
     )
     attempt_config = replace(config, output_csv=output_path)

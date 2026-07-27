@@ -4,14 +4,17 @@ import pytest
 
 from tests.package2_no_raw_fixture import (
     build_package2_no_raw_fixture,
+    package2_candidate_set,
     package2_hypothesis,
-    package2_selection,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.targeted_hypothesis_alignment import (
     TargetedHypothesisAlignmentError,
     TargetedHypothesisAlignmentInput,
     align_selected_targeted_hypotheses,
+)
+from xic_extractor.peak_detection.selection_decision import (
+    mint_diagnostic_peak_hypothesis_selection_ref,
 )
 
 
@@ -97,13 +100,17 @@ def test_duplicate_sample_cell_and_foreign_candidate_universe_fail_closed(
         )
     with pytest.raises(
         TargetedHypothesisAlignmentError,
-        match="immutable selection",
+        match="different canonical sample",
     ):
         TargetedHypothesisAlignmentInput(
             sample=fixture.sample("sample-a"),
             target=fixture.target,
             selection=first_input.selection,
-            candidate_hypotheses=(second,),
+            candidate_set=package2_candidate_set(
+                fixture,
+                "sample-b",
+                (second,),
+            ),
         )
 
 
@@ -114,14 +121,17 @@ def _input(
     *,
     failure_reason: str | None = None,
 ) -> TargetedHypothesisAlignmentInput:
+    candidate_set = package2_candidate_set(
+        fixture,
+        sample_stem,
+        hypotheses,
+        failure_reason=failure_reason,
+    )
     return TargetedHypothesisAlignmentInput(
         sample=fixture.sample(sample_stem),
         target=fixture.target,
-        selection=package2_selection(
-            fixture,
-            sample_stem,
-            hypotheses,
-            failure_reason=failure_reason,
+        candidate_set=candidate_set,
+        selection=mint_diagnostic_peak_hypothesis_selection_ref(
+            candidate_set=candidate_set,
         ),
-        candidate_hypotheses=hypotheses,
     )

@@ -50,6 +50,7 @@ from xic_extractor.extraction.targeted_diagnostic_method import (
     rollback_targeted_diagnostic_delivery,
     run_targeted_diagnostic_method,
     settle_targeted_diagnostic_delivery,
+    targeted_attempt_namespace_component,
 )
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
@@ -255,6 +256,8 @@ def test_complete_method_is_hard_exact_and_rollback_preserves_legacy_current(
     assert delivery.status == "sealed_diagnostic"
     assert delivery.diagnostic_csv_path is not None
     assert delivery.diagnostic_csv_path.read_bytes() == legacy_bytes
+    assert delivery.diagnostic_csv_path.parent.name.startswith("attempt-")
+    assert ":" not in delivery.diagnostic_csv_path.parent.name
     assert delivery.diagnostic_csv_sha256 == hashlib.sha256(legacy_bytes).hexdigest()
     assert delivery.active_output is request.authoritative_legacy_output
     assert delivery.prior_current_delivery_id == "legacy-seal:prior-current"
@@ -414,6 +417,24 @@ def test_semantic_area_difference_stops_before_delivery(tmp_path: Path) -> None:
         run_targeted_diagnostic_method(changed_request)
 
 
+def test_legacy_writer_target_must_match_exact_owner_definition(
+    tmp_path: Path,
+) -> None:
+    request, _fixture = _method_request(tmp_path)
+    changed_target = replace(
+        request.targets[0],
+        ppm_tol=request.targets[0].ppm_tol + 1.0,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="exact owner-resolved definition",
+    ):
+        run_targeted_diagnostic_method(
+            replace(request, targets=(changed_target,))
+        )
+
+
 def test_exact_byte_difference_is_retained_in_attempt_namespace(tmp_path: Path) -> None:
     request, fixture = _method_request(tmp_path)
     result = run_targeted_diagnostic_method(request)
@@ -444,7 +465,7 @@ def test_exact_byte_difference_is_retained_in_attempt_namespace(tmp_path: Path) 
     difference_path = (
         request.peak_config.output_csv.parent
         / "successor_attempts"
-        / result.processing_attempt_id
+        / targeted_attempt_namespace_component(result.processing_attempt_id)
         / "xic_results.csv"
     )
     assert difference_path.is_file()
@@ -510,13 +531,13 @@ def _method_request(
 def _trace_oracle(request: TargetedDiagnosticMethodRequest):
     return {
         item.sample.metadata.raw_stem: (
-            item.candidate_hypotheses[0]
+            item.candidate_set.candidate_hypotheses[0]
             .peak_observation_refs[0]
             .content.peak_observation_content_id,
-            item.candidate_hypotheses[0]
+            item.candidate_set.candidate_hypotheses[0]
             .peak_observation_refs[0]
             .generation_provenance.full_trace_sha256,
-            item.candidate_hypotheses[0]
+            item.candidate_set.candidate_hypotheses[0]
             .peak_observation_refs[0]
             .generation_provenance.selection_trace_sha256,
         )
@@ -527,7 +548,9 @@ def _trace_oracle(request: TargetedDiagnosticMethodRequest):
 
 def _hypothesis_oracle(request: TargetedDiagnosticMethodRequest):
     return {
-        item.sample.metadata.raw_stem: item.candidate_hypotheses[0].hypothesis_id
+        item.sample.metadata.raw_stem: (
+            item.candidate_set.candidate_hypotheses[0].hypothesis_id
+        )
         for item in request.alignment_inputs
         if item.sample.metadata.raw_stem in _FROZEN_HYPOTHESIS_ORACLE
     }

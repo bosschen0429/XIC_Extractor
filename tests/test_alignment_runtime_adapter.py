@@ -5,14 +5,22 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
 from xic_extractor.alignment.runtime_adapter import (
+    AlignmentRuntimeAdapterError,
     AlignmentRuntimeProcessResult,
+    canonical_alignment_peak_group_result_bytes,
     execute_alignment_process_runtime,
     mint_alignment_process_result_artifact,
 )
+from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
     AttemptTerminalOutcome,
@@ -50,6 +58,10 @@ class _NoRawAlignmentJob:
     payload: bytes
     delay_sec: float = 0.0
     fail: bool = False
+    cross_sample_peak_groups: tuple[CrossSamplePeakGroupHypothesis, ...] | None = (
+        None
+    )
+    upstream_artifacts: tuple[EvidenceArtifactRef, ...] = ()
 
 
 def _run_no_raw_alignment_job(
@@ -63,6 +75,7 @@ def _run_no_raw_alignment_job(
         processing_attempt=job.attempt,
         work_unit_key=job.work_unit_key,
         owner_result_payload=job.payload,
+        upstream_artifacts=job.upstream_artifacts,
     )
     return AlignmentRuntimeProcessResult(
         settlement=mint_work_unit_settlement(
@@ -75,6 +88,15 @@ def _run_no_raw_alignment_job(
         open_outcome=RuntimeResourceOpenOutcome.OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
         runtime_artifacts=(artifact,),
+        cross_sample_peak_groups=job.cross_sample_peak_groups,
+        cross_sample_peak_group_upstream_artifact_ids=(
+            None
+            if job.cross_sample_peak_groups is None
+            else tuple(
+                upstream.evidence_artifact_id
+                for upstream in job.upstream_artifacts
+            )
+        ),
     )
 
 
@@ -256,6 +278,198 @@ def test_alignment_preflight_failure_skips_runner_and_finalizes_marker(
     assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert recovered.finalization_acknowledged is True
     assert recovered.terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
+def test_alignment_scientific_carriers_roundtrip_in_manifest_order(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="carrier")
+    groups_a = (_group("group:a"),)
+    groups_b = (_group("group:b"),)
+    upstream_a = mint_alignment_process_result_artifact(
+        processing_attempt=attempt,
+        work_unit_key="upstream:a",
+        owner_result_payload=b"upstream-a",
+    )
+    upstream_b = mint_alignment_process_result_artifact(
+        processing_attempt=attempt,
+        work_unit_key="upstream:b",
+        owner_result_payload=b"upstream-b",
+    )
+    jobs = (
+        _NoRawAlignmentJob(
+            attempt,
+            "sample:b",
+            "process:sample:b",
+            canonical_alignment_peak_group_result_bytes(groups_b),
+            cross_sample_peak_groups=groups_b,
+            upstream_artifacts=(upstream_b,),
+        ),
+        _NoRawAlignmentJob(
+            attempt,
+            "sample:a",
+            "process:sample:a",
+            canonical_alignment_peak_group_result_bytes(groups_a),
+            cross_sample_peak_groups=groups_a,
+            upstream_artifacts=(upstream_a,),
+        ),
+    )
+
+    result = execute_alignment_process_runtime(
+        _runtime(attempt, ("sample:a", "sample:b")),
+        jobs,
+        worker=_run_no_raw_alignment_job,
+        error_factory=_alignment_job_error,
+        max_workers=2,
+        resource_reservations=_reservations(attempt),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "carrier.runtime.json",
+            "alignment-runtime-artifacts:carrier",
+        ),
+    )
+
+    assert result.successful_cross_sample_peak_groups == (
+        ("sample:a", groups_a),
+        ("sample:b", groups_b),
+    )
+
+
+def test_alignment_scientific_carrier_rejects_payload_mismatch(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="mismatch")
+    artifact = mint_alignment_process_result_artifact(
+        processing_attempt=attempt,
+        work_unit_key="sample:a",
+        owner_result_payload=canonical_alignment_peak_group_result_bytes(
+            (_group("group:artifact"),)
+        ),
+    )
+
+    with pytest.raises(AlignmentRuntimeAdapterError, match="does not bind"):
+        AlignmentRuntimeProcessResult(
+            settlement=mint_work_unit_settlement(
+                attempt=attempt,
+                work_unit_key="sample:a",
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                owner_result_ref=artifact,
+            ),
+            resource_key="process:sample:a",
+            open_outcome=RuntimeResourceOpenOutcome.OPENED,
+            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+            runtime_artifacts=(artifact,),
+            cross_sample_peak_groups=(_group("group:carrier"),),
+            cross_sample_peak_group_upstream_artifact_ids=(),
+        )
+
+    matching_artifact = mint_alignment_process_result_artifact(
+        processing_attempt=attempt,
+        work_unit_key="sample:a",
+        owner_result_payload=canonical_alignment_peak_group_result_bytes(
+            (_group("group:carrier"),)
+        ),
+    )
+    with pytest.raises(AlignmentRuntimeAdapterError, match="caller-provided"):
+        AlignmentRuntimeProcessResult(
+            settlement=mint_work_unit_settlement(
+                attempt=attempt,
+                work_unit_key="sample:a",
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                owner_result_ref=matching_artifact,
+            ),
+            resource_key="process:sample:a",
+            open_outcome=RuntimeResourceOpenOutcome.OPENED,
+            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+            runtime_artifacts=(matching_artifact,),
+            cross_sample_peak_groups=(_group("group:carrier"),),
+        )
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [WorkUnitTerminalOutcome.FAILED, WorkUnitTerminalOutcome.CANCELLED],
+)
+def test_alignment_unsuccessful_work_cannot_carry_scientific_result(
+    tmp_path: Path,
+    outcome: WorkUnitTerminalOutcome,
+) -> None:
+    attempt = _attempt(tmp_path, stem=f"unsuccessful-{outcome.value}")
+
+    with pytest.raises(AlignmentRuntimeAdapterError, match="only successful"):
+        AlignmentRuntimeProcessResult(
+            settlement=mint_work_unit_settlement(
+                attempt=attempt,
+                work_unit_key="sample:a",
+                outcome=outcome,
+                failure_detail=WorkUnitFailureDetail(
+                    category=(
+                        WorkUnitFailureCategory.CANCELLATION
+                        if outcome is WorkUnitTerminalOutcome.CANCELLED
+                        else WorkUnitFailureCategory.EXECUTION_ERROR
+                    ),
+                    stage="alignment-process-worker",
+                    source_reference="no-raw:sample:a",
+                    message="worker did not succeed",
+                ),
+            ),
+            resource_key="process:sample:a",
+            open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
+            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+            cross_sample_peak_groups=(_group("group:forbidden"),),
+            cross_sample_peak_group_upstream_artifact_ids=(),
+        )
+
+
+def test_alignment_conflicting_replay_does_not_expose_scientific_carrier(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="conflict")
+    first = (_group("group:first"),)
+    conflicting = (_group("group:conflicting"),)
+    jobs = (
+        _NoRawAlignmentJob(
+            attempt,
+            "sample:a",
+            "process:sample:a",
+            canonical_alignment_peak_group_result_bytes(first),
+            cross_sample_peak_groups=first,
+        ),
+        _NoRawAlignmentJob(
+            attempt,
+            "sample:a",
+            "process:sample:a",
+            canonical_alignment_peak_group_result_bytes(conflicting),
+            cross_sample_peak_groups=conflicting,
+        ),
+    )
+
+    result = execute_alignment_process_runtime(
+        _runtime(attempt, ("sample:a",)),
+        jobs,
+        worker=_run_no_raw_alignment_job,
+        error_factory=_alignment_job_error,
+        max_workers=1,
+        resource_reservations=(_reservations(attempt)[0],),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "conflict.runtime.json",
+            "alignment-runtime-artifacts:conflict",
+        ),
+    )
+
+    assert result.runtime.integrity_failure is not None
+    assert result.successful_cross_sample_peak_groups == ()
+
+
+def _group(group_id: str) -> CrossSamplePeakGroupHypothesis:
+    return CrossSamplePeakGroupHypothesis(
+        group_hypothesis_id=group_id,
+        public_family_id=group_id,
+        owner_ids=(f"owner:{group_id}",),
+        event_ids=(f"event:{group_id}",),
+        event_member_count=1,
+    )
 
 
 def _runtime(

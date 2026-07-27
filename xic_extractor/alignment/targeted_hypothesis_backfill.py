@@ -97,7 +97,7 @@ def build_targeted_hypothesis_cells(
     for item in sorted(inputs, key=lambda value: value.sample.metadata.raw_stem):
         selected = resolve_diagnostic_peak_hypothesis_selection(
             item.selection,
-            item.candidate_hypotheses,
+            item.candidate_set,
         )
         if selected is not None:
             group = group_by_owner.get(selected.hypothesis_id)

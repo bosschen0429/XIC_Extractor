@@ -14,6 +14,7 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.discovery.targeted_candidate_set import TargetedCandidateSetRef
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.selection_decision import (
     DiagnosticPeakHypothesisSelectionError,
@@ -33,8 +34,8 @@ class TargetedHypothesisAlignmentInput:
 
     sample: ResolvedCanonicalSampleIdentity
     target: ResolvedTargetDefinition
+    candidate_set: TargetedCandidateSetRef
     selection: DiagnosticPeakHypothesisSelectionRef
-    candidate_hypotheses: tuple[PeakHypothesis, ...]
 
     def __post_init__(self) -> None:
         if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
@@ -49,21 +50,29 @@ class TargetedHypothesisAlignmentInput:
             raise TargetedHypothesisAlignmentError(
                 "selection must be an immutable diagnostic selection ref"
             )
-        if not isinstance(self.candidate_hypotheses, tuple):
+        if not isinstance(self.candidate_set, TargetedCandidateSetRef):
             raise TargetedHypothesisAlignmentError(
-                "candidate_hypotheses must be an immutable complete tuple"
+                "candidate_set must be an immutable Discovery receipt"
             )
         if (
             self.selection.canonical_sample_identity_id
+            != self.sample.identity.sample_identity_id
+            or self.candidate_set.canonical_sample_identity_id
             != self.sample.identity.sample_identity_id
         ):
             raise TargetedHypothesisAlignmentError(
                 "selection references a different canonical sample"
             )
         if (
-            self.selection.target_key_id
+            self.selection.target_snapshot_id != self.target.snapshot.snapshot_id
+            or self.candidate_set.target_snapshot_id != self.target.snapshot.snapshot_id
+            or self.selection.target_key_id
+            != self.target.definition.target_key.target_key_id
+            or self.candidate_set.target_key_id
             != self.target.definition.target_key.target_key_id
             or self.selection.target_definition_id
+            != self.target.definition.target_definition_id
+            or self.candidate_set.target_definition_id
             != self.target.definition.target_definition_id
         ):
             raise TargetedHypothesisAlignmentError(
@@ -72,7 +81,7 @@ class TargetedHypothesisAlignmentInput:
         try:
             resolve_diagnostic_peak_hypothesis_selection(
                 self.selection,
-                self.candidate_hypotheses,
+                self.candidate_set,
             )
         except DiagnosticPeakHypothesisSelectionError as exc:
             raise TargetedHypothesisAlignmentError(str(exc)) from exc
@@ -104,7 +113,9 @@ def align_selected_targeted_hypotheses(
             )
         if item.target.definition.target_definition_id != (
             target.definition.target_definition_id
-        ):
+        ) or item.target.definition.target_key.target_key_id != (
+            target.definition.target_key.target_key_id
+        ) or item.target.snapshot.snapshot_id != target.snapshot.snapshot_id:
             raise TargetedHypothesisAlignmentError(
                 "all Alignment inputs must use the exact requested target definition"
             )
@@ -117,7 +128,7 @@ def align_selected_targeted_hypotheses(
         try:
             selected = resolve_diagnostic_peak_hypothesis_selection(
                 item.selection,
-                item.candidate_hypotheses,
+                item.candidate_set,
             )
         except DiagnosticPeakHypothesisSelectionError as exc:
             raise TargetedHypothesisAlignmentError(str(exc)) from exc

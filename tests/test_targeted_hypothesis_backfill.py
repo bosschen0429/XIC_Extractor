@@ -6,6 +6,7 @@ import pytest
 
 from tests.package2_no_raw_fixture import (
     build_package2_no_raw_fixture,
+    package2_candidate_set,
     package2_hypothesis,
     package2_selection,
 )
@@ -221,6 +222,12 @@ def _complete_inputs(tmp_path: Path):
 
 
 def _input(fixture, sample_stem, hypotheses, *, failure_reason=None):
+    candidate_set = package2_candidate_set(
+        fixture,
+        sample_stem,
+        hypotheses,
+        failure_reason=failure_reason,
+    )
     return TargetedHypothesisAlignmentInput(
         sample=fixture.sample(sample_stem),
         target=fixture.target,
@@ -228,9 +235,10 @@ def _input(fixture, sample_stem, hypotheses, *, failure_reason=None):
             fixture,
             sample_stem,
             hypotheses,
+            candidate_set=candidate_set,
             failure_reason=failure_reason,
         ),
-        candidate_hypotheses=hypotheses,
+        candidate_set=candidate_set,
     )
 
 

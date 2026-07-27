@@ -14,6 +14,7 @@ import json
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
@@ -55,6 +56,11 @@ from xic_extractor.peak_detection.observation_batch import (
     canonical_peak_observation_batch_bytes,
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
+
+if TYPE_CHECKING:
+    from xic_extractor.extraction.targeted_diagnostic_method import (
+        TargetedDiagnosticMethodResult,
+    )
 
 
 class TargetedRuntimeAdapterError(ValueError):
@@ -132,6 +138,8 @@ class TargetedProcessWorkerResultEnvelope:
     owner_result_ref: TargetedProcessResultRef | None = None
     failure_detail: WorkUnitFailureDetail | None = None
     peak_observation_batch: PeakObservationBatch | None = None
+    targeted_method_result: TargetedDiagnosticMethodResult | None = None
+    targeted_method_upstream_artifact_ids: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.attempt, ProcessingAttemptIdentity):
@@ -156,6 +164,16 @@ class TargetedProcessWorkerResultEnvelope:
                     attempt=self.attempt,
                     work_unit_key=self.work_unit_key,
                 )
+            if self.targeted_method_result is not None:
+                _validate_targeted_method_result_binding(
+                    self.owner_result_ref,
+                    self.targeted_method_result,
+                    attempt=self.attempt,
+                    work_unit_key=self.work_unit_key,
+                    upstream_artifact_ids=(
+                        self.targeted_method_upstream_artifact_ids
+                    ),
+                )
         elif self.owner_result_ref is not None:
             raise TargetedRuntimeAdapterError(
                 "only succeeded result envelope may carry owner_result_ref"
@@ -163,6 +181,17 @@ class TargetedProcessWorkerResultEnvelope:
         elif self.peak_observation_batch is not None:
             raise TargetedRuntimeAdapterError(
                 "only succeeded result envelope may carry peak_observation_batch"
+            )
+        elif self.targeted_method_result is not None:
+            raise TargetedRuntimeAdapterError(
+                "only succeeded result envelope may carry targeted_method_result"
+            )
+        if (
+            self.targeted_method_result is None
+            and self.targeted_method_upstream_artifact_ids is not None
+        ):
+            raise TargetedRuntimeAdapterError(
+                "Targeted method upstream IDs require a scientific result"
             )
         try:
             mint_work_unit_settlement(
@@ -183,6 +212,9 @@ class TargetedRuntimeApplicationResult:
     runtime: AttemptRuntime
     successful_result_refs: tuple[tuple[str, TargetedProcessResultRef], ...]
     successful_observation_batches: tuple[tuple[str, PeakObservationBatch], ...] = ()
+    successful_targeted_method_results: tuple[
+        tuple[str, TargetedDiagnosticMethodResult], ...
+    ] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.runtime, AttemptRuntime):
@@ -237,6 +269,37 @@ class TargetedRuntimeApplicationResult:
                 batch,
                 attempt=self.runtime.manifest.attempt,
                 work_unit_key=key,
+            )
+        method_keys = tuple(
+            key for key, _result in self.successful_targeted_method_results
+        )
+        if method_keys != tuple(
+            key
+            for key in self.runtime.manifest.work_unit_keys
+            if key in method_keys
+        ):
+            raise TargetedRuntimeAdapterError(
+                "successful_targeted_method_results must follow manifest order"
+            )
+        if len(method_keys) != len(set(method_keys)) or any(
+            key not in successful_keys
+            for key, _result in self.successful_targeted_method_results
+        ):
+            raise TargetedRuntimeAdapterError(
+                "successful Targeted method results must bind unique successful work"
+            )
+        if self.runtime.integrity_failure is not None and method_keys:
+            raise TargetedRuntimeAdapterError(
+                "integrity-failed runtime cannot expose Targeted method results"
+            )
+        for key, result in self.successful_targeted_method_results:
+            reference = references_by_key[key]
+            _validate_targeted_method_result_binding(
+                reference,
+                result,
+                attempt=self.runtime.manifest.attempt,
+                work_unit_key=key,
+                upstream_artifact_ids=reference.artifact.upstream_artifact_ids,
             )
 
 
@@ -509,6 +572,7 @@ def execute_targeted_runtime_lifecycle(
             runtime=settlement.runtime,
             successful_result_refs=settlement.successful_result_refs,
             successful_observation_batches=(),
+            successful_targeted_method_results=(),
         )
     return TargetedRuntimeLifecycleApplicationResult(
         settlement=settlement,
@@ -594,6 +658,7 @@ def _targeted_application_result(
     accepted = {item.work_unit_key: item for item in runtime.settlements}
     accepted_refs: dict[str, TargetedProcessResultRef] = {}
     accepted_observations: dict[str, PeakObservationBatch] = {}
+    accepted_targeted_method_results: dict[str, TargetedDiagnosticMethodResult] = {}
     for envelope in envelopes:
         if accepted.get(envelope.work_unit_key) != _settlement_from_envelope(envelope):
             continue
@@ -616,8 +681,15 @@ def _targeted_application_result(
                 work_unit_key=envelope.work_unit_key,
                 batch=envelope.peak_observation_batch,
             )
+        if envelope.targeted_method_result is not None:
+            _coalesce_targeted_method_result(
+                accepted_targeted_method_results,
+                work_unit_key=envelope.work_unit_key,
+                result=envelope.targeted_method_result,
+            )
     if runtime.integrity_failure is not None:
         accepted_observations.clear()
+        accepted_targeted_method_results.clear()
     return TargetedRuntimeApplicationResult(
         runtime=runtime,
         successful_result_refs=tuple(
@@ -629,6 +701,11 @@ def _targeted_application_result(
             (key, accepted_observations[key])
             for key in runtime.manifest.work_unit_keys
             if key in accepted_observations
+        ),
+        successful_targeted_method_results=tuple(
+            (key, accepted_targeted_method_results[key])
+            for key in runtime.manifest.work_unit_keys
+            if key in accepted_targeted_method_results
         ),
     )
 
@@ -694,6 +771,57 @@ def _validate_peak_observation_result_binding(
         )
 
 
+def _validate_targeted_method_result_binding(
+    reference: TargetedProcessResultRef,
+    result: TargetedDiagnosticMethodResult,
+    *,
+    attempt: ProcessingAttemptIdentity,
+    work_unit_key: str,
+    upstream_artifact_ids: tuple[str, ...] | None,
+) -> None:
+    from xic_extractor.extraction.targeted_diagnostic_method import (
+        TargetedDiagnosticMethodResult,
+        canonical_targeted_diagnostic_method_bytes,
+    )
+
+    if not isinstance(result, TargetedDiagnosticMethodResult):
+        raise TargetedRuntimeAdapterError(
+            "targeted_method_result must be owner-produced"
+        )
+    if (
+        result.processing_request_id != attempt.processing_request_id
+        or result.processing_attempt_id != attempt.processing_attempt_id
+    ):
+        raise TargetedRuntimeAdapterError(
+            "Targeted method result references a different processing attempt"
+        )
+    if upstream_artifact_ids is None:
+        raise TargetedRuntimeAdapterError(
+            "Targeted method result requires caller-provided upstream artifact IDs"
+        )
+    if not isinstance(upstream_artifact_ids, tuple) or any(
+        not isinstance(artifact_id, str) or not artifact_id
+        for artifact_id in upstream_artifact_ids
+    ):
+        raise TargetedRuntimeAdapterError(
+            "Targeted method upstream artifact IDs must be an explicit tuple"
+        )
+    if reference.artifact.upstream_artifact_ids != upstream_artifact_ids:
+        raise TargetedRuntimeAdapterError(
+            "Targeted result ref must close the caller-provided upstream IDs"
+        )
+    payload = canonical_targeted_diagnostic_method_bytes(result)
+    if (
+        reference.work_unit_key != work_unit_key
+        or reference.owner_result_content_sha256
+        != hashlib.sha256(payload).hexdigest()
+        or reference.owner_result_byte_size != len(payload)
+    ):
+        raise TargetedRuntimeAdapterError(
+            "Targeted result ref does not bind the Targeted method result"
+        )
+
+
 def _coalesce_observation_batch(
     batches: dict[str, PeakObservationBatch],
     *,
@@ -709,6 +837,28 @@ def _coalesce_observation_batch(
     ):
         raise TargetedRuntimeAdapterError(
             "replayed Targeted observation batch conflicts with accepted work"
+        )
+
+
+def _coalesce_targeted_method_result(
+    results: dict[str, TargetedDiagnosticMethodResult],
+    *,
+    work_unit_key: str,
+    result: TargetedDiagnosticMethodResult,
+) -> None:
+    from xic_extractor.extraction.targeted_diagnostic_method import (
+        canonical_targeted_diagnostic_method_bytes,
+    )
+
+    existing = results.get(work_unit_key)
+    if existing is None:
+        results[work_unit_key] = result
+        return
+    if canonical_targeted_diagnostic_method_bytes(existing) != (
+        canonical_targeted_diagnostic_method_bytes(result)
+    ):
+        raise TargetedRuntimeAdapterError(
+            "replayed Targeted method result conflicts with accepted work"
         )
 
 

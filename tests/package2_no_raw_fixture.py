@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from xic_extractor.config import Target
@@ -10,6 +10,17 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
     target_list_snapshot_payload,
 )
+from xic_extractor.discovery.targeted_candidate_set import (
+    TargetedCandidateSetMember,
+    TargetedCandidateSetRef,
+    mint_targeted_candidate_set_ref,
+)
+from xic_extractor.evidence_artifacts import EvidenceArtifactRef
+from xic_extractor.extraction.cid_nl_evidence_projection import (
+    TargetedCidNlProjectionRef,
+    mint_targeted_cid_nl_projection_ref,
+)
+from xic_extractor.neutral_loss import MS2ProductEvidence
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support_ref,
 )
@@ -57,7 +68,12 @@ class Package2NoRawFixture:
     attempt: ProcessingAttemptIdentity
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     target: ResolvedTargetDefinition
+    other_target: ResolvedTargetDefinition
     owners: ProcessingOwnerReferences
+    artifact_registry: dict[str, EvidenceArtifactRef] = field(default_factory=dict)
+    projections_by_hypothesis_id: dict[str, TargetedCidNlProjectionRef] = field(
+        default_factory=dict
+    )
 
     def sample(self, raw_stem: str) -> ResolvedCanonicalSampleIdentity:
         matches = tuple(
@@ -66,6 +82,48 @@ class Package2NoRawFixture:
         if len(matches) != 1:
             raise AssertionError(f"fixture sample is not unique: {raw_stem}")
         return matches[0]
+
+    def lineage_for(
+        self,
+        members: tuple[TargetedCandidateSetMember, ...],
+    ) -> tuple[EvidenceArtifactRef, ...]:
+        reachable: set[str] = set()
+
+        def visit(artifact_id: str) -> None:
+            if artifact_id in reachable:
+                return
+            artifact = self.artifact_registry[artifact_id]
+            reachable.add(artifact_id)
+            for upstream_id in artifact.upstream_artifact_ids:
+                visit(upstream_id)
+
+        for member in members:
+            hypothesis_artifact = member.hypothesis.artifact
+            assert hypothesis_artifact is not None
+            visit(hypothesis_artifact.evidence_artifact_id)
+            visit(member.targeted_cid_nl_projection.artifact.evidence_artifact_id)
+        return tuple(
+            self.artifact_registry[artifact_id]
+            for artifact_id in sorted(reachable)
+        )
+
+    def retry(self) -> Package2NoRawFixture:
+        retry_attempt = issue_processing_attempt(self.request, retry_of=self.attempt)
+        retry_owners = compose_processing_owner_references(
+            request=self.request,
+            attempt=retry_attempt,
+            sample_snapshot=self.samples[0].snapshot,
+            sample_resolutions=self.samples,
+            target_snapshot=self.target.snapshot,
+        )
+        return Package2NoRawFixture(
+            request=self.request,
+            attempt=retry_attempt,
+            samples=self.samples,
+            target=self.target,
+            other_target=self.other_target,
+            owners=retry_owners,
+        )
 
 
 def build_package2_no_raw_fixture(
@@ -106,8 +164,20 @@ def build_package2_no_raw_fixture(
         is_istd=False,
         istd_pair="",
     )
+    other_target_value = Target(
+        label="Other Analyte",
+        mz=PRECURSOR_MZ,
+        rt_min=7.5,
+        rt_max=8.6,
+        ppm_tol=20.0,
+        neutral_loss_da=NEUTRAL_LOSS_DA,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=40.0,
+        is_istd=False,
+        istd_pair="",
+    )
     target_snapshot = mint_target_list_snapshot(
-        (target_value,),
+        (target_value, other_target_value),
         identity_namespace="target-list:package2-no-raw",
     )
     request = build_processing_request_identity(
@@ -130,6 +200,7 @@ def build_package2_no_raw_fixture(
         for stem in sample_stems
     )
     target = resolve_target_definition(target_snapshot, "Analyte")
+    other_target = resolve_target_definition(target_snapshot, "Other Analyte")
     attempt = issue_processing_attempt(request)
     owners = compose_processing_owner_references(
         request=request,
@@ -138,7 +209,14 @@ def build_package2_no_raw_fixture(
         sample_resolutions=samples,
         target_snapshot=target_snapshot,
     )
-    return Package2NoRawFixture(request, attempt, samples, target, owners)
+    return Package2NoRawFixture(
+        request=request,
+        attempt=attempt,
+        samples=samples,
+        target=target,
+        other_target=other_target,
+        owners=owners,
+    )
 
 
 def package2_hypothesis(
@@ -187,7 +265,9 @@ def package2_hypothesis(
         resolver_mode="local_minimum",
         proposal_sources=("local_minimum",),
     )
+    _remember_artifact(fixture, peak.artifact)
     supports = []
+    projected_evidence = None
     for scan_offset, rt_offset in ((0, -0.01), (1, 0.01)):
         evidence = mint_cid_nl_evidence_ref(
             processing_owners=fixture.owners,
@@ -201,28 +281,88 @@ def package2_hypothesis(
             scan_rt_min=apex_rt + rt_offset,
             product_intensity=height * 0.8,
         )
-        supports.append(
-            resolve_dda_cid_nl_peak_support_ref(
-                processing_owners=fixture.owners,
-                sample=sample,
-                canonical_evidence=evidence,
-                candidate_peaks=(peak,),
-                policy=DdaCidNlPeakSupportPolicy(
-                    precursor_tolerance_da=0.01,
-                    neutral_loss_tolerance_ppm=20.0,
-                ),
-            )
+        _remember_artifact(fixture, evidence.artifact)
+        support = resolve_dda_cid_nl_peak_support_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            canonical_evidence=evidence,
+            candidate_peaks=(peak,),
+            policy=DdaCidNlPeakSupportPolicy(
+                precursor_tolerance_da=0.01,
+                neutral_loss_tolerance_ppm=20.0,
+            ),
         )
+        supports.append(support)
+        _remember_artifact(fixture, support.artifact)
+        if scan_offset == 0:
+            projected_evidence = evidence
     event = compose_cid_nl_chromatographic_support_ref(
         processing_owners=fixture.owners,
         sample=sample,
         scan_support_refs=tuple(supports),
     )
-    return compose_cid_nl_peak_hypothesis(
+    _remember_artifact(fixture, event.artifact)
+    hypothesis = compose_cid_nl_peak_hypothesis(
         processing_owners=fixture.owners,
         sample=sample,
         peak_observation=peak,
         chromatographic_support=event,
+    )
+    _remember_artifact(fixture, hypothesis.artifact)
+    assert projected_evidence is not None
+    projection = mint_targeted_cid_nl_projection_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        target=fixture.target,
+        canonical_evidence=projected_evidence,
+        targeted_evidence=MS2ProductEvidence(
+            scan_rt=apex_rt - 0.01,
+            precursor_mz=PRECURSOR_MZ,
+            product_mz=PRODUCT_MZ,
+            product_intensity=height * 0.8,
+            product_base_ratio=0.8,
+            target_product_ppm=0.0,
+            observed_loss_da=NEUTRAL_LOSS_DA,
+            observed_loss_error_ppm=0.0,
+            scan_number=scan_number,
+            acquisition_source_id=source.acquisition_source_id,
+        ),
+    )
+    _remember_artifact(fixture, projection.artifact)
+    fixture.projections_by_hypothesis_id[hypothesis.hypothesis_id] = projection
+    return hypothesis
+
+
+def package2_candidate_member(
+    fixture: Package2NoRawFixture,
+    hypothesis: PeakHypothesis,
+) -> TargetedCandidateSetMember:
+    return TargetedCandidateSetMember(
+        hypothesis=hypothesis,
+        targeted_cid_nl_projection=(
+            fixture.projections_by_hypothesis_id[hypothesis.hypothesis_id]
+        ),
+    )
+
+
+def package2_candidate_set(
+    fixture: Package2NoRawFixture,
+    sample_stem: str,
+    hypotheses: tuple[PeakHypothesis, ...],
+    *,
+    failure_reason: str | None = None,
+) -> TargetedCandidateSetRef:
+    members = tuple(package2_candidate_member(fixture, item) for item in hypotheses)
+    kwargs = {}
+    if failure_reason is not None:
+        kwargs["failure_reason"] = failure_reason
+    return mint_targeted_candidate_set_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        target=fixture.target,
+        candidates=members,
+        lineage_artifacts=fixture.lineage_for(members),
+        **kwargs,
     )
 
 
@@ -231,15 +371,26 @@ def package2_selection(
     sample_stem: str,
     hypotheses: tuple[PeakHypothesis, ...],
     *,
+    candidate_set: TargetedCandidateSetRef | None = None,
     failure_reason: str | None = None,
 ) -> DiagnosticPeakHypothesisSelectionRef:
-    kwargs = {}
-    if failure_reason is not None:
-        kwargs["failure_reason"] = failure_reason
     return mint_diagnostic_peak_hypothesis_selection_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-        target=fixture.target,
-        candidate_hypotheses=hypotheses,
-        **kwargs,
+        candidate_set=(
+            package2_candidate_set(
+                fixture,
+                sample_stem,
+                hypotheses,
+                failure_reason=failure_reason,
+            )
+            if candidate_set is None
+            else candidate_set
+        )
     )
+
+
+def _remember_artifact(
+    fixture: Package2NoRawFixture,
+    artifact: EvidenceArtifactRef | None,
+) -> None:
+    assert artifact is not None
+    fixture.artifact_registry[artifact.evidence_artifact_id] = artifact
