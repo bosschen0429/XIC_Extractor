@@ -3,8 +3,17 @@ from pathlib import Path
 
 from gui.workers.pipeline_worker import PipelineWorker
 from tests.test_targeted_diagnostic_method import _method_request
-from xic_extractor.extraction.targeted_diagnostic_method import (
-    run_targeted_diagnostic_method,
+from tests.test_targeted_method_runtime import (
+    _alignment_job,
+    _completion_spec,
+    _marker,
+    _reservations,
+    _runtime,
+)
+from xic_extractor.extraction.targeted_method_runtime import (
+    build_targeted_method_completion_jobs,
+    execute_targeted_method_alignment_runtime,
+    execute_targeted_method_completion_runtime,
 )
 from xic_extractor.extraction.targeted_service import TargetedApplicationService
 
@@ -16,7 +25,7 @@ def test_cli_and_gui_execute_same_diagnostic_method_service_once_each(
     import gui.workers.pipeline_worker as gui_module
     import scripts.run_extraction as cli_module
 
-    method_request, _fixture = _method_request(tmp_path)
+    method_request, fixture = _method_request(tmp_path)
     active_output = method_request.authoritative_legacy_output
     calls = {"legacy": 0, "factory": 0, "diagnostic": 0}
 
@@ -37,7 +46,39 @@ def test_cli_and_gui_execute_same_diagnostic_method_service_once_each(
 
     def diagnostic_runner(actual_request):
         calls["diagnostic"] += 1
-        return run_targeted_diagnostic_method(actual_request)
+        invocation = calls["diagnostic"]
+        alignment_job = _alignment_job(
+            actual_request,
+            fixture.attempt,
+            "alignment:method",
+        )
+        alignment = execute_targeted_method_alignment_runtime(
+            _runtime(fixture.attempt, ("alignment:method",)),
+            (alignment_job,),
+            max_workers=1,
+            resource_reservations=_reservations((alignment_job,)),
+            recovery_marker=_marker(
+                tmp_path,
+                f"adapter-{invocation}-alignment",
+            ),
+        )
+        jobs = build_targeted_method_completion_jobs(
+            alignment,
+            (_completion_spec(actual_request),),
+        )
+        targeted = execute_targeted_method_completion_runtime(
+            _runtime(fixture.attempt, ("targeted:method",)),
+            jobs,
+            max_workers=1,
+            resource_reservations=_reservations(jobs),
+            recovery_marker=_marker(
+                tmp_path,
+                f"adapter-{invocation}-targeted",
+            ),
+        )
+        results = targeted.settlement.successful_targeted_method_results
+        assert len(results) == 1
+        return results[0][1]
 
     service = TargetedApplicationService(
         legacy_runner,
