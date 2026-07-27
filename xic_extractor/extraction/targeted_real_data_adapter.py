@@ -40,6 +40,10 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.extraction.cid_nl_evidence_projection import (
     mint_targeted_cid_nl_projection_ref,
 )
+from xic_extractor.extraction.handoff_spine_runtime import (
+    promote_targeted_boundary_hypothesis,
+)
+from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.neutral_loss import MS2ProductEvidence
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support_ref,
@@ -153,23 +157,64 @@ def adapt_current_discovery_sample_target(
         )
         for candidate in bounded
     )
+    target_value = target.definition.target
+    targeted_rt_min, targeted_rt_max, _anchor_used, _anchor_rt = get_rt_window(
+        raw,
+        target_value,
+        peak_config,
+        reference_rt=None,
+    )
     requests = tuple(
         XICRequest(
-            mz=seed.precursor_mz,
-            rt_min=candidate.ms1_search_rt_min,
-            rt_max=candidate.ms1_search_rt_max,
-            ppm_tol=settings.precursor_mz_tolerance_ppm,
+            mz=target_value.mz,
+            rt_min=targeted_rt_min,
+            rt_max=targeted_rt_max,
+            ppm_tol=target_value.ppm_tol,
         )
-        for candidate, (_scan, seed) in zip(
-            bounded,
-            scans_and_seeds,
-            strict=True,
-        )
+        for _candidate in bounded
     )
     acquisition = acquire_trace_batch(capability, requests, raw)
 
     observations: list[PeakObservationRef] = []
     for candidate, acquired in zip(bounded, acquisition.traces, strict=True):
+        receipt_mask = (
+            (acquired.trace.rt >= candidate.ms1_search_rt_min)
+            & (acquired.trace.rt <= candidate.ms1_search_rt_max)
+        )
+        receipt_detection = detect_ms1_trace_peak(
+            acquired.trace.rt[receipt_mask],
+            acquired.trace.intensity[receipt_mask],
+            peak_config=peak_config,
+            preferred_rt=candidate.best_seed_rt,
+            peak_finder=find_peak_and_area,
+        )
+        if receipt_detection.status != "detected" or receipt_detection.result is None:
+            raise TargetedRealDataAdapterError(
+                f"{candidate.candidate_id}: current receipt was not reacquired"
+            )
+        receipt_hypotheses = build_peak_hypotheses(
+            sample_name=sample.metadata.sample_name,
+            target_label=target.definition.target.label,
+            role="ISTD" if target.definition.target.is_istd else "Analyte",
+            istd_pair=target.definition.target.istd_pair,
+            resolver_mode=settings.resolver_mode,
+            peak_result=receipt_detection.result,
+            rt=receipt_detection.rt,
+            intensity=receipt_detection.intensity,
+            baseline_integration_method=peak_config.baseline_integration_method,
+            ms1_morphology_smoothing_window_points=(
+                peak_config.ms1_morphology_smoothing_window_points
+            ),
+        )
+        receipt_selected = tuple(
+            item for item in receipt_hypotheses if item.audit.selected
+        )
+        if len(receipt_selected) != 1:
+            raise TargetedRealDataAdapterError(
+                f"{candidate.candidate_id}: receipt owner did not select one peak"
+            )
+        _validate_candidate_integration(candidate, receipt_selected[0].integration)
+
         detection = detect_ms1_trace_peak(
             acquired.trace.rt,
             acquired.trace.intensity,
@@ -201,8 +246,18 @@ def adapt_current_discovery_sample_target(
                 f"{candidate.candidate_id}: integration owner did not select "
                 "exactly one peak"
             )
-        integration = selected[0].integration
-        _validate_candidate_integration(candidate, integration)
+        boundary_promotion = promote_targeted_boundary_hypothesis(
+            selected[0],
+            rt=detection.rt,
+            intensity=detection.intensity,
+            context_rt_start=float(detection.rt[0]),
+            context_rt_end=float(detection.rt[-1]),
+            morphology_window_points=(
+                peak_config.ms1_morphology_smoothing_window_points
+            ),
+        )
+        promoted = boundary_promotion.hypothesis
+        integration = promoted.integration
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
             request=acquired.coordinate.request,
@@ -216,7 +271,7 @@ def adapt_current_discovery_sample_target(
             trace=trace,
             integration=integration,
             resolver_mode=settings.resolver_mode,
-            proposal_sources=selected[0].audit.proposal_sources,
+            proposal_sources=promoted.audit.proposal_sources,
         )
         observations.append(observation)
 

@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import xic_extractor.extraction.handoff_spine_runtime as handoff_spine_runtime
 import xic_extractor.extraction.target_extraction as target_extraction
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extraction.istd_recovery import IstdAnchorRecoveryDecision
@@ -414,12 +415,12 @@ def test_extract_one_target_passes_configured_ms1_window_to_boundary_policies(
         lambda **_kwargs: None,
     )
     monkeypatch.setattr(
-        target_extraction,
+        handoff_spine_runtime,
         "selected_envelope_promoted_hypothesis_from_hypothesis",
         _raise_after_capturing_selected_envelope,
     )
     monkeypatch.setattr(
-        target_extraction,
+        handoff_spine_runtime,
         "chrom_peak_segment_promoted_hypothesis_from_hypothesis",
         _raise_after_capturing_chrom_segment,
     )
@@ -694,7 +695,7 @@ def test_extract_one_target_caps_non_accept_selected_envelope_boundary(
         lambda **_kwargs: None,
     )
     monkeypatch.setattr(
-        target_extraction,
+        handoff_spine_runtime,
         "chrom_peak_segment_promoted_hypothesis_from_hypothesis",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("disabled")),
     )

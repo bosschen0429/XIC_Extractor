@@ -60,6 +60,46 @@ def test_adapter_reacquires_one_current_candidate_into_targeted_lifecycle(
     assert result.alignment_input.candidate_set.lineage_artifacts
 
 
+def test_adapter_uses_targeted_gaussian15_boundary_owner(tmp_path: Path) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    raw = _FakeRaw((8.0,))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+
+    result = adapt_current_discovery_sample_target(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        target=fixture.target,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    integration = (
+        result.alignment_input.candidate_set.candidate_hypotheses[0].integration
+    )
+    assert result.acquisition is not None
+    request = result.acquisition.traces[0].coordinate.request
+    target_value = fixture.target.definition.target
+    assert (request.mz, request.rt_min, request.rt_max, request.ppm_tol) == (
+        target_value.mz,
+        pytest.approx(7.0),
+        pytest.approx(9.0),
+        target_value.ppm_tol,
+    )
+    assert integration.integration_method == "chrom_peak_segment_gaussian15"
+    assert integration.ms1_morphology_trace_method == "gaussian_15"
+    assert integration.ms1_morphology_trace_window_points == 15
+    assert "chrom_peak_segment" in integration.boundary_sources
+
+
 def test_adapter_preserves_multiple_owner_backed_candidates_as_ambiguous(
     tmp_path: Path,
 ) -> None:

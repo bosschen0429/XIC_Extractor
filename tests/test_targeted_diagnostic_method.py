@@ -214,6 +214,25 @@ def test_complete_method_projection_is_serial_reorder_exact(
     assert _trace_oracle(request) == _FROZEN_TRACE_ORACLE
     assert _hypothesis_oracle(request) == _FROZEN_HYPOTHESIS_ORACLE
     assert result.groups[0].owner_ids == tuple(_FROZEN_HYPOTHESIS_ORACLE.values())
+    assert {
+        projection.sample_stem: projection.nl_token
+        for projection in result.projections
+        if projection.status == "observed"
+    } == {"observed-a": "OK", "observed-b": "OK"}
+    assert {
+        projection.sample_stem: projection.reason
+        for projection in result.projections
+        if projection.status == "observed"
+    } == {
+        "observed-a": (
+            "decision: accepted; evidence: ms1_coherent; "
+            "candidate_aligned_ms2_nl"
+        ),
+        "observed-b": (
+            "decision: accepted; evidence: ms1_coherent; "
+            "candidate_aligned_ms2_nl"
+        ),
+    }
     backfilled = next(cell for cell in result.cells if cell.status == "backfilled")
     assert backfilled.selected_integration is not None
     assert (
@@ -626,8 +645,14 @@ def _selected_file(
         reported_peak_end=end,
         reported_peak_width=width,
         confidence=confidence,
-        reason="legacy authoritative selected result",
+        reason=(
+            "decision: accepted; evidence: ms1_coherent; "
+            "candidate_aligned_ms2_nl"
+            if confidence == "HIGH"
+            else "legacy authoritative selected result"
+        ),
         targeted_product_projection=_projection(counted=True),
+        nl_token="OK" if confidence == "HIGH" else None,
     )
     return FileResult(sample_name=sample_stem, results={"Analyte": result})
 

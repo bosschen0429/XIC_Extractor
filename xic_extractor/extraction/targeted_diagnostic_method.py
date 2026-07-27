@@ -22,6 +22,10 @@ from xic_extractor.alignment.targeted_hypothesis_backfill import (
 )
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.extractor import RunOutput
+from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.selection_decision import (
+    resolve_diagnostic_peak_hypothesis_selection,
+)
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
@@ -171,6 +175,7 @@ def complete_targeted_diagnostic_method(
     projections = _validate_and_project_legacy(
         cells,
         request.authoritative_legacy_output,
+        alignment_inputs=request.alignment_inputs,
         target_label=request.targets[0].label,
     )
     return TargetedDiagnosticMethodResult(
@@ -251,6 +256,7 @@ def _validate_and_project_legacy(
     cells: tuple[TargetedHypothesisCell, ...],
     legacy: RunOutput,
     *,
+    alignment_inputs: tuple[TargetedHypothesisAlignmentInput, ...],
     target_label: str,
 ) -> tuple[TargetedDiagnosticProjection, ...]:
     file_results = {item.sample_name: item for item in legacy.file_results}
@@ -261,6 +267,13 @@ def _validate_and_project_legacy(
     if set(file_results) != {cell.sample_stem for cell in cells}:
         raise TargetedDiagnosticMethodParityError(
             "successor and legacy sample universes differ"
+        )
+    inputs_by_sample = {
+        item.sample.metadata.raw_stem: item for item in alignment_inputs
+    }
+    if set(inputs_by_sample) != set(file_results):
+        raise TargetedDiagnosticMethodParityError(
+            "successor projection inputs and cells differ"
         )
     projections = []
     for cell in cells:
@@ -305,8 +318,14 @@ def _validate_and_project_legacy(
             raise TargetedDiagnosticMethodParityError(
                 "legacy result is missing counted-state projection"
             )
-        successor_confidence, successor_reason = _successor_output_semantics(cell)
-        successor_nl_token = _successor_output_nl_token(cell)
+        successor_confidence, successor_reason = _successor_output_semantics(
+            cell,
+            inputs_by_sample[cell.sample_stem],
+        )
+        successor_nl_token = _successor_output_nl_token(
+            cell,
+            inputs_by_sample[cell.sample_stem],
+        )
         if (
             legacy_result.confidence != successor_confidence
             or legacy_result.reason != successor_reason
@@ -422,6 +441,7 @@ def _validate_request_attempt(
 
 def _successor_output_semantics(
     cell: TargetedHypothesisCell,
+    alignment_input: TargetedHypothesisAlignmentInput | None = None,
 ) -> tuple[str, str]:
     """Project bounded successor semantics before consulting legacy output.
 
@@ -442,7 +462,16 @@ def _successor_output_semantics(
             cell,
             "unique Discovery hypothesis preserved by Alignment",
         )
-        return "HIGH", "legacy authoritative selected result"
+        if alignment_input is None:
+            raise TargetedDiagnosticMethodParityError(
+                "observed successor semantics require the owner input"
+            )
+        _observed_selected_cid_nl_hypothesis(cell, alignment_input)
+        return (
+            "HIGH",
+            "decision: accepted; evidence: ms1_coherent; "
+            "candidate_aligned_ms2_nl",
+        )
     if cell.status == "backfilled":
         _require_successor_reason(
             cell,
@@ -481,8 +510,11 @@ def _successor_output_semantics(
     )
 
 
-def _successor_output_nl_token(cell: TargetedHypothesisCell) -> str | None:
-    """Project the frozen bounded writer token without consulting legacy DTOs."""
+def _successor_output_nl_token(
+    cell: TargetedHypothesisCell,
+    alignment_input: TargetedHypothesisAlignmentInput,
+) -> str | None:
+    """Project observed strict CID-NL support without consulting legacy DTOs."""
 
     if cell.status not in {
         "observed",
@@ -495,7 +527,30 @@ def _successor_output_nl_token(cell: TargetedHypothesisCell) -> str | None:
         raise TargetedDiagnosticMethodParityError(
             f"unsupported successor NL-token status: {cell.status}"
         )
-    return None
+    if cell.status != "observed":
+        return None
+    _observed_selected_cid_nl_hypothesis(cell, alignment_input)
+    return "OK"
+
+
+def _observed_selected_cid_nl_hypothesis(
+    cell: TargetedHypothesisCell,
+    alignment_input: TargetedHypothesisAlignmentInput,
+) -> PeakHypothesis:
+    selected = resolve_diagnostic_peak_hypothesis_selection(
+        alignment_input.selection,
+        alignment_input.candidate_set,
+    )
+    if selected is None or selected.hypothesis_id != cell.source_hypothesis_id:
+        raise TargetedDiagnosticMethodParityError(
+            "observed successor cell lost its selected CID-NL hypothesis"
+        )
+    support = selected.evidence.cid_nl_chromatographic_support_ref
+    if support is None or support.content.strict_nl_scan_count < 1:
+        raise TargetedDiagnosticMethodParityError(
+            "observed successor cell lacks strict CID-NL scan support"
+        )
+    return selected
 
 
 def _require_successor_reason(
