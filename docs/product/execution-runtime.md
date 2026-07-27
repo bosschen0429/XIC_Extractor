@@ -472,13 +472,16 @@ offers every registered artifact only to its owner; failure, cancellation, or
 worker-loss cleanup unknown quarantines the whole registered current-attempt
 set. Conflicting or missing cleanup and acknowledgement fail closed.
 
-This is still `diagnostic_only`. The callback is the explicit physical
+This remains `diagnostic_only`. The callback is the explicit physical
 persistence seam; the repo has not selected a storage schema, path, CAS,
 current pointer, product seal, or publication mechanism, and the no-RAW fixture
-does not claim that an in-memory callback is durable storage. Alignment is not
-yet a second consumer, and work events, monotonic offsets, metric availability,
-the concrete durable launch/finalization marker integration, and
-coordinator-loss recovery around that marker remain open.
+does not claim that an in-memory callback is durable storage. Alignment is now
+the second no-RAW consumer. The focused `execution_runtime_observability`
+companion makes attempt/work events, monotonic offsets, and required metric
+availability executable without selecting an event store or telemetry backend.
+The caller-located durable launch/finalization marker and coordinator-loss
+recovery are also executable for both Targeted and Alignment. These contracts
+do not make the legacy runners use a new storage or writer path.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.

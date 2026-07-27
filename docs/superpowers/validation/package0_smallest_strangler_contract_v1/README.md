@@ -2,23 +2,26 @@
 
 Status: `diagnostic_only`
 
-This packet freezes the comparison boundary for the CID-NL / NL116 Targeted
-strangler before successor implementation. It adds no scientific truth,
+This packet freezes and executes the comparison boundary for the CID-NL / NL116
+Targeted strangler before successor implementation. It adds no scientific truth,
 selected-value, counted-detection, Matrix, workbook, activation, publication,
 or export authority.
 
 ## Scope boundary
 
-This packet is a partial Issue #149 deliverable. It freezes comparator
-membership and proves that CLI and GUI adapters can share one headless Targeted
-application service. It does **not** implement or claim completion of canonical
-acquisition-source, processing-request, processing-attempt, evidence-artifact,
-delivery-revision, or delivery-seal identity.
+This packet is the completed local Package 0 / Issue #149 contract. Comparator
+membership is executable through
+`xic_extractor.package0_successor_comparator`; CLI and GUI are checked as equal
+adapters over one headless Targeted application service. Existing owners now
+provide executable acquisition-source, processing-request, processing-attempt,
+work/event/metric, trace-capability/coordinate, evidence-artifact, and
+Targeted delivery-cell/revision/seal-candidate identities with changed-input and
+fail-closed tests.
 
-Those identities require owner-backed semantic bases, immutable resolved
-execution inputs, and changed-input/substitution tests as one coherent follow-up
-contract. Until that contract exists, this packet must not be cited as closing
-Issue #149's deterministic-identity or lineage requirements.
+Completion is limited to executable no-RAW contracts. A delivery seal candidate
+is not a product seal. This packet does not implement the Package 1
+`PeakObservation` producer, Package 2 successor writer path, publication,
+current pointers, CAS, storage, supersession, or product activation.
 
 ## Legacy comparator membership
 
@@ -73,3 +76,9 @@ and header identities, the complete canonical artifact-path inventory, and the
 existing public-surface owners needed to recompute membership from a clean
 checkout. The receipt is an address and membership oracle, not a copied
 scientific result.
+
+`validate_package0_successor_observation` compares an observed successor receipt
+against every frozen membership and byte-digest field above, and requires exact
+CLI/GUI equality for canonical request, attempt semantics, lineage, scientific
+result, delivery projection, and both Targeted CSV digests. It remains
+`diagnostic_only`; passing it grants no writer or product authority.

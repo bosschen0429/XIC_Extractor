@@ -27,15 +27,14 @@ Last updated: 2026-07-27
 
 Current validation status: `diagnostic_only`
 
-Current issue gate: full Package 0 / Issue #149 closure is explicitly activated
-through every remaining canonical exit: work events/offsets/metrics,
-acquisition capability/trace coordinates, delivery-cell/revision/seal,
-equal-adapter CLI/GUI `cid-dR` parity, and the executable successor comparator.
-Execution continues across integrated logical slices without returning for
-administrative reactivation. This section is the canonical local write-scope
-record; it does not authorize GitHub publication, Package 1 batch
-`PeakObservation`, Package 2, RAW/DLL, product activation, Matrix/XLSX writing,
-or behavior change.
+Current issue gate: Package 0 / Issue #149 is locally complete at its executable
+no-RAW exit. Work events/monotonic offsets/metric availability, acquisition
+capability/trace coordinates, Targeted delivery-cell/revision/stage/seal
+candidates, equal-adapter CLI/GUI parity, and the frozen successor comparator
+are all executable and fail closed. This local completion does not change the
+remote GitHub issue. Package 1 batch `PeakObservation`, Package 2, RAW/DLL,
+product activation, Matrix/XLSX writing, publication, and behavior change remain
+outside the current write scope.
 
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
@@ -109,7 +108,7 @@ Progress vocabulary:
 
 | Package | Status | What is actually complete | First missing gate |
 | --- | --- | --- | --- |
-| Package 0 — executable no-RAW contracts | `wired_no_raw` / partial | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering through mutually exclusive queued cancellation and queued manifest-preflight failure paths. The current branch consumes owner-supplied manifest content into an attempt-bound immutable `RequiredWorkManifest`, starts `AttemptRuntime`, accepts one terminal settlement per declared key, then closes registered resources/artifacts through a content-bound coordinator proposal and supervisor acknowledgement. Targeted and Alignment now both consume that lifecycle. One caller-located atomic marker distinguishes launch-only coordinator loss, which fails and quarantines the attempt namespace, from a content-bound durable finalization acknowledgement. | Work events/offsets/metrics, acquisition capability/trace coordinates, delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the executable successor comparator remain open. Issue #149 remains open. |
+| Package 0 — executable no-RAW contracts | `evidence_passed` / complete | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering. This branch closes manifest/work/resource/artifact/finalization and recovery-marker behavior for Targeted plus Alignment, then adds executable work-event/offset/metric availability, capability-aware trace coordinates, Targeted delivery-cell/revision/stage/seal candidates, CLI/GUI equal-adapter receipts, and the frozen successor receipt comparator. All remain no-RAW and `diagnostic_only`. | None inside Package 0. Remote Issue #149 state is unchanged because no GitHub mutation was authorized. |
 | Package 1 — pure runtime and observation substrates | `wired_no_raw` / partial | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The first activated slice added a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, and one manifest-ordered application consumer without serializing legacy DTOs. The completed lifecycle slice reserves resources before process dispatch, accepts exactly-once open/cleanup reports, closes worker loss conservatively, registers current-attempt artifacts, freezes a coordinator proposal, and requires exact supervisor finalization. Package 0 closure now supplies the narrow physical recovery marker to both Targeted and Alignment without adding a storage framework. | Actual acquisition batch observations and `PeakObservation` production require a later explicit Package 1 scope. |
 | Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
@@ -144,19 +143,23 @@ finalizer. The default legacy runners and output paths were not invoked.
 
 **Last Package 0 runtime consumer boundary actually run:** Targeted and
 Alignment both supplied owner-minted, same-request/attempt
-`EvidenceArtifactRef` results to `execution_runtime`, then closed the focused
-resource/artifact/finalization reducer. The owner-path marker atomically
-replaced a launch record with the exact accepted terminal summary; coordinator
-loss before replacement recovers as failed plus whole-namespace quarantine,
-while loss after replacement recovers the acknowledged outcome and artifact
-dispositions. Marker tamper, attempt/path reuse, post-finalization redispatch,
-missing manifest work or cleanup, conflicting replay, undeclared keys, failed
-work, late resource reports, and conflicting acknowledgement fail closed. The
-focused closure set passed 16 tests; CI-equivalent targeted-core passed 1,064
-tests with 1 skip, alignment-core passed 2,487 tests, and docs-config passed 464
-tests with 1 skip. Full-package mypy covered 468 source files; Ruff, Import
-Linter, architecture census, diagnostics index, and docs audit passed their
-applicable gates.
+`EvidenceArtifactRef` results through the shared attempt/finalization lifecycle
+and durable recovery marker. The closure fixture now additionally validates one
+complete attempt/work observability ledger with monotonic offsets and explicit
+availability for every required metric. A capability-aware no-RAW adapter
+executes two `XICRequest` values through exactly one batch call and returns
+source-bound native-scan coordinates. Targeted delivery-cell/revision/stage/seal
+candidates compose existing owner refs only, and CLI/GUI receipts compare
+canonical request, attempt semantics, lineage, scientific result, delivery
+projection, and both frozen CSV digests exactly. The focused closure set is
+green at 67 tests. All seven CI-equivalent shards pass: docs-config 464 passed/1
+skipped, GUI 110 passed, targeted-core 1,080 passed/1 skipped, alignment-core
+2,487 passed, product-gates-activation 872 passed/1 skipped,
+product-gates-evidence 621 passed, and diagnostics-tools 351 passed/1 skipped
+(5,985 passed/4 skipped total). Ruff, full-package mypy over 472 source files,
+Import Linter (4 kept/0 broken), architecture census (1,308 modules/2,632
+internal imports), diagnostics index, validation retention, shard census, hook
+smokes, and docs audit with zero blockers also pass.
 
 **Current CID-NL semantic boundary:** the last completed semantic seam is exact CID-NL evidence
 → physical MS1 peak → diagnostic `PeakHypothesis`. The first missing product
@@ -170,25 +173,18 @@ Targeted-first Package 2 endpoint is hard-exact `xic_results.csv`. Untargeted
 Alignment Matrix/XLSX remains Package 3B and keeps separate authority; this
 decision does not skip Package 0/1 gates or authorize Package 2 mutation early.
 
-**First missing handoff and next falsifiable loop:** the durable marker and
-Alignment second-consumer closure slice is complete at `wired_no_raw`, but
-Package 0 is not formally complete. Its first remaining runtime handoff is the
-canonical work event/offset/metric contract; acquisition capability/trace
-coordinates, delivery-cell/revision/seal, equal-adapter `cid-dR` parity, and the
-executable successor comparator remain ordered later Package 0 exits. The next
-observation handoff is actual batch `PeakObservation` production, which remains
-a later Package 1 slice requiring explicit activation. The full multi-sample
-writer fixture remains Package 2.
+**First missing handoff and next falsifiable loop:** Package 0 has no remaining
+canonical exit. The next observation handoff is actual batch `PeakObservation`
+production in Package 1; it is not activated by this closure. The full
+multi-sample writer fixture remains Package 2.
 
 **Remaining unknowns:** no Product, Design, Evidence, or Execution unknown
-blocks closeout of this bounded marker/Alignment slice. Package 0's remaining
-gates are known unimplemented scope rather than evidence that this slice
-failed. No marker path, retention, product seal, current pointer, CAS,
-publication, or generic storage authority was selected by runtime.
-mechanism by implication. The next Design unknown is the explicit
+blocks Package 0 closeout. No retention, product seal, current pointer, CAS,
+publication, generic storage, selected-value, Matrix, or writer authority was
+selected by these contracts. The next Design unknown is the explicit
 diagnostic-hypothesis selection/externalization transition; the next Evidence
-gap is actual batch `PeakObservation` production. Neither grants authority for
-another Package 1 slice or Package 2 mutation.
+gap is actual batch `PeakObservation` production. Neither grants Package 1 or
+Package 2 mutation authority here.
 
 **Deferred method note:** Pt Pattern work is related and retained, but its
 Discovery method is not stable enough to drive this vertical tracer. It is not

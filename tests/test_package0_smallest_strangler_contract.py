@@ -25,23 +25,28 @@ def test_package0_comparator_is_bound_to_canonical_sealed_baseline() -> None:
     }
 
 
-def test_package0_declares_partial_issue_scope() -> None:
+def test_package0_declares_complete_no_raw_issue_scope() -> None:
     contract = _load(PACKET / "contract.json")
 
     assert contract["delivery_scope"] == {
-        "issue_149_completion": "partial",
+        "issue_149_completion": "complete",
         "implemented": [
             "legacy_comparator_membership",
+            "executable_successor_comparator",
             "shared_headless_targeted_service",
-        ],
-        "deferred": [
             "canonical_acquisition_source_identity",
             "canonical_processing_request_identity",
             "processing_attempt_identity",
+            "attempt_work_resource_event_contract",
+            "runtime_metric_availability_contract",
+            "trace_acquisition_capability_and_coordinates",
             "evidence_artifact_identity",
-            "delivery_revision_identity",
-            "delivery_seal_identity",
+            "targeted_delivery_cell_identity",
+            "targeted_delivery_revision_candidate_identity",
+            "targeted_delivery_seal_candidate_identity",
+            "cli_gui_equal_adapter_contract",
         ],
+        "deferred": [],
     }
 
 

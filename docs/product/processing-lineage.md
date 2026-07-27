@@ -189,9 +189,13 @@ rejects mixed sample snapshots, target/request substitution, unresolved review
 records, superseded review records, artifact content/role/schema substitution,
 missing dependencies, cross-attempt mixing, and review-snapshot substitution.
 This is a bounded diagnostic artifact-envelope tracer, not a production
-artifact registry. Cross-attempt dependency resolution, delivery-cell,
-revision, and seal identities remain incomplete later contracts. A timestamp can describe when something happened;
-it cannot establish what happened.
+artifact registry. Package 0 now makes Targeted delivery-cell, revision, stage,
+and seal-candidate identities executable by composing these existing owner refs
+in memory. Those candidates grant no product seal, current pointer, storage,
+publication, supersession, selected-value, Matrix, or writer authority.
+Cross-attempt runtime dependency resolution beyond the validated predecessor
+closure remains a later consumer contract. A timestamp can describe when
+something happened; it cannot establish what happened.
 
 An acquisition source and a sample remain different typed identities, but the
 current lab contract is one independent canonical analysis sample per source
