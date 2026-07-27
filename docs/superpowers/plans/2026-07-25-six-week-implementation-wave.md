@@ -30,7 +30,7 @@ Current validation status: `diagnostic_only`
 Current issue gate: Package 0 and Package 1 are complete at their executable
 no-RAW exits. The operator explicitly activated Package 2 on 2026-07-27; this
 tracked checkpoint is the canonical local tracker scope for branch
-`codex/package-2-targeted-method`. The active write scope is one bounded
+`codex/package-2-targeted-method`. The intended write scope is one bounded
 `diagnostic_only` Targeted CID-NL method: constrained Discovery -> explicit
 diagnostic `PeakHypothesis` selection/externalization -> cross-sample Alignment
 with preserved hypothesis identity -> evidence-based Backfill -> Targeted
@@ -42,6 +42,12 @@ settlement, and frozen-comparator contracts are reused, not rebuilt. No remote
 GitHub issue was changed. RAW/DLL, 8RAW/85RAW, Pt, Untargeted widening,
 Matrix/XLSX, Package 3, product activation/publication, new storage/runtime/core,
 and public CLI/config/schema/writer authority remain outside this write scope.
+Mutation is currently blocked before the first scientific slice because the
+repo names `peak_detection.selection_decision` as the future owner but does not
+authorize the canonical content/schema/immutable reference that may externalize
+the diagnostic owner-backed hypothesis. Three consecutive goal turns produced
+no design-owner acceptance of the proposed diagnostic-only reference, so the
+runtime Goal and this package checkpoint must remain blocked rather than guess.
 
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
@@ -117,7 +123,7 @@ Progress vocabulary:
 | --- | --- | --- | --- |
 | Package 0 — executable no-RAW contracts | `evidence_passed` / complete | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering. This branch closes manifest/work/resource/artifact/finalization and recovery-marker behavior for Targeted plus Alignment, then adds executable work-event/offset/metric availability, capability-aware trace coordinates, Targeted delivery-cell/revision/stage/seal candidates, CLI/GUI equal-adapter receipts, and the frozen successor receipt comparator. All remain no-RAW and `diagnostic_only`. | None inside Package 0. Remote Issue #149 state is unchanged because no GitHub mutation was authorized. |
 | Package 1 — pure runtime and observation substrates | `evidence_passed` / complete | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed runtime slices add a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, manifest-ordered application consumption, resource lifecycle, supervisor finalization, and the narrow recovery marker consumed by both Targeted and Alignment without serializing legacy DTOs or adding storage. Slice 2 now composes both real process consumers with the existing capability-aware batch acquisition and physical-observation owners: true spawned serial/reordered runs preserve immutable signal snapshots, source/kind coordinate truth, request/call/point counts, exact owner/observation lineage, replay idempotence, conflict quarantine, terminal dispositions, and byte-identical canonical receipts without invoking a writer. Its executable `DifferenceManifest` binds the explained internal carrier change to the immutable frozen comparator and one comparator-owned experiment entry that overwrites output paths, pins root identity, accepts only exact primitive no-RAW jobs, runs fixed Targeted/Alignment workers to synchronous drain, inventories final-state paths/bytes, and privately mints the receipt. | None inside Package 1. Package 2 selection/externalization and downstream method wiring remain inactive. |
-| Package 2 — complete Targeted CID-NL method | `active` / `diagnostic_only` / no-RAW | Dedicated branch/worktree is active from Package 1 closure `0d535413`. The bounded local scope is selection/externalization → cross-sample Alignment → evidence-based Backfill → existing hard-exact writer through one shared Targeted application service. No successor lifecycle slice is credited until its executable test and parity evidence pass. | Run one frozen multi-sample fixture containing observed Discovery, eligible Backfill, true missing, ambiguity, and failure; stop on any unexpected selected peak/boundary/area/confidence/reason/counting/CSV-byte/Matrix/writer difference or any required public CLI/config/schema/writer-contract change. |
+| Package 2 — complete Targeted CID-NL method | `blocked` / `diagnostic_only` / no-RAW | Dedicated branch/worktree exists from Package 1 closure `0d535413`, but no scientific successor slice has been implemented. Read-only owner mapping proved the expected `selection_decision` owner still rejects diagnostic owner-backed hypotheses and no canonical selection externalization content/reference exists. | Design owner must accept or replace the proposed diagnostic-only immutable selection ref. After that decision, run the frozen multi-sample fixture containing observed Discovery, eligible Backfill, true missing, ambiguity, and failure; stop on any unexpected selected peak/boundary/area/confidence/reason/counting/CSV-byte/Matrix/writer difference or any required public CLI/config/schema/writer-contract change. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
 | Package 4 — compare and decide | `not_started` | None. | Full tracer evidence, rollback rehearsal, and successor-versus-strangler comparison. |
@@ -188,10 +194,12 @@ Alignment Matrix/XLSX remains Package 3B and keeps separate authority; this
 decision does not skip Package 0/1 gates or authorize Package 2 mutation early.
 
 **First missing handoff and next falsifiable loop:** Package 0 and Package 1
-have no remaining canonical exit. Package 2 is active at `diagnostic_only`; its
-first loop is an explicit diagnostic-hypothesis selection/externalization
-handoff followed by one complete no-RAW multi-sample Targeted path through
-Alignment, Backfill, and the existing hard-exact `xic_results.csv` projection.
+have no remaining canonical exit. Package 2 is blocked at `diagnostic_only`;
+its first loop requires design-owner acceptance of the exact diagnostic
+hypothesis selection/externalization content and immutable reference. Once
+authorized, that handoff is followed by one complete no-RAW multi-sample
+Targeted path through Alignment, Backfill, and the existing hard-exact
+`xic_results.csv` projection.
 Any unexpected scientific, counting, CSV-byte, Matrix, or writer difference is
 a stop condition and must be preserved as difference evidence before further
 mutation.
