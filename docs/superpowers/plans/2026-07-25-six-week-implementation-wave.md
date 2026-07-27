@@ -50,6 +50,20 @@ artifacts, request/attempt lineage, deterministic status, and reasons. Only a
 unique candidate may be selected; ambiguity, no-candidate, and failure remain
 explicit. The existing product-selection guard is unchanged.
 
+The expanded no-RAW engineering gate is now complete. All seven repository
+shards pass at the integrated Package 2 head: docs-config 464 passed/1 skipped,
+GUI 110 passed, targeted-core 1,090 passed/1 skipped, alignment-core 2,487
+passed, product-gates-activation 872 passed/1 skipped,
+product-gates-evidence 633 passed, and diagnostics-tools 356 passed/1 skipped
+(6,012 passed/4 skipped total). Ruff, full-package mypy over 476 source files,
+Import Linter (4 kept/0 broken), architecture census, diagnostics index, docs
+audit with zero blockers, shard census, validation retention, hook fixtures,
+hook assertions, diff hygiene, and secret/private-path/local-config scans pass.
+Independent QA separately replayed the complete method, failure semantics, CSV
+digest, 13-row exact-zero manifest, unchanged writer blob, and zero Matrix/XLSX
+claim without a correctness finding. Fresh independent code review is the sole
+remaining Package 2 gate.
+
 Current engineering-migration gate: exact-zero product, scientific, Matrix, and
 writer parity. Any selected-peak, boundary, area, confidence/reason,
 counted-state, Matrix, or CSV value/byte difference stops this migration and
@@ -124,7 +138,7 @@ Progress vocabulary:
 | --- | --- | --- | --- |
 | Package 0 — executable no-RAW contracts | `evidence_passed` / complete | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering. This branch closes manifest/work/resource/artifact/finalization and recovery-marker behavior for Targeted plus Alignment, then adds executable work-event/offset/metric availability, capability-aware trace coordinates, Targeted delivery-cell/revision/stage/seal candidates, CLI/GUI equal-adapter receipts, and the frozen successor receipt comparator. All remain no-RAW and `diagnostic_only`. | None inside Package 0. Remote Issue #149 state is unchanged because no GitHub mutation was authorized. |
 | Package 1 — pure runtime and observation substrates | `evidence_passed` / complete | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed runtime slices add a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, manifest-ordered application consumption, resource lifecycle, supervisor finalization, and the narrow recovery marker consumed by both Targeted and Alignment without serializing legacy DTOs or adding storage. Slice 2 now composes both real process consumers with the existing capability-aware batch acquisition and physical-observation owners: true spawned serial/reordered runs preserve immutable signal snapshots, source/kind coordinate truth, request/call/point counts, exact owner/observation lineage, replay idempotence, conflict quarantine, terminal dispositions, and byte-identical canonical receipts without invoking a writer. Its executable `DifferenceManifest` binds the explained internal carrier change to the immutable frozen comparator and one comparator-owned experiment entry that overwrites output paths, pins root identity, accepts only exact primitive no-RAW jobs, runs fixed Targeted/Alignment workers to synchronous drain, inventories final-state paths/bytes, and privately mints the receipt. | None inside Package 1. Package 2 selection/externalization and downstream method wiring remain inactive. |
-| Package 2 — complete Targeted CID-NL method | `active` / `diagnostic_only` / no-RAW | One six-sample fixture now runs immutable selection → existing Alignment → existing Backfill → legacy-validated projection through `TargetedApplicationService.execute_diagnostic_method`. Targeted's scheduler and Alignment's process runner consume the same spawned method receipt; only two successful finalizations may call the unchanged wide CSV writer in an attempt namespace. The 403-byte CSV is hard-frozen at SHA-256 `f0a471bd81046cefaa924d619b934957505ee22591b17820a73143f7b4126937`; cancellation/failure quarantine, exact-byte difference retention, and whole-attempt rollback preserve legacy current. The validation packet/inventory and its 13-row exact-zero manifest are machine checked at SHA-256 `377932de8bac5a929467a108658a3f9c5899a8b0e78fb7c05e277cacec0f2755`. | Expand required CI/architecture/docs checks and obtain fresh independent approval; stop on any unexpected selected peak/boundary/area/confidence/reason/counting/CSV-byte/Matrix/writer difference or any required public CLI/config/schema/writer-contract change. |
+| Package 2 — complete Targeted CID-NL method | `active` / `diagnostic_only` / no-RAW | One six-sample fixture now runs immutable selection → existing Alignment → existing Backfill → legacy-validated projection through `TargetedApplicationService.execute_diagnostic_method`. Targeted's scheduler and Alignment's process runner consume the same spawned method receipt; only two successful finalizations may call the unchanged wide CSV writer in an attempt namespace. The 403-byte CSV is hard-frozen at SHA-256 `f0a471bd81046cefaa924d619b934957505ee22591b17820a73143f7b4126937`; cancellation/failure quarantine, exact-byte difference retention, and whole-attempt rollback preserve legacy current. The validation packet/inventory and its 13-row exact-zero manifest are machine checked at SHA-256 `377932de8bac5a929467a108658a3f9c5899a8b0e78fb7c05e277cacec0f2755`. All seven repository shards pass at 6,012 passed/4 skipped, all static/docs/hook/diff scans pass, and independent QA found no correctness issue. | Obtain fresh independent reviewer approval on the frozen integrated diff; stop on any unexpected selected peak/boundary/area/confidence/reason/counting/CSV-byte/Matrix/writer difference or any required public CLI/config/schema/writer-contract change. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
 | Package 4 — compare and decide | `not_started` | None. | Full tracer evidence, rollback rehearsal, and successor-versus-strangler comparison. |
@@ -144,18 +158,19 @@ Progress vocabulary:
 | Selected sample-local hypothesis → cross-sample Alignment | `TargetedHypothesisAlignmentInput` resolves the exact immutable candidate universe, then projects the selected owner-backed hypothesis into the existing `SampleLocalMS1Owner`/cross-sample group constructor with `owner_id == hypothesis_id` | A bounded three-sample no-RAW fixture groups two selected hypotheses while excluding no-candidate, ambiguous, and failed cells; reversed input order is canonical and foreign universes/duplicate cells fail closed | 26 focused no-RAW selection, Targeted Alignment, and existing owner-family contract tests pass; original hypothesis IDs are exact group owner IDs | `wired_no_raw` |
 | Alignment-supported missing cell → evidence-based Backfill | `TargetedHypothesisCell` carries selection artifact, canonical sample/target, exact group/owner IDs, source hypothesis, selected integration, and terminal reason while delegating local evidence detection/integration to existing `build_owner_backfill_result` | Six-sample frozen no-RAW fixture contains two observed hypotheses, one eligible rescued Backfill, one queried true missing, ambiguity, and Discovery failure; sources for non-`no_candidate` cells fail before query | 31 focused Targeted Alignment/Backfill plus existing owner-Backfill tests pass; rescued integration is owner-selected and missing/ambiguous/failure remain non-selected | `wired_no_raw` |
 | Backfill/observed states → existing table writer | `TargetedDiagnosticProjection` validates RT/area/intensity/boundaries/width/confidence/reason/counted state against the authoritative legacy `RunOutput`; no domain decision occurs in the writer | `TargetedApplicationService.execute_diagnostic_method` is the single CLI/GUI-owned service boundary; after Targeted and Alignment finalizations succeed, unchanged `write_wide_csv` renders the authoritative legacy file results under `successor_attempts/<attempt>/xic_results.csv` | Frozen 403-byte `xic_results.csv`, SHA-256 `f0a471bd81046cefaa924d619b934957505ee22591b17820a73143f7b4126937`; exact-byte mismatch is retained and stops, semantic area mismatch stops before delivery | `wired_no_raw` |
-| Full multi-sample no-RAW CID-NL lifecycle | One bounded six-sample fixture: two observed Discovery hypotheses, eligible Backfill, true missing, ambiguity, and failure | Same service runs the full diagnostic method; true spawned Targeted scheduler and Alignment runner settle the same receipt; failed/cancelled attempts quarantine, rollback retains diagnostic evidence and restores authoritative legacy output/current | 85 focused no-RAW method/service/selection/Alignment/Backfill/runtime/finalization/writer/manifest tests pass; serial/reordered receipt parity, frozen trace/hypothesis/Backfill/CSV oracles, Matrix/XLSX absence, semantic/byte stop tests; 13-row exact-zero DifferenceManifest | `evidence_passed` |
+| Full multi-sample no-RAW CID-NL lifecycle | One bounded six-sample fixture: two observed Discovery hypotheses, eligible Backfill, true missing, ambiguity, and failure | Same service runs the full diagnostic method; true spawned Targeted scheduler and Alignment runner settle the same receipt; failed/cancelled attempts quarantine, rollback retains diagnostic evidence and restores authoritative legacy output/current | 85 focused no-RAW method/service/selection/Alignment/Backfill/runtime/finalization/writer/manifest tests pass; serial/reordered receipt parity, frozen trace/hypothesis/Backfill/CSV oracles, Matrix/XLSX absence, semantic/byte stop tests; 13-row exact-zero DifferenceManifest; 6,012 passed/4 skipped across all repository shards; independent QA PASS | `evidence_passed` |
 | RAW-backed CID-NL lifecycle | No | No | No new RAW evidence | `blocked` |
 
-**Last application consumer boundary actually run:** Targeted's existing
-`TargetedApplicationService` and Alignment's existing process runner each used
-true spawn workers to acquire two capability-bound no-RAW XIC batches and mint
-owner-backed physical `PeakObservation` artifacts. Serial and deliberately
-reordered two-worker execution produced byte-identical canonical observation
-receipts and coordinator records, including native-scan versus RT-only
-coordinates, logical request/batch/adapter-call/point counts, exact upstream
-lineage, and terminal artifact dispositions. The default legacy runners and
-all product output paths were not invoked.
+**Last application consumer boundary actually run:** the existing
+`TargetedApplicationService.execute_diagnostic_method` ran the complete bounded
+six-sample method through immutable diagnostic selection, existing cross-sample
+Alignment, existing owner Backfill, legacy-validated Targeted projection, the
+Targeted scheduler and Alignment process runner under true spawn, and the
+unchanged `write_wide_csv` renderer in an attempt namespace. Both finalizations
+were required before delivery. Independent QA replayed the same boundary and
+verified the 403-byte CSV digest, exact-zero manifest, failure quarantine,
+conflicting replay, rollback to legacy with prior current preserved, unchanged
+writer blob, and zero Matrix/XLSX output.
 
 **Package 1 closure evidence:** the focused Package 1 comparator and runtime
 observability suites pass (49 tests). All seven CI-equivalent shards pass at the
@@ -188,8 +203,9 @@ diagnostic selection/externalization → existing cross-sample Alignment with th
 original hypothesis IDs preserved as owner IDs → existing evidence-based
 Backfill owner for the sole eligible gap → legacy-validated projection through
 the common Targeted application service and unchanged table writer. The full
-bounded no-RAW lifecycle is now wired; validation-packet closure, expanded CI,
-and fresh independent review remain before Package 2 can close.
+bounded no-RAW lifecycle, validation packet, independent QA, and expanded CI
+are now complete; fresh independent review is the sole remaining Package 2
+gate.
 
 **Current Product decision:** on 2026-07-26 the operator confirmed the
 Targeted-first Package 2 endpoint is hard-exact `xic_results.csv`. Untargeted
@@ -199,19 +215,21 @@ decision does not skip Package 0/1 gates or authorize Package 2 mutation early.
 **First missing handoff and next falsifiable loop:** Package 0 and Package 1
 have no remaining canonical exit. Package 2 is active at `diagnostic_only`;
 the complete bounded method and durable validation packet now pass focused
-fail-closed tests, including real Targeted/Alignment process consumers,
-hard-exact CSV projection, and manifest verification. The remaining loop is
-expanded repository checks and fresh independent review.
+fail-closed tests, all repository checks, and independent QA, including real
+Targeted/Alignment process consumers, hard-exact CSV projection, and manifest
+verification. The remaining loop is one fresh independent review of the frozen
+integrated diff.
 Any unexpected scientific, counting, CSV-byte, Matrix, or writer difference is
 a stop condition and must be preserved as difference evidence before further
 mutation.
 
 **Remaining unknowns:** no Product, Design, Evidence, or Execution unknown
-remains inside Package 1 or the Package 2 selection externalization boundary.
+remains inside Package 1 or Package 2.
 No retention, product seal, current pointer, CAS, publication, generic storage,
-selected-value, Matrix, or writer authority was selected. The next bounded
-falsification is whether existing cross-sample group/backfill owners can carry
-the original selected hypothesis identity without a second model or RAW access.
+selected-value, Matrix, or writer authority was selected. The cross-sample
+group/backfill owners have now carried the original selected hypothesis identity
+without a second model or RAW access; fresh review is the remaining independent
+falsification.
 
 **Deferred method note:** Pt Pattern work is related and retained, but its
 Discovery method is not stable enough to drive this vertical tracer. It is not
