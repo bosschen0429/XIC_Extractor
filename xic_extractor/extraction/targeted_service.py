@@ -26,6 +26,10 @@ from .targeted_runtime_adapter import (
 )
 
 if TYPE_CHECKING:
+    from xic_extractor.extraction.targeted_diagnostic_method import (
+        TargetedDiagnosticMethodRequest,
+        TargetedDiagnosticMethodResult,
+    )
     from xic_extractor.extractor import RunOutput
     from xic_extractor.peak_detection.model_selection import (
         ExpectedDiffApprovalRecord,
@@ -62,6 +66,13 @@ class TargetedRuntimeFinalizationPersister(Protocol):
     ) -> RuntimeFinalizationReceipt: ...
 
 
+class TargetedDiagnosticMethodRunner(Protocol):
+    def __call__(
+        self,
+        request: TargetedDiagnosticMethodRequest,
+    ) -> TargetedDiagnosticMethodResult: ...
+
+
 @dataclass(frozen=True)
 class TargetedApplicationRequest:
     """Headless application input; callbacks are lifecycle adapters, not science."""
@@ -83,6 +94,7 @@ class TargetedApplicationService:
     runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
     runtime_finalization_persister: TargetedRuntimeFinalizationPersister | None = None
     runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
+    diagnostic_method_runner: TargetedDiagnosticMethodRunner | None = None
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
         resolved_request = _resolve_application_request(request)
@@ -152,6 +164,19 @@ class TargetedApplicationService:
             telemetry_provider=telemetry_provider,
             finalization_persister=finalization_persister,
         )
+
+    def execute_diagnostic_method(
+        self,
+        request: TargetedDiagnosticMethodRequest,
+    ) -> TargetedDiagnosticMethodResult:
+        """Run the bounded no-RAW method through this canonical service owner."""
+
+        if self.diagnostic_method_runner is None:
+            raise TargetedRuntimeAdapterError(
+                "TargetedApplicationService requires diagnostic_method_runner "
+                "for execute_diagnostic_method"
+            )
+        return self.diagnostic_method_runner(request)
 
 
 def build_targeted_application_request(
