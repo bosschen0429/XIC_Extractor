@@ -483,6 +483,26 @@ The caller-located durable launch/finalization marker and coordinator-loss
 recovery are also executable for both Targeted and Alignment. These contracts
 do not make the legacy runners use a new storage or writer path.
 
+Package 1 now composes that mechanical lifecycle with the existing acquisition
+and physical-observation owners. `peak_detection.observation_batch` performs
+one capability-aware `XICRequest` batch, retains truthful native/conversion/RT
+coordinates and mechanical request/call/point counts, closes every coordinate
+against the capability source/kind, freezes copied signal arrays, and asks
+`peak_detection.observations` to validate owner-supplied `IntegrationResult`
+facts against each acquired trace before minting a `PeakObservationRef`.
+Targeted and Alignment process-result artifacts bind the same canonical batch
+receipt and exact observation-artifact upstream closure. Their existing runtime
+carriers register both wrapper and observation artifacts, and manifest-order
+normalization makes serial and deliberately reordered true-spawn results
+canonical-equal. Identical replay coalesces; a conflicting replay fails the
+attempt and exposes no observation batch through the success surface. Runtime
+does not select a peak or interpret the integration. A tracked
+`DifferenceManifest` binds the one explained internal carrier change to the
+immutable Package 0 comparator plus an observed current-run no-write receipt.
+This path remains opt-in no-RAW and `diagnostic_only`; legacy execution, product
+writers, CLI/config, output schemas, selected values, and Matrix authority are
+unchanged.
+
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.
 2. Targeted GUI cancellation can suppress later workbook/summary work after

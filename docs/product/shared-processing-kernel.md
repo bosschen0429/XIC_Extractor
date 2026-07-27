@@ -319,6 +319,11 @@ and owner-backed `PeakHypothesis` fixtures now satisfy the first
 direct-evidence → physical-observation → applicability → method-hypothesis
 chain. The same `peak_detection` owner composes the existing hypothesis model;
 lineage and provider-local `DetectedFeature` do not mint another one.
+The Package 1 no-RAW runtime fixture now also reaches that physical-observation
+owner from capability-bound batched `XICRequest` values in both Targeted and
+Alignment process consumers. The batch receipt retains acquisition coordinates
+and call counts while owner-supplied integration facts are revalidated against
+the acquired trace; it does not perform hypothesis selection or projection.
 Role-bearing multi-observation Pt/Delta Mass composition remains required before
 that separate method can claim the same seam, but Pt is deferred and does not
 block the current CID-NL tracer. CID-NL completion proceeds through explicit

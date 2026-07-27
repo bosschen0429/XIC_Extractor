@@ -19,6 +19,7 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
+    verify_evidence_artifact_payload,
 )
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
@@ -40,6 +41,10 @@ from xic_extractor.execution_runtime_finalization import (
     settle_runtime_resource,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.peak_detection.observation_batch import (
+    PeakObservationBatch,
+    canonical_peak_observation_batch_bytes,
+)
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
@@ -67,6 +72,7 @@ class AlignmentRuntimeProcessResult:
     open_outcome: RuntimeResourceOpenOutcome
     cleanup_outcome: RuntimeResourceCleanupOutcome
     runtime_artifacts: tuple[EvidenceArtifactRef, ...] = ()
+    peak_observation_batch: PeakObservationBatch | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.settlement, WorkUnitSettlement):
@@ -106,6 +112,8 @@ class AlignmentRuntimeProcessResult:
             raise AlignmentRuntimeAdapterError(
                 "runtime artifacts must bind the worker settlement attempt"
             )
+        if self.peak_observation_batch is not None:
+            _validate_peak_observation_result(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +121,9 @@ class AlignmentRuntimeApplicationResult:
     runtime: AttemptRuntime
     coordinator_record: CoordinatorTerminalRecord
     finalization_record: SupervisorFinalizationRecord
+    successful_observation_batches: tuple[
+        tuple[str, PeakObservationBatch], ...
+    ] = ()
 
     def __post_init__(self) -> None:
         attempt = self.runtime.manifest.attempt
@@ -123,6 +134,51 @@ class AlignmentRuntimeApplicationResult:
         if self.finalization_record.attempt != attempt:
             raise AlignmentRuntimeAdapterError(
                 "finalization record must bind the Alignment runtime attempt"
+            )
+        observation_keys = tuple(
+            key for key, _batch in self.successful_observation_batches
+        )
+        if observation_keys != tuple(
+            key
+            for key in self.runtime.manifest.work_unit_keys
+            if key in observation_keys
+        ):
+            raise AlignmentRuntimeAdapterError(
+                "successful_observation_batches must follow manifest order"
+            )
+        if len(observation_keys) != len(set(observation_keys)) or any(
+            not isinstance(batch, PeakObservationBatch)
+            for _key, batch in self.successful_observation_batches
+        ):
+            raise AlignmentRuntimeAdapterError(
+                "successful observation batches must bind unique manifest work"
+            )
+        settlements_by_key = {
+            settlement.work_unit_key: settlement
+            for settlement in self.runtime.settlements
+        }
+        registered_by_key = {
+            key: {
+                record.artifact.evidence_artifact_id
+                for record in self.coordinator_record.state.artifacts
+                if record.work_unit_key == key
+            }
+            for key in observation_keys
+        }
+        for key, batch in self.successful_observation_batches:
+            settlement = settlements_by_key.get(key)
+            if (
+                settlement is None
+                or settlement.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
+                or settlement.owner_result_ref is None
+            ):
+                raise AlignmentRuntimeAdapterError(
+                    "successful observation batch must bind accepted successful work"
+                )
+            _validate_alignment_application_batch(
+                settlement=settlement,
+                batch=batch,
+                registered_artifact_ids=registered_by_key[key],
             )
 
 
@@ -215,6 +271,7 @@ def execute_alignment_process_runtime(
         ),
     )
     current = state
+    successful_observation_batches: dict[str, PeakObservationBatch] = {}
     for item in ordered:
         settlement = item.settlement
         if settlement.attempt != runtime.manifest.attempt:
@@ -240,6 +297,24 @@ def execute_alignment_process_runtime(
             open_outcome=item.open_outcome,
             cleanup_outcome=item.cleanup_outcome,
         )
+        accepted_settlement = next(
+            (
+                accepted
+                for accepted in current.runtime.settlements
+                if accepted.work_unit_key == settlement.work_unit_key
+            ),
+            None,
+        )
+        if (
+            accepted_settlement == settlement
+            and settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
+            and item.peak_observation_batch is not None
+        ):
+            _coalesce_observation_batch(
+                successful_observation_batches,
+                work_unit_key=settlement.work_unit_key,
+                batch=item.peak_observation_batch,
+            )
     if not current.runtime.all_manifest_work_settled:
         settled_keys = {
             settlement.work_unit_key
@@ -256,10 +331,17 @@ def execute_alignment_process_runtime(
     coordinator = propose_attempt_terminal(current)
     proposed = mint_supervisor_finalization(coordinator)
     accepted = recovery_marker(coordinator, proposed)
+    if current.runtime.integrity_failure is not None or current.failures:
+        successful_observation_batches.clear()
     return AlignmentRuntimeApplicationResult(
         runtime=current.runtime,
         coordinator_record=coordinator,
         finalization_record=accepted,
+        successful_observation_batches=tuple(
+            (key, successful_observation_batches[key])
+            for key in current.runtime.manifest.work_unit_keys
+            if key in successful_observation_batches
+        ),
     )
 
 
@@ -289,6 +371,141 @@ def _required_text(value: object, *, field: str) -> str:
             f"{field} must be non-empty owner-normalized text"
         )
     return value
+
+
+def _validate_peak_observation_result(
+    result: AlignmentRuntimeProcessResult,
+) -> None:
+    batch = result.peak_observation_batch
+    if not isinstance(batch, PeakObservationBatch):
+        raise AlignmentRuntimeAdapterError(
+            "peak_observation_batch must be owner-produced"
+        )
+    settlement = result.settlement
+    if settlement.outcome is not WorkUnitTerminalOutcome.SUCCEEDED:
+        raise AlignmentRuntimeAdapterError(
+            "only successful Alignment work may carry peak observations"
+        )
+    artifact = settlement.owner_result_ref
+    if artifact is None:
+        raise AlignmentRuntimeAdapterError(
+            "peak observation work requires an Alignment result artifact"
+        )
+    if artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
+        raise AlignmentRuntimeAdapterError(
+            "peak observation work requires an Alignment-owned result artifact"
+        )
+    if (
+        batch.processing_request_id != settlement.attempt.processing_request_id
+        or batch.processing_attempt_id != settlement.attempt.processing_attempt_id
+    ):
+        raise AlignmentRuntimeAdapterError(
+            "peak observation batch references a different processing attempt"
+        )
+    payload = canonical_peak_observation_batch_bytes(batch)
+    try:
+        verify_evidence_artifact_payload(
+            artifact,
+            _canonical_result_identity_bytes(
+                work_unit_key=settlement.work_unit_key,
+                content_sha256=hashlib.sha256(payload).hexdigest(),
+                byte_size=len(payload),
+            ),
+        )
+    except ValueError as exc:
+        raise AlignmentRuntimeAdapterError(
+            "Alignment result artifact does not bind the peak observation batch"
+        ) from exc
+    expected_upstreams = tuple(
+        sorted(
+            observation_artifact.evidence_artifact_id
+            for observation_artifact in batch.observation_artifacts
+        )
+    )
+    if artifact.upstream_artifact_ids != expected_upstreams:
+        raise AlignmentRuntimeAdapterError(
+            "Alignment result artifact must close the exact observation artifacts"
+        )
+    registered_ids = {
+        runtime_artifact.evidence_artifact_id
+        for runtime_artifact in result.runtime_artifacts
+    }
+    required_ids = {artifact.evidence_artifact_id, *expected_upstreams}
+    if not required_ids.issubset(registered_ids):
+        raise AlignmentRuntimeAdapterError(
+            "Alignment runtime artifacts must register result and observations"
+        )
+
+
+def _coalesce_observation_batch(
+    batches: dict[str, PeakObservationBatch],
+    *,
+    work_unit_key: str,
+    batch: PeakObservationBatch,
+) -> None:
+    existing = batches.get(work_unit_key)
+    if existing is None:
+        batches[work_unit_key] = batch
+        return
+    if canonical_peak_observation_batch_bytes(existing) != (
+        canonical_peak_observation_batch_bytes(batch)
+    ):
+        raise AlignmentRuntimeAdapterError(
+            "replayed Alignment observation batch conflicts with accepted work"
+        )
+
+
+def _validate_alignment_application_batch(
+    *,
+    settlement: WorkUnitSettlement,
+    batch: PeakObservationBatch,
+    registered_artifact_ids: set[str],
+) -> None:
+    artifact = settlement.owner_result_ref
+    if artifact is None:
+        raise AlignmentRuntimeAdapterError(
+            "successful observation batch requires an accepted result artifact"
+        )
+    if artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
+        raise AlignmentRuntimeAdapterError(
+            "accepted observation batch requires an Alignment-owned result artifact"
+        )
+    if (
+        batch.processing_request_id != settlement.attempt.processing_request_id
+        or batch.processing_attempt_id != settlement.attempt.processing_attempt_id
+    ):
+        raise AlignmentRuntimeAdapterError(
+            "successful observation batch references a different attempt"
+        )
+    payload = canonical_peak_observation_batch_bytes(batch)
+    try:
+        verify_evidence_artifact_payload(
+            artifact,
+            _canonical_result_identity_bytes(
+                work_unit_key=settlement.work_unit_key,
+                content_sha256=hashlib.sha256(payload).hexdigest(),
+                byte_size=len(payload),
+            ),
+        )
+    except ValueError as exc:
+        raise AlignmentRuntimeAdapterError(
+            "accepted Alignment result does not bind the observation batch"
+        ) from exc
+    expected_upstreams = tuple(
+        sorted(item.evidence_artifact_id for item in batch.observation_artifacts)
+    )
+    if artifact.upstream_artifact_ids != expected_upstreams:
+        raise AlignmentRuntimeAdapterError(
+            "accepted Alignment result must close the exact observation artifacts"
+        )
+    required_ids = {
+        artifact.evidence_artifact_id,
+        *(item.evidence_artifact_id for item in batch.observation_artifacts),
+    }
+    if not required_ids.issubset(registered_artifact_ids):
+        raise AlignmentRuntimeAdapterError(
+            "successful observation batch artifacts are not registered"
+        )
 
 
 __all__ = [

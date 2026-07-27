@@ -183,6 +183,23 @@ class TraceAcquisitionBatch:
             raise AcquisitionContractError(
                 "all trace coordinates must bind the batch capability"
             )
+        expected_source_id = (
+            self.capability.acquisition_source.acquisition_source_id
+        )
+        if any(
+            trace.coordinate.acquisition_source_id != expected_source_id
+            for trace in self.traces
+        ):
+            raise AcquisitionContractError(
+                "all trace coordinates must bind the capability source"
+            )
+        if any(
+            trace.coordinate.coordinate_kind is not self.capability.coordinate_kind
+            for trace in self.traces
+        ):
+            raise AcquisitionContractError(
+                "all trace coordinates must bind the capability coordinate kind"
+            )
 
 
 def mint_trace_acquisition_capability(

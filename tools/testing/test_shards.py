@@ -81,6 +81,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_neutral_loss.py",
             "tests/test_output_*.py",
             "tests/test_package0_successor_comparator.py",
+            "tests/test_package1_observation_runtime.py",
             "tests/test_peak_*.py",
             "tests/test_processing_identity.py",
             "tests/test_processing_owner_references.py",
