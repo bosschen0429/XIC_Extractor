@@ -292,19 +292,25 @@ def propose_attempt_terminal(
         raise RuntimeFinalizationContractError(
             f"terminal proposal requires resource cleanup: {incomplete_resources!r}"
         )
-    registered_ids = {
-        record.artifact.evidence_artifact_id for record in state.artifacts
+    registered_artifacts = {
+        (record.work_unit_key, record.artifact.evidence_artifact_id)
+        for record in state.artifacts
     }
     missing_artifacts = tuple(
-        settlement.owner_result_ref.evidence_artifact_id
+        (settlement.work_unit_key, settlement.owner_result_ref.evidence_artifact_id)
         for settlement in state.runtime.settlements
         if settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
         and settlement.owner_result_ref is not None
-        and settlement.owner_result_ref.evidence_artifact_id not in registered_ids
+        and (
+            settlement.work_unit_key,
+            settlement.owner_result_ref.evidence_artifact_id,
+        )
+        not in registered_artifacts
     )
     if missing_artifacts:
         raise RuntimeFinalizationContractError(
-            f"successful result artifacts must be registered: {missing_artifacts!r}"
+            "successful result artifacts must be registered to the same work unit: "
+            f"{missing_artifacts!r}"
         )
     outcome = _proposed_outcome(state)
     disposition = (
@@ -441,7 +447,7 @@ def canonical_coordinator_terminal_record_bytes(
     state = coordinator.state
     integrity_failure = state.runtime.integrity_failure
     payload = {
-        "schema_version": "execution_runtime_coordinator_terminal_v1",
+        "schema_version": "execution_runtime_coordinator_terminal_v2",
         "processing_request_id": state.runtime.manifest.attempt.processing_request_id,
         "processing_attempt_id": state.runtime.manifest.attempt.processing_attempt_id,
         "manifest_work_unit_keys": state.runtime.manifest.work_unit_keys,
@@ -509,8 +515,19 @@ def canonical_coordinator_terminal_record_bytes(
 
 def _work_unit_settlement_payload(
     settlement: WorkUnitSettlement,
-) -> dict[str, str | None]:
+) -> dict[str, object]:
+    failure_detail = settlement.failure_detail
     return {
+        "failure_detail": (
+            None
+            if failure_detail is None
+            else {
+                "category": failure_detail.category.value,
+                "message": failure_detail.message,
+                "source_reference": failure_detail.source_reference,
+                "stage": failure_detail.stage,
+            }
+        ),
         "work_unit_key": settlement.work_unit_key,
         "outcome": settlement.outcome.value,
         "owner_result_artifact_id": (

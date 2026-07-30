@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,8 @@ from xic_extractor.execution_runtime import (
     AttemptLifecycleHistory,
     AttemptRuntime,
     AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
@@ -78,13 +81,19 @@ def _run_no_raw_alignment_job(
 
 def _alignment_job_error(
     job: _NoRawAlignmentJob,
-    _error: Exception,
+    error: Exception,
 ) -> AlignmentRuntimeProcessResult:
     return AlignmentRuntimeProcessResult(
         settlement=WorkUnitSettlement(
             attempt=job.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.FAILED,
+            failure_detail=WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                stage="alignment-process-worker",
+                source_reference=f"no-raw:{job.work_unit_key}",
+                message=str(error),
+            ),
         ),
         resource_key=job.resource_key,
         open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
@@ -204,6 +213,14 @@ def test_alignment_spawn_failure_closes_resource_and_durable_terminal(
     assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert recovered.finalization_acknowledged is True
     assert recovered.terminal_outcome is AttemptTerminalOutcome.FAILED
+    failure_detail = result.runtime.settlements[0].failure_detail
+    assert failure_detail is not None
+    assert failure_detail.message == "spawned failure:sample:a"
+    assert recovered.coordinator_record_bytes is not None
+    recovered_payload = json.loads(recovered.coordinator_record_bytes)
+    assert recovered_payload["work_settlements"][0]["failure_detail"]["message"] == (
+        "spawned failure:sample:a"
+    )
     resource = result.coordinator_record.state.resources[0]
     assert resource.open_outcome is RuntimeResourceOpenOutcome.NOT_OPENED
     assert resource.cleanup_outcome is RuntimeResourceCleanupOutcome.SUCCEEDED

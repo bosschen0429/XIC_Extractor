@@ -37,6 +37,36 @@ class WorkUnitTerminalOutcome(str, Enum):
     CANCELLED = "cancelled"
 
 
+class WorkUnitFailureCategory(str, Enum):
+    """Workflow-neutral reason class for unsuccessful settled work."""
+
+    EXECUTION_ERROR = "execution_error"
+    WORKER_LOSS = "worker_loss"
+    CANCELLATION = "cancellation"
+
+
+@dataclass(frozen=True, slots=True)
+class WorkUnitFailureDetail:
+    """Typed producer failure retained through terminal recovery."""
+
+    category: WorkUnitFailureCategory
+    stage: str
+    source_reference: str
+    message: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.category, WorkUnitFailureCategory):
+            raise AttemptLifecycleContractError(
+                "failure category must be a WorkUnitFailureCategory"
+            )
+        for field in ("stage", "source_reference", "message"):
+            value = getattr(self, field)
+            if not isinstance(value, str) or not value or value != value.strip():
+                raise AttemptLifecycleContractError(
+                    f"failure {field} must be non-empty owner-normalized text"
+                )
+
+
 class WorkUnitSettlementIntegrityFailureKind(str, Enum):
     """Fail-closed violations at the manifest-to-settlement boundary."""
 
@@ -85,6 +115,7 @@ class WorkUnitSettlement:
     work_unit_key: str
     outcome: WorkUnitTerminalOutcome
     owner_result_ref: EvidenceArtifactRef | None = None
+    failure_detail: WorkUnitFailureDetail | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.attempt, ProcessingAttemptIdentity):
@@ -114,9 +145,32 @@ class WorkUnitSettlement:
                 raise AttemptLifecycleContractError(
                     "owner_result_ref must bind the settlement request and attempt"
                 )
-        elif self.owner_result_ref is not None:
+            if self.failure_detail is not None:
+                raise AttemptLifecycleContractError(
+                    "succeeded settlement cannot carry failure_detail"
+                )
+            return
+        if self.owner_result_ref is not None:
             raise AttemptLifecycleContractError(
                 "only succeeded settlement may carry owner_result_ref"
+            )
+        if not isinstance(self.failure_detail, WorkUnitFailureDetail):
+            raise AttemptLifecycleContractError(
+                "failed or cancelled settlement requires WorkUnitFailureDetail"
+            )
+        if (
+            self.outcome is WorkUnitTerminalOutcome.CANCELLED
+            and self.failure_detail.category is not WorkUnitFailureCategory.CANCELLATION
+        ):
+            raise AttemptLifecycleContractError(
+                "cancelled settlement requires cancellation failure category"
+            )
+        if (
+            self.outcome is WorkUnitTerminalOutcome.FAILED
+            and self.failure_detail.category is WorkUnitFailureCategory.CANCELLATION
+        ):
+            raise AttemptLifecycleContractError(
+                "failed settlement cannot carry cancellation failure category"
             )
 
 
@@ -569,6 +623,7 @@ def settle_work_unit(
     work_unit_key: str,
     outcome: WorkUnitTerminalOutcome,
     owner_result_ref: EvidenceArtifactRef | None = None,
+    failure_detail: WorkUnitFailureDetail | None = None,
 ) -> AttemptRuntime:
     """Accept one settlement exactly once; record conflicts fail closed."""
 
@@ -579,6 +634,7 @@ def settle_work_unit(
         work_unit_key=work_unit_key,
         outcome=outcome,
         owner_result_ref=owner_result_ref,
+        failure_detail=failure_detail,
     )
     if (
         submitted.outcome is WorkUnitTerminalOutcome.CANCELLED
@@ -640,6 +696,8 @@ __all__ = [
     "RequiredWorkManifest",
     "RequiredWorkManifestPreflight",
     "WorkUnitSettlement",
+    "WorkUnitFailureCategory",
+    "WorkUnitFailureDetail",
     "WorkUnitSettlementIntegrityFailure",
     "WorkUnitSettlementIntegrityFailureKind",
     "WorkUnitTerminalOutcome",

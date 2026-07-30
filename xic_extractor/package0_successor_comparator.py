@@ -197,16 +197,17 @@ def mint_package1_difference_observation(
             "Package 1 difference receipt requires successful terminal results"
         )
     targeted_batches = tuple(
-        canonical_peak_observation_batch_bytes(batch)
-        for _key, batch in targeted.settlement.successful_observation_batches
+        (key, canonical_peak_observation_batch_bytes(batch))
+        for key, batch in targeted.settlement.successful_observation_batches
     )
     alignment_batches = tuple(
-        canonical_peak_observation_batch_bytes(batch)
-        for _key, batch in alignment.successful_observation_batches
+        (key, canonical_peak_observation_batch_bytes(batch))
+        for key, batch in alignment.successful_observation_batches
     )
     if not targeted_batches or targeted_batches != alignment_batches:
         raise Package0ComparatorError(
-            "Targeted and Alignment observation batch receipts must be canonical-equal"
+            "Targeted and Alignment observation batch receipts must preserve work keys "
+            "and be canonical-equal"
         )
     targeted_dispositions = targeted.finalization_record.artifact_dispositions
     alignment_dispositions = alignment.finalization_record.artifact_dispositions
@@ -245,10 +246,26 @@ def mint_package1_difference_observation(
             alignment_coordinator_bytes
         ).hexdigest().upper(),
         targeted_observation_batches_sha256=_canonical_sha256(
-            {"items": [hashlib.sha256(item).hexdigest() for item in targeted_batches]}
+            {
+                "items": [
+                    {
+                        "work_unit_key": key,
+                        "sha256": hashlib.sha256(item).hexdigest(),
+                    }
+                    for key, item in targeted_batches
+                ]
+            }
         ),
         alignment_observation_batches_sha256=_canonical_sha256(
-            {"items": [hashlib.sha256(item).hexdigest() for item in alignment_batches]}
+            {
+                "items": [
+                    {
+                        "work_unit_key": key,
+                        "sha256": hashlib.sha256(item).hexdigest(),
+                    }
+                    for key, item in alignment_batches
+                ]
+            }
         ),
         observation_batch_count=len(targeted_batches),
         targeted_terminal_dispositions_sha256=_canonical_sha256(

@@ -172,11 +172,11 @@ claiming a durable queue:
    namespace, and coordinator launch;
 2. after work, cleanup, and artifact-disposition proposal closure, the
    coordinator produces one immutable canonical `CoordinatorTerminalRecord`
-   byte sequence containing the proposed
-   outcome, manifest and per-unit outcomes, resource cleanup outcomes, artifact
-   registry and proposed dispositions, failures, coordinator metrics ending at
-   terminal proposal, and the coordinator event-ledger digest through that
-   proposal;
+   `execution_runtime_coordinator_terminal_v2` byte sequence containing the
+   proposed outcome, manifest and per-unit outcomes, typed per-unit failure
+   details, resource cleanup outcomes, artifact registry and proposed
+   dispositions, failures, coordinator metrics ending at terminal proposal,
+   and the coordinator event-ledger digest through that proposal;
 3. the owner-path supervisor fsyncs those exact coordinator bytes and the exact
    caller-supplied validated observability-ledger bytes inside the
    self-contained `execution_runtime_recovery_marker_v3` payload, then
@@ -274,9 +274,10 @@ this attempt's dependency-use record becomes non-deliverable.
 
 All failures are retained as typed records and aggregated at the attempt
 boundary. Each preserves the work-unit/resource key, stage, source reference,
-failure category, readable message, and relevant event sequence. One exception
-must not erase sibling failures, and a traceback must not be the only failure
-contract.
+failure category, and readable message. The terminal acknowledgement separately
+binds the exact observability ledger carrying the relevant work-event sequence,
+using the same work-unit key for correlation. One exception must not erase
+sibling failures, and a traceback must not be the only failure contract.
 
 ## Retry And Resume
 
@@ -451,9 +452,13 @@ proposal instead of relying on a caller to declare failure manually. An accepted
 manifest now starts one pure `AttemptRuntime`; terminal work settlements are
 accepted exactly once per declared opaque key, identical replay is idempotent,
 and conflicting or undeclared settlement records one immutable integrity
-failure that prevents attempt success. Failed work also prevents success. This
-settlement now accepts only an owner-minted `EvidenceArtifactRef` bound to the
-same processing request and attempt; an opaque string is no longer sufficient.
+failure that prevents attempt success. Failed work also prevents success.
+Failed and cancelled settlements require a typed `WorkUnitFailureDetail`
+containing category, stage, source reference, and readable message, while a
+successful settlement rejects failure detail. The canonical coordinator v2
+bytes retain that exact detail. A successful settlement accepts only an
+owner-minted `EvidenceArtifactRef` bound to the same processing request and
+attempt; an opaque string is no longer sufficient.
 
 The bounded Package 1 Targeted adapter in
 `xic_extractor.extraction.targeted_runtime_adapter` owns one canonical

@@ -23,6 +23,7 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
+    WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
     settle_work_unit,
@@ -123,7 +124,7 @@ class TargetedProcessWorkerResultEnvelope:
     work_unit_key: str
     outcome: WorkUnitTerminalOutcome
     owner_result_ref: TargetedProcessResultRef | None = None
-    failure_message: str | None = None
+    failure_detail: WorkUnitFailureDetail | None = None
     peak_observation_batch: PeakObservationBatch | None = None
 
     def __post_init__(self) -> None:
@@ -163,21 +164,10 @@ class TargetedProcessWorkerResultEnvelope:
                 work_unit_key=self.work_unit_key,
                 outcome=self.outcome,
                 owner_result_ref=artifact,
+                failure_detail=self.failure_detail,
             )
         except ValueError as exc:
             raise TargetedRuntimeAdapterError(str(exc)) from exc
-        if self.outcome is WorkUnitTerminalOutcome.SUCCEEDED:
-            if self.failure_message is not None:
-                raise TargetedRuntimeAdapterError(
-                    "succeeded result envelope cannot carry failure_message"
-                )
-        elif (
-            not isinstance(self.failure_message, str)
-            or not self.failure_message.strip()
-        ):
-            raise TargetedRuntimeAdapterError(
-                "failed or cancelled result envelope requires failure_message"
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,18 +286,24 @@ class TargetedRuntimeWorkerBatch:
             TargetedProcessResultRef,
             field="runtime_artifact_refs",
         )
-        artifact_ids = tuple(
-            reference.artifact.evidence_artifact_id
+        artifact_identities = tuple(
+            (reference.work_unit_key, reference.artifact.evidence_artifact_id)
             for reference in self.runtime_artifact_refs
         )
-        registered_ids = set(artifact_ids)
+        registered_identities = set(artifact_identities)
         missing_success_refs = tuple(
-            envelope.owner_result_ref.artifact.evidence_artifact_id
+            (
+                envelope.work_unit_key,
+                envelope.owner_result_ref.artifact.evidence_artifact_id,
+            )
             for envelope in self.result_envelopes
             if envelope.outcome is WorkUnitTerminalOutcome.SUCCEEDED
             and envelope.owner_result_ref is not None
-            and envelope.owner_result_ref.artifact.evidence_artifact_id
-            not in registered_ids
+            and (
+                envelope.work_unit_key,
+                envelope.owner_result_ref.artifact.evidence_artifact_id,
+            )
+            not in registered_identities
         )
         if missing_success_refs:
             raise TargetedRuntimeAdapterError(
@@ -474,6 +470,7 @@ def settle_targeted_process_worker_results(
                 if envelope.owner_result_ref is None
                 else envelope.owner_result_ref.artifact
             ),
+            failure_detail=envelope.failure_detail,
         )
         accepted_settlement = next(
             (

@@ -285,6 +285,7 @@ def execute_alignment_process_runtime(
             work_unit_key=settlement.work_unit_key,
             outcome=settlement.outcome,
             owner_result_ref=settlement.owner_result_ref,
+            failure_detail=settlement.failure_detail,
         )
         current = replace(current, runtime=settled_runtime)
         for artifact in item.runtime_artifacts:

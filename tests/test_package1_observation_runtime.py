@@ -33,6 +33,8 @@ from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptLifecycleHistory,
     AttemptRuntime,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
@@ -58,6 +60,7 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
     TargetedProcessWorkerResultEnvelope,
     TargetedRuntimeAdapterError,
+    TargetedRuntimeLifecycleApplicationResult,
     TargetedRuntimeWorkerBatch,
     mint_targeted_process_result_ref,
     settle_targeted_process_worker_results,
@@ -212,13 +215,19 @@ def _run_alignment_job(job: _ObservationJob) -> AlignmentRuntimeProcessResult:
 
 def _alignment_error(
     job: _ObservationJob,
-    _error: Exception,
+    error: Exception,
 ) -> AlignmentRuntimeProcessResult:
     return AlignmentRuntimeProcessResult(
         settlement=WorkUnitSettlement(
             attempt=job.owners.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.FAILED,
+            failure_detail=WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                stage="alignment-process-worker",
+                source_reference=f"no-raw:{job.work_unit_key}",
+                message=str(error),
+            ),
         ),
         resource_key=job.resource_key,
         open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
@@ -559,7 +568,12 @@ def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
                 attempt=owners.attempt,
                 work_unit_key=job.work_unit_key,
                 outcome=WorkUnitTerminalOutcome.FAILED,
-                failure_message="late conflicting failure",
+                failure_detail=WorkUnitFailureDetail(
+                    category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                    stage="targeted-process-worker",
+                    source_reference=f"no-raw:{job.work_unit_key}",
+                    message="late conflicting failure",
+                ),
             ),
         ),
     )
@@ -729,6 +743,134 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
                 observation,
                 frozen_surface_sha256=reset_digest,
             ),
+        )
+
+
+def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
+    tmp_path: Path,
+) -> None:
+    owners, sample = _identity_fixture(tmp_path)
+    first = replace(_jobs(owners, sample)[0], delay_sec=0.0)
+    second = replace(
+        first,
+        work_unit_key="sample:alternate",
+        resource_key="process:sample:alternate",
+    )
+    jobs = (first, second)
+    runtime = _runtime(owners.attempt, tuple(job.work_unit_key for job in jobs))
+    reservations = _reservations(owners.attempt, jobs)
+    batch = _produce_batch(first)
+    payload = canonical_peak_observation_batch_bytes(batch)
+
+    targeted_with_batch = mint_targeted_process_result_ref(
+        processing_attempt=owners.attempt,
+        work_unit_key=first.work_unit_key,
+        owner_result_payload=payload,
+        upstream_artifacts=batch.observation_artifacts,
+    )
+    targeted_without_batch = mint_targeted_process_result_ref(
+        processing_attempt=owners.attempt,
+        work_unit_key=second.work_unit_key,
+        owner_result_payload=b"no-observation-batch",
+    )
+    targeted_settlement = settle_targeted_process_worker_results(
+        runtime,
+        (
+            TargetedProcessWorkerResultEnvelope(
+                attempt=owners.attempt,
+                work_unit_key=first.work_unit_key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                owner_result_ref=targeted_with_batch,
+                peak_observation_batch=batch,
+            ),
+            TargetedProcessWorkerResultEnvelope(
+                attempt=owners.attempt,
+                work_unit_key=second.work_unit_key,
+                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                owner_result_ref=targeted_without_batch,
+            ),
+        ),
+    )
+    targeted_state = begin_attempt_finalization(targeted_settlement.runtime)
+    for reference in (targeted_with_batch, targeted_without_batch):
+        targeted_state = register_runtime_artifact(
+            targeted_state,
+            work_unit_key=reference.work_unit_key,
+            artifact=reference.artifact,
+        )
+    for artifact in batch.observation_artifacts:
+        targeted_state = register_runtime_artifact(
+            targeted_state,
+            work_unit_key=first.work_unit_key,
+            artifact=artifact,
+        )
+    targeted_coordinator = propose_attempt_terminal(targeted_state)
+    targeted = TargetedRuntimeLifecycleApplicationResult(
+        settlement=targeted_settlement,
+        coordinator_record=targeted_coordinator,
+        finalization_record=mint_supervisor_finalization(
+            targeted_coordinator,
+            observability_ledger=_ledger(runtime, reservations),
+        ),
+    )
+
+    alignment_without_batch = mint_alignment_process_result_artifact(
+        processing_attempt=owners.attempt,
+        work_unit_key=first.work_unit_key,
+        owner_result_payload=b"no-observation-batch",
+    )
+    alignment_with_batch = mint_alignment_process_result_artifact(
+        processing_attempt=owners.attempt,
+        work_unit_key=second.work_unit_key,
+        owner_result_payload=payload,
+        upstream_artifacts=batch.observation_artifacts,
+    )
+    alignment_runtime = settle_work_unit(
+        runtime,
+        work_unit_key=first.work_unit_key,
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref=alignment_without_batch,
+    )
+    alignment_runtime = settle_work_unit(
+        alignment_runtime,
+        work_unit_key=second.work_unit_key,
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref=alignment_with_batch,
+    )
+    alignment_state = begin_attempt_finalization(alignment_runtime)
+    alignment_state = register_runtime_artifact(
+        alignment_state,
+        work_unit_key=first.work_unit_key,
+        artifact=alignment_without_batch,
+    )
+    alignment_state = register_runtime_artifact(
+        alignment_state,
+        work_unit_key=second.work_unit_key,
+        artifact=alignment_with_batch,
+    )
+    for artifact in batch.observation_artifacts:
+        alignment_state = register_runtime_artifact(
+            alignment_state,
+            work_unit_key=second.work_unit_key,
+            artifact=artifact,
+        )
+    alignment_coordinator = propose_attempt_terminal(alignment_state)
+    alignment = AlignmentRuntimeApplicationResult(
+        runtime=alignment_runtime,
+        coordinator_record=alignment_coordinator,
+        finalization_record=mint_supervisor_finalization(
+            alignment_coordinator,
+            observability_ledger=_ledger(runtime, reservations),
+        ),
+        successful_observation_batches=((second.work_unit_key, batch),),
+    )
+
+    with pytest.raises(Package0ComparatorError, match="work keys"):
+        mint_package1_difference_observation(
+            targeted=targeted,
+            alignment=alignment,
+            targeted_legacy_runner_call_count=0,
+            successor_product_output_paths=(),
         )
 
 

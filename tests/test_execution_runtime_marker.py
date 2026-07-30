@@ -17,6 +17,8 @@ from xic_extractor.execution_runtime import (
     AttemptLifecycleHistory,
     AttemptRuntime,
     AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
     preflight_required_work_manifest,
@@ -358,6 +360,16 @@ def _terminal_records(
         outcome=outcome,
         owner_result_ref=(
             reference.artifact if outcome is WorkUnitTerminalOutcome.SUCCEEDED else None
+        ),
+        failure_detail=(
+            None
+            if outcome is WorkUnitTerminalOutcome.SUCCEEDED
+            else WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                stage="runtime-marker-test",
+                source_reference="no-raw:sample:a",
+                message="worker failed before finalization",
+            )
         ),
     )
     state = reserve_runtime_resource(

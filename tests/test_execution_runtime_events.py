@@ -449,6 +449,8 @@ def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> N
         AttemptLifecycleContractError,
         AttemptLifecycleEventKind,
         AttemptLifecycleHistory,
+        WorkUnitFailureCategory,
+        WorkUnitFailureDetail,
         WorkUnitTerminalOutcome,
         append_attempt_lifecycle_event,
         preflight_required_work_manifest,
@@ -511,12 +513,64 @@ def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> N
             runtime,
             work_unit_key="sample-a:target-1",
             outcome=WorkUnitTerminalOutcome.CANCELLED,
+            failure_detail=WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.CANCELLATION,
+                stage="runtime-test",
+                source_reference="sample-a:target-1",
+                message="cancelled before settlement",
+            ),
         )
 
+    with pytest.raises(
+        AttemptLifecycleContractError,
+        match="requires WorkUnitFailureDetail",
+    ):
+        settle_work_unit(
+            runtime,
+            work_unit_key="sample-a:target-1",
+            outcome=WorkUnitTerminalOutcome.FAILED,
+        )
+    execution_failure = WorkUnitFailureDetail(
+        category=WorkUnitFailureCategory.EXECUTION_ERROR,
+        stage="runtime-test",
+        source_reference="sample-a:target-1",
+        message="worker failed",
+    )
+    with pytest.raises(
+        AttemptLifecycleContractError,
+        match="succeeded settlement cannot carry failure_detail",
+    ):
+        settle_work_unit(
+            runtime,
+            work_unit_key="sample-a:target-1",
+            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+            owner_result_ref=_owner_result_ref(
+                attempt,
+                "sample-a:target-1",
+                b"unexpected-failure-detail",
+            ),
+            failure_detail=execution_failure,
+        )
+    with pytest.raises(
+        AttemptLifecycleContractError,
+        match="failed settlement cannot carry cancellation",
+    ):
+        settle_work_unit(
+            runtime,
+            work_unit_key="sample-a:target-1",
+            outcome=WorkUnitTerminalOutcome.FAILED,
+            failure_detail=WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.CANCELLATION,
+                stage="runtime-test",
+                source_reference="sample-a:target-1",
+                message="wrong category",
+            ),
+        )
     failed = settle_work_unit(
         runtime,
         work_unit_key="sample-a:target-1",
         outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=execution_failure,
     )
     assert failed.all_manifest_work_settled is True
     assert failed.must_fail is True

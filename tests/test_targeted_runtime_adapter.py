@@ -15,6 +15,8 @@ from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptLifecycleHistory,
     AttemptRuntime,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitSettlementIntegrityFailureKind,
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
@@ -92,7 +94,12 @@ def _build_spawned_worker_loss_batch(
                 attempt=attempt,
                 work_unit_key="raw:a",
                 outcome=WorkUnitTerminalOutcome.FAILED,
-                failure_message="worker lost",
+                failure_detail=WorkUnitFailureDetail(
+                    category=WorkUnitFailureCategory.WORKER_LOSS,
+                    stage="targeted-process-worker",
+                    source_reference="no-raw:raw:a",
+                    message="worker lost",
+                ),
             ),
         ),
         resource_reports=(
@@ -355,6 +362,10 @@ def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
     )
 
     assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
+    failure_detail = result.settlement.runtime.settlements[0].failure_detail
+    assert failure_detail is not None
+    assert failure_detail.category is WorkUnitFailureCategory.WORKER_LOSS
+    assert failure_detail.message == "worker lost"
     assert result.finalization_record.artifact_dispositions == (
         (
             _result_ref(
@@ -424,7 +435,12 @@ def test_targeted_runtime_adapter_closes_failed_work_and_rejects_missing_work(
         attempt=attempt,
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.FAILED,
-        failure_message="worker failed",
+        failure_detail=WorkUnitFailureDetail(
+            category=WorkUnitFailureCategory.EXECUTION_ERROR,
+            stage="targeted-process-worker",
+            source_reference="no-raw:raw:a",
+            message="worker failed",
+        ),
     )
 
     failed_result = settle_targeted_process_worker_results(
@@ -435,6 +451,9 @@ def test_targeted_runtime_adapter_closes_failed_work_and_rejects_missing_work(
     assert failed_result.runtime.all_manifest_work_settled is True
     assert failed_result.runtime.must_fail is True
     assert failed_result.successful_result_refs == ()
+    failure_detail = failed_result.runtime.settlements[0].failure_detail
+    assert failure_detail is not None
+    assert failure_detail.message == "worker failed"
 
     with pytest.raises(TargetedRuntimeAdapterError, match="did not settle"):
         settle_targeted_process_worker_results(

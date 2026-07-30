@@ -16,6 +16,8 @@ from xic_extractor.execution_runtime import (
     AttemptLifecycleHistory,
     AttemptRuntime,
     AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
     preflight_required_work_manifest,
@@ -206,6 +208,11 @@ def test_cancelled_attempt_quarantines_artifacts_without_becoming_failed(
         runtime,
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.CANCELLED,
+        failure_detail=_failure_detail(
+            "raw:a",
+            category=WorkUnitFailureCategory.CANCELLATION,
+            message="owner accepted cancellation",
+        ),
     )
     artifact = mint_targeted_process_result_ref(
         processing_attempt=attempt,
@@ -244,6 +251,7 @@ def test_worker_loss_preserves_open_fact_and_closes_cleanup_unknown(
         _runtime(attempt),
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=_failure_detail("raw:a", message="worker lost"),
     )
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
@@ -276,6 +284,7 @@ def test_late_resource_report_is_idempotent_or_fails_closed(tmp_path: Path) -> N
         _runtime(attempt),
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=_failure_detail("raw:a", message="late resource report"),
     )
     state = reserve_runtime_resource(
         begin_attempt_finalization(runtime),
@@ -370,6 +379,7 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
         runtime,
         work_unit_key="raw:a",
         outcome=WorkUnitTerminalOutcome.FAILED,
+        failure_detail=_failure_detail("raw:a", message="conflicting settlement"),
     )
     alternate_artifact = mint_targeted_process_result_ref(
         processing_attempt=attempt,
@@ -400,18 +410,28 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
     assert failed_bytes != alternate_bytes
     assert failure_payload == {
         "accepted_settlement": {
+            "failure_detail": None,
             "outcome": "succeeded",
             "owner_result_artifact_id": accepted_artifact.evidence_artifact_id,
             "work_unit_key": "raw:a",
         },
         "kind": "conflicting_settlement",
         "submitted_settlement": {
+            "failure_detail": {
+                "category": "execution_error",
+                "message": "conflicting settlement",
+                "source_reference": "raw:a",
+                "stage": "runtime-finalization-test",
+            },
             "outcome": "failed",
             "owner_result_artifact_id": None,
             "work_unit_key": "raw:a",
         },
         "work_unit_key": "raw:a",
     }
+    assert json.loads(failed_bytes)["schema_version"] == (
+        "execution_runtime_coordinator_terminal_v2"
+    )
     assert (
         mint_supervisor_finalization(
             failed_coordinator,
@@ -512,6 +532,37 @@ def test_undeclared_artifact_is_rejected_by_registration_and_state_invariant(
         )
 
 
+def test_successful_settlement_requires_artifact_registered_for_same_work_unit(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    artifact = mint_targeted_process_result_ref(
+        processing_attempt=attempt,
+        work_unit_key="raw:a",
+        owner_result_payload=b"shared-owner-result",
+    ).artifact
+    runtime = settle_work_unit(
+        _runtime(attempt, work_unit_keys=("raw:a", "raw:b")),
+        work_unit_key="raw:a",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref=artifact,
+    )
+    runtime = settle_work_unit(
+        runtime,
+        work_unit_key="raw:b",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref=artifact,
+    )
+    state = register_runtime_artifact(
+        begin_attempt_finalization(runtime),
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+
+    with pytest.raises(RuntimeFinalizationContractError, match="same work unit"):
+        propose_attempt_terminal(state)
+
+
 def test_runtime_finalization_modules_stay_inside_mechanical_boundary() -> None:
     expected = {
         "xic_extractor/execution_runtime_finalization.py": (
@@ -557,7 +608,11 @@ def _successful_runtime(
     return runtime, reference.artifact
 
 
-def _runtime(attempt: ProcessingAttemptIdentity) -> AttemptRuntime:
+def _runtime(
+    attempt: ProcessingAttemptIdentity,
+    *,
+    work_unit_keys: tuple[str, ...] = ("raw:a",),
+) -> AttemptRuntime:
     queued = append_attempt_lifecycle_event(
         AttemptLifecycleHistory(attempt=attempt),
         AttemptLifecycleEventKind.ATTEMPT_QUEUED,
@@ -566,7 +621,7 @@ def _runtime(attempt: ProcessingAttemptIdentity) -> AttemptRuntime:
         preflight_required_work_manifest(
             queued,
             attempt=attempt,
-            work_unit_keys=("raw:a",),
+            work_unit_keys=work_unit_keys,
             owner_completeness_attestation="runtime-finalization-test:v1",
         )
     )
@@ -579,6 +634,20 @@ def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservati
         worker_key="worker:1",
         source_reference="source:a",
         compatibility_token="targeted:test:v1",
+    )
+
+
+def _failure_detail(
+    source_reference: str,
+    *,
+    category: WorkUnitFailureCategory = WorkUnitFailureCategory.EXECUTION_ERROR,
+    message: str,
+) -> WorkUnitFailureDetail:
+    return WorkUnitFailureDetail(
+        category=category,
+        stage="runtime-finalization-test",
+        source_reference=source_reference,
+        message=message,
     )
 
 
