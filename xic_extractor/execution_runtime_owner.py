@@ -42,9 +42,10 @@ from xic_extractor.execution_runtime_finalization import (
     begin_attempt_finalization,
     mint_supervisor_finalization,
     propose_attempt_terminal,
+    record_runtime_resource_cleanup,
+    record_runtime_resource_open,
     register_runtime_artifact,
     reserve_runtime_resource,
-    settle_runtime_resource,
 )
 from xic_extractor.execution_runtime_observability import (
     RuntimeMetricAvailability,
@@ -446,6 +447,31 @@ def _apply_runtime_worker_batch(
     manifest_order = {
         key: index for index, key in enumerate(state.runtime.manifest.work_unit_keys)
     }
+    resource_order = {
+        record.reservation.resource_key: index
+        for index, record in enumerate(state.resources)
+    }
+    resource_settlements = tuple(
+        sorted(
+            batch.resource_settlements,
+            key=lambda item: resource_order.get(
+                item.resource_key,
+                len(resource_order),
+            ),
+        )
+    )
+    for resource_receipt in resource_settlements:
+        if resource_receipt.attempt != attempt:
+            raise RuntimeFinalizationContractError(
+                "resource receipt references a different runtime attempt"
+            )
+    for resource_receipt in resource_settlements:
+        state = record_runtime_resource_open(
+            state,
+            resource_key=resource_receipt.resource_key,
+            outcome=resource_receipt.open_outcome,
+        )
+
     for settlement in sorted(
         batch.settlements,
         key=lambda item: manifest_order.get(item.work_unit_key, len(manifest_order)),
@@ -476,23 +502,11 @@ def _apply_runtime_worker_batch(
             artifact=registration.artifact,
         )
 
-    resource_order = {
-        record.reservation.resource_key: index
-        for index, record in enumerate(state.resources)
-    }
-    for resource_receipt in sorted(
-        batch.resource_settlements,
-        key=lambda item: resource_order.get(item.resource_key, len(resource_order)),
-    ):
-        if resource_receipt.attempt != attempt:
-            raise RuntimeFinalizationContractError(
-                "resource receipt references a different runtime attempt"
-            )
-        state = settle_runtime_resource(
+    for resource_receipt in resource_settlements:
+        state = record_runtime_resource_cleanup(
             state,
             resource_key=resource_receipt.resource_key,
-            open_outcome=resource_receipt.open_outcome,
-            cleanup_outcome=resource_receipt.cleanup_outcome,
+            outcome=resource_receipt.cleanup_outcome,
         )
 
     accepted_acquisitions = {
@@ -866,12 +880,48 @@ def _runtime_observation_shapes(
 ) -> tuple[tuple[str, RuntimeObservationSubject, str], ...]:
     state = coordinator.state
     shapes: list[tuple[str, RuntimeObservationSubject, str]] = []
+
+    def append_lifecycle_phase(
+        kinds: frozenset[RuntimeLifecycleEventKind],
+        subject: RuntimeObservationSubject,
+    ) -> None:
+        for lifecycle_event in state.events:
+            if lifecycle_event.kind not in kinds:
+                continue
+            if subject is RuntimeObservationSubject.ATTEMPT:
+                subject_key = "attempt"
+            else:
+                lifecycle_subject_key = lifecycle_event.subject_key
+                if lifecycle_subject_key is None:
+                    raise RuntimeFinalizationContractError(
+                        f"{subject.value} event is missing its owner correlation"
+                    )
+                subject_key = lifecycle_subject_key
+            shapes.append((lifecycle_event.kind.value, subject, subject_key))
+
     for event in state.runtime.history.events:
         shapes.append((event.kind.value, RuntimeObservationSubject.ATTEMPT, "attempt"))
         if event.sequence == 1 and not state.runtime.manifest_preflight_failed:
             shapes.append(
                 ("manifest_closed", RuntimeObservationSubject.ATTEMPT, "manifest")
             )
+    append_lifecycle_phase(
+        frozenset({RuntimeLifecycleEventKind.RESOURCE_RESERVED}),
+        RuntimeObservationSubject.RESOURCE,
+    )
+    append_lifecycle_phase(
+        frozenset(
+            {
+                RuntimeLifecycleEventKind.RESOURCE_OPENED,
+                RuntimeLifecycleEventKind.RESOURCE_OPEN_FAILED,
+                RuntimeLifecycleEventKind.RESOURCE_NOT_OPENED,
+                RuntimeLifecycleEventKind.RESOURCE_OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS,
+            }
+        ),
+        RuntimeObservationSubject.RESOURCE,
+    )
+    for worker_key in _started_worker_keys(state):
+        shapes.append(("worker_started", RuntimeObservationSubject.WORKER, worker_key))
     for work_unit_key in state.runtime.manifest.work_unit_keys:
         shapes.extend(
             (
@@ -892,41 +942,24 @@ def _runtime_observation_shapes(
                 ),
             )
         )
-    for worker_key in _started_worker_keys(state):
-        shapes.append(("worker_started", RuntimeObservationSubject.WORKER, worker_key))
-    for lifecycle_event in state.events:
-        if lifecycle_event.kind is RuntimeLifecycleEventKind.TERMINAL_PROPOSAL:
-            shapes.append(
-                (
-                    lifecycle_event.kind.value,
-                    RuntimeObservationSubject.ATTEMPT,
-                    "attempt",
-                )
-            )
-        elif lifecycle_event.kind is RuntimeLifecycleEventKind.ARTIFACT_REGISTERED:
-            if lifecycle_event.subject_key is None:
-                raise RuntimeFinalizationContractError(
-                    "artifact event is missing its owner correlation"
-                )
-            shapes.append(
-                (
-                    lifecycle_event.kind.value,
-                    RuntimeObservationSubject.ARTIFACT,
-                    lifecycle_event.subject_key,
-                )
-            )
-        else:
-            if lifecycle_event.subject_key is None:
-                raise RuntimeFinalizationContractError(
-                    "resource event is missing its owner correlation"
-                )
-            shapes.append(
-                (
-                    lifecycle_event.kind.value,
-                    RuntimeObservationSubject.RESOURCE,
-                    lifecycle_event.subject_key,
-                )
-            )
+    append_lifecycle_phase(
+        frozenset({RuntimeLifecycleEventKind.ARTIFACT_REGISTERED}),
+        RuntimeObservationSubject.ARTIFACT,
+    )
+    append_lifecycle_phase(
+        frozenset(
+            {
+                RuntimeLifecycleEventKind.RESOURCE_CLEANUP_SUCCEEDED,
+                RuntimeLifecycleEventKind.RESOURCE_CLEANUP_FAILED,
+                RuntimeLifecycleEventKind.RESOURCE_CLEANUP_UNKNOWN_AFTER_WORKER_LOSS,
+            }
+        ),
+        RuntimeObservationSubject.RESOURCE,
+    )
+    append_lifecycle_phase(
+        frozenset({RuntimeLifecycleEventKind.TERMINAL_PROPOSAL}),
+        RuntimeObservationSubject.ATTEMPT,
+    )
     shapes.append(
         (
             SupervisorFinalizationEventKind.TERMINAL_ACKNOWLEDGED.value,

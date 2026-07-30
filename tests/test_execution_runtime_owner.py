@@ -127,6 +127,26 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         "artifact_offered_to_owner",
         "terminal_outcome",
     )
+    coordinator_event_kinds = tuple(
+        event.kind.value for event in receipt.coordinator.state.events
+    )
+    assert (
+        coordinator_event_kinds.index("resource_reserved")
+        < coordinator_event_kinds.index("resource_opened")
+        < coordinator_event_kinds.index("artifact_registered")
+        < coordinator_event_kinds.index("resource_cleanup_succeeded")
+        < coordinator_event_kinds.index("terminal_proposal")
+    )
+    assert (
+        event_kinds.index("resource_reserved")
+        < event_kinds.index("resource_opened")
+        < event_kinds.index("work_unit_submitted")
+        < event_kinds.index("work_unit_started")
+        < event_kinds.index("work_unit_settled")
+        < event_kinds.index("artifact_registered")
+        < event_kinds.index("resource_cleanup_succeeded")
+        < event_kinds.index("terminal_proposal")
+    )
 
     coordinator_payload = json.loads(
         canonical_coordinator_terminal_record_bytes(receipt.coordinator)
@@ -391,6 +411,20 @@ def test_unopened_process_resource_does_not_invent_worker_topology(
     assert "worker_started" not in {
         event.kind for event in receipt.observability_ledger.events
     }
+    event_kinds = tuple(event.kind for event in receipt.observability_ledger.events)
+    open_event_kind = {
+        RuntimeResourceOpenOutcome.NOT_OPENED: "resource_not_opened",
+        RuntimeResourceOpenOutcome.OPEN_FAILED: "resource_open_failed",
+    }[open_outcome]
+    assert (
+        event_kinds.index("resource_reserved")
+        < event_kinds.index(open_event_kind)
+        < event_kinds.index("work_unit_submitted")
+        < event_kinds.index("work_unit_started")
+        < event_kinds.index("work_unit_settled")
+        < event_kinds.index("resource_cleanup_succeeded")
+        < event_kinds.index("terminal_proposal")
+    )
     worker_metric = next(
         metric
         for metric in receipt.observability_ledger.metrics
@@ -455,6 +489,17 @@ def test_unknown_open_state_after_worker_loss_retains_worker_topology(
     assert "worker_started" in {
         event.kind for event in receipt.observability_ledger.events
     }
+    event_kinds = tuple(event.kind for event in receipt.observability_ledger.events)
+    assert (
+        event_kinds.index("resource_reserved")
+        < event_kinds.index("resource_open_state_unknown_after_worker_loss")
+        < event_kinds.index("worker_started")
+        < event_kinds.index("work_unit_submitted")
+        < event_kinds.index("work_unit_started")
+        < event_kinds.index("work_unit_settled")
+        < event_kinds.index("resource_cleanup_unknown_after_worker_loss")
+        < event_kinds.index("terminal_proposal")
+    )
     worker_metric = next(
         metric
         for metric in receipt.observability_ledger.metrics

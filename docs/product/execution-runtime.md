@@ -365,6 +365,15 @@ queued-to-terminal manifest-preflight path omits `attempt_started`; events
 listed below as started exist only after successful preflight. The minimum
 event set covers:
 
+For a running attempt, the owner normalizes causal facts into one canonical
+phase order: attempt start, all resource reservations, all resource open
+outcomes, started workers, manifest-order work submission/start/settlement,
+runtime artifact registration, all resource cleanup, terminal proposal, and
+then supervisor acknowledgement/dispositions/outcome. Monotonic offsets bind
+that logical topology; they do not claim to recover physical interleaving among
+concurrent workers inside a phase. A ledger that reorders these phases fails
+closed even when every individual resource or work-unit lifecycle is complete.
+
 - coordinator: `attempt_queued`, `manifest_preflight_failed` when applicable,
   `attempt_started` after successful preflight, cancellation accepted/rejected,
   and `terminal_proposal`;
@@ -516,6 +525,10 @@ facts, and an owner-supplied persister must return the exact proposed
 offers every registered artifact only to its owner; failure, cancellation, or
 worker-loss cleanup unknown quarantines the whole registered current-attempt
 set. Conflicting or missing cleanup and acknowledgement fail closed.
+Targeted runtime configuration must provide exactly one finalization authority:
+either `runtime_finalization_persister` or `runtime_recovery_marker`. The marker
+is itself the sole persister when selected; simultaneous independent surfaces
+are rejected before request resolution, launch recording, or work dispatch.
 
 This remains `diagnostic_only`. `OwnerPathRuntimeMarker` is the bounded physical
 persistence seam: the owner supplies its path, namespace, retention, and later

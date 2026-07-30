@@ -32,6 +32,32 @@ def build_runtime_observability_ledger(
         ("manifest_closed", RuntimeObservationSubject.ATTEMPT, "manifest"),
         ("attempt_started", RuntimeObservationSubject.ATTEMPT, "attempt"),
     ]
+    event_shapes.extend(
+        (
+            "resource_reserved",
+            RuntimeObservationSubject.RESOURCE,
+            resource_key,
+        )
+        for (
+            resource_key,
+            _resource_kind,
+            _open_kind,
+            _cleanup_kind,
+        ) in resource_lifecycles
+    )
+    event_shapes.extend(
+        (open_kind, RuntimeObservationSubject.RESOURCE, resource_key)
+        for (
+            resource_key,
+            _resource_kind,
+            open_kind,
+            _cleanup_kind,
+        ) in resource_lifecycles
+    )
+    event_shapes.extend(
+        ("worker_started", RuntimeObservationSubject.WORKER, worker_key)
+        for worker_key in worker_keys
+    )
     for work_unit_key in work_unit_keys:
         event_shapes.extend(
             (
@@ -53,28 +79,21 @@ def build_runtime_observability_ledger(
             )
         )
     event_shapes.extend(
-        ("worker_started", RuntimeObservationSubject.WORKER, worker_key)
-        for worker_key in worker_keys
-    )
-    for resource_key, _resource_kind, open_kind, cleanup_kind in resource_lifecycles:
-        event_shapes.extend(
-            (
-                (
-                    "resource_reserved",
-                    RuntimeObservationSubject.RESOURCE,
-                    resource_key,
-                ),
-                (open_kind, RuntimeObservationSubject.RESOURCE, resource_key),
-                (cleanup_kind, RuntimeObservationSubject.RESOURCE, resource_key),
-            )
-        )
-    event_shapes.extend(
         (
             "artifact_registered",
             RuntimeObservationSubject.ARTIFACT,
             artifact_id,
         )
         for artifact_id, _disposition_kind in artifact_dispositions
+    )
+    event_shapes.extend(
+        (cleanup_kind, RuntimeObservationSubject.RESOURCE, resource_key)
+        for (
+            resource_key,
+            _resource_kind,
+            _open_kind,
+            cleanup_kind,
+        ) in resource_lifecycles
     )
     event_shapes.extend(
         (

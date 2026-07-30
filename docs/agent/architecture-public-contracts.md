@@ -161,9 +161,11 @@ obfuscated `eval`/dynamic-module reflection is outside the static proof and is
 forbidden by this contract; the immutable runtime export check remains the
 executable backstop for the actual low-level public export set.
 
-This changes construction authority, not persisted wire shape. Coordinator v3,
-observability v1, recovery-marker v3, canonical bytes/digests, and replay/CAS
-semantics remain unchanged.
+The schema labels and field sets remain coordinator v3, observability v1, and
+recovery-marker v3, and the exact-equality/fail-closed replay and CAS rules are
+unchanged. Causal chronology normalization intentionally changes canonical
+event order, bytes, and digests for affected running attempts; pre-correction
+diagnostic markers therefore do not claim byte parity with corrected output.
 
 ## CodeGraph
 

@@ -211,18 +211,12 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
 ) -> None:
     attempt = _attempt(tmp_path)
     events = list(_events(attempt))
-    proposal_index = next(
-        index for index, event in enumerate(events) if event.kind == "terminal_proposal"
+    work_submitted_index = next(
+        index
+        for index, event in enumerate(events)
+        if event.kind == "work_unit_submitted"
     )
-    events[proposal_index:proposal_index] = (
-        RuntimeObservationEvent(
-            attempt=attempt,
-            sequence=1,
-            monotonic_offset_ns=1,
-            kind="worker_started",
-            subject=RuntimeObservationSubject.WORKER,
-            subject_key="worker:1",
-        ),
+    events[work_submitted_index:work_submitted_index] = (
         RuntimeObservationEvent(
             attempt=attempt,
             sequence=1,
@@ -401,6 +395,65 @@ def test_runtime_observability_rejects_incomplete_or_malformed_resource_lifecycl
             )
 
 
+def test_runtime_observability_rejects_cross_domain_phase_reordering(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    base_events = _events(attempt)
+    canonical_events = _resequence(
+        (
+            *base_events[:3],
+            replace(
+                base_events[3],
+                kind="resource_reserved",
+                subject=RuntimeObservationSubject.RESOURCE,
+                subject_key="session:a",
+            ),
+            replace(
+                base_events[3],
+                kind="resource_opened",
+                subject=RuntimeObservationSubject.RESOURCE,
+                subject_key="session:a",
+            ),
+            base_events[3],
+            *base_events[4:7],
+            replace(
+                base_events[3],
+                kind="resource_cleanup_succeeded",
+                subject=RuntimeObservationSubject.RESOURCE,
+                subject_key="session:a",
+            ),
+            *base_events[7:],
+        )
+    )
+    ledger = _mint_runtime_observability_ledger(
+        attempt=attempt,
+        work_unit_keys=("sample-a:target-a",),
+        events=canonical_events,
+        metrics=_metrics(attempt.processing_attempt_id, events=canonical_events),
+    )
+    invalid_events = list(ledger.events)
+    opened = invalid_events.pop(_event_index(ledger.events, "resource_opened"))
+    work_started = next(
+        index
+        for index, event in enumerate(invalid_events)
+        if event.kind == "work_unit_started"
+    )
+    invalid_events.insert(work_started + 1, opened)
+    invalid_events = list(_resequence(tuple(invalid_events)))
+
+    with pytest.raises(RuntimeObservabilityContractError, match="causal phase"):
+        _mint_runtime_observability_ledger(
+            attempt=attempt,
+            work_unit_keys=ledger.work_unit_keys,
+            events=tuple(invalid_events),
+            metrics=_metrics(
+                attempt.processing_attempt_id,
+                events=tuple(invalid_events),
+            ),
+        )
+
+
 def test_runtime_observability_rejects_incomplete_or_malformed_artifact_lifecycle(
     tmp_path: Path,
 ) -> None:
@@ -561,10 +614,10 @@ def test_runtime_observability_rejects_out_of_order_work_lifecycle(
 ) -> None:
     attempt = _attempt(tmp_path)
     events = list(_events(attempt))
-    events[3:6] = (
-        replace(events[3], kind="work_unit_settled"),
-        replace(events[4], kind="work_unit_submitted"),
-        replace(events[5], kind="work_unit_started"),
+    events[4:7] = (
+        replace(events[4], kind="work_unit_settled"),
+        replace(events[5], kind="work_unit_submitted"),
+        replace(events[6], kind="work_unit_started"),
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="lifecycle order"):
@@ -576,12 +629,52 @@ def test_runtime_observability_rejects_out_of_order_work_lifecycle(
         )
 
 
+def test_runtime_observability_rejects_non_manifest_work_order(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    work_unit_keys = ("sample-a:target-a", "sample-b:target-b")
+    ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=work_unit_keys,
+        worker_keys=("worker:1",),
+    )
+    work_positions = tuple(
+        index
+        for index, event in enumerate(ledger.events)
+        if event.subject is RuntimeObservationSubject.WORK_UNIT
+    )
+    reversed_work = tuple(
+        event
+        for work_unit_key in reversed(work_unit_keys)
+        for event in ledger.events
+        if event.subject is RuntimeObservationSubject.WORK_UNIT
+        and event.subject_key == work_unit_key
+    )
+    invalid_events = _resequence(
+        (
+            *ledger.events[: min(work_positions)],
+            *reversed_work,
+            *ledger.events[max(work_positions) + 1 :],
+        )
+    )
+
+    with pytest.raises(RuntimeObservabilityContractError, match="manifest order"):
+        _mint_runtime_observability_ledger(
+            attempt=attempt,
+            work_unit_keys=work_unit_keys,
+            events=invalid_events,
+            metrics=ledger.metrics,
+        )
+
+
 def test_runtime_observability_rejects_duplicate_work_lifecycle_event(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
     events = list(_events(attempt))
-    events.insert(4, replace(events[3]))
+    submitted = _event_index(tuple(events), "work_unit_submitted")
+    events.insert(submitted + 1, replace(events[submitted]))
     events = [
         replace(
             event,
@@ -605,7 +698,11 @@ def test_runtime_observability_rejects_undeclared_work_event(
 ) -> None:
     attempt = _attempt(tmp_path)
     events = list(_events(attempt))
-    events[3] = replace(events[3], subject_key="sample-b:target-b")
+    submitted = _event_index(tuple(events), "work_unit_submitted")
+    events[submitted] = replace(
+        events[submitted],
+        subject_key="sample-b:target-b",
+    )
 
     with pytest.raises(RuntimeObservabilityContractError, match="undeclared"):
         _mint_runtime_observability_ledger(
@@ -621,10 +718,11 @@ def test_runtime_observability_rejects_work_lifecycle_kind_on_wrong_subject(
 ) -> None:
     attempt = _attempt(tmp_path)
     events = list(_events(attempt))
+    submitted = _event_index(tuple(events), "work_unit_submitted")
     events.insert(
-        6,
+        submitted + 3,
         replace(
-            events[3],
+            events[submitted],
             kind="work_unit_submitted",
             subject=RuntimeObservationSubject.ATTEMPT,
             subject_key="attempt",
@@ -648,11 +746,54 @@ def test_runtime_observability_rejects_work_lifecycle_kind_on_wrong_subject(
         )
 
 
+def test_runtime_observability_rejects_malformed_worker_lifecycle(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    ledger = _mint_runtime_observability_ledger(
+        attempt=attempt,
+        work_unit_keys=("sample-a:target-a",),
+        events=_events(attempt),
+        metrics=_metrics(attempt.processing_attempt_id),
+    )
+    worker_started = _event_index(ledger.events, "worker_started")
+    duplicate = (
+        *ledger.events[: worker_started + 1],
+        ledger.events[worker_started],
+        *ledger.events[worker_started + 1 :],
+    )
+    wrong_kind = list(ledger.events)
+    wrong_kind[worker_started] = replace(
+        wrong_kind[worker_started],
+        kind="worker_stopped",
+    )
+    wrong_subject = list(ledger.events)
+    wrong_subject[worker_started] = replace(
+        wrong_subject[worker_started],
+        subject=RuntimeObservationSubject.ATTEMPT,
+        subject_key="attempt",
+    )
+
+    for invalid, match in (
+        (duplicate, "exactly one worker_started"),
+        (tuple(wrong_kind), "unregistered lifecycle"),
+        (tuple(wrong_subject), "worker subject"),
+    ):
+        with pytest.raises(RuntimeObservabilityContractError, match=match):
+            _mint_runtime_observability_ledger(
+                attempt=attempt,
+                work_unit_keys=ledger.work_unit_keys,
+                events=_resequence(invalid),
+                metrics=ledger.metrics,
+            )
+
+
 def _events(attempt):
     kinds = (
         ("attempt_queued", RuntimeObservationSubject.ATTEMPT, "attempt"),
         ("manifest_closed", RuntimeObservationSubject.ATTEMPT, "manifest"),
         ("attempt_started", RuntimeObservationSubject.ATTEMPT, "attempt"),
+        ("worker_started", RuntimeObservationSubject.WORKER, "worker:1"),
         (
             "work_unit_submitted",
             RuntimeObservationSubject.WORK_UNIT,
@@ -660,7 +801,6 @@ def _events(attempt):
         ),
         ("work_unit_started", RuntimeObservationSubject.WORK_UNIT, "sample-a:target-a"),
         ("work_unit_settled", RuntimeObservationSubject.WORK_UNIT, "sample-a:target-a"),
-        ("worker_started", RuntimeObservationSubject.WORKER, "worker:1"),
         ("terminal_proposal", RuntimeObservationSubject.ATTEMPT, "attempt"),
         ("terminal_acknowledged", RuntimeObservationSubject.ATTEMPT, "attempt"),
         ("terminal_outcome", RuntimeObservationSubject.ATTEMPT, "attempt"),
@@ -739,8 +879,8 @@ def _metrics(
             defaults = {
                 ("attempt_queued", "attempt"): 0,
                 ("attempt_started", "attempt"): 20,
-                ("work_unit_started", "sample-a:target-a"): 40,
-                ("work_unit_settled", "sample-a:target-a"): 50,
+                ("work_unit_started", "sample-a:target-a"): 50,
+                ("work_unit_settled", "sample-a:target-a"): 60,
                 ("terminal_proposal", "attempt"): 70,
                 ("terminal_outcome", "attempt"): 90,
             }

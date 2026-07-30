@@ -14,7 +14,6 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeAttemptAggregate,
     RuntimeFinalizationReceipt,
     RuntimeTelemetryProvider,
-    accept_runtime_finalization_receipt,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
 
@@ -115,6 +114,14 @@ class TargetedApplicationService:
                 "for execute_runtime_lifecycle"
             )
         if (
+            self.runtime_finalization_persister is not None
+            and self.runtime_recovery_marker is not None
+        ):
+            raise TargetedRuntimeAdapterError(
+                "runtime_finalization_persister and runtime_recovery_marker "
+                "are mutually exclusive finalization authorities"
+            )
+        if (
             self.runtime_finalization_persister is None
             and self.runtime_recovery_marker is None
         ):
@@ -126,26 +133,11 @@ class TargetedApplicationService:
         lifecycle_runner = self.runtime_lifecycle_runner
         if self.runtime_recovery_marker is not None:
             self.runtime_recovery_marker.record_launch(runtime)
-        finalization_persister = self.runtime_finalization_persister
-        if self.runtime_recovery_marker is not None:
-            marker = self.runtime_recovery_marker
-            delegated_finalizer = finalization_persister
-
-            def durable_persister(
-                proposed: RuntimeFinalizationReceipt,
-            ) -> RuntimeFinalizationReceipt:
-                submitted = (
-                    proposed
-                    if delegated_finalizer is None
-                    else delegated_finalizer(proposed)
-                )
-                accepted = accept_runtime_finalization_receipt(
-                    proposed,
-                    submitted,
-                )
-                return marker(accepted)
-
-            finalization_persister = durable_persister
+        finalization_persister = (
+            self.runtime_recovery_marker
+            if self.runtime_recovery_marker is not None
+            else self.runtime_finalization_persister
+        )
         if finalization_persister is None:
             raise TargetedRuntimeAdapterError(
                 "Targeted runtime finalizer unexpectedly remained unresolved"

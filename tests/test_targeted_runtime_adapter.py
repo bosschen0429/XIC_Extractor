@@ -240,6 +240,62 @@ def test_targeted_lifecycle_uses_owner_path_marker_as_durable_finalizer(
     )
 
 
+def test_targeted_lifecycle_rejects_independent_dual_finalizers_before_side_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.extraction.targeted_service import (
+        TargetedApplicationService,
+        build_targeted_application_request,
+    )
+
+    attempt = _attempt(tmp_path)
+    marker_path = tmp_path / "targeted-dual-finalizer.runtime.json"
+    marker = OwnerPathRuntimeMarker(
+        marker_path,
+        "targeted-runtime-artifacts:dual-finalizer",
+    )
+    resolution_calls: list[str] = []
+    runner_calls: list[str] = []
+    persister_calls: list[str] = []
+
+    def unexpected_resolution(_request):
+        resolution_calls.append("called")
+        raise AssertionError("dual finalizers must fail before request resolution")
+
+    def lifecycle_runner(_request, _aggregate):
+        runner_calls.append("called")
+        raise AssertionError("dual finalizers must fail before work dispatch")
+
+    def finalization_persister(proposed):
+        persister_calls.append("called")
+        return proposed
+
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_service._resolve_application_request",
+        unexpected_resolution,
+    )
+    service = TargetedApplicationService(
+        lambda *_args, **_kwargs: None,
+        runtime_lifecycle_runner=lifecycle_runner,
+        runtime_finalization_persister=finalization_persister,
+        runtime_recovery_marker=marker,
+    )
+
+    with pytest.raises(TargetedRuntimeAdapterError, match="mutually exclusive"):
+        service.execute_runtime_lifecycle(
+            build_targeted_application_request(_config(), [_target()]),
+            _runtime(attempt, ("raw:a",)),
+            resource_reservations=(_reservation(attempt),),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        )
+
+    assert resolution_calls == []
+    assert runner_calls == []
+    assert persister_calls == []
+    assert not marker_path.exists()
+
+
 def test_targeted_preflight_failure_skips_runner_and_finalizes_marker(
     tmp_path: Path,
 ) -> None:

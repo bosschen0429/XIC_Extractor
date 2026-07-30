@@ -118,6 +118,8 @@ _WORK_UNIT_LIFECYCLE_KINDS = (
     "work_unit_settled",
 )
 
+_WORKER_LIFECYCLE_KINDS = {"worker_started"}
+
 _RESOURCE_OPEN_EVENT_KINDS = {
     "resource_opened",
     "resource_open_failed",
@@ -323,7 +325,12 @@ class RuntimeObservabilityLedger:
             self.work_unit_keys,
             self.events,
         )
+        _validate_worker_event_lifecycle(self.events)
         _validate_resource_artifact_event_lifecycle(self.events)
+        _validate_cross_domain_event_lifecycle(
+            self.events,
+            preflight_failed=preflight_failed,
+        )
         if not isinstance(self.metrics, tuple) or any(
             not isinstance(metric, RuntimeMetricRecord) for metric in self.metrics
         ):
@@ -499,6 +506,19 @@ def _validate_work_event_lifecycle(
             raise RuntimeObservabilityContractError(
                 "work lifecycle order must be submitted, started, then settled"
             )
+    expected_lifecycle = tuple(
+        (key, kind)
+        for key in work_unit_keys
+        for kind in _WORK_UNIT_LIFECYCLE_KINDS
+    )
+    observed_lifecycle = tuple(
+        (event.subject_key, event.kind) for event in work_events
+    )
+    if observed_lifecycle != expected_lifecycle:
+        raise RuntimeObservabilityContractError(
+            "work lifecycle must follow manifest order with one complete "
+            "submitted, started, and settled sequence per work unit"
+        )
 
 
 def _validate_attempt_event_lifecycle(
@@ -581,6 +601,44 @@ def _validate_attempt_event_lifecycle(
                 "work lifecycle must occur after attempt start and before proposal"
             )
     return preflight_failed
+
+
+def _validate_worker_event_lifecycle(
+    events: tuple[RuntimeObservationEvent, ...],
+) -> None:
+    if any(
+        event.kind in _WORKER_LIFECYCLE_KINDS
+        and event.subject is not RuntimeObservationSubject.WORKER
+        for event in events
+    ):
+        raise RuntimeObservabilityContractError(
+            "worker lifecycle events must use the worker subject"
+        )
+    if any(
+        event.subject is RuntimeObservationSubject.WORKER
+        and event.kind not in _WORKER_LIFECYCLE_KINDS
+        for event in events
+    ):
+        raise RuntimeObservabilityContractError(
+            "worker subject contains an unregistered lifecycle event"
+        )
+    worker_keys = {
+        event.subject_key
+        for event in events
+        if event.subject is RuntimeObservationSubject.WORKER
+    }
+    for worker_key in worker_keys:
+        matches = tuple(
+            event
+            for event in events
+            if event.subject is RuntimeObservationSubject.WORKER
+            and event.subject_key == worker_key
+            and event.kind == "worker_started"
+        )
+        if len(matches) != 1:
+            raise RuntimeObservabilityContractError(
+                "each observed worker requires exactly one worker_started event"
+            )
 
 
 def _validate_resource_artifact_event_lifecycle(
@@ -711,6 +769,81 @@ def _validate_resource_artifact_event_lifecycle(
             "artifact dispositions must occur after terminal acknowledgement and "
             "before terminal outcome"
         )
+
+
+def _validate_cross_domain_event_lifecycle(
+    events: tuple[RuntimeObservationEvent, ...],
+    *,
+    preflight_failed: bool,
+) -> None:
+    runtime_subjects = {
+        RuntimeObservationSubject.WORK_UNIT,
+        RuntimeObservationSubject.WORKER,
+        RuntimeObservationSubject.RESOURCE,
+        RuntimeObservationSubject.ARTIFACT,
+    }
+    if preflight_failed:
+        if any(event.subject in runtime_subjects for event in events):
+            raise RuntimeObservabilityContractError(
+                "preflight-failure lifecycle cannot contain runtime causal phases"
+            )
+        return
+
+    def positions(*kinds: str) -> tuple[int, ...]:
+        accepted = set(kinds)
+        return tuple(
+            index
+            for index, event in enumerate(events)
+            if event.kind in accepted
+        )
+
+    def require_before(
+        earlier: tuple[int, ...],
+        later: tuple[int, ...],
+        detail: str,
+    ) -> None:
+        if earlier and later and max(earlier) >= min(later):
+            raise RuntimeObservabilityContractError(
+                f"runtime causal phases must order {detail}"
+            )
+
+    attempt_started = positions("attempt_started")
+    reservations = positions("resource_reserved")
+    open_outcomes = positions(*_RESOURCE_OPEN_EVENT_KINDS)
+    workers = positions("worker_started")
+    work_submitted = positions("work_unit_submitted")
+    work_settled = positions("work_unit_settled")
+    artifacts = positions("artifact_registered")
+    cleanup_outcomes = positions(*_RESOURCE_CLEANUP_EVENT_KINDS)
+    terminal_proposal = positions("terminal_proposal")
+    runtime_positions = (
+        *reservations,
+        *open_outcomes,
+        *workers,
+        *work_submitted,
+        *work_settled,
+        *artifacts,
+        *cleanup_outcomes,
+    )
+    if runtime_positions and max(attempt_started) >= min(runtime_positions):
+        raise RuntimeObservabilityContractError(
+            "runtime causal phases must begin after attempt_started"
+        )
+    require_before(reservations, open_outcomes, "reservations before open outcomes")
+    require_before(open_outcomes, workers, "open outcomes before worker starts")
+    require_before(
+        open_outcomes,
+        work_submitted,
+        "open outcomes before work submission",
+    )
+    require_before(workers, work_submitted, "worker starts before work submission")
+    require_before(
+        work_settled,
+        (*artifacts, *cleanup_outcomes),
+        "settled work before artifacts and cleanup",
+    )
+    require_before(artifacts, cleanup_outcomes, "artifacts before resource cleanup")
+    require_before(cleanup_outcomes, terminal_proposal, "cleanup before proposal")
 
 
 def _validate_runtime_metrics(
