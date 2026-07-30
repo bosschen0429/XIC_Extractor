@@ -418,8 +418,7 @@ def canonical_coordinator_terminal_record_bytes(
         "processing_attempt_id": state.runtime.manifest.attempt.processing_attempt_id,
         "manifest_work_unit_keys": state.runtime.manifest.work_unit_keys,
         "work_settlements": [
-            _work_unit_settlement_payload(item)
-            for item in state.runtime.settlements
+            _work_unit_settlement_payload(item) for item in state.runtime.settlements
         ],
         "settlement_integrity_failure": (
             None
@@ -495,6 +494,14 @@ def _work_unit_settlement_payload(
 
 
 def _proposed_outcome(state: AttemptFinalizationState) -> AttemptTerminalOutcome:
+    resource_open_failed = any(
+        record.open_outcome
+        in {
+            RuntimeResourceOpenOutcome.OPEN_FAILED,
+            RuntimeResourceOpenOutcome.OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS,
+        }
+        for record in state.resources
+    )
     cleanup_failed = any(
         record.cleanup_outcome
         in {
@@ -503,7 +510,12 @@ def _proposed_outcome(state: AttemptFinalizationState) -> AttemptTerminalOutcome
         }
         for record in state.resources
     )
-    if state.runtime.must_fail or state.failures or cleanup_failed:
+    if (
+        state.runtime.must_fail
+        or state.failures
+        or resource_open_failed
+        or cleanup_failed
+    ):
         return AttemptTerminalOutcome.FAILED
     if state.runtime.history.cancellation_accepted:
         return AttemptTerminalOutcome.CANCELLED

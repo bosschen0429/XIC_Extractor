@@ -141,6 +141,43 @@ def test_failed_cleanup_terminalizes_and_quarantines_whole_attempt(
     assert finalization.events[-1].terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
+@pytest.mark.parametrize(
+    "open_outcome",
+    (
+        RuntimeResourceOpenOutcome.OPEN_FAILED,
+        RuntimeResourceOpenOutcome.OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS,
+    ),
+)
+def test_failed_or_unknown_resource_open_prevents_successful_terminalization(
+    tmp_path: Path,
+    open_outcome: RuntimeResourceOpenOutcome,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, artifact = _successful_runtime(attempt)
+    state = reserve_runtime_resource(
+        begin_attempt_finalization(runtime),
+        _reservation(attempt),
+    )
+    state = register_runtime_artifact(
+        state,
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+    state = settle_runtime_resource(
+        state,
+        resource_key="session:a",
+        open_outcome=open_outcome,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+
+    coordinator = propose_attempt_terminal(state)
+
+    assert coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
+    assert coordinator.state.artifacts[0].proposed_disposition is (
+        RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC
+    )
+
+
 def test_cancelled_attempt_quarantines_artifacts_without_becoming_failed(
     tmp_path: Path,
 ) -> None:
@@ -336,9 +373,7 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
     failed_coordinator = close(failed_submission)
     alternate_coordinator = close(alternate_submission)
     failed_bytes = canonical_coordinator_terminal_record_bytes(failed_coordinator)
-    alternate_bytes = canonical_coordinator_terminal_record_bytes(
-        alternate_coordinator
-    )
+    alternate_bytes = canonical_coordinator_terminal_record_bytes(alternate_coordinator)
     failure_payload = json.loads(failed_bytes)["settlement_integrity_failure"]
 
     assert failed_bytes != alternate_bytes
@@ -358,9 +393,7 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
     }
     assert (
         mint_supervisor_finalization(failed_coordinator).coordinator_record_sha256
-        != mint_supervisor_finalization(
-            alternate_coordinator
-        ).coordinator_record_sha256
+        != mint_supervisor_finalization(alternate_coordinator).coordinator_record_sha256
     )
 
 
