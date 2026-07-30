@@ -94,8 +94,7 @@ class RequiredWorkManifest:
                 "work_unit_keys must contain at least one declared work unit"
             )
         if any(
-            not isinstance(key, str) or not key.strip()
-            for key in self.work_unit_keys
+            not isinstance(key, str) or not key.strip() for key in self.work_unit_keys
         ):
             raise AttemptLifecycleContractError(
                 "work_unit_keys must contain non-empty opaque text keys"
@@ -108,6 +107,30 @@ class RequiredWorkManifest:
         ):
             raise AttemptLifecycleContractError(
                 "owner_completeness_attestation must be non-empty opaque text"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _RejectedRequiredWorkManifest:
+    """Internal empty carrier for a manifest-preflight terminal attempt.
+
+    This is not an accepted manifest and is never exposed as a construction
+    surface.  It lets the existing coordinator v3 and observability v1 shapes
+    retain the owner-issued attempt plus an empty work universe without
+    fabricating ``attempt_started``.
+    """
+
+    attempt: ProcessingAttemptIdentity
+    work_unit_keys: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.attempt, ProcessingAttemptIdentity):
+            raise AttemptLifecycleContractError(
+                "attempt must be an owner-issued ProcessingAttemptIdentity"
+            )
+        if self.work_unit_keys:
+            raise AttemptLifecycleContractError(
+                "rejected manifest carrier must have no work units"
             )
 
 
@@ -137,8 +160,7 @@ class WorkUnitSettlement:
         if self.outcome is WorkUnitTerminalOutcome.SUCCEEDED:
             if not isinstance(self.owner_result_ref, EvidenceArtifactRef):
                 raise AttemptLifecycleContractError(
-                    "succeeded settlement requires an owner-minted "
-                    "EvidenceArtifactRef"
+                    "succeeded settlement requires an owner-minted EvidenceArtifactRef"
                 )
             if (
                 self.owner_result_ref.producer_processing_request_id
@@ -431,18 +453,19 @@ class RequiredWorkManifestPreflight:
 
 @dataclass(frozen=True, slots=True)
 class AttemptRuntime:
-    """Pure in-memory reducer state for one accepted required-work manifest."""
+    """Pure reducer state for a running or preflight-terminalized attempt."""
 
-    manifest: RequiredWorkManifest
+    manifest: RequiredWorkManifest | _RejectedRequiredWorkManifest
     history: AttemptLifecycleHistory
     settlements: tuple[WorkUnitSettlement, ...] = ()
     integrity_failure: WorkUnitSettlementIntegrityFailure | None = None
 
     def __post_init__(self) -> None:
-        if not isinstance(self.manifest, RequiredWorkManifest):
-            raise AttemptLifecycleContractError(
-                "manifest must be a RequiredWorkManifest"
-            )
+        if not isinstance(
+            self.manifest,
+            (RequiredWorkManifest, _RejectedRequiredWorkManifest),
+        ):
+            raise AttemptLifecycleContractError("manifest must be runtime-owner-issued")
         if not isinstance(self.history, AttemptLifecycleHistory):
             raise AttemptLifecycleContractError(
                 "history must be an AttemptLifecycleHistory"
@@ -451,7 +474,26 @@ class AttemptRuntime:
             raise AttemptLifecycleContractError(
                 "runtime history must reference the manifest attempt"
             )
-        if not any(
+        preflight_failed = isinstance(self.manifest, _RejectedRequiredWorkManifest)
+        if preflight_failed:
+            if (
+                self.history.events[-1].kind
+                is not AttemptLifecycleEventKind.TERMINAL_PROPOSAL
+                or self.history.events[-1].proposed_outcome
+                is not AttemptTerminalOutcome.FAILED
+                or any(
+                    event.kind is AttemptLifecycleEventKind.ATTEMPT_STARTED
+                    for event in self.history.events
+                )
+            ):
+                raise AttemptLifecycleContractError(
+                    "rejected manifest runtime must retain the queued-to-failed path"
+                )
+            if self.settlements or self.integrity_failure is not None:
+                raise AttemptLifecycleContractError(
+                    "preflight-terminalized runtime cannot contain work results"
+                )
+        elif not any(
             event.kind is AttemptLifecycleEventKind.ATTEMPT_STARTED
             for event in self.history.events
         ):
@@ -483,10 +525,13 @@ class AttemptRuntime:
             raise AttemptLifecycleContractError(
                 "accepted settlements must bind declared manifest work"
             )
-        if any(
-            settlement.outcome is WorkUnitTerminalOutcome.CANCELLED
-            for settlement in self.settlements
-        ) and not self.history.cancellation_accepted:
+        if (
+            any(
+                settlement.outcome is WorkUnitTerminalOutcome.CANCELLED
+                for settlement in self.settlements
+            )
+            and not self.history.cancellation_accepted
+        ):
             raise AttemptLifecycleContractError(
                 "cancelled settlement requires accepted cancellation"
             )
@@ -509,10 +554,18 @@ class AttemptRuntime:
 
     @property
     def must_fail(self) -> bool:
-        return self.integrity_failure is not None or any(
-            settlement.outcome is WorkUnitTerminalOutcome.FAILED
-            for settlement in self.settlements
+        return (
+            self.manifest_preflight_failed
+            or self.integrity_failure is not None
+            or any(
+                settlement.outcome is WorkUnitTerminalOutcome.FAILED
+                for settlement in self.settlements
+            )
         )
+
+    @property
+    def manifest_preflight_failed(self) -> bool:
+        return isinstance(self.manifest, _RejectedRequiredWorkManifest)
 
 
 def append_attempt_lifecycle_event(
@@ -621,6 +674,56 @@ def start_attempt_runtime(
     return AttemptRuntime(manifest=preflight.manifest, history=started)
 
 
+def _start_runtime_attempt(
+    *,
+    attempt: ProcessingAttemptIdentity,
+    work_unit_keys: tuple[str, ...],
+    owner_completeness_attestation: str | None,
+) -> AttemptRuntime:
+    """Mint one running or preflight-terminalized owner attempt.
+
+    The public facade lives in ``execution_runtime_owner``.  Keeping this
+    implementation private prevents the state-model module from becoming an
+    alternate production construction authority.
+    """
+
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+    preflight = preflight_required_work_manifest(
+        queued,
+        attempt=attempt,
+        work_unit_keys=work_unit_keys,
+        owner_completeness_attestation=owner_completeness_attestation,
+    )
+    if not preflight.accepted:
+        return AttemptRuntime(
+            manifest=_RejectedRequiredWorkManifest(attempt=preflight.history.attempt),
+            history=preflight.history,
+        )
+    return start_attempt_runtime(preflight)
+
+
+def mint_work_unit_settlement(
+    *,
+    attempt: ProcessingAttemptIdentity,
+    work_unit_key: str,
+    outcome: WorkUnitTerminalOutcome,
+    owner_result_ref: EvidenceArtifactRef | None = None,
+    failure_detail: WorkUnitFailureDetail | None = None,
+) -> WorkUnitSettlement:
+    """Mint one typed work settlement through the runtime owner."""
+
+    return WorkUnitSettlement(
+        attempt=attempt,
+        work_unit_key=work_unit_key,
+        outcome=outcome,
+        owner_result_ref=owner_result_ref,
+        failure_detail=failure_detail,
+    )
+
+
 def settle_work_unit(
     runtime: AttemptRuntime,
     *,
@@ -633,7 +736,7 @@ def settle_work_unit(
 
     if not isinstance(runtime, AttemptRuntime):
         raise AttemptLifecycleContractError("runtime must be an AttemptRuntime")
-    submitted = WorkUnitSettlement(
+    submitted = mint_work_unit_settlement(
         attempt=runtime.manifest.attempt,
         work_unit_key=work_unit_key,
         outcome=outcome,
@@ -690,24 +793,12 @@ def settle_work_unit(
     )
 
 
-__all__ = [
-    "AttemptRuntime",
+__all__ = (
     "AttemptLifecycleContractError",
-    "AttemptLifecycleEvent",
     "AttemptLifecycleEventKind",
-    "AttemptLifecycleHistory",
     "AttemptTerminalOutcome",
-    "RequiredWorkManifest",
-    "RequiredWorkManifestPreflight",
-    "WorkUnitSettlement",
     "WorkUnitFailureCategory",
     "WorkUnitFailureDetail",
-    "WorkUnitSettlementIntegrityFailure",
     "WorkUnitSettlementIntegrityFailureKind",
     "WorkUnitTerminalOutcome",
-    "append_attempt_lifecycle_event",
-    "preflight_required_work_manifest",
-    "propose_manifest_preflight_failure",
-    "settle_work_unit",
-    "start_attempt_runtime",
-]
+)

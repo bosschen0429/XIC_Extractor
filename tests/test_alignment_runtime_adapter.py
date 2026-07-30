@@ -5,8 +5,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from tests.runtime_observability_fixtures import (
-    build_runtime_observability_ledger,
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
 )
 from xic_extractor.alignment.runtime_adapter import (
     AlignmentRuntimeProcessResult,
@@ -14,17 +14,11 @@ from xic_extractor.alignment.runtime_adapter import (
     mint_alignment_process_result_artifact,
 )
 from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
     AttemptRuntime,
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
-    WorkUnitSettlement,
     WorkUnitTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    start_attempt_runtime,
 )
 from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
@@ -35,6 +29,10 @@ from xic_extractor.execution_runtime_finalization import (
     canonical_coordinator_terminal_record_bytes,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import (
+    mint_work_unit_settlement,
+    start_runtime_attempt,
+)
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     ProcessingAttemptIdentity,
@@ -67,7 +65,7 @@ def _run_no_raw_alignment_job(
         owner_result_payload=job.payload,
     )
     return AlignmentRuntimeProcessResult(
-        settlement=WorkUnitSettlement(
+        settlement=mint_work_unit_settlement(
             attempt=job.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
@@ -85,7 +83,7 @@ def _alignment_job_error(
     error: Exception,
 ) -> AlignmentRuntimeProcessResult:
     return AlignmentRuntimeProcessResult(
-        settlement=WorkUnitSettlement(
+        settlement=mint_work_unit_settlement(
             attempt=job.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.FAILED,
@@ -130,12 +128,7 @@ def test_alignment_spawn_runner_is_canonical_across_serial_and_reordered_results
         error_factory=_alignment_job_error,
         max_workers=1,
         resource_reservations=reservations,
-        observability_ledger=_ledger(
-            attempt,
-            jobs=jobs,
-            work_unit_keys=("sample:a", "sample:b"),
-            worker_keys=("worker:a", "worker:b"),
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "serial.runtime.json",
             "alignment-runtime-artifacts:test",
@@ -148,12 +141,7 @@ def test_alignment_spawn_runner_is_canonical_across_serial_and_reordered_results
         error_factory=_alignment_job_error,
         max_workers=2,
         resource_reservations=reservations,
-        observability_ledger=_ledger(
-            attempt,
-            jobs=jobs,
-            work_unit_keys=("sample:a", "sample:b"),
-            worker_keys=("worker:a", "worker:b"),
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "reordered.runtime.json",
             "alignment-runtime-artifacts:test",
@@ -204,12 +192,7 @@ def test_alignment_spawn_failure_closes_resource_and_durable_terminal(
         error_factory=_alignment_job_error,
         max_workers=1,
         resource_reservations=(_reservations(attempt)[0],),
-        observability_ledger=_ledger(
-            attempt,
-            jobs=jobs,
-            work_unit_keys=("sample:a",),
-            worker_keys=("worker:a",),
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=marker,
     )
 
@@ -231,21 +214,58 @@ def test_alignment_spawn_failure_closes_resource_and_durable_terminal(
     assert resource.cleanup_outcome is RuntimeResourceCleanupOutcome.SUCCEEDED
 
 
+def test_alignment_preflight_failure_skips_runner_and_finalizes_marker(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="preflight")
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "alignment-preflight.runtime.json",
+        "alignment-runtime-artifacts:preflight",
+    )
+    runner_calls: list[str] = []
+    job = _NoRawAlignmentJob(
+        attempt,
+        "sample:undeclared",
+        "process:sample:undeclared",
+        b"must-not-run",
+    )
+
+    def worker(observed_job: _NoRawAlignmentJob) -> AlignmentRuntimeProcessResult:
+        runner_calls.append(observed_job.work_unit_key)
+        return _run_no_raw_alignment_job(observed_job)
+
+    result = execute_alignment_process_runtime(
+        start_runtime_attempt(
+            attempt=attempt,
+            work_unit_keys=(),
+            owner_completeness_attestation="alignment-runtime-test:v1",
+        ),
+        (job,),
+        worker=worker,
+        error_factory=_alignment_job_error,
+        max_workers=1,
+        resource_reservations=(_reservations(attempt)[0],),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+    )
+
+    recovered = marker.recover_after_coordinator_loss(attempt)
+    assert runner_calls == []
+    assert result.runtime.manifest_preflight_failed is True
+    assert result.coordinator_record.state.resources == ()
+    assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert recovered.finalization_acknowledged is True
+    assert recovered.terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
 def _runtime(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
 ) -> AttemptRuntime:
-    queued = append_attempt_lifecycle_event(
-        AttemptLifecycleHistory(attempt=attempt),
-        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
-    )
-    return start_attempt_runtime(
-        preflight_required_work_manifest(
-            queued,
-            attempt=attempt,
-            work_unit_keys=work_unit_keys,
-            owner_completeness_attestation="alignment-runtime-test:v1",
-        )
+    return start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=work_unit_keys,
+        owner_completeness_attestation="alignment-runtime-test:v1",
     )
 
 
@@ -262,50 +282,6 @@ def _reservations(
             compatibility_token="alignment:no-raw:v1",
         )
         for suffix in ("a", "b")
-    )
-
-
-def _ledger(
-    attempt: ProcessingAttemptIdentity,
-    *,
-    jobs: tuple[_NoRawAlignmentJob, ...],
-    work_unit_keys: tuple[str, ...],
-    worker_keys: tuple[str, ...],
-):
-    failed = any(job.fail for job in jobs)
-    artifacts = tuple(
-        mint_alignment_process_result_artifact(
-            processing_attempt=attempt,
-            work_unit_key=job.work_unit_key,
-            owner_result_payload=job.payload,
-        )
-        for job in jobs
-        if not job.fail
-    )
-    return build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=work_unit_keys,
-        worker_keys=worker_keys,
-        resource_lifecycles=tuple(
-            (
-                job.resource_key,
-                RuntimeResourceKind.PROCESS_WORKER,
-                "resource_not_opened" if job.fail else "resource_opened",
-                "resource_cleanup_succeeded",
-            )
-            for job in jobs
-        ),
-        artifact_dispositions=tuple(
-            (
-                artifact.evidence_artifact_id,
-                (
-                    "artifact_quarantined_diagnostic"
-                    if failed
-                    else "artifact_offered_to_owner"
-                ),
-            )
-            for artifact in artifacts
-        ),
     )
 
 

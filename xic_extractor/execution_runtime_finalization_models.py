@@ -100,9 +100,7 @@ class RuntimeResourceReservation:
     def __post_init__(self) -> None:
         _require_attempt(self.attempt)
         if not isinstance(self.kind, RuntimeResourceKind):
-            raise RuntimeFinalizationContractError(
-                "kind must be a RuntimeResourceKind"
-            )
+            raise RuntimeFinalizationContractError("kind must be a RuntimeResourceKind")
         _required_text(self.resource_key, field="resource_key")
         _required_text(self.worker_key, field="worker_key")
         _required_text(self.source_reference, field="source_reference")
@@ -261,9 +259,7 @@ class AttemptFinalizationState:
                 "runtime artifacts must bind the runtime request and attempt"
             )
         manifest_keys = set(self.runtime.manifest.work_unit_keys)
-        if any(
-            record.work_unit_key not in manifest_keys for record in self.artifacts
-        ):
+        if any(record.work_unit_key not in manifest_keys for record in self.artifacts):
             raise RuntimeFinalizationContractError(
                 "runtime artifacts must bind declared manifest work units"
             )
@@ -287,8 +283,11 @@ class AttemptFinalizationState:
     @property
     def terminal_proposed(self) -> bool:
         return bool(
-            self.events
-            and self.events[-1].kind is RuntimeLifecycleEventKind.TERMINAL_PROPOSAL
+            (
+                self.events
+                and self.events[-1].kind is RuntimeLifecycleEventKind.TERMINAL_PROPOSAL
+            )
+            or self.runtime.manifest_preflight_failed
         )
 
 
@@ -313,7 +312,12 @@ class CoordinatorTerminalRecord:
             raise RuntimeFinalizationContractError(
                 "proposed_outcome must be an AttemptTerminalOutcome"
             )
-        if self.state.events[-1].proposed_outcome is not self.proposed_outcome:
+        terminal_event = (
+            self.state.events[-1]
+            if self.state.events
+            else self.state.runtime.history.events[-1]
+        )
+        if terminal_event.proposed_outcome is not self.proposed_outcome:
             raise RuntimeFinalizationContractError(
                 "coordinator outcome must match the terminal event"
             )
@@ -442,22 +446,13 @@ def _require_tuple_of(value: object, item_type: type, *, field: str) -> None:
         )
 
 
-__all__ = [
-    "AttemptFinalizationState",
-    "CoordinatorTerminalRecord",
+__all__ = (
     "RuntimeArtifactDisposition",
-    "RuntimeArtifactRecord",
     "RuntimeFinalizationContractError",
-    "RuntimeLifecycleEvent",
     "RuntimeLifecycleEventKind",
-    "RuntimeLifecycleFailure",
     "RuntimeLifecycleFailureKind",
     "RuntimeResourceCleanupOutcome",
     "RuntimeResourceKind",
     "RuntimeResourceOpenOutcome",
-    "RuntimeResourceRecord",
-    "RuntimeResourceReservation",
-    "SupervisorFinalizationEvent",
     "SupervisorFinalizationEventKind",
-    "SupervisorFinalizationRecord",
-]
+)

@@ -17,6 +17,8 @@ from xic_extractor.execution_runtime_observability import (
     RuntimeObservabilityLedger,
     RuntimeObservationEvent,
     RuntimeObservationSubject,
+    _mint_runtime_observability_ledger,
+    canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -30,7 +32,7 @@ def test_runtime_observability_closes_work_offsets_and_metric_availability(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    ledger = RuntimeObservabilityLedger(
+    ledger = _mint_runtime_observability_ledger(
         attempt=attempt,
         work_unit_keys=("sample-a:target-a",),
         events=_events(attempt),
@@ -50,13 +52,46 @@ def test_runtime_observability_closes_work_offsets_and_metric_availability(
     )
 
 
+def test_runtime_observability_ledger_rejects_forged_mint_capability(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    ledger = _mint_runtime_observability_ledger(
+        attempt=attempt,
+        work_unit_keys=("sample-a:target-a",),
+        events=_events(attempt),
+        metrics=_metrics(attempt.processing_attempt_id),
+    )
+
+    with pytest.raises(RuntimeObservabilityContractError, match="minted by"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=_events(attempt),
+            metrics=_metrics(attempt.processing_attempt_id),
+            _mint_token=object(),
+        )
+    assert not hasattr(ledger, "_mint_token")
+    with pytest.raises(ValueError, match="InitVar '_mint_token'"):
+        replace(ledger)
+    with pytest.raises(TypeError, match="RuntimeObservabilityLedger is final"):
+        type("ForgedLedger", (RuntimeObservabilityLedger,), {})
+    with pytest.raises(
+        RuntimeObservabilityContractError,
+        match="ledger must be a RuntimeObservabilityLedger",
+    ):
+        canonical_runtime_observability_ledger_bytes(  # type: ignore[arg-type]
+            {"logical_xic_request_count": 0}
+        )
+
+
 def test_runtime_observability_rejects_nonmonotonic_offsets(tmp_path: Path) -> None:
     attempt = _attempt(tmp_path)
     events = list(_events(attempt))
     events[3] = replace(events[3], monotonic_offset_ns=1)
 
     with pytest.raises(RuntimeObservabilityContractError, match="monotonic"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -70,7 +105,7 @@ def test_runtime_observability_rejects_missing_metric_availability(
     attempt = _attempt(tmp_path)
 
     with pytest.raises(RuntimeObservabilityContractError, match="missing"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -93,7 +128,7 @@ def test_runtime_observability_requires_measured_metrics_after_attempt_start(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="measured"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -119,7 +154,7 @@ def test_runtime_observability_requires_complete_terminal_lifecycle(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="lifecycle"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=events,
@@ -145,7 +180,7 @@ def test_runtime_observability_rejects_wrong_required_metric_shape(
     metrics[0] = replace(metrics[0], **replacement)
 
     with pytest.raises(RuntimeObservabilityContractError, match="metric contract"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -163,7 +198,7 @@ def test_runtime_observability_rejects_duplicate_or_unknown_metrics(
 
     for invalid in (duplicate, unknown):
         with pytest.raises(RuntimeObservabilityContractError, match="metric"):
-            RuntimeObservabilityLedger(
+            _mint_runtime_observability_ledger(
                 attempt=attempt,
                 work_unit_keys=("sample-a:target-a",),
                 events=_events(attempt),
@@ -225,7 +260,7 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
         )
     )
 
-    ledger = RuntimeObservabilityLedger(
+    ledger = _mint_runtime_observability_ledger(
         attempt=attempt,
         work_unit_keys=("sample-a:target-a",),
         events=events,
@@ -246,7 +281,7 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
         for metric in ledger.metrics
     )
     with pytest.raises(RuntimeObservabilityContractError, match="worker"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=events,
@@ -283,7 +318,7 @@ def test_runtime_observability_represents_serial_mode_without_worker_process(
         for metric in _metrics(attempt.processing_attempt_id, events=events)
     )
 
-    ledger = RuntimeObservabilityLedger(
+    ledger = _mint_runtime_observability_ledger(
         attempt=attempt,
         work_unit_keys=("sample-a:target-a",),
         events=events,
@@ -309,7 +344,7 @@ def test_runtime_observability_rejects_elapsed_metrics_that_conflict_with_events
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="event offsets"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -358,7 +393,7 @@ def test_runtime_observability_rejects_incomplete_or_malformed_resource_lifecycl
         (tuple(wrong_subject), "resource subject"),
     ):
         with pytest.raises(RuntimeObservabilityContractError, match=match):
-            RuntimeObservabilityLedger(
+            _mint_runtime_observability_ledger(
                 attempt=attempt,
                 work_unit_keys=ledger.work_unit_keys,
                 events=_resequence(invalid),
@@ -402,7 +437,7 @@ def test_runtime_observability_rejects_incomplete_or_malformed_artifact_lifecycl
         (tuple(wrong_subject), "artifact subject"),
     ):
         with pytest.raises(RuntimeObservabilityContractError, match=match):
-            RuntimeObservabilityLedger(
+            _mint_runtime_observability_ledger(
                 attempt=attempt,
                 work_unit_keys=ledger.work_unit_keys,
                 events=_resequence(invalid),
@@ -445,7 +480,7 @@ def test_runtime_observability_rejects_resource_events_after_terminal_proposal(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="terminal proposal"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=ledger.work_unit_keys,
             events=_resequence(invalid),
@@ -469,7 +504,7 @@ def test_runtime_observability_rejects_artifact_disposition_before_acknowledgeme
     events.insert(acknowledgement, disposition)
 
     with pytest.raises(RuntimeObservabilityContractError, match="acknowledgement"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=ledger.work_unit_keys,
             events=_resequence(tuple(events)),
@@ -498,7 +533,7 @@ def test_runtime_observability_rejects_nonfinite_or_fractional_measurements(
             replace(metric, value=value) if metric.name == metric_name else metric
             for metric in _metrics(attempt.processing_attempt_id)
         )
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=_events(attempt),
@@ -511,7 +546,7 @@ def test_runtime_observability_accepts_preflight_failure_contract(
 ) -> None:
     attempt = _attempt(tmp_path)
 
-    ledger = RuntimeObservabilityLedger(
+    ledger = _mint_runtime_observability_ledger(
         attempt=attempt,
         work_unit_keys=(),
         events=_preflight_events(attempt),
@@ -533,7 +568,7 @@ def test_runtime_observability_rejects_out_of_order_work_lifecycle(
     )
 
     with pytest.raises(RuntimeObservabilityContractError, match="lifecycle order"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -557,7 +592,7 @@ def test_runtime_observability_rejects_duplicate_work_lifecycle_event(
     ]
 
     with pytest.raises(RuntimeObservabilityContractError, match="exactly one"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -573,7 +608,7 @@ def test_runtime_observability_rejects_undeclared_work_event(
     events[3] = replace(events[3], subject_key="sample-b:target-b")
 
     with pytest.raises(RuntimeObservabilityContractError, match="undeclared"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),
@@ -605,7 +640,7 @@ def test_runtime_observability_rejects_work_lifecycle_kind_on_wrong_subject(
     ]
 
     with pytest.raises(RuntimeObservabilityContractError, match="work_unit subject"):
-        RuntimeObservabilityLedger(
+        _mint_runtime_observability_ledger(
             attempt=attempt,
             work_unit_keys=("sample-a:target-a",),
             events=tuple(events),

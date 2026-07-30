@@ -13,7 +13,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
@@ -24,30 +24,30 @@ from xic_extractor.evidence_artifacts import (
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
     WorkUnitFailureDetail,
-    WorkUnitSettlement,
     WorkUnitTerminalOutcome,
-    settle_work_unit,
 )
 from xic_extractor.execution_runtime_finalization import (
-    AttemptFinalizationState,
     CoordinatorTerminalRecord,
-    RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     SupervisorFinalizationRecord,
-    accept_supervisor_finalization,
-    begin_attempt_finalization,
-    mint_supervisor_finalization,
-    propose_attempt_terminal,
-    register_runtime_artifact,
-    reserve_runtime_resource,
-    settle_runtime_resource,
 )
 from xic_extractor.execution_runtime_observability import (
     RuntimeObservabilityContractError,
-    RuntimeObservabilityLedger,
     validate_runtime_acquisition_metrics,
+)
+from xic_extractor.execution_runtime_owner import (
+    RuntimeAcquisitionReceipt,
+    RuntimeArtifactRegistrationReceipt,
+    RuntimeAttemptAggregate,
+    RuntimeFinalizationPersister,
+    RuntimeFinalizationReceipt,
+    RuntimeResourceSettlementReceipt,
+    RuntimeTelemetryProvider,
+    RuntimeWorkerBatchReceipt,
+    execute_runtime_attempt,
+    mint_work_unit_settlement,
 )
 from xic_extractor.peak_detection.observation_batch import (
     PeakObservationBatch,
@@ -164,7 +164,7 @@ class TargetedProcessWorkerResultEnvelope:
                 "only succeeded result envelope may carry peak_observation_batch"
             )
         try:
-            WorkUnitSettlement(
+            mint_work_unit_settlement(
                 attempt=self.attempt,
                 work_unit_key=self.work_unit_key,
                 outcome=self.outcome,
@@ -181,9 +181,7 @@ class TargetedRuntimeApplicationResult:
 
     runtime: AttemptRuntime
     successful_result_refs: tuple[tuple[str, TargetedProcessResultRef], ...]
-    successful_observation_batches: tuple[
-        tuple[str, PeakObservationBatch], ...
-    ] = ()
+    successful_observation_batches: tuple[tuple[str, PeakObservationBatch], ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.runtime, AttemptRuntime):
@@ -225,8 +223,7 @@ class TargetedRuntimeApplicationResult:
                 "successful_observation_batches must follow settled manifest order"
             )
         if len(observation_keys) != len(set(observation_keys)) or any(
-            key not in successful_keys
-            or not isinstance(batch, PeakObservationBatch)
+            key not in successful_keys or not isinstance(batch, PeakObservationBatch)
             for key, batch in self.successful_observation_batches
         ):
             raise TargetedRuntimeAdapterError(
@@ -321,46 +318,41 @@ class TargetedRuntimeLifecycleApplicationResult:
     """Targeted settlement plus an accepted atomic terminal acknowledgement."""
 
     settlement: TargetedRuntimeApplicationResult
-    coordinator_record: CoordinatorTerminalRecord
-    finalization_record: SupervisorFinalizationRecord
+    finalization: RuntimeFinalizationReceipt
 
     def __post_init__(self) -> None:
         if not isinstance(self.settlement, TargetedRuntimeApplicationResult):
             raise TargetedRuntimeAdapterError(
                 "settlement must be a TargetedRuntimeApplicationResult"
             )
-        if not isinstance(self.coordinator_record, CoordinatorTerminalRecord):
+        if not isinstance(self.finalization, RuntimeFinalizationReceipt):
             raise TargetedRuntimeAdapterError(
-                "coordinator_record must be a CoordinatorTerminalRecord"
-            )
-        if not isinstance(self.finalization_record, SupervisorFinalizationRecord):
-            raise TargetedRuntimeAdapterError(
-                "finalization_record must be a SupervisorFinalizationRecord"
+                "finalization must be a RuntimeFinalizationReceipt"
             )
         if (
-            self.coordinator_record.state.runtime != self.settlement.runtime
-            or self.finalization_record.attempt
+            self.finalization.coordinator.state.runtime != self.settlement.runtime
+            or self.finalization.supervisor.attempt
             != self.settlement.runtime.manifest.attempt
         ):
             raise TargetedRuntimeAdapterError(
                 "lifecycle result must bind one settled runtime attempt"
             )
-        try:
-            accept_supervisor_finalization(
-                self.coordinator_record,
-                self.finalization_record,
-                observability_ledger=(
-                    self.finalization_record.observability_ledger
-                ),
-            )
-        except RuntimeFinalizationContractError as exc:
-            raise TargetedRuntimeAdapterError(
-                "finalization record must bind the coordinator proposal"
-            ) from exc
         _validate_observation_batch_acquisition_metrics(
-            self.finalization_record.observability_ledger,
+            self.finalization.observability_ledger,
             self.settlement.successful_observation_batches,
         )
+
+    @property
+    def coordinator_record(self) -> CoordinatorTerminalRecord:
+        """Compatibility projection from the single accepted receipt."""
+
+        return self.finalization.coordinator
+
+    @property
+    def finalization_record(self) -> SupervisorFinalizationRecord:
+        """Compatibility projection from the single accepted receipt."""
+
+        return self.finalization.supervisor
 
 
 def canonical_targeted_process_result_identity_bytes(
@@ -438,250 +430,200 @@ def mint_targeted_process_result_ref(
     )
 
 
-def settle_targeted_process_worker_results(
+def execute_targeted_runtime_lifecycle(
     runtime: AttemptRuntime,
-    envelopes: Sequence[TargetedProcessWorkerResultEnvelope],
-) -> TargetedRuntimeApplicationResult:
-    """Settle a closed Targeted result batch through the existing reducer."""
+    resource_reservations: Sequence[RuntimeResourceReservation],
+    *,
+    worker_batch_provider: Callable[
+        [RuntimeAttemptAggregate],
+        TargetedRuntimeWorkerBatch,
+    ],
+    telemetry_provider: RuntimeTelemetryProvider,
+    finalization_persister: RuntimeFinalizationPersister,
+) -> TargetedRuntimeLifecycleApplicationResult:
+    """Translate one Targeted run through the owner's atomic lifecycle entry."""
 
     if not isinstance(runtime, AttemptRuntime):
         raise TargetedRuntimeAdapterError("runtime must be an AttemptRuntime")
-    if isinstance(envelopes, (str, bytes)):
-        raise TargetedRuntimeAdapterError(
-            "envelopes must contain TargetedProcessWorkerResultEnvelope values"
-        )
-    try:
-        batch = tuple(envelopes)
-    except TypeError as exc:
-        raise TargetedRuntimeAdapterError(
-            "envelopes must contain TargetedProcessWorkerResultEnvelope values"
-        ) from exc
-    manifest_order = {
-        key: index for index, key in enumerate(runtime.manifest.work_unit_keys)
-    }
-    batch = tuple(
-        sorted(
-            batch,
-            key=lambda item: manifest_order.get(
-                item.work_unit_key
-                if isinstance(item, TargetedProcessWorkerResultEnvelope)
-                else "",
-                len(manifest_order),
-            ),
-        )
-    )
-    current = runtime
-    accepted_refs: dict[str, TargetedProcessResultRef] = {}
-    accepted_observation_batches: dict[str, PeakObservationBatch] = {}
-    for envelope in batch:
-        if not isinstance(envelope, TargetedProcessWorkerResultEnvelope):
+    if not callable(worker_batch_provider):
+        raise TargetedRuntimeAdapterError("worker_batch_provider must be callable")
+    observed_batch: TargetedRuntimeWorkerBatch | None = None
+
+    def provide_owner_batch(
+        aggregate: RuntimeAttemptAggregate,
+    ) -> RuntimeWorkerBatchReceipt:
+        nonlocal observed_batch
+        batch = worker_batch_provider(aggregate)
+        if not isinstance(batch, TargetedRuntimeWorkerBatch):
             raise TargetedRuntimeAdapterError(
-                "envelopes must contain TargetedProcessWorkerResultEnvelope values"
+                "worker_batch_provider must return a TargetedRuntimeWorkerBatch"
             )
-        if envelope.attempt != current.manifest.attempt:
-            raise TargetedRuntimeAdapterError(
-                "worker result envelope references a different runtime attempt"
-            )
-        current = settle_work_unit(
-            current,
-            work_unit_key=envelope.work_unit_key,
-            outcome=envelope.outcome,
-            owner_result_ref=(
-                None
-                if envelope.owner_result_ref is None
-                else envelope.owner_result_ref.artifact
-            ),
-            failure_detail=envelope.failure_detail,
-        )
-        accepted_settlement = next(
-            (
-                settlement
-                for settlement in current.settlements
-                if settlement.work_unit_key == envelope.work_unit_key
-            ),
-            None,
-        )
-        submitted_artifact = (
-            None
-            if envelope.owner_result_ref is None
-            else envelope.owner_result_ref.artifact
-        )
-        if (
-            envelope.outcome is WorkUnitTerminalOutcome.SUCCEEDED
-            and accepted_settlement
-            == WorkUnitSettlement(
-                attempt=envelope.attempt,
-                work_unit_key=envelope.work_unit_key,
-                outcome=envelope.outcome,
-                owner_result_ref=submitted_artifact,
-            )
-        ):
-            if not isinstance(envelope.owner_result_ref, TargetedProcessResultRef):
+        for envelope in batch.result_envelopes:
+            if envelope.attempt != runtime.manifest.attempt:
                 raise TargetedRuntimeAdapterError(
-                    "succeeded envelope lost its TargetedProcessResultRef"
+                    "worker result envelope references a different runtime attempt"
                 )
-            existing_ref = accepted_refs.get(envelope.work_unit_key)
-            if existing_ref is not None and existing_ref != envelope.owner_result_ref:
-                raise TargetedRuntimeAdapterError(
-                    "replayed Targeted result ref conflicts with accepted work"
-                )
-            accepted_refs[envelope.work_unit_key] = envelope.owner_result_ref
-            if envelope.peak_observation_batch is not None:
-                _coalesce_observation_batch(
-                    accepted_observation_batches,
-                    work_unit_key=envelope.work_unit_key,
-                    batch=envelope.peak_observation_batch,
-                )
-    if not current.all_manifest_work_settled:
+        submitted_keys = {
+            envelope.work_unit_key for envelope in batch.result_envelopes
+        }
         missing = tuple(
             key
-            for key in current.manifest.work_unit_keys
-            if key
-            not in {settlement.work_unit_key for settlement in current.settlements}
+            for key in runtime.manifest.work_unit_keys
+            if key not in submitted_keys
         )
-        raise TargetedRuntimeAdapterError(
-            f"worker result batch did not settle manifest work: {missing!r}"
-        )
-    refs = tuple(
-        (key, accepted_refs[key])
-        for key in current.manifest.work_unit_keys
-        if key in accepted_refs
-    )
-    if current.integrity_failure is not None:
-        accepted_observation_batches.clear()
-    return TargetedRuntimeApplicationResult(
-        runtime=current,
-        successful_result_refs=refs,
-        successful_observation_batches=tuple(
-            (key, accepted_observation_batches[key])
-            for key in current.manifest.work_unit_keys
-            if key in accepted_observation_batches
-        ),
-    )
-
-
-def prepare_targeted_runtime_lifecycle(
-    runtime: AttemptRuntime,
-    reservations: Sequence[RuntimeResourceReservation],
-) -> AttemptFinalizationState:
-    """Reserve every declared resource before the Targeted runner is invoked."""
-
-    state = begin_attempt_finalization(runtime)
-    if isinstance(reservations, (str, bytes)):
-        raise TargetedRuntimeAdapterError(
-            "reservations must contain RuntimeResourceReservation values"
-        )
-    try:
-        reservation_batch = tuple(reservations)
-    except TypeError as exc:
-        raise TargetedRuntimeAdapterError(
-            "reservations must contain RuntimeResourceReservation values"
-        ) from exc
-    for reservation in reservation_batch:
-        if not isinstance(reservation, RuntimeResourceReservation):
+        if missing:
             raise TargetedRuntimeAdapterError(
-                "reservations must contain RuntimeResourceReservation values"
+                f"worker result batch did not settle manifest work: {missing!r}"
             )
-        state = reserve_runtime_resource(state, reservation)
-    return state
+        observed_batch = batch
+        return _targeted_owner_batch(batch)
 
-
-def finalize_targeted_runtime_worker_batch(
-    state: AttemptFinalizationState,
-    batch: TargetedRuntimeWorkerBatch,
-    *,
-    observability_ledger: RuntimeObservabilityLedger,
-    supervisor_finalizer: Callable[
-        [CoordinatorTerminalRecord, SupervisorFinalizationRecord],
-        SupervisorFinalizationRecord,
-    ],
-) -> TargetedRuntimeLifecycleApplicationResult:
-    """Close one Targeted worker batch and require supervisor acknowledgement."""
-
-    if not isinstance(state, AttemptFinalizationState):
-        raise TargetedRuntimeAdapterError("state must be an AttemptFinalizationState")
-    if not isinstance(batch, TargetedRuntimeWorkerBatch):
-        raise TargetedRuntimeAdapterError("batch must be a TargetedRuntimeWorkerBatch")
-    if not callable(supervisor_finalizer):
-        raise TargetedRuntimeAdapterError("supervisor_finalizer must be callable")
-    attempt = state.runtime.manifest.attempt
-    if any(report.attempt != attempt for report in batch.resource_reports):
-        raise TargetedRuntimeAdapterError(
-            "resource report references a different runtime attempt"
+    finalization = execute_runtime_attempt(
+        runtime,
+        resource_reservations,
+        worker_batch_provider=provide_owner_batch,
+        telemetry_provider=telemetry_provider,
+        persister=finalization_persister,
+    )
+    closed_state = finalization.coordinator.state
+    settlement = (
+        TargetedRuntimeApplicationResult(
+            runtime=closed_state.runtime,
+            successful_result_refs=(),
+            successful_observation_batches=(),
         )
-    settlement = settle_targeted_process_worker_results(
-        state.runtime,
-        batch.result_envelopes,
-    )
-    current = AttemptFinalizationState(
-        runtime=settlement.runtime,
-        resources=state.resources,
-        artifacts=state.artifacts,
-        events=state.events,
-        failures=state.failures,
-    )
-    manifest_order = {
-        key: index for index, key in enumerate(state.runtime.manifest.work_unit_keys)
-    }
-    for reference in sorted(
-        batch.runtime_artifact_refs,
-        key=lambda item: manifest_order.get(item.work_unit_key, len(manifest_order)),
-    ):
-        current = register_runtime_artifact(
-            current,
-            work_unit_key=reference.work_unit_key,
-            artifact=reference.artifact,
+        if observed_batch is None
+        else _targeted_application_result(
+            closed_state.runtime,
+            observed_batch.result_envelopes,
         )
-    for envelope in sorted(
-        batch.result_envelopes,
-        key=lambda item: manifest_order.get(item.work_unit_key, len(manifest_order)),
-    ):
-        if envelope.peak_observation_batch is None:
-            continue
-        for artifact in envelope.peak_observation_batch.observation_artifacts:
-            current = register_runtime_artifact(
-                current,
-                work_unit_key=envelope.work_unit_key,
-                artifact=artifact,
-            )
-    resource_order = {
-        resource.reservation.resource_key: index
-        for index, resource in enumerate(state.resources)
-    }
-    for report in sorted(
-        batch.resource_reports,
-        key=lambda item: resource_order.get(item.resource_key, len(resource_order)),
-    ):
-        current = settle_runtime_resource(
-            current,
-            resource_key=report.resource_key,
-            open_outcome=report.open_outcome,
-            cleanup_outcome=report.cleanup_outcome,
-        )
-    _validate_observation_batch_acquisition_metrics(
-        observability_ledger,
-        settlement.successful_observation_batches,
     )
-    coordinator = propose_attempt_terminal(current)
-    proposed = mint_supervisor_finalization(
-        coordinator,
-        observability_ledger=observability_ledger,
-    )
-    submitted = supervisor_finalizer(coordinator, proposed)
-    accepted = accept_supervisor_finalization(
-        coordinator,
-        submitted,
-        observability_ledger=observability_ledger,
-    )
-    if current.failures:
-        settlement = replace(
-            settlement,
+    if closed_state.failures or closed_state.runtime.integrity_failure is not None:
+        settlement = TargetedRuntimeApplicationResult(
+            runtime=settlement.runtime,
+            successful_result_refs=settlement.successful_result_refs,
             successful_observation_batches=(),
         )
     return TargetedRuntimeLifecycleApplicationResult(
         settlement=settlement,
-        coordinator_record=coordinator,
-        finalization_record=accepted,
+        finalization=finalization,
+    )
+
+
+def _targeted_owner_batch(
+    batch: TargetedRuntimeWorkerBatch,
+) -> RuntimeWorkerBatchReceipt:
+    registrations = [
+        RuntimeArtifactRegistrationReceipt(
+            work_unit_key=reference.work_unit_key,
+            artifact=reference.artifact,
+        )
+        for reference in batch.runtime_artifact_refs
+    ]
+    acquisitions: list[RuntimeAcquisitionReceipt] = []
+    for envelope in batch.result_envelopes:
+        observation_batch = envelope.peak_observation_batch
+        if observation_batch is None:
+            continue
+        registrations.extend(
+            RuntimeArtifactRegistrationReceipt(
+                work_unit_key=envelope.work_unit_key,
+                artifact=artifact,
+            )
+            for artifact in observation_batch.observation_artifacts
+        )
+        acquisitions.append(
+            RuntimeAcquisitionReceipt(
+                work_unit_key=envelope.work_unit_key,
+                acquisition=observation_batch.acquisition,
+            )
+        )
+    return RuntimeWorkerBatchReceipt(
+        settlements=tuple(
+            _settlement_from_envelope(envelope) for envelope in batch.result_envelopes
+        ),
+        resource_settlements=tuple(
+            RuntimeResourceSettlementReceipt(
+                attempt=report.attempt,
+                resource_key=report.resource_key,
+                open_outcome=report.open_outcome,
+                cleanup_outcome=report.cleanup_outcome,
+            )
+            for report in batch.resource_reports
+        ),
+        artifact_registrations=tuple(registrations),
+        acquisitions=tuple(acquisitions),
+    )
+
+
+def _settlement_from_envelope(
+    envelope: TargetedProcessWorkerResultEnvelope,
+):
+    return mint_work_unit_settlement(
+        attempt=envelope.attempt,
+        work_unit_key=envelope.work_unit_key,
+        outcome=envelope.outcome,
+        owner_result_ref=(
+            None
+            if envelope.owner_result_ref is None
+            else envelope.owner_result_ref.artifact
+        ),
+        failure_detail=envelope.failure_detail,
+    )
+
+
+def _targeted_application_result(
+    runtime: AttemptRuntime,
+    envelopes: Sequence[TargetedProcessWorkerResultEnvelope],
+) -> TargetedRuntimeApplicationResult:
+    if not runtime.all_manifest_work_settled:
+        missing = tuple(
+            key
+            for key in runtime.manifest.work_unit_keys
+            if key not in {item.work_unit_key for item in runtime.settlements}
+        )
+        raise TargetedRuntimeAdapterError(
+            f"worker result batch did not settle manifest work: {missing!r}"
+        )
+    accepted = {item.work_unit_key: item for item in runtime.settlements}
+    accepted_refs: dict[str, TargetedProcessResultRef] = {}
+    accepted_observations: dict[str, PeakObservationBatch] = {}
+    for envelope in envelopes:
+        if accepted.get(envelope.work_unit_key) != _settlement_from_envelope(envelope):
+            continue
+        if envelope.outcome is not WorkUnitTerminalOutcome.SUCCEEDED:
+            continue
+        reference = envelope.owner_result_ref
+        if not isinstance(reference, TargetedProcessResultRef):
+            raise TargetedRuntimeAdapterError(
+                "succeeded envelope lost its TargetedProcessResultRef"
+            )
+        existing_ref = accepted_refs.get(envelope.work_unit_key)
+        if existing_ref is not None and existing_ref != reference:
+            raise TargetedRuntimeAdapterError(
+                "replayed Targeted result ref conflicts with accepted work"
+            )
+        accepted_refs[envelope.work_unit_key] = reference
+        if envelope.peak_observation_batch is not None:
+            _coalesce_observation_batch(
+                accepted_observations,
+                work_unit_key=envelope.work_unit_key,
+                batch=envelope.peak_observation_batch,
+            )
+    if runtime.integrity_failure is not None:
+        accepted_observations.clear()
+    return TargetedRuntimeApplicationResult(
+        runtime=runtime,
+        successful_result_refs=tuple(
+            (key, accepted_refs[key])
+            for key in runtime.manifest.work_unit_keys
+            if key in accepted_refs
+        ),
+        successful_observation_batches=tuple(
+            (key, accepted_observations[key])
+            for key in runtime.manifest.work_unit_keys
+            if key in accepted_observations
+        ),
     )
 
 
@@ -694,7 +636,7 @@ def _required_text(value: object, *, field: str) -> str:
 
 
 def _validate_observation_batch_acquisition_metrics(
-    ledger: RuntimeObservabilityLedger,
+    ledger,
     batches: tuple[tuple[str, PeakObservationBatch], ...],
 ) -> None:
     try:
@@ -729,8 +671,7 @@ def _validate_peak_observation_result_binding(
     payload = canonical_peak_observation_batch_bytes(batch)
     if (
         reference.work_unit_key != work_unit_key
-        or reference.owner_result_content_sha256
-        != hashlib.sha256(payload).hexdigest()
+        or reference.owner_result_content_sha256 != hashlib.sha256(payload).hexdigest()
         or reference.owner_result_byte_size != len(payload)
     ):
         raise TargetedRuntimeAdapterError(
@@ -738,8 +679,7 @@ def _validate_peak_observation_result_binding(
         )
     expected_upstreams = tuple(
         sorted(
-            artifact.evidence_artifact_id
-            for artifact in batch.observation_artifacts
+            artifact.evidence_artifact_id for artifact in batch.observation_artifacts
         )
     )
     if reference.artifact.upstream_artifact_ids != expected_upstreams:
@@ -784,8 +724,6 @@ __all__ = [
     "TargetedRuntimeLifecycleApplicationResult",
     "TargetedRuntimeWorkerBatch",
     "canonical_targeted_process_result_identity_bytes",
-    "finalize_targeted_runtime_worker_batch",
+    "execute_targeted_runtime_lifecycle",
     "mint_targeted_process_result_ref",
-    "prepare_targeted_runtime_lifecycle",
-    "settle_targeted_process_worker_results",
 ]

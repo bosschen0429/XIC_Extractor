@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 from xic_extractor.alignment.process_execution import run_process_jobs
@@ -25,28 +25,28 @@ from xic_extractor.execution_runtime import (
     AttemptRuntime,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
-    settle_work_unit,
 )
 from xic_extractor.execution_runtime_finalization import (
     CoordinatorTerminalRecord,
-    RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     SupervisorFinalizationRecord,
-    accept_supervisor_finalization,
-    begin_attempt_finalization,
-    mint_supervisor_finalization,
-    propose_attempt_terminal,
-    register_runtime_artifact,
-    reserve_runtime_resource,
-    settle_runtime_resource,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_observability import (
     RuntimeObservabilityContractError,
-    RuntimeObservabilityLedger,
     validate_runtime_acquisition_metrics,
+)
+from xic_extractor.execution_runtime_owner import (
+    RuntimeAcquisitionReceipt,
+    RuntimeArtifactRegistrationReceipt,
+    RuntimeAttemptAggregate,
+    RuntimeFinalizationReceipt,
+    RuntimeResourceSettlementReceipt,
+    RuntimeTelemetryProvider,
+    RuntimeWorkerBatchReceipt,
+    execute_runtime_attempt,
 )
 from xic_extractor.peak_detection.observation_batch import (
     PeakObservationBatch,
@@ -126,34 +126,23 @@ class AlignmentRuntimeProcessResult:
 @dataclass(frozen=True, slots=True)
 class AlignmentRuntimeApplicationResult:
     runtime: AttemptRuntime
-    coordinator_record: CoordinatorTerminalRecord
-    finalization_record: SupervisorFinalizationRecord
-    successful_observation_batches: tuple[
-        tuple[str, PeakObservationBatch], ...
-    ] = ()
+    finalization: RuntimeFinalizationReceipt
+    successful_observation_batches: tuple[tuple[str, PeakObservationBatch], ...] = ()
 
     def __post_init__(self) -> None:
         attempt = self.runtime.manifest.attempt
-        if self.coordinator_record.state.runtime != self.runtime:
+        if not isinstance(self.finalization, RuntimeFinalizationReceipt):
+            raise AlignmentRuntimeAdapterError(
+                "finalization must be a RuntimeFinalizationReceipt"
+            )
+        if self.finalization.coordinator.state.runtime != self.runtime:
             raise AlignmentRuntimeAdapterError(
                 "coordinator record must bind the settled Alignment runtime"
             )
-        if self.finalization_record.attempt != attempt:
+        if self.finalization.supervisor.attempt != attempt:
             raise AlignmentRuntimeAdapterError(
                 "finalization record must bind the Alignment runtime attempt"
             )
-        try:
-            accept_supervisor_finalization(
-                self.coordinator_record,
-                self.finalization_record,
-                observability_ledger=(
-                    self.finalization_record.observability_ledger
-                ),
-            )
-        except RuntimeFinalizationContractError as exc:
-            raise AlignmentRuntimeAdapterError(
-                "finalization record must bind the coordinator proposal"
-            ) from exc
         observation_keys = tuple(
             key for key, _batch in self.successful_observation_batches
         )
@@ -179,7 +168,7 @@ class AlignmentRuntimeApplicationResult:
         registered_by_key = {
             key: {
                 record.artifact.evidence_artifact_id
-                for record in self.coordinator_record.state.artifacts
+                for record in self.finalization.coordinator.state.artifacts
                 if record.work_unit_key == key
             }
             for key in observation_keys
@@ -200,9 +189,21 @@ class AlignmentRuntimeApplicationResult:
                 registered_artifact_ids=registered_by_key[key],
             )
         _validate_observation_batch_acquisition_metrics(
-            self.finalization_record.observability_ledger,
+            self.finalization.observability_ledger,
             self.successful_observation_batches,
         )
+
+    @property
+    def coordinator_record(self) -> CoordinatorTerminalRecord:
+        """Compatibility projection from the single accepted receipt."""
+
+        return self.finalization.coordinator
+
+    @property
+    def finalization_record(self) -> SupervisorFinalizationRecord:
+        """Compatibility projection from the single accepted receipt."""
+
+        return self.finalization.supervisor
 
 
 def mint_alignment_process_result_artifact(
@@ -227,12 +228,8 @@ def mint_alignment_process_result_artifact(
         byte_size=len(owner_result_payload),
     )
     return _mint_evidence_artifact_ref(
-        producer_processing_request_id=(
-            processing_attempt.processing_request_id
-        ),
-        producer_processing_attempt_id=(
-            processing_attempt.processing_attempt_id
-        ),
+        producer_processing_request_id=(processing_attempt.processing_request_id),
+        producer_processing_attempt_id=(processing_attempt.processing_attempt_id),
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=identity_bytes,
         upstream_artifacts=upstream_artifacts,
@@ -247,7 +244,7 @@ def execute_alignment_process_runtime(
     error_factory: Callable[[Any, Exception], AlignmentRuntimeProcessResult],
     max_workers: int,
     resource_reservations: Sequence[RuntimeResourceReservation],
-    observability_ledger: RuntimeObservabilityLedger,
+    telemetry_provider: RuntimeTelemetryProvider,
     recovery_marker: OwnerPathRuntimeMarker,
     executor_factory: Callable[..., Any] | None = None,
 ) -> AlignmentRuntimeApplicationResult:
@@ -265,85 +262,93 @@ def execute_alignment_process_runtime(
         or max_workers < 1
     ):
         raise AlignmentRuntimeAdapterError("max_workers must be a positive integer")
-    state = begin_attempt_finalization(runtime)
-    for reservation in resource_reservations:
-        if not isinstance(reservation, RuntimeResourceReservation):
-            raise AlignmentRuntimeAdapterError(
-                "resource_reservations must contain RuntimeResourceReservation values"
-            )
-        state = reserve_runtime_resource(state, reservation)
     recovery_marker.record_launch(runtime)
-    observed = run_process_jobs(
-        jobs,
-        worker=worker,
-        error_factory=error_factory,
-        max_workers=max_workers,
-        executor_factory=executor_factory,
-    )
-    if any(not isinstance(item, AlignmentRuntimeProcessResult) for item in observed):
-        raise AlignmentRuntimeAdapterError(
-            "Alignment runner returned an invalid runtime process result"
-        )
-    manifest_order = {
-        key: index for index, key in enumerate(runtime.manifest.work_unit_keys)
-    }
-    ordered = sorted(
-        observed,
-        key=lambda item: manifest_order.get(
-            item.settlement.work_unit_key,
-            len(manifest_order),
-        ),
-    )
-    current = state
     successful_observation_batches: dict[str, PeakObservationBatch] = {}
-    for item in ordered:
-        settlement = item.settlement
-        if settlement.attempt != runtime.manifest.attempt:
-            raise AlignmentRuntimeAdapterError(
-                "Alignment result references a different runtime attempt"
-            )
-        settled_runtime = settle_work_unit(
-            current.runtime,
-            work_unit_key=settlement.work_unit_key,
-            outcome=settlement.outcome,
-            owner_result_ref=settlement.owner_result_ref,
-            failure_detail=settlement.failure_detail,
+
+    def provide_owner_batch(
+        _aggregate: RuntimeAttemptAggregate,
+    ) -> RuntimeWorkerBatchReceipt:
+        observed = run_process_jobs(
+            jobs,
+            worker=worker,
+            error_factory=error_factory,
+            max_workers=max_workers,
+            executor_factory=executor_factory,
         )
-        current = replace(current, runtime=settled_runtime)
-        for artifact in item.runtime_artifacts:
-            current = register_runtime_artifact(
-                current,
-                work_unit_key=settlement.work_unit_key,
-                artifact=artifact,
-            )
-        current = settle_runtime_resource(
-            current,
-            resource_key=item.resource_key,
-            open_outcome=item.open_outcome,
-            cleanup_outcome=item.cleanup_outcome,
-        )
-        accepted_settlement = next(
-            (
-                accepted
-                for accepted in current.runtime.settlements
-                if accepted.work_unit_key == settlement.work_unit_key
-            ),
-            None,
-        )
-        if (
-            accepted_settlement == settlement
-            and settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
-            and item.peak_observation_batch is not None
+        if any(
+            not isinstance(item, AlignmentRuntimeProcessResult) for item in observed
         ):
-            _coalesce_observation_batch(
-                successful_observation_batches,
-                work_unit_key=settlement.work_unit_key,
-                batch=item.peak_observation_batch,
+            raise AlignmentRuntimeAdapterError(
+                "Alignment runner returned an invalid runtime process result"
             )
-    if not current.runtime.all_manifest_work_settled:
+        manifest_order = {
+            key: index for index, key in enumerate(runtime.manifest.work_unit_keys)
+        }
+        ordered = sorted(
+            observed,
+            key=lambda item: manifest_order.get(
+                item.settlement.work_unit_key,
+                len(manifest_order),
+            ),
+        )
+        for item in ordered:
+            settlement = item.settlement
+            if settlement.attempt != runtime.manifest.attempt:
+                raise AlignmentRuntimeAdapterError(
+                    "Alignment result references a different runtime attempt"
+                )
+            if (
+                settlement.outcome is WorkUnitTerminalOutcome.SUCCEEDED
+                and item.peak_observation_batch is not None
+            ):
+                _coalesce_observation_batch(
+                    successful_observation_batches,
+                    work_unit_key=settlement.work_unit_key,
+                    batch=item.peak_observation_batch,
+                )
+        return RuntimeWorkerBatchReceipt(
+            settlements=tuple(item.settlement for item in ordered),
+            resource_settlements=tuple(
+                RuntimeResourceSettlementReceipt(
+                    attempt=item.settlement.attempt,
+                    resource_key=item.resource_key,
+                    open_outcome=item.open_outcome,
+                    cleanup_outcome=item.cleanup_outcome,
+                )
+                for item in ordered
+            ),
+            artifact_registrations=tuple(
+                RuntimeArtifactRegistrationReceipt(
+                    work_unit_key=item.settlement.work_unit_key,
+                    artifact=artifact,
+                )
+                for item in ordered
+                for artifact in item.runtime_artifacts
+            ),
+            acquisitions=tuple(
+                RuntimeAcquisitionReceipt(
+                    work_unit_key=item.settlement.work_unit_key,
+                    acquisition=item.peak_observation_batch.acquisition,
+                )
+                for item in ordered
+                if item.peak_observation_batch is not None
+            ),
+        )
+
+    finalization = execute_runtime_attempt(
+        runtime,
+        resource_reservations,
+        worker_batch_provider=provide_owner_batch,
+        telemetry_provider=telemetry_provider,
+        persister=recovery_marker,
+    )
+    current = finalization.coordinator.state
+    if (
+        not current.runtime.manifest_preflight_failed
+        and not current.runtime.all_manifest_work_settled
+    ):
         settled_keys = {
-            settlement.work_unit_key
-            for settlement in current.runtime.settlements
+            settlement.work_unit_key for settlement in current.runtime.settlements
         }
         missing = tuple(
             key
@@ -353,27 +358,11 @@ def execute_alignment_process_runtime(
         raise AlignmentRuntimeAdapterError(
             f"Alignment results did not settle manifest work: {missing!r}"
         )
-    acquired_observation_batches = tuple(
-        (key, successful_observation_batches[key])
-        for key in current.runtime.manifest.work_unit_keys
-        if key in successful_observation_batches
-    )
-    _validate_observation_batch_acquisition_metrics(
-        observability_ledger,
-        acquired_observation_batches,
-    )
-    coordinator = propose_attempt_terminal(current)
-    proposed = mint_supervisor_finalization(
-        coordinator,
-        observability_ledger=observability_ledger,
-    )
-    accepted = recovery_marker(coordinator, proposed)
     if current.runtime.integrity_failure is not None or current.failures:
         successful_observation_batches.clear()
     return AlignmentRuntimeApplicationResult(
         runtime=current.runtime,
-        coordinator_record=coordinator,
-        finalization_record=accepted,
+        finalization=finalization,
         successful_observation_batches=tuple(
             (key, successful_observation_batches[key])
             for key in current.runtime.manifest.work_unit_keys
@@ -411,7 +400,7 @@ def _required_text(value: object, *, field: str) -> str:
 
 
 def _validate_observation_batch_acquisition_metrics(
-    ledger: RuntimeObservabilityLedger,
+    ledger,
     batches: tuple[tuple[str, PeakObservationBatch], ...],
 ) -> None:
     try:

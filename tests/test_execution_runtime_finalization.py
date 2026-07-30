@@ -485,24 +485,15 @@ def test_supervisor_receipt_binds_validated_runtime_observability(
         artifact=artifact,
     )
     coordinator = propose_attempt_terminal(state)
-    base_ledger = _ledger(attempt, coordinator)
-    first_ledger = replace(
-        base_ledger,
-        metrics=tuple(
-            replace(metric, value=1)
-            if metric.name == "logical_xic_request_count"
-            else metric
-            for metric in base_ledger.metrics
-        ),
+    first_ledger = _ledger(
+        attempt,
+        coordinator,
+        logical_xic_request_count=1,
     )
-    second_ledger = replace(
-        base_ledger,
-        metrics=tuple(
-            replace(metric, value=2)
-            if metric.name == "logical_xic_request_count"
-            else metric
-            for metric in base_ledger.metrics
-        ),
+    second_ledger = _ledger(
+        attempt,
+        coordinator,
+        logical_xic_request_count=2,
     )
 
     first = mint_supervisor_finalization(
@@ -578,15 +569,10 @@ def test_supervisor_rejects_raw_open_count_that_conflicts_with_resources(
         artifact=artifact,
     )
     coordinator = propose_attempt_terminal(state)
-    valid = _ledger(attempt, coordinator)
-    inconsistent = replace(
-        valid,
-        metrics=tuple(
-            replace(metric, value=0)
-            if metric.name == "raw_open_count"
-            else metric
-            for metric in valid.metrics
-        ),
+    inconsistent = _ledger(
+        attempt,
+        coordinator,
+        raw_open_count=0,
     )
 
     with pytest.raises(RuntimeFinalizationContractError, match="raw_open_count"):
@@ -794,7 +780,13 @@ def _failure_detail(
     )
 
 
-def _ledger(attempt: ProcessingAttemptIdentity, coordinator=None):
+def _ledger(
+    attempt: ProcessingAttemptIdentity,
+    coordinator=None,
+    *,
+    raw_open_count: int | None = None,
+    logical_xic_request_count: int = 0,
+):
     resource_lifecycles = ()
     artifact_dispositions = ()
     if coordinator is not None:
@@ -818,6 +810,8 @@ def _ledger(attempt: ProcessingAttemptIdentity, coordinator=None):
         attempt,
         work_unit_keys=("raw:a",),
         worker_keys=("worker:1",),
+        raw_open_count=raw_open_count,
+        logical_xic_request_count=logical_xic_request_count,
         resource_lifecycles=resource_lifecycles,
         artifact_dispositions=artifact_dispositions,
     )

@@ -292,6 +292,20 @@ def propose_attempt_terminal(
 ) -> CoordinatorTerminalRecord:
     """Freeze a terminal proposal only after all mechanical inputs close."""
 
+    if not isinstance(state, AttemptFinalizationState):
+        raise RuntimeFinalizationContractError(
+            "state must be an AttemptFinalizationState"
+        )
+    if state.runtime.manifest_preflight_failed:
+        if state.resources or state.artifacts or state.events or state.failures:
+            raise RuntimeFinalizationContractError(
+                "preflight-terminalized attempt must have empty runtime registries"
+            )
+        return CoordinatorTerminalRecord(
+            state=state,
+            proposed_outcome=AttemptTerminalOutcome.FAILED,
+            coordinator_event_digest=_coordinator_event_digest(state),
+        )
     _require_mutable_state(state)
     if not state.runtime.all_manifest_work_settled:
         raise RuntimeFinalizationContractError(
@@ -382,7 +396,11 @@ def mint_supervisor_finalization(
             "observability ledger must bind the closed manifest work units"
         )
     _validate_observability_against_coordinator(coordinator, observability_ledger)
-    start = coordinator.state.events[-1].sequence + 1
+    start = (
+        len(coordinator.state.runtime.history.events)
+        + len(coordinator.state.events)
+        + 1
+    )
     dispositions = tuple(
         (record.artifact.evidence_artifact_id, record.proposed_disposition)
         for record in coordinator.state.artifacts
@@ -468,13 +486,14 @@ def _validate_observability_against_coordinator(
                 "attempt",
             )
         ] += 1
-    expected[
-        (
-            "manifest_closed",
-            RuntimeObservationSubject.ATTEMPT,
-            "manifest",
-        )
-    ] += 1
+    if not state.runtime.manifest_preflight_failed:
+        expected[
+            (
+                "manifest_closed",
+                RuntimeObservationSubject.ATTEMPT,
+                "manifest",
+            )
+        ] += 1
     for lifecycle_event in state.events:
         subject_key: str | None
         if lifecycle_event.kind is RuntimeLifecycleEventKind.TERMINAL_PROPOSAL:
@@ -540,8 +559,7 @@ def _validate_observability_against_coordinator(
     )
     if (
         len(raw_open_records) != 1
-        or raw_open_records[0].availability
-        is not RuntimeMetricAvailability.MEASURED
+        or raw_open_records[0].availability is not RuntimeMetricAvailability.MEASURED
         or raw_open_records[0].value != expected_raw_open_count
     ):
         raise RuntimeFinalizationContractError(
@@ -781,33 +799,15 @@ def _required_text(value: object, *, field: str) -> str:
     return value
 
 
-__all__ = [
-    "AttemptFinalizationState",
-    "CoordinatorTerminalRecord",
+__all__ = (
     "RuntimeArtifactDisposition",
-    "RuntimeArtifactRecord",
     "RuntimeFinalizationContractError",
-    "RuntimeLifecycleEvent",
     "RuntimeLifecycleEventKind",
-    "RuntimeLifecycleFailure",
     "RuntimeLifecycleFailureKind",
     "RuntimeResourceCleanupOutcome",
     "RuntimeResourceKind",
     "RuntimeResourceOpenOutcome",
-    "RuntimeResourceRecord",
     "RuntimeResourceReservation",
-    "SupervisorFinalizationEvent",
     "SupervisorFinalizationEventKind",
-    "SupervisorFinalizationRecord",
-    "accept_supervisor_finalization",
-    "begin_attempt_finalization",
     "canonical_coordinator_terminal_record_bytes",
-    "mark_worker_lost",
-    "mint_supervisor_finalization",
-    "propose_attempt_terminal",
-    "record_runtime_resource_cleanup",
-    "record_runtime_resource_open",
-    "register_runtime_artifact",
-    "reserve_runtime_resource",
-    "settle_runtime_resource",
-]
+)

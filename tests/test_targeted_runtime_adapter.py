@@ -7,21 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from tests.runtime_observability_fixtures import (
-    build_runtime_observability_ledger,
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
 )
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
     AttemptRuntime,
+    AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitSettlementIntegrityFailureKind,
     WorkUnitTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    start_attempt_runtime,
 )
 from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
@@ -33,15 +29,17 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import start_runtime_attempt
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
     TargetedProcessResultRef,
     TargetedProcessWorkerResultEnvelope,
     TargetedRuntimeAdapterError,
+    TargetedRuntimeApplicationResult,
     TargetedRuntimeWorkerBatch,
     canonical_targeted_process_result_identity_bytes,
+    execute_targeted_runtime_lifecycle,
     mint_targeted_process_result_ref,
-    settle_targeted_process_worker_results,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -119,7 +117,7 @@ def _build_spawned_worker_loss_batch(
     )
 
 
-def test_targeted_application_service_settles_reordered_process_results(
+def test_targeted_application_service_has_no_settle_only_runtime_bypass(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.extraction.targeted_service import (
@@ -127,52 +125,13 @@ def test_targeted_application_service_settles_reordered_process_results(
         build_targeted_application_request,
     )
 
-    attempt = _attempt(tmp_path)
-    runtime = _runtime(attempt, ("raw:a", "raw:b"))
-    runner_calls: list[tuple[object, AttemptRuntime]] = []
-
     def legacy_runner(*_args, **_kwargs):
-        raise AssertionError("runtime consumer must not call the legacy runner")
+        raise AssertionError("contract inspection must not call the legacy runner")
 
-    def runtime_runner(request, actual_runtime):
-        runner_calls.append((request, actual_runtime))
-        with ProcessPoolExecutor(
-            max_workers=2,
-            mp_context=get_context("spawn"),
-        ) as executor:
-            futures = (
-                executor.submit(
-                    _build_spawned_envelope,
-                    attempt,
-                    "raw:b",
-                    b"owner-b",
-                ),
-                executor.submit(
-                    _build_spawned_envelope,
-                    attempt,
-                    "raw:a",
-                    b"owner-a",
-                ),
-            )
-            return tuple(future.result(timeout=15) for future in futures)
+    service = TargetedApplicationService(legacy_runner)
 
-    service = TargetedApplicationService(
-        legacy_runner,
-        runtime_runner=runtime_runner,
-    )
-    result = service.execute_runtime(
-        build_targeted_application_request(_config(), [_target()]),
-        runtime,
-    )
-
-    assert len(runner_calls) == 1
-    assert runner_calls[0][1] is runtime
-    assert result.runtime.all_manifest_work_settled is True
-    assert result.runtime.must_fail is False
-    assert result.successful_result_refs == (
-        ("raw:a", _result_ref(attempt, "raw:a", b"owner-a")),
-        ("raw:b", _result_ref(attempt, "raw:b", b"owner-b")),
-    )
+    assert not hasattr(service, "execute_runtime")
+    assert build_targeted_application_request(_config(), [_target()]).targets
 
 
 def test_targeted_application_service_closes_true_process_lifecycle(
@@ -191,7 +150,8 @@ def test_targeted_application_service_closes_true_process_lifecycle(
     def legacy_runner(*_args, **_kwargs):
         raise AssertionError("runtime lifecycle must not call the legacy runner")
 
-    def lifecycle_runner(_request, state):
+    def lifecycle_runner(_request, aggregate):
+        state = aggregate.state
         observed_states.append(state)
         assert len(state.resources) == 1
         assert state.resources[0].open_outcome is None
@@ -207,27 +167,20 @@ def test_targeted_application_service_closes_true_process_lifecycle(
                 b"spawned-lifecycle-result",
             ).result(timeout=15)
 
-    def supervisor_finalizer(coordinator, proposed):
-        finalized.append((coordinator, proposed))
+    def finalization_persister(proposed):
+        finalized.append(proposed)
         return proposed
 
     service = TargetedApplicationService(
         legacy_runner,
         runtime_lifecycle_runner=lifecycle_runner,
-        runtime_supervisor_finalizer=supervisor_finalizer,
+        runtime_finalization_persister=finalization_persister,
     )
     result = service.execute_runtime_lifecycle(
         build_targeted_application_request(_config(), [_target()]),
         runtime,
         resource_reservations=(_reservation(attempt),),
-        observability_ledger=_ledger(
-            attempt,
-            _build_spawned_lifecycle_batch(
-                attempt,
-                "raw:a",
-                b"spawned-lifecycle-result",
-            ),
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
     assert len(observed_states) == 1
@@ -276,7 +229,7 @@ def test_targeted_lifecycle_uses_owner_path_marker_as_durable_finalizer(
         build_targeted_application_request(_config(), [_target()]),
         _runtime(attempt, ("raw:a",)),
         resource_reservations=(_reservation(attempt),),
-        observability_ledger=_ledger(attempt, batch),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
     recovered = marker.recover_after_coordinator_loss(attempt)
@@ -287,11 +240,56 @@ def test_targeted_lifecycle_uses_owner_path_marker_as_durable_finalizer(
     )
 
 
+def test_targeted_preflight_failure_skips_runner_and_finalizes_marker(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.extraction.targeted_service import (
+        TargetedApplicationService,
+        build_targeted_application_request,
+    )
+
+    attempt = _attempt(tmp_path)
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "targeted-preflight.runtime.json",
+        "targeted-runtime-artifacts:preflight",
+    )
+    runner_calls: list[str] = []
+
+    def lifecycle_runner(_request, _aggregate):
+        runner_calls.append("called")
+        raise AssertionError("preflight failure must not dispatch Targeted work")
+
+    def legacy_runner(*_args, **_kwargs):
+        raise AssertionError("preflight lifecycle must not call the legacy runner")
+
+    service = TargetedApplicationService(
+        legacy_runner,
+        runtime_lifecycle_runner=lifecycle_runner,
+        runtime_recovery_marker=marker,
+    )
+    result = service.execute_runtime_lifecycle(
+        build_targeted_application_request(_config(), [_target()]),
+        start_runtime_attempt(
+            attempt=attempt,
+            work_unit_keys=(),
+            owner_completeness_attestation="targeted-runtime-adapter:v1",
+        ),
+        resource_reservations=(_reservation(attempt),),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+    )
+
+    recovered = marker.recover_after_coordinator_loss(attempt)
+    assert runner_calls == []
+    assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert result.settlement.runtime.manifest_preflight_failed is True
+    assert result.coordinator_record.state.resources == ()
+    assert recovered.finalization_acknowledged is True
+    assert recovered.terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
 def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
     tmp_path: Path,
 ) -> None:
-    from dataclasses import replace
-
     from xic_extractor.extraction.targeted_service import (
         TargetedApplicationService,
         build_targeted_application_request,
@@ -318,10 +316,7 @@ def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
     service = TargetedApplicationService(
         legacy_runner,
         runtime_lifecycle_runner=lambda _request, _state: batch,
-        runtime_supervisor_finalizer=lambda _coordinator, proposed: replace(
-            proposed,
-            coordinator_record_sha256="0" * 64,
-        ),
+        runtime_finalization_persister=lambda _proposed: object(),
     )
 
     with pytest.raises(RuntimeFinalizationContractError, match="conflicts"):
@@ -329,21 +324,19 @@ def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
             build_targeted_application_request(_config(), [_target()]),
             _runtime(attempt, ("raw:a",)),
             resource_reservations=(_reservation(attempt),),
-            observability_ledger=_ledger(attempt, batch),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         )
 
 
 def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.execution_runtime import AttemptTerminalOutcome
     from xic_extractor.extraction.targeted_service import (
         TargetedApplicationService,
         build_targeted_application_request,
     )
 
     attempt = _attempt(tmp_path)
-    expected_batch = _build_spawned_worker_loss_batch(attempt)
 
     def legacy_runner(*_args, **_kwargs):
         raise AssertionError("runtime lifecycle must not call the legacy runner")
@@ -361,13 +354,13 @@ def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
     service = TargetedApplicationService(
         legacy_runner,
         runtime_lifecycle_runner=lifecycle_runner,
-        runtime_supervisor_finalizer=lambda _coordinator, proposed: proposed,
+        runtime_finalization_persister=lambda proposed: proposed,
     )
     result = service.execute_runtime_lifecycle(
         build_targeted_application_request(_config(), [_target()]),
         _runtime(attempt, ("raw:a",)),
         resource_reservations=(_reservation(attempt),),
-        observability_ledger=_ledger(attempt, expected_batch),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
     assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
@@ -420,7 +413,7 @@ def test_targeted_runtime_adapter_keeps_first_ref_and_records_conflict(
         _result_ref(attempt, "raw:a", b"different"),
     )
 
-    result = settle_targeted_process_worker_results(
+    result = _execute_targeted_envelopes(
         runtime,
         (first, first, different),
     )
@@ -452,7 +445,7 @@ def test_targeted_runtime_adapter_closes_failed_work_and_rejects_missing_work(
         ),
     )
 
-    failed_result = settle_targeted_process_worker_results(
+    failed_result = _execute_targeted_envelopes(
         failed_runtime,
         (failed,),
     )
@@ -465,7 +458,7 @@ def test_targeted_runtime_adapter_closes_failed_work_and_rejects_missing_work(
     assert failure_detail.message == "worker failed"
 
     with pytest.raises(TargetedRuntimeAdapterError, match="did not settle"):
-        settle_targeted_process_worker_results(
+        _execute_targeted_envelopes(
             _runtime(attempt, ("raw:a", "raw:b")),
             (_success(attempt, "raw:a", _result_ref(attempt, "raw:a", b"a")),),
         )
@@ -494,7 +487,7 @@ def test_targeted_result_ref_and_runtime_attempt_substitution_fail_closed(
         _result_ref(other_attempt, "raw:a", b"other"),
     )
     with pytest.raises(TargetedRuntimeAdapterError, match="different runtime"):
-        settle_targeted_process_worker_results(
+        _execute_targeted_envelopes(
             _runtime(attempt, ("raw:a",)),
             (other_envelope,),
         )
@@ -548,21 +541,39 @@ def _result_ref(
     )
 
 
+def _execute_targeted_envelopes(
+    runtime: AttemptRuntime,
+    envelopes: tuple[TargetedProcessWorkerResultEnvelope, ...],
+) -> TargetedRuntimeApplicationResult:
+    references = {
+        envelope.owner_result_ref.artifact.evidence_artifact_id: (
+            envelope.owner_result_ref
+        )
+        for envelope in envelopes
+        if envelope.owner_result_ref is not None
+    }
+    lifecycle = execute_targeted_runtime_lifecycle(
+        runtime,
+        (),
+        worker_batch_provider=lambda _aggregate: TargetedRuntimeWorkerBatch(
+            result_envelopes=envelopes,
+            resource_reports=(),
+            runtime_artifact_refs=tuple(references.values()),
+        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        finalization_persister=lambda proposed: proposed,
+    )
+    return lifecycle.settlement
+
+
 def _runtime(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
 ) -> AttemptRuntime:
-    queued = append_attempt_lifecycle_event(
-        AttemptLifecycleHistory(attempt=attempt),
-        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
-    )
-    return start_attempt_runtime(
-        preflight_required_work_manifest(
-            queued,
-            attempt=attempt,
-            work_unit_keys=work_unit_keys,
-            owner_completeness_attestation="targeted-runtime-adapter:v1",
-        )
+    return start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=work_unit_keys,
+        owner_completeness_attestation="targeted-runtime-adapter:v1",
     )
 
 
@@ -574,59 +585,6 @@ def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservati
         worker_key="worker:1",
         source_reference="source:a",
         compatibility_token="targeted-runtime-test:v1",
-    )
-
-
-def _ledger(
-    attempt: ProcessingAttemptIdentity,
-    batch: TargetedRuntimeWorkerBatch,
-):
-    failed = any(
-        envelope.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
-        for envelope in batch.result_envelopes
-    )
-    artifact_ids = tuple(
-        dict.fromkeys(
-            (
-                *(
-                    reference.artifact.evidence_artifact_id
-                    for reference in batch.runtime_artifact_refs
-                ),
-                *(
-                    artifact.evidence_artifact_id
-                    for envelope in batch.result_envelopes
-                    if envelope.peak_observation_batch is not None
-                    for artifact in (
-                        envelope.peak_observation_batch.observation_artifacts
-                    )
-                ),
-            )
-        )
-    )
-    return build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("raw:a",),
-        worker_keys=("worker:1",),
-        resource_lifecycles=tuple(
-            (
-                report.resource_key,
-                RuntimeResourceKind.ACQUISITION_SESSION,
-                f"resource_{report.open_outcome.value}",
-                f"resource_cleanup_{report.cleanup_outcome.value}",
-            )
-            for report in batch.resource_reports
-        ),
-        artifact_dispositions=tuple(
-            (
-                artifact_id,
-                (
-                    "artifact_quarantined_diagnostic"
-                    if failed
-                    else "artifact_offered_to_owner"
-                ),
-            )
-            for artifact_id in artifact_ids
-        ),
     )
 
 

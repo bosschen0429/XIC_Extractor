@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-from xic_extractor.execution_runtime_finalization_models import (
-    CoordinatorTerminalRecord,
-    RuntimeArtifactDisposition,
-    RuntimeResourceCleanupOutcome,
-    RuntimeResourceKind,
-    RuntimeResourceOpenOutcome,
-)
+from xic_extractor.execution_runtime_finalization_models import RuntimeResourceKind
 from xic_extractor.execution_runtime_observability import (
     REQUIRED_RUNTIME_METRIC_NAMES,
     RuntimeMetricAvailability,
@@ -15,6 +9,7 @@ from xic_extractor.execution_runtime_observability import (
     RuntimeObservabilityLedger,
     RuntimeObservationEvent,
     RuntimeObservationSubject,
+    _mint_runtime_observability_ledger,
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
@@ -29,9 +24,7 @@ def build_runtime_observability_ledger(
     xic_batch_count: int = 0,
     adapter_chromatogram_call_count: int = 0,
     trace_point_count: int = 0,
-    resource_lifecycles: tuple[
-        tuple[str, RuntimeResourceKind, str, str], ...
-    ] = (),
+    resource_lifecycles: tuple[tuple[str, RuntimeResourceKind, str, str], ...] = (),
     artifact_dispositions: tuple[tuple[str, str], ...] = (),
 ) -> RuntimeObservabilityLedger:
     event_shapes: list[tuple[str, RuntimeObservationSubject, str]] = [
@@ -162,11 +155,7 @@ def build_runtime_observability_ledger(
             else "bytes"
         )
         aggregation = (
-            "last"
-            if name in last_names
-            else "max"
-            if name in max_names
-            else "sum"
+            "last" if name in last_names else "max" if name in max_names else "sum"
         )
         for scope_key in scope_keys:
             value: int | float = 0
@@ -211,80 +200,9 @@ def build_runtime_observability_ledger(
                     reason=None if worker_rss_supported else "not_applicable_serial",
                 )
             )
-    return RuntimeObservabilityLedger(
+    return _mint_runtime_observability_ledger(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
         events=events,
         metrics=tuple(metrics),
     )
-
-
-def build_runtime_observability_ledger_from_coordinator(
-    coordinator: CoordinatorTerminalRecord,
-    *,
-    worker_keys: tuple[str, ...] | None = None,
-    logical_xic_request_count: int = 0,
-    xic_batch_count: int = 0,
-    adapter_chromatogram_call_count: int = 0,
-    trace_point_count: int = 0,
-) -> RuntimeObservabilityLedger:
-    """Build a no-RAW test ledger from the coordinator's terminal facts."""
-
-    state = coordinator.state
-    resolved_worker_keys = (
-        tuple(
-            dict.fromkeys(
-                record.reservation.worker_key for record in state.resources
-            )
-        )
-        if worker_keys is None
-        else worker_keys
-    )
-    resource_lifecycles = tuple(
-        (
-            record.reservation.resource_key,
-            record.reservation.kind,
-            _resource_open_event_kind(record.open_outcome),
-            _resource_cleanup_event_kind(record.cleanup_outcome),
-        )
-        for record in state.resources
-    )
-    artifact_dispositions = tuple(
-        (
-            record.artifact.evidence_artifact_id,
-            (
-                "artifact_offered_to_owner"
-                if record.proposed_disposition
-                is RuntimeArtifactDisposition.OFFERED_TO_OWNER
-                else "artifact_quarantined_diagnostic"
-            ),
-        )
-        for record in state.artifacts
-    )
-    return build_runtime_observability_ledger(
-        state.runtime.manifest.attempt,
-        work_unit_keys=state.runtime.manifest.work_unit_keys,
-        worker_keys=resolved_worker_keys,
-        logical_xic_request_count=logical_xic_request_count,
-        xic_batch_count=xic_batch_count,
-        adapter_chromatogram_call_count=adapter_chromatogram_call_count,
-        trace_point_count=trace_point_count,
-        resource_lifecycles=resource_lifecycles,
-        artifact_dispositions=artifact_dispositions,
-    )
-
-
-def _resource_open_event_kind(
-    outcome: RuntimeResourceOpenOutcome | None,
-) -> str:
-    if outcome is None:
-        raise AssertionError("coordinator resource must have an open outcome")
-    return f"resource_{outcome.value}"
-
-
-def _resource_cleanup_event_kind(
-    outcome: RuntimeResourceCleanupOutcome | None,
-) -> str:
-    if outcome is None:
-        raise AssertionError("coordinator resource must have a cleanup outcome")
-    return f"resource_cleanup_{outcome.value}"

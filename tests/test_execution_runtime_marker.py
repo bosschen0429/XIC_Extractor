@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.runtime_observability_fixtures import (
-    build_runtime_observability_ledger_from_coordinator,
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
 )
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
@@ -49,6 +49,11 @@ from xic_extractor.execution_runtime_marker import (
 )
 from xic_extractor.execution_runtime_observability import (
     canonical_runtime_observability_ledger_bytes,
+)
+from xic_extractor.execution_runtime_owner import (
+    _derive_runtime_observability_ledger,
+    _mint_runtime_attempt_aggregate,
+    _mint_runtime_finalization_receipt,
 )
 from xic_extractor.extraction.targeted_runtime_adapter import (
     mint_targeted_process_result_ref,
@@ -128,18 +133,22 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
         coordinator,
         observability_ledger=ledger,
     )
+    receipt = _mint_runtime_finalization_receipt(
+        coordinator=coordinator,
+        supervisor=proposed,
+    )
     marker = OwnerPathRuntimeMarker(
         tmp_path / "attempt.runtime.json",
         "runtime-attempt-artifacts:a",
     )
     marker.record_launch(_runtime(attempt))
 
-    accepted = marker(coordinator, proposed)
+    accepted = marker(receipt)
     recovered = marker.recover_after_coordinator_loss(attempt)
 
-    assert accepted == proposed
+    assert accepted == receipt
     assert marker.read().state is RuntimeMarkerState.FINALIZED
-    assert marker(coordinator, proposed) == accepted
+    assert marker(receipt) == accepted
     with pytest.raises(RuntimeFinalizationContractError, match="already durably"):
         marker.record_launch(_runtime(attempt))
     assert recovered.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
@@ -163,17 +172,25 @@ def test_finalized_marker_bytes_bind_the_exact_observability_ledger(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    coordinator, _ = _terminal_records(
+    coordinator = _terminal_records(
         attempt,
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-    )
-    first_ledger = build_runtime_observability_ledger_from_coordinator(
+    ).coordinator
+    first_ledger = _derive_runtime_observability_ledger(
+        _mint_runtime_attempt_aggregate(state=coordinator.state),
         coordinator,
-        logical_xic_request_count=1,
+        telemetry=build_runtime_telemetry_samples_from_coordinator(
+            coordinator,
+            process_tree_peak_rss_bytes=1,
+        ),
     )
-    second_ledger = build_runtime_observability_ledger_from_coordinator(
+    second_ledger = _derive_runtime_observability_ledger(
+        _mint_runtime_attempt_aggregate(state=coordinator.state),
         coordinator,
-        logical_xic_request_count=2,
+        telemetry=build_runtime_telemetry_samples_from_coordinator(
+            coordinator,
+            process_tree_peak_rss_bytes=2,
+        ),
     )
     first_marker = OwnerPathRuntimeMarker(
         tmp_path / "first.runtime.json",
@@ -187,17 +204,21 @@ def test_finalized_marker_bytes_bind_the_exact_observability_ledger(
         marker.record_launch(_runtime(attempt))
 
     first_marker(
-        coordinator,
-        mint_supervisor_finalization(
-            coordinator,
-            observability_ledger=first_ledger,
+        _mint_runtime_finalization_receipt(
+            coordinator=coordinator,
+            supervisor=mint_supervisor_finalization(
+                coordinator,
+                observability_ledger=first_ledger,
+            ),
         ),
     )
     second_marker(
-        coordinator,
-        mint_supervisor_finalization(
-            coordinator,
-            observability_ledger=second_ledger,
+        _mint_runtime_finalization_receipt(
+            coordinator=coordinator,
+            supervisor=mint_supervisor_finalization(
+                coordinator,
+                observability_ledger=second_ledger,
+            ),
         ),
     )
 
@@ -220,7 +241,7 @@ def test_recovery_rejects_coordinator_bytes_that_do_not_match_digest(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
-    coordinator, proposed = _terminal_records(
+    receipt = _terminal_records(
         attempt,
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
     )
@@ -229,7 +250,7 @@ def test_recovery_rejects_coordinator_bytes_that_do_not_match_digest(
         "runtime-attempt-artifacts:a",
     )
     marker.record_launch(_runtime(attempt))
-    marker(coordinator, proposed)
+    marker(receipt)
     payload = json.loads(marker.path.read_bytes())
     payload["coordinator_record_base64"] = base64.b64encode(
         b'{"tampered":true}'
@@ -289,8 +310,8 @@ def test_concurrent_conflicting_finalizations_fail_closed_at_replace(
     _delay_competing_writes(monkeypatch)
 
     outcomes = _run_concurrently(
-        lambda: marker(*succeeded),
-        lambda: marker(*failed),
+        lambda: marker(succeeded),
+        lambda: marker(failed),
     )
 
     assert sorted(outcome[0] for outcome in outcomes) == ["error", "ok"]
@@ -397,9 +418,12 @@ def _terminal_records(
             artifact=reference.artifact,
         )
     coordinator = propose_attempt_terminal(state)
-    return coordinator, mint_supervisor_finalization(
-        coordinator,
-        observability_ledger=_ledger(coordinator),
+    return _mint_runtime_finalization_receipt(
+        coordinator=coordinator,
+        supervisor=mint_supervisor_finalization(
+            coordinator,
+            observability_ledger=_ledger(coordinator),
+        ),
     )
 
 
@@ -457,7 +481,11 @@ def _runtime(attempt: ProcessingAttemptIdentity) -> AttemptRuntime:
 
 
 def _ledger(coordinator: CoordinatorTerminalRecord):
-    return build_runtime_observability_ledger_from_coordinator(coordinator)
+    return _derive_runtime_observability_ledger(
+        _mint_runtime_attempt_aggregate(state=coordinator.state),
+        coordinator,
+        telemetry=build_runtime_telemetry_samples_from_coordinator(coordinator),
+    )
 
 
 def _attempt(

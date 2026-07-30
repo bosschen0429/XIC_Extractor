@@ -2,21 +2,20 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import inspect
 import json
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from multiprocessing import get_context
 from pathlib import Path
-from typing import Literal
 
 import pytest
 
 import xic_extractor.acquisition_contract as acquisition_contract_module
 import xic_extractor.package0_successor_comparator as comparator_module
-from tests.runtime_observability_fixtures import (
-    build_runtime_observability_ledger,
-    build_runtime_observability_ledger_from_coordinator,
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
 )
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
@@ -33,17 +32,10 @@ from xic_extractor.alignment.runtime_adapter import (
 )
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
     AttemptRuntime,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
-    WorkUnitSettlement,
     WorkUnitTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    settle_work_unit,
-    start_attempt_runtime,
 )
 from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
@@ -51,25 +43,27 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
-    begin_attempt_finalization,
     canonical_coordinator_terminal_record_bytes,
-    mint_supervisor_finalization,
-    propose_attempt_terminal,
-    register_runtime_artifact,
-    reserve_runtime_resource,
-    settle_runtime_resource,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import (
+    RuntimeAcquisitionReceipt,
+    RuntimeArtifactRegistrationReceipt,
+    RuntimeFinalizationReceipt,
+    RuntimeResourceSettlementReceipt,
+    RuntimeWorkerBatchReceipt,
+    execute_runtime_attempt,
+    mint_work_unit_settlement,
+    start_runtime_attempt,
+)
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedProcessResourceReport,
     TargetedProcessWorkerResultEnvelope,
     TargetedRuntimeAdapterError,
     TargetedRuntimeLifecycleApplicationResult,
     TargetedRuntimeWorkerBatch,
-    finalize_targeted_runtime_worker_batch,
+    execute_targeted_runtime_lifecycle,
     mint_targeted_process_result_ref,
-    prepare_targeted_runtime_lifecycle,
-    settle_targeted_process_worker_results,
 )
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
@@ -224,7 +218,7 @@ def _run_alignment_job(job: _ObservationJob) -> AlignmentRuntimeProcessResult:
         upstream_artifacts=batch.observation_artifacts,
     )
     return AlignmentRuntimeProcessResult(
-        settlement=WorkUnitSettlement(
+        settlement=mint_work_unit_settlement(
             attempt=job.owners.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.SUCCEEDED,
@@ -243,7 +237,7 @@ def _alignment_error(
     error: Exception,
 ) -> AlignmentRuntimeProcessResult:
     return AlignmentRuntimeProcessResult(
-        settlement=WorkUnitSettlement(
+        settlement=mint_work_unit_settlement(
             attempt=job.owners.attempt,
             work_unit_key=job.work_unit_key,
             outcome=WorkUnitTerminalOutcome.FAILED,
@@ -304,12 +298,7 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
         error_factory=_alignment_error,
         max_workers=1,
         resource_reservations=reservations,
-        observability_ledger=_ledger(
-            runtime,
-            reservations,
-            jobs=jobs,
-            result_kind="alignment",
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-serial.runtime.json",
             "alignment-observation-runtime:test",
@@ -322,12 +311,7 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
         error_factory=_alignment_error,
         max_workers=2,
         resource_reservations=reservations,
-        observability_ledger=_ledger(
-            runtime,
-            reservations,
-            jobs=jobs,
-            result_kind="alignment",
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-reordered.runtime.json",
             "alignment-observation-runtime:test",
@@ -343,9 +327,7 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
     assert _canonical_batches(targeted_batches) == _canonical_batches(
         reordered_targeted_batches
     )
-    assert _canonical_batches(targeted_batches) == _canonical_batches(
-        alignment_batches
-    )
+    assert _canonical_batches(targeted_batches) == _canonical_batches(alignment_batches)
     assert _canonical_batches(alignment_batches) == _canonical_batches(
         reordered_alignment_batches
     )
@@ -360,12 +342,10 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
     assert native.acquisition.adapter_chromatogram_call_count == 0
     assert native.acquisition.trace_point_count == 10
     assert all(
-        item.coordinate.first_scan is not None
-        for item in native.acquisition.traces
+        item.coordinate.first_scan is not None for item in native.acquisition.traces
     )
     assert all(
-        item.coordinate.first_scan is None
-        for item in rt_only.acquisition.traces
+        item.coordinate.first_scan is None for item in rt_only.acquisition.traces
     )
     assert canonical_coordinator_terminal_record_bytes(
         targeted_serial.coordinator_record
@@ -379,15 +359,15 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
     )
     assert _offered_count(targeted_serial.finalization_record) == 5
     assert _offered_count(alignment_serial.finalization_record) == 5
-    with pytest.raises(TargetedRuntimeAdapterError, match="coordinator proposal"):
+    with pytest.raises(TargetedRuntimeAdapterError, match="one settled runtime"):
         replace(
             targeted_serial,
-            finalization_record=alignment_serial.finalization_record,
+            finalization=alignment_serial.finalization,
         )
-    with pytest.raises(AlignmentRuntimeAdapterError, match="coordinator proposal"):
+    with pytest.raises(AlignmentRuntimeAdapterError, match="coordinator record"):
         replace(
             alignment_serial,
-            finalization_record=targeted_serial.finalization_record,
+            finalization=targeted_serial.finalization,
         )
 
 
@@ -417,7 +397,7 @@ def test_runtime_carriers_reject_unclosed_observation_lineage(tmp_path: Path) ->
     )
     with pytest.raises(AlignmentRuntimeAdapterError, match="exact observation"):
         AlignmentRuntimeProcessResult(
-            settlement=WorkUnitSettlement(
+            settlement=mint_work_unit_settlement(
                 attempt=owners.attempt,
                 work_unit_key=job.work_unit_key,
                 outcome=WorkUnitTerminalOutcome.SUCCEEDED,
@@ -438,7 +418,7 @@ def test_runtime_carriers_reject_unclosed_observation_lineage(tmp_path: Path) ->
     ).artifact
     with pytest.raises(AlignmentRuntimeAdapterError, match="Alignment-owned"):
         AlignmentRuntimeProcessResult(
-            settlement=WorkUnitSettlement(
+            settlement=mint_work_unit_settlement(
                 attempt=owners.attempt,
                 work_unit_key=job.work_unit_key,
                 outcome=WorkUnitTerminalOutcome.SUCCEEDED,
@@ -472,9 +452,7 @@ def test_batch_receipt_is_stable_and_coordinate_truth_changes_identity(
     with pytest.raises(PeakObservationBatchError, match="different processing"):
         replace(
             first,
-            processing_attempt_id=(
-                "xic.processing-attempt.v1:" + "0" * 64
-            ),
+            processing_attempt_id=("xic.processing-attempt.v1:" + "0" * 64),
         )
 
 
@@ -490,42 +468,48 @@ def test_alignment_public_result_rejects_unclosed_observation_upstreams(
         work_unit_key=job.work_unit_key,
         owner_result_payload=payload,
     )
-    runtime = settle_work_unit(
-        _runtime(owners.attempt, (job.work_unit_key,)),
-        work_unit_key=job.work_unit_key,
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=unclosed,
-    )
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
     reservation = _reservations(owners.attempt, (job,))[0]
-    state = reserve_runtime_resource(
-        begin_attempt_finalization(runtime),
-        reservation,
+    finalization = _execute_owner_batch(
+        runtime,
+        (reservation,),
+        RuntimeWorkerBatchReceipt(
+            settlements=(
+                mint_work_unit_settlement(
+                    attempt=owners.attempt,
+                    work_unit_key=job.work_unit_key,
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                    owner_result_ref=unclosed,
+                ),
+            ),
+            resource_settlements=(
+                RuntimeResourceSettlementReceipt(
+                    attempt=owners.attempt,
+                    resource_key=job.resource_key,
+                    open_outcome=RuntimeResourceOpenOutcome.OPENED,
+                    cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+                ),
+            ),
+            artifact_registrations=tuple(
+                RuntimeArtifactRegistrationReceipt(
+                    work_unit_key=job.work_unit_key,
+                    artifact=artifact,
+                )
+                for artifact in (unclosed, *batch.observation_artifacts)
+            ),
+            acquisitions=(
+                RuntimeAcquisitionReceipt(
+                    work_unit_key=job.work_unit_key,
+                    acquisition=batch.acquisition,
+                ),
+            ),
+        ),
     )
-    for artifact in (unclosed, *batch.observation_artifacts):
-        state = register_runtime_artifact(
-            state,
-            work_unit_key=job.work_unit_key,
-            artifact=artifact,
-        )
-    state = settle_runtime_resource(
-        state,
-        resource_key=job.resource_key,
-        open_outcome=RuntimeResourceOpenOutcome.OPENED,
-        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-    )
-    coordinator = propose_attempt_terminal(state)
 
     with pytest.raises(AlignmentRuntimeAdapterError, match="exact observation"):
         AlignmentRuntimeApplicationResult(
-            runtime=runtime,
-            coordinator_record=coordinator,
-            finalization_record=mint_supervisor_finalization(
-                coordinator,
-                observability_ledger=_ledger_from_coordinator_with_batches(
-                    coordinator,
-                    (batch,),
-                ),
-            ),
+            runtime=finalization.coordinator.state.runtime,
+            finalization=finalization,
             successful_observation_batches=((job.work_unit_key, batch),),
         )
 
@@ -563,12 +547,7 @@ def test_runtime_consumers_coalesce_identical_spawned_result_replay(
         error_factory=_alignment_error,
         max_workers=2,
         resource_reservations=reservations,
-        observability_ledger=_ledger(
-            runtime,
-            reservations,
-            jobs=(job,),
-            result_kind="alignment",
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-replay.runtime.json",
             "alignment-observation-replay:test",
@@ -605,15 +584,13 @@ def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
         (without_carrier, with_carrier),
         (with_carrier, without_carrier),
     ):
-        settled = settle_targeted_process_worker_results(
+        settled = _execute_targeted_envelopes(
             _runtime(owners.attempt, (job.work_unit_key,)),
             envelopes,
-        )
-        assert settled.successful_observation_batches == (
-            (job.work_unit_key, batch),
-        )
+        ).settlement
+        assert settled.successful_observation_batches == ((job.work_unit_key, batch),)
 
-    targeted_conflict = settle_targeted_process_worker_results(
+    targeted_conflict = _execute_targeted_envelopes(
         _runtime(owners.attempt, (job.work_unit_key,)),
         (
             with_carrier,
@@ -629,7 +606,7 @@ def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
                 ),
             ),
         ),
-    )
+    ).settlement
     assert targeted_conflict.runtime.integrity_failure is not None
     assert targeted_conflict.successful_observation_batches == ()
 
@@ -654,14 +631,7 @@ def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
             error_factory=_alignment_replay_error,
             max_workers=1,
             resource_reservations=conflict_reservations,
-            observability_ledger=_ledger(
-                conflict_runtime,
-                conflict_reservations,
-                jobs=(replay_jobs[0].job,),
-                result_kind="alignment",
-                terminal_failed=True,
-                resource_opened=not replay_jobs[0].fail,
-            ),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=OwnerPathRuntimeMarker(
                 tmp_path / f"alignment-conflict-{index}.runtime.json",
                 "alignment-observation-conflict:test",
@@ -719,89 +689,62 @@ def test_observation_batch_rejects_cross_sample_capability_before_acquisition(
     assert adapter.extract_many_call_count == 0
 
 
-@pytest.mark.parametrize(
-    "metric_name",
-    (
-        "logical_xic_request_count",
-        "xic_batch_count",
-        "adapter_chromatogram_call_count",
-        "trace_point_count",
-    ),
-)
-def test_targeted_rejects_falsified_acquisition_counts_before_acknowledgement(
-    tmp_path: Path,
-    metric_name: str,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-    state = prepare_targeted_runtime_lifecycle(runtime, reservations)
-    envelope, report = _run_targeted_job(replace(job, delay_sec=0.0))
-    assert envelope.owner_result_ref is not None
-    batch = TargetedRuntimeWorkerBatch(
-        result_envelopes=(envelope,),
-        resource_reports=(report,),
-        runtime_artifact_refs=(envelope.owner_result_ref,),
-    )
-    ledger = _ledger(
-        runtime,
-        reservations,
-        jobs=(job,),
-        result_kind="targeted",
-    )
-    truthful = next(
-        metric.value for metric in ledger.metrics if metric.name == metric_name
-    )
-    assert isinstance(truthful, int)
-    falsified = _replace_metric_value(ledger, metric_name, truthful + 1)
-    supervisor_called = False
-
-    def supervisor_finalizer(coordinator, proposed):
-        nonlocal supervisor_called
-        supervisor_called = True
-        return proposed
-
-    with pytest.raises(TargetedRuntimeAdapterError, match="acquisition metrics"):
-        finalize_targeted_runtime_worker_batch(
-            state,
-            batch,
-            observability_ledger=falsified,
-            supervisor_finalizer=supervisor_finalizer,
-        )
-
-    assert supervisor_called is False
-
-
-def test_alignment_rejects_falsified_acquisition_counts_before_acknowledgement(
+def test_runtime_consumers_derive_acquisition_counts_without_scalar_override(
     tmp_path: Path,
 ) -> None:
     owners, sample = _identity_fixture(tmp_path)
     job = replace(_jobs(owners, sample)[0], delay_sec=0.0)
     runtime = _runtime(owners.attempt, (job.work_unit_key,))
     reservations = _reservations(owners.attempt, (job,))
-    ledger = _ledger(
+    targeted = _run_targeted_service(
         runtime,
+        (job,),
         reservations,
-        jobs=(job,),
-        result_kind="alignment",
+        max_workers=1,
+        marker_path=tmp_path / "targeted-derived-counts.runtime.json",
     )
-    falsified = _replace_metric_value(ledger, "trace_point_count", 0)
+    alignment = execute_alignment_process_runtime(
+        runtime,
+        (job,),
+        worker=_run_alignment_job,
+        error_factory=_alignment_error,
+        max_workers=1,
+        resource_reservations=reservations,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "alignment-derived-counts.runtime.json",
+            "alignment-observation-derived-counts:test",
+        ),
+    )
+    expected = _produce_batch(job).acquisition
+    for ledger in (
+        targeted.finalization.observability_ledger,
+        alignment.finalization.observability_ledger,
+    ):
+        values = {metric.name: metric.value for metric in ledger.metrics}
+        for metric_name in (
+            "logical_xic_request_count",
+            "xic_batch_count",
+            "adapter_chromatogram_call_count",
+            "trace_point_count",
+        ):
+            assert values[metric_name] == getattr(expected, metric_name)
 
-    with pytest.raises(AlignmentRuntimeAdapterError, match="acquisition metrics"):
-        execute_alignment_process_runtime(
-            runtime,
-            (job,),
-            worker=_run_alignment_job,
-            error_factory=_alignment_error,
-            max_workers=1,
-            resource_reservations=reservations,
-            observability_ledger=falsified,
-            recovery_marker=OwnerPathRuntimeMarker(
-                tmp_path / "alignment-falsified-counts.runtime.json",
-                "alignment-observation-falsified-counts:test",
-            ),
-        )
+    forbidden_parameters = {
+        "observability_ledger",
+        "logical_xic_request_count",
+        "xic_batch_count",
+        "adapter_chromatogram_call_count",
+        "trace_point_count",
+    }
+    assert not forbidden_parameters & set(
+        inspect.signature(
+            TargetedApplicationService.execute_runtime_lifecycle
+        ).parameters
+    )
+    assert not forbidden_parameters & set(
+        inspect.signature(execute_alignment_process_runtime).parameters
+    )
 
 
 def test_acquisition_batch_rejects_coordinate_source_or_kind_substitution(
@@ -874,12 +817,7 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
         error_factory=_alignment_error,
         max_workers=1,
         resource_reservations=reservations,
-        observability_ledger=_ledger(
-            runtime,
-            reservations,
-            jobs=(job,),
-            result_kind="alignment",
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-difference.runtime.json",
             "alignment-observation-difference:test",
@@ -910,9 +848,7 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
 
     reset_contract = json.loads(json.dumps(contract))
     reset_contract["canonical_output_inventory_sha256"] = "F" * 64
-    reset_digest = comparator_module._package1_frozen_surface_digest(
-        reset_contract
-    )
+    reset_digest = comparator_module._package1_frozen_surface_digest(reset_contract)
     consistently_reset = [dict(row) for row in rows]
     consistently_reset[1]["old_value"] = f"sha256:{reset_digest}"
     consistently_reset[1]["new_value"] = f"sha256:{reset_digest}"
@@ -953,7 +889,7 @@ def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
         work_unit_key=second.work_unit_key,
         owner_result_payload=b"no-observation-batch",
     )
-    targeted_settlement = settle_targeted_process_worker_results(
+    targeted = _execute_targeted_envelopes(
         runtime,
         (
             TargetedProcessWorkerResultEnvelope(
@@ -971,31 +907,6 @@ def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
             ),
         ),
     )
-    targeted_state = begin_attempt_finalization(targeted_settlement.runtime)
-    for reference in (targeted_with_batch, targeted_without_batch):
-        targeted_state = register_runtime_artifact(
-            targeted_state,
-            work_unit_key=reference.work_unit_key,
-            artifact=reference.artifact,
-        )
-    for artifact in batch.observation_artifacts:
-        targeted_state = register_runtime_artifact(
-            targeted_state,
-            work_unit_key=first.work_unit_key,
-            artifact=artifact,
-        )
-    targeted_coordinator = propose_attempt_terminal(targeted_state)
-    targeted = TargetedRuntimeLifecycleApplicationResult(
-        settlement=targeted_settlement,
-        coordinator_record=targeted_coordinator,
-        finalization_record=mint_supervisor_finalization(
-            targeted_coordinator,
-            observability_ledger=_ledger_from_coordinator_with_batches(
-                targeted_coordinator,
-                (batch,),
-            ),
-        ),
-    )
 
     alignment_without_batch = mint_alignment_process_result_artifact(
         processing_attempt=owners.attempt,
@@ -1008,46 +919,52 @@ def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
         owner_result_payload=payload,
         upstream_artifacts=batch.observation_artifacts,
     )
-    alignment_runtime = settle_work_unit(
+    alignment_finalization = _execute_owner_batch(
         runtime,
-        work_unit_key=first.work_unit_key,
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=alignment_without_batch,
-    )
-    alignment_runtime = settle_work_unit(
-        alignment_runtime,
-        work_unit_key=second.work_unit_key,
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=alignment_with_batch,
-    )
-    alignment_state = begin_attempt_finalization(alignment_runtime)
-    alignment_state = register_runtime_artifact(
-        alignment_state,
-        work_unit_key=first.work_unit_key,
-        artifact=alignment_without_batch,
-    )
-    alignment_state = register_runtime_artifact(
-        alignment_state,
-        work_unit_key=second.work_unit_key,
-        artifact=alignment_with_batch,
-    )
-    for artifact in batch.observation_artifacts:
-        alignment_state = register_runtime_artifact(
-            alignment_state,
-            work_unit_key=second.work_unit_key,
-            artifact=artifact,
-        )
-    alignment_coordinator = propose_attempt_terminal(alignment_state)
-    alignment = AlignmentRuntimeApplicationResult(
-        runtime=alignment_runtime,
-        coordinator_record=alignment_coordinator,
-        finalization_record=mint_supervisor_finalization(
-            alignment_coordinator,
-            observability_ledger=_ledger_from_coordinator_with_batches(
-                alignment_coordinator,
-                (batch,),
+        (),
+        RuntimeWorkerBatchReceipt(
+            settlements=(
+                mint_work_unit_settlement(
+                    attempt=owners.attempt,
+                    work_unit_key=first.work_unit_key,
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                    owner_result_ref=alignment_without_batch,
+                ),
+                mint_work_unit_settlement(
+                    attempt=owners.attempt,
+                    work_unit_key=second.work_unit_key,
+                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+                    owner_result_ref=alignment_with_batch,
+                ),
+            ),
+            artifact_registrations=(
+                RuntimeArtifactRegistrationReceipt(
+                    work_unit_key=first.work_unit_key,
+                    artifact=alignment_without_batch,
+                ),
+                RuntimeArtifactRegistrationReceipt(
+                    work_unit_key=second.work_unit_key,
+                    artifact=alignment_with_batch,
+                ),
+                *(
+                    RuntimeArtifactRegistrationReceipt(
+                        work_unit_key=second.work_unit_key,
+                        artifact=artifact,
+                    )
+                    for artifact in batch.observation_artifacts
+                ),
+            ),
+            acquisitions=(
+                RuntimeAcquisitionReceipt(
+                    work_unit_key=second.work_unit_key,
+                    acquisition=batch.acquisition,
+                ),
             ),
         ),
+    )
+    alignment = AlignmentRuntimeApplicationResult(
+        runtime=alignment_finalization.coordinator.state.runtime,
+        finalization=alignment_finalization,
         successful_observation_batches=((second.work_unit_key, batch),),
     )
 
@@ -1081,9 +998,7 @@ def _run_targeted_service(
             max_workers=max_workers,
             mp_context=get_context("spawn"),
         ) as executor:
-            futures = tuple(
-                executor.submit(_run_targeted_job, job) for job in jobs
-            )
+            futures = tuple(executor.submit(_run_targeted_job, job) for job in jobs)
             results = tuple(future.result(timeout=15) for future in futures)
         envelopes = tuple(envelope for envelope, _report in results)
         return TargetedRuntimeWorkerBatch(
@@ -1108,111 +1023,7 @@ def _run_targeted_service(
         build_targeted_application_request(_config(), [_target()]),
         runtime,
         resource_reservations=reservations,
-        observability_ledger=_ledger(
-            runtime,
-            reservations,
-            jobs=jobs,
-            result_kind="targeted",
-        ),
-    )
-
-
-def _ledger(
-    runtime: AttemptRuntime,
-    reservations: tuple[RuntimeResourceReservation, ...],
-    *,
-    jobs: tuple[_ObservationJob, ...],
-    result_kind: Literal["targeted", "alignment"],
-    terminal_failed: bool = False,
-    resource_opened: bool = True,
-):
-    manifest_order = {
-        key: index for index, key in enumerate(runtime.manifest.work_unit_keys)
-    }
-    unique_jobs = tuple(
-        {
-            job.work_unit_key: job
-            for job in sorted(
-                jobs,
-                key=lambda item: manifest_order[item.work_unit_key],
-            )
-        }.values()
-    )
-    result_artifact_ids: list[str] = []
-    observation_artifact_ids: list[str] = []
-    acquisition_counts = {
-        "logical_xic_request_count": 0,
-        "xic_batch_count": 0,
-        "adapter_chromatogram_call_count": 0,
-        "trace_point_count": 0,
-    }
-    for job in unique_jobs:
-        batch = _produce_batch(replace(job, delay_sec=0.0))
-        acquisition = batch.acquisition
-        for name in acquisition_counts:
-            acquisition_counts[name] += getattr(acquisition, name)
-        payload = canonical_peak_observation_batch_bytes(batch)
-        result_artifact = (
-            mint_targeted_process_result_ref(
-                processing_attempt=job.owners.attempt,
-                work_unit_key=job.work_unit_key,
-                owner_result_payload=payload,
-                upstream_artifacts=batch.observation_artifacts,
-            ).artifact
-            if result_kind == "targeted"
-            else mint_alignment_process_result_artifact(
-                processing_attempt=job.owners.attempt,
-                work_unit_key=job.work_unit_key,
-                owner_result_payload=payload,
-                upstream_artifacts=batch.observation_artifacts,
-            )
-        )
-        result_artifact_ids.append(result_artifact.evidence_artifact_id)
-        observation_artifact_ids.extend(
-            artifact.evidence_artifact_id
-            for artifact in batch.observation_artifacts
-        )
-    artifact_ids = tuple(
-        dict.fromkeys((*result_artifact_ids, *observation_artifact_ids))
-    )
-    return build_runtime_observability_ledger(
-        runtime.manifest.attempt,
-        work_unit_keys=runtime.manifest.work_unit_keys,
-        worker_keys=tuple(
-            dict.fromkeys(
-                reservation.worker_key for reservation in reservations
-            )
-        ),
-        logical_xic_request_count=acquisition_counts["logical_xic_request_count"],
-        xic_batch_count=acquisition_counts["xic_batch_count"],
-        adapter_chromatogram_call_count=(
-            acquisition_counts["adapter_chromatogram_call_count"]
-        ),
-        trace_point_count=acquisition_counts["trace_point_count"],
-        resource_lifecycles=tuple(
-            (
-                reservation.resource_key,
-                reservation.kind,
-                (
-                    "resource_opened"
-                    if resource_opened
-                    else "resource_not_opened"
-                ),
-                "resource_cleanup_succeeded",
-            )
-            for reservation in reservations
-        ),
-        artifact_dispositions=tuple(
-            (
-                artifact_id,
-                (
-                    "artifact_quarantined_diagnostic"
-                    if terminal_failed
-                    else "artifact_offered_to_owner"
-                ),
-            )
-            for artifact_id in artifact_ids
-        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
     )
 
 
@@ -1341,37 +1152,41 @@ def _two_sample_identity_fixture(
     return owners, first, second
 
 
-def _replace_metric_value(ledger, name: str, value: int):
-    return replace(
-        ledger,
-        metrics=tuple(
-            replace(metric, value=value) if metric.name == name else metric
-            for metric in ledger.metrics
-        ),
+def _execute_owner_batch(
+    runtime: AttemptRuntime,
+    reservations: tuple[RuntimeResourceReservation, ...],
+    batch: RuntimeWorkerBatchReceipt,
+) -> RuntimeFinalizationReceipt:
+    return execute_runtime_attempt(
+        runtime,
+        reservations,
+        worker_batch_provider=lambda _aggregate: batch,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=lambda proposed: proposed,
     )
 
 
-def _ledger_from_coordinator_with_batches(
-    coordinator,
-    batches: tuple[PeakObservationBatch, ...],
-):
-    counts = {
-        name: sum(getattr(batch.acquisition, name) for batch in batches)
-        for name in (
-            "logical_xic_request_count",
-            "xic_batch_count",
-            "adapter_chromatogram_call_count",
-            "trace_point_count",
+def _execute_targeted_envelopes(
+    runtime: AttemptRuntime,
+    envelopes: tuple[TargetedProcessWorkerResultEnvelope, ...],
+) -> TargetedRuntimeLifecycleApplicationResult:
+    references = {
+        envelope.owner_result_ref.artifact.evidence_artifact_id: (
+            envelope.owner_result_ref
         )
+        for envelope in envelopes
+        if envelope.owner_result_ref is not None
     }
-    return build_runtime_observability_ledger_from_coordinator(
-        coordinator,
-        logical_xic_request_count=counts["logical_xic_request_count"],
-        xic_batch_count=counts["xic_batch_count"],
-        adapter_chromatogram_call_count=(
-            counts["adapter_chromatogram_call_count"]
+    return execute_targeted_runtime_lifecycle(
+        runtime,
+        (),
+        worker_batch_provider=lambda _aggregate: TargetedRuntimeWorkerBatch(
+            result_envelopes=envelopes,
+            resource_reports=(),
+            runtime_artifact_refs=tuple(references.values()),
         ),
-        trace_point_count=counts["trace_point_count"],
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        finalization_persister=lambda proposed: proposed,
     )
 
 
@@ -1433,17 +1248,10 @@ def _runtime(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
 ) -> AttemptRuntime:
-    queued = append_attempt_lifecycle_event(
-        AttemptLifecycleHistory(attempt=attempt),
-        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
-    )
-    return start_attempt_runtime(
-        preflight_required_work_manifest(
-            queued,
-            attempt=attempt,
-            work_unit_keys=work_unit_keys,
-            owner_completeness_attestation="package1-observation-runtime:v1",
-        )
+    return start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=work_unit_keys,
+        owner_completeness_attestation="package1-observation-runtime:v1",
     )
 
 
@@ -1468,8 +1276,7 @@ def _canonical_batches(
     batches: tuple[tuple[str, PeakObservationBatch], ...],
 ) -> tuple[tuple[str, bytes], ...]:
     return tuple(
-        (key, canonical_peak_observation_batch_bytes(batch))
-        for key, batch in batches
+        (key, canonical_peak_observation_batch_bytes(batch)) for key, batch in batches
     )
 
 

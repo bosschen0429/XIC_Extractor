@@ -21,16 +21,14 @@ from typing import Any, Iterator
 
 from xic_extractor.execution_runtime import AttemptRuntime, AttemptTerminalOutcome
 from xic_extractor.execution_runtime_finalization import (
-    CoordinatorTerminalRecord,
     RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
-    SupervisorFinalizationRecord,
-    accept_supervisor_finalization,
     canonical_coordinator_terminal_record_bytes,
 )
 from xic_extractor.execution_runtime_observability import (
     canonical_runtime_observability_ledger_bytes,
 )
+from xic_extractor.execution_runtime_owner import RuntimeFinalizationReceipt
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 _MARKER_LOCK_TIMEOUT_SECONDS = 2.0
@@ -113,14 +111,16 @@ class OwnerPathRuntimeMarker:
 
     def __call__(
         self,
-        coordinator: CoordinatorTerminalRecord,
-        proposed: SupervisorFinalizationRecord,
-    ) -> SupervisorFinalizationRecord:
-        accepted = accept_supervisor_finalization(
-            coordinator,
-            proposed,
-            observability_ledger=proposed.observability_ledger,
-        )
+        receipt: RuntimeFinalizationReceipt,
+    ) -> RuntimeFinalizationReceipt:
+        """Persist exactly one owner-minted finalization receipt."""
+
+        if not isinstance(receipt, RuntimeFinalizationReceipt):
+            raise RuntimeFinalizationContractError(
+                "runtime marker requires a RuntimeFinalizationReceipt"
+            )
+        coordinator = receipt.coordinator
+        accepted = receipt.supervisor
         coordinator_bytes = canonical_coordinator_terminal_record_bytes(coordinator)
         observability_bytes = canonical_runtime_observability_ledger_bytes(
             accepted.observability_ledger
@@ -161,9 +161,9 @@ class OwnerPathRuntimeMarker:
                     raise RuntimeFinalizationContractError(
                         "runtime marker already contains conflicting finalization"
                     )
-                return accepted
+                return receipt
             self._write(finalized)
-            return accepted
+            return receipt
 
     def recover_after_coordinator_loss(
         self,
@@ -434,8 +434,7 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         not isinstance(observability_sha256, str)
         or len(observability_sha256) != 64
         or any(
-            character not in "0123456789abcdef"
-            for character in observability_sha256
+            character not in "0123456789abcdef" for character in observability_sha256
         )
     ):
         raise RuntimeFinalizationContractError(

@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass, field
 from enum import Enum
+from typing import final
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
@@ -14,6 +15,9 @@ from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 class RuntimeObservabilityContractError(ValueError):
     """Raised when an attempt ledger or metric set is incomplete or ambiguous."""
+
+
+_RUNTIME_OBSERVABILITY_MINT_TOKEN = object()
 
 
 class RuntimeObservationSubject(str, Enum):
@@ -260,14 +264,23 @@ class RuntimeMetricRecord:
             _required_text(self.reason, "reason")
 
 
+@final
 @dataclass(frozen=True, slots=True)
 class RuntimeObservabilityLedger:
     attempt: ProcessingAttemptIdentity
     work_unit_keys: tuple[str, ...]
     events: tuple[RuntimeObservationEvent, ...]
     metrics: tuple[RuntimeMetricRecord, ...]
+    _mint_token: InitVar[object] = field(kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("RuntimeObservabilityLedger is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _RUNTIME_OBSERVABILITY_MINT_TOKEN:
+            raise RuntimeObservabilityContractError(
+                "RuntimeObservabilityLedger must be minted by the runtime owner"
+            )
         attempt = _require_attempt(self.attempt)
         if not isinstance(self.work_unit_keys, tuple) or any(
             not isinstance(key, str) or not key.strip() for key in self.work_unit_keys
@@ -324,6 +337,24 @@ class RuntimeObservabilityLedger:
             self.metrics,
             preflight_failed=preflight_failed,
         )
+
+
+def _mint_runtime_observability_ledger(
+    *,
+    attempt: ProcessingAttemptIdentity,
+    work_unit_keys: tuple[str, ...],
+    events: tuple[RuntimeObservationEvent, ...],
+    metrics: tuple[RuntimeMetricRecord, ...],
+) -> RuntimeObservabilityLedger:
+    """Mint one validated ledger for the runtime owner or owner-model tests."""
+
+    return RuntimeObservabilityLedger(
+        attempt=attempt,
+        work_unit_keys=work_unit_keys,
+        events=events,
+        metrics=metrics,
+        _mint_token=_RUNTIME_OBSERVABILITY_MINT_TOKEN,
+    )
 
 
 def canonical_runtime_observability_ledger_bytes(
@@ -599,14 +630,10 @@ def _validate_resource_artifact_event_lifecycle(
         }
         reserved = positions["resource_reserved"]
         opened = tuple(
-            index
-            for kind in _RESOURCE_OPEN_EVENT_KINDS
-            for index in positions[kind]
+            index for kind in _RESOURCE_OPEN_EVENT_KINDS for index in positions[kind]
         )
         cleaned = tuple(
-            index
-            for kind in _RESOURCE_CLEANUP_EVENT_KINDS
-            for index in positions[kind]
+            index for kind in _RESOURCE_CLEANUP_EVENT_KINDS for index in positions[kind]
         )
         if len(reserved) != 1 or len(opened) != 1 or len(cleaned) != 1:
             raise RuntimeObservabilityContractError(
@@ -733,9 +760,10 @@ def _validate_runtime_metrics(
                 )
         elif name == "worker_peak_rss_bytes" and not preflight_failed:
             if observed_worker_keys:
-                if len(records) != len(observed_worker_keys) or {
-                    record.scope_key for record in records
-                } != observed_worker_keys:
+                if (
+                    len(records) != len(observed_worker_keys)
+                    or {record.scope_key for record in records} != observed_worker_keys
+                ):
                     raise RuntimeObservabilityContractError(
                         "worker_peak_rss_bytes requires one metric per observed worker"
                     )
@@ -743,8 +771,7 @@ def _validate_runtime_metrics(
                 len(records) != 1
                 or records[0].scope is not RuntimeMetricScope.ATTEMPT
                 or records[0].scope_key != attempt_id
-                or records[0].availability
-                is not RuntimeMetricAvailability.UNSUPPORTED
+                or records[0].availability is not RuntimeMetricAvailability.UNSUPPORTED
                 or records[0].reason != "not_applicable_serial"
             ):
                 raise RuntimeObservabilityContractError(
@@ -755,10 +782,14 @@ def _validate_runtime_metrics(
             raise RuntimeObservabilityContractError(
                 f"runtime metric requires exactly one canonical record: {name}"
             )
-        expected_scope = RuntimeMetricScope.ATTEMPT if preflight_failed else (
+        expected_scope = (
             RuntimeMetricScope.ATTEMPT
-            if name == "worker_peak_rss_bytes" and not observed_worker_keys
-            else spec.running_scope
+            if preflight_failed
+            else (
+                RuntimeMetricScope.ATTEMPT
+                if name == "worker_peak_rss_bytes" and not observed_worker_keys
+                else spec.running_scope
+            )
         )
         for record in records:
             if (
@@ -895,15 +926,12 @@ def _nonnegative_integer(value: object, field: str) -> int:
     return value
 
 
-__all__ = [
+__all__ = (
     "REQUIRED_RUNTIME_METRIC_NAMES",
     "RuntimeMetricAvailability",
-    "RuntimeMetricRecord",
     "RuntimeMetricScope",
     "RuntimeObservabilityContractError",
-    "RuntimeObservabilityLedger",
-    "RuntimeObservationEvent",
     "RuntimeObservationSubject",
     "canonical_runtime_observability_ledger_bytes",
     "validate_runtime_acquisition_metrics",
-]
+)
