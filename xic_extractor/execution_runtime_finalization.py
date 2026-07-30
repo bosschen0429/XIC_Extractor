@@ -30,6 +30,7 @@ from xic_extractor.execution_runtime_finalization_models import (
     RuntimeLifecycleFailure,
     RuntimeLifecycleFailureKind,
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceRecord,
     RuntimeResourceReservation,
@@ -533,7 +534,8 @@ def _validate_observability_against_coordinator(
         metric for metric in ledger.metrics if metric.name == "raw_open_count"
     )
     expected_raw_open_count = sum(
-        record.open_outcome is RuntimeResourceOpenOutcome.OPENED
+        record.reservation.kind is RuntimeResourceKind.ACQUISITION_SESSION
+        and record.open_outcome is RuntimeResourceOpenOutcome.OPENED
         for record in state.resources
     )
     if (
@@ -556,7 +558,7 @@ def canonical_coordinator_terminal_record_bytes(
     state = coordinator.state
     integrity_failure = state.runtime.integrity_failure
     payload = {
-        "schema_version": "execution_runtime_coordinator_terminal_v2",
+        "schema_version": "execution_runtime_coordinator_terminal_v3",
         "processing_request_id": state.runtime.manifest.attempt.processing_request_id,
         "processing_attempt_id": state.runtime.manifest.attempt.processing_attempt_id,
         "manifest_work_unit_keys": state.runtime.manifest.work_unit_keys,
@@ -583,6 +585,7 @@ def canonical_coordinator_terminal_record_bytes(
         ),
         "resources": [
             {
+                "resource_kind": item.reservation.kind.value,
                 "resource_key": item.reservation.resource_key,
                 "worker_key": item.reservation.worker_key,
                 "source_reference": item.reservation.source_reference,
@@ -664,11 +667,19 @@ def _proposed_outcome(state: AttemptFinalizationState) -> AttemptTerminalOutcome
         }
         for record in state.resources
     )
+    resource_not_opened_without_cancellation = (
+        not state.runtime.history.cancellation_accepted
+        and any(
+            record.open_outcome is RuntimeResourceOpenOutcome.NOT_OPENED
+            for record in state.resources
+        )
+    )
     if (
         state.runtime.must_fail
         or state.failures
         or resource_open_failed
         or cleanup_failed
+        or resource_not_opened_without_cancellation
     ):
         return AttemptTerminalOutcome.FAILED
     if state.runtime.history.cancellation_accepted:
@@ -781,6 +792,7 @@ __all__ = [
     "RuntimeLifecycleFailure",
     "RuntimeLifecycleFailureKind",
     "RuntimeResourceCleanupOutcome",
+    "RuntimeResourceKind",
     "RuntimeResourceOpenOutcome",
     "RuntimeResourceRecord",
     "RuntimeResourceReservation",

@@ -137,8 +137,9 @@ runtime artifact disposition, not by a `partial` attempt outcome.
 Terminal outcome is deterministic:
 
 1. manifest precondition failure, submission failure, worker loss, unit
-   failure, integrity failure, or cleanup `failed` /
-   `unknown_after_worker_loss` makes the attempt `failed`;
+   failure, integrity failure, cleanup `failed` /
+   `unknown_after_worker_loss`, or a `not_opened` resource without an accepted
+   cancellation makes the attempt `failed`;
 2. otherwise, a cancellation accepted before the terminal decision makes it
    `cancelled`;
 3. otherwise, every manifest unit settling successfully makes it `succeeded`.
@@ -173,9 +174,9 @@ claiming a durable queue:
    namespace, and coordinator launch;
 2. after work, cleanup, and artifact-disposition proposal closure, the
    coordinator produces one immutable canonical `CoordinatorTerminalRecord`
-   `execution_runtime_coordinator_terminal_v2` byte sequence containing the
+   `execution_runtime_coordinator_terminal_v3` byte sequence containing the
    proposed outcome, manifest and per-unit outcomes, typed per-unit failure
-   details, resource cleanup outcomes, artifact registry and proposed
+   details, typed resource kinds plus open/cleanup outcomes, artifact registry and proposed
    dispositions, failures, coordinator metrics ending at terminal proposal,
    and the coordinator event-ledger digest through that proposal;
 3. the owner-path supervisor fsyncs those exact coordinator bytes and the exact
@@ -195,6 +196,12 @@ Coordinator-record write/integrity failure or supervisor-finalization failure
 cannot commit success. The coordinator and finalization records are recovery
 metadata, not delivery evidence or ProductWriter artifacts. Neither record
 contains or digests facts that occur only after that record is finalized.
+Public Targeted and Alignment application results revalidate the exact
+coordinator/finalization pair; matching attempt identity alone is insufficient.
+
+`raw_open_count` counts only opened `acquisition_session` reservations. Opened
+`process_worker` reservations still emit complete resource lifecycle facts but
+cannot inflate acquisition-session telemetry.
 
 If the coordinator exits before durable terminal acknowledgement:
 

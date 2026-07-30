@@ -4,6 +4,7 @@ from xic_extractor.execution_runtime_finalization_models import (
     CoordinatorTerminalRecord,
     RuntimeArtifactDisposition,
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
 )
 from xic_extractor.execution_runtime_observability import (
@@ -25,7 +26,9 @@ def build_runtime_observability_ledger(
     worker_keys: tuple[str, ...],
     raw_open_count: int | None = None,
     logical_xic_request_count: int = 0,
-    resource_lifecycles: tuple[tuple[str, str, str], ...] = (),
+    resource_lifecycles: tuple[
+        tuple[str, RuntimeResourceKind, str, str], ...
+    ] = (),
     artifact_dispositions: tuple[tuple[str, str], ...] = (),
 ) -> RuntimeObservabilityLedger:
     event_shapes: list[tuple[str, RuntimeObservationSubject, str]] = [
@@ -57,7 +60,7 @@ def build_runtime_observability_ledger(
         ("worker_started", RuntimeObservationSubject.WORKER, worker_key)
         for worker_key in worker_keys
     )
-    for resource_key, open_kind, cleanup_kind in resource_lifecycles:
+    for resource_key, _resource_kind, open_kind, cleanup_kind in resource_lifecycles:
         event_shapes.extend(
             (
                 (
@@ -118,8 +121,9 @@ def build_runtime_observability_ledger(
     max_names = {"worker_peak_rss_bytes", "process_tree_peak_rss_bytes"}
     resolved_raw_open_count = (
         sum(
-            open_kind == "resource_opened"
-            for _key, open_kind, _cleanup in resource_lifecycles
+            resource_kind is RuntimeResourceKind.ACQUISITION_SESSION
+            and open_kind == "resource_opened"
+            for _key, resource_kind, open_kind, _cleanup in resource_lifecycles
         )
         if raw_open_count is None
         else raw_open_count
@@ -227,6 +231,7 @@ def build_runtime_observability_ledger_from_coordinator(
     resource_lifecycles = tuple(
         (
             record.reservation.resource_key,
+            record.reservation.kind,
             _resource_open_event_kind(record.open_outcome),
             _resource_cleanup_event_kind(record.cleanup_outcome),
         )

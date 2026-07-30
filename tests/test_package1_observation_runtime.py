@@ -47,6 +47,7 @@ from xic_extractor.execution_runtime import (
 from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     begin_attempt_finalization,
@@ -356,6 +357,16 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
     )
     assert _offered_count(targeted_serial.finalization_record) == 5
     assert _offered_count(alignment_serial.finalization_record) == 5
+    with pytest.raises(TargetedRuntimeAdapterError, match="coordinator proposal"):
+        replace(
+            targeted_serial,
+            finalization_record=alignment_serial.finalization_record,
+        )
+    with pytest.raises(AlignmentRuntimeAdapterError, match="coordinator proposal"):
+        replace(
+            alignment_serial,
+            finalization_record=targeted_serial.finalization_record,
+        )
 
 
 def test_runtime_carriers_reject_unclosed_observation_lineage(tmp_path: Path) -> None:
@@ -1028,6 +1039,7 @@ def _ledger(
         resource_lifecycles=tuple(
             (
                 reservation.resource_key,
+                reservation.kind,
                 (
                     "resource_opened"
                     if resource_opened
@@ -1169,6 +1181,7 @@ def _reservations(
     return tuple(
         RuntimeResourceReservation(
             attempt=attempt,
+            kind=RuntimeResourceKind.PROCESS_WORKER,
             resource_key=job.resource_key,
             worker_key=f"worker:{index}",
             source_reference=f"no-raw:{job.work_unit_key}",

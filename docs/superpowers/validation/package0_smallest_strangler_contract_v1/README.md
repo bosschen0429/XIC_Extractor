@@ -77,8 +77,13 @@ existing public-surface owners needed to recompute membership from a clean
 checkout. The receipt is an address and membership oracle, not a copied
 scientific result.
 
-`validate_package0_successor_observation` compares an observed successor receipt
-against every frozen membership and byte-digest field above, and requires exact
-CLI/GUI equality for canonical request, attempt semantics, lineage, scientific
-result, delivery projection, and both Targeted CSV digests. It remains
-`diagnostic_only`; passing it grants no writer or product authority.
+`validate_package0_successor_output` reads an actual successor artifact root,
+requires its complete path inventory to equal `membership_receipt.json`, and
+derives every file, ordered sample, ordered header, and Targeted CSV digest from
+those bytes. CLI/GUI receipts are minted from an owner-issued processing request
+plus actual attempt, lineage, scientific-result, delivery-projection, and CSV
+bytes; callers cannot supply those digests through the public API. The mechanism
+is executable from a clean checkout, while the frozen contract records the real
+successor observation as `not_evaluated` until a later package supplies an
+actual output root. It remains `diagnostic_only`; passing it grants no writer or
+product authority.

@@ -29,6 +29,7 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
     RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     begin_attempt_finalization,
@@ -103,6 +104,7 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
         begin_attempt_finalization(runtime),
         RuntimeResourceReservation(
             attempt=attempt,
+            kind=RuntimeResourceKind.PROCESS_WORKER,
             resource_key="process:sample:a",
             worker_key="worker:1",
             source_reference="no-raw:sample:a",
@@ -375,6 +377,7 @@ def _terminal_records(
         begin_attempt_finalization(runtime),
         RuntimeResourceReservation(
             attempt=attempt,
+            kind=RuntimeResourceKind.PROCESS_WORKER,
             resource_key="process:sample:a",
             worker_key="worker:1",
             source_reference="no-raw:sample:a",

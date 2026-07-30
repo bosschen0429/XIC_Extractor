@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 from typing import Mapping, Sequence
 
 from xic_extractor.alignment.runtime_adapter import AlignmentRuntimeApplicationResult
@@ -20,6 +23,7 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
 from xic_extractor.peak_detection.observation_batch import (
     canonical_peak_observation_batch_bytes,
 )
+from xic_extractor.processing_identity import ProcessingRequestIdentity
 
 
 class Package0ComparatorError(ValueError):
@@ -46,7 +50,7 @@ _PACKAGE1_DIFFERENCE_FIELDS = (
 
 
 @dataclass(frozen=True, slots=True)
-class TargetedAdapterParityReceipt:
+class _TargetedAdapterParityReceipt:
     adapter_name: str
     processing_request_id: str
     attempt_semantics_sha256: str
@@ -75,7 +79,7 @@ class TargetedAdapterParityReceipt:
 
 
 @dataclass(frozen=True, slots=True)
-class Package0SuccessorObservation:
+class _Package0SuccessorObservation:
     baseline_id: str
     canonical_output_inventory_sha256: str
     canonical_artifact_path_sha256: str
@@ -302,13 +306,54 @@ def mint_package1_difference_observation(
     )
 
 
+def mint_targeted_adapter_parity_receipt(
+    *,
+    adapter_name: str,
+    processing_request: ProcessingRequestIdentity,
+    attempt_semantics: bytes,
+    lineage: bytes,
+    scientific_results: bytes,
+    delivery_projection: bytes,
+    baseline_stage_xic_results: Path,
+    final_stage_xic_results: Path,
+) -> _TargetedAdapterParityReceipt:
+    """Mint one parity receipt only from owner identity and actual bytes/files."""
+
+    if not isinstance(processing_request, ProcessingRequestIdentity):
+        raise Package0ComparatorError(
+            "processing_request must be an owner-minted ProcessingRequestIdentity"
+        )
+    return _TargetedAdapterParityReceipt(
+        adapter_name=adapter_name,
+        processing_request_id=processing_request.processing_request_id,
+        attempt_semantics_sha256=_bytes_sha256(
+            attempt_semantics, field="attempt_semantics"
+        ),
+        lineage_sha256=_bytes_sha256(lineage, field="lineage"),
+        scientific_results_sha256=_bytes_sha256(
+            scientific_results, field="scientific_results"
+        ),
+        delivery_projection_sha256=_bytes_sha256(
+            delivery_projection, field="delivery_projection"
+        ),
+        baseline_stage_xic_results_sha256=_file_sha256(
+            baseline_stage_xic_results,
+            field="baseline_stage_xic_results",
+        ),
+        final_stage_xic_results_sha256=_file_sha256(
+            final_stage_xic_results,
+            field="final_stage_xic_results",
+        ),
+    )
+
+
 def assert_targeted_adapter_parity(
-    cli: TargetedAdapterParityReceipt,
-    gui: TargetedAdapterParityReceipt,
+    cli: _TargetedAdapterParityReceipt,
+    gui: _TargetedAdapterParityReceipt,
 ) -> str:
-    if not isinstance(cli, TargetedAdapterParityReceipt) or cli.adapter_name != "cli":
+    if not isinstance(cli, _TargetedAdapterParityReceipt) or cli.adapter_name != "cli":
         raise Package0ComparatorError("cli must be a CLI parity receipt")
-    if not isinstance(gui, TargetedAdapterParityReceipt) or gui.adapter_name != "gui":
+    if not isinstance(gui, _TargetedAdapterParityReceipt) or gui.adapter_name != "gui":
         raise Package0ComparatorError("gui must be a GUI parity receipt")
     cli_basis = _adapter_basis(cli)
     gui_basis = _adapter_basis(gui)
@@ -322,12 +367,35 @@ def assert_targeted_adapter_parity(
     return _canonical_sha256(cli_basis)
 
 
-def validate_package0_successor_observation(
+def validate_package0_successor_output(
     contract: Mapping[str, object],
-    observation: Package0SuccessorObservation,
+    membership_receipt: Mapping[str, object],
     *,
-    cli: TargetedAdapterParityReceipt,
-    gui: TargetedAdapterParityReceipt,
+    output_root: Path,
+    cli: _TargetedAdapterParityReceipt,
+    gui: _TargetedAdapterParityReceipt,
+) -> str:
+    """Derive and validate the frozen comparator from actual successor files."""
+
+    observation = _observe_package0_successor_output(
+        contract,
+        membership_receipt,
+        output_root=output_root,
+    )
+    return _validate_package0_successor_observation(
+        contract,
+        observation,
+        cli=cli,
+        gui=gui,
+    )
+
+
+def _validate_package0_successor_observation(
+    contract: Mapping[str, object],
+    observation: _Package0SuccessorObservation,
+    *,
+    cli: _TargetedAdapterParityReceipt,
+    gui: _TargetedAdapterParityReceipt,
 ) -> str:
     if contract.get("authority") != {
         "product_authority_granted": False,
@@ -560,7 +628,113 @@ def _package1_frozen_surface_digest(contract: Mapping[str, object]) -> str:
     return _canonical_sha256(basis)
 
 
-def _adapter_basis(receipt: TargetedAdapterParityReceipt) -> dict[str, str]:
+def _observe_package0_successor_output(
+    contract: Mapping[str, object],
+    membership_receipt: Mapping[str, object],
+    *,
+    output_root: Path,
+) -> _Package0SuccessorObservation:
+    if not isinstance(membership_receipt, Mapping) or (
+        membership_receipt.get("schema_version")
+        != "package0_legacy_membership_receipt_v1"
+    ):
+        raise Package0ComparatorError("membership receipt schema is invalid")
+    paths = _membership_text_sequence(
+        membership_receipt,
+        "canonical_artifact_paths",
+    )
+    samples = _membership_text_sequence(
+        membership_receipt,
+        "ordered_sample_identities",
+    )
+    header = _membership_text_sequence(
+        membership_receipt,
+        "ordered_final_header",
+    )
+    if paths != tuple(sorted(paths)) or len(paths) != len(set(paths)):
+        raise Package0ComparatorError(
+            "canonical_artifact_paths must be unique and ordered"
+        )
+    normalized_paths = tuple(_normalized_relative_path(path) for path in paths)
+    if not isinstance(output_root, Path) or not output_root.is_dir():
+        raise Package0ComparatorError("output_root must be an existing directory")
+    resolved_root = output_root.resolve()
+    actual_paths = tuple(
+        sorted(
+            path.relative_to(output_root).as_posix()
+            for path in output_root.rglob("*")
+            if path.is_file()
+        )
+    )
+    if actual_paths != paths:
+        raise Package0ComparatorError(
+            "successor differs from frozen comparator: canonical_artifact_paths"
+        )
+    output_artifacts: list[dict[str, object]] = []
+    bytes_by_path: dict[str, bytes] = {}
+    for relative_path in normalized_paths:
+        path = output_root / relative_path
+        resolved_path = path.resolve()
+        if not resolved_path.is_relative_to(resolved_root) or not path.is_file():
+            raise Package0ComparatorError(
+                f"successor artifact escapes or is missing: {relative_path}"
+            )
+        exact_bytes = path.read_bytes()
+        bytes_by_path[relative_path] = exact_bytes
+        output_artifacts.append(
+            {
+                "path": relative_path,
+                "sha256": hashlib.sha256(exact_bytes).hexdigest().upper(),
+                "size_bytes": len(exact_bytes),
+            }
+        )
+    baseline_path = "baseline/output/xic_results.csv"
+    final_path = "final/output/xic_results.csv"
+    try:
+        baseline_bytes = bytes_by_path[baseline_path]
+        final_bytes = bytes_by_path[final_path]
+    except KeyError as exc:
+        raise Package0ComparatorError(
+            "membership receipt must include both Targeted xic_results.csv files"
+        ) from exc
+    baseline_header, baseline_samples = _csv_membership(
+        baseline_bytes,
+        field=baseline_path,
+    )
+    final_header, final_samples = _csv_membership(
+        final_bytes,
+        field=final_path,
+    )
+    differences: list[str] = []
+    if baseline_header != header or final_header != header:
+        differences.append("ordered_final_header")
+    if baseline_samples != samples or final_samples != samples:
+        differences.append("ordered_sample")
+    if differences:
+        raise Package0ComparatorError(
+            "successor differs from frozen comparator: " + ", ".join(differences)
+        )
+    baseline_id = contract.get("baseline_id")
+    if not isinstance(baseline_id, str) or not baseline_id:
+        raise Package0ComparatorError("baseline_id must be non-empty")
+    return _Package0SuccessorObservation(
+        baseline_id=baseline_id,
+        canonical_output_inventory_sha256=_canonical_value_sha256(
+            output_artifacts
+        ),
+        canonical_artifact_path_sha256=_ordered_sha256(paths),
+        ordered_sample_sha256=_ordered_sha256(baseline_samples),
+        ordered_final_header_sha256=_ordered_sha256(baseline_header),
+        baseline_stage_xic_results_sha256=(
+            hashlib.sha256(baseline_bytes).hexdigest().upper()
+        ),
+        final_stage_xic_results_sha256=(
+            hashlib.sha256(final_bytes).hexdigest().upper()
+        ),
+    )
+
+
+def _adapter_basis(receipt: _TargetedAdapterParityReceipt) -> dict[str, str]:
     return {
         "processing_request_id": receipt.processing_request_id,
         "attempt_semantics_sha256": receipt.attempt_semantics_sha256,
@@ -575,11 +749,73 @@ def _adapter_basis(receipt: TargetedAdapterParityReceipt) -> dict[str, str]:
 
 
 def _canonical_sha256(value: Mapping[str, object]) -> str:
+    return _canonical_value_sha256(value)
+
+
+def _canonical_value_sha256(value: object) -> str:
     return hashlib.sha256(
         json.dumps(
             value, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         ).encode("utf-8")
     ).hexdigest().upper()
+
+
+def _ordered_sha256(values: Sequence[str]) -> str:
+    return hashlib.sha256("\n".join(values).encode("utf-8")).hexdigest().upper()
+
+
+def _bytes_sha256(value: object, *, field: str) -> str:
+    if not isinstance(value, bytes):
+        raise Package0ComparatorError(f"{field} must be exact bytes")
+    return hashlib.sha256(value).hexdigest().upper()
+
+
+def _file_sha256(path: object, *, field: str) -> str:
+    if not isinstance(path, Path) or not path.is_file():
+        raise Package0ComparatorError(f"{field} must be an existing file")
+    return hashlib.sha256(path.read_bytes()).hexdigest().upper()
+
+
+def _membership_text_sequence(
+    membership_receipt: Mapping[str, object],
+    field: str,
+) -> tuple[str, ...]:
+    value = membership_receipt.get(field)
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(item, str) or not item for item in value)
+    ):
+        raise Package0ComparatorError(f"{field} must be a non-empty text list")
+    return tuple(value)
+
+
+def _normalized_relative_path(value: str) -> str:
+    path = PurePosixPath(value)
+    if path.is_absolute() or ".." in path.parts or path.as_posix() != value:
+        raise Package0ComparatorError(
+            "canonical artifact paths must be normalized relative POSIX paths"
+        )
+    return value
+
+
+def _csv_membership(
+    exact_bytes: bytes,
+    *,
+    field: str,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    try:
+        rows = tuple(
+            tuple(row)
+            for row in csv.reader(
+                io.StringIO(exact_bytes.decode("utf-8-sig"), newline="")
+            )
+        )
+    except (UnicodeDecodeError, csv.Error) as exc:
+        raise Package0ComparatorError(f"{field} must be a UTF-8 CSV") from exc
+    if len(rows) < 2 or not rows[0] or any(len(row) != len(rows[0]) for row in rows):
+        raise Package0ComparatorError(f"{field} must be a rectangular non-empty CSV")
+    return rows[0], tuple(row[0] for row in rows[1:])
 
 
 def _sha256(value: object, field: str) -> str:
@@ -592,11 +828,10 @@ def _sha256(value: object, field: str) -> str:
 
 __all__ = [
     "Package0ComparatorError",
-    "Package0SuccessorObservation",
     "Package1DifferenceObservation",
-    "TargetedAdapterParityReceipt",
     "assert_targeted_adapter_parity",
+    "mint_targeted_adapter_parity_receipt",
     "mint_package1_difference_observation",
     "validate_package1_difference_manifest",
-    "validate_package0_successor_observation",
+    "validate_package0_successor_output",
 ]

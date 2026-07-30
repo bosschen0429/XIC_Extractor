@@ -29,6 +29,7 @@ from xic_extractor.execution_runtime import (
 from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     canonical_coordinator_terminal_record_bytes,
@@ -254,6 +255,7 @@ def _reservations(
     return tuple(
         RuntimeResourceReservation(
             attempt=attempt,
+            kind=RuntimeResourceKind.PROCESS_WORKER,
             resource_key=f"process:sample:{suffix}",
             worker_key=f"worker:{suffix}",
             source_reference=f"no-raw:sample:{suffix}",
@@ -287,6 +289,7 @@ def _ledger(
         resource_lifecycles=tuple(
             (
                 job.resource_key,
+                RuntimeResourceKind.PROCESS_WORKER,
                 "resource_not_opened" if job.fail else "resource_opened",
                 "resource_cleanup_succeeded",
             )

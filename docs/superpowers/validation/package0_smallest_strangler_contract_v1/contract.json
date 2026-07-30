@@ -9,7 +9,7 @@
     "issue_149_completion": "complete",
     "implemented": [
       "legacy_comparator_membership",
-      "executable_successor_comparator",
+      "executable_successor_output_comparator_mechanism",
       "shared_headless_targeted_service",
       "canonical_acquisition_source_identity",
       "canonical_processing_request_identity",
@@ -61,6 +61,11 @@
     "legacy_comparator_membership": false,
     "independent_oracle_required": true,
     "product_write_authority": false
+  },
+  "successor_observation": {
+    "status": "not_evaluated",
+    "reason": "successor_output_belongs_to_a_later_package",
+    "required_input": "actual_output_root_and_cli_gui_owner_receipts"
   },
   "schema_version": "package0_smallest_strangler_contract_v1"
 }

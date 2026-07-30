@@ -31,6 +31,7 @@ from xic_extractor.execution_runtime import (
 from xic_extractor.execution_runtime_finalization import (
     AttemptFinalizationState,
     CoordinatorTerminalRecord,
+    RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
@@ -340,6 +341,18 @@ class TargetedRuntimeLifecycleApplicationResult:
             raise TargetedRuntimeAdapterError(
                 "lifecycle result must bind one settled runtime attempt"
             )
+        try:
+            accept_supervisor_finalization(
+                self.coordinator_record,
+                self.finalization_record,
+                observability_ledger=(
+                    self.finalization_record.observability_ledger
+                ),
+            )
+        except RuntimeFinalizationContractError as exc:
+            raise TargetedRuntimeAdapterError(
+                "finalization record must bind the coordinator proposal"
+            ) from exc
 
 
 def canonical_targeted_process_result_identity_bytes(

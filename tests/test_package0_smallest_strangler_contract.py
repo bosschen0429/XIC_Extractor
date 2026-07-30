@@ -32,7 +32,7 @@ def test_package0_declares_complete_no_raw_issue_scope() -> None:
         "issue_149_completion": "complete",
         "implemented": [
             "legacy_comparator_membership",
-            "executable_successor_comparator",
+            "executable_successor_output_comparator_mechanism",
             "shared_headless_targeted_service",
             "canonical_acquisition_source_identity",
             "canonical_processing_request_identity",

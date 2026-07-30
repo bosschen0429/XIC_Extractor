@@ -32,6 +32,7 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeLifecycleEventKind,
     RuntimeLifecycleFailureKind,
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     SupervisorFinalizationEventKind,
@@ -183,6 +184,35 @@ def test_failed_or_unknown_resource_open_prevents_successful_terminalization(
         state,
         resource_key="session:a",
         open_outcome=open_outcome,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+
+    coordinator = propose_attempt_terminal(state)
+
+    assert coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
+    assert coordinator.state.artifacts[0].proposed_disposition is (
+        RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC
+    )
+
+
+def test_not_opened_resource_without_accepted_cancellation_fails_attempt(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, artifact = _successful_runtime(attempt)
+    state = reserve_runtime_resource(
+        begin_attempt_finalization(runtime),
+        _reservation(attempt),
+    )
+    state = register_runtime_artifact(
+        state,
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+    state = settle_runtime_resource(
+        state,
+        resource_key="session:a",
+        open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
         cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
     )
 
@@ -430,7 +460,7 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
         "work_unit_key": "raw:a",
     }
     assert json.loads(failed_bytes)["schema_version"] == (
-        "execution_runtime_coordinator_terminal_v2"
+        "execution_runtime_coordinator_terminal_v3"
     )
     assert (
         mint_supervisor_finalization(
@@ -564,6 +594,43 @@ def test_supervisor_rejects_raw_open_count_that_conflicts_with_resources(
             coordinator,
             observability_ledger=inconsistent,
         )
+
+
+def test_process_worker_open_does_not_increment_raw_open_count(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, artifact = _successful_runtime(attempt)
+    state = reserve_runtime_resource(
+        begin_attempt_finalization(runtime),
+        replace(
+            _reservation(attempt),
+            kind=RuntimeResourceKind.PROCESS_WORKER,
+            resource_key="process:a",
+        ),
+    )
+    state = settle_runtime_resource(
+        state,
+        resource_key="process:a",
+        open_outcome=RuntimeResourceOpenOutcome.OPENED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+    state = register_runtime_artifact(
+        state,
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+    coordinator = propose_attempt_terminal(state)
+    ledger = _ledger(attempt, coordinator)
+
+    mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=ledger,
+    )
+
+    assert next(
+        metric.value for metric in ledger.metrics if metric.name == "raw_open_count"
+    ) == 0
 
 
 def test_undeclared_artifact_is_rejected_by_registration_and_state_invariant(
@@ -705,6 +772,7 @@ def _runtime(
 def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservation:
     return RuntimeResourceReservation(
         attempt=attempt,
+        kind=RuntimeResourceKind.ACQUISITION_SESSION,
         resource_key="session:a",
         worker_key="worker:1",
         source_reference="source:a",
@@ -733,6 +801,7 @@ def _ledger(attempt: ProcessingAttemptIdentity, coordinator=None):
         resource_lifecycles = tuple(
             (
                 record.reservation.resource_key,
+                record.reservation.kind,
                 f"resource_{record.open_outcome.value}",
                 f"resource_cleanup_{record.cleanup_outcome.value}",
             )

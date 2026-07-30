@@ -7,6 +7,7 @@ import pytest
 from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
 )
+from xic_extractor.execution_runtime_finalization_models import RuntimeResourceKind
 from xic_extractor.execution_runtime_observability import (
     REQUIRED_RUNTIME_METRIC_NAMES,
     RuntimeMetricAvailability,
@@ -327,6 +328,7 @@ def test_runtime_observability_rejects_incomplete_or_malformed_resource_lifecycl
         resource_lifecycles=(
             (
                 "session:a",
+                RuntimeResourceKind.ACQUISITION_SESSION,
                 "resource_opened",
                 "resource_cleanup_succeeded",
             ),

@@ -34,6 +34,13 @@ class RuntimeResourceCleanupOutcome(str, Enum):
     UNKNOWN_AFTER_WORKER_LOSS = "unknown_after_worker_loss"
 
 
+class RuntimeResourceKind(str, Enum):
+    """Mechanical resource role used by owner-backed runtime metrics."""
+
+    ACQUISITION_SESSION = "acquisition_session"
+    PROCESS_WORKER = "process_worker"
+
+
 class RuntimeArtifactDisposition(str, Enum):
     """Runtime-only artifact states; none grants delivery or writer authority."""
 
@@ -84,6 +91,7 @@ class RuntimeResourceReservation:
     """Owner-supplied opaque reservation recorded before allocation/dispatch."""
 
     attempt: ProcessingAttemptIdentity
+    kind: RuntimeResourceKind
     resource_key: str
     worker_key: str
     source_reference: str
@@ -91,6 +99,10 @@ class RuntimeResourceReservation:
 
     def __post_init__(self) -> None:
         _require_attempt(self.attempt)
+        if not isinstance(self.kind, RuntimeResourceKind):
+            raise RuntimeFinalizationContractError(
+                "kind must be a RuntimeResourceKind"
+            )
         _required_text(self.resource_key, field="resource_key")
         _required_text(self.worker_key, field="worker_key")
         _required_text(self.source_reference, field="source_reference")
@@ -441,6 +453,7 @@ __all__ = [
     "RuntimeLifecycleFailure",
     "RuntimeLifecycleFailureKind",
     "RuntimeResourceCleanupOutcome",
+    "RuntimeResourceKind",
     "RuntimeResourceOpenOutcome",
     "RuntimeResourceRecord",
     "RuntimeResourceReservation",

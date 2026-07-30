@@ -29,10 +29,12 @@ from xic_extractor.execution_runtime import (
 )
 from xic_extractor.execution_runtime_finalization import (
     CoordinatorTerminalRecord,
+    RuntimeFinalizationContractError,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     SupervisorFinalizationRecord,
+    accept_supervisor_finalization,
     begin_attempt_finalization,
     mint_supervisor_finalization,
     propose_attempt_terminal,
@@ -136,6 +138,18 @@ class AlignmentRuntimeApplicationResult:
             raise AlignmentRuntimeAdapterError(
                 "finalization record must bind the Alignment runtime attempt"
             )
+        try:
+            accept_supervisor_finalization(
+                self.coordinator_record,
+                self.finalization_record,
+                observability_ledger=(
+                    self.finalization_record.observability_ledger
+                ),
+            )
+        except RuntimeFinalizationContractError as exc:
+            raise AlignmentRuntimeAdapterError(
+                "finalization record must bind the coordinator proposal"
+            ) from exc
         observation_keys = tuple(
             key for key, _batch in self.successful_observation_batches
         )

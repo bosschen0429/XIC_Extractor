@@ -28,6 +28,7 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeFinalizationContractError,
     RuntimeLifecycleEventKind,
     RuntimeResourceCleanupOutcome,
+    RuntimeResourceKind,
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
 )
@@ -568,6 +569,7 @@ def _runtime(
 def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservation:
     return RuntimeResourceReservation(
         attempt=attempt,
+        kind=RuntimeResourceKind.ACQUISITION_SESSION,
         resource_key="session:a",
         worker_key="worker:1",
         source_reference="source:a",
@@ -608,6 +610,7 @@ def _ledger(
         resource_lifecycles=tuple(
             (
                 report.resource_key,
+                RuntimeResourceKind.ACQUISITION_SESSION,
                 f"resource_{report.open_outcome.value}",
                 f"resource_cleanup_{report.cleanup_outcome.value}",
             )
