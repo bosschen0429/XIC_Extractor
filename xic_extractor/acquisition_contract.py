@@ -26,6 +26,9 @@ class TraceCoordinateKind(str, Enum):
 
 
 class BatchXICAdapter(Protocol):
+    @property
+    def raw_chromatogram_call_count(self) -> int: ...
+
     def extract_xic_many(
         self, requests: Sequence[XICRequest]
     ) -> Sequence[XICTrace]: ...
@@ -168,7 +171,6 @@ class TraceAcquisitionBatch:
         expected_counts = {
             "logical_xic_request_count": len(self.traces),
             "xic_batch_count": 1,
-            "adapter_chromatogram_call_count": 1,
             "trace_point_count": sum(len(item.trace.rt) for item in self.traces),
         }
         for field, expected in expected_counts.items():
@@ -176,6 +178,10 @@ class TraceAcquisitionBatch:
                 raise AcquisitionContractError(
                     f"{field} mismatches the acquired batch content"
                 )
+        _nonnegative_integer(
+            self.adapter_chromatogram_call_count,
+            "adapter_chromatogram_call_count",
+        )
         if any(
             trace.coordinate.capability_id != self.capability.capability_id
             for trace in self.traces
@@ -250,7 +256,13 @@ def acquire_trace_batch(
         raise AcquisitionContractError("requests must be an XICRequest tuple")
     if not requests:
         raise AcquisitionContractError("requests must be non-empty")
+    call_count_before = _adapter_chromatogram_call_count(adapter)
     traces = tuple(adapter.extract_xic_many(requests))
+    call_count_after = _adapter_chromatogram_call_count(adapter)
+    if call_count_after < call_count_before:
+        raise AcquisitionContractError(
+            "adapter chromatogram call counter must be monotonic"
+        )
     if len(traces) != len(requests):
         raise AcquisitionContractError(
             "batch adapter must return exactly one trace per request"
@@ -277,7 +289,7 @@ def acquire_trace_batch(
         traces=tuple(acquired),
         logical_xic_request_count=len(requests),
         xic_batch_count=1,
-        adapter_chromatogram_call_count=1,
+        adapter_chromatogram_call_count=call_count_after - call_count_before,
         trace_point_count=point_count,
     )
 
@@ -349,6 +361,23 @@ def _required_text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise AcquisitionContractError(
             f"{field} must be non-empty owner-normalized text"
+        )
+    return value
+
+
+def _adapter_chromatogram_call_count(adapter: object) -> int:
+    value = getattr(adapter, "raw_chromatogram_call_count", None)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise AcquisitionContractError(
+            "adapter must expose a non-negative raw chromatogram call counter"
+        )
+    return value
+
+
+def _nonnegative_integer(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise AcquisitionContractError(
+            f"{field} must be a non-negative integer"
         )
     return value
 

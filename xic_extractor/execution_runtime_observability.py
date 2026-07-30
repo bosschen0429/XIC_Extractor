@@ -51,6 +51,12 @@ REQUIRED_RUNTIME_METRIC_NAMES = (
     "artifact_write_bytes",
 )
 
+_WORK_UNIT_LIFECYCLE_KINDS = (
+    "work_unit_submitted",
+    "work_unit_started",
+    "work_unit_settled",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeObservationEvent:
@@ -165,20 +171,7 @@ class RuntimeObservabilityLedger:
             raise RuntimeObservabilityContractError(
                 "terminal_outcome must be the last observation"
             )
-        work_events = {
-            key: {
-                event.kind
-                for event in self.events
-                if event.subject is RuntimeObservationSubject.WORK_UNIT
-                and event.subject_key == key
-            }
-            for key in self.work_unit_keys
-        }
-        required = {"work_unit_submitted", "work_unit_started", "work_unit_settled"}
-        if any(kinds & required != required for kinds in work_events.values()):
-            raise RuntimeObservabilityContractError(
-                "each work unit requires submitted, started, and settled events"
-            )
+        _validate_work_event_lifecycle(self.work_unit_keys, self.events)
         if not isinstance(self.metrics, tuple) or any(
             not isinstance(metric, RuntimeMetricRecord) for metric in self.metrics
         ):
@@ -199,6 +192,54 @@ def _require_attempt(value: object) -> ProcessingAttemptIdentity:
             "attempt must be an owner-issued ProcessingAttemptIdentity"
         )
     return value
+
+
+def _validate_work_event_lifecycle(
+    work_unit_keys: tuple[str, ...],
+    events: tuple[RuntimeObservationEvent, ...],
+) -> None:
+    declared = set(work_unit_keys)
+    work_events = tuple(
+        event
+        for event in events
+        if event.subject is RuntimeObservationSubject.WORK_UNIT
+    )
+    undeclared = sorted(
+        {event.subject_key for event in work_events} - declared
+    )
+    if undeclared:
+        raise RuntimeObservabilityContractError(
+            "work events reference undeclared work units: "
+            + ", ".join(undeclared)
+        )
+    if any(
+        event.kind in _WORK_UNIT_LIFECYCLE_KINDS
+        and event.subject is not RuntimeObservationSubject.WORK_UNIT
+        for event in events
+    ):
+        raise RuntimeObservabilityContractError(
+            "work lifecycle events must use the work_unit subject"
+        )
+    for key in work_unit_keys:
+        positions: list[int] = []
+        for kind in _WORK_UNIT_LIFECYCLE_KINDS:
+            matches = [
+                index
+                for index, event in enumerate(events)
+                if event.subject is RuntimeObservationSubject.WORK_UNIT
+                and event.subject_key == key
+                and event.kind == kind
+            ]
+            if len(matches) != 1:
+                raise RuntimeObservabilityContractError(
+                    "each work unit requires exactly one submitted, started, "
+                    "and settled event"
+                )
+            positions.append(matches[0])
+        if positions != sorted(positions):
+            raise RuntimeObservabilityContractError(
+                "work lifecycle order must be submitted, started, then settled"
+            )
 
 
 def _required_text(value: object, field: str) -> str:

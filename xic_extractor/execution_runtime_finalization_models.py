@@ -247,6 +247,13 @@ class AttemptFinalizationState:
             raise RuntimeFinalizationContractError(
                 "runtime artifacts must bind the runtime request and attempt"
             )
+        manifest_keys = set(self.runtime.manifest.work_unit_keys)
+        if any(
+            record.work_unit_key not in manifest_keys for record in self.artifacts
+        ):
+            raise RuntimeFinalizationContractError(
+                "runtime artifacts must bind declared manifest work units"
+            )
         first_sequence = len(self.runtime.history.events) + 1
         if tuple(event.sequence for event in self.events) != tuple(
             range(first_sequence, first_sequence + len(self.events))

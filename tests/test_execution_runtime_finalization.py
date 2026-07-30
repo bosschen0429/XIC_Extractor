@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -19,7 +20,9 @@ from xic_extractor.execution_runtime import (
     start_attempt_runtime,
 )
 from xic_extractor.execution_runtime_finalization import (
+    AttemptFinalizationState,
     RuntimeArtifactDisposition,
+    RuntimeArtifactRecord,
     RuntimeFinalizationContractError,
     RuntimeLifecycleEventKind,
     RuntimeLifecycleFailureKind,
@@ -297,6 +300,108 @@ def test_terminal_and_acknowledgement_fail_closed_on_missing_or_conflict(
             coordinator.state,
             work_unit_key="raw:a",
             artifact=artifact,
+        )
+
+
+def test_coordinator_receipt_binds_settlement_integrity_failure(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, accepted_artifact = _successful_runtime(attempt)
+    failed_submission = settle_work_unit(
+        runtime,
+        work_unit_key="raw:a",
+        outcome=WorkUnitTerminalOutcome.FAILED,
+    )
+    alternate_artifact = mint_targeted_process_result_ref(
+        processing_attempt=attempt,
+        work_unit_key="raw:a",
+        owner_result_payload=b"alternate-owner-result",
+    ).artifact
+    alternate_submission = settle_work_unit(
+        runtime,
+        work_unit_key="raw:a",
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+        owner_result_ref=alternate_artifact,
+    )
+
+    def close(conflicted: AttemptRuntime):
+        state = register_runtime_artifact(
+            begin_attempt_finalization(conflicted),
+            work_unit_key="raw:a",
+            artifact=accepted_artifact,
+        )
+        return propose_attempt_terminal(state)
+
+    failed_coordinator = close(failed_submission)
+    alternate_coordinator = close(alternate_submission)
+    failed_bytes = canonical_coordinator_terminal_record_bytes(failed_coordinator)
+    alternate_bytes = canonical_coordinator_terminal_record_bytes(
+        alternate_coordinator
+    )
+    failure_payload = json.loads(failed_bytes)["settlement_integrity_failure"]
+
+    assert failed_bytes != alternate_bytes
+    assert failure_payload == {
+        "accepted_settlement": {
+            "outcome": "succeeded",
+            "owner_result_artifact_id": accepted_artifact.evidence_artifact_id,
+            "work_unit_key": "raw:a",
+        },
+        "kind": "conflicting_settlement",
+        "submitted_settlement": {
+            "outcome": "failed",
+            "owner_result_artifact_id": None,
+            "work_unit_key": "raw:a",
+        },
+        "work_unit_key": "raw:a",
+    }
+    assert (
+        mint_supervisor_finalization(failed_coordinator).coordinator_record_sha256
+        != mint_supervisor_finalization(
+            alternate_coordinator
+        ).coordinator_record_sha256
+    )
+
+
+def test_undeclared_artifact_is_rejected_by_registration_and_state_invariant(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, accepted_artifact = _successful_runtime(attempt)
+    rogue_artifact = mint_targeted_process_result_ref(
+        processing_attempt=attempt,
+        work_unit_key="raw:rogue",
+        owner_result_payload=b"rogue-owner-result",
+    ).artifact
+    state = register_runtime_artifact(
+        begin_attempt_finalization(runtime),
+        work_unit_key="raw:a",
+        artifact=accepted_artifact,
+    )
+
+    with pytest.raises(RuntimeFinalizationContractError, match="declared manifest"):
+        register_runtime_artifact(
+            state,
+            work_unit_key="raw:rogue",
+            artifact=rogue_artifact,
+        )
+    coordinator = propose_attempt_terminal(state)
+
+    assert tuple(item.work_unit_key for item in state.artifacts) == ("raw:a",)
+    assert coordinator.proposed_outcome is AttemptTerminalOutcome.SUCCEEDED
+    assert coordinator.state.artifacts[0].proposed_disposition is (
+        RuntimeArtifactDisposition.OFFERED_TO_OWNER
+    )
+    with pytest.raises(RuntimeFinalizationContractError, match="declared manifest"):
+        AttemptFinalizationState(
+            runtime=runtime,
+            artifacts=(
+                RuntimeArtifactRecord(
+                    work_unit_key="raw:rogue",
+                    artifact=rogue_artifact,
+                ),
+            ),
         )
 
 

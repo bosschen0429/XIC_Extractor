@@ -103,6 +103,10 @@ FROZEN_COMPARATOR = Path(
 
 @dataclass(frozen=True)
 class _NoRawBatchAdapter:
+    @property
+    def raw_chromatogram_call_count(self) -> int:
+        return 0
+
     def extract_xic_many(
         self, requests: tuple[XICRequest, ...]
     ) -> tuple[XICTrace, ...]:
@@ -304,7 +308,7 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
     rt_only = targeted_batches[1][1]
     assert native.acquisition.logical_xic_request_count == 2
     assert native.acquisition.xic_batch_count == 1
-    assert native.acquisition.adapter_chromatogram_call_count == 1
+    assert native.acquisition.adapter_chromatogram_call_count == 0
     assert native.acquisition.trace_point_count == 10
     assert all(
         item.coordinate.first_scan is not None

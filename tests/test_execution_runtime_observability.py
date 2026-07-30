@@ -70,6 +70,98 @@ def test_runtime_observability_rejects_missing_metric_availability(
         )
 
 
+def test_runtime_observability_rejects_out_of_order_work_lifecycle(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    events = list(_events(attempt))
+    events[3:6] = (
+        replace(events[3], kind="work_unit_settled"),
+        replace(events[4], kind="work_unit_submitted"),
+        replace(events[5], kind="work_unit_started"),
+    )
+
+    with pytest.raises(RuntimeObservabilityContractError, match="lifecycle order"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=tuple(events),
+            metrics=_metrics(attempt.processing_attempt_id),
+        )
+
+
+def test_runtime_observability_rejects_duplicate_work_lifecycle_event(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    events = list(_events(attempt))
+    events.insert(4, replace(events[3]))
+    events = [
+        replace(
+            event,
+            sequence=index,
+            monotonic_offset_ns=(index - 1) * 10,
+        )
+        for index, event in enumerate(events, start=1)
+    ]
+
+    with pytest.raises(RuntimeObservabilityContractError, match="exactly one"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=tuple(events),
+            metrics=_metrics(attempt.processing_attempt_id),
+        )
+
+
+def test_runtime_observability_rejects_undeclared_work_event(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    events = list(_events(attempt))
+    events[3] = replace(events[3], subject_key="sample-b:target-b")
+
+    with pytest.raises(RuntimeObservabilityContractError, match="undeclared"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=tuple(events),
+            metrics=_metrics(attempt.processing_attempt_id),
+        )
+
+
+def test_runtime_observability_rejects_work_lifecycle_kind_on_wrong_subject(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    events = list(_events(attempt))
+    events.insert(
+        6,
+        replace(
+            events[3],
+            kind="work_unit_submitted",
+            subject=RuntimeObservationSubject.ATTEMPT,
+            subject_key="attempt",
+        ),
+    )
+    events = [
+        replace(
+            event,
+            sequence=index,
+            monotonic_offset_ns=(index - 1) * 10,
+        )
+        for index, event in enumerate(events, start=1)
+    ]
+
+    with pytest.raises(RuntimeObservabilityContractError, match="work_unit subject"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=tuple(events),
+            metrics=_metrics(attempt.processing_attempt_id),
+        )
+
+
 def _events(attempt):
     kinds = (
         ("attempt_queued", RuntimeObservationSubject.ATTEMPT, "attempt"),

@@ -14,6 +14,7 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
     AttemptTerminalOutcome,
+    WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
 from xic_extractor.execution_runtime_finalization_models import (
@@ -236,6 +237,10 @@ def register_runtime_artifact(
         raise RuntimeFinalizationContractError(
             "runtime artifact must bind the runtime request and attempt"
         )
+    if record.work_unit_key not in state.runtime.manifest.work_unit_keys:
+        raise RuntimeFinalizationContractError(
+            "runtime artifact must bind a declared manifest work unit"
+        )
     existing = next(
         (
             item
@@ -406,23 +411,34 @@ def canonical_coordinator_terminal_record_bytes(
     """Return deterministic recovery-record bytes without product payloads."""
 
     state = coordinator.state
+    integrity_failure = state.runtime.integrity_failure
     payload = {
         "schema_version": "execution_runtime_coordinator_terminal_v1",
         "processing_request_id": state.runtime.manifest.attempt.processing_request_id,
         "processing_attempt_id": state.runtime.manifest.attempt.processing_attempt_id,
         "manifest_work_unit_keys": state.runtime.manifest.work_unit_keys,
         "work_settlements": [
-            {
-                "work_unit_key": item.work_unit_key,
-                "outcome": item.outcome.value,
-                "owner_result_artifact_id": (
-                    None
-                    if item.owner_result_ref is None
-                    else item.owner_result_ref.evidence_artifact_id
-                ),
-            }
+            _work_unit_settlement_payload(item)
             for item in state.runtime.settlements
         ],
+        "settlement_integrity_failure": (
+            None
+            if integrity_failure is None
+            else {
+                "work_unit_key": integrity_failure.work_unit_key,
+                "kind": integrity_failure.kind.value,
+                "submitted_settlement": _work_unit_settlement_payload(
+                    integrity_failure.submitted_settlement
+                ),
+                "accepted_settlement": (
+                    None
+                    if integrity_failure.accepted_settlement is None
+                    else _work_unit_settlement_payload(
+                        integrity_failure.accepted_settlement
+                    )
+                ),
+            }
+        ),
         "resources": [
             {
                 "resource_key": item.reservation.resource_key,
@@ -462,6 +478,20 @@ def canonical_coordinator_terminal_record_bytes(
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
+
+
+def _work_unit_settlement_payload(
+    settlement: WorkUnitSettlement,
+) -> dict[str, str | None]:
+    return {
+        "work_unit_key": settlement.work_unit_key,
+        "outcome": settlement.outcome.value,
+        "owner_result_artifact_id": (
+            None
+            if settlement.owner_result_ref is None
+            else settlement.owner_result_ref.evidence_artifact_id
+        ),
+    }
 
 
 def _proposed_outcome(state: AttemptFinalizationState) -> AttemptTerminalOutcome:
