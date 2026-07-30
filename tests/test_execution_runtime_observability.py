@@ -37,9 +37,12 @@ def test_runtime_observability_closes_work_offsets_and_metric_availability(
     assert {metric.name for metric in ledger.metrics} == set(
         REQUIRED_RUNTIME_METRIC_NAMES
     )
-    assert next(
-        metric for metric in ledger.metrics if metric.name == "raw_open_count"
-    ).value == 0
+    assert (
+        next(
+            metric for metric in ledger.metrics if metric.name == "raw_open_count"
+        ).value
+        == 0
+    )
 
 
 def test_runtime_observability_rejects_nonmonotonic_offsets(tmp_path: Path) -> None:
@@ -68,6 +71,114 @@ def test_runtime_observability_rejects_missing_metric_availability(
             events=_events(attempt),
             metrics=_metrics(attempt.processing_attempt_id)[:-1],
         )
+
+
+def test_runtime_observability_requires_measured_metrics_after_attempt_start(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    unavailable = tuple(
+        replace(
+            metric,
+            availability=RuntimeMetricAvailability.UNSUPPORTED,
+            value=None,
+            reason="not captured",
+        )
+        for metric in _metrics(attempt.processing_attempt_id)
+    )
+
+    with pytest.raises(RuntimeObservabilityContractError, match="measured"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=_events(attempt),
+            metrics=unavailable,
+        )
+
+
+def test_runtime_observability_requires_complete_terminal_lifecycle(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    omitted = {
+        "attempt_started",
+        "terminal_proposal",
+        "terminal_acknowledged",
+    }
+    events = tuple(
+        replace(event, sequence=index, monotonic_offset_ns=(index - 1) * 10)
+        for index, event in enumerate(
+            (event for event in _events(attempt) if event.kind not in omitted),
+            start=1,
+        )
+    )
+
+    with pytest.raises(RuntimeObservabilityContractError, match="lifecycle"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=events,
+            metrics=_metrics(attempt.processing_attempt_id),
+        )
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    (
+        {"scope": RuntimeMetricScope.STAGE},
+        {"scope_key": "wrong-attempt"},
+        {"unit": "seconds"},
+        {"aggregation": "max"},
+    ),
+)
+def test_runtime_observability_rejects_wrong_required_metric_shape(
+    tmp_path: Path,
+    replacement: dict[str, object],
+) -> None:
+    attempt = _attempt(tmp_path)
+    metrics = list(_metrics(attempt.processing_attempt_id))
+    metrics[0] = replace(metrics[0], **replacement)
+
+    with pytest.raises(RuntimeObservabilityContractError, match="metric contract"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=_events(attempt),
+            metrics=tuple(metrics),
+        )
+
+
+def test_runtime_observability_rejects_duplicate_or_unknown_metrics(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    metrics = _metrics(attempt.processing_attempt_id)
+    duplicate = (*metrics, metrics[0])
+    unknown = (*metrics, replace(metrics[0], name="unregistered_metric"))
+
+    for invalid in (duplicate, unknown):
+        with pytest.raises(RuntimeObservabilityContractError, match="metric"):
+            RuntimeObservabilityLedger(
+                attempt=attempt,
+                work_unit_keys=("sample-a:target-a",),
+                events=_events(attempt),
+                metrics=invalid,
+            )
+
+
+def test_runtime_observability_accepts_preflight_failure_contract(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+
+    ledger = RuntimeObservabilityLedger(
+        attempt=attempt,
+        work_unit_keys=(),
+        events=_preflight_events(attempt),
+        metrics=_preflight_metrics(attempt.processing_attempt_id),
+    )
+
+    assert "attempt_started" not in {event.kind for event in ledger.events}
 
 
 def test_runtime_observability_rejects_out_of_order_work_lifecycle(
@@ -215,19 +326,39 @@ def _metrics(attempt_id: str) -> tuple[RuntimeMetricRecord, ...]:
         "artifact_write_count",
         "artifact_write_bytes",
     }
+    attempt_shapes = {
+        "coordinator_work_seconds": ("seconds", "last"),
+        "attempt_wall_seconds": ("seconds", "last"),
+        "worker_peak_rss_bytes": ("bytes", "max"),
+        "process_tree_peak_rss_bytes": ("bytes", "max"),
+    }
     return tuple(
         RuntimeMetricRecord(
             name=name,
-            scope=RuntimeMetricScope.ATTEMPT,
-            scope_key=attempt_id,
+            scope=(
+                RuntimeMetricScope.WORK_UNIT
+                if name == "stage_or_unit_elapsed_seconds"
+                else RuntimeMetricScope.WORKER
+                if name == "worker_peak_rss_bytes"
+                else RuntimeMetricScope.ATTEMPT
+            ),
+            scope_key=(
+                "sample-a:target-a"
+                if name == "stage_or_unit_elapsed_seconds"
+                else "worker:aggregate"
+                if name == "worker_peak_rss_bytes"
+                else attempt_id
+            ),
             unit=(
-                "count"
+                attempt_shapes[name][0]
+                if name in attempt_shapes
+                else "count"
                 if name in count_metrics
                 else "bytes"
                 if name.endswith("bytes")
                 else "seconds"
             ),
-            aggregation="sum" if name != "attempt_wall_seconds" else "last",
+            aggregation=(attempt_shapes[name][1] if name in attempt_shapes else "sum"),
             measurement_source="package0-no-raw-fixture",
             availability=(
                 RuntimeMetricAvailability.MEASURED
@@ -239,6 +370,52 @@ def _metrics(attempt_id: str) -> tuple[RuntimeMetricRecord, ...]:
         )
         for name in REQUIRED_RUNTIME_METRIC_NAMES
     )
+
+
+def _preflight_events(attempt) -> tuple[RuntimeObservationEvent, ...]:
+    kinds = (
+        "attempt_queued",
+        "manifest_preflight_failed",
+        "terminal_proposal",
+        "terminal_acknowledged",
+        "terminal_outcome",
+    )
+    return tuple(
+        RuntimeObservationEvent(
+            attempt=attempt,
+            sequence=index,
+            monotonic_offset_ns=(index - 1) * 10,
+            kind=kind,
+            subject=RuntimeObservationSubject.ATTEMPT,
+            subject_key="attempt",
+        )
+        for index, kind in enumerate(kinds, start=1)
+    )
+
+
+def _preflight_metrics(attempt_id: str) -> tuple[RuntimeMetricRecord, ...]:
+    unavailable = {
+        "coordinator_work_seconds",
+        "stage_or_unit_elapsed_seconds",
+        "worker_peak_rss_bytes",
+        "process_tree_peak_rss_bytes",
+    }
+    metrics = []
+    for metric in _metrics(attempt_id):
+        if metric.name in unavailable:
+            metrics.append(
+                replace(
+                    metric,
+                    scope=RuntimeMetricScope.ATTEMPT,
+                    scope_key=attempt_id,
+                    availability=RuntimeMetricAvailability.UNSUPPORTED,
+                    value=None,
+                    reason="not_started_preflight_failure",
+                )
+            )
+        else:
+            metrics.append(replace(metric, value=0))
+    return tuple(metrics)
 
 
 def _attempt(tmp_path: Path):

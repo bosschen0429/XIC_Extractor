@@ -391,6 +391,15 @@ lifecycle events fail closed.
 | `artifact_read_count/bytes` | Sum of runtime-mediated reads; excludes uninstrumented external I/O and records coverage |
 | `artifact_write_count/bytes` | Sum of runtime-mediated writes; excludes uninstrumented external I/O and records coverage |
 
+The executable Package 0/1 ledger uses one attempt-scoped `sum` record for the
+count and artifact-I/O metrics, attempt-scoped `last` records for coordinator
+and wall spans, one work-unit-scoped `sum` elapsed record per declared work key,
+worker-scoped `max` RSS, and attempt-scoped `max` process-tree RSS. Metric
+identity is `(name, scope, scope_key)` and duplicates or unregistered names fail
+closed. The queued-to-terminal preflight path has no work/worker scope, so its
+explicitly unavailable elapsed/RSS records use the attempt scope and
+`not_started_preflight_failure` reason.
+
 These metrics describe cost and execution locality. They do not score evidence
 quality or authorize a result.
 
