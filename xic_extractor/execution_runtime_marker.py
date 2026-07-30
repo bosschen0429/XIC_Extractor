@@ -6,14 +6,18 @@ namespace, retention, and any later publication decision.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
 import tempfile
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from xic_extractor.execution_runtime import AttemptRuntime, AttemptTerminalOutcome
 from xic_extractor.execution_runtime_finalization import (
@@ -22,8 +26,12 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeFinalizationContractError,
     SupervisorFinalizationRecord,
     accept_supervisor_finalization,
+    canonical_coordinator_terminal_record_bytes,
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
+
+_MARKER_LOCK_TIMEOUT_SECONDS = 2.0
+_MARKER_LOCK_POLL_SECONDS = 0.01
 
 
 class RuntimeMarkerState(str, Enum):
@@ -39,10 +47,9 @@ class RuntimeMarkerSnapshot:
     artifact_namespace: str
     manifest_work_unit_keys: tuple[str, ...]
     coordinator_record_sha256: str | None = None
+    coordinator_record_bytes: bytes | None = None
     terminal_outcome: AttemptTerminalOutcome | None = None
-    artifact_dispositions: tuple[
-        tuple[str, RuntimeArtifactDisposition], ...
-    ] = ()
+    artifact_dispositions: tuple[tuple[str, RuntimeArtifactDisposition], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,9 +58,8 @@ class CoordinatorLossRecovery:
     finalization_acknowledged: bool
     quarantine_artifact_namespace: bool
     artifact_namespace: str
-    artifact_dispositions: tuple[
-        tuple[str, RuntimeArtifactDisposition], ...
-    ] = ()
+    coordinator_record_bytes: bytes | None = None
+    artifact_dispositions: tuple[tuple[str, RuntimeArtifactDisposition], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,9 +78,7 @@ class OwnerPathRuntimeMarker:
 
     def record_launch(self, runtime: AttemptRuntime) -> RuntimeMarkerSnapshot:
         if not isinstance(runtime, AttemptRuntime):
-            raise RuntimeFinalizationContractError(
-                "runtime must be an AttemptRuntime"
-            )
+            raise RuntimeFinalizationContractError("runtime must be an AttemptRuntime")
         attempt = runtime.manifest.attempt
         proposed = RuntimeMarkerSnapshot(
             state=RuntimeMarkerState.LAUNCHED,
@@ -83,22 +87,23 @@ class OwnerPathRuntimeMarker:
             artifact_namespace=self.artifact_namespace,
             manifest_work_unit_keys=runtime.manifest.work_unit_keys,
         )
-        existing = self.read_optional()
-        if existing is not None:
-            if existing == proposed:
-                return existing
-            if (
-                existing.state is RuntimeMarkerState.FINALIZED
-                and _same_attempt_scope(existing, proposed)
-            ):
+        with self._exclusive_transaction():
+            existing = self.read_optional()
+            if existing is not None:
+                if existing == proposed:
+                    return existing
+                if (
+                    existing.state is RuntimeMarkerState.FINALIZED
+                    and _same_attempt_scope(existing, proposed)
+                ):
+                    raise RuntimeFinalizationContractError(
+                        "runtime attempt is already durably finalized"
+                    )
                 raise RuntimeFinalizationContractError(
-                    "runtime attempt is already durably finalized"
+                    "runtime marker path already contains a different attempt scope"
                 )
-            raise RuntimeFinalizationContractError(
-                "runtime marker path already contains a different attempt scope"
-            )
-        self._write(proposed)
-        return proposed
+            self._write(proposed)
+            return proposed
 
     def __call__(
         self,
@@ -106,39 +111,42 @@ class OwnerPathRuntimeMarker:
         proposed: SupervisorFinalizationRecord,
     ) -> SupervisorFinalizationRecord:
         accepted = accept_supervisor_finalization(coordinator, proposed)
-        launch = self.read()
-        attempt = coordinator.state.runtime.manifest.attempt
-        expected_scope = RuntimeMarkerSnapshot(
-            state=RuntimeMarkerState.LAUNCHED,
-            processing_request_id=attempt.processing_request_id,
-            processing_attempt_id=attempt.processing_attempt_id,
-            artifact_namespace=self.artifact_namespace,
-            manifest_work_unit_keys=(
-                coordinator.state.runtime.manifest.work_unit_keys
-            ),
-        )
-        if not _same_attempt_scope(launch, expected_scope):
-            raise RuntimeFinalizationContractError(
-                "runtime finalization does not match the durable launch marker"
+        coordinator_bytes = canonical_coordinator_terminal_record_bytes(coordinator)
+        with self._exclusive_transaction():
+            launch = self.read()
+            attempt = coordinator.state.runtime.manifest.attempt
+            expected_scope = RuntimeMarkerSnapshot(
+                state=RuntimeMarkerState.LAUNCHED,
+                processing_request_id=attempt.processing_request_id,
+                processing_attempt_id=attempt.processing_attempt_id,
+                artifact_namespace=self.artifact_namespace,
+                manifest_work_unit_keys=(
+                    coordinator.state.runtime.manifest.work_unit_keys
+                ),
             )
-        finalized = RuntimeMarkerSnapshot(
-            state=RuntimeMarkerState.FINALIZED,
-            processing_request_id=launch.processing_request_id,
-            processing_attempt_id=launch.processing_attempt_id,
-            artifact_namespace=launch.artifact_namespace,
-            manifest_work_unit_keys=launch.manifest_work_unit_keys,
-            coordinator_record_sha256=accepted.coordinator_record_sha256,
-            terminal_outcome=accepted.terminal_outcome,
-            artifact_dispositions=accepted.artifact_dispositions,
-        )
-        if launch.state is RuntimeMarkerState.FINALIZED:
-            if launch != finalized:
+            if not _same_attempt_scope(launch, expected_scope):
                 raise RuntimeFinalizationContractError(
-                    "runtime marker already contains conflicting finalization"
+                    "runtime finalization does not match the durable launch marker"
                 )
+            finalized = RuntimeMarkerSnapshot(
+                state=RuntimeMarkerState.FINALIZED,
+                processing_request_id=launch.processing_request_id,
+                processing_attempt_id=launch.processing_attempt_id,
+                artifact_namespace=launch.artifact_namespace,
+                manifest_work_unit_keys=launch.manifest_work_unit_keys,
+                coordinator_record_sha256=accepted.coordinator_record_sha256,
+                coordinator_record_bytes=coordinator_bytes,
+                terminal_outcome=accepted.terminal_outcome,
+                artifact_dispositions=accepted.artifact_dispositions,
+            )
+            if launch.state is RuntimeMarkerState.FINALIZED:
+                if launch != finalized:
+                    raise RuntimeFinalizationContractError(
+                        "runtime marker already contains conflicting finalization"
+                    )
+                return accepted
+            self._write(finalized)
             return accepted
-        self._write(finalized)
-        return accepted
 
     def recover_after_coordinator_loss(
         self,
@@ -173,6 +181,7 @@ class OwnerPathRuntimeMarker:
             finalization_acknowledged=True,
             quarantine_artifact_namespace=False,
             artifact_namespace=snapshot.artifact_namespace,
+            coordinator_record_bytes=snapshot.coordinator_record_bytes,
             artifact_dispositions=snapshot.artifact_dispositions,
         )
 
@@ -229,6 +238,39 @@ class OwnerPathRuntimeMarker:
             except FileNotFoundError:
                 pass
 
+    @contextmanager
+    def _exclusive_transaction(self) -> Iterator[None]:
+        if not self.path.parent.is_dir():
+            raise RuntimeFinalizationContractError(
+                "owner-supplied runtime marker parent must already exist"
+            )
+        lock_path = self.path.with_name(f".{self.path.name}.lock")
+        deadline = time.monotonic() + _MARKER_LOCK_TIMEOUT_SECONDS
+        while True:
+            try:
+                descriptor = os.open(
+                    lock_path,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                )
+            except FileExistsError as exc:
+                if time.monotonic() >= deadline:
+                    raise RuntimeFinalizationContractError(
+                        "runtime marker transaction is locked; concurrent or stale "
+                        "owner lock must be resolved before retry"
+                    ) from exc
+                time.sleep(_MARKER_LOCK_POLL_SECONDS)
+                continue
+            os.close(descriptor)
+            break
+        try:
+            yield
+        finally:
+            try:
+                lock_path.unlink()
+            except FileNotFoundError:
+                pass
+
 
 def _same_attempt_scope(
     left: RuntimeMarkerSnapshot,
@@ -269,11 +311,16 @@ def _snapshot_payload(snapshot: RuntimeMarkerSnapshot) -> dict[str, Any]:
             for artifact_id, disposition in snapshot.artifact_dispositions
         ],
         "artifact_namespace": snapshot.artifact_namespace,
+        "coordinator_record_base64": (
+            None
+            if snapshot.coordinator_record_bytes is None
+            else base64.b64encode(snapshot.coordinator_record_bytes).decode("ascii")
+        ),
         "coordinator_record_sha256": snapshot.coordinator_record_sha256,
         "manifest_work_unit_keys": list(snapshot.manifest_work_unit_keys),
         "processing_attempt_id": snapshot.processing_attempt_id,
         "processing_request_id": snapshot.processing_request_id,
-        "schema_version": "execution_runtime_recovery_marker_v1",
+        "schema_version": "execution_runtime_recovery_marker_v2",
         "state": snapshot.state.value,
         "terminal_outcome": (
             None
@@ -289,6 +336,7 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
     expected_keys = {
         "artifact_dispositions",
         "artifact_namespace",
+        "coordinator_record_base64",
         "coordinator_record_sha256",
         "manifest_work_unit_keys",
         "marker_sha256",
@@ -302,7 +350,7 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         raise RuntimeFinalizationContractError(
             "runtime marker fields do not match the recovery schema"
         )
-    if payload["schema_version"] != "execution_runtime_recovery_marker_v1":
+    if payload["schema_version"] != "execution_runtime_recovery_marker_v2":
         raise RuntimeFinalizationContractError(
             "runtime marker schema_version is unsupported"
         )
@@ -340,6 +388,21 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         raise RuntimeFinalizationContractError(
             "runtime marker coordinator digest must be lowercase SHA-256"
         )
+    coordinator_base64 = payload["coordinator_record_base64"]
+    try:
+        coordinator_bytes = (
+            None
+            if coordinator_base64 is None
+            else base64.b64decode(coordinator_base64, validate=True)
+        )
+    except (binascii.Error, ValueError, TypeError) as exc:
+        raise RuntimeFinalizationContractError(
+            "runtime marker coordinator record must be canonical base64"
+        ) from exc
+    if coordinator_base64 is not None and not isinstance(coordinator_base64, str):
+        raise RuntimeFinalizationContractError(
+            "runtime marker coordinator record must be canonical base64"
+        )
     snapshot = RuntimeMarkerSnapshot(
         state=state,
         processing_request_id=_required_text(
@@ -353,6 +416,7 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         ),
         manifest_work_unit_keys=tuple(work_unit_keys),
         coordinator_record_sha256=coordinator_sha256,
+        coordinator_record_bytes=coordinator_bytes,
         terminal_outcome=terminal_outcome,
         artifact_dispositions=dispositions,
     )
@@ -377,6 +441,7 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         )
     if state is RuntimeMarkerState.LAUNCHED and (
         coordinator_sha256 is not None
+        or coordinator_bytes is not None
         or terminal_outcome is not None
         or dispositions
     ):
@@ -384,10 +449,19 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
             "launch marker cannot contain finalization fields"
         )
     if state is RuntimeMarkerState.FINALIZED and (
-        coordinator_sha256 is None or terminal_outcome is None
+        coordinator_sha256 is None
+        or coordinator_bytes is None
+        or terminal_outcome is None
     ):
         raise RuntimeFinalizationContractError(
-            "finalized marker requires coordinator digest and terminal outcome"
+            "finalized marker requires coordinator bytes, digest, and terminal outcome"
+        )
+    if (
+        coordinator_bytes is not None
+        and hashlib.sha256(coordinator_bytes).hexdigest() != coordinator_sha256
+    ):
+        raise RuntimeFinalizationContractError(
+            "runtime marker coordinator digest does not match persisted bytes"
         )
     return snapshot
 

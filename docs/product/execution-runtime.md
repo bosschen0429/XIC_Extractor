@@ -171,13 +171,15 @@ claiming a durable queue:
    the owner-created attempt identity, attempt-scoped temporary-artifact
    namespace, and coordinator launch;
 2. after work, cleanup, and artifact-disposition proposal closure, the
-   coordinator
-   writes one immutable `CoordinatorTerminalRecord` containing the proposed
+   coordinator produces one immutable canonical `CoordinatorTerminalRecord`
+   byte sequence containing the proposed
    outcome, manifest and per-unit outcomes, resource cleanup outcomes, artifact
    registry and proposed dispositions, failures, coordinator metrics ending at
    terminal proposal, and the coordinator event-ledger digest through that
    proposal;
-3. the supervisor atomically replaces the launch marker with one immutable
+3. the owner-path supervisor fsyncs those exact coordinator bytes inside the
+   self-contained `execution_runtime_recovery_marker_v2` payload, then
+   atomically replaces the launch marker with one immutable
    `SupervisorFinalizationRecord` containing the coordinator-record digest and
    an atomic event batch continuing the coordinator sequence:
    `terminal_acknowledged`, one committed disposition event for every
@@ -472,11 +474,15 @@ offers every registered artifact only to its owner; failure, cancellation, or
 worker-loss cleanup unknown quarantines the whole registered current-attempt
 set. Conflicting or missing cleanup and acknowledgement fail closed.
 
-This remains `diagnostic_only`. The callback is the explicit physical
-persistence seam; the repo has not selected a storage schema, path, CAS,
-current pointer, product seal, or publication mechanism, and the no-RAW fixture
-does not claim that an in-memory callback is durable storage. Alignment is now
-the second no-RAW consumer. The focused `execution_runtime_observability`
+This remains `diagnostic_only`. `OwnerPathRuntimeMarker` is the bounded physical
+persistence seam: the owner supplies its path, namespace, retention, and later
+publication policy; the v2 marker embeds the exact coordinator bytes and uses a
+cross-platform exclusive sibling lock around read/validate/replace. A concurrent
+writer waits for the current transaction and then revalidates; an unresolved
+stale lock fails closed for owner recovery instead of being auto-deleted. The
+repo has not selected a storage engine, durable queue, current pointer, product
+seal, or publication mechanism. Alignment is now the second no-RAW consumer.
+The focused `execution_runtime_observability`
 companion makes attempt/work events, monotonic offsets, and required metric
 availability executable without selecting an event store or telemetry backend.
 The caller-located durable launch/finalization marker and coordinator-loss

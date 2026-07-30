@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -23,6 +27,7 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     begin_attempt_finalization,
+    canonical_coordinator_terminal_record_bytes,
     mint_supervisor_finalization,
     propose_attempt_terminal,
     register_runtime_artifact,
@@ -123,12 +128,99 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
     assert recovered.terminal_outcome is AttemptTerminalOutcome.SUCCEEDED
     assert recovered.finalization_acknowledged is True
     assert recovered.quarantine_artifact_namespace is False
+    assert recovered.coordinator_record_bytes == (
+        canonical_coordinator_terminal_record_bytes(coordinator)
+    )
     assert recovered.artifact_dispositions == (
         (
             reference.artifact.evidence_artifact_id,
             RuntimeArtifactDisposition.OFFERED_TO_OWNER,
         ),
     )
+
+
+def test_recovery_rejects_coordinator_bytes_that_do_not_match_digest(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    coordinator, proposed = _terminal_records(
+        attempt,
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+    )
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    marker.record_launch(_runtime(attempt))
+    marker(coordinator, proposed)
+    payload = json.loads(marker.path.read_bytes())
+    payload["coordinator_record_base64"] = base64.b64encode(
+        b'{"tampered":true}'
+    ).decode("ascii")
+    unsigned = {key: value for key, value in payload.items() if key != "marker_sha256"}
+    payload["marker_sha256"] = hashlib.sha256(
+        _canonical_json_bytes(unsigned)
+    ).hexdigest()
+    marker.path.write_bytes(_canonical_json_bytes(payload))
+
+    with pytest.raises(RuntimeFinalizationContractError, match="coordinator digest"):
+        marker.recover_after_coordinator_loss(attempt)
+
+
+def test_concurrent_different_launches_fail_closed_at_replace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    first = _attempt(tmp_path, stem="first")
+    second = _attempt(tmp_path, stem="second")
+    _delay_competing_writes(monkeypatch)
+
+    outcomes = _run_concurrently(
+        lambda: marker.record_launch(_runtime(first)),
+        lambda: marker.record_launch(_runtime(second)),
+    )
+
+    assert sorted(outcome[0] for outcome in outcomes) == ["error", "ok"]
+    assert marker.read().processing_attempt_id in {
+        first.processing_attempt_id,
+        second.processing_attempt_id,
+    }
+
+
+def test_concurrent_conflicting_finalizations_fail_closed_at_replace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt = _attempt(tmp_path)
+    succeeded = _terminal_records(
+        attempt,
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+    )
+    failed = _terminal_records(
+        attempt,
+        outcome=WorkUnitTerminalOutcome.FAILED,
+    )
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    marker.record_launch(_runtime(attempt))
+    _delay_competing_writes(monkeypatch)
+
+    outcomes = _run_concurrently(
+        lambda: marker(*succeeded),
+        lambda: marker(*failed),
+    )
+
+    assert sorted(outcome[0] for outcome in outcomes) == ["error", "ok"]
+    assert marker.read().terminal_outcome in {
+        AttemptTerminalOutcome.SUCCEEDED,
+        AttemptTerminalOutcome.FAILED,
+    }
 
 
 def test_marker_rejects_noncanonical_or_wrong_attempt_content(
@@ -173,6 +265,89 @@ def test_marker_rejects_canonical_but_digest_mismatched_content(
 
     with pytest.raises(RuntimeFinalizationContractError, match="digest"):
         marker.read()
+
+
+def _terminal_records(
+    attempt: ProcessingAttemptIdentity,
+    *,
+    outcome: WorkUnitTerminalOutcome,
+):
+    runtime = _runtime(attempt)
+    reference = mint_targeted_process_result_ref(
+        processing_attempt=attempt,
+        work_unit_key="sample:a",
+        owner_result_payload=b"no-raw-result",
+    )
+    runtime = settle_work_unit(
+        runtime,
+        work_unit_key="sample:a",
+        outcome=outcome,
+        owner_result_ref=(
+            reference.artifact if outcome is WorkUnitTerminalOutcome.SUCCEEDED else None
+        ),
+    )
+    state = reserve_runtime_resource(
+        begin_attempt_finalization(runtime),
+        RuntimeResourceReservation(
+            attempt=attempt,
+            resource_key="process:sample:a",
+            worker_key="worker:1",
+            source_reference="no-raw:sample:a",
+            compatibility_token="alignment:no-raw:v1",
+        ),
+    )
+    state = settle_runtime_resource(
+        state,
+        resource_key="process:sample:a",
+        open_outcome=RuntimeResourceOpenOutcome.OPENED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+    if outcome is WorkUnitTerminalOutcome.SUCCEEDED:
+        state = register_runtime_artifact(
+            state,
+            work_unit_key="sample:a",
+            artifact=reference.artifact,
+        )
+    coordinator = propose_attempt_terminal(state)
+    return coordinator, mint_supervisor_finalization(coordinator)
+
+
+def _delay_competing_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+    original = OwnerPathRuntimeMarker._write
+    barrier = threading.Barrier(2)
+
+    def delayed(marker, snapshot):
+        try:
+            barrier.wait(timeout=0.25)
+        except threading.BrokenBarrierError:
+            pass
+        return original(marker, snapshot)
+
+    monkeypatch.setattr(OwnerPathRuntimeMarker, "_write", delayed)
+
+
+def _run_concurrently(*calls):
+    start = threading.Barrier(len(calls))
+
+    def invoke(call):
+        start.wait(timeout=2)
+        try:
+            return "ok", call()
+        except RuntimeFinalizationContractError as exc:
+            return "error", str(exc)
+
+    with ThreadPoolExecutor(max_workers=len(calls)) as executor:
+        return tuple(executor.map(invoke, calls))
+
+
+def _canonical_json_bytes(payload: object) -> bytes:
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
 
 
 def _runtime(attempt: ProcessingAttemptIdentity) -> AttemptRuntime:
