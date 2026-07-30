@@ -554,9 +554,11 @@ derives the ledger's complete mechanical lifecycle facts from the closed
 coordinator state, including `raw_open_count` from opened resource records.
 Logical XIC request, batch, backend-call, and trace-point counts are derived from
 typed `TraceAcquisitionBatch` receipts correlated to submitted successful work;
-without a receipt those counts are zero, not caller-authored estimates. Missing,
-extra, substituted, or conflicting receipt facts fail closed before
-acknowledgement. RSS, monotonic offsets, and runtime-mediated artifact-I/O remain
+for a successful application result, an empty observation-batch projection is
+accepted only when all four owner counts are zero. Failed or quarantined results
+may suppress exposed success batches while retaining physically observed counts.
+Missing, extra, substituted, or conflicting success-projection facts fail closed
+before acknowledgement. RSS, monotonic offsets, and runtime-mediated artifact-I/O remain
 external telemetry samples because the coordinator has no independent source
 for them; callers cannot assemble or submit the ledger itself. Only an opened
 `PROCESS_WORKER` reservation creates `worker_started` and requires a correlated
@@ -590,7 +592,17 @@ canonical-equal. Identical replay coalesces; a conflicting replay fails the
 attempt and exposes no observation batch through the success surface. Runtime
 does not select a peak or interpret the integration. A tracked
 `DifferenceManifest` binds the one explained internal carrier change to the
-immutable Package 0 comparator plus an observed current-run no-write receipt.
+immutable Package 0 comparator and one comparator-owned experiment. That single
+entry overwrites caller output paths with a dedicated identity-pinned root,
+constructs the Targeted service with the forbidden legacy runner, accepts only
+primitive no-RAW jobs, and runs fixed Targeted and Alignment workers to a
+synchronous executor drain. It inventories final paths/bytes before privately
+minting the owner-derived receipt. There is no public request factory,
+worker/result/executor provider, begin/mint, or finished-result handoff, and
+callers cannot construct or replace the receipt. The inventory claim is
+final-state parity, not transient filesystem-I/O absence; legacy writer
+non-invocation is proved separately by fixed ingress plus the sentinel and
+Alignment dependency boundary.
 This path remains opt-in no-RAW and `diagnostic_only`; legacy execution, product
 writers, CLI/config, output schemas, selected values, and Matrix authority are
 unchanged.

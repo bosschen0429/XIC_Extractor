@@ -33,11 +33,22 @@ observation batch bytes/counts, and both terminal artifact-disposition sets. It
 also proves that the selected sample's request-bound acquisition source is
 checked before adapter I/O, all four XIC/batch/backend-call/point ledger counts
 must equal the accepted acquisition receipts before supervisor acknowledgement,
-and coordinator resource/artifact events cannot cross into the supervisor phase.
-The test also records zero Targeted legacy-runner calls, zero emitted
-CSV/TSV/XLS/XLSX
-paths, no scientific or Matrix projection, and no writer invocation;
-Alignment's runtime adapter has no writer dependency or output surface.
-Together with Import Linter and the frozen comparator, this is the
+successful results cannot erase nonzero counts behind an empty observation
+projection, and coordinator resource/artifact events cannot cross into the
+supervisor phase. One comparator-owned experiment entry creates and binds a
+dedicated identity-pinned product-output root and overwrites caller paths before
+execution. It accepts only exact primitive no-RAW jobs, constructs the Targeted
+service with the actual legacy-runner sentinel, runs fixed Targeted and
+Alignment workers to synchronous executor drain, inventories every final file,
+directory, symlink, and other entry, and privately mints the receipt. It rejects
+legacy invocation, root substitution, persistent output differences, experiment
+replay, crossed work keys, prebuilt result handoff, and caller receipt
+construction/replacement; no public request factory, generic worker/result/
+executor provider, begin/mint, or finished-result handoff exists. The inventory
+proves final-state path/byte parity, not transient filesystem-I/O absence.
+Writer non-invocation is instead established by fixed ingress, the Targeted
+sentinel, and Alignment's dependency boundary. Scientific and Matrix absence is
+not represented by self-asserting status fields. Together with Import Linter and
+the frozen comparator, this is the
 bounded exact-zero product/scientific/Matrix/writer evidence for this internal
 slice. It does not claim a full Package 2 successor method or RAW readiness.

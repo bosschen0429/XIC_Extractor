@@ -23,6 +23,7 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
+    AttemptTerminalOutcome,
     WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
 )
@@ -337,10 +338,15 @@ class TargetedRuntimeLifecycleApplicationResult:
             raise TargetedRuntimeAdapterError(
                 "lifecycle result must bind one settled runtime attempt"
             )
-        _validate_observation_batch_acquisition_metrics(
-            self.finalization.observability_ledger,
-            self.settlement.successful_observation_batches,
-        )
+        if (
+            self.settlement.successful_observation_batches
+            or self.finalization.supervisor.terminal_outcome
+            is AttemptTerminalOutcome.SUCCEEDED
+        ):
+            _validate_observation_batch_acquisition_metrics(
+                self.finalization.observability_ledger,
+                self.settlement.successful_observation_batches,
+            )
 
     @property
     def coordinator_record(self) -> CoordinatorTerminalRecord:

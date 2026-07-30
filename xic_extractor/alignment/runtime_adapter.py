@@ -23,6 +23,7 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.execution_runtime import (
     AttemptRuntime,
+    AttemptTerminalOutcome,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
 )
@@ -188,10 +189,15 @@ class AlignmentRuntimeApplicationResult:
                 batch=batch,
                 registered_artifact_ids=registered_by_key[key],
             )
-        _validate_observation_batch_acquisition_metrics(
-            self.finalization.observability_ledger,
-            self.successful_observation_batches,
-        )
+        if (
+            self.successful_observation_batches
+            or self.finalization.supervisor.terminal_outcome
+            is AttemptTerminalOutcome.SUCCEEDED
+        ):
+            _validate_observation_batch_acquisition_metrics(
+                self.finalization.observability_ledger,
+                self.successful_observation_batches,
+            )
 
     @property
     def coordinator_record(self) -> CoordinatorTerminalRecord:

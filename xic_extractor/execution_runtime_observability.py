@@ -432,8 +432,6 @@ def validate_runtime_acquisition_metrics(
         raise RuntimeObservabilityContractError(
             "acquisitions must contain TraceAcquisitionBatch receipts"
         )
-    if not acquisitions:
-        return
     expected = {
         name: sum(getattr(acquisition, name) for acquisition in acquisitions)
         for name in _ACQUISITION_COUNT_METRIC_NAMES

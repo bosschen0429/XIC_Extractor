@@ -6,24 +6,74 @@ import csv
 import hashlib
 import io
 import json
+import math
+import os
 import re
-from dataclasses import dataclass
+import secrets
+import stat
+import time
+from collections.abc import Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import InitVar, dataclass, replace
+from dataclasses import field as dataclass_field
+from multiprocessing import get_context
 from pathlib import Path, PurePosixPath
-from typing import Mapping, Sequence
+from typing import NoReturn, final
 
-from xic_extractor.alignment.runtime_adapter import AlignmentRuntimeApplicationResult
-from xic_extractor.execution_runtime import AttemptTerminalOutcome
+from xic_extractor.acquisition_contract import (
+    TraceCoordinateKind,
+    mint_trace_acquisition_capability,
+)
+from xic_extractor.alignment.runtime_adapter import (
+    AlignmentRuntimeApplicationResult,
+    AlignmentRuntimeProcessResult,
+    execute_alignment_process_runtime,
+    mint_alignment_process_result_artifact,
+)
+from xic_extractor.execution_runtime import (
+    AttemptRuntime,
+    AttemptTerminalOutcome,
+    WorkUnitFailureCategory,
+    WorkUnitFailureDetail,
+    WorkUnitTerminalOutcome,
+)
 from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
+    RuntimeResourceCleanupOutcome,
+    RuntimeResourceOpenOutcome,
+    RuntimeResourceReservation,
     canonical_coordinator_terminal_record_bytes,
 )
+from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import (
+    RuntimeAttemptAggregate,
+    RuntimeTelemetryProvider,
+    mint_work_unit_settlement,
+)
 from xic_extractor.extraction.targeted_runtime_adapter import (
+    TargetedProcessResourceReport,
+    TargetedProcessWorkerResultEnvelope,
     TargetedRuntimeLifecycleApplicationResult,
+    TargetedRuntimeWorkerBatch,
+    mint_targeted_process_result_ref,
+)
+from xic_extractor.extraction.targeted_service import (
+    TargetedApplicationRequest,
+    TargetedApplicationService,
 )
 from xic_extractor.peak_detection.observation_batch import (
+    PeakObservationBatch,
+    PeakObservationPlan,
     canonical_peak_observation_batch_bytes,
+    produce_peak_observation_batch,
 )
-from xic_extractor.processing_identity import ProcessingRequestIdentity
+from xic_extractor.processing_identity import (
+    ProcessingOwnerReferences,
+    ProcessingRequestIdentity,
+    resolve_request_acquisition_source,
+)
+from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 
 class Package0ComparatorError(ValueError):
@@ -35,6 +85,11 @@ _PACKAGE1_DIFFERENCE_SCHEMA = "package1_runtime_observation_difference_v1"
 _FROZEN_PACKAGE1_SURFACE_SHA256 = (
     "70099C0412D9301736CA479F05BEBF1D7F928C248407ED062D1EFBBA0D045B6B"
 )
+_PACKAGE1_OBSERVATION_MINT_TOKEN = object()
+_PACKAGE1_PROBE_MINT_TOKEN = object()
+_PACKAGE1_EXPERIMENT_DIR = "package1-runtime-observation-experiment"
+_PACKAGE1_PRODUCT_OUTPUT_DIR = "product-output"
+_PACKAGE1_ROOT_IDENTITY_MARKER = ".package1-root-identity"
 _PACKAGE1_DIFFERENCE_FIELDS = (
     "schema_version",
     "stage",
@@ -47,6 +102,144 @@ _PACKAGE1_DIFFERENCE_FIELDS = (
     "classification",
     "disposition",
 )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class Package1ObservationTraceFixture:
+    """Exact no-RAW trace input for one Package 1 experiment request."""
+
+    request: XICRequest
+    rt: tuple[float, ...]
+    intensity: tuple[float, ...]
+    first_scan: int
+    last_scan: int
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Package1ObservationTraceFixture is final")
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.request, XICRequest):
+            raise Package0ComparatorError("trace fixture request must be an XICRequest")
+        if not isinstance(self.rt, tuple) or not isinstance(self.intensity, tuple):
+            raise Package0ComparatorError(
+                "trace fixture rt and intensity must be exact tuples"
+            )
+        try:
+            XICTrace.from_arrays(self.rt, self.intensity)
+        except (TypeError, ValueError) as exc:
+            raise Package0ComparatorError(
+                "trace fixture must contain one valid finite XIC trace"
+            ) from exc
+        if (
+            isinstance(self.first_scan, bool)
+            or not isinstance(self.first_scan, int)
+            or isinstance(self.last_scan, bool)
+            or not isinstance(self.last_scan, int)
+            or self.first_scan < 1
+            or self.last_scan < self.first_scan
+        ):
+            raise Package0ComparatorError(
+                "trace fixture scan window must be ordered positive integers"
+            )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class Package1ObservationExperimentJob:
+    """Primitive, pickleable input to the fixed Package 1 experiment workers."""
+
+    owners: ProcessingOwnerReferences
+    sample: ResolvedCanonicalSampleIdentity
+    work_unit_key: str
+    resource_key: str
+    coordinate_kind: TraceCoordinateKind
+    plans: tuple[PeakObservationPlan, ...]
+    trace_fixtures: tuple[Package1ObservationTraceFixture, ...]
+    delay_sec: float = 0.0
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Package1ObservationExperimentJob is final")
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.owners, ProcessingOwnerReferences):
+            raise Package0ComparatorError(
+                "experiment job owners must be ProcessingOwnerReferences"
+            )
+        if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
+            raise Package0ComparatorError(
+                "experiment job sample must be a resolved canonical identity"
+            )
+        if not isinstance(self.work_unit_key, str) or not self.work_unit_key:
+            raise Package0ComparatorError(
+                "experiment job work_unit_key must be non-empty"
+            )
+        if not isinstance(self.resource_key, str) or not self.resource_key:
+            raise Package0ComparatorError(
+                "experiment job resource_key must be non-empty"
+            )
+        if not isinstance(self.coordinate_kind, TraceCoordinateKind):
+            raise Package0ComparatorError(
+                "experiment job coordinate_kind must be a TraceCoordinateKind"
+            )
+        if not isinstance(self.plans, tuple) or not self.plans or any(
+            not isinstance(plan, PeakObservationPlan) for plan in self.plans
+        ):
+            raise Package0ComparatorError(
+                "experiment job plans must be a non-empty PeakObservationPlan tuple"
+            )
+        if not isinstance(self.trace_fixtures, tuple) or any(
+            type(fixture) is not Package1ObservationTraceFixture
+            for fixture in self.trace_fixtures
+        ):
+            raise Package0ComparatorError(
+                "experiment job trace_fixtures must be an exact fixture tuple"
+            )
+        if tuple(plan.request for plan in self.plans) != tuple(
+            fixture.request for fixture in self.trace_fixtures
+        ):
+            raise Package0ComparatorError(
+                "experiment trace fixtures must match plan requests in order"
+            )
+        if (
+            isinstance(self.delay_sec, bool)
+            or not isinstance(self.delay_sec, (int, float))
+            or not math.isfinite(float(self.delay_sec))
+            or self.delay_sec < 0
+        ):
+            raise Package0ComparatorError(
+                "experiment job delay_sec must be finite and non-negative"
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class _Package1NoRawBatchAdapter:
+    fixtures: tuple[Package1ObservationTraceFixture, ...]
+
+    @property
+    def raw_chromatogram_call_count(self) -> int:
+        return 0
+
+    def extract_xic_many(
+        self,
+        requests: Sequence[XICRequest],
+    ) -> tuple[XICTrace, ...]:
+        if tuple(requests) != tuple(fixture.request for fixture in self.fixtures):
+            raise Package0ComparatorError(
+                "experiment adapter requests must match the fixed trace fixtures"
+            )
+        return tuple(
+            XICTrace.from_arrays(fixture.rt, fixture.intensity)
+            for fixture in self.fixtures
+        )
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        for fixture in self.fixtures:
+            if fixture.request == request:
+                return fixture.first_scan, fixture.last_scan
+        raise Package0ComparatorError(
+            "experiment adapter request is absent from the fixed trace fixtures"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,9 +295,10 @@ class _Package0SuccessorObservation:
             _sha256(getattr(self, field), field)
 
 
+@final
 @dataclass(frozen=True, slots=True)
 class Package1DifferenceObservation:
-    """Observed no-write receipt for one Package 1 runtime consumer run."""
+    """Owner-derived final-state and runner receipt for one Package 1 run."""
 
     frozen_surface_sha256: str
     processing_request_id: str
@@ -121,12 +315,17 @@ class Package1DifferenceObservation:
     terminal_non_offered_count: int
     targeted_legacy_runner_call_count: int
     successor_product_output_paths: tuple[str, ...]
-    scientific_projection_status: str
-    matrix_projection_status: str
-    writer_status: str
     validation_status: str
+    _mint_token: InitVar[object] = dataclass_field(kw_only=True)
 
-    def __post_init__(self) -> None:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Package1DifferenceObservation is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _PACKAGE1_OBSERVATION_MINT_TOKEN:
+            raise Package0ComparatorError(
+                "Package1DifferenceObservation must be minted by the comparator"
+            )
         for field in (
             "frozen_surface_sha256",
             "targeted_coordinator_sha256",
@@ -164,23 +363,373 @@ class Package1DifferenceObservation:
             )
 
 
-def mint_package1_difference_observation(
+@final
+class _Package1ProductOutputProbe:
+    """Comparator-owned final-state parity window for product outputs."""
+
+    __slots__ = (
+        "_before_inventory",
+        "_consumed",
+        "_legacy_runner_call_count",
+        "_output_root",
+        "_root_identity",
+    )
+
+    def __init__(
+        self,
+        *,
+        output_root: Path,
+        before_inventory: tuple[tuple[str, str], ...],
+        root_identity: tuple[int, int, int, int, int, str],
+        _mint_token: object,
+    ) -> None:
+        if _mint_token is not _PACKAGE1_PROBE_MINT_TOKEN:
+            raise Package0ComparatorError(
+                "Package 1 product-output probe must be minted by the comparator"
+            )
+        self._output_root = output_root
+        self._before_inventory = before_inventory
+        self._root_identity = root_identity
+        self._legacy_runner_call_count = 0
+        self._consumed = False
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("Package 1 product-output probe is final")
+
+    def _forbidden_legacy_runner(
+        self,
+        *_args: object,
+        **_kwargs: object,
+    ) -> NoReturn:
+        """Fail immediately if the Package 1 path enters the legacy runner."""
+
+        self._legacy_runner_call_count += 1
+        raise Package0ComparatorError(
+            "Package 1 observation path invoked the forbidden legacy runner"
+        )
+
+    def _finish(self) -> tuple[int, tuple[str, ...]]:
+        if self._consumed:
+            raise Package0ComparatorError(
+                "Package 1 product-output probe may finalize exactly one observation"
+            )
+        self._consumed = True
+        if _package1_output_root_identity(self._output_root) != self._root_identity:
+            raise Package0ComparatorError(
+                "Package 1 comparator-owned output root identity changed"
+            )
+        after_inventory = _package1_product_output_inventory(self._output_root)
+        before_by_path = dict(self._before_inventory)
+        after_by_path = dict(after_inventory)
+        changed_paths = tuple(
+            sorted(
+                path
+                for path in before_by_path.keys() | after_by_path.keys()
+                if before_by_path.get(path) != after_by_path.get(path)
+            )
+        )
+        try:
+            (self._output_root / _PACKAGE1_ROOT_IDENTITY_MARKER).unlink()
+        except OSError as exc:
+            raise Package0ComparatorError(
+                "Package 1 comparator-owned output root identity marker changed"
+            ) from exc
+        return self._legacy_runner_call_count, changed_paths
+
+
+def run_package1_observation_experiment(
     *,
+    experiment_workspace: Path,
+    targeted_request: TargetedApplicationRequest,
+    runtime: AttemptRuntime,
+    resource_reservations: Sequence[RuntimeResourceReservation],
+    telemetry_provider: RuntimeTelemetryProvider,
+    jobs: tuple[Package1ObservationExperimentJob, ...],
+    max_workers: int,
+) -> Package1DifferenceObservation:
+    """Run fixed Package 1 consumers inside one comparator-owned parity window."""
+
+    if not isinstance(experiment_workspace, Path) or not experiment_workspace.is_dir():
+        raise Package0ComparatorError(
+            "experiment_workspace must be an existing directory"
+        )
+    if not isinstance(targeted_request, TargetedApplicationRequest):
+        raise Package0ComparatorError(
+            "targeted_request must be a TargetedApplicationRequest"
+        )
+    _validate_package1_experiment_jobs(
+        jobs,
+        runtime=runtime,
+        resource_reservations=resource_reservations,
+        max_workers=max_workers,
+    )
+    experiment_root = experiment_workspace / _PACKAGE1_EXPERIMENT_DIR
+    try:
+        experiment_root.mkdir()
+    except FileExistsError as exc:
+        raise Package0ComparatorError(
+            "Package 1 experiment root must not already exist"
+        ) from exc
+    product_output_root = experiment_root / _PACKAGE1_PRODUCT_OUTPUT_DIR
+    product_output_root.mkdir()
+    (product_output_root / _PACKAGE1_ROOT_IDENTITY_MARKER).write_bytes(
+        secrets.token_bytes(32)
+    )
+    probe = _Package1ProductOutputProbe(
+        output_root=product_output_root,
+        before_inventory=_package1_product_output_inventory(product_output_root),
+        root_identity=_package1_output_root_identity(product_output_root),
+        _mint_token=_PACKAGE1_PROBE_MINT_TOKEN,
+    )
+    bound_targeted_request = _bind_package1_targeted_output_root(
+        targeted_request,
+        product_output_root=product_output_root,
+    )
+
+    def run_fixed_targeted_jobs(
+        request: TargetedApplicationRequest,
+        aggregate: RuntimeAttemptAggregate,
+    ) -> TargetedRuntimeWorkerBatch:
+        del request, aggregate
+        return _execute_package1_targeted_jobs(jobs, max_workers=max_workers)
+
+    targeted_service = TargetedApplicationService(
+        probe._forbidden_legacy_runner,
+        runtime_lifecycle_runner=run_fixed_targeted_jobs,
+        runtime_recovery_marker=OwnerPathRuntimeMarker(
+            experiment_root / "targeted.runtime.json",
+            "package1-targeted-runtime-observation:v1",
+        ),
+    )
+    targeted = targeted_service.execute_runtime_lifecycle(
+        bound_targeted_request,
+        runtime,
+        resource_reservations=resource_reservations,
+        telemetry_provider=telemetry_provider,
+    )
+    alignment = execute_alignment_process_runtime(
+        runtime,
+        jobs,
+        worker=_run_package1_alignment_job,
+        error_factory=_package1_alignment_error,
+        max_workers=max_workers,
+        resource_reservations=resource_reservations,
+        telemetry_provider=telemetry_provider,
+        recovery_marker=OwnerPathRuntimeMarker(
+            experiment_root / "alignment.runtime.json",
+            "package1-alignment-runtime-observation:v1",
+        ),
+    )
+    return _mint_package1_difference_observation(
+        probe=probe,
+        targeted=targeted,
+        alignment=alignment,
+    )
+
+
+def _validate_package1_experiment_jobs(
+    jobs: object,
+    *,
+    runtime: AttemptRuntime,
+    resource_reservations: Sequence[RuntimeResourceReservation],
+    max_workers: int,
+) -> None:
+    if not isinstance(runtime, AttemptRuntime):
+        raise Package0ComparatorError("runtime must be an AttemptRuntime")
+    if not isinstance(jobs, tuple) or not jobs or any(
+        type(job) is not Package1ObservationExperimentJob for job in jobs
+    ):
+        raise Package0ComparatorError(
+            "jobs must be a non-empty Package1ObservationExperimentJob tuple"
+        )
+    if (
+        isinstance(max_workers, bool)
+        or not isinstance(max_workers, int)
+        or max_workers < 1
+    ):
+        raise Package0ComparatorError("max_workers must be a positive integer")
+    if tuple(job.work_unit_key for job in jobs) != runtime.manifest.work_unit_keys:
+        raise Package0ComparatorError(
+            "experiment jobs must match runtime manifest work in order"
+        )
+    if any(job.owners.attempt != runtime.manifest.attempt for job in jobs):
+        raise Package0ComparatorError(
+            "experiment jobs must bind the runtime processing attempt"
+        )
+    reservations = tuple(resource_reservations)
+    if any(
+        not isinstance(reservation, RuntimeResourceReservation)
+        for reservation in reservations
+    ):
+        raise Package0ComparatorError(
+            "resource_reservations must contain RuntimeResourceReservation values"
+        )
+    if tuple(reservation.resource_key for reservation in reservations) != tuple(
+        job.resource_key for job in jobs
+    ):
+        raise Package0ComparatorError(
+            "experiment resource reservations must match jobs in order"
+        )
+
+
+def _bind_package1_targeted_output_root(
+    request: TargetedApplicationRequest,
+    *,
+    product_output_root: Path,
+) -> TargetedApplicationRequest:
+    output_csv = product_output_root / "xic_results.csv"
+    diagnostics_csv = product_output_root / "xic_diagnostics.csv"
+    bound = replace(
+        request,
+        config=replace(
+            request.config,
+            output_csv=output_csv,
+            diagnostics_csv=diagnostics_csv,
+        ),
+    )
+    if (
+        bound.config.output_csv != output_csv
+        or bound.config.diagnostics_csv != diagnostics_csv
+    ):
+        raise Package0ComparatorError(
+            "Targeted product outputs must use the comparator-owned output root"
+        )
+    return bound
+
+
+def _execute_package1_targeted_jobs(
+    jobs: tuple[Package1ObservationExperimentJob, ...],
+    *,
+    max_workers: int,
+) -> TargetedRuntimeWorkerBatch:
+    worker_count = min(max_workers, len(jobs))
+    with ProcessPoolExecutor(
+        max_workers=worker_count,
+        mp_context=get_context("spawn"),
+    ) as executor:
+        futures = tuple(
+            executor.submit(_run_package1_targeted_job, job) for job in jobs
+        )
+        results = tuple(future.result() for future in futures)
+    envelopes = tuple(envelope for envelope, _report in results)
+    return TargetedRuntimeWorkerBatch(
+        result_envelopes=envelopes,
+        resource_reports=tuple(report for _envelope, report in results),
+        runtime_artifact_refs=tuple(
+            envelope.owner_result_ref
+            for envelope in envelopes
+            if envelope.owner_result_ref is not None
+        ),
+    )
+
+
+def _run_package1_targeted_job(
+    job: Package1ObservationExperimentJob,
+) -> tuple[TargetedProcessWorkerResultEnvelope, TargetedProcessResourceReport]:
+    batch = _produce_package1_observation_batch(job)
+    payload = canonical_peak_observation_batch_bytes(batch)
+    reference = mint_targeted_process_result_ref(
+        processing_attempt=job.owners.attempt,
+        work_unit_key=job.work_unit_key,
+        owner_result_payload=payload,
+        upstream_artifacts=batch.observation_artifacts,
+    )
+    return (
+        TargetedProcessWorkerResultEnvelope(
+            attempt=job.owners.attempt,
+            work_unit_key=job.work_unit_key,
+            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+            owner_result_ref=reference,
+            peak_observation_batch=batch,
+        ),
+        TargetedProcessResourceReport(
+            attempt=job.owners.attempt,
+            resource_key=job.resource_key,
+            open_outcome=RuntimeResourceOpenOutcome.OPENED,
+            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+        ),
+    )
+
+
+def _run_package1_alignment_job(
+    job: Package1ObservationExperimentJob,
+) -> AlignmentRuntimeProcessResult:
+    batch = _produce_package1_observation_batch(job)
+    payload = canonical_peak_observation_batch_bytes(batch)
+    artifact = mint_alignment_process_result_artifact(
+        processing_attempt=job.owners.attempt,
+        work_unit_key=job.work_unit_key,
+        owner_result_payload=payload,
+        upstream_artifacts=batch.observation_artifacts,
+    )
+    return AlignmentRuntimeProcessResult(
+        settlement=mint_work_unit_settlement(
+            attempt=job.owners.attempt,
+            work_unit_key=job.work_unit_key,
+            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+            owner_result_ref=artifact,
+        ),
+        resource_key=job.resource_key,
+        open_outcome=RuntimeResourceOpenOutcome.OPENED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+        runtime_artifacts=(artifact, *batch.observation_artifacts),
+        peak_observation_batch=batch,
+    )
+
+
+def _package1_alignment_error(
+    job: Package1ObservationExperimentJob,
+    error: Exception,
+) -> AlignmentRuntimeProcessResult:
+    return AlignmentRuntimeProcessResult(
+        settlement=mint_work_unit_settlement(
+            attempt=job.owners.attempt,
+            work_unit_key=job.work_unit_key,
+            outcome=WorkUnitTerminalOutcome.FAILED,
+            failure_detail=WorkUnitFailureDetail(
+                category=WorkUnitFailureCategory.EXECUTION_ERROR,
+                stage="package1-alignment-process-worker",
+                source_reference=f"package1-no-raw:{job.work_unit_key}",
+                message=str(error),
+            ),
+        ),
+        resource_key=job.resource_key,
+        open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+
+
+def _produce_package1_observation_batch(
+    job: Package1ObservationExperimentJob,
+) -> PeakObservationBatch:
+    if job.delay_sec:
+        time.sleep(job.delay_sec)
+    source = resolve_request_acquisition_source(
+        processing_owners=job.owners,
+        sample=job.sample,
+    )
+    capability = mint_trace_acquisition_capability(
+        source,
+        adapter_namespace="synthetic.package1.no_raw",
+        coordinate_kind=job.coordinate_kind,
+    )
+    return produce_peak_observation_batch(
+        processing_owners=job.owners,
+        sample=job.sample,
+        capability=capability,
+        plans=job.plans,
+        adapter=_Package1NoRawBatchAdapter(job.trace_fixtures),
+    )
+
+
+def _mint_package1_difference_observation(
+    *,
+    probe: _Package1ProductOutputProbe,
     targeted: TargetedRuntimeLifecycleApplicationResult,
     alignment: AlignmentRuntimeApplicationResult,
-    targeted_legacy_runner_call_count: int,
-    successor_product_output_paths: Sequence[str],
 ) -> Package1DifferenceObservation:
-    """Derive the no-write receipt from actual dual-consumer runtime results."""
+    """Derive one receipt from the comparator-owned experiment results."""
 
-    if not isinstance(targeted, TargetedRuntimeLifecycleApplicationResult):
-        raise Package0ComparatorError(
-            "targeted must be a validated Targeted runtime lifecycle result"
-        )
-    if not isinstance(alignment, AlignmentRuntimeApplicationResult):
-        raise Package0ComparatorError(
-            "alignment must be a validated Alignment runtime application result"
-        )
     targeted_attempt = targeted.settlement.runtime.manifest.attempt
     alignment_attempt = alignment.runtime.manifest.attempt
     if targeted_attempt != alignment_attempt:
@@ -239,6 +788,16 @@ def mint_package1_difference_observation(
     alignment_coordinator_bytes = canonical_coordinator_terminal_record_bytes(
         alignment.coordinator_record
     )
+    legacy_runner_call_count, product_output_paths = probe._finish()
+    if legacy_runner_call_count != 0:
+        raise Package0ComparatorError(
+            "Package 1 observation path invoked the forbidden legacy runner"
+        )
+    if product_output_paths:
+        raise Package0ComparatorError(
+            "Package 1 observation path changed product output files: "
+            + ", ".join(product_output_paths)
+        )
     return Package1DifferenceObservation(
         frozen_surface_sha256=_FROZEN_PACKAGE1_SURFACE_SHA256,
         processing_request_id=targeted_attempt.processing_request_id,
@@ -297,12 +856,10 @@ def mint_package1_difference_observation(
             for _artifact_id, disposition in alignment_dispositions
         ),
         terminal_non_offered_count=non_offered,
-        targeted_legacy_runner_call_count=targeted_legacy_runner_call_count,
-        successor_product_output_paths=tuple(successor_product_output_paths),
-        scientific_projection_status="not_emitted",
-        matrix_projection_status="not_emitted",
-        writer_status="not_invoked",
+        targeted_legacy_runner_call_count=legacy_runner_call_count,
+        successor_product_output_paths=product_output_paths,
         validation_status="diagnostic_only",
+        _mint_token=_PACKAGE1_OBSERVATION_MINT_TOKEN,
     )
 
 
@@ -491,9 +1048,6 @@ def validate_package1_difference_manifest(
         or observation.terminal_non_offered_count != 0
         or observation.targeted_legacy_runner_call_count != 0
         or observation.successor_product_output_paths
-        or observation.scientific_projection_status != "not_emitted"
-        or observation.matrix_projection_status != "not_emitted"
-        or observation.writer_status != "not_invoked"
         or observation.validation_status != "diagnostic_only"
     ):
         raise Package0ComparatorError(
@@ -586,11 +1140,6 @@ def validate_package1_difference_manifest(
                 "successor_product_output_paths": (
                     observation.successor_product_output_paths
                 ),
-                "scientific_projection_status": (
-                    observation.scientific_projection_status
-                ),
-                "matrix_projection_status": observation.matrix_projection_status,
-                "writer_status": observation.writer_status,
                 "validation_status": observation.validation_status,
             },
             "rows": normalized,
@@ -734,6 +1283,77 @@ def _observe_package0_successor_output(
     )
 
 
+def _package1_output_root_identity(
+    output_root: Path,
+) -> tuple[int, int, int, int, int, str]:
+    if not isinstance(output_root, Path):
+        raise Package0ComparatorError(
+            "Package 1 probe output_root must be a Path"
+        )
+    try:
+        observed = os.lstat(output_root)
+    except OSError as exc:
+        raise Package0ComparatorError(
+            "Package 1 comparator-owned output root is unavailable"
+        ) from exc
+    if not stat.S_ISDIR(observed.st_mode):
+        raise Package0ComparatorError(
+            "Package 1 comparator-owned output root must remain one directory"
+        )
+    marker_path = output_root / _PACKAGE1_ROOT_IDENTITY_MARKER
+    try:
+        marker = os.lstat(marker_path)
+        marker_sha256 = hashlib.sha256(marker_path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise Package0ComparatorError(
+            "Package 1 comparator-owned output root identity marker changed"
+        ) from exc
+    if not stat.S_ISREG(marker.st_mode):
+        raise Package0ComparatorError(
+            "Package 1 comparator-owned output root identity marker changed"
+        )
+    return (
+        observed.st_dev,
+        observed.st_ino,
+        observed.st_mode,
+        marker.st_dev,
+        marker.st_ino,
+        marker_sha256,
+    )
+
+
+def _package1_product_output_inventory(
+    output_root: Path,
+) -> tuple[tuple[str, str], ...]:
+    if not isinstance(output_root, Path) or not output_root.is_dir():
+        raise Package0ComparatorError(
+            "Package 1 probe output_root must be an existing directory"
+        )
+    resolved_root = output_root.resolve()
+    inventory: list[tuple[str, str]] = []
+    for path in output_root.rglob("*"):
+        resolved_path = path.resolve()
+        if not resolved_path.is_relative_to(resolved_root):
+            raise Package0ComparatorError(
+                "Package 1 product output path escapes the observed root"
+            )
+        if path.is_symlink():
+            content_identity = "symlink"
+        elif path.is_file():
+            content_identity = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        elif path.is_dir():
+            content_identity = "directory"
+        else:
+            content_identity = "other"
+        inventory.append(
+            (
+                path.relative_to(output_root).as_posix(),
+                content_identity,
+            )
+        )
+    return tuple(sorted(inventory))
+
+
 def _adapter_basis(receipt: _TargetedAdapterParityReceipt) -> dict[str, str]:
     return {
         "processing_request_id": receipt.processing_request_id,
@@ -829,9 +1449,11 @@ def _sha256(value: object, field: str) -> str:
 __all__ = [
     "Package0ComparatorError",
     "Package1DifferenceObservation",
+    "Package1ObservationExperimentJob",
+    "Package1ObservationTraceFixture",
     "assert_targeted_adapter_parity",
     "mint_targeted_adapter_parity_receipt",
-    "mint_package1_difference_observation",
+    "run_package1_observation_experiment",
     "validate_package1_difference_manifest",
     "validate_package0_successor_output",
 ]

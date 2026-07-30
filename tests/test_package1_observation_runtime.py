@@ -67,11 +67,14 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
 )
 from xic_extractor.extraction.targeted_service import (
     TargetedApplicationService,
+    TargetedRuntimeLifecycleRunner,
     build_targeted_application_request,
 )
 from xic_extractor.package0_successor_comparator import (
     Package0ComparatorError,
-    mint_package1_difference_observation,
+    Package1ObservationExperimentJob,
+    Package1ObservationTraceFixture,
+    run_package1_observation_experiment,
     validate_package1_difference_manifest,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
@@ -105,6 +108,7 @@ DIFFERENCE_PACKET = Path(
 FROZEN_COMPARATOR = Path(
     "docs/superpowers/validation/package0_smallest_strangler_contract_v1/contract.json"
 )
+_ObservationJob = Package1ObservationExperimentJob
 
 
 @dataclass(frozen=True)
@@ -140,17 +144,6 @@ class _RecordingNoRawBatchAdapter:
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         offset = int(request.mz - 500.0) * 10
         return 100 + offset, 104 + offset
-
-
-@dataclass(frozen=True)
-class _ObservationJob:
-    owners: ProcessingOwnerReferences
-    sample: ResolvedCanonicalSampleIdentity
-    work_unit_key: str
-    resource_key: str
-    coordinate_kind: TraceCoordinateKind
-    plans: tuple[PeakObservationPlan, ...]
-    delay_sec: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -317,6 +310,21 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
             "alignment-observation-runtime:test",
         ),
     )
+
+    with pytest.raises(TargetedRuntimeAdapterError, match="acquisition metrics"):
+        TargetedRuntimeLifecycleApplicationResult(
+            settlement=replace(
+                targeted_serial.settlement,
+                successful_observation_batches=(),
+            ),
+            finalization=targeted_serial.finalization,
+        )
+    with pytest.raises(AlignmentRuntimeAdapterError, match="acquisition metrics"):
+        AlignmentRuntimeApplicationResult(
+            runtime=alignment_serial.runtime,
+            finalization=alignment_serial.finalization,
+            successful_observation_batches=(),
+        )
 
     targeted_batches = targeted_serial.settlement.successful_observation_batches
     reordered_targeted_batches = (
@@ -522,7 +530,13 @@ def test_batch_production_rejects_selection_trace_length_mismatch(
     bad_plan = replace(job.plans[0], selection_intensity=(1.0, 2.0))
 
     with pytest.raises(PeakObservationBatchError, match="trace length"):
-        _produce_batch(replace(job, plans=(bad_plan,)))
+        _produce_batch(
+            replace(
+                job,
+                plans=(bad_plan,),
+                trace_fixtures=(job.trace_fixtures[0],),
+            )
+        )
 
 
 def test_runtime_consumers_coalesce_identical_spawned_result_replay(
@@ -800,35 +814,19 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
     job = _jobs(owners, sample)[0]
     runtime = _runtime(owners.attempt, (job.work_unit_key,))
     reservations = _reservations(owners.attempt, (job,))
-    legacy_calls: list[str] = []
-    before = _product_surface_paths(tmp_path)
-    targeted_result = _run_targeted_service(
-        runtime,
-        (job,),
-        reservations,
-        max_workers=1,
-        marker_path=tmp_path / "targeted-difference.runtime.json",
-        legacy_call_log=legacy_calls,
-    )
-    alignment_result = execute_alignment_process_runtime(
-        runtime,
-        (job,),
-        worker=_run_alignment_job,
-        error_factory=_alignment_error,
-        max_workers=1,
+    experiment_workspace = tmp_path / "difference-experiment"
+    experiment_workspace.mkdir()
+    observation = run_package1_observation_experiment(
+        experiment_workspace=experiment_workspace,
+        targeted_request=build_targeted_application_request(
+            _config(tmp_path / "caller-placeholder-output"),
+            [_target()],
+        ),
+        runtime=runtime,
         resource_reservations=reservations,
         telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "alignment-difference.runtime.json",
-            "alignment-observation-difference:test",
-        ),
-    )
-    emitted = tuple(sorted(_product_surface_paths(tmp_path) - before))
-    observation = mint_package1_difference_observation(
-        targeted=targeted_result,
-        alignment=alignment_result,
-        targeted_legacy_runner_call_count=len(legacy_calls),
-        successor_product_output_paths=emitted,
+        jobs=(job,),
+        max_workers=1,
     )
 
     digest = validate_package1_difference_manifest(
@@ -837,6 +835,19 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
         observation=observation,
     )
     assert len(digest) == 64
+    with pytest.raises(Package0ComparatorError, match="must not already exist"):
+        run_package1_observation_experiment(
+            experiment_workspace=experiment_workspace,
+            targeted_request=build_targeted_application_request(
+                _config(tmp_path / "second-caller-placeholder-output"),
+                [_target()],
+            ),
+            runtime=runtime,
+            resource_reservations=reservations,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            jobs=(job,),
+            max_workers=1,
+        )
     tampered = [dict(row) for row in rows]
     tampered[1]["new_value"] = "sha256:" + "F" * 64
     with pytest.raises(Package0ComparatorError, match="frozen exact-zero"):
@@ -856,124 +867,245 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
         validate_package1_difference_manifest(
             reset_contract,
             consistently_reset,
-            observation=replace(
-                observation,
-                frozen_surface_sha256=reset_digest,
+            observation=observation,
+        )
+
+    with pytest.raises(Package0ComparatorError, match="must be minted"):
+        replace(observation, _mint_token=object())
+    assert not hasattr(comparator_module, "begin_package1_no_write_probe")
+    assert not hasattr(comparator_module, "mint_package1_difference_observation")
+
+
+def test_package1_experiment_owns_legacy_runner_wiring(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owners, sample = _identity_fixture(tmp_path)
+    job = _jobs(owners, sample)[0]
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
+    reservations = _reservations(owners.attempt, (job,))
+    experiment_workspace = tmp_path / "legacy-runner-experiment"
+    experiment_workspace.mkdir()
+
+    def invoke_legacy_runner(self, request, _runtime, **_kwargs):
+        return self.execute(request)
+
+    monkeypatch.setattr(
+        TargetedApplicationService,
+        "execute_runtime_lifecycle",
+        invoke_legacy_runner,
+    )
+    with pytest.raises(Package0ComparatorError, match="forbidden legacy runner"):
+        run_package1_observation_experiment(
+            experiment_workspace=experiment_workspace,
+            targeted_request=build_targeted_application_request(
+                _config(),
+                [_target()],
             ),
+            runtime=runtime,
+            resource_reservations=reservations,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            jobs=(job,),
+            max_workers=1,
         )
 
 
-def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
+def test_package1_experiment_owns_and_overwrites_product_output_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owners, sample = _identity_fixture(tmp_path)
+    job = _jobs(owners, sample)[0]
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
+    reservations = _reservations(owners.attempt, (job,))
+    experiment_workspace = tmp_path / "owned-root-experiment"
+    experiment_workspace.mkdir()
+    caller_root = tmp_path / "caller-selected-output"
+    observed_paths: list[tuple[Path, Path]] = []
+    owner_execute = TargetedApplicationService.execute_runtime_lifecycle
+
+    def observe_bound_request(self, request, *args, **kwargs):
+        observed_paths.append(
+            (request.config.output_csv, request.config.diagnostics_csv)
+        )
+        return owner_execute(self, request, *args, **kwargs)
+
+    monkeypatch.setattr(
+        TargetedApplicationService,
+        "execute_runtime_lifecycle",
+        observe_bound_request,
+    )
+    run_package1_observation_experiment(
+        experiment_workspace=experiment_workspace,
+        targeted_request=build_targeted_application_request(
+            _config(caller_root),
+            [_target()],
+        ),
+        runtime=runtime,
+        resource_reservations=reservations,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        jobs=(job,),
+        max_workers=1,
+    )
+
+    product_root = (
+        experiment_workspace
+        / "package1-runtime-observation-experiment"
+        / "product-output"
+    )
+    assert observed_paths == [
+        (
+            product_root / "xic_results.csv",
+            product_root / "xic_diagnostics.csv",
+        )
+    ]
+    assert not caller_root.exists()
+    assert tuple(product_root.iterdir()) == ()
+
+
+def test_package1_experiment_rejects_any_product_output_entry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owners, sample = _identity_fixture(tmp_path)
+    job = _jobs(owners, sample)[0]
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
+    reservations = _reservations(owners.attempt, (job,))
+    experiment_workspace = tmp_path / "product-output-experiment"
+    experiment_workspace.mkdir()
+    owner_execute = TargetedApplicationService.execute_runtime_lifecycle
+
+    def write_product_entry(self, request, *args, **kwargs):
+        (request.config.output_csv.parent / "unexpected.json").write_text(
+            "{}\n",
+            encoding="utf-8",
+        )
+        return owner_execute(self, request, *args, **kwargs)
+
+    monkeypatch.setattr(
+        TargetedApplicationService,
+        "execute_runtime_lifecycle",
+        write_product_entry,
+    )
+
+    with pytest.raises(Package0ComparatorError, match="changed product output"):
+        run_package1_observation_experiment(
+            experiment_workspace=experiment_workspace,
+            targeted_request=build_targeted_application_request(
+                _config(),
+                [_target()],
+            ),
+            runtime=runtime,
+            resource_reservations=reservations,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            jobs=(job,),
+            max_workers=1,
+        )
+
+
+def test_package1_experiment_rejects_output_root_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owners, sample = _identity_fixture(tmp_path)
+    job = _jobs(owners, sample)[0]
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
+    reservations = _reservations(owners.attempt, (job,))
+    experiment_workspace = tmp_path / "replaced-root-experiment"
+    experiment_workspace.mkdir()
+    owner_execute = TargetedApplicationService.execute_runtime_lifecycle
+
+    def replace_output_root(self, request, *args, **kwargs):
+        output_root = request.config.output_csv.parent
+        for entry in output_root.iterdir():
+            entry.unlink()
+        output_root.rmdir()
+        output_root.mkdir()
+        return owner_execute(self, request, *args, **kwargs)
+
+    monkeypatch.setattr(
+        TargetedApplicationService,
+        "execute_runtime_lifecycle",
+        replace_output_root,
+    )
+    with pytest.raises(Package0ComparatorError, match="root identity"):
+        run_package1_observation_experiment(
+            experiment_workspace=experiment_workspace,
+            targeted_request=build_targeted_application_request(
+                _config(),
+                [_target()],
+            ),
+            runtime=runtime,
+            resource_reservations=reservations,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            jobs=(job,),
+            max_workers=1,
+        )
+
+
+def test_package1_experiment_has_no_generic_result_provider_seams(
+    tmp_path: Path,
+) -> None:
+    forbidden_parameters = {
+        "targeted_request_factory",
+        "targeted_lifecycle_runner",
+        "alignment_jobs",
+        "alignment_worker",
+        "alignment_error_factory",
+        "alignment_executor_factory",
+    }
+    assert not forbidden_parameters & set(
+        inspect.signature(run_package1_observation_experiment).parameters
+    )
+
+    owners, sample = _identity_fixture(tmp_path)
+    job = _jobs(owners, sample)[0]
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
+    reservations = _reservations(owners.attempt, (job,))
+    prebuilt_result = _run_alignment_job(job)
+    experiment_workspace = tmp_path / "prebuilt-result-experiment"
+    experiment_workspace.mkdir()
+    with pytest.raises(
+        Package0ComparatorError,
+        match="Package1ObservationExperimentJob",
+    ):
+        run_package1_observation_experiment(
+            experiment_workspace=experiment_workspace,
+            targeted_request=build_targeted_application_request(
+                _config(),
+                [_target()],
+            ),
+            runtime=runtime,
+            resource_reservations=reservations,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            jobs=(prebuilt_result,),  # type: ignore[arg-type]
+            max_workers=1,
+        )
+
+
+def test_package1_experiment_binds_primitive_jobs_to_manifest(
     tmp_path: Path,
 ) -> None:
     owners, sample = _identity_fixture(tmp_path)
-    first = replace(_jobs(owners, sample)[0], delay_sec=0.0)
-    second = replace(
-        first,
-        work_unit_key="sample:alternate",
-        resource_key="process:sample:alternate",
-    )
-    jobs = (first, second)
-    runtime = _runtime(owners.attempt, tuple(job.work_unit_key for job in jobs))
-    batch = _produce_batch(first)
-    payload = canonical_peak_observation_batch_bytes(batch)
+    job = _jobs(owners, sample)[0]
+    mismatched_job = replace(job, work_unit_key="sample:alternate")
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
+    reservations = _reservations(owners.attempt, (mismatched_job,))
+    experiment_workspace = tmp_path / "cross-work-key-experiment"
+    experiment_workspace.mkdir()
 
-    targeted_with_batch = mint_targeted_process_result_ref(
-        processing_attempt=owners.attempt,
-        work_unit_key=first.work_unit_key,
-        owner_result_payload=payload,
-        upstream_artifacts=batch.observation_artifacts,
-    )
-    targeted_without_batch = mint_targeted_process_result_ref(
-        processing_attempt=owners.attempt,
-        work_unit_key=second.work_unit_key,
-        owner_result_payload=b"no-observation-batch",
-    )
-    targeted = _execute_targeted_envelopes(
-        runtime,
-        (
-            TargetedProcessWorkerResultEnvelope(
-                attempt=owners.attempt,
-                work_unit_key=first.work_unit_key,
-                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                owner_result_ref=targeted_with_batch,
-                peak_observation_batch=batch,
+    with pytest.raises(Package0ComparatorError, match="manifest work"):
+        run_package1_observation_experiment(
+            experiment_workspace=experiment_workspace,
+            targeted_request=build_targeted_application_request(
+                _config(),
+                [_target()],
             ),
-            TargetedProcessWorkerResultEnvelope(
-                attempt=owners.attempt,
-                work_unit_key=second.work_unit_key,
-                outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                owner_result_ref=targeted_without_batch,
-            ),
-        ),
-    )
-
-    alignment_without_batch = mint_alignment_process_result_artifact(
-        processing_attempt=owners.attempt,
-        work_unit_key=first.work_unit_key,
-        owner_result_payload=b"no-observation-batch",
-    )
-    alignment_with_batch = mint_alignment_process_result_artifact(
-        processing_attempt=owners.attempt,
-        work_unit_key=second.work_unit_key,
-        owner_result_payload=payload,
-        upstream_artifacts=batch.observation_artifacts,
-    )
-    alignment_finalization = _execute_owner_batch(
-        runtime,
-        (),
-        RuntimeWorkerBatchReceipt(
-            settlements=(
-                mint_work_unit_settlement(
-                    attempt=owners.attempt,
-                    work_unit_key=first.work_unit_key,
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=alignment_without_batch,
-                ),
-                mint_work_unit_settlement(
-                    attempt=owners.attempt,
-                    work_unit_key=second.work_unit_key,
-                    outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-                    owner_result_ref=alignment_with_batch,
-                ),
-            ),
-            artifact_registrations=(
-                RuntimeArtifactRegistrationReceipt(
-                    work_unit_key=first.work_unit_key,
-                    artifact=alignment_without_batch,
-                ),
-                RuntimeArtifactRegistrationReceipt(
-                    work_unit_key=second.work_unit_key,
-                    artifact=alignment_with_batch,
-                ),
-                *(
-                    RuntimeArtifactRegistrationReceipt(
-                        work_unit_key=second.work_unit_key,
-                        artifact=artifact,
-                    )
-                    for artifact in batch.observation_artifacts
-                ),
-            ),
-            acquisitions=(
-                RuntimeAcquisitionReceipt(
-                    work_unit_key=second.work_unit_key,
-                    acquisition=batch.acquisition,
-                ),
-            ),
-        ),
-    )
-    alignment = AlignmentRuntimeApplicationResult(
-        runtime=alignment_finalization.coordinator.state.runtime,
-        finalization=alignment_finalization,
-        successful_observation_batches=((second.work_unit_key, batch),),
-    )
-
-    with pytest.raises(Package0ComparatorError, match="work keys"):
-        mint_package1_difference_observation(
-            targeted=targeted,
-            alignment=alignment,
-            targeted_legacy_runner_call_count=0,
-            successor_product_output_paths=(),
+            runtime=runtime,
+            resource_reservations=reservations,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            jobs=(mismatched_job,),
+            max_workers=1,
         )
 
 
@@ -984,15 +1116,36 @@ def _run_targeted_service(
     *,
     max_workers: int,
     marker_path: Path,
-    legacy_call_log: list[str] | None = None,
 ):
-    def legacy_runner(*_args, **_kwargs):
-        if legacy_call_log is not None:
-            legacy_call_log.append("legacy_runner")
+    def default_legacy_runner(*_args, **_kwargs):
         raise AssertionError(
             "observation runtime must not invoke the legacy writer path"
         )
 
+    service = TargetedApplicationService(
+        default_legacy_runner,
+        runtime_lifecycle_runner=_targeted_lifecycle_runner(
+            jobs,
+            max_workers=max_workers,
+        ),
+        runtime_recovery_marker=OwnerPathRuntimeMarker(
+            marker_path,
+            "targeted-observation-runtime:test",
+        ),
+    )
+    return service.execute_runtime_lifecycle(
+        build_targeted_application_request(_config(), [_target()]),
+        runtime,
+        resource_reservations=reservations,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+    )
+
+
+def _targeted_lifecycle_runner(
+    jobs: tuple[_ObservationJob, ...],
+    *,
+    max_workers: int,
+) -> TargetedRuntimeLifecycleRunner:
     def lifecycle_runner(_request, _state):
         with ProcessPoolExecutor(
             max_workers=max_workers,
@@ -1011,20 +1164,7 @@ def _run_targeted_service(
             ),
         )
 
-    service = TargetedApplicationService(
-        legacy_runner,
-        runtime_lifecycle_runner=lifecycle_runner,
-        runtime_recovery_marker=OwnerPathRuntimeMarker(
-            marker_path,
-            "targeted-observation-runtime:test",
-        ),
-    )
-    return service.execute_runtime_lifecycle(
-        build_targeted_application_request(_config(), [_target()]),
-        runtime,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-    )
+    return lifecycle_runner
 
 
 def _identity_fixture(
@@ -1194,6 +1334,11 @@ def _jobs(
     owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
 ) -> tuple[_ObservationJob, ...]:
+    native_plans = (
+        _plan(500.0, 500.0, 3300.0),
+        _plan(501.0, 200.0, 1320.0),
+    )
+    rt_only_plans = (_plan(500.0, 500.0, 3300.0),)
     return (
         _ObservationJob(
             owners=owners,
@@ -1201,7 +1346,8 @@ def _jobs(
             work_unit_key="sample:native",
             resource_key="process:sample:native",
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
-            plans=(_plan(500.0, 500.0, 3300.0), _plan(501.0, 200.0, 1320.0)),
+            plans=native_plans,
+            trace_fixtures=_trace_fixtures(native_plans),
             delay_sec=0.03,
         ),
         _ObservationJob(
@@ -1210,7 +1356,8 @@ def _jobs(
             work_unit_key="sample:rt-only",
             resource_key="process:sample:rt-only",
             coordinate_kind=TraceCoordinateKind.RT_ONLY,
-            plans=(_plan(500.0, 500.0, 3300.0),),
+            plans=rt_only_plans,
+            trace_fixtures=_trace_fixtures(rt_only_plans),
         ),
     )
 
@@ -1242,6 +1389,25 @@ def _trace_for_request(request: XICRequest) -> XICTrace:
         (7.7, 7.9, 8.0, 8.1, 8.3),
         tuple(value * scale for value in (0.0, 50.0, 500.0, 50.0, 0.0)),
     )
+
+
+def _trace_fixtures(
+    plans: tuple[PeakObservationPlan, ...],
+) -> tuple[Package1ObservationTraceFixture, ...]:
+    fixtures: list[Package1ObservationTraceFixture] = []
+    for plan in plans:
+        trace = _trace_for_request(plan.request)
+        offset = int(plan.request.mz - 500.0) * 10
+        fixtures.append(
+            Package1ObservationTraceFixture(
+                request=plan.request,
+                rt=tuple(float(value) for value in trace.rt),
+                intensity=tuple(float(value) for value in trace.intensity),
+                first_scan=100 + offset,
+                last_scan=104 + offset,
+            )
+        )
+    return tuple(fixtures)
 
 
 def _runtime(
@@ -1278,15 +1444,6 @@ def _canonical_batches(
     return tuple(
         (key, canonical_peak_observation_batch_bytes(batch)) for key, batch in batches
     )
-
-
-def _product_surface_paths(root: Path) -> set[str]:
-    product_suffixes = {".csv", ".tsv", ".xls", ".xlsx"}
-    return {
-        path.relative_to(root).as_posix()
-        for path in root.rglob("*")
-        if path.is_file() and path.suffix.lower() in product_suffixes
-    }
 
 
 def _replace_coordinate(
@@ -1330,12 +1487,12 @@ def _offered_count(finalization_record) -> int:
     return len(dispositions)
 
 
-def _config() -> ExtractionConfig:
+def _config(output_root: Path = Path("output")) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=Path("data"),
         dll_dir=Path("dll"),
-        output_csv=Path("output/xic_results.csv"),
-        diagnostics_csv=Path("output/xic_diagnostics.csv"),
+        output_csv=output_root / "xic_results.csv",
+        diagnostics_csv=output_root / "xic_diagnostics.csv",
         smooth_window=9,
         smooth_polyorder=2,
         peak_rel_height=0.02,

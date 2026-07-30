@@ -114,7 +114,7 @@ Progress vocabulary:
 | Package | Status | What is actually complete | First missing gate |
 | --- | --- | --- | --- |
 | Package 0 — executable no-RAW contracts | `evidence_passed` / complete | PR #151 merged the legacy comparator and shared `TargetedApplicationService`; PR #152 merged acquisition-source/request/attempt identity, canonical sample/target/review references, diagnostic evidence-artifact identity, retry-ancestor lineage validation, and fail-closed canonical request content. PR #153 merged owner-backed append-only lifecycle ordering. This branch closes manifest/work/resource/artifact/finalization and recovery-marker behavior for Targeted plus Alignment, then adds executable work-event/offset/metric availability, capability-aware trace coordinates, Targeted delivery-cell/revision/stage/seal candidates, CLI/GUI equal-adapter receipts, and the frozen successor receipt comparator. All remain no-RAW and `diagnostic_only`. | None inside Package 0. Remote Issue #149 state is unchanged because no GitHub mutation was authorized. |
-| Package 1 — pure runtime and observation substrates | `evidence_passed` / complete | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed runtime slices add a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, manifest-ordered application consumption, resource lifecycle, supervisor finalization, and the narrow recovery marker consumed by both Targeted and Alignment without serializing legacy DTOs or adding storage. Slice 2 now composes both real process consumers with the existing capability-aware batch acquisition and physical-observation owners: true spawned serial/reordered runs preserve immutable signal snapshots, source/kind coordinate truth, request/call/point counts, exact owner/observation lineage, replay idempotence, conflict quarantine, terminal dispositions, and byte-identical canonical receipts without invoking a writer. Its executable `DifferenceManifest` binds the explained internal carrier change to the immutable frozen comparator and an observed no-write run receipt. | None inside Package 1. Package 2 selection/externalization and downstream method wiring remain inactive. |
+| Package 1 — pure runtime and observation substrates | `evidence_passed` / complete | Merged PR #154 reaches exact request-source-bound DDA evidence → physical MS1 observation → chromatographic support event → diagnostic owner-backed `PeakHypothesis`. The completed runtime slices add a Targeted-owned canonical result identity, pickleable process-worker envelope, same-request/attempt `EvidenceArtifactRef` settlement, manifest-ordered application consumption, resource lifecycle, supervisor finalization, and the narrow recovery marker consumed by both Targeted and Alignment without serializing legacy DTOs or adding storage. Slice 2 now composes both real process consumers with the existing capability-aware batch acquisition and physical-observation owners: true spawned serial/reordered runs preserve immutable signal snapshots, source/kind coordinate truth, request/call/point counts, exact owner/observation lineage, replay idempotence, conflict quarantine, terminal dispositions, and byte-identical canonical receipts without invoking a writer. Its executable `DifferenceManifest` binds the explained internal carrier change to the immutable frozen comparator and one comparator-owned experiment entry that overwrites output paths, pins root identity, accepts only exact primitive no-RAW jobs, runs fixed Targeted/Alignment workers to synchronous drain, inventories final-state paths/bytes, and privately mints the receipt. | None inside Package 1. Package 2 selection/externalization and downstream method wiring remain inactive. |
 | Package 2 — complete Targeted CID-NL method | `not_started` | The operator confirmed hard-exact Targeted `xic_results.csv` as the first endpoint. Legacy stages exist, but the successor owner-backed chain is not wired through them. | After Package 0/1 gates close, wire selection/externalization → cross-sample Alignment → Backfill → existing hard-exact writer in one no-RAW multi-sample fixture. |
 | Package 3A — bounded real-data lifecycle | `blocked` | No new RAW run was launched. | Package 2 no-RAW coherence, RAW preflight, sealed oracle inputs, runtime budget, and explicit operator authorization. |
 | Package 3B — widened Untargeted Discovery | `deferred` | No widening is credited by this wave. | Full Targeted parity first; widened Discovery must reuse the same downstream core and keep production Matrix authority unchanged. Pt Pattern is not automatically selected as the widening provider. |
@@ -124,9 +124,9 @@ Progress vocabulary:
 
 | Method handoff | Contract / local object | Actual consumer wiring | Strongest evidence | Status |
 | --- | --- | --- | --- | --- |
-| Canonical acquisition input → processing request/attempt → coordinator lifecycle prefix | Implemented across the first two isolated stack layers; events require the owner-issued attempt and cover queued cancellation plus owner-content-driven manifest-preflight failure to a `failed` proposal without `attempt_started` | `TargetedApplicationService` and Alignment's existing process runner now consume one accepted attempt/runtime through the shared work/resource/artifact/finalization lifecycle. Their owner-path marker distinguishes launch-only coordinator loss from an acknowledged durable terminal record. Legacy `extractor.run` and product outputs remain unchanged. | 16 focused marker/Targeted/Alignment closure tests, including true spawn, reorder equality, failure, tamper and coordinator loss; CI-equivalent targeted-core 1,064 passed/1 skipped, alignment-core 2,487 passed, and docs-config 464 passed/1 skipped | `wired_no_raw` |
+| Canonical acquisition input → processing request/attempt → coordinator lifecycle prefix | Implemented across the first two isolated stack layers; events require the owner-issued attempt and cover queued cancellation plus owner-content-driven manifest-preflight failure to a `failed` proposal without `attempt_started` | `TargetedApplicationService` and Alignment's existing process runner now consume one accepted attempt/runtime through the shared work/resource/artifact/finalization lifecycle. Their owner-path marker distinguishes launch-only coordinator loss from an acknowledged durable terminal record. Legacy `extractor.run` and product outputs remain unchanged. | Focused marker/Targeted/Alignment closure tests cover true spawn, reorder equality, failure, tamper, and coordinator loss; the current integrated gate is recorded once below. | `wired_no_raw` |
 | Canonical sample/target/review references | Implemented locally through existing owners | Not yet proven through both complete tracer projections | Focused missing/ambiguous/stale/superseded tests | `contract_only` |
-| Capability-bound XIC batch → owner-backed physical MS1 observations | Implemented by composing the existing acquisition and `PeakObservation` owners; runtime supplies neither peak selection nor integration truth | Targeted and Alignment real process consumers accept the same immutable batch receipt and exact observation-artifact closure through true spawn | 10 Package 1 consumer/difference tests plus a 68-test focused acquisition/observation/runtime/comparator suite; serial/reordered Targeted/Alignment canonical equality, source/kind and signal immutability, request/call/point counts, owner/upstream rejection, replay/conflict quarantine, terminal dispositions, and immutable exact-zero DifferenceManifest validation | `evidence_passed` |
+| Capability-bound XIC batch → owner-backed physical MS1 observations | Implemented by composing the existing acquisition and `PeakObservation` owners; runtime supplies neither peak selection nor integration truth | Targeted and Alignment real process consumers accept the same immutable batch receipt and exact observation-artifact closure through true spawn | Focused acquisition/observation/runtime/comparator tests cover serial/reordered Targeted/Alignment canonical equality, source/kind and signal immutability, request/call/point counts, owner/upstream rejection, replay/conflict quarantine, terminal dispositions, successful empty-projection rejection, the single comparator-owned final-state parity experiment, fixed result-provider ingress, and immutable exact-zero DifferenceManifest validation; the current integrated gate is recorded once below. | `evidence_passed` |
 | Exact DDA/ddMS2 CID-NL evidence | Implemented in the third stack layer with exact request acquisition-source and scan identity; Targeted projection also binds the measured scan precursor to the exact target's ppm tolerance, while direct Discovery projection requires its finite measured scan precursor | Targeted/Discovery adapters can validate bounded refs; main application path does not carry them end to end | Focused synthetic no-RAW source/target/scan/direct-precursor substitution tests | `contract_only` |
 | CID-NL evidence → physical MS1 peak | Implemented in the third stack layer as owner-backed applicability refs with request-source-bound raw/selection-trace provenance, in-trace observation bounds, signal-validated true apex/heights/raw area/AsLS/Gaussian15 facts, signed-zero-stable identity, and DDA support matched to physical integration bounds rather than padded trace points | `run_discovery` does not yet emit the complete owner-backed chain | Focused stale-integration, false-apex, signed-zero, field-mutation, substitution, ambiguity, and boundary tests | `contract_only` |
 | Repeated strict scans → one chromatographic support event | Implemented in the third stack layer | Not consumed by the real Discovery runtime | Focused no-RAW aggregation tests | `contract_only` |
@@ -148,16 +148,16 @@ coordinates, logical request/batch/adapter-call/point counts, exact upstream
 lineage, and terminal artifact dispositions. The default legacy runners and
 all product output paths were not invoked.
 
-**Package 1 closure evidence:** 10 Package 1 consumer/difference tests and the
-68-test focused acquisition/observation/runtime/comparator set pass. All seven
-CI-equivalent shards pass at the integrated head: docs-config 464 passed/1
-skipped, GUI 110 passed, targeted-core 1,090 passed/1 skipped, alignment-core
-2,487 passed, product-gates-activation 872 passed/1 skipped,
-product-gates-evidence 621 passed, and diagnostics-tools 351 passed/1 skipped
-(5,995 passed/4 skipped total). Ruff, full-package mypy over 473 source files,
-Import Linter (4 kept/0 broken), architecture census (1,310 modules/2,647
-internal imports), diagnostics index, validation retention, shard census, hook
-smokes, docs audit with zero blockers, and independent review also pass.
+**Package 1 closure evidence:** the focused Package 1 comparator and runtime
+observability suites pass (49 tests). All seven CI-equivalent shards pass at the
+integrated head: docs-config 493 passed/1 skipped, GUI 110 passed,
+targeted-core 1,160 passed/1 skipped, alignment-core 2,488 passed,
+product-gates-activation 872 passed/1 skipped, product-gates-evidence 623
+passed, and diagnostics-tools 351 passed/1 skipped (6,097 passed/4 skipped
+total). Ruff, full-package mypy over 474 source files, Import Linter (4 kept/0
+broken), architecture census (1,314 modules/2,670 internal imports),
+diagnostics index, validation retention, shard census, bootstrap check, and
+docs audit with zero blockers also pass.
 
 **Last Package 0 runtime consumer boundary actually run:** Targeted and
 Alignment both supplied owner-minted, same-request/attempt
@@ -169,15 +169,9 @@ executes two `XICRequest` values through exactly one batch call and returns
 source-bound native-scan coordinates. Targeted delivery-cell/revision/stage/seal
 candidates compose existing owner refs only, and CLI/GUI receipts compare
 canonical request, attempt semantics, lineage, scientific result, delivery
-projection, and both frozen CSV digests exactly. The focused closure set is
-green at 67 tests. All seven CI-equivalent shards pass: docs-config 464 passed/1
-skipped, GUI 110 passed, targeted-core 1,080 passed/1 skipped, alignment-core
-2,487 passed, product-gates-activation 872 passed/1 skipped,
-product-gates-evidence 621 passed, and diagnostics-tools 351 passed/1 skipped
-(5,985 passed/4 skipped total). Ruff, full-package mypy over 472 source files,
-Import Linter (4 kept/0 broken), architecture census (1,308 modules/2,632
-internal imports), diagnostics index, validation retention, shard census, hook
-smokes, and docs audit with zero blockers also pass.
+projection, and both frozen CSV digests exactly. The focused Package 0 closure
+fixtures remain green; the single integrated verification record above covers
+this boundary without duplicating per-shard counts.
 
 **Current CID-NL semantic boundary:** the last completed semantic seam is exact CID-NL evidence
 → physical MS1 peak → diagnostic `PeakHypothesis`. The first missing product

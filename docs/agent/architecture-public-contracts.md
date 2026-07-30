@@ -99,6 +99,12 @@ The boundary is closed as follows:
   pair through persistence, marker replay, and application results. Separate
   caller-supplied finalization halves are forbidden even when their attempt IDs
   match.
+- A successful Targeted or Alignment application result is a complete
+  acquisition projection. An empty `successful_observation_batches` value is
+  valid only when the owner ledger's logical request, batch, adapter-call, and
+  trace-point counts are all zero. Failed or quarantined results may deliberately
+  hide observation batches while retaining physically observed nonzero counts;
+  that loss must never be reused as a successful no-acquisition claim.
 - Public consumer paths must close the full lifecycle. A settlement-only service
   or adapter entry point is a bypass, not a compatibility facade. Consumers call
   `execute_runtime_attempt`; preparation, batch application, ledger derivation,
@@ -143,6 +149,21 @@ override mint validation. Normal downstream construction fails even if a type
 annotation or a new static import shape exposes the class object; explicit
 access to private owner state remains forbidden and is separately rejected at
 the import root.
+
+Package 1 comparator receipts follow the same construction rule. One public
+experiment entry creates a dedicated workspace and product-output root,
+overwrites the Targeted request's output paths, pins the root identity, and
+constructs the Targeted service with the comparator-owned legacy-runner
+sentinel. It accepts only exact primitive no-RAW jobs; fixed Targeted and
+Alignment workers execute and drain synchronously before the private receipt
+mint. Callers cannot provide request factories, lifecycle/result providers,
+finished application/process results, executor factories, split begin/mint
+operations, counts, paths, or receipt construction/replacement. The root
+inventory proves final-state path/byte parity, not transient filesystem-I/O
+absence. Legacy writer non-invocation is instead owned by the sentinel, fixed
+worker ingress, and Alignment dependency boundary. Scientific and Matrix
+absence likewise remains a separate direct integration and dependency-boundary
+claim rather than a self-asserting status field.
 
 Every low-level module must define exactly one literal tuple `__all__` equal to
 its allowlist. Static binding/mutation/reflection checks and an evaluated runtime

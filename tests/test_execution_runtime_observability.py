@@ -19,6 +19,7 @@ from xic_extractor.execution_runtime_observability import (
     RuntimeObservationSubject,
     _mint_runtime_observability_ledger,
     canonical_runtime_observability_ledger_bytes,
+    validate_runtime_acquisition_metrics,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -50,6 +51,33 @@ def test_runtime_observability_closes_work_offsets_and_metric_availability(
         ).value
         == 0
     )
+
+
+def test_runtime_acquisition_metrics_treat_empty_projection_as_exact_zero(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    zero_ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample-a:target-a",),
+        worker_keys=(),
+    )
+    validate_runtime_acquisition_metrics(zero_ledger, ())
+
+    nonzero_ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample-a:target-a",),
+        worker_keys=(),
+        logical_xic_request_count=1,
+        xic_batch_count=1,
+        adapter_chromatogram_call_count=1,
+        trace_point_count=10,
+    )
+    with pytest.raises(
+        RuntimeObservabilityContractError,
+        match="logical_xic_request_count",
+    ):
+        validate_runtime_acquisition_metrics(nonzero_ledger, ())
 
 
 def test_runtime_observability_ledger_rejects_forged_mint_capability(
