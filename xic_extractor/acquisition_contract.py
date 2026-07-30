@@ -142,11 +142,15 @@ class AcquiredTrace:
             raise AcquisitionContractError("coordinate must be a TraceCoordinate")
         if not isinstance(self.trace, XICTrace):
             raise AcquisitionContractError("trace must be an XICTrace")
-        if len(self.trace.rt) != self.coordinate.trace_point_count:
+        rt = np.asarray(self.trace.rt)
+        intensity = np.asarray(self.trace.intensity)
+        if rt.ndim != 1 or intensity.ndim != 1 or rt.shape != intensity.shape:
+            raise AcquisitionContractError(
+                "trace arrays must be matching one-dimensional arrays"
+            )
+        if len(rt) != self.coordinate.trace_point_count:
             raise AcquisitionContractError("trace length mismatches trace coordinates")
-        if not np.all(np.isfinite(self.trace.rt)) or not np.all(
-            np.isfinite(self.trace.intensity)
-        ):
+        if not np.all(np.isfinite(rt)) or not np.all(np.isfinite(intensity)):
             raise AcquisitionContractError("trace values must be finite")
 
 

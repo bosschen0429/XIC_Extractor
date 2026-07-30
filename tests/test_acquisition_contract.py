@@ -215,6 +215,35 @@ def test_batch_trace_contract_rejects_nonfinite_trace_values(tmp_path: Path) -> 
         )
 
 
+@pytest.mark.parametrize(
+    "trace",
+    (
+        XICTrace(np.array([8.0, 9.0]), np.array([1.0])),
+        XICTrace(np.array([[8.0, 9.0]]), np.array([[1.0, 2.0]])),
+    ),
+)
+def test_batch_trace_contract_rejects_mismatched_or_multidimensional_arrays(
+    tmp_path: Path,
+    trace: XICTrace,
+) -> None:
+    capability = mint_trace_acquisition_capability(
+        _source(tmp_path),
+        adapter_namespace="tests.invalid_shape_batch_adapter",
+        coordinate_kind=TraceCoordinateKind.RT_ONLY,
+    )
+
+    class InvalidAdapter(_NoRawBatchAdapter):
+        def extract_xic_many(self, requests):
+            return (trace,)
+
+    with pytest.raises(AcquisitionContractError, match="matching one-dimensional"):
+        acquire_trace_batch(
+            capability,
+            (XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0),),
+            InvalidAdapter(),
+        )
+
+
 def _source(tmp_path: Path):
     path = tmp_path / "source.fixture"
     path.write_bytes(b"no-raw-source")
