@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
+from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
@@ -173,6 +175,13 @@ _PREFLIGHT_ZERO_METRICS = (
     set(REQUIRED_RUNTIME_METRIC_NAMES)
     - _PREFLIGHT_UNAVAILABLE_METRICS
     - {"attempt_wall_seconds"}
+)
+
+_ACQUISITION_COUNT_METRIC_NAMES = (
+    "logical_xic_request_count",
+    "xic_batch_count",
+    "adapter_chromatogram_call_count",
+    "trace_point_count",
 )
 
 
@@ -366,6 +375,46 @@ def canonical_runtime_observability_ledger_bytes(
         separators=(",", ":"),
         allow_nan=False,
     ).encode("utf-8")
+
+
+def validate_runtime_acquisition_metrics(
+    ledger: RuntimeObservabilityLedger,
+    acquisitions: Sequence[TraceAcquisitionBatch],
+) -> None:
+    """Reconcile adapter-ledger counts with accepted acquisition receipts."""
+
+    if not isinstance(ledger, RuntimeObservabilityLedger):
+        raise RuntimeObservabilityContractError(
+            "ledger must be a RuntimeObservabilityLedger"
+        )
+    if isinstance(acquisitions, (str, bytes)) or any(
+        not isinstance(acquisition, TraceAcquisitionBatch)
+        for acquisition in acquisitions
+    ):
+        raise RuntimeObservabilityContractError(
+            "acquisitions must contain TraceAcquisitionBatch receipts"
+        )
+    if not acquisitions:
+        return
+    expected = {
+        name: sum(getattr(acquisition, name) for acquisition in acquisitions)
+        for name in _ACQUISITION_COUNT_METRIC_NAMES
+    }
+    measured = {
+        metric.name: metric
+        for metric in ledger.metrics
+        if metric.name in _ACQUISITION_COUNT_METRIC_NAMES
+    }
+    for name, expected_value in expected.items():
+        metric = measured[name]
+        if (
+            metric.availability is not RuntimeMetricAvailability.MEASURED
+            or metric.value != expected_value
+        ):
+            raise RuntimeObservabilityContractError(
+                "runtime acquisition metrics conflict with accepted acquisition "
+                f"batches: {name}"
+            )
 
 
 def _require_attempt(value: object) -> ProcessingAttemptIdentity:
@@ -597,6 +646,45 @@ def _validate_resource_artifact_event_lifecycle(
                 "artifact lifecycle order must be registered before disposition"
             )
 
+    proposal_position = next(
+        index for index, event in enumerate(events) if event.kind == "terminal_proposal"
+    )
+    acknowledgement_position = next(
+        index
+        for index, event in enumerate(events)
+        if event.kind == "terminal_acknowledged"
+    )
+    outcome_position = next(
+        index for index, event in enumerate(events) if event.kind == "terminal_outcome"
+    )
+    coordinator_resource_artifact_positions = tuple(
+        index
+        for index, event in enumerate(events)
+        if event.subject is RuntimeObservationSubject.RESOURCE
+        or event.kind == "artifact_registered"
+    )
+    if any(
+        position > proposal_position
+        for position in coordinator_resource_artifact_positions
+    ):
+        raise RuntimeObservabilityContractError(
+            "coordinator resource and artifact events must occur before "
+            "terminal proposal"
+        )
+    disposition_positions = tuple(
+        index
+        for index, event in enumerate(events)
+        if event.kind in _ARTIFACT_DISPOSITION_EVENT_KINDS
+    )
+    if any(
+        not acknowledgement_position < position < outcome_position
+        for position in disposition_positions
+    ):
+        raise RuntimeObservabilityContractError(
+            "artifact dispositions must occur after terminal acknowledgement and "
+            "before terminal outcome"
+        )
+
 
 def _validate_runtime_metrics(
     attempt: ProcessingAttemptIdentity,
@@ -817,4 +905,5 @@ __all__ = [
     "RuntimeObservationEvent",
     "RuntimeObservationSubject",
     "canonical_runtime_observability_ledger_bytes",
+    "validate_runtime_acquisition_metrics",
 ]

@@ -520,22 +520,31 @@ Alignment is now the second no-RAW consumer. The focused
 attempt/work/resource/artifact events, monotonic offsets, serial-or-process RSS
 representation, elapsed-event agreement, and required finite/integral metric
 availability without collecting live telemetry or selecting an event store or
-telemetry backend. Before supervisor acknowledgement, the finalization owner
+telemetry backend. It also enforces the global phase boundary: coordinator
+resource lifecycle and artifact registration end before `terminal_proposal`;
+artifact dispositions occur only after `terminal_acknowledged` and before
+`terminal_outcome`. Before supervisor acknowledgement, the finalization owner
 cross-checks the ledger's complete mechanical lifecycle facts against the
 closed coordinator state and derives the required `raw_open_count` from opened
 resource records. Missing, extra, or substituted lifecycle facts and a
-conflicting count fail closed. Logical XIC/call/point counts, RSS, and
-runtime-mediated artifact-I/O telemetry remain caller measurements because the
-coordinator does not own an independent source for them.
+conflicting count fail closed. Logical XIC/call/point counts remain caller
+measurements when no acquisition receipt exists. When a Targeted or Alignment
+result carries accepted `TraceAcquisitionBatch` receipts, the adapter aggregates
+their logical request, batch, backend-call, and trace-point counts and rejects a
+ledger mismatch before acknowledgement. RSS and runtime-mediated artifact-I/O
+telemetry remain caller measurements because the coordinator has no independent
+source for them.
 The caller-located durable launch/finalization marker and coordinator-loss
 recovery are also executable for both Targeted and Alignment. These contracts
 do not make the legacy runners use a new storage or writer path.
 
 Package 1 now composes that mechanical lifecycle with the existing acquisition
 and physical-observation owners. `peak_detection.observation_batch` performs
-one capability-aware `XICRequest` batch, retains truthful native/conversion/RT
-coordinates and mechanical request/call/point counts, closes every coordinate
-against the capability source/kind, freezes copied signal arrays, and asks
+one capability-aware `XICRequest` batch only after resolving the sample's
+request binding and requiring the capability's acquisition source to match.
+It retains truthful native/conversion/RT coordinates and mechanical
+request/call/point counts, closes every coordinate against the capability
+source/kind, freezes copied signal arrays, and asks
 `peak_detection.observations` to validate owner-supplied `IntegrationResult`
 facts against each acquired trace before minting a `PeakObservationRef`.
 Targeted and Alignment process-result artifacts bind the same canonical batch

@@ -1,6 +1,6 @@
 # Package 1 Runtime Observation DifferenceManifest v1
 
-Doc placement: Repo validation artifact
+Doc placement: repo_support_doc
 Repo owner: `xic_extractor.package0_successor_comparator`
 Doc kind: validation_artifact
 Doc lifecycle: retained Package 1 closure evidence
@@ -30,7 +30,12 @@ reordered, changed, or consistently reset manifest/contract fields. The
 true-spawn consumer test derives that receipt from the owner request/attempt,
 both canonical coordinator records, canonical-equal Targeted/Alignment
 observation batch bytes/counts, and both terminal artifact-disposition sets. It
-also records zero Targeted legacy-runner calls, zero emitted CSV/TSV/XLS/XLSX
+also proves that the selected sample's request-bound acquisition source is
+checked before adapter I/O, all four XIC/batch/backend-call/point ledger counts
+must equal the accepted acquisition receipts before supervisor acknowledgement,
+and coordinator resource/artifact events cannot cross into the supervisor phase.
+The test also records zero Targeted legacy-runner calls, zero emitted
+CSV/TSV/XLS/XLSX
 paths, no scientific or Matrix projection, and no writer invocation;
 Alignment's runtime adapter has no writer dependency or output surface.
 Together with Import Linter and the frozen comparator, this is the

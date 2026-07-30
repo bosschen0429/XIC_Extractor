@@ -30,7 +30,11 @@ from xic_extractor.peak_detection.observations import (
     mint_peak_observation_ref,
 )
 from xic_extractor.peak_detection.traces import trace_from_xic_request
-from xic_extractor.processing_identity import ProcessingOwnerReferences
+from xic_extractor.processing_identity import (
+    IdentityContractError,
+    ProcessingOwnerReferences,
+    resolve_request_acquisition_source,
+)
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.xic_models import XICRequest
 
@@ -188,6 +192,17 @@ def produce_peak_observation_batch(
     ):
         raise PeakObservationBatchError(
             "plans must be a non-empty PeakObservationPlan tuple"
+        )
+    try:
+        request_source = resolve_request_acquisition_source(
+            processing_owners=processing_owners,
+            sample=sample,
+        )
+    except IdentityContractError as exc:
+        raise PeakObservationBatchError(str(exc)) from exc
+    if capability.acquisition_source != request_source:
+        raise PeakObservationBatchError(
+            "capability acquisition source mismatches the sample request binding"
         )
     acquisition = acquire_trace_batch(
         capability,

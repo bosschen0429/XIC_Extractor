@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -65,7 +66,9 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedRuntimeAdapterError,
     TargetedRuntimeLifecycleApplicationResult,
     TargetedRuntimeWorkerBatch,
+    finalize_targeted_runtime_worker_batch,
     mint_targeted_process_result_ref,
+    prepare_targeted_runtime_lifecycle,
     settle_targeted_process_worker_results,
 )
 from xic_extractor.extraction.targeted_service import (
@@ -119,6 +122,25 @@ class _NoRawBatchAdapter:
     def extract_xic_many(
         self, requests: tuple[XICRequest, ...]
     ) -> tuple[XICTrace, ...]:
+        return tuple(_trace_for_request(request) for request in requests)
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        offset = int(request.mz - 500.0) * 10
+        return 100 + offset, 104 + offset
+
+
+@dataclass
+class _RecordingNoRawBatchAdapter:
+    extract_many_call_count: int = 0
+
+    @property
+    def raw_chromatogram_call_count(self) -> int:
+        return 0
+
+    def extract_xic_many(
+        self, requests: tuple[XICRequest, ...]
+    ) -> tuple[XICTrace, ...]:
+        self.extract_many_call_count += 1
         return tuple(_trace_for_request(request) for request in requests)
 
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
@@ -499,10 +521,9 @@ def test_alignment_public_result_rejects_unclosed_observation_upstreams(
             coordinator_record=coordinator,
             finalization_record=mint_supervisor_finalization(
                 coordinator,
-                observability_ledger=(
-                    build_runtime_observability_ledger_from_coordinator(
-                        coordinator
-                    )
+                observability_ledger=_ledger_from_coordinator_with_batches(
+                    coordinator,
+                    (batch,),
                 ),
             ),
             successful_observation_batches=((job.work_unit_key, batch),),
@@ -662,6 +683,125 @@ def test_batch_freezes_signal_and_detects_post_mint_mutation(tmp_path: Path) -> 
     intensity[0] = 123.0
     with pytest.raises(PeakObservationBatchError, match="changed after"):
         canonical_peak_observation_batch_bytes(batch)
+
+
+def test_observation_batch_rejects_cross_sample_capability_before_acquisition(
+    tmp_path: Path,
+) -> None:
+    owners, first, second = _two_sample_identity_fixture(tmp_path)
+    second_binding = next(
+        binding
+        for binding in owners.request.acquisition_bindings
+        if binding.adapter_input_key == second.lookup_token
+    )
+    second_source = next(
+        source
+        for source in owners.request.acquisition_sources
+        if source.acquisition_source_id == second_binding.acquisition_source_id
+    )
+    capability = mint_trace_acquisition_capability(
+        second_source,
+        adapter_namespace="synthetic.package1.no_raw",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    adapter = _RecordingNoRawBatchAdapter()
+
+    with pytest.raises(PeakObservationBatchError, match="request binding"):
+        produce_peak_observation_batch(
+            processing_owners=owners,
+            sample=first,
+            capability=capability,
+            plans=(_plan(500.0, 500.0, 3300.0),),
+            adapter=adapter,
+        )
+
+    assert first.lookup_token != second.lookup_token
+    assert adapter.extract_many_call_count == 0
+
+
+@pytest.mark.parametrize(
+    "metric_name",
+    (
+        "logical_xic_request_count",
+        "xic_batch_count",
+        "adapter_chromatogram_call_count",
+        "trace_point_count",
+    ),
+)
+def test_targeted_rejects_falsified_acquisition_counts_before_acknowledgement(
+    tmp_path: Path,
+    metric_name: str,
+) -> None:
+    owners, sample = _identity_fixture(tmp_path)
+    job = _jobs(owners, sample)[0]
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
+    reservations = _reservations(owners.attempt, (job,))
+    state = prepare_targeted_runtime_lifecycle(runtime, reservations)
+    envelope, report = _run_targeted_job(replace(job, delay_sec=0.0))
+    assert envelope.owner_result_ref is not None
+    batch = TargetedRuntimeWorkerBatch(
+        result_envelopes=(envelope,),
+        resource_reports=(report,),
+        runtime_artifact_refs=(envelope.owner_result_ref,),
+    )
+    ledger = _ledger(
+        runtime,
+        reservations,
+        jobs=(job,),
+        result_kind="targeted",
+    )
+    truthful = next(
+        metric.value for metric in ledger.metrics if metric.name == metric_name
+    )
+    assert isinstance(truthful, int)
+    falsified = _replace_metric_value(ledger, metric_name, truthful + 1)
+    supervisor_called = False
+
+    def supervisor_finalizer(coordinator, proposed):
+        nonlocal supervisor_called
+        supervisor_called = True
+        return proposed
+
+    with pytest.raises(TargetedRuntimeAdapterError, match="acquisition metrics"):
+        finalize_targeted_runtime_worker_batch(
+            state,
+            batch,
+            observability_ledger=falsified,
+            supervisor_finalizer=supervisor_finalizer,
+        )
+
+    assert supervisor_called is False
+
+
+def test_alignment_rejects_falsified_acquisition_counts_before_acknowledgement(
+    tmp_path: Path,
+) -> None:
+    owners, sample = _identity_fixture(tmp_path)
+    job = replace(_jobs(owners, sample)[0], delay_sec=0.0)
+    runtime = _runtime(owners.attempt, (job.work_unit_key,))
+    reservations = _reservations(owners.attempt, (job,))
+    ledger = _ledger(
+        runtime,
+        reservations,
+        jobs=(job,),
+        result_kind="alignment",
+    )
+    falsified = _replace_metric_value(ledger, "trace_point_count", 0)
+
+    with pytest.raises(AlignmentRuntimeAdapterError, match="acquisition metrics"):
+        execute_alignment_process_runtime(
+            runtime,
+            (job,),
+            worker=_run_alignment_job,
+            error_factory=_alignment_error,
+            max_workers=1,
+            resource_reservations=reservations,
+            observability_ledger=falsified,
+            recovery_marker=OwnerPathRuntimeMarker(
+                tmp_path / "alignment-falsified-counts.runtime.json",
+                "alignment-observation-falsified-counts:test",
+            ),
+        )
 
 
 def test_acquisition_batch_rejects_coordinate_source_or_kind_substitution(
@@ -850,10 +990,9 @@ def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
         coordinator_record=targeted_coordinator,
         finalization_record=mint_supervisor_finalization(
             targeted_coordinator,
-            observability_ledger=(
-                build_runtime_observability_ledger_from_coordinator(
-                    targeted_coordinator
-                )
+            observability_ledger=_ledger_from_coordinator_with_batches(
+                targeted_coordinator,
+                (batch,),
             ),
         ),
     )
@@ -904,10 +1043,9 @@ def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
         coordinator_record=alignment_coordinator,
         finalization_record=mint_supervisor_finalization(
             alignment_coordinator,
-            observability_ledger=(
-                build_runtime_observability_ledger_from_coordinator(
-                    alignment_coordinator
-                )
+            observability_ledger=_ledger_from_coordinator_with_batches(
+                alignment_coordinator,
+                (batch,),
             ),
         ),
         successful_observation_batches=((second.work_unit_key, batch),),
@@ -1002,8 +1140,17 @@ def _ledger(
     )
     result_artifact_ids: list[str] = []
     observation_artifact_ids: list[str] = []
+    acquisition_counts = {
+        "logical_xic_request_count": 0,
+        "xic_batch_count": 0,
+        "adapter_chromatogram_call_count": 0,
+        "trace_point_count": 0,
+    }
     for job in unique_jobs:
         batch = _produce_batch(replace(job, delay_sec=0.0))
+        acquisition = batch.acquisition
+        for name in acquisition_counts:
+            acquisition_counts[name] += getattr(acquisition, name)
         payload = canonical_peak_observation_batch_bytes(batch)
         result_artifact = (
             mint_targeted_process_result_ref(
@@ -1036,6 +1183,12 @@ def _ledger(
                 reservation.worker_key for reservation in reservations
             )
         ),
+        logical_xic_request_count=acquisition_counts["logical_xic_request_count"],
+        xic_batch_count=acquisition_counts["xic_batch_count"],
+        adapter_chromatogram_call_count=(
+            acquisition_counts["adapter_chromatogram_call_count"]
+        ),
+        trace_point_count=acquisition_counts["trace_point_count"],
         resource_lifecycles=tuple(
             (
                 reservation.resource_key,
@@ -1100,6 +1253,126 @@ def _identity_fixture(
         sample_resolutions=(sample,),
     )
     return owners, sample
+
+
+def _two_sample_identity_fixture(
+    tmp_path: Path,
+) -> tuple[
+    ProcessingOwnerReferences,
+    ResolvedCanonicalSampleIdentity,
+    ResolvedCanonicalSampleIdentity,
+]:
+    source_paths = (tmp_path / "sample-a.raw", tmp_path / "sample-b.raw")
+    source_paths[0].write_bytes(b"synthetic-package1-source-a")
+    source_paths[1].write_bytes(b"synthetic-package1-source-b")
+    sources = tuple(
+        sorted(
+            (
+                build_acquisition_source_identity(
+                    path,
+                    acquisition_format="thermo_raw",
+                    observation_namespace="thermo.raw.ms_controller_1",
+                )
+                for path in source_paths
+            ),
+            key=lambda source: source.acquisition_source_id,
+        )
+    )
+    source_by_content = {source.content_sha256: source for source in sources}
+    source_a = source_by_content[
+        hashlib.sha256(b"synthetic-package1-source-a").hexdigest()
+    ]
+    source_b = source_by_content[
+        hashlib.sha256(b"synthetic-package1-source-b").hexdigest()
+    ]
+    bindings = tuple(
+        sorted(
+            (
+                AcquisitionInputBinding(
+                    acquisition_source_id=source_a.acquisition_source_id,
+                    adapter_input_key="sample-a",
+                    injection_order=1,
+                ),
+                AcquisitionInputBinding(
+                    acquisition_source_id=source_b.acquisition_source_id,
+                    adapter_input_key="sample-b",
+                    injection_order=2,
+                ),
+            ),
+            key=lambda binding: (
+                binding.acquisition_source_id,
+                binding.adapter_input_key,
+                binding.injection_order,
+            ),
+        )
+    )
+    request = build_processing_request_identity(
+        acquisition_sources=sources,
+        acquisition_bindings=bindings,
+        scientific_input_schema_version="package1-observation-input-v1",
+        processing_algorithm_version="package1-observation-algorithm-v1",
+        processing_contract_version="package1-observation-contract-v1",
+        scientific_inputs={"fixture": "synthetic-no-raw-package1-two-sample"},
+    )
+    attempt = issue_processing_attempt(request)
+    snapshot = mint_sample_metadata_snapshot(
+        (
+            SampleMetadata(
+                sample_name="Sample A",
+                raw_stem="sample-a",
+                injection_order=1,
+            ),
+            SampleMetadata(
+                sample_name="Sample B",
+                raw_stem="sample-b",
+                injection_order=2,
+            ),
+        ),
+        identity_namespace="study:package1-observation",
+    )
+    first = resolve_canonical_sample_identity(snapshot, "sample-a")
+    second = resolve_canonical_sample_identity(snapshot, "sample-b")
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=attempt,
+        sample_snapshot=snapshot,
+        sample_resolutions=(first, second),
+    )
+    return owners, first, second
+
+
+def _replace_metric_value(ledger, name: str, value: int):
+    return replace(
+        ledger,
+        metrics=tuple(
+            replace(metric, value=value) if metric.name == name else metric
+            for metric in ledger.metrics
+        ),
+    )
+
+
+def _ledger_from_coordinator_with_batches(
+    coordinator,
+    batches: tuple[PeakObservationBatch, ...],
+):
+    counts = {
+        name: sum(getattr(batch.acquisition, name) for batch in batches)
+        for name in (
+            "logical_xic_request_count",
+            "xic_batch_count",
+            "adapter_chromatogram_call_count",
+            "trace_point_count",
+        )
+    }
+    return build_runtime_observability_ledger_from_coordinator(
+        coordinator,
+        logical_xic_request_count=counts["logical_xic_request_count"],
+        xic_batch_count=counts["xic_batch_count"],
+        adapter_chromatogram_call_count=(
+            counts["adapter_chromatogram_call_count"]
+        ),
+        trace_point_count=counts["trace_point_count"],
+    )
 
 
 def _jobs(

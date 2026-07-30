@@ -410,6 +410,73 @@ def test_runtime_observability_rejects_incomplete_or_malformed_artifact_lifecycl
             )
 
 
+def test_runtime_observability_rejects_resource_events_after_terminal_proposal(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample-a:target-a",),
+        worker_keys=("worker:1",),
+        resource_lifecycles=(
+            (
+                "session:a",
+                RuntimeResourceKind.ACQUISITION_SESSION,
+                "resource_opened",
+                "resource_cleanup_succeeded",
+            ),
+        ),
+    )
+    resource_events = tuple(
+        event
+        for event in ledger.events
+        if event.subject is RuntimeObservationSubject.RESOURCE
+    )
+    without_resource = tuple(
+        event
+        for event in ledger.events
+        if event.subject is not RuntimeObservationSubject.RESOURCE
+    )
+    acknowledgement = _event_index(without_resource, "terminal_acknowledged")
+    invalid = (
+        *without_resource[: acknowledgement + 1],
+        *resource_events,
+        *without_resource[acknowledgement + 1 :],
+    )
+
+    with pytest.raises(RuntimeObservabilityContractError, match="terminal proposal"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=ledger.work_unit_keys,
+            events=_resequence(invalid),
+            metrics=ledger.metrics,
+        )
+
+
+def test_runtime_observability_rejects_artifact_disposition_before_acknowledgement(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample-a:target-a",),
+        worker_keys=("worker:1",),
+        artifact_dispositions=(("artifact:a", "artifact_offered_to_owner"),),
+    )
+    events = list(ledger.events)
+    disposition = events.pop(_event_index(tuple(events), "artifact_offered_to_owner"))
+    acknowledgement = _event_index(tuple(events), "terminal_acknowledged")
+    events.insert(acknowledgement, disposition)
+
+    with pytest.raises(RuntimeObservabilityContractError, match="acknowledgement"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=ledger.work_unit_keys,
+            events=_resequence(tuple(events)),
+            metrics=ledger.metrics,
+        )
+
+
 @pytest.mark.parametrize(
     ("metric_name", "value"),
     (

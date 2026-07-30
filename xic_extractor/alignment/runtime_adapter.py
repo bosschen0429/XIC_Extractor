@@ -43,7 +43,11 @@ from xic_extractor.execution_runtime_finalization import (
     settle_runtime_resource,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
+from xic_extractor.execution_runtime_observability import (
+    RuntimeObservabilityContractError,
+    RuntimeObservabilityLedger,
+    validate_runtime_acquisition_metrics,
+)
 from xic_extractor.peak_detection.observation_batch import (
     PeakObservationBatch,
     canonical_peak_observation_batch_bytes,
@@ -195,6 +199,10 @@ class AlignmentRuntimeApplicationResult:
                 batch=batch,
                 registered_artifact_ids=registered_by_key[key],
             )
+        _validate_observation_batch_acquisition_metrics(
+            self.finalization_record.observability_ledger,
+            self.successful_observation_batches,
+        )
 
 
 def mint_alignment_process_result_artifact(
@@ -345,6 +353,15 @@ def execute_alignment_process_runtime(
         raise AlignmentRuntimeAdapterError(
             f"Alignment results did not settle manifest work: {missing!r}"
         )
+    acquired_observation_batches = tuple(
+        (key, successful_observation_batches[key])
+        for key in current.runtime.manifest.work_unit_keys
+        if key in successful_observation_batches
+    )
+    _validate_observation_batch_acquisition_metrics(
+        observability_ledger,
+        acquired_observation_batches,
+    )
     coordinator = propose_attempt_terminal(current)
     proposed = mint_supervisor_finalization(
         coordinator,
@@ -391,6 +408,21 @@ def _required_text(value: object, *, field: str) -> str:
             f"{field} must be non-empty owner-normalized text"
         )
     return value
+
+
+def _validate_observation_batch_acquisition_metrics(
+    ledger: RuntimeObservabilityLedger,
+    batches: tuple[tuple[str, PeakObservationBatch], ...],
+) -> None:
+    try:
+        validate_runtime_acquisition_metrics(
+            ledger,
+            tuple(batch.acquisition for _key, batch in batches),
+        )
+    except RuntimeObservabilityContractError as exc:
+        raise AlignmentRuntimeAdapterError(
+            "runtime acquisition metrics must match accepted observation batches"
+        ) from exc
 
 
 def _validate_peak_observation_result(

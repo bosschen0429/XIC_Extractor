@@ -26,6 +26,9 @@ def build_runtime_observability_ledger(
     worker_keys: tuple[str, ...],
     raw_open_count: int | None = None,
     logical_xic_request_count: int = 0,
+    xic_batch_count: int = 0,
+    adapter_chromatogram_call_count: int = 0,
+    trace_point_count: int = 0,
     resource_lifecycles: tuple[
         tuple[str, RuntimeResourceKind, str, str], ...
     ] = (),
@@ -171,6 +174,12 @@ def build_runtime_observability_ledger(
                 value = resolved_raw_open_count
             elif name == "logical_xic_request_count":
                 value = logical_xic_request_count
+            elif name == "xic_batch_count":
+                value = xic_batch_count
+            elif name == "adapter_chromatogram_call_count":
+                value = adapter_chromatogram_call_count
+            elif name == "trace_point_count":
+                value = trace_point_count
             elif name == "coordinator_work_seconds":
                 value = (
                     offset("terminal_proposal") - offset("attempt_started")
@@ -215,6 +224,9 @@ def build_runtime_observability_ledger_from_coordinator(
     *,
     worker_keys: tuple[str, ...] | None = None,
     logical_xic_request_count: int = 0,
+    xic_batch_count: int = 0,
+    adapter_chromatogram_call_count: int = 0,
+    trace_point_count: int = 0,
 ) -> RuntimeObservabilityLedger:
     """Build a no-RAW test ledger from the coordinator's terminal facts."""
 
@@ -254,6 +266,9 @@ def build_runtime_observability_ledger_from_coordinator(
         work_unit_keys=state.runtime.manifest.work_unit_keys,
         worker_keys=resolved_worker_keys,
         logical_xic_request_count=logical_xic_request_count,
+        xic_batch_count=xic_batch_count,
+        adapter_chromatogram_call_count=adapter_chromatogram_call_count,
+        trace_point_count=trace_point_count,
         resource_lifecycles=resource_lifecycles,
         artifact_dispositions=artifact_dispositions,
     )

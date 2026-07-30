@@ -44,7 +44,11 @@ from xic_extractor.execution_runtime_finalization import (
     reserve_runtime_resource,
     settle_runtime_resource,
 )
-from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
+from xic_extractor.execution_runtime_observability import (
+    RuntimeObservabilityContractError,
+    RuntimeObservabilityLedger,
+    validate_runtime_acquisition_metrics,
+)
 from xic_extractor.peak_detection.observation_batch import (
     PeakObservationBatch,
     canonical_peak_observation_batch_bytes,
@@ -353,6 +357,10 @@ class TargetedRuntimeLifecycleApplicationResult:
             raise TargetedRuntimeAdapterError(
                 "finalization record must bind the coordinator proposal"
             ) from exc
+        _validate_observation_batch_acquisition_metrics(
+            self.finalization_record.observability_ledger,
+            self.settlement.successful_observation_batches,
+        )
 
 
 def canonical_targeted_process_result_identity_bytes(
@@ -650,6 +658,10 @@ def finalize_targeted_runtime_worker_batch(
             open_outcome=report.open_outcome,
             cleanup_outcome=report.cleanup_outcome,
         )
+    _validate_observation_batch_acquisition_metrics(
+        observability_ledger,
+        settlement.successful_observation_batches,
+    )
     coordinator = propose_attempt_terminal(current)
     proposed = mint_supervisor_finalization(
         coordinator,
@@ -679,6 +691,21 @@ def _required_text(value: object, *, field: str) -> str:
             f"{field} must be non-empty owner-normalized text"
         )
     return value
+
+
+def _validate_observation_batch_acquisition_metrics(
+    ledger: RuntimeObservabilityLedger,
+    batches: tuple[tuple[str, PeakObservationBatch], ...],
+) -> None:
+    try:
+        validate_runtime_acquisition_metrics(
+            ledger,
+            tuple(batch.acquisition for _key, batch in batches),
+        )
+    except RuntimeObservabilityContractError as exc:
+        raise TargetedRuntimeAdapterError(
+            "runtime acquisition metrics must match accepted observation batches"
+        ) from exc
 
 
 def _validate_peak_observation_result_binding(
