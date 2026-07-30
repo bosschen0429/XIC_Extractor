@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.runtime_observability_fixtures import (
+    build_runtime_observability_ledger,
+)
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
@@ -209,6 +212,7 @@ def test_targeted_application_service_closes_true_process_lifecycle(
         build_targeted_application_request(_config(), [_target()]),
         runtime,
         resource_reservations=(_reservation(attempt),),
+        observability_ledger=_ledger(attempt),
     )
 
     assert len(observed_states) == 1
@@ -257,6 +261,7 @@ def test_targeted_lifecycle_uses_owner_path_marker_as_durable_finalizer(
         build_targeted_application_request(_config(), [_target()]),
         _runtime(attempt, ("raw:a",)),
         resource_reservations=(_reservation(attempt),),
+        observability_ledger=_ledger(attempt),
     )
 
     recovered = marker.recover_after_coordinator_loss(attempt)
@@ -309,6 +314,7 @@ def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
             build_targeted_application_request(_config(), [_target()]),
             _runtime(attempt, ("raw:a",)),
             resource_reservations=(_reservation(attempt),),
+            observability_ledger=_ledger(attempt),
         )
 
 
@@ -345,6 +351,7 @@ def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
         build_targeted_application_request(_config(), [_target()]),
         _runtime(attempt, ("raw:a",)),
         resource_reservations=(_reservation(attempt),),
+        observability_ledger=_ledger(attempt),
     )
 
     assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
@@ -538,6 +545,14 @@ def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservati
         worker_key="worker:1",
         source_reference="source:a",
         compatibility_token="targeted-runtime-test:v1",
+    )
+
+
+def _ledger(attempt: ProcessingAttemptIdentity):
+    return build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("raw:a",),
+        worker_keys=("worker:1",),
     )
 
 

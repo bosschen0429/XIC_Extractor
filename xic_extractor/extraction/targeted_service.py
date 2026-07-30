@@ -11,8 +11,10 @@ from xic_extractor.execution_runtime_finalization import (
     CoordinatorTerminalRecord,
     RuntimeResourceReservation,
     SupervisorFinalizationRecord,
+    accept_supervisor_finalization,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
 from xic_extractor.rt_prior_library import LibraryEntry
 
 from .targeted_inputs import resolve_model_selection_expected_diff_approvals
@@ -131,6 +133,7 @@ class TargetedApplicationService:
         runtime: AttemptRuntime,
         *,
         resource_reservations: Sequence[RuntimeResourceReservation],
+        observability_ledger: RuntimeObservabilityLedger,
     ) -> TargetedRuntimeLifecycleApplicationResult:
         """Reserve, dispatch, settle, and require one supervisor acknowledgement."""
 
@@ -166,7 +169,12 @@ class TargetedApplicationService:
                     if delegated_finalizer is None
                     else delegated_finalizer(coordinator, proposed)
                 )
-                return marker(coordinator, submitted)
+                accepted = accept_supervisor_finalization(
+                    coordinator,
+                    submitted,
+                    observability_ledger=proposed.observability_ledger,
+                )
+                return marker(coordinator, accepted)
 
             supervisor_finalizer = durable_finalizer
         if supervisor_finalizer is None:
@@ -176,6 +184,7 @@ class TargetedApplicationService:
         return finalize_targeted_runtime_worker_batch(
             state,
             batch,
+            observability_ledger=observability_ledger,
             supervisor_finalizer=supervisor_finalizer,
         )
 

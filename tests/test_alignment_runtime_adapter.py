@@ -4,6 +4,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from tests.runtime_observability_fixtures import (
+    build_runtime_observability_ledger,
+)
 from xic_extractor.alignment.runtime_adapter import (
     AlignmentRuntimeProcessResult,
     execute_alignment_process_runtime,
@@ -117,6 +120,11 @@ def test_alignment_spawn_runner_is_canonical_across_serial_and_reordered_results
         error_factory=_alignment_job_error,
         max_workers=1,
         resource_reservations=reservations,
+        observability_ledger=_ledger(
+            attempt,
+            work_unit_keys=("sample:a", "sample:b"),
+            worker_keys=("worker:a", "worker:b"),
+        ),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "serial.runtime.json",
             "alignment-runtime-artifacts:test",
@@ -129,6 +137,11 @@ def test_alignment_spawn_runner_is_canonical_across_serial_and_reordered_results
         error_factory=_alignment_job_error,
         max_workers=2,
         resource_reservations=reservations,
+        observability_ledger=_ledger(
+            attempt,
+            work_unit_keys=("sample:a", "sample:b"),
+            worker_keys=("worker:a", "worker:b"),
+        ),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "reordered.runtime.json",
             "alignment-runtime-artifacts:test",
@@ -178,6 +191,11 @@ def test_alignment_spawn_failure_closes_resource_and_durable_terminal(
         error_factory=_alignment_job_error,
         max_workers=1,
         resource_reservations=(_reservations(attempt)[0],),
+        observability_ledger=_ledger(
+            attempt,
+            work_unit_keys=("sample:a",),
+            worker_keys=("worker:a",),
+        ),
         recovery_marker=marker,
     )
 
@@ -221,6 +239,19 @@ def _reservations(
             compatibility_token="alignment:no-raw:v1",
         )
         for suffix in ("a", "b")
+    )
+
+
+def _ledger(
+    attempt: ProcessingAttemptIdentity,
+    *,
+    work_unit_keys: tuple[str, ...],
+    worker_keys: tuple[str, ...],
+):
+    return build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=work_unit_keys,
+        worker_keys=worker_keys,
     )
 
 

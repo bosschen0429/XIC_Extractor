@@ -177,8 +177,9 @@ claiming a durable queue:
    registry and proposed dispositions, failures, coordinator metrics ending at
    terminal proposal, and the coordinator event-ledger digest through that
    proposal;
-3. the owner-path supervisor fsyncs those exact coordinator bytes inside the
-   self-contained `execution_runtime_recovery_marker_v2` payload, then
+3. the owner-path supervisor fsyncs those exact coordinator bytes and the exact
+   caller-supplied validated observability-ledger bytes inside the
+   self-contained `execution_runtime_recovery_marker_v3` payload, then
    atomically replaces the launch marker with one immutable
    `SupervisorFinalizationRecord` containing the coordinator-record digest and
    an atomic event batch continuing the coordinator sequence:
@@ -485,15 +486,18 @@ set. Conflicting or missing cleanup and acknowledgement fail closed.
 
 This remains `diagnostic_only`. `OwnerPathRuntimeMarker` is the bounded physical
 persistence seam: the owner supplies its path, namespace, retention, and later
-publication policy; the v2 marker embeds the exact coordinator bytes and uses a
+publication policy; the v3 marker embeds the exact coordinator and validated
+observability-ledger bytes, with separate content digests, and uses a
 cross-platform exclusive sibling lock around read/validate/replace. A concurrent
 writer waits for the current transaction and then revalidates; an unresolved
 stale lock fails closed for owner recovery instead of being auto-deleted. The
 repo has not selected a storage engine, durable queue, current pointer, product
-seal, or publication mechanism. Alignment is now the second no-RAW consumer.
-The focused `execution_runtime_observability`
-companion makes attempt/work events, monotonic offsets, and required metric
-availability executable without selecting an event store or telemetry backend.
+seal, publication mechanism, telemetry producer, or telemetry backend.
+Alignment is now the second no-RAW consumer. The focused
+`execution_runtime_observability` companion validates caller-supplied
+attempt/work events, monotonic offsets, per-observed-worker RSS records, and
+required finite/integral metric availability without collecting live telemetry
+or selecting an event store or telemetry backend.
 The caller-located durable launch/finalization marker and coordinator-loss
 recovery are also executable for both Targeted and Alignment. These contracts
 do not make the legacy runners use a new storage or writer path.
@@ -583,8 +587,9 @@ integration must provide:
   product writer, that every partial artifact is registered, and that
   current-attempt artifact disposition closes atomically with terminal outcome;
 - observability fixtures proving metric scope, aggregation, and unavailable
-  semantics, including preflight-not-started, cache rebuild, and eviction
-  outcomes.
+  semantics, including preflight-not-started, cache rebuild, eviction outcomes,
+  one RSS record per observed worker, finite/integral count and byte values, and
+  exact observability-ledger recovery-byte binding.
 
 This evidence must begin no-RAW. Thermo RAW validation is justified only if a
 later bounded question requires cooperative-call or worker-termination

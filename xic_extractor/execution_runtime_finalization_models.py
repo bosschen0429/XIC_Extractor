@@ -9,6 +9,7 @@ from enum import Enum
 
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import AttemptRuntime, AttemptTerminalOutcome
+from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 
@@ -329,6 +330,7 @@ class SupervisorFinalizationRecord:
     terminal_outcome: AttemptTerminalOutcome
     artifact_dispositions: tuple[tuple[str, RuntimeArtifactDisposition], ...]
     events: tuple[SupervisorFinalizationEvent, ...]
+    observability_ledger: RuntimeObservabilityLedger
 
     def __post_init__(self) -> None:
         _require_attempt(self.attempt)
@@ -346,6 +348,14 @@ class SupervisorFinalizationRecord:
         ):
             raise RuntimeFinalizationContractError(
                 "events must contain SupervisorFinalizationEvent values"
+            )
+        if not isinstance(self.observability_ledger, RuntimeObservabilityLedger):
+            raise RuntimeFinalizationContractError(
+                "observability_ledger must be a RuntimeObservabilityLedger"
+            )
+        if self.observability_ledger.attempt != self.attempt:
+            raise RuntimeFinalizationContractError(
+                "observability ledger must bind the finalization attempt"
             )
 
 

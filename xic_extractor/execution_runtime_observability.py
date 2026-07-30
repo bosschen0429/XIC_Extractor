@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import math
 from dataclasses import dataclass
 from enum import Enum
 
@@ -204,6 +206,14 @@ class RuntimeMetricRecord:
                 raise RuntimeObservabilityContractError(
                     "measured metric requires a numeric value"
                 )
+            if not math.isfinite(self.value):
+                raise RuntimeObservabilityContractError(
+                    "measured metric value must be finite"
+                )
+            if self.unit in {"count", "bytes"} and not isinstance(self.value, int):
+                raise RuntimeObservabilityContractError(
+                    "count and byte metric values must be integers"
+                )
             if self.reason is not None:
                 raise RuntimeObservabilityContractError(
                     "measured metric cannot carry an unavailable reason"
@@ -275,9 +285,61 @@ class RuntimeObservabilityLedger:
         _validate_runtime_metrics(
             attempt,
             self.work_unit_keys,
+            self.events,
             self.metrics,
             preflight_failed=preflight_failed,
         )
+
+
+def canonical_runtime_observability_ledger_bytes(
+    ledger: RuntimeObservabilityLedger,
+) -> bytes:
+    """Serialize one validated complete ledger for durable terminal binding."""
+
+    if not isinstance(ledger, RuntimeObservabilityLedger):
+        raise RuntimeObservabilityContractError(
+            "ledger must be a RuntimeObservabilityLedger"
+        )
+    payload = {
+        "events": [
+            {
+                "kind": event.kind,
+                "monotonic_offset_ns": event.monotonic_offset_ns,
+                "sequence": event.sequence,
+                "subject": event.subject.value,
+                "subject_key": event.subject_key,
+            }
+            for event in ledger.events
+        ],
+        "metrics": [
+            {
+                "aggregation": metric.aggregation,
+                "availability": metric.availability.value,
+                "measurement_source": metric.measurement_source,
+                "name": metric.name,
+                "reason": metric.reason,
+                "scope": metric.scope.value,
+                "scope_key": metric.scope_key,
+                "unit": metric.unit,
+                "value": metric.value,
+            }
+            for metric in sorted(
+                ledger.metrics,
+                key=lambda item: (item.name, item.scope.value, item.scope_key),
+            )
+        ],
+        "processing_attempt_id": ledger.attempt.processing_attempt_id,
+        "processing_request_id": ledger.attempt.processing_request_id,
+        "schema_version": "execution_runtime_observability_ledger_v1",
+        "work_unit_keys": list(ledger.work_unit_keys),
+    }
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
 
 
 def _require_attempt(value: object) -> ProcessingAttemptIdentity:
@@ -418,6 +480,7 @@ def _validate_attempt_event_lifecycle(
 def _validate_runtime_metrics(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
+    events: tuple[RuntimeObservationEvent, ...],
     metrics: tuple[RuntimeMetricRecord, ...],
     *,
     preflight_failed: bool,
@@ -445,6 +508,11 @@ def _validate_runtime_metrics(
         for name in REQUIRED_RUNTIME_METRIC_NAMES
     }
     attempt_id = attempt.processing_attempt_id
+    observed_worker_keys = {
+        event.subject_key
+        for event in events
+        if event.subject is RuntimeObservationSubject.WORKER
+    }
     for name, records in by_name.items():
         spec = _RUNTIME_METRIC_SPECS[name]
         if name == "stage_or_unit_elapsed_seconds" and not preflight_failed:
@@ -453,6 +521,13 @@ def _validate_runtime_metrics(
             } != set(work_unit_keys):
                 raise RuntimeObservabilityContractError(
                     "stage_or_unit_elapsed_seconds requires one metric per work unit"
+                )
+        elif name == "worker_peak_rss_bytes" and not preflight_failed:
+            if not observed_worker_keys or {
+                record.scope_key for record in records
+            } != observed_worker_keys:
+                raise RuntimeObservabilityContractError(
+                    "worker_peak_rss_bytes requires one metric per observed worker"
                 )
         elif len(records) != 1:
             raise RuntimeObservabilityContractError(
@@ -550,4 +625,5 @@ __all__ = [
     "RuntimeObservabilityLedger",
     "RuntimeObservationEvent",
     "RuntimeObservationSubject",
+    "canonical_runtime_observability_ledger_bytes",
 ]

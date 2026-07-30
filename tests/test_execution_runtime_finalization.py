@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.runtime_observability_fixtures import (
+    build_runtime_observability_ledger,
+)
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
@@ -74,11 +77,19 @@ def test_success_closes_resource_artifact_and_atomic_acknowledgement(
     )
 
     coordinator = propose_attempt_terminal(state)
-    submitted = mint_supervisor_finalization(coordinator)
-    accepted = accept_supervisor_finalization(coordinator, submitted)
+    submitted = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=_ledger(attempt),
+    )
+    accepted = accept_supervisor_finalization(
+        coordinator,
+        submitted,
+        observability_ledger=_ledger(attempt),
+    )
     replay = accept_supervisor_finalization(
         coordinator,
         submitted,
+        observability_ledger=_ledger(attempt),
         existing=accepted,
     )
 
@@ -129,7 +140,10 @@ def test_failed_cleanup_terminalizes_and_quarantines_whole_attempt(
     )
 
     coordinator = propose_attempt_terminal(state)
-    finalization = mint_supervisor_finalization(coordinator)
+    finalization = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=_ledger(attempt),
+    )
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
     assert finalization.artifact_dispositions == (
@@ -324,14 +338,21 @@ def test_terminal_and_acknowledgement_fail_closed_on_missing_or_conflict(
         artifact=artifact,
     )
     coordinator = propose_attempt_terminal(state)
-    finalization = mint_supervisor_finalization(coordinator)
+    finalization = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=_ledger(attempt),
+    )
     conflicting = replace(
         finalization,
         coordinator_record_sha256="0" * 64,
     )
 
     with pytest.raises(RuntimeFinalizationContractError, match="conflicts"):
-        accept_supervisor_finalization(coordinator, conflicting)
+        accept_supervisor_finalization(
+            coordinator,
+            conflicting,
+            observability_ledger=_ledger(attempt),
+        )
     with pytest.raises(RuntimeFinalizationContractError, match="cannot change"):
         register_runtime_artifact(
             coordinator.state,
@@ -392,9 +413,62 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
         "work_unit_key": "raw:a",
     }
     assert (
-        mint_supervisor_finalization(failed_coordinator).coordinator_record_sha256
-        != mint_supervisor_finalization(alternate_coordinator).coordinator_record_sha256
+        mint_supervisor_finalization(
+            failed_coordinator,
+            observability_ledger=_ledger(attempt),
+        ).coordinator_record_sha256
+        != mint_supervisor_finalization(
+            alternate_coordinator,
+            observability_ledger=_ledger(attempt),
+        ).coordinator_record_sha256
     )
+
+
+def test_supervisor_receipt_binds_validated_runtime_observability(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, artifact = _successful_runtime(attempt)
+    state = register_runtime_artifact(
+        begin_attempt_finalization(runtime),
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+    coordinator = propose_attempt_terminal(state)
+    first_ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("raw:a",),
+        worker_keys=("worker:1",),
+        raw_open_count=1,
+    )
+    second_ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("raw:a",),
+        worker_keys=("worker:1",),
+        raw_open_count=2,
+    )
+
+    first = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=first_ledger,
+    )
+    second = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=second_ledger,
+    )
+
+    assert first.observability_ledger == first_ledger
+    assert second.observability_ledger == second_ledger
+    assert first != second
+    with pytest.raises(
+        RuntimeFinalizationContractError,
+        match="conflicts with the coordinator proposal",
+    ):
+        accept_supervisor_finalization(
+            coordinator,
+            second,
+            observability_ledger=first_ledger,
+        )
 
 
 def test_undeclared_artifact_is_rejected_by_registration_and_state_invariant(
@@ -444,10 +518,12 @@ def test_runtime_finalization_modules_stay_inside_mechanical_boundary() -> None:
             "xic_extractor.evidence_artifacts",
             "xic_extractor.execution_runtime",
             "xic_extractor.execution_runtime_finalization_models",
+            "xic_extractor.execution_runtime_observability",
         ),
         "xic_extractor/execution_runtime_finalization_models.py": (
             "xic_extractor.evidence_artifacts",
             "xic_extractor.execution_runtime",
+            "xic_extractor.execution_runtime_observability",
             "xic_extractor.processing_identity",
         ),
     }
@@ -503,6 +579,14 @@ def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservati
         worker_key="worker:1",
         source_reference="source:a",
         compatibility_token="targeted:test:v1",
+    )
+
+
+def _ledger(attempt: ProcessingAttemptIdentity):
+    return build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("raw:a",),
+        worker_keys=("worker:1",),
     )
 
 

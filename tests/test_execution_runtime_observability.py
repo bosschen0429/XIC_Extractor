@@ -1,3 +1,4 @@
+import math
 from dataclasses import replace
 from pathlib import Path
 
@@ -166,6 +167,118 @@ def test_runtime_observability_rejects_duplicate_or_unknown_metrics(
             )
 
 
+def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    events = list(_events(attempt))
+    proposal_index = next(
+        index for index, event in enumerate(events) if event.kind == "terminal_proposal"
+    )
+    events[proposal_index:proposal_index] = (
+        RuntimeObservationEvent(
+            attempt=attempt,
+            sequence=1,
+            monotonic_offset_ns=1,
+            kind="worker_started",
+            subject=RuntimeObservationSubject.WORKER,
+            subject_key="worker:1",
+        ),
+        RuntimeObservationEvent(
+            attempt=attempt,
+            sequence=1,
+            monotonic_offset_ns=1,
+            kind="worker_started",
+            subject=RuntimeObservationSubject.WORKER,
+            subject_key="worker:2",
+        ),
+    )
+    events = tuple(
+        replace(event, sequence=index, monotonic_offset_ns=(index - 1) * 10)
+        for index, event in enumerate(events, start=1)
+    )
+    metrics = list(_metrics(attempt.processing_attempt_id))
+    worker_metric = next(
+        metric for metric in metrics if metric.name == "worker_peak_rss_bytes"
+    )
+    metrics.remove(worker_metric)
+    metrics.extend(
+        (
+            replace(
+                worker_metric,
+                scope_key="worker:1",
+                availability=RuntimeMetricAvailability.MEASURED,
+                value=1024,
+                reason=None,
+            ),
+            replace(
+                worker_metric,
+                scope_key="worker:2",
+                availability=RuntimeMetricAvailability.MEASURED,
+                value=2048,
+                reason=None,
+            ),
+        )
+    )
+
+    ledger = RuntimeObservabilityLedger(
+        attempt=attempt,
+        work_unit_keys=("sample-a:target-a",),
+        events=events,
+        metrics=tuple(metrics),
+    )
+
+    assert {
+        metric.scope_key
+        for metric in ledger.metrics
+        if metric.name == "worker_peak_rss_bytes"
+    } == {"worker:1", "worker:2"}
+
+    wrong_worker = tuple(
+        replace(metric, scope_key="worker:other")
+        if metric.name == "worker_peak_rss_bytes"
+        and metric.scope_key == "worker:2"
+        else metric
+        for metric in ledger.metrics
+    )
+    with pytest.raises(RuntimeObservabilityContractError, match="worker"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=events,
+            metrics=wrong_worker,
+        )
+
+
+@pytest.mark.parametrize(
+    ("metric_name", "value"),
+    (
+        ("attempt_wall_seconds", math.nan),
+        ("coordinator_work_seconds", math.inf),
+        ("raw_open_count", 0.5),
+        ("artifact_write_bytes", 1.5),
+    ),
+)
+def test_runtime_observability_rejects_nonfinite_or_fractional_measurements(
+    tmp_path: Path,
+    metric_name: str,
+    value: float,
+) -> None:
+    attempt = _attempt(tmp_path)
+
+    with pytest.raises(RuntimeObservabilityContractError, match="finite|integer"):
+        metrics = tuple(
+            replace(metric, value=value) if metric.name == metric_name else metric
+            for metric in _metrics(attempt.processing_attempt_id)
+        )
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=_events(attempt),
+            metrics=metrics,
+        )
+
+
 def test_runtime_observability_accepts_preflight_failure_contract(
     tmp_path: Path,
 ) -> None:
@@ -285,6 +398,7 @@ def _events(attempt):
         ),
         ("work_unit_started", RuntimeObservationSubject.WORK_UNIT, "sample-a:target-a"),
         ("work_unit_settled", RuntimeObservationSubject.WORK_UNIT, "sample-a:target-a"),
+        ("worker_started", RuntimeObservationSubject.WORKER, "worker:1"),
         ("terminal_proposal", RuntimeObservationSubject.ATTEMPT, "attempt"),
         ("terminal_acknowledged", RuntimeObservationSubject.ATTEMPT, "attempt"),
         ("terminal_outcome", RuntimeObservationSubject.ATTEMPT, "attempt"),
@@ -345,7 +459,7 @@ def _metrics(attempt_id: str) -> tuple[RuntimeMetricRecord, ...]:
             scope_key=(
                 "sample-a:target-a"
                 if name == "stage_or_unit_elapsed_seconds"
-                else "worker:aggregate"
+                else "worker:1"
                 if name == "worker_peak_rss_bytes"
                 else attempt_id
             ),

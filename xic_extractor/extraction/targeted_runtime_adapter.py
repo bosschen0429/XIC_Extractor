@@ -42,6 +42,7 @@ from xic_extractor.execution_runtime_finalization import (
     reserve_runtime_resource,
     settle_runtime_resource,
 )
+from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
 from xic_extractor.peak_detection.observation_batch import (
     PeakObservationBatch,
     canonical_peak_observation_batch_bytes,
@@ -571,6 +572,7 @@ def finalize_targeted_runtime_worker_batch(
     state: AttemptFinalizationState,
     batch: TargetedRuntimeWorkerBatch,
     *,
+    observability_ledger: RuntimeObservabilityLedger,
     supervisor_finalizer: Callable[
         [CoordinatorTerminalRecord, SupervisorFinalizationRecord],
         SupervisorFinalizationRecord,
@@ -639,9 +641,16 @@ def finalize_targeted_runtime_worker_batch(
             cleanup_outcome=report.cleanup_outcome,
         )
     coordinator = propose_attempt_terminal(current)
-    proposed = mint_supervisor_finalization(coordinator)
+    proposed = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=observability_ledger,
+    )
     submitted = supervisor_finalizer(coordinator, proposed)
-    accepted = accept_supervisor_finalization(coordinator, submitted)
+    accepted = accept_supervisor_finalization(
+        coordinator,
+        submitted,
+        observability_ledger=observability_ledger,
+    )
     if current.failures:
         settlement = replace(
             settlement,

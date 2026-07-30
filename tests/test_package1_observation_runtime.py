@@ -12,6 +12,9 @@ import pytest
 
 import xic_extractor.acquisition_contract as acquisition_contract_module
 import xic_extractor.package0_successor_comparator as comparator_module
+from tests.runtime_observability_fixtures import (
+    build_runtime_observability_ledger,
+)
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
     TraceCoordinate,
@@ -267,6 +270,7 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
         error_factory=_alignment_error,
         max_workers=1,
         resource_reservations=reservations,
+        observability_ledger=_ledger(runtime, reservations),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-serial.runtime.json",
             "alignment-observation-runtime:test",
@@ -279,6 +283,7 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
         error_factory=_alignment_error,
         max_workers=2,
         resource_reservations=reservations,
+        observability_ledger=_ledger(runtime, reservations),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-reordered.runtime.json",
             "alignment-observation-runtime:test",
@@ -460,7 +465,10 @@ def test_alignment_public_result_rejects_unclosed_observation_upstreams(
         AlignmentRuntimeApplicationResult(
             runtime=runtime,
             coordinator_record=coordinator,
-            finalization_record=mint_supervisor_finalization(coordinator),
+            finalization_record=mint_supervisor_finalization(
+                coordinator,
+                observability_ledger=_ledger(runtime, (reservation,)),
+            ),
             successful_observation_batches=((job.work_unit_key, batch),),
         )
 
@@ -498,6 +506,7 @@ def test_runtime_consumers_coalesce_identical_spawned_result_replay(
         error_factory=_alignment_error,
         max_workers=2,
         resource_reservations=reservations,
+        observability_ledger=_ledger(runtime, reservations),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-replay.runtime.json",
             "alignment-observation-replay:test",
@@ -569,13 +578,19 @@ def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
             ),
         )
     ):
+        conflict_runtime = _runtime(owners.attempt, (job.work_unit_key,))
+        conflict_reservations = _reservations(owners.attempt, (job,))
         conflicting = execute_alignment_process_runtime(
-            _runtime(owners.attempt, (job.work_unit_key,)),
+            conflict_runtime,
             replay_jobs,
             worker=_run_alignment_replay_job,
             error_factory=_alignment_replay_error,
             max_workers=1,
-            resource_reservations=_reservations(owners.attempt, (job,)),
+            resource_reservations=conflict_reservations,
+            observability_ledger=_ledger(
+                conflict_runtime,
+                conflict_reservations,
+            ),
             recovery_marker=OwnerPathRuntimeMarker(
                 tmp_path / f"alignment-conflict-{index}.runtime.json",
                 "alignment-observation-conflict:test",
@@ -669,6 +684,7 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
         error_factory=_alignment_error,
         max_workers=1,
         resource_reservations=reservations,
+        observability_ledger=_ledger(runtime, reservations),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-difference.runtime.json",
             "alignment-observation-difference:test",
@@ -764,6 +780,22 @@ def _run_targeted_service(
         build_targeted_application_request(_config(), [_target()]),
         runtime,
         resource_reservations=reservations,
+        observability_ledger=_ledger(runtime, reservations),
+    )
+
+
+def _ledger(
+    runtime: AttemptRuntime,
+    reservations: tuple[RuntimeResourceReservation, ...],
+):
+    return build_runtime_observability_ledger(
+        runtime.manifest.attempt,
+        work_unit_keys=runtime.manifest.work_unit_keys,
+        worker_keys=tuple(
+            dict.fromkeys(
+                reservation.worker_key for reservation in reservations
+            )
+        ),
     )
 
 

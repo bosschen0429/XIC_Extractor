@@ -41,6 +41,7 @@ from xic_extractor.execution_runtime_finalization import (
     settle_runtime_resource,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
 from xic_extractor.peak_detection.observation_batch import (
     PeakObservationBatch,
     canonical_peak_observation_batch_bytes,
@@ -224,6 +225,7 @@ def execute_alignment_process_runtime(
     error_factory: Callable[[Any, Exception], AlignmentRuntimeProcessResult],
     max_workers: int,
     resource_reservations: Sequence[RuntimeResourceReservation],
+    observability_ledger: RuntimeObservabilityLedger,
     recovery_marker: OwnerPathRuntimeMarker,
     executor_factory: Callable[..., Any] | None = None,
 ) -> AlignmentRuntimeApplicationResult:
@@ -329,7 +331,10 @@ def execute_alignment_process_runtime(
             f"Alignment results did not settle manifest work: {missing!r}"
         )
     coordinator = propose_attempt_terminal(current)
-    proposed = mint_supervisor_finalization(coordinator)
+    proposed = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=observability_ledger,
+    )
     accepted = recovery_marker(coordinator, proposed)
     if current.runtime.integrity_failure is not None or current.failures:
         successful_observation_batches.clear()

@@ -36,6 +36,7 @@ from xic_extractor.execution_runtime_finalization_models import (
     SupervisorFinalizationRecord,
     _coordinator_event_digest,
 )
+from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
 
 
 def begin_attempt_finalization(runtime: AttemptRuntime) -> AttemptFinalizationState:
@@ -335,12 +336,30 @@ def propose_attempt_terminal(
 
 def mint_supervisor_finalization(
     coordinator: CoordinatorTerminalRecord,
+    *,
+    observability_ledger: RuntimeObservabilityLedger,
 ) -> SupervisorFinalizationRecord:
     """Mint the exact atomic acknowledgement batch for a coordinator record."""
 
     if not isinstance(coordinator, CoordinatorTerminalRecord):
         raise RuntimeFinalizationContractError(
             "coordinator must be a CoordinatorTerminalRecord"
+        )
+    if not isinstance(observability_ledger, RuntimeObservabilityLedger):
+        raise RuntimeFinalizationContractError(
+            "observability_ledger must be a RuntimeObservabilityLedger"
+        )
+    attempt = coordinator.state.runtime.manifest.attempt
+    if observability_ledger.attempt != attempt:
+        raise RuntimeFinalizationContractError(
+            "observability ledger must bind the coordinator attempt"
+        )
+    if (
+        observability_ledger.work_unit_keys
+        != coordinator.state.runtime.manifest.work_unit_keys
+    ):
+        raise RuntimeFinalizationContractError(
+            "observability ledger must bind the closed manifest work units"
         )
     start = coordinator.state.events[-1].sequence + 1
     dispositions = tuple(
@@ -373,13 +392,14 @@ def mint_supervisor_finalization(
         )
     )
     return SupervisorFinalizationRecord(
-        attempt=coordinator.state.runtime.manifest.attempt,
+        attempt=attempt,
         coordinator_record_sha256=hashlib.sha256(
             canonical_coordinator_terminal_record_bytes(coordinator)
         ).hexdigest(),
         terminal_outcome=coordinator.proposed_outcome,
         artifact_dispositions=dispositions,
         events=tuple(events),
+        observability_ledger=observability_ledger,
     )
 
 
@@ -387,12 +407,20 @@ def accept_supervisor_finalization(
     coordinator: CoordinatorTerminalRecord,
     submitted: SupervisorFinalizationRecord,
     *,
+    observability_ledger: RuntimeObservabilityLedger,
     existing: SupervisorFinalizationRecord | None = None,
 ) -> SupervisorFinalizationRecord:
     """Accept canonical acknowledgement once; identical replay is idempotent."""
 
-    expected = mint_supervisor_finalization(coordinator)
-    if not isinstance(submitted, SupervisorFinalizationRecord) or submitted != expected:
+    if not isinstance(submitted, SupervisorFinalizationRecord):
+        raise RuntimeFinalizationContractError(
+            "supervisor finalization conflicts with the coordinator proposal"
+        )
+    expected = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=observability_ledger,
+    )
+    if submitted != expected:
         raise RuntimeFinalizationContractError(
             "supervisor finalization conflicts with the coordinator proposal"
         )

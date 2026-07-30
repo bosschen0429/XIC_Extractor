@@ -9,6 +9,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.runtime_observability_fixtures import (
+    build_runtime_observability_ledger,
+)
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptLifecycleHistory,
@@ -37,6 +40,9 @@ from xic_extractor.execution_runtime_finalization import (
 from xic_extractor.execution_runtime_marker import (
     OwnerPathRuntimeMarker,
     RuntimeMarkerState,
+)
+from xic_extractor.execution_runtime_observability import (
+    canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.extraction.targeted_runtime_adapter import (
     mint_targeted_process_result_ref,
@@ -110,7 +116,11 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
         artifact=reference.artifact,
     )
     coordinator = propose_attempt_terminal(state)
-    proposed = mint_supervisor_finalization(coordinator)
+    ledger = _ledger(attempt)
+    proposed = mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=ledger,
+    )
     marker = OwnerPathRuntimeMarker(
         tmp_path / "attempt.runtime.json",
         "runtime-attempt-artifacts:a",
@@ -131,11 +141,75 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
     assert recovered.coordinator_record_bytes == (
         canonical_coordinator_terminal_record_bytes(coordinator)
     )
+    assert recovered.observability_ledger_bytes == (
+        canonical_runtime_observability_ledger_bytes(ledger)
+    )
     assert recovered.artifact_dispositions == (
         (
             reference.artifact.evidence_artifact_id,
             RuntimeArtifactDisposition.OFFERED_TO_OWNER,
         ),
+    )
+
+
+def test_finalized_marker_bytes_bind_the_exact_observability_ledger(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    coordinator, _ = _terminal_records(
+        attempt,
+        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
+    )
+    first_ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample:a",),
+        worker_keys=("worker:1",),
+        raw_open_count=1,
+    )
+    second_ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample:a",),
+        worker_keys=("worker:1",),
+        raw_open_count=2,
+    )
+    first_marker = OwnerPathRuntimeMarker(
+        tmp_path / "first.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    second_marker = OwnerPathRuntimeMarker(
+        tmp_path / "second.runtime.json",
+        "runtime-attempt-artifacts:a",
+    )
+    for marker in (first_marker, second_marker):
+        marker.record_launch(_runtime(attempt))
+
+    first_marker(
+        coordinator,
+        mint_supervisor_finalization(
+            coordinator,
+            observability_ledger=first_ledger,
+        ),
+    )
+    second_marker(
+        coordinator,
+        mint_supervisor_finalization(
+            coordinator,
+            observability_ledger=second_ledger,
+        ),
+    )
+
+    first_recovery = first_marker.recover_after_coordinator_loss(attempt)
+    second_recovery = second_marker.recover_after_coordinator_loss(attempt)
+    assert first_marker.path.read_bytes() != second_marker.path.read_bytes()
+    assert first_recovery.observability_ledger_bytes == (
+        canonical_runtime_observability_ledger_bytes(first_ledger)
+    )
+    assert second_recovery.observability_ledger_bytes == (
+        canonical_runtime_observability_ledger_bytes(second_ledger)
+    )
+    assert (
+        first_recovery.observability_ledger_bytes
+        != second_recovery.observability_ledger_bytes
     )
 
 
@@ -309,7 +383,10 @@ def _terminal_records(
             artifact=reference.artifact,
         )
     coordinator = propose_attempt_terminal(state)
-    return coordinator, mint_supervisor_finalization(coordinator)
+    return coordinator, mint_supervisor_finalization(
+        coordinator,
+        observability_ledger=_ledger(attempt),
+    )
 
 
 def _delay_competing_writes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -362,6 +439,14 @@ def _runtime(attempt: ProcessingAttemptIdentity) -> AttemptRuntime:
             work_unit_keys=("sample:a",),
             owner_completeness_attestation="runtime-marker-test:v1",
         )
+    )
+
+
+def _ledger(attempt: ProcessingAttemptIdentity):
+    return build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample:a",),
+        worker_keys=("worker:1",),
     )
 
 

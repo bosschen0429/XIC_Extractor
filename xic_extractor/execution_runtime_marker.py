@@ -28,6 +28,9 @@ from xic_extractor.execution_runtime_finalization import (
     accept_supervisor_finalization,
     canonical_coordinator_terminal_record_bytes,
 )
+from xic_extractor.execution_runtime_observability import (
+    canonical_runtime_observability_ledger_bytes,
+)
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 _MARKER_LOCK_TIMEOUT_SECONDS = 2.0
@@ -48,6 +51,8 @@ class RuntimeMarkerSnapshot:
     manifest_work_unit_keys: tuple[str, ...]
     coordinator_record_sha256: str | None = None
     coordinator_record_bytes: bytes | None = None
+    observability_ledger_sha256: str | None = None
+    observability_ledger_bytes: bytes | None = None
     terminal_outcome: AttemptTerminalOutcome | None = None
     artifact_dispositions: tuple[tuple[str, RuntimeArtifactDisposition], ...] = ()
 
@@ -59,6 +64,7 @@ class CoordinatorLossRecovery:
     quarantine_artifact_namespace: bool
     artifact_namespace: str
     coordinator_record_bytes: bytes | None = None
+    observability_ledger_bytes: bytes | None = None
     artifact_dispositions: tuple[tuple[str, RuntimeArtifactDisposition], ...] = ()
 
 
@@ -110,8 +116,15 @@ class OwnerPathRuntimeMarker:
         coordinator: CoordinatorTerminalRecord,
         proposed: SupervisorFinalizationRecord,
     ) -> SupervisorFinalizationRecord:
-        accepted = accept_supervisor_finalization(coordinator, proposed)
+        accepted = accept_supervisor_finalization(
+            coordinator,
+            proposed,
+            observability_ledger=proposed.observability_ledger,
+        )
         coordinator_bytes = canonical_coordinator_terminal_record_bytes(coordinator)
+        observability_bytes = canonical_runtime_observability_ledger_bytes(
+            accepted.observability_ledger
+        )
         with self._exclusive_transaction():
             launch = self.read()
             attempt = coordinator.state.runtime.manifest.attempt
@@ -136,6 +149,10 @@ class OwnerPathRuntimeMarker:
                 manifest_work_unit_keys=launch.manifest_work_unit_keys,
                 coordinator_record_sha256=accepted.coordinator_record_sha256,
                 coordinator_record_bytes=coordinator_bytes,
+                observability_ledger_sha256=hashlib.sha256(
+                    observability_bytes
+                ).hexdigest(),
+                observability_ledger_bytes=observability_bytes,
                 terminal_outcome=accepted.terminal_outcome,
                 artifact_dispositions=accepted.artifact_dispositions,
             )
@@ -182,6 +199,7 @@ class OwnerPathRuntimeMarker:
             quarantine_artifact_namespace=False,
             artifact_namespace=snapshot.artifact_namespace,
             coordinator_record_bytes=snapshot.coordinator_record_bytes,
+            observability_ledger_bytes=snapshot.observability_ledger_bytes,
             artifact_dispositions=snapshot.artifact_dispositions,
         )
 
@@ -317,10 +335,16 @@ def _snapshot_payload(snapshot: RuntimeMarkerSnapshot) -> dict[str, Any]:
             else base64.b64encode(snapshot.coordinator_record_bytes).decode("ascii")
         ),
         "coordinator_record_sha256": snapshot.coordinator_record_sha256,
+        "observability_ledger_base64": (
+            None
+            if snapshot.observability_ledger_bytes is None
+            else base64.b64encode(snapshot.observability_ledger_bytes).decode("ascii")
+        ),
+        "observability_ledger_sha256": snapshot.observability_ledger_sha256,
         "manifest_work_unit_keys": list(snapshot.manifest_work_unit_keys),
         "processing_attempt_id": snapshot.processing_attempt_id,
         "processing_request_id": snapshot.processing_request_id,
-        "schema_version": "execution_runtime_recovery_marker_v2",
+        "schema_version": "execution_runtime_recovery_marker_v3",
         "state": snapshot.state.value,
         "terminal_outcome": (
             None
@@ -338,6 +362,8 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         "artifact_namespace",
         "coordinator_record_base64",
         "coordinator_record_sha256",
+        "observability_ledger_base64",
+        "observability_ledger_sha256",
         "manifest_work_unit_keys",
         "marker_sha256",
         "processing_attempt_id",
@@ -350,7 +376,7 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         raise RuntimeFinalizationContractError(
             "runtime marker fields do not match the recovery schema"
         )
-    if payload["schema_version"] != "execution_runtime_recovery_marker_v2":
+    if payload["schema_version"] != "execution_runtime_recovery_marker_v3":
         raise RuntimeFinalizationContractError(
             "runtime marker schema_version is unsupported"
         )
@@ -403,6 +429,33 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         raise RuntimeFinalizationContractError(
             "runtime marker coordinator record must be canonical base64"
         )
+    observability_sha256 = payload["observability_ledger_sha256"]
+    if observability_sha256 is not None and (
+        not isinstance(observability_sha256, str)
+        or len(observability_sha256) != 64
+        or any(
+            character not in "0123456789abcdef"
+            for character in observability_sha256
+        )
+    ):
+        raise RuntimeFinalizationContractError(
+            "runtime marker observability digest must be lowercase SHA-256"
+        )
+    observability_base64 = payload["observability_ledger_base64"]
+    try:
+        observability_bytes = (
+            None
+            if observability_base64 is None
+            else base64.b64decode(observability_base64, validate=True)
+        )
+    except (binascii.Error, ValueError, TypeError) as exc:
+        raise RuntimeFinalizationContractError(
+            "runtime marker observability ledger must be canonical base64"
+        ) from exc
+    if observability_base64 is not None and not isinstance(observability_base64, str):
+        raise RuntimeFinalizationContractError(
+            "runtime marker observability ledger must be canonical base64"
+        )
     snapshot = RuntimeMarkerSnapshot(
         state=state,
         processing_request_id=_required_text(
@@ -417,6 +470,8 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         manifest_work_unit_keys=tuple(work_unit_keys),
         coordinator_record_sha256=coordinator_sha256,
         coordinator_record_bytes=coordinator_bytes,
+        observability_ledger_sha256=observability_sha256,
+        observability_ledger_bytes=observability_bytes,
         terminal_outcome=terminal_outcome,
         artifact_dispositions=dispositions,
     )
@@ -442,6 +497,8 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
     if state is RuntimeMarkerState.LAUNCHED and (
         coordinator_sha256 is not None
         or coordinator_bytes is not None
+        or observability_sha256 is not None
+        or observability_bytes is not None
         or terminal_outcome is not None
         or dispositions
     ):
@@ -451,10 +508,13 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
     if state is RuntimeMarkerState.FINALIZED and (
         coordinator_sha256 is None
         or coordinator_bytes is None
+        or observability_sha256 is None
+        or observability_bytes is None
         or terminal_outcome is None
     ):
         raise RuntimeFinalizationContractError(
-            "finalized marker requires coordinator bytes, digest, and terminal outcome"
+            "finalized marker requires coordinator and observability bytes, digests, "
+            "and terminal outcome"
         )
     if (
         coordinator_bytes is not None
@@ -462,6 +522,13 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
     ):
         raise RuntimeFinalizationContractError(
             "runtime marker coordinator digest does not match persisted bytes"
+        )
+    if (
+        observability_bytes is not None
+        and hashlib.sha256(observability_bytes).hexdigest() != observability_sha256
+    ):
+        raise RuntimeFinalizationContractError(
+            "runtime marker observability digest does not match persisted bytes"
         )
     return snapshot
 
