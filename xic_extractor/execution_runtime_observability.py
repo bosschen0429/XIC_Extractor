@@ -112,6 +112,31 @@ _WORK_UNIT_LIFECYCLE_KINDS = (
     "work_unit_settled",
 )
 
+_RESOURCE_OPEN_EVENT_KINDS = {
+    "resource_opened",
+    "resource_open_failed",
+    "resource_not_opened",
+    "resource_open_state_unknown_after_worker_loss",
+}
+_RESOURCE_CLEANUP_EVENT_KINDS = {
+    "resource_cleanup_succeeded",
+    "resource_cleanup_failed",
+    "resource_cleanup_unknown_after_worker_loss",
+}
+_RESOURCE_LIFECYCLE_KINDS = {
+    "resource_reserved",
+    *_RESOURCE_OPEN_EVENT_KINDS,
+    *_RESOURCE_CLEANUP_EVENT_KINDS,
+}
+_ARTIFACT_DISPOSITION_EVENT_KINDS = {
+    "artifact_offered_to_owner",
+    "artifact_quarantined_diagnostic",
+}
+_ARTIFACT_LIFECYCLE_KINDS = {
+    "artifact_registered",
+    *_ARTIFACT_DISPOSITION_EVENT_KINDS,
+}
+
 _RUNNING_ATTEMPT_LIFECYCLE_KINDS = (
     "attempt_queued",
     "manifest_closed",
@@ -276,6 +301,7 @@ class RuntimeObservabilityLedger:
             self.work_unit_keys,
             self.events,
         )
+        _validate_resource_artifact_event_lifecycle(self.events)
         if not isinstance(self.metrics, tuple) or any(
             not isinstance(metric, RuntimeMetricRecord) for metric in self.metrics
         ):
@@ -477,6 +503,101 @@ def _validate_attempt_event_lifecycle(
     return preflight_failed
 
 
+def _validate_resource_artifact_event_lifecycle(
+    events: tuple[RuntimeObservationEvent, ...],
+) -> None:
+    for event in events:
+        if event.kind in _RESOURCE_LIFECYCLE_KINDS and (
+            event.subject is not RuntimeObservationSubject.RESOURCE
+        ):
+            raise RuntimeObservabilityContractError(
+                "resource lifecycle events must use the resource subject"
+            )
+        if event.subject is RuntimeObservationSubject.RESOURCE and (
+            event.kind not in _RESOURCE_LIFECYCLE_KINDS
+        ):
+            raise RuntimeObservabilityContractError(
+                "resource subject contains an unregistered lifecycle event"
+            )
+        if event.kind in _ARTIFACT_LIFECYCLE_KINDS and (
+            event.subject is not RuntimeObservationSubject.ARTIFACT
+        ):
+            raise RuntimeObservabilityContractError(
+                "artifact lifecycle events must use the artifact subject"
+            )
+        if event.subject is RuntimeObservationSubject.ARTIFACT and (
+            event.kind not in _ARTIFACT_LIFECYCLE_KINDS
+        ):
+            raise RuntimeObservabilityContractError(
+                "artifact subject contains an unregistered lifecycle event"
+            )
+
+    resource_keys = {
+        event.subject_key
+        for event in events
+        if event.subject is RuntimeObservationSubject.RESOURCE
+    }
+    for resource_key in resource_keys:
+        positions = {
+            kind: tuple(
+                index
+                for index, event in enumerate(events)
+                if event.subject is RuntimeObservationSubject.RESOURCE
+                and event.subject_key == resource_key
+                and event.kind == kind
+            )
+            for kind in _RESOURCE_LIFECYCLE_KINDS
+        }
+        reserved = positions["resource_reserved"]
+        opened = tuple(
+            index
+            for kind in _RESOURCE_OPEN_EVENT_KINDS
+            for index in positions[kind]
+        )
+        cleaned = tuple(
+            index
+            for kind in _RESOURCE_CLEANUP_EVENT_KINDS
+            for index in positions[kind]
+        )
+        if len(reserved) != 1 or len(opened) != 1 or len(cleaned) != 1:
+            raise RuntimeObservabilityContractError(
+                "each resource requires exactly one reserved, open, and cleanup event"
+            )
+        if not reserved[0] < opened[0] < cleaned[0]:
+            raise RuntimeObservabilityContractError(
+                "resource lifecycle order must be reserved, opened, then cleaned"
+            )
+
+    artifact_ids = {
+        event.subject_key
+        for event in events
+        if event.subject is RuntimeObservationSubject.ARTIFACT
+    }
+    for artifact_id in artifact_ids:
+        registered = tuple(
+            index
+            for index, event in enumerate(events)
+            if event.subject is RuntimeObservationSubject.ARTIFACT
+            and event.subject_key == artifact_id
+            and event.kind == "artifact_registered"
+        )
+        disposed = tuple(
+            index
+            for index, event in enumerate(events)
+            if event.subject is RuntimeObservationSubject.ARTIFACT
+            and event.subject_key == artifact_id
+            and event.kind in _ARTIFACT_DISPOSITION_EVENT_KINDS
+        )
+        if len(registered) != 1 or len(disposed) != 1:
+            raise RuntimeObservabilityContractError(
+                "each artifact requires exactly one registered and disposition event"
+            )
+        if registered[0] >= disposed[0]:
+            raise RuntimeObservabilityContractError(
+                "artifact lifecycle order must be registered before disposition"
+            )
+
+
 def _validate_runtime_metrics(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
@@ -523,18 +644,33 @@ def _validate_runtime_metrics(
                     "stage_or_unit_elapsed_seconds requires one metric per work unit"
                 )
         elif name == "worker_peak_rss_bytes" and not preflight_failed:
-            if not observed_worker_keys or {
-                record.scope_key for record in records
-            } != observed_worker_keys:
+            if observed_worker_keys:
+                if len(records) != len(observed_worker_keys) or {
+                    record.scope_key for record in records
+                } != observed_worker_keys:
+                    raise RuntimeObservabilityContractError(
+                        "worker_peak_rss_bytes requires one metric per observed worker"
+                    )
+            elif (
+                len(records) != 1
+                or records[0].scope is not RuntimeMetricScope.ATTEMPT
+                or records[0].scope_key != attempt_id
+                or records[0].availability
+                is not RuntimeMetricAvailability.UNSUPPORTED
+                or records[0].reason != "not_applicable_serial"
+            ):
                 raise RuntimeObservabilityContractError(
-                    "worker_peak_rss_bytes requires one metric per observed worker"
+                    "serial runtime requires one attempt-scoped unsupported "
+                    "worker_peak_rss_bytes metric"
                 )
         elif len(records) != 1:
             raise RuntimeObservabilityContractError(
                 f"runtime metric requires exactly one canonical record: {name}"
             )
-        expected_scope = (
-            RuntimeMetricScope.ATTEMPT if preflight_failed else spec.running_scope
+        expected_scope = RuntimeMetricScope.ATTEMPT if preflight_failed else (
+            RuntimeMetricScope.ATTEMPT
+            if name == "worker_peak_rss_bytes" and not observed_worker_keys
+            else spec.running_scope
         )
         for record in records:
             if (
@@ -570,6 +706,61 @@ def _validate_runtime_metrics(
                 raise RuntimeObservabilityContractError(
                     f"running attempt requires measured runtime metric: {name}"
                 )
+    _validate_elapsed_metrics(events, by_name, preflight_failed=preflight_failed)
+
+
+def _validate_elapsed_metrics(
+    events: tuple[RuntimeObservationEvent, ...],
+    by_name: dict[str, tuple[RuntimeMetricRecord, ...]],
+    *,
+    preflight_failed: bool,
+) -> None:
+    def offset(kind: str, subject_key: str = "attempt") -> int:
+        matches = tuple(
+            event.monotonic_offset_ns
+            for event in events
+            if event.kind == kind and event.subject_key == subject_key
+        )
+        if len(matches) != 1:
+            raise RuntimeObservabilityContractError(
+                "elapsed metrics require one matching lifecycle event"
+            )
+        return matches[0]
+
+    def require_span(metric: RuntimeMetricRecord, expected_seconds: float) -> None:
+        if (
+            metric.availability is not RuntimeMetricAvailability.MEASURED
+            or metric.value is None
+            or not math.isclose(
+                float(metric.value),
+                expected_seconds,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+        ):
+            raise RuntimeObservabilityContractError(
+                f"{metric.name} conflicts with lifecycle event offsets"
+            )
+
+    require_span(
+        by_name["attempt_wall_seconds"][0],
+        (offset("terminal_outcome") - offset("attempt_queued")) / 1_000_000_000,
+    )
+    if preflight_failed:
+        return
+    require_span(
+        by_name["coordinator_work_seconds"][0],
+        (offset("terminal_proposal") - offset("attempt_started")) / 1_000_000_000,
+    )
+    for metric in by_name["stage_or_unit_elapsed_seconds"]:
+        require_span(
+            metric,
+            (
+                offset("work_unit_settled", metric.scope_key)
+                - offset("work_unit_started", metric.scope_key)
+            )
+            / 1_000_000_000,
+        )
 
 
 def _validate_preflight_metrics(

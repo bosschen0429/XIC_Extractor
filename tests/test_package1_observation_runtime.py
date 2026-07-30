@@ -7,6 +7,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from multiprocessing import get_context
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -14,6 +15,7 @@ import xic_extractor.acquisition_contract as acquisition_contract_module
 import xic_extractor.package0_successor_comparator as comparator_module
 from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
+    build_runtime_observability_ledger_from_coordinator,
 )
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
@@ -279,7 +281,12 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
         error_factory=_alignment_error,
         max_workers=1,
         resource_reservations=reservations,
-        observability_ledger=_ledger(runtime, reservations),
+        observability_ledger=_ledger(
+            runtime,
+            reservations,
+            jobs=jobs,
+            result_kind="alignment",
+        ),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-serial.runtime.json",
             "alignment-observation-runtime:test",
@@ -292,7 +299,12 @@ def test_targeted_and_alignment_close_same_spawned_observation_batches(
         error_factory=_alignment_error,
         max_workers=2,
         resource_reservations=reservations,
-        observability_ledger=_ledger(runtime, reservations),
+        observability_ledger=_ledger(
+            runtime,
+            reservations,
+            jobs=jobs,
+            result_kind="alignment",
+        ),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-reordered.runtime.json",
             "alignment-observation-runtime:test",
@@ -476,7 +488,11 @@ def test_alignment_public_result_rejects_unclosed_observation_upstreams(
             coordinator_record=coordinator,
             finalization_record=mint_supervisor_finalization(
                 coordinator,
-                observability_ledger=_ledger(runtime, (reservation,)),
+                observability_ledger=(
+                    build_runtime_observability_ledger_from_coordinator(
+                        coordinator
+                    )
+                ),
             ),
             successful_observation_batches=((job.work_unit_key, batch),),
         )
@@ -515,7 +531,12 @@ def test_runtime_consumers_coalesce_identical_spawned_result_replay(
         error_factory=_alignment_error,
         max_workers=2,
         resource_reservations=reservations,
-        observability_ledger=_ledger(runtime, reservations),
+        observability_ledger=_ledger(
+            runtime,
+            reservations,
+            jobs=(job,),
+            result_kind="alignment",
+        ),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-replay.runtime.json",
             "alignment-observation-replay:test",
@@ -604,6 +625,10 @@ def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
             observability_ledger=_ledger(
                 conflict_runtime,
                 conflict_reservations,
+                jobs=(replay_jobs[0].job,),
+                result_kind="alignment",
+                terminal_failed=True,
+                resource_opened=not replay_jobs[0].fail,
             ),
             recovery_marker=OwnerPathRuntimeMarker(
                 tmp_path / f"alignment-conflict-{index}.runtime.json",
@@ -698,7 +723,12 @@ def test_package1_difference_manifest_reuses_frozen_exact_zero_comparator(
         error_factory=_alignment_error,
         max_workers=1,
         resource_reservations=reservations,
-        observability_ledger=_ledger(runtime, reservations),
+        observability_ledger=_ledger(
+            runtime,
+            reservations,
+            jobs=(job,),
+            result_kind="alignment",
+        ),
         recovery_marker=OwnerPathRuntimeMarker(
             tmp_path / "alignment-difference.runtime.json",
             "alignment-observation-difference:test",
@@ -758,7 +788,6 @@ def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
     )
     jobs = (first, second)
     runtime = _runtime(owners.attempt, tuple(job.work_unit_key for job in jobs))
-    reservations = _reservations(owners.attempt, jobs)
     batch = _produce_batch(first)
     payload = canonical_peak_observation_batch_bytes(batch)
 
@@ -810,7 +839,11 @@ def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
         coordinator_record=targeted_coordinator,
         finalization_record=mint_supervisor_finalization(
             targeted_coordinator,
-            observability_ledger=_ledger(runtime, reservations),
+            observability_ledger=(
+                build_runtime_observability_ledger_from_coordinator(
+                    targeted_coordinator
+                )
+            ),
         ),
     )
 
@@ -860,7 +893,11 @@ def test_package1_comparator_rejects_equal_batches_under_different_work_keys(
         coordinator_record=alignment_coordinator,
         finalization_record=mint_supervisor_finalization(
             alignment_coordinator,
-            observability_ledger=_ledger(runtime, reservations),
+            observability_ledger=(
+                build_runtime_observability_ledger_from_coordinator(
+                    alignment_coordinator
+                )
+            ),
         ),
         successful_observation_batches=((second.work_unit_key, batch),),
     )
@@ -922,14 +959,64 @@ def _run_targeted_service(
         build_targeted_application_request(_config(), [_target()]),
         runtime,
         resource_reservations=reservations,
-        observability_ledger=_ledger(runtime, reservations),
+        observability_ledger=_ledger(
+            runtime,
+            reservations,
+            jobs=jobs,
+            result_kind="targeted",
+        ),
     )
 
 
 def _ledger(
     runtime: AttemptRuntime,
     reservations: tuple[RuntimeResourceReservation, ...],
+    *,
+    jobs: tuple[_ObservationJob, ...],
+    result_kind: Literal["targeted", "alignment"],
+    terminal_failed: bool = False,
+    resource_opened: bool = True,
 ):
+    manifest_order = {
+        key: index for index, key in enumerate(runtime.manifest.work_unit_keys)
+    }
+    unique_jobs = tuple(
+        {
+            job.work_unit_key: job
+            for job in sorted(
+                jobs,
+                key=lambda item: manifest_order[item.work_unit_key],
+            )
+        }.values()
+    )
+    result_artifact_ids: list[str] = []
+    observation_artifact_ids: list[str] = []
+    for job in unique_jobs:
+        batch = _produce_batch(replace(job, delay_sec=0.0))
+        payload = canonical_peak_observation_batch_bytes(batch)
+        result_artifact = (
+            mint_targeted_process_result_ref(
+                processing_attempt=job.owners.attempt,
+                work_unit_key=job.work_unit_key,
+                owner_result_payload=payload,
+                upstream_artifacts=batch.observation_artifacts,
+            ).artifact
+            if result_kind == "targeted"
+            else mint_alignment_process_result_artifact(
+                processing_attempt=job.owners.attempt,
+                work_unit_key=job.work_unit_key,
+                owner_result_payload=payload,
+                upstream_artifacts=batch.observation_artifacts,
+            )
+        )
+        result_artifact_ids.append(result_artifact.evidence_artifact_id)
+        observation_artifact_ids.extend(
+            artifact.evidence_artifact_id
+            for artifact in batch.observation_artifacts
+        )
+    artifact_ids = tuple(
+        dict.fromkeys((*result_artifact_ids, *observation_artifact_ids))
+    )
     return build_runtime_observability_ledger(
         runtime.manifest.attempt,
         work_unit_keys=runtime.manifest.work_unit_keys,
@@ -937,6 +1024,29 @@ def _ledger(
             dict.fromkeys(
                 reservation.worker_key for reservation in reservations
             )
+        ),
+        resource_lifecycles=tuple(
+            (
+                reservation.resource_key,
+                (
+                    "resource_opened"
+                    if resource_opened
+                    else "resource_not_opened"
+                ),
+                "resource_cleanup_succeeded",
+            )
+            for reservation in reservations
+        ),
+        artifact_dispositions=tuple(
+            (
+                artifact_id,
+                (
+                    "artifact_quarantined_diagnostic"
+                    if terminal_failed
+                    else "artifact_offered_to_owner"
+                ),
+            )
+            for artifact_id in artifact_ids
         ),
     )
 

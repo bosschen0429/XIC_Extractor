@@ -9,14 +9,14 @@ class EvidenceArtifactClosureError(ValueError):
     """Raised when a supplied artifact dependency closure is not complete."""
 
 
-def canonical_evidence_artifact_closure(
+def _canonical_evidence_artifact_closure(
     *,
     processing_request_id: str,
     processing_attempt_id: str,
-    dependency_processing_attempt_ids: tuple[str, ...] = (),
+    dependency_processing_attempt_ids: tuple[str, ...],
     artifacts: tuple[EvidenceArtifactRef, ...],
 ) -> tuple[EvidenceArtifactRef, ...]:
-    """Validate current-attempt artifacts plus owner-backed retry dependencies."""
+    """Validate an owner-derived current-attempt and retry dependency scope."""
 
     if not isinstance(artifacts, tuple) or any(
         not isinstance(artifact, EvidenceArtifactRef) for artifact in artifacts
@@ -107,5 +107,4 @@ def canonical_evidence_artifact_closure(
 
 __all__ = [
     "EvidenceArtifactClosureError",
-    "canonical_evidence_artifact_closure",
 ]

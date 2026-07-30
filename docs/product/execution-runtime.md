@@ -91,19 +91,20 @@ These concepts are internal mechanics, not user-visible review tags.
 | `RuntimeEvent` | Ordered fact about scheduling, resource, outcome, cleanup, cache, or metrics | Scientific evidence |
 | `ValidatedDependencyToken` | Lineage-owner approval bound to the new attempt and exactly one manifest work-unit key, plus an opaque immutable dependency reference | Runtime-created identity or compatibility proof |
 
-The manifest is closed before the attempt starts. Duplicate keys, a missing
-owner completeness attestation, submission failure, or an attempt to add later
-work fails closed. The runtime cannot discover that the owner omitted a unit
-from the manifest; its enforceable invariant is that every key in an
-owner-attested manifest settles exactly once. Manifest preflight failure
-terminalizes the attempt as `failed` before any work or resource reservation. It
-uses an explicit queued-to-terminal path: `attempt_queued` and
+The manifest is closed before the attempt starts. An accepted running manifest
+contains at least one work unit. An empty owner universe, duplicate or blank
+keys, a missing owner completeness attestation, submission failure, or an
+attempt to add later work fails closed. The runtime cannot discover that the
+owner omitted a unit from the manifest; its enforceable invariant is that every
+key in an owner-attested manifest settles exactly once. Manifest preflight
+failure terminalizes the attempt as `failed` before any work or resource
+reservation. It uses an explicit queued-to-terminal path: `attempt_queued` and
 `manifest_preflight_failed` are recorded, `attempt_started` is not fabricated,
 and the empty work, resource, and artifact registries permit an immediate
 terminal proposal. Dynamic manifest expansion and later-added stage manifests
 are outside the first integration. If Targeted or Alignment cannot state its
-complete work universe up front, stop and redraw the seam rather than infer
-completion from only the units that happened to be submitted.
+complete non-empty work universe up front, stop and redraw the seam rather than
+infer completion from only the units that happened to be submitted.
 
 An acquisition session may be reused only within the same attempt, worker,
 `AcquisitionSource`, and owner-supplied compatibility token. Correctness must
@@ -402,6 +403,15 @@ closed. The queued-to-terminal preflight path has no work/worker scope, so its
 explicitly unavailable elapsed/RSS records use the attempt scope and
 `not_started_preflight_failure` reason.
 
+For a running attempt, resource lifecycle events use only the registered
+resource subject and contain exactly one reservation, one open outcome, and one
+cleanup outcome in that order. Each registered runtime artifact likewise has
+exactly one registration followed by one offered/quarantined disposition.
+Elapsed metrics must equal their correlated monotonic event spans. A serial run
+with no child-worker event retains one attempt-scoped
+`worker_peak_rss_bytes=unsupported:not_applicable_serial` record; it does not
+invent a worker identity or omit the required metric.
+
 These metrics describe cost and execution locality. They do not score evidence
 quality or authorize a result.
 
@@ -500,9 +510,16 @@ repo has not selected a storage engine, durable queue, current pointer, product
 seal, publication mechanism, telemetry producer, or telemetry backend.
 Alignment is now the second no-RAW consumer. The focused
 `execution_runtime_observability` companion validates caller-supplied
-attempt/work events, monotonic offsets, per-observed-worker RSS records, and
-required finite/integral metric availability without collecting live telemetry
-or selecting an event store or telemetry backend.
+attempt/work/resource/artifact events, monotonic offsets, serial-or-process RSS
+representation, elapsed-event agreement, and required finite/integral metric
+availability without collecting live telemetry or selecting an event store or
+telemetry backend. Before supervisor acknowledgement, the finalization owner
+cross-checks the ledger's complete mechanical lifecycle facts against the
+closed coordinator state and derives the required `raw_open_count` from opened
+resource records. Missing, extra, or substituted lifecycle facts and a
+conflicting count fail closed. Logical XIC/call/point counts, RSS, and
+runtime-mediated artifact-I/O telemetry remain caller measurements because the
+coordinator does not own an independent source for them.
 The caller-located durable launch/finalization marker and coordinator-loss
 recovery are also executable for both Targeted and Alignment. These contracts
 do not make the legacy runners use a new storage or writer path.

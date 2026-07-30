@@ -193,7 +193,16 @@ artifact registry. Package 0 now makes Targeted delivery-cell, revision, stage,
 and seal-candidate identities executable by composing these existing owner refs
 in memory. Those candidates grant no product seal, current pointer, storage,
 publication, supersession, selected-value, Matrix, or writer authority.
-Cross-attempt runtime dependency resolution beyond the validated predecessor
+The processing-identity owner derives the complete same-request predecessor
+chain from `ProcessingAttempt.retry_of`. A Targeted delivery revision uses that
+derived chain as its only allowed `dependency_processing_attempt_ids`; an
+optional caller-supplied tuple is an exact assertion and grants no authority.
+It cannot omit an indirect predecessor or authorize a same-request sibling.
+The reusable artifact-closure entry point likewise accepts the owner-issued
+producer attempt rather than a caller-authored allowlist. Its retry-aware form
+derives that chain, while the delivery-stage output form accepts only artifacts
+minted by the current attempt.
+Cross-attempt runtime dependency resolution beyond this validated predecessor
 closure remains a later consumer contract. A timestamp can describe when
 something happened; it cannot establish what happened.
 

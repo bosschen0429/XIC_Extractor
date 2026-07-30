@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from dataclasses import replace
 
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
+    AttemptLifecycleEventKind,
     AttemptRuntime,
     AttemptTerminalOutcome,
     WorkUnitSettlement,
@@ -36,7 +38,18 @@ from xic_extractor.execution_runtime_finalization_models import (
     SupervisorFinalizationRecord,
     _coordinator_event_digest,
 )
-from xic_extractor.execution_runtime_observability import RuntimeObservabilityLedger
+from xic_extractor.execution_runtime_observability import (
+    RuntimeMetricAvailability,
+    RuntimeObservabilityLedger,
+    RuntimeObservationSubject,
+)
+
+_OWNER_OBSERVABILITY_EVENT_KINDS = {
+    "manifest_closed",
+    *(kind.value for kind in AttemptLifecycleEventKind),
+    *(kind.value for kind in RuntimeLifecycleEventKind),
+    *(kind.value for kind in SupervisorFinalizationEventKind),
+}
 
 
 def begin_attempt_finalization(runtime: AttemptRuntime) -> AttemptFinalizationState:
@@ -367,6 +380,7 @@ def mint_supervisor_finalization(
         raise RuntimeFinalizationContractError(
             "observability ledger must bind the closed manifest work units"
         )
+    _validate_observability_against_coordinator(coordinator, observability_ledger)
     start = coordinator.state.events[-1].sequence + 1
     dispositions = tuple(
         (record.artifact.evidence_artifact_id, record.proposed_disposition)
@@ -437,6 +451,101 @@ def accept_supervisor_finalization(
             "conflicting finalization already exists for this attempt"
         )
     return existing
+
+
+def _validate_observability_against_coordinator(
+    coordinator: CoordinatorTerminalRecord,
+    ledger: RuntimeObservabilityLedger,
+) -> None:
+    state = coordinator.state
+    expected: Counter[tuple[str, RuntimeObservationSubject, str]] = Counter()
+    for history_event in state.runtime.history.events:
+        expected[
+            (
+                history_event.kind.value,
+                RuntimeObservationSubject.ATTEMPT,
+                "attempt",
+            )
+        ] += 1
+    expected[
+        (
+            "manifest_closed",
+            RuntimeObservationSubject.ATTEMPT,
+            "manifest",
+        )
+    ] += 1
+    for lifecycle_event in state.events:
+        subject_key: str | None
+        if lifecycle_event.kind is RuntimeLifecycleEventKind.TERMINAL_PROPOSAL:
+            subject = RuntimeObservationSubject.ATTEMPT
+            subject_key = "attempt"
+        elif lifecycle_event.kind is RuntimeLifecycleEventKind.ARTIFACT_REGISTERED:
+            subject = RuntimeObservationSubject.ARTIFACT
+            subject_key = lifecycle_event.subject_key
+        else:
+            subject = RuntimeObservationSubject.RESOURCE
+            subject_key = lifecycle_event.subject_key
+        if subject_key is None:
+            raise RuntimeFinalizationContractError(
+                "coordinator lifecycle event is missing observability correlation"
+            )
+        expected[(lifecycle_event.kind.value, subject, subject_key)] += 1
+    expected[
+        (
+            "terminal_acknowledged",
+            RuntimeObservationSubject.ATTEMPT,
+            "attempt",
+        )
+    ] += 1
+    for artifact in state.artifacts:
+        disposition_kind = (
+            "artifact_offered_to_owner"
+            if artifact.proposed_disposition
+            is RuntimeArtifactDisposition.OFFERED_TO_OWNER
+            else "artifact_quarantined_diagnostic"
+        )
+        expected[
+            (
+                disposition_kind,
+                RuntimeObservationSubject.ARTIFACT,
+                artifact.artifact.evidence_artifact_id,
+            )
+        ] += 1
+    expected[
+        (
+            "terminal_outcome",
+            RuntimeObservationSubject.ATTEMPT,
+            "attempt",
+        )
+    ] += 1
+
+    observed = Counter(
+        (event.kind, event.subject, event.subject_key)
+        for event in ledger.events
+        if event.kind in _OWNER_OBSERVABILITY_EVENT_KINDS
+    )
+    if observed != expected:
+        raise RuntimeFinalizationContractError(
+            "observability ledger lifecycle conflicts with finalized runtime facts"
+        )
+
+    raw_open_records = tuple(
+        metric for metric in ledger.metrics if metric.name == "raw_open_count"
+    )
+    expected_raw_open_count = sum(
+        record.open_outcome is RuntimeResourceOpenOutcome.OPENED
+        for record in state.resources
+    )
+    if (
+        len(raw_open_records) != 1
+        or raw_open_records[0].availability
+        is not RuntimeMetricAvailability.MEASURED
+        or raw_open_records[0].value != expected_raw_open_count
+    ):
+        raise RuntimeFinalizationContractError(
+            "observability ledger raw_open_count conflicts with finalized "
+            "runtime resources"
+        )
 
 
 def canonical_coordinator_terminal_record_bytes(

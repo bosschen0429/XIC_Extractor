@@ -219,7 +219,14 @@ def test_targeted_application_service_closes_true_process_lifecycle(
         build_targeted_application_request(_config(), [_target()]),
         runtime,
         resource_reservations=(_reservation(attempt),),
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(
+            attempt,
+            _build_spawned_lifecycle_batch(
+                attempt,
+                "raw:a",
+                b"spawned-lifecycle-result",
+            ),
+        ),
     )
 
     assert len(observed_states) == 1
@@ -268,7 +275,7 @@ def test_targeted_lifecycle_uses_owner_path_marker_as_durable_finalizer(
         build_targeted_application_request(_config(), [_target()]),
         _runtime(attempt, ("raw:a",)),
         resource_reservations=(_reservation(attempt),),
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(attempt, batch),
     )
 
     recovered = marker.recover_after_coordinator_loss(attempt)
@@ -321,7 +328,7 @@ def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(
             build_targeted_application_request(_config(), [_target()]),
             _runtime(attempt, ("raw:a",)),
             resource_reservations=(_reservation(attempt),),
-            observability_ledger=_ledger(attempt),
+            observability_ledger=_ledger(attempt, batch),
         )
 
 
@@ -335,6 +342,7 @@ def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
     )
 
     attempt = _attempt(tmp_path)
+    expected_batch = _build_spawned_worker_loss_batch(attempt)
 
     def legacy_runner(*_args, **_kwargs):
         raise AssertionError("runtime lifecycle must not call the legacy runner")
@@ -358,7 +366,7 @@ def test_targeted_spawned_worker_loss_quarantines_partial_artifact(
         build_targeted_application_request(_config(), [_target()]),
         _runtime(attempt, ("raw:a",)),
         resource_reservations=(_reservation(attempt),),
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(attempt, expected_batch),
     )
 
     assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
@@ -567,11 +575,55 @@ def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservati
     )
 
 
-def _ledger(attempt: ProcessingAttemptIdentity):
+def _ledger(
+    attempt: ProcessingAttemptIdentity,
+    batch: TargetedRuntimeWorkerBatch,
+):
+    failed = any(
+        envelope.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
+        for envelope in batch.result_envelopes
+    )
+    artifact_ids = tuple(
+        dict.fromkeys(
+            (
+                *(
+                    reference.artifact.evidence_artifact_id
+                    for reference in batch.runtime_artifact_refs
+                ),
+                *(
+                    artifact.evidence_artifact_id
+                    for envelope in batch.result_envelopes
+                    if envelope.peak_observation_batch is not None
+                    for artifact in (
+                        envelope.peak_observation_batch.observation_artifacts
+                    )
+                ),
+            )
+        )
+    )
     return build_runtime_observability_ledger(
         attempt,
         work_unit_keys=("raw:a",),
         worker_keys=("worker:1",),
+        resource_lifecycles=tuple(
+            (
+                report.resource_key,
+                f"resource_{report.open_outcome.value}",
+                f"resource_cleanup_{report.cleanup_outcome.value}",
+            )
+            for report in batch.resource_reports
+        ),
+        artifact_dispositions=tuple(
+            (
+                artifact_id,
+                (
+                    "artifact_quarantined_diagnostic"
+                    if failed
+                    else "artifact_offered_to_owner"
+                ),
+            )
+            for artifact_id in artifact_ids
+        ),
     )
 
 

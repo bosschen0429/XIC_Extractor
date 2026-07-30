@@ -131,6 +131,7 @@ def test_alignment_spawn_runner_is_canonical_across_serial_and_reordered_results
         resource_reservations=reservations,
         observability_ledger=_ledger(
             attempt,
+            jobs=jobs,
             work_unit_keys=("sample:a", "sample:b"),
             worker_keys=("worker:a", "worker:b"),
         ),
@@ -148,6 +149,7 @@ def test_alignment_spawn_runner_is_canonical_across_serial_and_reordered_results
         resource_reservations=reservations,
         observability_ledger=_ledger(
             attempt,
+            jobs=jobs,
             work_unit_keys=("sample:a", "sample:b"),
             worker_keys=("worker:a", "worker:b"),
         ),
@@ -185,23 +187,25 @@ def test_alignment_spawn_failure_closes_resource_and_durable_terminal(
         tmp_path / "failed.runtime.json",
         "alignment-runtime-artifacts:failed",
     )
+    jobs = (
+        _NoRawAlignmentJob(
+            attempt,
+            "sample:a",
+            "process:sample:a",
+            b"unused",
+            fail=True,
+        ),
+    )
     result = execute_alignment_process_runtime(
         runtime,
-        (
-            _NoRawAlignmentJob(
-                attempt,
-                "sample:a",
-                "process:sample:a",
-                b"unused",
-                fail=True,
-            ),
-        ),
+        jobs,
         worker=_run_no_raw_alignment_job,
         error_factory=_alignment_job_error,
         max_workers=1,
         resource_reservations=(_reservations(attempt)[0],),
         observability_ledger=_ledger(
             attempt,
+            jobs=jobs,
             work_unit_keys=("sample:a",),
             worker_keys=("worker:a",),
         ),
@@ -262,13 +266,43 @@ def _reservations(
 def _ledger(
     attempt: ProcessingAttemptIdentity,
     *,
+    jobs: tuple[_NoRawAlignmentJob, ...],
     work_unit_keys: tuple[str, ...],
     worker_keys: tuple[str, ...],
 ):
+    failed = any(job.fail for job in jobs)
+    artifacts = tuple(
+        mint_alignment_process_result_artifact(
+            processing_attempt=attempt,
+            work_unit_key=job.work_unit_key,
+            owner_result_payload=job.payload,
+        )
+        for job in jobs
+        if not job.fail
+    )
     return build_runtime_observability_ledger(
         attempt,
         work_unit_keys=work_unit_keys,
         worker_keys=worker_keys,
+        resource_lifecycles=tuple(
+            (
+                job.resource_key,
+                "resource_not_opened" if job.fail else "resource_opened",
+                "resource_cleanup_succeeded",
+            )
+            for job in jobs
+        ),
+        artifact_dispositions=tuple(
+            (
+                artifact.evidence_artifact_id,
+                (
+                    "artifact_quarantined_diagnostic"
+                    if failed
+                    else "artifact_offered_to_owner"
+                ),
+            )
+            for artifact in artifacts
+        ),
     )
 
 

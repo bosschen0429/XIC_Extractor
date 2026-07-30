@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from xic_extractor.artifact_lineage import EvidenceArtifactClosureError
 from xic_extractor.config import Target
 from xic_extractor.configuration.target_identity import (
     mint_target_list_snapshot,
@@ -23,6 +24,7 @@ from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     build_acquisition_source_identity,
     build_processing_request_identity,
+    canonical_evidence_artifact_closure,
     issue_processing_attempt,
 )
 from xic_extractor.sample_metadata import (
@@ -115,6 +117,93 @@ def test_stage_rejects_duplicate_delivery_cell(tmp_path: Path) -> None:
         )
 
 
+def test_delivery_revision_derives_complete_retry_predecessor_chain(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path)
+    first = issue_processing_attempt(request)
+    second = issue_processing_attempt(request, retry_of=first)
+    third = issue_processing_attempt(request, retry_of=second)
+    first_artifact = _artifact(first, b"first-attempt-evidence")
+
+    revision = mint_targeted_delivery_revision_candidate(
+        cell=mint_targeted_delivery_cell_key(_sample(), _target()),
+        producer_attempt=third,
+        projection_contract_version="targeted_projection_v1",
+        evidence_artifacts=(first_artifact,),
+        selected_payload=b"selected-from-retry-chain",
+    )
+
+    assert revision.dependency_processing_attempt_ids == (
+        second.processing_attempt_id,
+        first.processing_attempt_id,
+    )
+
+
+def test_delivery_revision_rejects_caller_authorized_sibling_attempt(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path)
+    sibling = issue_processing_attempt(request)
+    producer = issue_processing_attempt(request)
+
+    with pytest.raises(DeliveryLineageContractError, match="retry predecessor"):
+        mint_targeted_delivery_revision_candidate(
+            cell=mint_targeted_delivery_cell_key(_sample(), _target()),
+            producer_attempt=producer,
+            projection_contract_version="targeted_projection_v1",
+            evidence_artifacts=(_artifact(sibling, b"sibling-evidence"),),
+            dependency_processing_attempt_ids=(sibling.processing_attempt_id,),
+            selected_payload=b"invalid-cross-attempt-selection",
+        )
+
+
+def test_artifact_closure_derives_retry_scope_from_producer_attempt(
+    tmp_path: Path,
+) -> None:
+    request = _request(tmp_path)
+    predecessor = issue_processing_attempt(request)
+    retry = issue_processing_attempt(request, retry_of=predecessor)
+    sibling = issue_processing_attempt(request)
+
+    assert canonical_evidence_artifact_closure(
+        producer_attempt=retry,
+        artifacts=(_artifact(predecessor, b"retry-evidence"),),
+    )
+    with pytest.raises(
+        EvidenceArtifactClosureError,
+        match="different processing attempt",
+    ):
+        canonical_evidence_artifact_closure(
+            producer_attempt=retry,
+            artifacts=(_artifact(sibling, b"sibling-evidence"),),
+        )
+
+
+def test_delivery_stage_outputs_must_come_from_current_attempt(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    predecessor = issue_processing_attempt(request)
+    retry = issue_processing_attempt(request, retry_of=predecessor)
+    predecessor_artifact = _artifact(predecessor, b"predecessor-evidence")
+    revision = mint_targeted_delivery_revision_candidate(
+        cell=mint_targeted_delivery_cell_key(_sample(), _target()),
+        producer_attempt=retry,
+        projection_contract_version="targeted_projection_v1",
+        evidence_artifacts=(predecessor_artifact,),
+        selected_payload=b"selected-from-retry-chain",
+    )
+
+    with pytest.raises(
+        EvidenceArtifactClosureError,
+        match="different processing attempt",
+    ):
+        stage_targeted_delivery_candidate(
+            producer_attempt=retry,
+            revisions=(revision,),
+            output_artifacts=(predecessor_artifact,),
+        )
+
+
 def _sample():
     snapshot = mint_sample_metadata_snapshot(
         (SampleMetadata(sample_name="SampleA", raw_stem="SampleA"),),
@@ -144,7 +233,7 @@ def _target():
     return resolve_target_definition(snapshot, "Analyte")
 
 
-def _attempt(tmp_path: Path):
+def _request(tmp_path: Path):
     path = tmp_path / "source.fixture"
     path.write_bytes(b"no-raw-source")
     source = build_acquisition_source_identity(
@@ -152,7 +241,7 @@ def _attempt(tmp_path: Path):
         acquisition_format="fixture",
         observation_namespace="package0:no-raw",
     )
-    request = build_processing_request_identity(
+    return build_processing_request_identity(
         acquisition_sources=(source,),
         acquisition_bindings=(
             AcquisitionInputBinding(
@@ -166,7 +255,10 @@ def _attempt(tmp_path: Path):
         processing_contract_version="package0_fixture_v1",
         scientific_inputs={"neutral_loss_da": 116.0474},
     )
-    return issue_processing_attempt(request)
+
+
+def _attempt(tmp_path: Path):
+    return issue_processing_attempt(_request(tmp_path))
 
 
 def _artifact(attempt, payload: bytes):

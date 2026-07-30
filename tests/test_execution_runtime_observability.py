@@ -4,6 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from tests.runtime_observability_fixtures import (
+    build_runtime_observability_ledger,
+)
 from xic_extractor.execution_runtime_observability import (
     REQUIRED_RUNTIME_METRIC_NAMES,
     RuntimeMetricAvailability,
@@ -197,7 +200,7 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
         replace(event, sequence=index, monotonic_offset_ns=(index - 1) * 10)
         for index, event in enumerate(events, start=1)
     )
-    metrics = list(_metrics(attempt.processing_attempt_id))
+    metrics = list(_metrics(attempt.processing_attempt_id, events=events))
     worker_metric = next(
         metric for metric in metrics if metric.name == "worker_peak_rss_bytes"
     )
@@ -248,6 +251,161 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
             events=events,
             metrics=wrong_worker,
         )
+
+
+def test_runtime_observability_represents_serial_mode_without_worker_process(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    events = tuple(
+        replace(event, sequence=index, monotonic_offset_ns=(index - 1) * 10)
+        for index, event in enumerate(
+            (
+                event
+                for event in _events(attempt)
+                if event.subject is not RuntimeObservationSubject.WORKER
+            ),
+            start=1,
+        )
+    )
+    metrics = tuple(
+        replace(
+            metric,
+            scope=RuntimeMetricScope.ATTEMPT,
+            scope_key=attempt.processing_attempt_id,
+            availability=RuntimeMetricAvailability.UNSUPPORTED,
+            value=None,
+            reason="not_applicable_serial",
+        )
+        if metric.name == "worker_peak_rss_bytes"
+        else metric
+        for metric in _metrics(attempt.processing_attempt_id, events=events)
+    )
+
+    ledger = RuntimeObservabilityLedger(
+        attempt=attempt,
+        work_unit_keys=("sample-a:target-a",),
+        events=events,
+        metrics=metrics,
+    )
+
+    worker_rss = next(
+        metric for metric in ledger.metrics if metric.name == "worker_peak_rss_bytes"
+    )
+    assert worker_rss.scope is RuntimeMetricScope.ATTEMPT
+    assert worker_rss.reason == "not_applicable_serial"
+
+
+def test_runtime_observability_rejects_elapsed_metrics_that_conflict_with_events(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    metrics = tuple(
+        replace(metric, value=1.0)
+        if metric.name == "coordinator_work_seconds"
+        else metric
+        for metric in _metrics(attempt.processing_attempt_id)
+    )
+
+    with pytest.raises(RuntimeObservabilityContractError, match="event offsets"):
+        RuntimeObservabilityLedger(
+            attempt=attempt,
+            work_unit_keys=("sample-a:target-a",),
+            events=_events(attempt),
+            metrics=metrics,
+        )
+
+
+def test_runtime_observability_rejects_incomplete_or_malformed_resource_lifecycle(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample-a:target-a",),
+        worker_keys=("worker:1",),
+        resource_lifecycles=(
+            (
+                "session:a",
+                "resource_opened",
+                "resource_cleanup_succeeded",
+            ),
+        ),
+    )
+    reserved = _event_index(ledger.events, "resource_reserved")
+    opened = _event_index(ledger.events, "resource_opened")
+    cleanup = _event_index(ledger.events, "resource_cleanup_succeeded")
+    missing = (*ledger.events[:cleanup], *ledger.events[cleanup + 1 :])
+    duplicate = (
+        *ledger.events[: opened + 1],
+        ledger.events[opened],
+        *ledger.events[opened + 1 :],
+    )
+    reordered = list(ledger.events)
+    reordered[reserved], reordered[opened] = reordered[opened], reordered[reserved]
+    wrong_subject = list(ledger.events)
+    wrong_subject[opened] = replace(
+        wrong_subject[opened],
+        subject=RuntimeObservationSubject.ATTEMPT,
+    )
+
+    for invalid, match in (
+        (missing, "exactly one"),
+        (duplicate, "exactly one"),
+        (tuple(reordered), "lifecycle order"),
+        (tuple(wrong_subject), "resource subject"),
+    ):
+        with pytest.raises(RuntimeObservabilityContractError, match=match):
+            RuntimeObservabilityLedger(
+                attempt=attempt,
+                work_unit_keys=ledger.work_unit_keys,
+                events=_resequence(invalid),
+                metrics=ledger.metrics,
+            )
+
+
+def test_runtime_observability_rejects_incomplete_or_malformed_artifact_lifecycle(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    ledger = build_runtime_observability_ledger(
+        attempt,
+        work_unit_keys=("sample-a:target-a",),
+        worker_keys=("worker:1",),
+        artifact_dispositions=(("artifact:a", "artifact_offered_to_owner"),),
+    )
+    registered = _event_index(ledger.events, "artifact_registered")
+    disposed = _event_index(ledger.events, "artifact_offered_to_owner")
+    missing = (*ledger.events[:disposed], *ledger.events[disposed + 1 :])
+    duplicate = (
+        *ledger.events[: disposed + 1],
+        ledger.events[disposed],
+        *ledger.events[disposed + 1 :],
+    )
+    reordered = list(ledger.events)
+    reordered[registered], reordered[disposed] = (
+        reordered[disposed],
+        reordered[registered],
+    )
+    wrong_subject = list(ledger.events)
+    wrong_subject[registered] = replace(
+        wrong_subject[registered],
+        subject=RuntimeObservationSubject.ATTEMPT,
+    )
+
+    for invalid, match in (
+        (missing, "exactly one"),
+        (duplicate, "exactly one"),
+        (tuple(reordered), "lifecycle order"),
+        (tuple(wrong_subject), "artifact subject"),
+    ):
+        with pytest.raises(RuntimeObservabilityContractError, match=match):
+            RuntimeObservabilityLedger(
+                attempt=attempt,
+                work_unit_keys=ledger.work_unit_keys,
+                events=_resequence(invalid),
+                metrics=ledger.metrics,
+            )
 
 
 @pytest.mark.parametrize(
@@ -416,7 +574,31 @@ def _events(attempt):
     )
 
 
-def _metrics(attempt_id: str) -> tuple[RuntimeMetricRecord, ...]:
+def _event_index(
+    events: tuple[RuntimeObservationEvent, ...],
+    kind: str,
+) -> int:
+    return next(index for index, event in enumerate(events) if event.kind == kind)
+
+
+def _resequence(
+    events: tuple[RuntimeObservationEvent, ...],
+) -> tuple[RuntimeObservationEvent, ...]:
+    return tuple(
+        replace(
+            event,
+            sequence=index,
+            monotonic_offset_ns=(index - 1) * 10,
+        )
+        for index, event in enumerate(events, start=1)
+    )
+
+
+def _metrics(
+    attempt_id: str,
+    *,
+    events: tuple[RuntimeObservationEvent, ...] | None = None,
+) -> tuple[RuntimeMetricRecord, ...]:
     count_metrics = {
         "raw_open_count",
         "logical_xic_request_count",
@@ -446,6 +628,41 @@ def _metrics(attempt_id: str) -> tuple[RuntimeMetricRecord, ...]:
         "worker_peak_rss_bytes": ("bytes", "max"),
         "process_tree_peak_rss_bytes": ("bytes", "max"),
     }
+    event_sequence = events
+
+    def offset(kind: str, subject_key: str = "attempt") -> int:
+        if event_sequence is None:
+            defaults = {
+                ("attempt_queued", "attempt"): 0,
+                ("attempt_started", "attempt"): 20,
+                ("work_unit_started", "sample-a:target-a"): 40,
+                ("work_unit_settled", "sample-a:target-a"): 50,
+                ("terminal_proposal", "attempt"): 70,
+                ("terminal_outcome", "attempt"): 90,
+            }
+            return defaults[(kind, subject_key)]
+        return next(
+            event.monotonic_offset_ns
+            for event in event_sequence
+            if event.kind == kind and event.subject_key == subject_key
+        )
+
+    def value(name: str) -> int | float:
+        if name == "coordinator_work_seconds":
+            return (
+                offset("terminal_proposal") - offset("attempt_started")
+            ) / 1_000_000_000
+        if name == "attempt_wall_seconds":
+            return (
+                offset("terminal_outcome") - offset("attempt_queued")
+            ) / 1_000_000_000
+        if name == "stage_or_unit_elapsed_seconds":
+            return (
+                offset("work_unit_settled", "sample-a:target-a")
+                - offset("work_unit_started", "sample-a:target-a")
+            ) / 1_000_000_000
+        return 0
+
     return tuple(
         RuntimeMetricRecord(
             name=name,
@@ -479,7 +696,7 @@ def _metrics(attempt_id: str) -> tuple[RuntimeMetricRecord, ...]:
                 if name in measured
                 else RuntimeMetricAvailability.UNSUPPORTED
             ),
-            value=0 if name in measured else None,
+            value=value(name) if name in measured else None,
             reason=None if name in measured else "no child process in pure fixture",
         )
         for name in REQUIRED_RUNTIME_METRIC_NAMES
@@ -528,7 +745,12 @@ def _preflight_metrics(attempt_id: str) -> tuple[RuntimeMetricRecord, ...]:
                 )
             )
         else:
-            metrics.append(replace(metric, value=0))
+            metrics.append(
+                replace(
+                    metric,
+                    value=4e-8 if metric.name == "attempt_wall_seconds" else 0,
+                )
+            )
     return tuple(metrics)
 
 

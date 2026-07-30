@@ -81,17 +81,17 @@ def test_success_closes_resource_artifact_and_atomic_acknowledgement(
     coordinator = propose_attempt_terminal(state)
     submitted = mint_supervisor_finalization(
         coordinator,
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(attempt, coordinator),
     )
     accepted = accept_supervisor_finalization(
         coordinator,
         submitted,
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(attempt, coordinator),
     )
     replay = accept_supervisor_finalization(
         coordinator,
         submitted,
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(attempt, coordinator),
         existing=accepted,
     )
 
@@ -144,7 +144,7 @@ def test_failed_cleanup_terminalizes_and_quarantines_whole_attempt(
     coordinator = propose_attempt_terminal(state)
     finalization = mint_supervisor_finalization(
         coordinator,
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(attempt, coordinator),
     )
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
@@ -349,7 +349,7 @@ def test_terminal_and_acknowledgement_fail_closed_on_missing_or_conflict(
     coordinator = propose_attempt_terminal(state)
     finalization = mint_supervisor_finalization(
         coordinator,
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(attempt, coordinator),
     )
     conflicting = replace(
         finalization,
@@ -360,7 +360,7 @@ def test_terminal_and_acknowledgement_fail_closed_on_missing_or_conflict(
         accept_supervisor_finalization(
             coordinator,
             conflicting,
-            observability_ledger=_ledger(attempt),
+            observability_ledger=_ledger(attempt, coordinator),
         )
     with pytest.raises(RuntimeFinalizationContractError, match="cannot change"):
         register_runtime_artifact(
@@ -435,11 +435,11 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
     assert (
         mint_supervisor_finalization(
             failed_coordinator,
-            observability_ledger=_ledger(attempt),
+            observability_ledger=_ledger(attempt, failed_coordinator),
         ).coordinator_record_sha256
         != mint_supervisor_finalization(
             alternate_coordinator,
-            observability_ledger=_ledger(attempt),
+                observability_ledger=_ledger(attempt, alternate_coordinator),
         ).coordinator_record_sha256
     )
 
@@ -455,17 +455,24 @@ def test_supervisor_receipt_binds_validated_runtime_observability(
         artifact=artifact,
     )
     coordinator = propose_attempt_terminal(state)
-    first_ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("raw:a",),
-        worker_keys=("worker:1",),
-        raw_open_count=1,
+    base_ledger = _ledger(attempt, coordinator)
+    first_ledger = replace(
+        base_ledger,
+        metrics=tuple(
+            replace(metric, value=1)
+            if metric.name == "logical_xic_request_count"
+            else metric
+            for metric in base_ledger.metrics
+        ),
     )
-    second_ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("raw:a",),
-        worker_keys=("worker:1",),
-        raw_open_count=2,
+    second_ledger = replace(
+        base_ledger,
+        metrics=tuple(
+            replace(metric, value=2)
+            if metric.name == "logical_xic_request_count"
+            else metric
+            for metric in base_ledger.metrics
+        ),
     )
 
     first = mint_supervisor_finalization(
@@ -488,6 +495,74 @@ def test_supervisor_receipt_binds_validated_runtime_observability(
             coordinator,
             second,
             observability_ledger=first_ledger,
+        )
+
+
+def test_supervisor_rejects_observability_that_conflicts_with_finalized_facts(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, artifact = _successful_runtime(attempt)
+    state = reserve_runtime_resource(
+        begin_attempt_finalization(runtime),
+        _reservation(attempt),
+    )
+    state = register_runtime_artifact(
+        state,
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+    state = settle_runtime_resource(
+        state,
+        resource_key="session:a",
+        open_outcome=RuntimeResourceOpenOutcome.OPENED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+    coordinator = propose_attempt_terminal(state)
+
+    with pytest.raises(RuntimeFinalizationContractError, match="observability ledger"):
+        mint_supervisor_finalization(
+            coordinator,
+            observability_ledger=_ledger(attempt),
+        )
+
+
+def test_supervisor_rejects_raw_open_count_that_conflicts_with_resources(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, artifact = _successful_runtime(attempt)
+    state = reserve_runtime_resource(
+        begin_attempt_finalization(runtime),
+        _reservation(attempt),
+    )
+    state = settle_runtime_resource(
+        state,
+        resource_key="session:a",
+        open_outcome=RuntimeResourceOpenOutcome.OPENED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+    state = register_runtime_artifact(
+        state,
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+    coordinator = propose_attempt_terminal(state)
+    valid = _ledger(attempt, coordinator)
+    inconsistent = replace(
+        valid,
+        metrics=tuple(
+            replace(metric, value=0)
+            if metric.name == "raw_open_count"
+            else metric
+            for metric in valid.metrics
+        ),
+    )
+
+    with pytest.raises(RuntimeFinalizationContractError, match="raw_open_count"):
+        mint_supervisor_finalization(
+            coordinator,
+            observability_ledger=inconsistent,
         )
 
 
@@ -651,11 +726,31 @@ def _failure_detail(
     )
 
 
-def _ledger(attempt: ProcessingAttemptIdentity):
+def _ledger(attempt: ProcessingAttemptIdentity, coordinator=None):
+    resource_lifecycles = ()
+    artifact_dispositions = ()
+    if coordinator is not None:
+        resource_lifecycles = tuple(
+            (
+                record.reservation.resource_key,
+                f"resource_{record.open_outcome.value}",
+                f"resource_cleanup_{record.cleanup_outcome.value}",
+            )
+            for record in coordinator.state.resources
+        )
+        artifact_dispositions = tuple(
+            (
+                record.artifact.evidence_artifact_id,
+                f"artifact_{record.proposed_disposition.value}",
+            )
+            for record in coordinator.state.artifacts
+        )
     return build_runtime_observability_ledger(
         attempt,
         work_unit_keys=("raw:a",),
         worker_keys=("worker:1",),
+        resource_lifecycles=resource_lifecycles,
+        artifact_dispositions=artifact_dispositions,
     )
 
 

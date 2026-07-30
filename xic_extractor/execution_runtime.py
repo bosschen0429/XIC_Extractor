@@ -89,6 +89,10 @@ class RequiredWorkManifest:
             )
         if not isinstance(self.work_unit_keys, tuple):
             raise AttemptLifecycleContractError("work_unit_keys must be a tuple")
+        if not self.work_unit_keys:
+            raise AttemptLifecycleContractError(
+                "work_unit_keys must contain at least one declared work unit"
+            )
         if any(
             not isinstance(key, str) or not key.strip()
             for key in self.work_unit_keys

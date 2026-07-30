@@ -15,7 +15,7 @@ from typing import Any
 
 from xic_extractor.artifact_lineage import (
     EvidenceArtifactClosureError,
-    canonical_evidence_artifact_closure,
+    _canonical_evidence_artifact_closure,
 )
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
@@ -418,15 +418,70 @@ class ProcessingAttemptIdentity:
             )
 
 
-def _retry_predecessor_attempt_ids(
+def retry_predecessor_attempt_ids(
     attempt: ProcessingAttemptIdentity,
 ) -> tuple[str, ...]:
+    """Return the complete owner-validated retry predecessor chain."""
+
+    if not isinstance(attempt, ProcessingAttemptIdentity):
+        raise IdentityContractError(
+            "attempt must be an owner-issued ProcessingAttemptIdentity"
+        )
     predecessor_ids: list[str] = []
+    seen = {attempt.processing_attempt_id}
     predecessor = attempt.retry_of
     while predecessor is not None:
+        predecessor_id = predecessor.processing_attempt_id
+        if predecessor_id in seen:
+            raise IdentityContractError("retry predecessor chain must be acyclic")
+        if predecessor.processing_request_id != attempt.processing_request_id:
+            raise IdentityContractError(
+                "retry predecessor chain references a different processing request"
+            )
+        seen.add(predecessor_id)
         predecessor_ids.append(predecessor.processing_attempt_id)
         predecessor = predecessor.retry_of
     return tuple(predecessor_ids)
+
+
+def canonical_evidence_artifact_closure(
+    *,
+    producer_attempt: ProcessingAttemptIdentity,
+    artifacts: tuple[EvidenceArtifactRef, ...],
+) -> tuple[EvidenceArtifactRef, ...]:
+    """Validate artifacts against the producer's complete retry chain."""
+
+    if not isinstance(producer_attempt, ProcessingAttemptIdentity):
+        raise IdentityContractError(
+            "producer_attempt must be an owner-issued ProcessingAttemptIdentity"
+        )
+    return _canonical_evidence_artifact_closure(
+        processing_request_id=producer_attempt.processing_request_id,
+        processing_attempt_id=producer_attempt.processing_attempt_id,
+        dependency_processing_attempt_ids=retry_predecessor_attempt_ids(
+            producer_attempt
+        ),
+        artifacts=artifacts,
+    )
+
+
+def canonical_current_attempt_artifact_closure(
+    *,
+    producer_attempt: ProcessingAttemptIdentity,
+    artifacts: tuple[EvidenceArtifactRef, ...],
+) -> tuple[EvidenceArtifactRef, ...]:
+    """Validate artifacts produced only by the current attempt."""
+
+    if not isinstance(producer_attempt, ProcessingAttemptIdentity):
+        raise IdentityContractError(
+            "producer_attempt must be an owner-issued ProcessingAttemptIdentity"
+        )
+    return _canonical_evidence_artifact_closure(
+        processing_request_id=producer_attempt.processing_request_id,
+        processing_attempt_id=producer_attempt.processing_attempt_id,
+        dependency_processing_attempt_ids=(),
+        artifacts=artifacts,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -513,11 +568,7 @@ class ProcessingOwnerReferences:
             _validate_request_target_snapshot(request_inputs, self.target_snapshot)
         try:
             canonical_artifacts = canonical_evidence_artifact_closure(
-                processing_request_id=self.request.processing_request_id,
-                processing_attempt_id=self.attempt.processing_attempt_id,
-                dependency_processing_attempt_ids=_retry_predecessor_attempt_ids(
-                    self.attempt
-                ),
+                producer_attempt=self.attempt,
                 artifacts=self.evidence_artifacts,
             )
         except EvidenceArtifactClosureError as exc:
@@ -911,8 +962,11 @@ __all__ = [
     "ProcessingRequestIdentity",
     "build_acquisition_source_identity",
     "build_processing_request_identity",
+    "canonical_current_attempt_artifact_closure",
+    "canonical_evidence_artifact_closure",
     "compose_processing_owner_references",
     "fingerprint_file_content",
     "issue_processing_attempt",
+    "retry_predecessor_attempt_ids",
     "resolve_request_acquisition_source",
 ]

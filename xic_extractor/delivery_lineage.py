@@ -8,10 +8,14 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from xic_extractor.artifact_lineage import canonical_evidence_artifact_closure
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.processing_identity import ProcessingAttemptIdentity
+from xic_extractor.processing_identity import (
+    ProcessingAttemptIdentity,
+    canonical_current_attempt_artifact_closure,
+    canonical_evidence_artifact_closure,
+    retry_predecessor_attempt_ids,
+)
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 
@@ -69,6 +73,14 @@ class TargetedDeliveryRevisionCandidate:
             raise DeliveryLineageContractError(
                 "producer_attempt must be an owner-issued attempt"
             )
+        expected_dependency_attempt_ids = retry_predecessor_attempt_ids(
+            self.producer_attempt
+        )
+        if self.dependency_processing_attempt_ids != expected_dependency_attempt_ids:
+            raise DeliveryLineageContractError(
+                "dependency processing attempts must equal the producer retry "
+                "predecessor chain"
+            )
         version = _required_text(
             self.projection_contract_version, "projection_contract_version"
         )
@@ -91,9 +103,7 @@ class TargetedDeliveryRevisionCandidate:
             )
         try:
             closure = canonical_evidence_artifact_closure(
-                processing_request_id=self.producer_attempt.processing_request_id,
-                processing_attempt_id=self.producer_attempt.processing_attempt_id,
-                dependency_processing_attempt_ids=self.dependency_processing_attempt_ids,
+                producer_attempt=self.producer_attempt,
                 artifacts=self.evidence_artifacts,
             )
         except ValueError as exc:
@@ -156,9 +166,8 @@ class TargetedDeliveryStageCandidate:
             raise DeliveryLineageContractError(
                 "delivery revisions must be canonical-sorted by cell"
             )
-        closure = canonical_evidence_artifact_closure(
-            processing_request_id=self.producer_attempt.processing_request_id,
-            processing_attempt_id=self.producer_attempt.processing_attempt_id,
+        closure = canonical_current_attempt_artifact_closure(
+            producer_attempt=self.producer_attempt,
             artifacts=self.output_artifacts,
         )
         if closure != self.output_artifacts:
@@ -248,13 +257,22 @@ def mint_targeted_delivery_revision_candidate(
     producer_attempt: ProcessingAttemptIdentity,
     projection_contract_version: str,
     evidence_artifacts: tuple[EvidenceArtifactRef, ...],
-    dependency_processing_attempt_ids: tuple[str, ...] = (),
+    dependency_processing_attempt_ids: tuple[str, ...] | None = None,
     selected_payload: bytes | None = None,
     non_observation_reason: str | None = None,
 ) -> TargetedDeliveryRevisionCandidate:
     if (selected_payload is None) == (non_observation_reason is None):
         raise DeliveryLineageContractError(
             "revision requires exactly one selected payload or non-observation reason"
+        )
+    expected_dependency_attempt_ids = retry_predecessor_attempt_ids(producer_attempt)
+    if (
+        dependency_processing_attempt_ids is not None
+        and dependency_processing_attempt_ids != expected_dependency_attempt_ids
+    ):
+        raise DeliveryLineageContractError(
+            "dependency processing attempts must equal the producer retry "
+            "predecessor chain"
         )
     selected_sha = (
         hashlib.sha256(selected_payload).hexdigest()
@@ -266,7 +284,7 @@ def mint_targeted_delivery_revision_candidate(
         attempt=producer_attempt,
         projection_contract_version=projection_contract_version,
         evidence_artifacts=evidence_artifacts,
-        dependency_processing_attempt_ids=dependency_processing_attempt_ids,
+        dependency_processing_attempt_ids=expected_dependency_attempt_ids,
         selected_payload_sha256=selected_sha,
         non_observation_reason=non_observation_reason,
     )
@@ -278,7 +296,7 @@ def mint_targeted_delivery_revision_candidate(
         producer_attempt=producer_attempt,
         projection_contract_version=projection_contract_version,
         evidence_artifacts=evidence_artifacts,
-        dependency_processing_attempt_ids=dependency_processing_attempt_ids,
+        dependency_processing_attempt_ids=expected_dependency_attempt_ids,
         selected_payload_sha256=selected_sha,
         non_observation_reason=non_observation_reason,
     )

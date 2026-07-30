@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.runtime_observability_fixtures import (
-    build_runtime_observability_ledger,
+    build_runtime_observability_ledger_from_coordinator,
 )
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
@@ -38,6 +38,9 @@ from xic_extractor.execution_runtime_finalization import (
     register_runtime_artifact,
     reserve_runtime_resource,
     settle_runtime_resource,
+)
+from xic_extractor.execution_runtime_finalization_models import (
+    CoordinatorTerminalRecord,
 )
 from xic_extractor.execution_runtime_marker import (
     OwnerPathRuntimeMarker,
@@ -118,7 +121,7 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
         artifact=reference.artifact,
     )
     coordinator = propose_attempt_terminal(state)
-    ledger = _ledger(attempt)
+    ledger = _ledger(coordinator)
     proposed = mint_supervisor_finalization(
         coordinator,
         observability_ledger=ledger,
@@ -162,17 +165,13 @@ def test_finalized_marker_bytes_bind_the_exact_observability_ledger(
         attempt,
         outcome=WorkUnitTerminalOutcome.SUCCEEDED,
     )
-    first_ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("sample:a",),
-        worker_keys=("worker:1",),
-        raw_open_count=1,
+    first_ledger = build_runtime_observability_ledger_from_coordinator(
+        coordinator,
+        logical_xic_request_count=1,
     )
-    second_ledger = build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("sample:a",),
-        worker_keys=("worker:1",),
-        raw_open_count=2,
+    second_ledger = build_runtime_observability_ledger_from_coordinator(
+        coordinator,
+        logical_xic_request_count=2,
     )
     first_marker = OwnerPathRuntimeMarker(
         tmp_path / "first.runtime.json",
@@ -397,7 +396,7 @@ def _terminal_records(
     coordinator = propose_attempt_terminal(state)
     return coordinator, mint_supervisor_finalization(
         coordinator,
-        observability_ledger=_ledger(attempt),
+        observability_ledger=_ledger(coordinator),
     )
 
 
@@ -454,12 +453,8 @@ def _runtime(attempt: ProcessingAttemptIdentity) -> AttemptRuntime:
     )
 
 
-def _ledger(attempt: ProcessingAttemptIdentity):
-    return build_runtime_observability_ledger(
-        attempt,
-        work_unit_keys=("sample:a",),
-        worker_keys=("worker:1",),
-    )
+def _ledger(coordinator: CoordinatorTerminalRecord):
+    return build_runtime_observability_ledger_from_coordinator(coordinator)
 
 
 def _attempt(

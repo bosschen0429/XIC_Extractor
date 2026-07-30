@@ -181,6 +181,38 @@ def test_required_work_manifest_preflight_accepts_owner_attested_closed_work(
     )
 
 
+def test_required_work_manifest_preflight_rejects_empty_running_manifest(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.execution_runtime import (
+        AttemptLifecycleEventKind,
+        AttemptLifecycleHistory,
+        append_attempt_lifecycle_event,
+        preflight_required_work_manifest,
+    )
+
+    attempt = _attempt(tmp_path)
+    queued = append_attempt_lifecycle_event(
+        AttemptLifecycleHistory(attempt=attempt),
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    )
+
+    preflight = preflight_required_work_manifest(
+        queued,
+        attempt=attempt,
+        work_unit_keys=(),
+        owner_completeness_attestation="targeted-application-service:v1",
+    )
+
+    assert preflight.accepted is False
+    assert preflight.manifest is None
+    assert [event.kind for event in preflight.history.events] == [
+        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+        AttemptLifecycleEventKind.MANIFEST_PREFLIGHT_FAILED,
+        AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
+    ]
+
+
 @pytest.mark.parametrize(
     ("work_unit_keys", "owner_completeness_attestation"),
     [

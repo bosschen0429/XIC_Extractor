@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from xic_extractor.execution_runtime_finalization_models import (
+    CoordinatorTerminalRecord,
+    RuntimeArtifactDisposition,
+    RuntimeResourceCleanupOutcome,
+    RuntimeResourceOpenOutcome,
+)
 from xic_extractor.execution_runtime_observability import (
     REQUIRED_RUNTIME_METRIC_NAMES,
     RuntimeMetricAvailability,
@@ -17,7 +23,10 @@ def build_runtime_observability_ledger(
     *,
     work_unit_keys: tuple[str, ...],
     worker_keys: tuple[str, ...],
-    raw_open_count: int = 0,
+    raw_open_count: int | None = None,
+    logical_xic_request_count: int = 0,
+    resource_lifecycles: tuple[tuple[str, str, str], ...] = (),
+    artifact_dispositions: tuple[tuple[str, str], ...] = (),
 ) -> RuntimeObservabilityLedger:
     event_shapes: list[tuple[str, RuntimeObservationSubject, str]] = [
         ("attempt_queued", RuntimeObservationSubject.ATTEMPT, "attempt"),
@@ -48,12 +57,42 @@ def build_runtime_observability_ledger(
         ("worker_started", RuntimeObservationSubject.WORKER, worker_key)
         for worker_key in worker_keys
     )
+    for resource_key, open_kind, cleanup_kind in resource_lifecycles:
+        event_shapes.extend(
+            (
+                (
+                    "resource_reserved",
+                    RuntimeObservationSubject.RESOURCE,
+                    resource_key,
+                ),
+                (open_kind, RuntimeObservationSubject.RESOURCE, resource_key),
+                (cleanup_kind, RuntimeObservationSubject.RESOURCE, resource_key),
+            )
+        )
+    event_shapes.extend(
+        (
+            "artifact_registered",
+            RuntimeObservationSubject.ARTIFACT,
+            artifact_id,
+        )
+        for artifact_id, _disposition_kind in artifact_dispositions
+    )
     event_shapes.extend(
         (
             ("terminal_proposal", RuntimeObservationSubject.ATTEMPT, "attempt"),
             ("terminal_acknowledged", RuntimeObservationSubject.ATTEMPT, "attempt"),
-            ("terminal_outcome", RuntimeObservationSubject.ATTEMPT, "attempt"),
         )
+    )
+    event_shapes.extend(
+        (
+            disposition_kind,
+            RuntimeObservationSubject.ARTIFACT,
+            artifact_id,
+        )
+        for artifact_id, disposition_kind in artifact_dispositions
+    )
+    event_shapes.append(
+        ("terminal_outcome", RuntimeObservationSubject.ATTEMPT, "attempt")
     )
     events = tuple(
         RuntimeObservationEvent(
@@ -77,22 +116,37 @@ def build_runtime_observability_ledger(
     }
     last_names = {"coordinator_work_seconds", "attempt_wall_seconds"}
     max_names = {"worker_peak_rss_bytes", "process_tree_peak_rss_bytes"}
+    resolved_raw_open_count = (
+        sum(
+            open_kind == "resource_opened"
+            for _key, open_kind, _cleanup in resource_lifecycles
+        )
+        if raw_open_count is None
+        else raw_open_count
+    )
+
+    def offset(kind: str, subject_key: str = "attempt") -> int:
+        return next(
+            event.monotonic_offset_ns
+            for event in events
+            if event.kind == kind and event.subject_key == subject_key
+        )
+
     metrics: list[RuntimeMetricRecord] = []
     for name in REQUIRED_RUNTIME_METRIC_NAMES:
         scope_keys = (
             work_unit_keys
             if name == "stage_or_unit_elapsed_seconds"
-            else worker_keys
+            else worker_keys or (attempt.processing_attempt_id,)
             if name == "worker_peak_rss_bytes"
             else (attempt.processing_attempt_id,)
         )
-        scope = (
-            RuntimeMetricScope.WORK_UNIT
-            if name == "stage_or_unit_elapsed_seconds"
-            else RuntimeMetricScope.WORKER
-            if name == "worker_peak_rss_bytes"
-            else RuntimeMetricScope.ATTEMPT
-        )
+        if name == "stage_or_unit_elapsed_seconds":
+            scope = RuntimeMetricScope.WORK_UNIT
+        elif name == "worker_peak_rss_bytes" and worker_keys:
+            scope = RuntimeMetricScope.WORKER
+        else:
+            scope = RuntimeMetricScope.ATTEMPT
         unit = (
             "count"
             if name in count_names
@@ -108,6 +162,25 @@ def build_runtime_observability_ledger(
             else "sum"
         )
         for scope_key in scope_keys:
+            value: int | float = 0
+            if name == "raw_open_count":
+                value = resolved_raw_open_count
+            elif name == "logical_xic_request_count":
+                value = logical_xic_request_count
+            elif name == "coordinator_work_seconds":
+                value = (
+                    offset("terminal_proposal") - offset("attempt_started")
+                ) / 1_000_000_000
+            elif name == "attempt_wall_seconds":
+                value = (
+                    offset("terminal_outcome") - offset("attempt_queued")
+                ) / 1_000_000_000
+            elif name == "stage_or_unit_elapsed_seconds":
+                value = (
+                    offset("work_unit_settled", scope_key)
+                    - offset("work_unit_started", scope_key)
+                ) / 1_000_000_000
+            worker_rss_supported = name != "worker_peak_rss_bytes" or bool(worker_keys)
             metrics.append(
                 RuntimeMetricRecord(
                     name=name,
@@ -116,8 +189,13 @@ def build_runtime_observability_ledger(
                     unit=unit,
                     aggregation=aggregation,
                     measurement_source="package0-1-no-raw-fixture",
-                    availability=RuntimeMetricAvailability.MEASURED,
-                    value=raw_open_count if name == "raw_open_count" else 0,
+                    availability=(
+                        RuntimeMetricAvailability.MEASURED
+                        if worker_rss_supported
+                        else RuntimeMetricAvailability.UNSUPPORTED
+                    ),
+                    value=value if worker_rss_supported else None,
+                    reason=None if worker_rss_supported else "not_applicable_serial",
                 )
             )
     return RuntimeObservabilityLedger(
@@ -126,3 +204,67 @@ def build_runtime_observability_ledger(
         events=events,
         metrics=tuple(metrics),
     )
+
+
+def build_runtime_observability_ledger_from_coordinator(
+    coordinator: CoordinatorTerminalRecord,
+    *,
+    worker_keys: tuple[str, ...] | None = None,
+    logical_xic_request_count: int = 0,
+) -> RuntimeObservabilityLedger:
+    """Build a no-RAW test ledger from the coordinator's terminal facts."""
+
+    state = coordinator.state
+    resolved_worker_keys = (
+        tuple(
+            dict.fromkeys(
+                record.reservation.worker_key for record in state.resources
+            )
+        )
+        if worker_keys is None
+        else worker_keys
+    )
+    resource_lifecycles = tuple(
+        (
+            record.reservation.resource_key,
+            _resource_open_event_kind(record.open_outcome),
+            _resource_cleanup_event_kind(record.cleanup_outcome),
+        )
+        for record in state.resources
+    )
+    artifact_dispositions = tuple(
+        (
+            record.artifact.evidence_artifact_id,
+            (
+                "artifact_offered_to_owner"
+                if record.proposed_disposition
+                is RuntimeArtifactDisposition.OFFERED_TO_OWNER
+                else "artifact_quarantined_diagnostic"
+            ),
+        )
+        for record in state.artifacts
+    )
+    return build_runtime_observability_ledger(
+        state.runtime.manifest.attempt,
+        work_unit_keys=state.runtime.manifest.work_unit_keys,
+        worker_keys=resolved_worker_keys,
+        logical_xic_request_count=logical_xic_request_count,
+        resource_lifecycles=resource_lifecycles,
+        artifact_dispositions=artifact_dispositions,
+    )
+
+
+def _resource_open_event_kind(
+    outcome: RuntimeResourceOpenOutcome | None,
+) -> str:
+    if outcome is None:
+        raise AssertionError("coordinator resource must have an open outcome")
+    return f"resource_{outcome.value}"
+
+
+def _resource_cleanup_event_kind(
+    outcome: RuntimeResourceCleanupOutcome | None,
+) -> str:
+    if outcome is None:
+        raise AssertionError("coordinator resource must have a cleanup outcome")
+    return f"resource_cleanup_{outcome.value}"
