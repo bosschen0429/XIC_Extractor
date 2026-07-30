@@ -11,7 +11,9 @@ console-wrapper, or frozen-application behavior.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
+import importlib
 import json
 import subprocess
 import sys
@@ -40,6 +42,171 @@ CENSUS_OWNER_REFS: Mapping[str, str] = {
     "package_discovery_patterns": LAYOUT_OWNER,
 }
 
+RUNTIME_CONSTRUCTION_OWNER_PATHS = frozenset(
+    {
+        "xic_extractor/execution_runtime.py",
+        "xic_extractor/execution_runtime_finalization.py",
+        "xic_extractor/execution_runtime_finalization_models.py",
+        "xic_extractor/execution_runtime_observability.py",
+        "xic_extractor/execution_runtime_owner.py",
+    }
+)
+RUNTIME_CONSUMER_PATHS = frozenset(
+    {
+        "xic_extractor/alignment/runtime_adapter.py",
+        "xic_extractor/extraction/targeted_runtime_adapter.py",
+        "xic_extractor/extraction/targeted_service.py",
+    }
+)
+RUNTIME_AUTHORITY_MODULES = frozenset(
+    {
+        "xic_extractor.execution_runtime",
+        "xic_extractor.execution_runtime_finalization",
+        "xic_extractor.execution_runtime_finalization_models",
+        "xic_extractor.execution_runtime_observability",
+        "xic_extractor.execution_runtime_owner",
+    }
+)
+RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
+    "xic_extractor/execution_runtime.py": frozenset(
+        {
+            "AttemptLifecycleContractError",
+            "AttemptLifecycleEventKind",
+            "AttemptTerminalOutcome",
+            "WorkUnitFailureCategory",
+            "WorkUnitFailureDetail",
+            "WorkUnitSettlementIntegrityFailureKind",
+            "WorkUnitTerminalOutcome",
+        }
+    ),
+    "xic_extractor/execution_runtime_finalization.py": frozenset(
+        {
+            "RuntimeArtifactDisposition",
+            "RuntimeFinalizationContractError",
+            "RuntimeLifecycleEventKind",
+            "RuntimeLifecycleFailureKind",
+            "RuntimeResourceCleanupOutcome",
+            "RuntimeResourceKind",
+            "RuntimeResourceOpenOutcome",
+            "RuntimeResourceReservation",
+            "SupervisorFinalizationEventKind",
+            "canonical_coordinator_terminal_record_bytes",
+        }
+    ),
+    "xic_extractor/execution_runtime_finalization_models.py": frozenset(
+        {
+            "RuntimeArtifactDisposition",
+            "RuntimeFinalizationContractError",
+            "RuntimeLifecycleEventKind",
+            "RuntimeLifecycleFailureKind",
+            "RuntimeResourceCleanupOutcome",
+            "RuntimeResourceKind",
+            "RuntimeResourceOpenOutcome",
+            "SupervisorFinalizationEventKind",
+        }
+    ),
+    "xic_extractor/execution_runtime_observability.py": frozenset(
+        {
+            "REQUIRED_RUNTIME_METRIC_NAMES",
+            "RuntimeMetricAvailability",
+            "RuntimeMetricScope",
+            "RuntimeObservabilityContractError",
+            "RuntimeObservationSubject",
+            "canonical_runtime_observability_ledger_bytes",
+            "validate_runtime_acquisition_metrics",
+        }
+    ),
+}
+RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
+    "xic_extractor.execution_runtime": RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
+        "xic_extractor/execution_runtime.py"
+    ],
+    "xic_extractor.execution_runtime_finalization": (
+        RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
+            "xic_extractor/execution_runtime_finalization.py"
+        ]
+    ),
+    "xic_extractor.execution_runtime_finalization_models": (
+        RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
+            "xic_extractor/execution_runtime_finalization_models.py"
+        ]
+    ),
+    "xic_extractor.execution_runtime_observability": (
+        RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[
+            "xic_extractor/execution_runtime_observability.py"
+        ]
+    ),
+    "xic_extractor.execution_runtime_owner": frozenset(
+        {
+            "RuntimeAcquisitionReceipt",
+            "RuntimeArtifactIoSample",
+            "RuntimeArtifactRegistrationReceipt",
+            "RuntimeProcessTreePeakRssSample",
+            "RuntimeResourceSettlementReceipt",
+            "RuntimeTelemetrySamples",
+            "RuntimeWorkerBatchReceipt",
+            "RuntimeWorkerPeakRssSample",
+            "accept_runtime_finalization_receipt",
+            "execute_runtime_attempt",
+            "mint_work_unit_settlement",
+            "runtime_observation_event_count",
+            "runtime_started_worker_keys",
+            "start_runtime_attempt",
+        }
+    ),
+}
+RUNTIME_CALLER_PROJECTION_PARAMETERS = frozenset(
+    {
+        "adapter_chromatogram_call_count",
+        "coordinator_record",
+        "finalization_record",
+        "logical_xic_request_count",
+        "observability_ledger",
+        "raw_open_count",
+        "trace_point_count",
+        "xic_batch_count",
+    }
+)
+RUNTIME_CALLER_PROJECTION_TYPES = frozenset(
+    {
+        "CoordinatorTerminalRecord",
+        "RuntimeObservabilityLedger",
+        "SupervisorFinalizationRecord",
+    }
+)
+RUNTIME_OWNER_METRIC_NAMES = frozenset(
+    {
+        "adapter_chromatogram_call_count",
+        "artifact_read_bytes",
+        "artifact_read_count",
+        "artifact_write_bytes",
+        "artifact_write_count",
+        "attempt_wall_seconds",
+        "coordinator_work_seconds",
+        "logical_xic_request_count",
+        "process_tree_peak_rss_bytes",
+        "raw_open_count",
+        "stage_or_unit_elapsed_seconds",
+        "trace_point_count",
+        "worker_peak_rss_bytes",
+        "xic_batch_count",
+    }
+)
+RUNTIME_STATE_MODEL_TEST_OWNER_PATHS = frozenset(
+    {
+        "tests/runtime_observability_fixtures.py",
+        "tests/test_execution_runtime_events.py",
+        "tests/test_execution_runtime_finalization.py",
+        "tests/test_execution_runtime_marker.py",
+        "tests/test_execution_runtime_observability.py",
+        "tests/test_execution_runtime_owner.py",
+    }
+)
+RUNTIME_STATE_MODEL_TEST_OWNER_MODULES = frozenset(
+    path.removesuffix(".py").replace("/", ".")
+    for path in RUNTIME_STATE_MODEL_TEST_OWNER_PATHS
+)
+
 
 @dataclass(frozen=True)
 class StaticImportReference:
@@ -47,6 +214,12 @@ class StaticImportReference:
     source_module: str
     imported_module: str
     line: int
+
+
+@dataclass(frozen=True)
+class FunctionScopeBindings:
+    local_names: frozenset[str]
+    global_names: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -105,7 +278,7 @@ def validate_architecture_census(
     repo_root: Path,
     census: ArchitectureCensus,
 ) -> list[str]:
-    """Validate observation integrity without rechecking owner semantics."""
+    """Validate census integrity and executable architecture ownership gates."""
     problems: list[str] = []
     tracked_paths = repository_tracked_paths(repo_root)
     for section, owner_ref in CENSUS_OWNER_REFS.items():
@@ -118,7 +291,231 @@ def validate_architecture_census(
         owner = _repo_reference_path(repo_root, owner_ref)
         if owner is None or not owner.is_file():
             problems.append(f"architecture census owner does not resolve: {owner_ref}")
+    problems.extend(validate_runtime_boundary_authority(repo_root))
     return problems
+
+
+def validate_runtime_boundary_authority(
+    repo_root: Path,
+    python_paths: Sequence[Path] | None = None,
+) -> list[str]:
+    """Reject runtime construction, projection, export, and lifecycle bypasses."""
+
+    paths = (
+        repository_python_paths(repo_root)
+        if python_paths is None
+        else tuple(python_paths)
+    )
+    problems: list[str] = []
+    for relative_path in paths:
+        path_key = relative_path.as_posix()
+        source_path = repo_root / relative_path
+        try:
+            tree = ast.parse(source_path.read_text(encoding="utf-8"), path_key)
+        except (OSError, SyntaxError) as exc:
+            problems.append(f"{path_key}: runtime boundary AST scan failed: {exc}")
+            continue
+        parents = {
+            child: parent
+            for parent in ast.walk(tree)
+            for child in ast.iter_child_nodes(parent)
+        }
+        aliases = _runtime_symbol_aliases(
+            tree,
+            source_path=relative_path,
+            parents=parents,
+        )
+        scope_bindings = _function_scope_bindings(tree)
+        annotation_nodes = _annotation_nodes(tree)
+        is_runtime_owner = path_key in RUNTIME_CONSTRUCTION_OWNER_PATHS
+        is_test = path_key.startswith("tests/")
+        is_state_model_test_owner = path_key in RUNTIME_STATE_MODEL_TEST_OWNER_PATHS
+        is_runtime_consumer = (
+            not is_test
+            and (
+                path_key in RUNTIME_CONSUMER_PATHS
+                or _imports_runtime_owner_facade(
+                    tree,
+                    source_path=relative_path,
+                )
+            )
+            and not is_runtime_owner
+        )
+        problems.extend(
+            _runtime_import_boundary_problems(
+                tree,
+                path_key=path_key,
+                source_path=relative_path,
+                parents=parents,
+                is_runtime_owner=is_runtime_owner,
+                is_test=is_test,
+                is_state_model_test_owner=is_state_model_test_owner,
+            )
+        )
+        if path_key in RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS:
+            allowed_exports = RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[path_key]
+            observed_exports = _exported_symbol_names(tree)
+            if observed_exports is None:
+                problems.append(
+                    _runtime_boundary_problem(
+                        path_key,
+                        1,
+                        (
+                            "low-level runtime module must define exactly one "
+                            "literal, immutable __all__"
+                        ),
+                    )
+                )
+            else:
+                for symbol in sorted(observed_exports - allowed_exports):
+                    problems.append(
+                        _runtime_boundary_problem(
+                            path_key,
+                            1,
+                            f"low-level runtime module publicly exports {symbol}",
+                        )
+                    )
+                missing_exports = allowed_exports - observed_exports
+                if missing_exports:
+                    problems.append(
+                        _runtime_boundary_problem(
+                            path_key,
+                            1,
+                            (
+                                "low-level runtime module __all__ is not the exact "
+                                f"allowlist; missing={sorted(missing_exports)!r}"
+                            ),
+                        )
+                    )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                reference = _runtime_symbol_reference(
+                    node.func,
+                    aliases,
+                    parents=parents,
+                    scope_bindings=scope_bindings,
+                )
+                call_symbol = _runtime_symbol_leaf(reference)
+                if (
+                    not is_runtime_owner
+                    and not is_state_model_test_owner
+                    and _is_runtime_authority_reference(reference)
+                    and not _is_allowed_runtime_external_call(reference, call_symbol)
+                ):
+                    problems.append(
+                        _runtime_boundary_problem(
+                            path_key,
+                            node.lineno,
+                            (
+                                f"{call_symbol} is owner-internal; use "
+                                "execute_runtime_attempt or a typed public fact API"
+                            ),
+                        )
+                    )
+            if (
+                not is_runtime_owner
+                and not is_state_model_test_owner
+                and isinstance(node, (ast.Name, ast.Attribute))
+            ):
+                reference = _runtime_symbol_reference(
+                    node,
+                    aliases,
+                    parents=parents,
+                    scope_bindings=scope_bindings,
+                )
+                referenced_symbol = _runtime_symbol_leaf(reference)
+                if (
+                    _is_runtime_authority_reference(reference)
+                    and not _is_allowed_runtime_external_call(
+                        reference,
+                        referenced_symbol,
+                    )
+                    and node not in annotation_nodes
+                    and _runtime_reference_escapes_as_value(
+                        node,
+                        parents=parents,
+                        aliases=aliases,
+                        scope_bindings=scope_bindings,
+                    )
+                ):
+                    problems.append(
+                        _runtime_boundary_problem(
+                            path_key,
+                            node.lineno,
+                            (
+                                f"{referenced_symbol} is owner-internal and may "
+                                "not escape as a higher-order value"
+                            ),
+                        )
+                    )
+            if is_runtime_consumer and isinstance(
+                node, (ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                for argument in _function_arguments(node):
+                    if argument.arg in (
+                        RUNTIME_CALLER_PROJECTION_PARAMETERS
+                        | RUNTIME_OWNER_METRIC_NAMES
+                    ):
+                        problems.append(
+                            _runtime_boundary_problem(
+                                path_key,
+                                argument.lineno,
+                                (
+                                    f"caller-authored projection parameter "
+                                    f"{argument.arg} is forbidden"
+                                ),
+                            )
+                        )
+                    projection_type = _runtime_projection_type_in_annotation(
+                        argument.annotation,
+                        aliases=aliases,
+                        parents=parents,
+                        scope_bindings=scope_bindings,
+                    )
+                    if projection_type is not None:
+                        problems.append(
+                            _runtime_boundary_problem(
+                                path_key,
+                                argument.lineno,
+                                (
+                                    "caller input may not carry owner-derived "
+                                    f"projection type {projection_type}"
+                                ),
+                            )
+                        )
+            if (
+                is_runtime_consumer
+                and isinstance(node, ast.ClassDef)
+                and _is_dataclass_definition(
+                    node,
+                    aliases=aliases,
+                    parents=parents,
+                    scope_bindings=scope_bindings,
+                )
+            ):
+                for statement in node.body:
+                    if not isinstance(statement, ast.AnnAssign):
+                        continue
+                    projection_type = _runtime_projection_type_in_annotation(
+                        statement.annotation,
+                        aliases=aliases,
+                        parents=parents,
+                        scope_bindings=scope_bindings,
+                    )
+                    if projection_type is not None:
+                        problems.append(
+                            _runtime_boundary_problem(
+                                path_key,
+                                statement.lineno,
+                                (
+                                    "generated dataclass input may not carry "
+                                    f"owner-derived projection type {projection_type}"
+                                ),
+                            )
+                        )
+    if python_paths is None and repo_root.resolve() == ROOT.resolve():
+        problems.extend(_runtime_export_invariant_problems())
+    return sorted(set(problems))
 
 
 def repository_python_paths(repo_root: Path = ROOT) -> tuple[Path, ...]:
@@ -142,6 +539,46 @@ def repository_python_paths(repo_root: Path = ROOT) -> tuple[Path, ...]:
         Path(line) for line in completed.stdout.splitlines() if line.strip()
     )
     return tuple(path for path in candidates if (repo_root / path).is_file())
+
+
+def _runtime_export_invariant_problems() -> list[str]:
+    problems: list[str] = []
+    for path_key, allowed_exports in RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS.items():
+        module_name = module_name_from_path(Path(path_key))
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as exc:  # pragma: no cover - diagnostic import failure
+            problems.append(
+                _runtime_boundary_problem(
+                    path_key,
+                    1,
+                    f"low-level runtime module import failed: {exc}",
+                )
+            )
+            continue
+        observed = getattr(module, "__all__", None)
+        if not isinstance(observed, tuple) or observed != tuple(
+            item for item in observed if isinstance(item, str)
+        ):
+            problems.append(
+                _runtime_boundary_problem(
+                    path_key,
+                    1,
+                    "runtime __all__ must evaluate to an immutable tuple of names",
+                )
+            )
+            continue
+        if frozenset(observed) != allowed_exports or len(observed) != len(
+            allowed_exports
+        ):
+            problems.append(
+                _runtime_boundary_problem(
+                    path_key,
+                    1,
+                    "runtime __all__ does not evaluate to the exact allowlist",
+                )
+            )
+    return problems
 
 
 def repository_tracked_paths(repo_root: Path = ROOT) -> frozenset[str]:
@@ -220,6 +657,181 @@ def _repo_reference_path(repo_root: Path, value: str) -> Path | None:
     return resolved if resolved.is_relative_to(repo_root.resolve()) else None
 
 
+def _runtime_import_boundary_problems(
+    tree: ast.AST,
+    *,
+    path_key: str,
+    source_path: Path,
+    parents: Mapping[ast.AST, ast.AST],
+    is_runtime_owner: bool,
+    is_test: bool,
+    is_state_model_test_owner: bool,
+) -> list[str]:
+    problems: list[str] = []
+    source_package = _source_package_from_path(source_path)
+    for node in ast.walk(tree):
+        imported_modules: list[str] = []
+        import_line: int | None = None
+        if isinstance(node, ast.ImportFrom):
+            import_line = node.lineno
+            base_module = _resolve_import_from_module(
+                source_package=source_package,
+                imported_module=node.module,
+                level=node.level,
+            )
+            if base_module is not None:
+                imported_modules.append(base_module)
+                imported_modules.extend(
+                    f"{base_module}.{imported.name}" for imported in node.names
+                )
+            if (
+                base_module in RUNTIME_AUTHORITY_MODULES
+                and not is_runtime_owner
+                and not is_state_model_test_owner
+            ):
+                if _has_lexical_scope_ancestor(node, parents=parents):
+                    problems.append(
+                        _runtime_boundary_problem(
+                            path_key,
+                            node.lineno,
+                            (
+                                "function-local runtime authority import is "
+                                "forbidden; import public facts at module scope"
+                            ),
+                        )
+                    )
+                for imported in node.names:
+                    reference = f"{base_module}.{imported.name}"
+                    local_name = imported.asname or imported.name
+                    has_runtime_use = any(
+                        isinstance(candidate, ast.Name)
+                        and isinstance(candidate.ctx, ast.Load)
+                        and candidate.id == local_name
+                        for candidate in ast.walk(tree)
+                    )
+                    if (
+                        imported.name == "*"
+                        or imported.name.startswith("_")
+                        or (
+                            not _is_allowed_runtime_external_call(
+                                reference,
+                                imported.name,
+                            )
+                            and not has_runtime_use
+                        )
+                    ):
+                        problems.append(
+                            _runtime_boundary_problem(
+                                path_key,
+                                node.lineno,
+                                (
+                                    f"{imported.name} may not be imported or "
+                                    "re-exported as an owner-internal bridge"
+                                ),
+                            )
+                        )
+        elif isinstance(node, ast.Import):
+            import_line = node.lineno
+            imported_modules.extend(imported.name for imported in node.names)
+
+        if (
+            import_line is not None
+            and not is_state_model_test_owner
+            and any(
+                module in RUNTIME_STATE_MODEL_TEST_OWNER_MODULES
+                for module in imported_modules
+            )
+        ):
+            caller_kind = "shared test" if is_test else "production caller"
+            problems.append(
+                _runtime_boundary_problem(
+                    path_key,
+                    import_line,
+                    (
+                        f"{caller_kind} may not import a runtime state-model "
+                        "test owner; supply typed receipts or telemetry facts"
+                    ),
+                )
+            )
+    return problems
+
+
+def _runtime_projection_type_in_annotation(
+    annotation: ast.expr | None,
+    *,
+    aliases: Mapping[str, str],
+    parents: Mapping[ast.AST, ast.AST],
+    scope_bindings: Mapping[ast.AST, FunctionScopeBindings],
+) -> str | None:
+    if annotation is None:
+        return None
+    roots = [annotation]
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        try:
+            parsed_annotation = ast.parse(annotation.value, mode="eval")
+        except SyntaxError:
+            parsed_annotation = None
+        if isinstance(parsed_annotation, ast.Expression):
+            roots.append(parsed_annotation.body)
+    for root in roots:
+        for node in ast.walk(root):
+            if not isinstance(node, (ast.Name, ast.Attribute)):
+                continue
+            reference = _runtime_symbol_reference(
+                node,
+                aliases,
+                parents=parents,
+                scope_bindings=scope_bindings,
+            )
+            if reference is None or reference.startswith("local:"):
+                dotted_reference = _dotted_expression_name(node)
+                if dotted_reference is not None and any(
+                    dotted_reference.startswith(f"{module}.")
+                    for module in RUNTIME_AUTHORITY_MODULES
+                ):
+                    reference = dotted_reference
+            symbol = _runtime_symbol_leaf(reference)
+            if (
+                symbol in RUNTIME_CALLER_PROJECTION_TYPES
+                and _is_runtime_authority_reference(reference)
+            ):
+                return symbol
+    return None
+
+
+def _is_dataclass_definition(
+    node: ast.ClassDef,
+    *,
+    aliases: Mapping[str, str],
+    parents: Mapping[ast.AST, ast.AST],
+    scope_bindings: Mapping[ast.AST, FunctionScopeBindings],
+) -> bool:
+    for decorator in node.decorator_list:
+        candidate = decorator.func if isinstance(decorator, ast.Call) else decorator
+        if not isinstance(candidate, (ast.Name, ast.Attribute)):
+            continue
+        if (
+            _runtime_symbol_reference(
+                candidate,
+                aliases,
+                parents=parents,
+                scope_bindings=scope_bindings,
+            )
+            == "dataclasses.dataclass"
+        ):
+            return True
+    return False
+
+
+def _dotted_expression_name(node: ast.expr) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _dotted_expression_name(node.value)
+        return None if prefix is None else f"{prefix}.{node.attr}"
+    return None
+
+
 def _import_sort_key(
     reference: StaticImportReference,
 ) -> tuple[str, int, str]:
@@ -229,6 +841,412 @@ def _import_sort_key(
 def _read_toml(path: Path) -> dict[str, Any]:
     with path.open("rb") as handle:
         return tomllib.load(handle)
+
+
+def _runtime_symbol_aliases(
+    tree: ast.AST,
+    *,
+    source_path: Path,
+    parents: Mapping[ast.AST, ast.AST],
+) -> dict[str, str]:
+    aliases: dict[str, str] = {}
+    source_package = _source_package_from_path(source_path)
+    for node in ast.walk(tree):
+        if _has_lexical_scope_ancestor(node, parents=parents):
+            continue
+        if isinstance(node, ast.ImportFrom):
+            imported_module = _resolve_import_from_module(
+                source_package=source_package,
+                imported_module=node.module,
+                level=node.level,
+            )
+            if imported_module is None:
+                continue
+            for imported in node.names:
+                aliases[imported.asname or imported.name] = (
+                    f"{imported_module}.{imported.name}"
+                )
+        elif isinstance(node, ast.Import):
+            for imported in node.names:
+                local_name = imported.asname or imported.name.split(".")[0]
+                aliases[local_name] = imported.name if imported.asname else local_name
+    return aliases
+
+
+def _has_lexical_scope_ancestor(
+    node: ast.AST,
+    *,
+    parents: Mapping[ast.AST, ast.AST],
+) -> bool:
+    current = node
+    while (parent := parents.get(current)) is not None:
+        if isinstance(
+            parent,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef),
+        ):
+            return True
+        current = parent
+    return False
+
+
+class _LocalBindingCollector(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.local_names: set[str] = set()
+        self.global_names: set[str] = set()
+        self.nonlocal_names: set[str] = set()
+
+    def visit_Name(self, node: ast.Name) -> None:  # noqa: N802
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.local_names.add(node.id)
+
+    def visit_Global(self, node: ast.Global) -> None:  # noqa: N802
+        self.global_names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:  # noqa: N802
+        self.nonlocal_names.update(node.names)
+
+    def visit_Import(self, node: ast.Import) -> None:  # noqa: N802
+        self.local_names.update(
+            imported.asname or imported.name.split(".")[0] for imported in node.names
+        )
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
+        self.local_names.update(
+            imported.asname or imported.name for imported in node.names
+        )
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+        self.local_names.add(node.name)
+
+    def visit_AsyncFunctionDef(  # noqa: N802
+        self,
+        node: ast.AsyncFunctionDef,
+    ) -> None:
+        self.local_names.add(node.name)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+        self.local_names.add(node.name)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:  # noqa: N802
+        del node
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:  # noqa: N802
+        del node
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:  # noqa: N802
+        del node
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:  # noqa: N802
+        del node
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:  # noqa: N802
+        del node
+
+
+def _function_scope_bindings(
+    tree: ast.AST,
+) -> Mapping[ast.AST, FunctionScopeBindings]:
+    result: dict[ast.AST, FunctionScopeBindings] = {}
+    for scope in ast.walk(tree):
+        if not isinstance(
+            scope,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda),
+        ):
+            continue
+        collector = _LocalBindingCollector()
+        arguments = (
+            _function_arguments(scope)
+            if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef))
+            else (
+                *scope.args.posonlyargs,
+                *scope.args.args,
+                *scope.args.kwonlyargs,
+                *(item for item in (scope.args.vararg, scope.args.kwarg) if item),
+            )
+        )
+        collector.local_names.update(argument.arg for argument in arguments)
+        body = scope.body if isinstance(scope.body, list) else (scope.body,)
+        for statement in body:
+            collector.visit(statement)
+        collector.local_names.difference_update(
+            collector.global_names | collector.nonlocal_names
+        )
+        result[scope] = FunctionScopeBindings(
+            local_names=frozenset(collector.local_names),
+            global_names=frozenset(collector.global_names),
+        )
+    return result
+
+
+def _name_is_lexically_local(
+    node: ast.AST,
+    *,
+    name: str,
+    parents: Mapping[ast.AST, ast.AST],
+    scope_bindings: Mapping[ast.AST, FunctionScopeBindings],
+) -> bool:
+    current = node
+    while (parent := parents.get(current)) is not None:
+        if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            in_runtime_scope = (
+                current in parent.body
+                if isinstance(parent.body, list)
+                else current is parent.body
+            )
+            if in_runtime_scope:
+                bindings = scope_bindings[parent]
+                if name in bindings.global_names:
+                    return False
+                if name in bindings.local_names:
+                    return True
+        current = parent
+    return False
+
+
+def _source_package_from_path(source_path: Path) -> str:
+    source_module = module_name_from_path(source_path)
+    return (
+        source_module
+        if source_path.name == "__init__.py"
+        else source_module.rpartition(".")[0]
+    )
+
+
+def _resolve_import_from_module(
+    *,
+    source_package: str,
+    imported_module: str | None,
+    level: int,
+) -> str | None:
+    if level == 0:
+        return imported_module
+    package_parts = source_package.split(".") if source_package else []
+    parent_count = level - 1
+    if parent_count > len(package_parts):
+        return None
+    prefix = package_parts[: len(package_parts) - parent_count]
+    suffix = imported_module.split(".") if imported_module else []
+    resolved = ".".join((*prefix, *suffix))
+    return resolved or None
+
+
+def _imports_runtime_owner_facade(
+    tree: ast.AST,
+    *,
+    source_path: Path,
+) -> bool:
+    owner_module = "xic_extractor.execution_runtime_owner"
+    source_package = _source_package_from_path(source_path)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            imported_module = _resolve_import_from_module(
+                source_package=source_package,
+                imported_module=node.module,
+                level=node.level,
+            )
+            if imported_module == owner_module:
+                return True
+            if imported_module is not None and any(
+                f"{imported_module}.{imported.name}" == owner_module
+                for imported in node.names
+            ):
+                return True
+        if isinstance(node, ast.Import) and any(
+            imported.name == owner_module for imported in node.names
+        ):
+            return True
+    return False
+
+
+def _runtime_symbol_reference(
+    node: ast.expr,
+    aliases: Mapping[str, str],
+    *,
+    parents: Mapping[ast.AST, ast.AST],
+    scope_bindings: Mapping[ast.AST, FunctionScopeBindings],
+) -> str | None:
+    if isinstance(node, ast.Name):
+        if _name_is_lexically_local(
+            node,
+            name=node.id,
+            parents=parents,
+            scope_bindings=scope_bindings,
+        ):
+            return f"local:{node.id}"
+        return aliases.get(node.id, f"local:{node.id}")
+    if isinstance(node, ast.Attribute):
+        parent = _runtime_symbol_reference(
+            node.value,
+            aliases,
+            parents=parents,
+            scope_bindings=scope_bindings,
+        )
+        if parent is None or parent.startswith("local:"):
+            return None
+        return f"{parent}.{node.attr}"
+    return None
+
+
+def _runtime_symbol_leaf(reference: str | None) -> str | None:
+    return None if reference is None else reference.rsplit(".", 1)[-1]
+
+
+def _is_runtime_authority_reference(reference: str | None) -> bool:
+    if reference is None or reference.startswith("local:"):
+        return False
+    module = reference.rsplit(".", 1)[0]
+    return module in RUNTIME_AUTHORITY_MODULES
+
+
+def _is_allowed_runtime_external_call(
+    reference: str | None,
+    symbol: str | None,
+) -> bool:
+    if reference is None or symbol is None or reference.startswith("local:"):
+        return False
+    module = reference.rsplit(".", 1)[0]
+    return symbol in RUNTIME_EXTERNAL_CALLS_BY_MODULE.get(module, frozenset())
+
+
+def _runtime_reference_escapes_as_value(
+    node: ast.expr,
+    *,
+    parents: Mapping[ast.AST, ast.AST],
+    aliases: Mapping[str, str],
+    scope_bindings: Mapping[ast.AST, FunctionScopeBindings],
+) -> bool:
+    current: ast.AST = node
+    while (parent := parents.get(current)) is not None:
+        if isinstance(parent, ast.Call):
+            if parent.func is current:
+                return False
+            callee = (
+                parent.func.id
+                if isinstance(parent.func, ast.Name)
+                else _runtime_symbol_leaf(
+                    _runtime_symbol_reference(
+                        parent.func,
+                        aliases,
+                        parents=parents,
+                        scope_bindings=scope_bindings,
+                    )
+                )
+            )
+            return callee not in {"isinstance", "issubclass"}
+        if isinstance(parent, (ast.Assign, ast.AnnAssign)):
+            return parent.value is current
+        if isinstance(parent, (ast.Return, ast.Yield, ast.YieldFrom)):
+            return True
+        if isinstance(
+            parent,
+            (ast.Dict, ast.List, ast.Set, ast.Starred, ast.Tuple, ast.keyword),
+        ):
+            current = parent
+            continue
+        # Any other expression context is an escape, including function defaults,
+        # conditional aliases, boolean aliases, decorators, and annotations. Keep
+        # the gate fail-closed: the only exemptions above are a direct call and
+        # isinstance/issubclass inspection.
+        return True
+    return True
+
+
+def _annotation_nodes(tree: ast.AST) -> frozenset[ast.AST]:
+    roots: list[ast.expr] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and node.annotation is not None:
+            roots.append(node.annotation)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.returns is not None:
+                roots.append(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            roots.append(node.annotation)
+    return frozenset(descendant for root in roots for descendant in ast.walk(root))
+
+
+def _exported_symbol_names(tree: ast.AST) -> frozenset[str] | None:
+    assignments: list[tuple[ast.Assign | ast.AnnAssign, ast.expr]] = []
+    for node in getattr(tree, "body", ()):
+        if isinstance(node, ast.Assign):
+            if any(_is_dunder_all_target(target) for target in node.targets):
+                assignments.append((node, node.value))
+        elif isinstance(node, ast.AnnAssign) and _is_dunder_all_target(node.target):
+            if node.value is None:
+                return None
+            assignments.append((node, node.value))
+    if len(assignments) != 1:
+        return None
+    assignment, value_node = assignments[0]
+    if isinstance(assignment, ast.Assign) and (
+        len(assignment.targets) != 1 or not _is_dunder_all_target(assignment.targets[0])
+    ):
+        return None
+    if _mutates_dunder_all(tree, allowed_assignment=assignment):
+        return None
+    try:
+        value = ast.literal_eval(value_node)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(value, tuple) or any(not isinstance(item, str) for item in value):
+        return None
+    if len(value) != len(set(value)):
+        return None
+    return frozenset(value)
+
+
+def _is_dunder_all_target(node: ast.AST) -> bool:
+    return isinstance(node, ast.Name) and node.id == "__all__"
+
+
+def _mutates_dunder_all(
+    tree: ast.AST,
+    *,
+    allowed_assignment: ast.Assign | ast.AnnAssign,
+) -> bool:
+    allowed_target = (
+        allowed_assignment.targets[0]
+        if isinstance(allowed_assignment, ast.Assign)
+        else allowed_assignment.target
+    )
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and node.value == "__all__":
+            return True
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "__all__"
+            and node is not allowed_target
+        ):
+            return True
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if node.name == "__all__":
+                return True
+        if isinstance(node, ast.alias):
+            bound_name = node.asname or node.name.split(".")[0]
+            if bound_name == "__all__":
+                return True
+        if isinstance(node, ast.ExceptHandler) and node.name == "__all__":
+            return True
+        if isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name == "__all__":
+            return True
+        if isinstance(node, ast.MatchMapping) and node.rest == "__all__":
+            return True
+    return False
+
+
+def _function_arguments(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.arg, ...]:
+    positional = (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+    optional = tuple(
+        argument
+        for argument in (node.args.vararg, node.args.kwarg)
+        if argument is not None
+    )
+    return (*positional, *optional)
+
+
+def _runtime_boundary_problem(path: str, line: int, message: str) -> str:
+    return f"{path}:{line}: runtime boundary authority: {message}"
 
 
 def _source_identity(

@@ -180,7 +180,7 @@ claiming a durable queue:
    dispositions, failures, coordinator metrics ending at terminal proposal,
    and the coordinator event-ledger digest through that proposal;
 3. the owner-path supervisor fsyncs those exact coordinator bytes and the exact
-   caller-supplied validated observability-ledger bytes inside the
+   runtime-owner-derived observability-ledger bytes inside the
    self-contained `execution_runtime_recovery_marker_v3` payload, then
    atomically replaces the launch marker with one immutable
    `SupervisorFinalizationRecord` containing the coordinator-record digest and
@@ -465,14 +465,23 @@ committed outcome. The Package 0 runtime owner now consumes owner-supplied
 manifest content into an attempt-bound immutable `RequiredWorkManifest` with
 closed unique opaque work-unit keys. Missing completeness attestation, duplicate
 or blank keys, and attempt substitution drive that existing queued-to-failed
-proposal instead of relying on a caller to declare failure manually. An accepted
-manifest now starts one pure `AttemptRuntime`; terminal work settlements are
+proposal instead of relying on a caller to declare failure manually. That
+preflight-terminal state now continues through the same owner finalization
+receipt and v3 recovery marker with empty work/resource/artifact registries,
+measured-zero mechanical counts, and `unsupported:not_started_preflight_failure`
+for work- and worker-derived metrics. Targeted and Alignment enter through the
+same atomic owner operation; it does not invoke their worker provider when
+preflight has already terminalized, so the public consumer path cannot allocate
+or dispatch work for a rejected manifest. Any reservation plans passed with that
+terminal state remain unconsumed and the final receipt retains empty registries.
+An accepted manifest starts one pure
+`AttemptRuntime`; terminal work settlements are
 accepted exactly once per declared opaque key, identical replay is idempotent,
 and conflicting or undeclared settlement records one immutable integrity
 failure that prevents attempt success. Failed work also prevents success.
 Failed and cancelled settlements require a typed `WorkUnitFailureDetail`
 containing category, stage, source reference, and readable message, while a
-successful settlement rejects failure detail. The canonical coordinator v2
+successful settlement rejects failure detail. The canonical coordinator v3
 bytes retain that exact detail. A successful settlement accepts only an
 owner-minted `EvidenceArtifactRef` bound to the same processing request and
 attempt; an opaque string is no longer sufficient.
@@ -486,22 +495,24 @@ work key and owner-payload identity to the underlying `EvidenceArtifactRef`, so
 an artifact minted for one work key cannot settle another. A pickleable
 worker-result envelope carries that producer-owned reference across a true
 spawned process, and
-`TargetedApplicationService.execute_runtime` consumes reordered envelopes and
-settles the existing runtime in manifest order. This boundary is
+the full-lifecycle Targeted service consumes reordered envelopes through the
+shared runtime aggregate and settles the existing runtime in manifest order.
+There is no public settlement-only service or adapter bypass. This boundary is
 `wired_no_raw` and remains `diagnostic_only`; default legacy execution and all
 product outputs are unchanged.
 
-The next bounded Targeted lifecycle seam is also executable no-RAW. The focused
-`execution_runtime_finalization` owner companions reserve resources before the
-process runner, accept exactly one open and cleanup outcome per reservation,
-close worker loss conservatively, register current-attempt immutable artifacts,
-and freeze a content-bound `CoordinatorTerminalRecord`. The supervisor layer
-mints one atomic acknowledgement batch containing `terminal_acknowledged`, one
+The next bounded Targeted lifecycle seam is also executable no-RAW.
+`execution_runtime_owner.RuntimeAttemptAggregate` is the single construction
+facade over the focused state-model companions. It reserves resources before the
+process runner, accepts exactly one open and cleanup outcome per reservation,
+closes worker loss conservatively, registers current-attempt immutable artifacts,
+and freezes a content-bound `CoordinatorTerminalRecord`. The owner then mints
+one atomic acknowledgement batch containing `terminal_acknowledged`, one
 committed disposition per registered artifact, and `terminal_outcome`.
 `TargetedApplicationService.execute_runtime_lifecycle` supplies the first real
-consumer: a true spawned process returns work/resource/artifact facts, and an
-owner-supplied supervisor callback must return the exact canonical
-`SupervisorFinalizationRecord` before the application result exists. Success
+consumer: a true spawned process returns typed work/resource/artifact/acquisition
+facts, and an owner-supplied persister must return the exact proposed
+`RuntimeFinalizationReceipt` before the application result exists. Success
 offers every registered artifact only to its owner; failure, cancellation, or
 worker-loss cleanup unknown quarantines the whole registered current-attempt
 set. Conflicting or missing cleanup and acknowledgement fail closed.
@@ -515,26 +526,37 @@ writer waits for the current transaction and then revalidates; an unresolved
 stale lock fails closed for owner recovery instead of being auto-deleted. The
 repo has not selected a storage engine, durable queue, current pointer, product
 seal, publication mechanism, telemetry producer, or telemetry backend.
-Alignment is now the second no-RAW consumer. The focused
-`execution_runtime_observability` companion validates caller-supplied
-attempt/work/resource/artifact events, monotonic offsets, serial-or-process RSS
-representation, elapsed-event agreement, and required finite/integral metric
-availability without collecting live telemetry or selecting an event store or
-telemetry backend. It also enforces the global phase boundary: coordinator
+Alignment is now the second no-RAW consumer. Callers supply only typed
+`RuntimeTelemetrySamples` for monotonic offsets, serial-or-process RSS, and
+runtime-mediated artifact I/O. The runtime owner derives the complete event
+topology and mechanical counts, while the focused
+`execution_runtime_observability` companion validates elapsed-event agreement
+and required finite/integral metric availability without collecting live
+telemetry or selecting an event store or telemetry backend. It also enforces
+the global phase boundary: coordinator
 resource lifecycle and artifact registration end before `terminal_proposal`;
 artifact dispositions occur only after `terminal_acknowledged` and before
 `terminal_outcome`. Before supervisor acknowledgement, the finalization owner
-cross-checks the ledger's complete mechanical lifecycle facts against the
-closed coordinator state and derives the required `raw_open_count` from opened
-resource records. Missing, extra, or substituted lifecycle facts and a
-conflicting count fail closed. Logical XIC/call/point counts remain caller
-measurements when no acquisition receipt exists. When a Targeted or Alignment
-result carries accepted `TraceAcquisitionBatch` receipts, the adapter aggregates
-their logical request, batch, backend-call, and trace-point counts and rejects a
-ledger mismatch before acknowledgement. RSS and runtime-mediated artifact-I/O
-telemetry remain caller measurements because the coordinator has no independent
-source for them.
-The caller-located durable launch/finalization marker and coordinator-loss
+derives the ledger's complete mechanical lifecycle facts from the closed
+coordinator state, including `raw_open_count` from opened resource records.
+Logical XIC request, batch, backend-call, and trace-point counts are derived from
+typed `TraceAcquisitionBatch` receipts correlated to submitted successful work;
+without a receipt those counts are zero, not caller-authored estimates. Missing,
+extra, substituted, or conflicting receipt facts fail closed before
+acknowledgement. RSS, monotonic offsets, and runtime-mediated artifact-I/O remain
+external telemetry samples because the coordinator has no independent source
+for them; callers cannot assemble or submit the ledger itself. Only an opened
+`PROCESS_WORKER` reservation creates `worker_started` and requires a correlated
+worker RSS sample; `not_opened` and failed-open reservations cannot invent a
+worker. The owner fixes metric provenance to `execution_runtime_owner:v1`, so a
+caller cannot alter canonical bytes by relabeling owner-derived facts.
+Metric names remain readable public schema vocabulary. A caller may copy those
+names, but a caller-built mapping or named record is untrusted and is not an
+observability contract. Persistence and future runtime-metric writers must use
+the owner-minted ledger carried by the accepted finalization receipt and its
+content-bound canonical bytes/digest; no scalar or mapping substitution is
+accepted by the runtime boundary.
+The owner-path durable launch/finalization marker and coordinator-loss
 recovery are also executable for both Targeted and Alignment. These contracts
 do not make the legacy runners use a new storage or writer path.
 
