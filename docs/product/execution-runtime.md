@@ -91,19 +91,20 @@ These concepts are internal mechanics, not user-visible review tags.
 | `RuntimeEvent` | Ordered fact about scheduling, resource, outcome, cleanup, cache, or metrics | Scientific evidence |
 | `ValidatedDependencyToken` | Lineage-owner approval bound to the new attempt and exactly one manifest work-unit key, plus an opaque immutable dependency reference | Runtime-created identity or compatibility proof |
 
-The manifest is closed before the attempt starts. Duplicate keys, a missing
-owner completeness attestation, submission failure, or an attempt to add later
-work fails closed. The runtime cannot discover that the owner omitted a unit
-from the manifest; its enforceable invariant is that every key in an
-owner-attested manifest settles exactly once. Manifest preflight failure
-terminalizes the attempt as `failed` before any work or resource reservation. It
-uses an explicit queued-to-terminal path: `attempt_queued` and
+The manifest is closed before the attempt starts. An accepted running manifest
+contains at least one work unit. An empty owner universe, duplicate or blank
+keys, a missing owner completeness attestation, submission failure, or an
+attempt to add later work fails closed. The runtime cannot discover that the
+owner omitted a unit from the manifest; its enforceable invariant is that every
+key in an owner-attested manifest settles exactly once. Manifest preflight
+failure terminalizes the attempt as `failed` before any work or resource
+reservation. It uses an explicit queued-to-terminal path: `attempt_queued` and
 `manifest_preflight_failed` are recorded, `attempt_started` is not fabricated,
 and the empty work, resource, and artifact registries permit an immediate
 terminal proposal. Dynamic manifest expansion and later-added stage manifests
 are outside the first integration. If Targeted or Alignment cannot state its
-complete work universe up front, stop and redraw the seam rather than infer
-completion from only the units that happened to be submitted.
+complete non-empty work universe up front, stop and redraw the seam rather than
+infer completion from only the units that happened to be submitted.
 
 An acquisition session may be reused only within the same attempt, worker,
 `AcquisitionSource`, and owner-supplied compatibility token. Correctness must
@@ -136,8 +137,9 @@ runtime artifact disposition, not by a `partial` attempt outcome.
 Terminal outcome is deterministic:
 
 1. manifest precondition failure, submission failure, worker loss, unit
-   failure, integrity failure, or cleanup `failed` /
-   `unknown_after_worker_loss` makes the attempt `failed`;
+   failure, integrity failure, cleanup `failed` /
+   `unknown_after_worker_loss`, or a `not_opened` resource without an accepted
+   cancellation makes the attempt `failed`;
 2. otherwise, a cancellation accepted before the terminal decision makes it
    `cancelled`;
 3. otherwise, every manifest unit settling successfully makes it `succeeded`.
@@ -171,13 +173,16 @@ claiming a durable queue:
    the owner-created attempt identity, attempt-scoped temporary-artifact
    namespace, and coordinator launch;
 2. after work, cleanup, and artifact-disposition proposal closure, the
-   coordinator
-   writes one immutable `CoordinatorTerminalRecord` containing the proposed
-   outcome, manifest and per-unit outcomes, resource cleanup outcomes, artifact
-   registry and proposed dispositions, failures, coordinator metrics ending at
-   terminal proposal, and the coordinator event-ledger digest through that
-   proposal;
-3. the supervisor atomically replaces the launch marker with one immutable
+   coordinator produces one immutable canonical `CoordinatorTerminalRecord`
+   `execution_runtime_coordinator_terminal_v3` byte sequence containing the
+   proposed outcome, manifest and per-unit outcomes, typed per-unit failure
+   details, typed resource kinds plus open/cleanup outcomes, artifact registry and proposed
+   dispositions, failures, coordinator metrics ending at terminal proposal,
+   and the coordinator event-ledger digest through that proposal;
+3. the owner-path supervisor fsyncs those exact coordinator bytes and the exact
+   runtime-owner-derived observability-ledger bytes inside the
+   self-contained `execution_runtime_recovery_marker_v3` payload, then
+   atomically replaces the launch marker with one immutable
    `SupervisorFinalizationRecord` containing the coordinator-record digest and
    an atomic event batch continuing the coordinator sequence:
    `terminal_acknowledged`, one committed disposition event for every
@@ -191,6 +196,12 @@ Coordinator-record write/integrity failure or supervisor-finalization failure
 cannot commit success. The coordinator and finalization records are recovery
 metadata, not delivery evidence or ProductWriter artifacts. Neither record
 contains or digests facts that occur only after that record is finalized.
+Public Targeted and Alignment application results revalidate the exact
+coordinator/finalization pair; matching attempt identity alone is insufficient.
+
+`raw_open_count` counts only opened `acquisition_session` reservations. Opened
+`process_worker` reservations still emit complete resource lifecycle facts but
+cannot inflate acquisition-session telemetry.
 
 If the coordinator exits before durable terminal acknowledgement:
 
@@ -271,9 +282,10 @@ this attempt's dependency-use record becomes non-deliverable.
 
 All failures are retained as typed records and aggregated at the attempt
 boundary. Each preserves the work-unit/resource key, stage, source reference,
-failure category, readable message, and relevant event sequence. One exception
-must not erase sibling failures, and a traceback must not be the only failure
-contract.
+failure category, and readable message. The terminal acknowledgement separately
+binds the exact observability ledger carrying the relevant work-event sequence,
+using the same work-unit key for correlation. One exception must not erase
+sibling failures, and a traceback must not be the only failure contract.
 
 ## Retry And Resume
 
@@ -353,6 +365,15 @@ queued-to-terminal manifest-preflight path omits `attempt_started`; events
 listed below as started exist only after successful preflight. The minimum
 event set covers:
 
+For a running attempt, the owner normalizes causal facts into one canonical
+phase order: attempt start, all resource reservations, all resource open
+outcomes, started workers, manifest-order work submission/start/settlement,
+runtime artifact registration, all resource cleanup, terminal proposal, and
+then supervisor acknowledgement/dispositions/outcome. Monotonic offsets bind
+that logical topology; they do not claim to recover physical interleaving among
+concurrent workers inside a phase. A ledger that reorders these phases fails
+closed even when every individual resource or work-unit lifecycle is complete.
+
 - coordinator: `attempt_queued`, `manifest_preflight_failed` when applicable,
   `attempt_started` after successful preflight, cancellation accepted/rejected,
   and `terminal_proposal`;
@@ -388,6 +409,24 @@ lifecycle events fail closed.
 | `process_tree_peak_rss_bytes` | Maximum observed parent-plus-child RSS, not a sum of per-worker peaks |
 | `artifact_read_count/bytes` | Sum of runtime-mediated reads; excludes uninstrumented external I/O and records coverage |
 | `artifact_write_count/bytes` | Sum of runtime-mediated writes; excludes uninstrumented external I/O and records coverage |
+
+The executable Package 0/1 ledger uses one attempt-scoped `sum` record for the
+count and artifact-I/O metrics, attempt-scoped `last` records for coordinator
+and wall spans, one work-unit-scoped `sum` elapsed record per declared work key,
+worker-scoped `max` RSS, and attempt-scoped `max` process-tree RSS. Metric
+identity is `(name, scope, scope_key)` and duplicates or unregistered names fail
+closed. The queued-to-terminal preflight path has no work/worker scope, so its
+explicitly unavailable elapsed/RSS records use the attempt scope and
+`not_started_preflight_failure` reason.
+
+For a running attempt, resource lifecycle events use only the registered
+resource subject and contain exactly one reservation, one open outcome, and one
+cleanup outcome in that order. Each registered runtime artifact likewise has
+exactly one registration followed by one offered/quarantined disposition.
+Elapsed metrics must equal their correlated monotonic event spans. A serial run
+with no child-worker event retains one attempt-scoped
+`worker_peak_rss_bytes=unsupported:not_applicable_serial` record; it does not
+invent a worker identity or omit the required metric.
 
 These metrics describe cost and execution locality. They do not score evidence
 quality or authorize a result.
@@ -431,11 +470,142 @@ prevent an accepted queued cancellation from later becoming a started attempt.
 They also encode the coordinator-only
 `attempt_queued` -> `manifest_preflight_failed` ->
 `terminal_proposal(failed)` path without fabricating `attempt_started` or a
-committed outcome. This remains `contract_only`: no Targeted or Alignment
-runtime caller consumes it, and it does not yet validate a real
-`RequiredWorkManifest` or completeness attestation, record monotonic offsets or
-metric availability, settle work/resources/artifacts, or durably acknowledge a
-terminal outcome.
+committed outcome. The Package 0 runtime owner now consumes owner-supplied
+manifest content into an attempt-bound immutable `RequiredWorkManifest` with
+closed unique opaque work-unit keys. Missing completeness attestation, duplicate
+or blank keys, and attempt substitution drive that existing queued-to-failed
+proposal instead of relying on a caller to declare failure manually. That
+preflight-terminal state now continues through the same owner finalization
+receipt and v3 recovery marker with empty work/resource/artifact registries,
+measured-zero mechanical counts, and `unsupported:not_started_preflight_failure`
+for work- and worker-derived metrics. Targeted and Alignment enter through the
+same atomic owner operation; it does not invoke their worker provider when
+preflight has already terminalized, so the public consumer path cannot allocate
+or dispatch work for a rejected manifest. Any reservation plans passed with that
+terminal state remain unconsumed and the final receipt retains empty registries.
+An accepted manifest starts one pure
+`AttemptRuntime`; terminal work settlements are
+accepted exactly once per declared opaque key, identical replay is idempotent,
+and conflicting or undeclared settlement records one immutable integrity
+failure that prevents attempt success. Failed work also prevents success.
+Failed and cancelled settlements require a typed `WorkUnitFailureDetail`
+containing category, stage, source reference, and readable message, while a
+successful settlement rejects failure detail. The canonical coordinator v3
+bytes retain that exact detail. A successful settlement accepts only an
+owner-minted `EvidenceArtifactRef` bound to the same processing request and
+attempt; an opaque string is no longer sufficient.
+
+The bounded Package 1 Targeted adapter in
+`xic_extractor.extraction.targeted_runtime_adapter` owns one canonical
+process-result identity payload over the closed work key and exact digest/size
+of owner-supplied result bytes. It does not serialize or hash legacy
+`RawFileExtractionResult` / `RunOutput`. `TargetedProcessResultRef` binds that
+work key and owner-payload identity to the underlying `EvidenceArtifactRef`, so
+an artifact minted for one work key cannot settle another. A pickleable
+worker-result envelope carries that producer-owned reference across a true
+spawned process, and
+the full-lifecycle Targeted service consumes reordered envelopes through the
+shared runtime aggregate and settles the existing runtime in manifest order.
+There is no public settlement-only service or adapter bypass. This boundary is
+`wired_no_raw` and remains `diagnostic_only`; default legacy execution and all
+product outputs are unchanged.
+
+The next bounded Targeted lifecycle seam is also executable no-RAW.
+`execution_runtime_owner.RuntimeAttemptAggregate` is the single construction
+facade over the focused state-model companions. It reserves resources before the
+process runner, accepts exactly one open and cleanup outcome per reservation,
+closes worker loss conservatively, registers current-attempt immutable artifacts,
+and freezes a content-bound `CoordinatorTerminalRecord`. The owner then mints
+one atomic acknowledgement batch containing `terminal_acknowledged`, one
+committed disposition per registered artifact, and `terminal_outcome`.
+`TargetedApplicationService.execute_runtime_lifecycle` supplies the first real
+consumer: a true spawned process returns typed work/resource/artifact/acquisition
+facts, and an owner-supplied persister must return the exact proposed
+`RuntimeFinalizationReceipt` before the application result exists. Success
+offers every registered artifact only to its owner; failure, cancellation, or
+worker-loss cleanup unknown quarantines the whole registered current-attempt
+set. Conflicting or missing cleanup and acknowledgement fail closed.
+Targeted runtime configuration must provide exactly one finalization authority:
+either `runtime_finalization_persister` or `runtime_recovery_marker`. The marker
+is itself the sole persister when selected; simultaneous independent surfaces
+are rejected before request resolution, launch recording, or work dispatch.
+
+This remains `diagnostic_only`. `OwnerPathRuntimeMarker` is the bounded physical
+persistence seam: the owner supplies its path, namespace, retention, and later
+publication policy; the v3 marker embeds the exact coordinator and validated
+observability-ledger bytes, with separate content digests, and uses a
+cross-platform exclusive sibling lock around read/validate/replace. A concurrent
+writer waits for the current transaction and then revalidates; an unresolved
+stale lock fails closed for owner recovery instead of being auto-deleted. The
+repo has not selected a storage engine, durable queue, current pointer, product
+seal, publication mechanism, telemetry producer, or telemetry backend.
+Alignment is now the second no-RAW consumer. Callers supply only typed
+`RuntimeTelemetrySamples` for monotonic offsets, serial-or-process RSS, and
+runtime-mediated artifact I/O. The runtime owner derives the complete event
+topology and mechanical counts, while the focused
+`execution_runtime_observability` companion validates elapsed-event agreement
+and required finite/integral metric availability without collecting live
+telemetry or selecting an event store or telemetry backend. It also enforces
+the global phase boundary: coordinator
+resource lifecycle and artifact registration end before `terminal_proposal`;
+artifact dispositions occur only after `terminal_acknowledged` and before
+`terminal_outcome`. Before supervisor acknowledgement, the finalization owner
+derives the ledger's complete mechanical lifecycle facts from the closed
+coordinator state, including `raw_open_count` from opened resource records.
+Logical XIC request, batch, backend-call, and trace-point counts are derived from
+typed `TraceAcquisitionBatch` receipts correlated to submitted successful work;
+for a successful application result, an empty observation-batch projection is
+accepted only when all four owner counts are zero. Failed or quarantined results
+may suppress exposed success batches while retaining physically observed counts.
+Missing, extra, substituted, or conflicting success-projection facts fail closed
+before acknowledgement. RSS, monotonic offsets, and runtime-mediated artifact-I/O remain
+external telemetry samples because the coordinator has no independent source
+for them; callers cannot assemble or submit the ledger itself. Only an opened
+`PROCESS_WORKER` reservation creates `worker_started` and requires a correlated
+worker RSS sample; `not_opened` and failed-open reservations cannot invent a
+worker. The owner fixes metric provenance to `execution_runtime_owner:v1`, so a
+caller cannot alter canonical bytes by relabeling owner-derived facts.
+Metric names remain readable public schema vocabulary. A caller may copy those
+names, but a caller-built mapping or named record is untrusted and is not an
+observability contract. Persistence and future runtime-metric writers must use
+the owner-minted ledger carried by the accepted finalization receipt and its
+content-bound canonical bytes/digest; no scalar or mapping substitution is
+accepted by the runtime boundary.
+The owner-path durable launch/finalization marker and coordinator-loss
+recovery are also executable for both Targeted and Alignment. These contracts
+do not make the legacy runners use a new storage or writer path.
+
+Package 1 now composes that mechanical lifecycle with the existing acquisition
+and physical-observation owners. `peak_detection.observation_batch` performs
+one capability-aware `XICRequest` batch only after resolving the sample's
+request binding and requiring the capability's acquisition source to match.
+It retains truthful native/conversion/RT coordinates and mechanical
+request/call/point counts, closes every coordinate against the capability
+source/kind, freezes copied signal arrays, and asks
+`peak_detection.observations` to validate owner-supplied `IntegrationResult`
+facts against each acquired trace before minting a `PeakObservationRef`.
+Targeted and Alignment process-result artifacts bind the same canonical batch
+receipt and exact observation-artifact upstream closure. Their existing runtime
+carriers register both wrapper and observation artifacts, and manifest-order
+normalization makes serial and deliberately reordered true-spawn results
+canonical-equal. Identical replay coalesces; a conflicting replay fails the
+attempt and exposes no observation batch through the success surface. Runtime
+does not select a peak or interpret the integration. A tracked
+`DifferenceManifest` binds the one explained internal carrier change to the
+immutable Package 0 comparator and one comparator-owned experiment. That single
+entry overwrites caller output paths with a dedicated identity-pinned root,
+constructs the Targeted service with the forbidden legacy runner, accepts only
+primitive no-RAW jobs, and runs fixed Targeted and Alignment workers to a
+synchronous executor drain. It inventories final paths/bytes before privately
+minting the owner-derived receipt. There is no public request factory,
+worker/result/executor provider, begin/mint, or finished-result handoff, and
+callers cannot construct or replace the receipt. The inventory claim is
+final-state parity, not transient filesystem-I/O absence; legacy writer
+non-invocation is proved separately by fixed ingress plus the sentinel and
+Alignment dependency boundary.
+This path remains opt-in no-RAW and `diagnostic_only`; legacy execution, product
+writers, CLI/config, output schemas, selected values, and Matrix authority are
+unchanged.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.
@@ -502,8 +672,9 @@ integration must provide:
   product writer, that every partial artifact is registered, and that
   current-attempt artifact disposition closes atomically with terminal outcome;
 - observability fixtures proving metric scope, aggregation, and unavailable
-  semantics, including preflight-not-started, cache rebuild, and eviction
-  outcomes.
+  semantics, including preflight-not-started, cache rebuild, eviction outcomes,
+  one RSS record per observed worker, finite/integral count and byte values, and
+  exact observability-ledger recovery-byte binding.
 
 This evidence must begin no-RAW. Thermo RAW validation is justified only if a
 later bounded question requires cooperative-call or worker-termination

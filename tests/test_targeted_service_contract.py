@@ -122,7 +122,13 @@ def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:
         "xic_extractor.output",
         "xic_extractor.raw_reader",
     )
-    for path in (Path("xic_extractor/extraction/targeted_service.py"),):
+    for path in (
+        Path("xic_extractor/acquisition_contract.py"),
+        Path("xic_extractor/delivery_lineage.py"),
+        Path("xic_extractor/execution_runtime_observability.py"),
+        Path("xic_extractor/extraction/targeted_service.py"),
+        Path("xic_extractor/package0_successor_comparator.py"),
+    ):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         imports = _imports(tree)
         assert not any(

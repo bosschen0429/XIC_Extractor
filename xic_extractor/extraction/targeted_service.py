@@ -1,13 +1,29 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
+from xic_extractor.execution_runtime import AttemptRuntime
+from xic_extractor.execution_runtime_finalization import (
+    RuntimeResourceReservation,
+)
+from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import (
+    RuntimeAttemptAggregate,
+    RuntimeFinalizationReceipt,
+    RuntimeTelemetryProvider,
+)
 from xic_extractor.rt_prior_library import LibraryEntry
 
 from .targeted_inputs import resolve_model_selection_expected_diff_approvals
+from .targeted_runtime_adapter import (
+    TargetedRuntimeAdapterError,
+    TargetedRuntimeLifecycleApplicationResult,
+    TargetedRuntimeWorkerBatch,
+    execute_targeted_runtime_lifecycle,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.extractor import RunOutput
@@ -31,6 +47,21 @@ class TargetedRunner(Protocol):
     ) -> RunOutput: ...
 
 
+class TargetedRuntimeLifecycleRunner(Protocol):
+    def __call__(
+        self,
+        request: TargetedApplicationRequest,
+        aggregate: RuntimeAttemptAggregate,
+    ) -> TargetedRuntimeWorkerBatch: ...
+
+
+class TargetedRuntimeFinalizationPersister(Protocol):
+    def __call__(
+        self,
+        proposed: RuntimeFinalizationReceipt,
+    ) -> RuntimeFinalizationReceipt: ...
+
+
 @dataclass(frozen=True)
 class TargetedApplicationRequest:
     """Headless application input; callbacks are lifecycle adapters, not science."""
@@ -45,23 +76,81 @@ class TargetedApplicationRequest:
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None
 
+
 @dataclass(frozen=True)
 class TargetedApplicationService:
     runner: TargetedRunner
+    runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
+    runtime_finalization_persister: TargetedRuntimeFinalizationPersister | None = None
+    runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
-        resolved_approvals = resolve_model_selection_expected_diff_approvals(
-            request.config,
-            request.model_selection_expected_diff_approvals,
-        )
+        resolved_request = _resolve_application_request(request)
         return self.runner(
-            request.config,
-            list(request.targets),
-            progress_callback=request.progress_callback,
-            should_stop=request.should_stop,
-            injection_order=request.injection_order,
-            rt_prior_library=request.rt_prior_library,
-            model_selection_expected_diff_approvals=resolved_approvals,
+            resolved_request.config,
+            list(resolved_request.targets),
+            progress_callback=resolved_request.progress_callback,
+            should_stop=resolved_request.should_stop,
+            injection_order=resolved_request.injection_order,
+            rt_prior_library=resolved_request.rt_prior_library,
+            model_selection_expected_diff_approvals=(
+                resolved_request.model_selection_expected_diff_approvals
+            ),
+        )
+
+    def execute_runtime_lifecycle(
+        self,
+        request: TargetedApplicationRequest,
+        runtime: AttemptRuntime,
+        *,
+        resource_reservations: Sequence[RuntimeResourceReservation],
+        telemetry_provider: RuntimeTelemetryProvider,
+    ) -> TargetedRuntimeLifecycleApplicationResult:
+        """Reserve, dispatch, settle, and require one supervisor acknowledgement."""
+
+        if self.runtime_lifecycle_runner is None:
+            raise TargetedRuntimeAdapterError(
+                "TargetedApplicationService requires runtime_lifecycle_runner "
+                "for execute_runtime_lifecycle"
+            )
+        if (
+            self.runtime_finalization_persister is not None
+            and self.runtime_recovery_marker is not None
+        ):
+            raise TargetedRuntimeAdapterError(
+                "runtime_finalization_persister and runtime_recovery_marker "
+                "are mutually exclusive finalization authorities"
+            )
+        if (
+            self.runtime_finalization_persister is None
+            and self.runtime_recovery_marker is None
+        ):
+            raise TargetedRuntimeAdapterError(
+                "TargetedApplicationService requires runtime_finalization_persister "
+                "or runtime_recovery_marker for execute_runtime_lifecycle"
+            )
+        resolved_request = _resolve_application_request(request)
+        lifecycle_runner = self.runtime_lifecycle_runner
+        if self.runtime_recovery_marker is not None:
+            self.runtime_recovery_marker.record_launch(runtime)
+        finalization_persister = (
+            self.runtime_recovery_marker
+            if self.runtime_recovery_marker is not None
+            else self.runtime_finalization_persister
+        )
+        if finalization_persister is None:
+            raise TargetedRuntimeAdapterError(
+                "Targeted runtime finalizer unexpectedly remained unresolved"
+            )
+        return execute_targeted_runtime_lifecycle(
+            runtime,
+            resource_reservations,
+            worker_batch_provider=lambda aggregate: lifecycle_runner(
+                resolved_request,
+                aggregate,
+            ),
+            telemetry_provider=telemetry_provider,
+            finalization_persister=finalization_persister,
         )
 
 
@@ -87,4 +176,19 @@ def build_targeted_application_request(
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
+    )
+
+
+def _resolve_application_request(
+    request: TargetedApplicationRequest,
+) -> TargetedApplicationRequest:
+    if not isinstance(request, TargetedApplicationRequest):
+        raise TypeError("request must be a TargetedApplicationRequest")
+    resolved_approvals = resolve_model_selection_expected_diff_approvals(
+        request.config,
+        request.model_selection_expected_diff_approvals,
+    )
+    return replace(
+        request,
+        model_selection_expected_diff_approvals=resolved_approvals,
     )

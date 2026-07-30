@@ -101,6 +101,12 @@ must remain clean-checkout safe.
   and writers belong in package modules.
 - Diagnostic writers render only. They must not recompute domain evidence or
   re-scan RAW files.
+- Runtime consumers submit typed work/resource/artifact/acquisition receipts and
+  external telemetry samples to `execution_runtime_owner`; only that owner may
+  construct lifecycle, observability, or finalization projections. Adapters must
+  enter through its atomic execution/finalization API, not call partial lifecycle
+  primitives, accept caller-authored ledgers/counts, or expose settlement-only
+  public bypasses. See `docs/agent/architecture-public-contracts.md`.
 
 ## Workflow Routing
 
