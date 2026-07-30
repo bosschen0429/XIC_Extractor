@@ -78,10 +78,12 @@ For every cluster:
    negative path, and ability to go red.
 7. Record the result in the ledger before moving to the next cluster.
 
-Always examine these six dimensions:
+Always examine these seven dimensions:
 
 - authority and dependency direction;
 - public and persisted contracts;
+- source-to-target projection closure across adapters, settlements, maps,
+  serializers, recovery records, comparators, and writers;
 - absent, malformed, duplicate, reordered, partial, fallback, and exception
   states;
 - test/oracle integrity;
@@ -131,6 +133,13 @@ For every input-to-map, input-to-group, or cross-artifact join, state the
 normalized key and cardinality (`one-to-one`, `one-to-many`, or `many-to-many`).
 Exercise blank and duplicate keys, matching and conflicting duplicates, reversed
 order, and partial input.
+
+For every non-trivial source-to-target projection, state the source owner,
+target consumer, complete identity tuple/cardinality, preserved semantics,
+deliberately omitted facts and reduced claim, failure/provenance binding, and
+canonical/recovery/replay behavior. Require a source-to-terminal oracle plus the
+applicable crossed-key identical-payload, malformed, duplicate, reordered,
+partial, terminal-failure, and round-trip cases.
 
 Completion criterion: every material claim has an oracle that can go red at the
 same layer, or the claim is explicitly deferred/inconclusive.

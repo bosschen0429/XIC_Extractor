@@ -22,6 +22,45 @@ contract surfaces. The fuller decomposition contract remains in
   moving uncovered behavior.
 - Separate real-data validation from normal unit tests.
 
+## Boundary Projection Closure
+
+Treat every non-trivial source-to-target conversion as a contract boundary:
+domain model to adapter envelope, worker result to settlement, typed record to
+map or grouping, state to canonical bytes, receipt to recovery marker, or
+producer output to comparator/writer. Before implementation, record:
+
+| Field | Required decision |
+| --- | --- |
+| source owner and target consumer | Which owner defines the facts and which consumer relies on them |
+| identity and cardinality | The complete identity tuple and allowed one-to-one, one-to-many, or many-to-many shape |
+| preserved semantics | Values, ordering, terminal state, failure detail, provenance, and authority the target must retain |
+| deliberate loss | Every source fact intentionally omitted, why the consumer does not need it, and which claim must therefore remain unavailable |
+| durable binding | Schema version, canonical bytes/digest, replay, recovery, and event correlation where the target persists or certifies facts |
+| oracle | The test or artifact that proves preservation and makes crossed or lossy projections go red |
+
+Apply these invariants:
+
+- Keep composite identity composite through sets, maps, joins, registries,
+  comparisons, digests, and persisted receipts. A leaf artifact/row ID must not
+  stand in for `(owner scope, work key, ID)` when the owner contract uses the
+  tuple.
+- Validate cardinality at the semantic owner. Exercise matching and conflicting
+  duplicates, identical payloads under different keys, reversed order, partial
+  input, and missing members.
+- Preserve typed terminal failure and provenance through aggregation and durable
+  recovery. A separately persisted event ledger may carry event sequence, but
+  it must be exact-bound and retain the correlation identity.
+- Version a persisted/canonical schema when its semantic shape changes. Include
+  every fact that the receipt, comparator, acknowledgement, or replay claims to
+  certify.
+- Keep adapters translational. They may reject invalid projections, but must not
+  silently recompute, collapse, or invent owner facts.
+
+A lossy projection is allowed only when the omitted fields and reduced claim are
+explicit. CI closure for a contract-bearing projection requires a source-to-
+terminal round trip plus the applicable cross-key, duplicate, malformed,
+reordered, partial, failure, serialization, recovery, and replay counterexamples.
+
 ## CodeGraph
 
 - Prefer the `codegraph` CLI for broad indexed search, status, files, and

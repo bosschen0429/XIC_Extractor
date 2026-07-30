@@ -6,6 +6,7 @@ supplement the core closure process; they are not a flat checklist for every PR.
 ## Contents
 
 - [Shared Helper Or Dependency Boundary](#shared-helper-or-dependency-boundary)
+- [Boundary Projection, Adapter, Serializer, Or Receipt](#boundary-projection-adapter-serializer-or-receipt)
 - [Schema, Writer, Reader, Or Public Output](#schema-writer-reader-or-public-output)
 - [Identity, Join, Grouping, Or Cache](#identity-join-grouping-or-cache)
 - [RAW Access, Evidence, Or Performance](#raw-access-evidence-or-performance)
@@ -30,6 +31,33 @@ rule, adapter, or import boundary changed.
 
 Closure: the caller/dependency universe is reproducible and new members cannot
 silently bypass the gate.
+
+## Boundary Projection, Adapter, Serializer, Or Receipt
+
+Trigger: a typed model, event, worker result, artifact, or owner record is
+translated into an adapter envelope, settlement, map/group, canonical payload,
+digest, recovery marker, comparator receipt, or writer input.
+
+- Trace the source owner through every target consumer and durable/replay
+  surface. List the complete identity tuple, cardinality, ordering, terminal
+  state, failure detail, provenance, authority, and event correlation each
+  target relies on.
+- Mark every omitted source field as deliberate loss and reduce the target claim
+  accordingly. A consumer must not certify, compare, acknowledge, or recover a
+  fact its projection discarded.
+- Keep composite keys composite through membership tests, deduplication,
+  comparisons, digests, and registration closure. Test identical payloads under
+  different keys and conflicting payloads under the same key.
+- Check missing, malformed, duplicate, reordered, partial, failed/cancelled, and
+  replayed inputs. Require source-to-terminal round trip and exact inequality
+  when any preserved semantic fact changes.
+- When canonical or persisted shape changes, require an explicit schema version
+  and verify recovery from the actual stored bytes rather than reconstructed
+  in-memory state.
+
+Closure: every claimed source fact survives to the consumer or is explicitly
+excluded from the claim, and a crossed/lossy projection makes the owning oracle
+go red.
 
 ## Schema, Writer, Reader, Or Public Output
 
