@@ -32,6 +32,7 @@ from xic_extractor.execution_runtime_observability import (
 from xic_extractor.execution_runtime_owner import (
     RuntimeArtifactRegistrationReceipt,
     RuntimeAttemptAggregate,
+    RuntimeCancellationRequest,
     RuntimeFinalizationReceipt,
     RuntimeResourceSettlementReceipt,
     RuntimeWorkerBatchReceipt,
@@ -53,6 +54,57 @@ from xic_extractor.processing_identity import (
     build_processing_request_identity,
     issue_processing_attempt,
 )
+
+
+def test_owner_start_accepts_exact_typed_cancellation_request(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="cancelled-start")
+
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a",),
+        owner_completeness_attestation="runtime-owner-test:v1",
+        cancellation_request=RuntimeCancellationRequest(attempt=attempt),
+    )
+
+    assert runtime.history.cancellation_accepted is True
+    assert runtime.history.events[-1].kind is (
+        AttemptLifecycleEventKind.CANCELLATION_ACCEPTED
+    )
+
+
+def test_owner_start_rejects_foreign_cancellation_request(tmp_path: Path) -> None:
+    attempt = _attempt(tmp_path, stem="cancelled-start")
+    foreign = _attempt(tmp_path, stem="foreign-cancellation")
+
+    with pytest.raises(
+        RuntimeFinalizationContractError,
+        match="different runtime attempt",
+    ):
+        start_runtime_attempt(
+            attempt=attempt,
+            work_unit_keys=("raw:a",),
+            owner_completeness_attestation="runtime-owner-test:v1",
+            cancellation_request=RuntimeCancellationRequest(attempt=foreign),
+        )
+
+
+def test_owner_start_does_not_relabel_rejected_manifest_as_cancelled(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="cancelled-invalid-manifest")
+
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=(),
+        owner_completeness_attestation="runtime-owner-test:v1",
+        cancellation_request=RuntimeCancellationRequest(attempt=attempt),
+    )
+
+    assert runtime.manifest_preflight_failed is True
+    assert runtime.history.cancellation_accepted is False
+    assert runtime.history.events[-1].proposed_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(

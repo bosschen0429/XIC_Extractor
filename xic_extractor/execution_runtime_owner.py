@@ -16,11 +16,13 @@ from typing import final
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
+    AttemptLifecycleEventKind,
     AttemptRuntime,
     WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
     _start_runtime_attempt,
+    append_attempt_lifecycle_event,
     settle_work_unit,
 )
 from xic_extractor.execution_runtime import (
@@ -60,6 +62,19 @@ from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 _RUNTIME_OWNER_MEASUREMENT_SOURCE = "execution_runtime_owner:v1"
 _RUNTIME_OWNER_MINT_TOKEN = object()
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCancellationRequest:
+    """One owner-bound request to accept cancellation for a runtime attempt."""
+
+    attempt: ProcessingAttemptIdentity
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.attempt, ProcessingAttemptIdentity):
+            raise RuntimeFinalizationContractError(
+                "cancellation request attempt must be owner-issued"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,13 +380,32 @@ def start_runtime_attempt(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
     owner_completeness_attestation: str | None,
+    cancellation_request: RuntimeCancellationRequest | None = None,
 ) -> AttemptRuntime:
-    """Create one running or preflight-terminalized runtime owner state."""
+    """Create one running, cancelled, or preflight-terminalized owner state."""
 
-    return _start_runtime_attempt(
+    if cancellation_request is not None:
+        if not isinstance(cancellation_request, RuntimeCancellationRequest):
+            raise RuntimeFinalizationContractError(
+                "cancellation_request must be a RuntimeCancellationRequest or None"
+            )
+        if cancellation_request.attempt != attempt:
+            raise RuntimeFinalizationContractError(
+                "cancellation request references a different runtime attempt"
+            )
+    runtime = _start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
         owner_completeness_attestation=owner_completeness_attestation,
+    )
+    if cancellation_request is None or runtime.manifest_preflight_failed:
+        return runtime
+    return replace(
+        runtime,
+        history=append_attempt_lifecycle_event(
+            runtime.history,
+            AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
+        ),
     )
 
 
@@ -1227,6 +1261,7 @@ __all__ = [
     "RuntimeArtifactIoSample",
     "RuntimeArtifactRegistrationReceipt",
     "RuntimeAttemptAggregate",
+    "RuntimeCancellationRequest",
     "RuntimeFinalizationPersister",
     "RuntimeFinalizationReceipt",
     "RuntimeProcessTreePeakRssSample",

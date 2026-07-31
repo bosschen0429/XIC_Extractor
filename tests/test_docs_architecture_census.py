@@ -103,6 +103,33 @@ def inspect_local(helper: LocalHelper) -> str:
     assert census.validate_runtime_boundary_authority(tmp_path, (adapter,)) == []
 
 
+def test_runtime_boundary_allows_owner_bound_cancellation_start_fact(
+    tmp_path: Path,
+) -> None:
+    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
+    source = tmp_path / adapter
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        """
+from xic_extractor.execution_runtime_owner import (
+    RuntimeCancellationRequest,
+    start_runtime_attempt,
+)
+
+def start_cancelled(attempt):
+    return start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("targeted:a",),
+        owner_completeness_attestation="targeted:v1",
+        cancellation_request=RuntimeCancellationRequest(attempt=attempt),
+    )
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    assert census.validate_runtime_boundary_authority(tmp_path, (adapter,)) == []
+
+
 def test_runtime_boundary_authority_rejects_nested_and_branched_partial_paths(
     tmp_path: Path,
 ) -> None:

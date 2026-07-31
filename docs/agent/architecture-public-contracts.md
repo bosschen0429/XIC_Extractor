@@ -72,10 +72,14 @@ they are not alternate construction APIs for consumers.
 
 The boundary is closed as follows:
 
-- Targeted, Alignment, and future consumers may translate producer results only
-  into typed work settlements, resource settlements, artifact registrations,
-  and acquisition receipts. They may also provide `RuntimeTelemetrySamples` for
-  facts the runtime cannot independently observe: monotonic offsets, RSS, and
+- Targeted, Alignment, and future consumers may submit one owner-bound
+  `RuntimeCancellationRequest` and translate producer results only into typed
+  work settlements, resource settlements, artifact registrations, and
+  acquisition receipts. The runtime owner validates the request against the
+  exact processing attempt and alone appends the accepted-cancellation event;
+  rejected manifest preflight remains failed rather than being relabeled as
+  cancelled. Consumers may also provide `RuntimeTelemetrySamples` for facts the
+  runtime cannot independently observe: monotonic offsets, RSS, and
   runtime-mediated artifact I/O.
 - Lifecycle topology, accepted work/resource/artifact state, RAW-open count,
   logical XIC request/batch/call/point counts, terminal proposal,

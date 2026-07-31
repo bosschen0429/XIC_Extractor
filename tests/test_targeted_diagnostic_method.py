@@ -26,15 +26,10 @@ from xic_extractor.alignment.runtime_adapter import (
 )
 from xic_extractor.config import Target
 from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    start_attempt_runtime,
 )
 from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceCleanupOutcome,
@@ -43,7 +38,10 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import mint_work_unit_settlement
+from xic_extractor.execution_runtime_owner import (
+    mint_work_unit_settlement,
+    start_runtime_attempt,
+)
 from xic_extractor.extraction.targeted_diagnostic_method import (
     TargetedDiagnosticMethodParityError,
     TargetedDiagnosticMethodRequest,
@@ -663,17 +661,10 @@ def _projection(*, counted: bool) -> TargetedProductProjection:
 
 
 def _runtime(fixture: Package2NoRawFixture, work_unit_key: str):
-    history = append_attempt_lifecycle_event(
-        AttemptLifecycleHistory(attempt=fixture.attempt),
-        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
-    )
-    return start_attempt_runtime(
-        preflight_required_work_manifest(
-            history,
-            attempt=fixture.attempt,
-            work_unit_keys=(work_unit_key,),
-            owner_completeness_attestation="package2-targeted-method:v1",
-        )
+    return start_runtime_attempt(
+        attempt=fixture.attempt,
+        work_unit_keys=(work_unit_key,),
+        owner_completeness_attestation="package2-targeted-method:v1",
     )
 
 

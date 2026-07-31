@@ -16,20 +16,19 @@ from pathlib import Path
 from typing import Protocol
 
 from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
     AttemptRuntime,
     AttemptTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    start_attempt_runtime,
 )
 from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceKind,
     RuntimeResourceReservation,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import RuntimeTelemetryProvider
+from xic_extractor.execution_runtime_owner import (
+    RuntimeCancellationRequest,
+    RuntimeTelemetryProvider,
+    start_runtime_attempt,
+)
 from xic_extractor.extraction.targeted_diagnostic_delivery import (
     settle_targeted_diagnostic_delivery_candidate,
 )
@@ -306,27 +305,14 @@ def _runtime(
     *,
     cancelled: bool,
 ) -> AttemptRuntime:
-    history = append_attempt_lifecycle_event(
-        AttemptLifecycleHistory(attempt=attempt),
-        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
+    return start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=work_unit_keys,
+        owner_completeness_attestation=_RUNTIME_CONTRACT,
+        cancellation_request=(
+            RuntimeCancellationRequest(attempt=attempt) if cancelled else None
+        ),
     )
-    runtime = start_attempt_runtime(
-        preflight_required_work_manifest(
-            history,
-            attempt=attempt,
-            work_unit_keys=work_unit_keys,
-            owner_completeness_attestation=_RUNTIME_CONTRACT,
-        )
-    )
-    if cancelled:
-        runtime = replace(
-            runtime,
-            history=append_attempt_lifecycle_event(
-                runtime.history,
-                AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
-            ),
-        )
-    return runtime
 
 
 def _stop_requested(should_stop: Callable[[], bool] | None) -> bool:

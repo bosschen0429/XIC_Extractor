@@ -22,18 +22,13 @@ from xic_extractor.alignment.runtime_adapter import (
 )
 from xic_extractor.evidence_artifacts import verify_evidence_artifact_payload
 from xic_extractor.execution_runtime import (
-    AttemptLifecycleEventKind,
-    AttemptLifecycleHistory,
     AttemptRuntime,
     AttemptTerminalOutcome,
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
-    append_attempt_lifecycle_event,
-    preflight_required_work_manifest,
-    start_attempt_runtime,
 )
-from xic_extractor.execution_runtime_finalization_models import (
+from xic_extractor.execution_runtime_finalization import (
     RuntimeArtifactDisposition,
     RuntimeResourceCleanupOutcome,
     RuntimeResourceKind,
@@ -42,9 +37,11 @@ from xic_extractor.execution_runtime_finalization_models import (
 )
 from xic_extractor.execution_runtime_owner import (
     RuntimeArtifactRegistrationReceipt,
+    RuntimeCancellationRequest,
     RuntimeWorkerBatchReceipt,
     execute_runtime_attempt,
     mint_work_unit_settlement,
+    start_runtime_attempt,
 )
 from xic_extractor.extraction.targeted_diagnostic_delivery import (
     TargetedDiagnosticDeliveryError,
@@ -416,19 +413,16 @@ def _unsuccessful_targeted_runtime(
     scenario: str,
 ) -> TargetedRuntimeLifecycleApplicationResult:
     work_unit_key = "targeted:method"
-    runtime = _base_runtime(attempt, work_unit_key)
+    runtime = _base_runtime(
+        attempt,
+        work_unit_key,
+        cancelled=scenario == "cancelled",
+    )
     envelopes: list[TargetedProcessWorkerResultEnvelope] = []
     registered = []
     reservations: tuple[RuntimeResourceReservation, ...] = ()
     resource_reports: tuple[TargetedProcessResourceReport, ...] = ()
     if scenario == "cancelled":
-        runtime = replace(
-            runtime,
-            history=append_attempt_lifecycle_event(
-                runtime.history,
-                AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
-            ),
-        )
         envelopes.append(
             TargetedProcessWorkerResultEnvelope(
                 attempt=attempt,
@@ -546,16 +540,14 @@ def _unsuccessful_targeted_runtime(
 def _base_runtime(
     attempt: ProcessingAttemptIdentity,
     work_unit_key: str,
+    *,
+    cancelled: bool = False,
 ) -> AttemptRuntime:
-    history = append_attempt_lifecycle_event(
-        AttemptLifecycleHistory(attempt=attempt),
-        AttemptLifecycleEventKind.ATTEMPT_QUEUED,
-    )
-    return start_attempt_runtime(
-        preflight_required_work_manifest(
-            history,
-            attempt=attempt,
-            work_unit_keys=(work_unit_key,),
-            owner_completeness_attestation="targeted-delivery-test:v1",
-        )
+    return start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=(work_unit_key,),
+        owner_completeness_attestation="targeted-delivery-test:v1",
+        cancellation_request=(
+            RuntimeCancellationRequest(attempt=attempt) if cancelled else None
+        ),
     )
