@@ -12,7 +12,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
+
 from xic_extractor.acquisition_contract import (
+    AcquiredTrace,
     BatchXICAdapter,
     TraceAcquisitionBatch,
     TraceCoordinateKind,
@@ -68,6 +71,7 @@ from xic_extractor.peak_detection.selection_decision import (
 from xic_extractor.peak_detection.traces import trace_from_xic_request
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
+    canonical_current_attempt_artifact_closure,
     canonical_evidence_artifact_closure,
     resolve_request_acquisition_source,
 )
@@ -107,7 +111,71 @@ class TargetedRealDataAdapterResult:
     validation_status: str = VALIDATION_STATUS
 
 
-def adapt_current_discovery_sample_target(
+class _TargetedRealDataWorkObserver:
+    """Private worker facts retained even when scientific projection fails."""
+
+    __slots__ = ("_artifacts", "_processing_owners", "acquisition")
+
+    def __init__(self, processing_owners: ProcessingOwnerReferences) -> None:
+        if not isinstance(processing_owners, ProcessingOwnerReferences):
+            raise TargetedRealDataAdapterError(
+                "observer requires validated processing owners"
+            )
+        self._processing_owners = processing_owners
+        self.acquisition: TraceAcquisitionBatch | None = None
+        self._artifacts: dict[str, EvidenceArtifactRef] = {}
+
+    def record_acquisition(self, acquisition: TraceAcquisitionBatch) -> None:
+        if not isinstance(acquisition, TraceAcquisitionBatch):
+            raise TargetedRealDataAdapterError(
+                "observer acquisition must be a TraceAcquisitionBatch"
+            )
+        if self.acquisition is not None and self.acquisition is not acquisition:
+            raise TargetedRealDataAdapterError(
+                "one bounded work unit cannot replace its observed acquisition"
+            )
+        self.acquisition = acquisition
+
+    def record_artifact(self, artifact: EvidenceArtifactRef) -> None:
+        if not isinstance(artifact, EvidenceArtifactRef):
+            raise TargetedRealDataAdapterError(
+                "observer artifact must be an EvidenceArtifactRef"
+            )
+        attempt = self._processing_owners.attempt
+        if (
+            artifact.producer_processing_request_id
+            != attempt.processing_request_id
+            or artifact.producer_processing_attempt_id
+            != attempt.processing_attempt_id
+        ):
+            raise TargetedRealDataAdapterError(
+                "observer artifact must bind the current processing attempt"
+            )
+        existing = self._artifacts.get(artifact.evidence_artifact_id)
+        if existing is not None and existing != artifact:
+            raise TargetedRealDataAdapterError(
+                "observer artifact identity was rebound"
+            )
+        self._artifacts[artifact.evidence_artifact_id] = artifact
+
+    def artifact_closure(self) -> tuple[EvidenceArtifactRef, ...]:
+        return canonical_current_attempt_artifact_closure(
+            producer_attempt=self._processing_owners.attempt,
+            artifacts=tuple(self._artifacts.values()),
+        )
+
+    def observed_artifacts(self) -> tuple[EvidenceArtifactRef, ...]:
+        """Return already-minted facts even when closure validation fails."""
+
+        return tuple(
+            sorted(
+                self._artifacts.values(),
+                key=lambda artifact: artifact.evidence_artifact_id,
+            )
+        )
+
+
+def _adapt_current_discovery_sample_target(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -115,9 +183,10 @@ def adapt_current_discovery_sample_target(
     candidates: tuple[DiscoveryCandidate, ...],
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
-    raw: TargetedRealDataRaw,
+    raw: TargetedRealDataRaw | None,
+    _observer: _TargetedRealDataWorkObserver | None = None,
 ) -> TargetedRealDataAdapterResult:
-    """Reacquire one complete sample-target candidate universe from one RAW."""
+    """Private scientific core invoked only by the atomic runtime adapter."""
 
     _validate_inputs(
         processing_owners=processing_owners,
@@ -137,19 +206,22 @@ def adapt_current_discovery_sample_target(
         raise TargetedRealDataAdapterError(
             "peak_config requires canonical asls baseline integration"
         )
-    bounded = tuple(
-        sorted(
-            (item for item in candidates if _matches_target(item, target=target)),
-            key=lambda item: item.candidate_id,
-        )
+    bounded = _bounded_current_discovery_candidates(
+        candidates=candidates,
+        sample=sample,
+        target=target,
     )
-    _validate_bounded_candidates(bounded, sample=sample, target=target)
     if not bounded:
         return _empty_result(
             processing_owners=processing_owners,
             sample=sample,
             target=target,
         )
+    if raw is None:
+        raise TargetedRealDataAdapterError(
+            "bounded candidate universe requires an owner-opened RAW adapter"
+        )
+    _validate_raw_adapter(raw)
 
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
@@ -204,7 +276,11 @@ def adapt_current_discovery_sample_target(
         rt_max=acquisition_rt_max,
         ppm_tol=target_value.ppm_tol,
     )
-    acquisition = acquire_trace_batch(capability, (request,), bound_raw)
+    acquisition = _freeze_acquisition(
+        acquire_trace_batch(capability, (request,), bound_raw)
+    )
+    if _observer is not None:
+        _observer.record_acquisition(acquisition)
     if len(acquisition.traces) != 1:
         raise TargetedRealDataAdapterError(
             "shared candidate-universe acquisition must produce one trace"
@@ -217,6 +293,7 @@ def adapt_current_discovery_sample_target(
     )
 
     observations: list[PeakObservationRef] = []
+    artifacts: list[EvidenceArtifactRef] = []
     for candidate in bounded:
         receipt_mask = (
             (acquired.trace.rt >= candidate.ms1_search_rt_min)
@@ -315,10 +392,10 @@ def adapt_current_discovery_sample_target(
             proposal_sources=promoted.audit.proposal_sources,
         )
         observations.append(observation)
+        _record_artifact(artifacts, _observer, observation.artifact)
 
     hypotheses = []
     projections = []
-    artifacts: list[EvidenceArtifactRef] = [item.artifact for item in observations]
     for candidate, observation, (scan, seed) in zip(
         bounded,
         observations,
@@ -338,6 +415,7 @@ def adapt_current_discovery_sample_target(
             scan_rt_min=seed.rt,
             product_intensity=seed.product_intensity,
         )
+        _record_artifact(artifacts, _observer, evidence.artifact)
         support = resolve_dda_cid_nl_peak_support_ref(
             processing_owners=processing_owners,
             sample=sample,
@@ -353,11 +431,13 @@ def adapt_current_discovery_sample_target(
                 neutral_loss_tolerance_ppm=settings.nl_tolerance_ppm,
             ),
         )
+        _record_artifact(artifacts, _observer, support.artifact)
         event = compose_cid_nl_chromatographic_support_ref(
             processing_owners=processing_owners,
             sample=sample,
             scan_support_refs=(support,),
         )
+        _record_artifact(artifacts, _observer, event.artifact)
         hypothesis = compose_cid_nl_peak_hypothesis(
             processing_owners=processing_owners,
             sample=sample,
@@ -369,6 +449,7 @@ def adapt_current_discovery_sample_target(
             raise TargetedRealDataAdapterError(
                 "CID-NL hypothesis owner omitted its evidence artifact"
             )
+        _record_artifact(artifacts, _observer, hypothesis_artifact)
         expected_product = target_value.mz - neutral_loss_da
         projection = mint_targeted_cid_nl_projection_ref(
             processing_owners=processing_owners,
@@ -392,17 +473,9 @@ def adapt_current_discovery_sample_target(
                 acquisition_source_id=source.acquisition_source_id,
             ),
         )
+        _record_artifact(artifacts, _observer, projection.artifact)
         hypotheses.append(hypothesis)
         projections.append(projection)
-        artifacts.extend(
-            (
-                evidence.artifact,
-                support.artifact,
-                event.artifact,
-                hypothesis_artifact,
-                projection.artifact,
-            )
-        )
 
     lineage = canonical_evidence_artifact_closure(
         producer_attempt=processing_owners.attempt,
@@ -425,6 +498,10 @@ def adapt_current_discovery_sample_target(
     selection = mint_diagnostic_peak_hypothesis_selection_ref(
         candidate_set=candidate_set
     )
+    if _observer is not None:
+        for artifact in candidate_set.lineage_artifacts:
+            _observer.record_artifact(artifact)
+        _observer.record_artifact(selection.artifact)
     return TargetedRealDataAdapterResult(
         alignment_input=TargetedHypothesisAlignmentInput(
             sample=sample,
@@ -491,6 +568,22 @@ def _matches_target(
         )
         and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
     )
+
+
+def _bounded_current_discovery_candidates(
+    *,
+    candidates: tuple[DiscoveryCandidate, ...],
+    sample: ResolvedCanonicalSampleIdentity,
+    target: ResolvedTargetDefinition,
+) -> tuple[DiscoveryCandidate, ...]:
+    bounded = tuple(
+        sorted(
+            (item for item in candidates if _matches_target(item, target=target)),
+            key=lambda item: item.candidate_id,
+        )
+    )
+    _validate_bounded_candidates(bounded, sample=sample, target=target)
+    return bounded
 
 
 def _validate_bounded_candidates(
@@ -606,10 +699,40 @@ def _validate_inputs(**values: object) -> None:
         raise TargetedRealDataAdapterError(
             "candidates must contain current DiscoveryCandidate values"
         )
-    raw = values["raw"]
+
+
+def _validate_raw_adapter(raw: object) -> None:
     for method in ("extract_xic_many", "scan_window_for_request", "iter_ms2_scans"):
         if not callable(getattr(raw, method, None)):
             raise TargetedRealDataAdapterError(f"raw adapter lacks {method}")
+
+
+def _freeze_acquisition(
+    acquisition: TraceAcquisitionBatch,
+) -> TraceAcquisitionBatch:
+    frozen_traces: list[AcquiredTrace] = []
+    for acquired in acquisition.traces:
+        rt = np.array(acquired.trace.rt, dtype=float, copy=True)
+        intensity = np.array(acquired.trace.intensity, dtype=float, copy=True)
+        rt.setflags(write=False)
+        intensity.setflags(write=False)
+        frozen_traces.append(
+            replace(
+                acquired,
+                trace=type(acquired.trace)(rt=rt, intensity=intensity),
+            )
+        )
+    return replace(acquisition, traces=tuple(frozen_traces))
+
+
+def _record_artifact(
+    artifacts: list[EvidenceArtifactRef],
+    observer: _TargetedRealDataWorkObserver | None,
+    artifact: EvidenceArtifactRef,
+) -> None:
+    artifacts.append(artifact)
+    if observer is not None:
+        observer.record_artifact(artifact)
 
 
 def _within_ppm(observed: float, expected: float, tolerance_ppm: float) -> bool:
@@ -625,8 +748,6 @@ def _receipt_close(observed: float, receipt: float) -> bool:
     )
 
 
-__all__ = [
+__all__ = (
     "TargetedRealDataAdapterError",
-    "TargetedRealDataAdapterResult",
-    "adapt_current_discovery_sample_target",
-]
+)

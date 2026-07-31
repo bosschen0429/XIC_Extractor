@@ -29,6 +29,16 @@ class RawReaderError(Exception):
     """Raised when Thermo raw reader setup or file opening fails."""
 
 
+class RawReaderOpenError(RawReaderError):
+    """Raised after a vendor open attempt with explicit cleanup truth."""
+
+    def __init__(self, message: str, *, cleanup_failed: bool) -> None:
+        super().__init__(message)
+        if not isinstance(cleanup_failed, bool):
+            raise TypeError("cleanup_failed must be a bool")
+        self.cleanup_failed = cleanup_failed
+
+
 @dataclass(frozen=True)
 class Ms2Scan:
     scan_number: int
@@ -295,18 +305,29 @@ def open_raw(
         path,
         expected_acquisition_source,
     )
+    raw_file = None
     try:
         raw_file = thermo.raw_file_reader_adapter.FileFactory(str(path))
         raw_file.SelectInstrument(thermo.device_ms, 1)
     except Exception as exc:
-        raise RawReaderError(
-            f"Failed to load Thermo DLL or open raw file: {exc}"
+        cleanup_error = _dispose_after_failed_open(raw_file)
+        message = f"Failed to load Thermo DLL or open raw file: {exc}"
+        if cleanup_error is not None:
+            message = f"{message}; vendor cleanup failed: {cleanup_error}"
+        raise RawReaderOpenError(
+            message,
+            cleanup_failed=cleanup_error is not None,
         ) from exc
     try:
         _verify_source_path_still_bound(path, source_binding)
-    except RawReaderError:
-        raw_file.Dispose()
-        raise
+    except RawReaderError as exc:
+        cleanup_error = _dispose_after_failed_open(raw_file)
+        if cleanup_error is not None:
+            raise RawReaderOpenError(
+                f"{exc}; vendor cleanup failed: {cleanup_error}",
+                cleanup_failed=True,
+            ) from exc
+        raise RawReaderOpenError(str(exc), cleanup_failed=False) from exc
     if source_binding is None:
         return RawFileHandle(raw_file, thermo)
     return _mint_owner_bound_raw_handle(
@@ -314,6 +335,16 @@ def open_raw(
         thermo,
         source_binding.source,
     )
+
+
+def _dispose_after_failed_open(raw_file: Any | None) -> Exception | None:
+    if raw_file is None:
+        return None
+    try:
+        raw_file.Dispose()
+    except Exception as exc:
+        return exc
+    return None
 
 
 def _verify_expected_acquisition_source(

@@ -19,7 +19,9 @@ from xic_extractor.discovery.ms1_backfill import backfill_ms1_candidates
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.extraction.targeted_real_data_adapter import (
     TargetedRealDataAdapterError,
-    adapt_current_discovery_sample_target,
+)
+from xic_extractor.extraction.targeted_real_data_adapter import (
+    _adapt_current_discovery_sample_target as adapt_current_discovery_sample_target,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,

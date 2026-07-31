@@ -80,6 +80,69 @@ def test_open_raw_raises_raw_reader_error_when_preflight_fails(tmp_path: Path) -
         )
 
 
+def test_open_raw_disposes_vendor_handle_when_select_instrument_fails(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.raw_reader import (
+        RawReaderOpenError,
+        open_raw,
+        reset_reader_state,
+    )
+
+    class _SelectFailRaw(_FakeRaw):
+        def SelectInstrument(self, *_args) -> None:
+            raise RuntimeError("select failed")
+
+    reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw = _SelectFailRaw()
+
+    with pytest.raises(RawReaderOpenError, match="select failed") as caught:
+        open_raw(
+            tmp_path / "sample.raw",
+            tmp_path,
+            _import_module=_working_imports(),
+            _thermo=_fake_thermo(raw),
+        )
+
+    assert caught.value.cleanup_failed is False
+    assert raw.disposed is True
+
+
+def test_open_raw_reports_cleanup_failure_after_vendor_open_error(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.raw_reader import (
+        RawReaderOpenError,
+        open_raw,
+        reset_reader_state,
+    )
+
+    class _CleanupFailRaw(_FakeRaw):
+        def SelectInstrument(self, *_args) -> None:
+            raise RuntimeError("select failed")
+
+        def Dispose(self) -> None:
+            raise RuntimeError("dispose failed")
+
+    reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw = _CleanupFailRaw()
+
+    with pytest.raises(
+        RawReaderOpenError,
+        match="vendor cleanup failed: dispose failed",
+    ) as caught:
+        open_raw(
+            tmp_path / "sample.raw",
+            tmp_path,
+            _import_module=_working_imports(),
+            _thermo=_fake_thermo(raw),
+        )
+
+    assert caught.value.cleanup_failed is True
+
+
 def test_open_raw_loads_only_expected_absolute_dll_paths(tmp_path: Path) -> None:
     from xic_extractor.raw_reader import (
         EXPECTED_THERMO_DLLS,

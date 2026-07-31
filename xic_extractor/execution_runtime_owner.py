@@ -120,7 +120,7 @@ class RuntimeArtifactRegistrationReceipt:
 
 @dataclass(frozen=True, slots=True)
 class RuntimeAcquisitionReceipt:
-    """Observed acquisition facts correlated to one submitted successful result."""
+    """Observed acquisition facts correlated to one submitted terminal result."""
 
     work_unit_key: str
     acquisition: TraceAcquisitionBatch
@@ -550,22 +550,21 @@ def _apply_runtime_worker_batch(
     settlements_by_key = {
         item.work_unit_key: item for item in state.runtime.settlements
     }
-    submitted_success_keys = {
+    submitted_work_keys = {
         item.work_unit_key
         for item in batch.settlements
-        if item.outcome is WorkUnitTerminalOutcome.SUCCEEDED
     }
     for acquisition_receipt in sorted(
         batch.acquisitions,
         key=lambda item: manifest_order.get(item.work_unit_key, len(manifest_order)),
     ):
         accepted_settlement = settlements_by_key.get(acquisition_receipt.work_unit_key)
-        if accepted_settlement is None or (
-            accepted_settlement.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
-            and acquisition_receipt.work_unit_key not in submitted_success_keys
+        if (
+            accepted_settlement is None
+            or acquisition_receipt.work_unit_key not in submitted_work_keys
         ):
             raise RuntimeFinalizationContractError(
-                "acquisition receipt requires a submitted successful work result"
+                "acquisition receipt requires a submitted terminal work result"
             )
         existing = accepted_acquisitions.get(acquisition_receipt.work_unit_key)
         if existing is not None and not _acquisition_receipts_match(
