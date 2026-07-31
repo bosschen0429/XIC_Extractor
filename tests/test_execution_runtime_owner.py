@@ -107,6 +107,68 @@ def test_owner_start_does_not_relabel_rejected_manifest_as_cancelled(
     assert runtime.history.events[-1].proposed_outcome is AttemptTerminalOutcome.FAILED
 
 
+def test_owner_accepted_cancellation_closes_without_worker_dispatch(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="cancelled-execution")
+    runtime = start_runtime_attempt(
+        attempt=attempt,
+        work_unit_keys=("raw:a", "raw:b"),
+        owner_completeness_attestation="runtime-owner-test:v1",
+        cancellation_request=RuntimeCancellationRequest(attempt=attempt),
+    )
+    worker_calls: list[str] = []
+    persisted: list[RuntimeFinalizationReceipt] = []
+
+    def persist(
+        proposed: RuntimeFinalizationReceipt,
+    ) -> RuntimeFinalizationReceipt:
+        persisted.append(proposed)
+        return proposed
+
+    receipt = execute_runtime_attempt(
+        runtime,
+        (_reservation(attempt),),
+        worker_batch_provider=lambda _aggregate: (
+            worker_calls.append("called") or RuntimeWorkerBatchReceipt(settlements=())
+        ),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        persister=persist,
+    )
+
+    state = receipt.coordinator.state
+    assert worker_calls == []
+    assert persisted == [receipt]
+    assert receipt.coordinator.proposed_outcome is AttemptTerminalOutcome.CANCELLED
+    assert tuple(
+        (settlement.work_unit_key, settlement.outcome)
+        for settlement in state.runtime.settlements
+    ) == (
+        ("raw:a", WorkUnitTerminalOutcome.CANCELLED),
+        ("raw:b", WorkUnitTerminalOutcome.CANCELLED),
+    )
+    assert all(
+        settlement.owner_result_ref is None
+        and settlement.failure_detail is not None
+        and settlement.failure_detail.category is WorkUnitFailureCategory.CANCELLATION
+        and settlement.failure_detail.stage == "runtime-owner-pre-dispatch"
+        for settlement in state.runtime.settlements
+    )
+    assert tuple(
+        (resource.open_outcome, resource.cleanup_outcome)
+        for resource in state.resources
+    ) == (
+        (
+            RuntimeResourceOpenOutcome.NOT_OPENED,
+            RuntimeResourceCleanupOutcome.SUCCEEDED,
+        ),
+    )
+    assert state.artifacts == ()
+    assert "worker_started" not in tuple(
+        event.kind for event in receipt.observability_ledger.events
+    )
+
+
 def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
     tmp_path: Path,
 ) -> None:

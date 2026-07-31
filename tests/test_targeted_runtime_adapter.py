@@ -32,7 +32,10 @@ from xic_extractor.execution_runtime_finalization import (
     RuntimeResourceReservation,
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
-from xic_extractor.execution_runtime_owner import start_runtime_attempt
+from xic_extractor.execution_runtime_owner import (
+    RuntimeCancellationRequest,
+    start_runtime_attempt,
+)
 from xic_extractor.extraction.targeted_diagnostic_method import (
     TargetedDiagnosticMethodResult,
     canonical_targeted_diagnostic_method_bytes,
@@ -372,6 +375,45 @@ def test_targeted_preflight_failure_skips_runner_and_finalizes_marker(
     assert result.coordinator_record.state.resources == ()
     assert recovered.finalization_acknowledged is True
     assert recovered.terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
+def test_targeted_accepted_cancellation_skips_successful_provider_projection(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    provider_calls: list[str] = []
+
+    def successful_provider(_aggregate) -> TargetedRuntimeWorkerBatch:
+        provider_calls.append("called")
+        return _build_spawned_lifecycle_batch(
+            attempt,
+            "raw:a",
+            b"must-not-be-exposed",
+        )
+
+    result = execute_targeted_runtime_lifecycle(
+        start_runtime_attempt(
+            attempt=attempt,
+            work_unit_keys=("raw:a",),
+            owner_completeness_attestation="targeted-runtime-adapter:v1",
+            cancellation_request=RuntimeCancellationRequest(attempt=attempt),
+        ),
+        (_reservation(attempt),),
+        worker_batch_provider=successful_provider,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        finalization_persister=lambda proposed: proposed,
+    )
+
+    assert provider_calls == []
+    assert result.finalization_record.terminal_outcome is (
+        AttemptTerminalOutcome.CANCELLED
+    )
+    assert result.settlement.successful_result_refs == ()
+    assert result.settlement.successful_observation_batches == ()
+    assert result.settlement.successful_targeted_method_results == ()
+    assert tuple(
+        settlement.outcome for settlement in result.settlement.runtime.settlements
+    ) == (WorkUnitTerminalOutcome.CANCELLED,)
 
 
 def test_targeted_lifecycle_fails_closed_without_exact_supervisor_ack(

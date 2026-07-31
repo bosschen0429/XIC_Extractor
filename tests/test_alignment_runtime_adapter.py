@@ -38,6 +38,7 @@ from xic_extractor.execution_runtime_finalization import (
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import (
+    RuntimeCancellationRequest,
     mint_work_unit_settlement,
     start_runtime_attempt,
 )
@@ -278,6 +279,68 @@ def test_alignment_preflight_failure_skips_runner_and_finalizes_marker(
     assert result.finalization_record.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert recovered.finalization_acknowledged is True
     assert recovered.terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
+def test_alignment_accepted_cancellation_skips_runner_without_factory(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path, stem="cancelled")
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "alignment-cancelled.runtime.json",
+        "alignment-runtime-artifacts:cancelled",
+    )
+    runner_calls: list[str] = []
+    job = _NoRawAlignmentJob(
+        attempt,
+        "sample:a",
+        "process:sample:a",
+        b"must-not-run",
+    )
+
+    def worker(observed_job: _NoRawAlignmentJob) -> AlignmentRuntimeProcessResult:
+        runner_calls.append(observed_job.work_unit_key)
+        return _run_no_raw_alignment_job(observed_job)
+
+    result = execute_alignment_process_runtime(
+        start_runtime_attempt(
+            attempt=attempt,
+            work_unit_keys=("sample:a",),
+            owner_completeness_attestation="alignment-runtime-test:v1",
+            cancellation_request=RuntimeCancellationRequest(attempt=attempt),
+        ),
+        (job,),
+        worker=worker,
+        error_factory=_alignment_job_error,
+        max_workers=1,
+        resource_reservations=(_reservations(attempt)[0],),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=marker,
+    )
+
+    recovered = marker.recover_after_coordinator_loss(attempt)
+    assert runner_calls == []
+    assert result.finalization_record.terminal_outcome is (
+        AttemptTerminalOutcome.CANCELLED
+    )
+    assert result.successful_observation_batches == ()
+    assert result.successful_cross_sample_peak_groups == ()
+    assert tuple(settlement.outcome for settlement in result.runtime.settlements) == (
+        WorkUnitTerminalOutcome.CANCELLED,
+    )
+    resource = result.coordinator_record.state.resources[0]
+    assert resource.open_outcome is RuntimeResourceOpenOutcome.NOT_OPENED
+    assert resource.cleanup_outcome is RuntimeResourceCleanupOutcome.SUCCEEDED
+    assert recovered.finalization_acknowledged is True
+    assert recovered.terminal_outcome is AttemptTerminalOutcome.CANCELLED
+    assert recovered.coordinator_record_bytes is not None
+    recovered_payload = json.loads(recovered.coordinator_record_bytes)
+    recovered_settlement = recovered_payload["work_settlements"][0]
+    assert recovered_settlement["outcome"] == "cancelled"
+    assert recovered_settlement["owner_result_artifact_id"] is None
+    assert recovered_settlement["failure_detail"]["category"] == "cancellation"
+    assert recovered_settlement["failure_detail"]["stage"] == (
+        "runtime-owner-pre-dispatch"
+    )
 
 
 def test_alignment_scientific_carriers_roundtrip_in_manifest_order(

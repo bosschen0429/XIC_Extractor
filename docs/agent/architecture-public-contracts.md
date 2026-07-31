@@ -77,9 +77,12 @@ The boundary is closed as follows:
   work settlements, resource settlements, artifact registrations, and
   acquisition receipts. The runtime owner validates the request against the
   exact processing attempt and alone appends the accepted-cancellation event;
-  rejected manifest preflight remains failed rather than being relabeled as
-  cancelled. Consumers may also provide `RuntimeTelemetrySamples` for facts the
-  runtime cannot independently observe: monotonic offsets, RSS, and
+  once accepted before dispatch, the atomic owner skips the worker-batch
+  provider, settles every manifest work unit as cancelled, and closes reserved
+  resources as not opened without accepting artifacts or acquisitions.
+  Rejected manifest preflight remains failed rather than being relabeled as
+  cancelled. Consumers may also provide `RuntimeTelemetrySamples` for facts
+  the runtime cannot independently observe: monotonic offsets, RSS, and
   runtime-mediated artifact I/O.
 - Lifecycle topology, accepted work/resource/artifact state, RAW-open count,
   logical XIC request/batch/call/point counts, terminal proposal,

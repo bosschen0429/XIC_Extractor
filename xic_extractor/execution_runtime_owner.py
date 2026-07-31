@@ -18,6 +18,7 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptRuntime,
+    WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
@@ -637,14 +638,51 @@ def execute_runtime_attempt(
 
     Rejected manifest preflight remains a first-class owner state: the worker
     provider is not invoked, no resources are reserved, and the same terminal
-    receipt/persistence path closes the attempt. Consumers therefore cannot
-    split preparation or settlement from finalization.
+    receipt/persistence path closes the attempt. Accepted pre-dispatch
+    cancellation likewise skips the worker provider; the owner settles every
+    manifest work unit as cancelled and closes reserved resources as not
+    opened. Consumers therefore cannot split preparation or settlement from
+    finalization.
     """
 
     if not callable(worker_batch_provider):
         raise RuntimeFinalizationContractError("worker_batch_provider must be callable")
     aggregate = _prepare_runtime_attempt(runtime, reservations)
-    if not aggregate.runtime.manifest_preflight_failed:
+    if aggregate.runtime.history.cancellation_accepted:
+        attempt = aggregate.runtime.manifest.attempt
+        aggregate = _apply_runtime_worker_batch(
+            aggregate,
+            RuntimeWorkerBatchReceipt(
+                settlements=tuple(
+                    mint_work_unit_settlement(
+                        attempt=attempt,
+                        work_unit_key=work_unit_key,
+                        outcome=WorkUnitTerminalOutcome.CANCELLED,
+                        failure_detail=WorkUnitFailureDetail(
+                            category=WorkUnitFailureCategory.CANCELLATION,
+                            stage="runtime-owner-pre-dispatch",
+                            source_reference=(
+                                f"runtime-owner:{attempt.processing_attempt_id}"
+                            ),
+                            message=(
+                                "attempt cancellation accepted before worker dispatch"
+                            ),
+                        ),
+                    )
+                    for work_unit_key in aggregate.runtime.manifest.work_unit_keys
+                ),
+                resource_settlements=tuple(
+                    RuntimeResourceSettlementReceipt(
+                        attempt=attempt,
+                        resource_key=record.reservation.resource_key,
+                        open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
+                        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+                    )
+                    for record in aggregate.state.resources
+                ),
+            ),
+        )
+    elif not aggregate.runtime.manifest_preflight_failed:
         aggregate = _apply_runtime_worker_batch(
             aggregate,
             worker_batch_provider(aggregate),
