@@ -71,10 +71,15 @@ from xic_extractor.processing_identity import (
     canonical_evidence_artifact_closure,
     resolve_request_acquisition_source,
 )
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
+from xic_extractor.raw_reader import (
+    Ms2Scan,
+    Ms2ScanEvent,
+    RawReaderError,
+    require_owner_bound_raw_handle,
+)
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.signal_processing import find_peak_and_area
-from xic_extractor.xic_models import XICRequest
+from xic_extractor.xic_models import XICRequest, crop_xic_trace_by_rt
 
 VALIDATION_STATUS = "diagnostic_only"
 _ADAPTER_NAMESPACE = "xic_extractor.targeted_real_data_adapter"
@@ -150,6 +155,12 @@ def adapt_current_discovery_sample_target(
         processing_owners=processing_owners,
         sample=sample,
     )
+    try:
+        bound_raw = require_owner_bound_raw_handle(raw, source)
+    except RawReaderError as exc:
+        raise TargetedRealDataAdapterError(
+            "raw handle is not owner-bound to the resolved acquisition source"
+        ) from exc
     capability = mint_trace_acquisition_capability(
         source,
         adapter_namespace=_ADAPTER_NAMESPACE,
@@ -157,7 +168,7 @@ def adapt_current_discovery_sample_target(
     )
     scans_and_seeds = tuple(
         (
-            scan := _read_exact_scan(raw, candidate),
+            scan := _read_exact_scan(bound_raw, candidate),
             _read_exact_seed(
                 scan,
                 raw_file=candidate.raw_file,
@@ -168,24 +179,45 @@ def adapt_current_discovery_sample_target(
         for candidate in bounded
     )
     targeted_rt_min, targeted_rt_max, _anchor_used, _anchor_rt = get_rt_window(
-        raw,
+        bound_raw,
         target_value,
         peak_config,
         reference_rt=None,
     )
-    requests = tuple(
-        XICRequest(
-            mz=target_value.mz,
-            rt_min=targeted_rt_min,
-            rt_max=targeted_rt_max,
-            ppm_tol=target_value.ppm_tol,
-        )
-        for _candidate in bounded
+    targeted_request = XICRequest(
+        mz=target_value.mz,
+        rt_min=targeted_rt_min,
+        rt_max=targeted_rt_max,
+        ppm_tol=target_value.ppm_tol,
     )
-    acquisition = acquire_trace_batch(capability, requests, raw)
+    acquisition_rt_min = min(
+        targeted_rt_min,
+        *(candidate.ms1_search_rt_min for candidate in bounded),
+    )
+    acquisition_rt_max = max(
+        targeted_rt_max,
+        *(candidate.ms1_search_rt_max for candidate in bounded),
+    )
+    request = XICRequest(
+        mz=target_value.mz,
+        rt_min=acquisition_rt_min,
+        rt_max=acquisition_rt_max,
+        ppm_tol=target_value.ppm_tol,
+    )
+    acquisition = acquire_trace_batch(capability, (request,), bound_raw)
+    if len(acquisition.traces) != 1:
+        raise TargetedRealDataAdapterError(
+            "shared candidate-universe acquisition must produce one trace"
+        )
+    acquired = acquisition.traces[0]
+    targeted_trace = crop_xic_trace_by_rt(
+        acquired.trace,
+        targeted_request.rt_min,
+        targeted_request.rt_max,
+    )
 
     observations: list[PeakObservationRef] = []
-    for candidate, acquired in zip(bounded, acquisition.traces, strict=True):
+    for candidate in bounded:
         receipt_mask = (
             (acquired.trace.rt >= candidate.ms1_search_rt_min)
             & (acquired.trace.rt <= candidate.ms1_search_rt_max)
@@ -225,8 +257,8 @@ def adapt_current_discovery_sample_target(
         _validate_candidate_integration(candidate, receipt_selected[0].integration)
 
         detection = detect_ms1_trace_peak(
-            acquired.trace.rt,
-            acquired.trace.intensity,
+            targeted_trace.rt,
+            targeted_trace.intensity,
             peak_config=peak_config,
             preferred_rt=candidate.best_seed_rt,
             peak_finder=find_peak_and_area,
@@ -269,8 +301,8 @@ def adapt_current_discovery_sample_target(
         integration = promoted.integration
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
-            request=acquired.coordinate.request,
-            xic_trace=acquired.trace,
+            request=targeted_request,
+            xic_trace=targeted_trace,
             source=f"{_ADAPTER_NAMESPACE}:{TraceCoordinateKind.NATIVE_SCAN.value}",
             acquisition_source_id=source.acquisition_source_id,
         )

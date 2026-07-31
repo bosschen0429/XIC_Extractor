@@ -103,6 +103,220 @@ def test_open_raw_loads_only_expected_absolute_dll_paths(tmp_path: Path) -> None
     assert all(Path(call).parent == tmp_path.resolve() for call in calls)
 
 
+def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> None:
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.raw_reader import open_raw, reset_reader_state
+
+    reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"sample-a")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo:raw:v1",
+    )
+    raw = _FakeRaw()
+
+    handle = open_raw(
+        raw_path,
+        tmp_path,
+        expected_acquisition_source=source,
+        _import_module=_working_imports(),
+        _thermo=_fake_thermo(raw),
+    )
+
+    assert handle.acquisition_source == source
+
+
+def test_owner_bound_raw_handle_seals_payload_and_source(tmp_path: Path) -> None:
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.raw_reader import (
+        open_raw,
+        require_owner_bound_raw_handle,
+        reset_reader_state,
+    )
+
+    reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    other_path = tmp_path / "other.raw"
+    raw_path.write_bytes(b"sample-a")
+    other_path.write_bytes(b"sample-b")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo:raw:v1",
+    )
+    other_source = build_acquisition_source_identity(
+        other_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo:raw:v1",
+    )
+    raw = _FakeRaw()
+    thermo = _fake_thermo(raw)
+    handle = open_raw(
+        raw_path,
+        tmp_path,
+        expected_acquisition_source=source,
+        _import_module=_working_imports(),
+        _thermo=thermo,
+    )
+
+    for attribute, replacement in (
+        ("_raw_file", _FakeRaw()),
+        ("_thermo", _fake_thermo(_FakeRaw())),
+        ("_bound_acquisition_source", other_source),
+    ):
+        with pytest.raises(AttributeError, match="is sealed"):
+            setattr(handle, attribute, replacement)
+        with pytest.raises(AttributeError, match="is sealed"):
+            delattr(handle, attribute)
+
+    assert handle.acquisition_source == source
+    assert require_owner_bound_raw_handle(handle, source) is handle
+
+
+def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) -> None:
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.raw_reader import (
+        RawFileHandle,
+        RawReaderError,
+        require_owner_bound_raw_handle,
+    )
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"sample-a")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo:raw:v1",
+    )
+    raw = _FakeRaw()
+    handle = RawFileHandle(raw, _fake_thermo(raw))
+
+    with pytest.raises(
+        RawReaderError,
+        match="was not owner-bound by open_raw",
+    ):
+        require_owner_bound_raw_handle(handle, source)
+
+
+def test_open_raw_rejects_path_content_from_another_source(tmp_path: Path) -> None:
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.raw_reader import RawReaderError, open_raw, reset_reader_state
+
+    reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    expected_path = tmp_path / "sample-a.raw"
+    actual_path = tmp_path / "sample-b.raw"
+    expected_path.write_bytes(b"sample-a")
+    actual_path.write_bytes(b"sample-b")
+    expected_source = build_acquisition_source_identity(
+        expected_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo:raw:v1",
+    )
+
+    with pytest.raises(
+        RawReaderError,
+        match="does not match expected acquisition source",
+    ):
+        open_raw(
+            actual_path,
+            tmp_path,
+            expected_acquisition_source=expected_source,
+            _import_module=_working_imports(),
+            _thermo=_fake_thermo(_FakeRaw()),
+        )
+
+
+def test_open_raw_rejects_source_path_replacement_during_vendor_open(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.raw_reader import RawReaderError, open_raw, reset_reader_state
+
+    reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    replacement_path = tmp_path / "replacement.raw"
+    raw_path.write_bytes(b"sample-a")
+    replacement_path.write_bytes(b"sample-b")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo:raw:v1",
+    )
+    raw = _FakeRaw()
+    thermo = _fake_thermo(raw)
+
+    def _replace_before_open(_path: str):
+        replacement_path.replace(raw_path)
+        return raw
+
+    thermo.raw_file_reader_adapter.FileFactory = _replace_before_open
+
+    with pytest.raises(
+        RawReaderError,
+        match="source content or path changed while the vendor handle was opening",
+    ):
+        open_raw(
+            raw_path,
+            tmp_path,
+            expected_acquisition_source=source,
+            _import_module=_working_imports(),
+            _thermo=thermo,
+        )
+
+    assert raw.disposed
+
+
+def test_open_raw_rechecks_content_after_vendor_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xic_extractor.raw_reader as raw_reader
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+
+    raw_reader.reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"sample-a")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo:raw:v1",
+    )
+    raw = _FakeRaw()
+    thermo = _fake_thermo(raw)
+
+    def _mutate_after_precheck(_path: str):
+        raw_path.write_bytes(b"sample-b")
+        return raw
+
+    thermo.raw_file_reader_adapter.FileFactory = _mutate_after_precheck
+    monkeypatch.setattr(
+        raw_reader,
+        "_stat_identity",
+        lambda _value: (1, 1, len(b"sample-a"), 1, 1),
+    )
+
+    with pytest.raises(
+        raw_reader.RawReaderError,
+        match="source content or path changed while the vendor handle was opening",
+    ):
+        raw_reader.open_raw(
+            raw_path,
+            tmp_path,
+            expected_acquisition_source=source,
+            _import_module=_working_imports(),
+            _thermo=thermo,
+        )
+
+    assert raw.disposed
+
+
 def test_raw_file_handle_exit_disposes_raw_object() -> None:
     from xic_extractor.raw_reader import RawFileHandle
 

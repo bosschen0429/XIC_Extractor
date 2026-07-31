@@ -1,14 +1,20 @@
 import importlib
 import math
+import os
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, final
 
 import numpy as np
 
+from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
+    IdentityContractError,
+    fingerprint_file_content,
+)
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 EXPECTED_THERMO_DLLS = (
@@ -50,7 +56,15 @@ class _ThermoApi:
     ms2_order: Any
 
 
+@dataclass(frozen=True)
+class _VerifiedAcquisitionSourceBinding:
+    source: AcquisitionSourceIdentity
+    path_identity: tuple[int, int, int, int, int]
+
+
 class RawFileHandle:
+    __slots__ = ("_raw_file", "_thermo", "_raw_chromatogram_call_count")
+
     def __init__(self, raw_file: Any, thermo: _ThermoApi) -> None:
         self._raw_file = raw_file
         self._thermo = thermo
@@ -65,6 +79,10 @@ class RawFileHandle:
     @property
     def raw_chromatogram_call_count(self) -> int:
         return self._raw_chromatogram_call_count
+
+    @property
+    def acquisition_source(self) -> AcquisitionSourceIdentity | None:
+        return None
 
     def extract_xic(
         self, mz: float, rt_min: float, rt_max: float, ppm_tol: float
@@ -171,10 +189,93 @@ class RawFileHandle:
             return self._thermo.trace_settings_factory()
 
 
+def _owner_bound_raw_handle_support() -> tuple[
+    Callable[[Any, _ThermoApi, AcquisitionSourceIdentity], RawFileHandle],
+    Callable[[object, AcquisitionSourceIdentity], RawFileHandle],
+]:
+    mint_token = object()
+
+    @final
+    class OwnerBoundRawFileHandle(RawFileHandle):
+        __slots__ = ("_bound_acquisition_source",)
+
+        def __init__(
+            self,
+            raw_file: Any,
+            thermo: _ThermoApi,
+            source: AcquisitionSourceIdentity,
+            *,
+            _mint_token: object,
+        ) -> None:
+            if _mint_token is not mint_token:
+                raise RawReaderError(
+                    "owner-bound RAW handles must be minted by open_raw"
+                )
+            super().__init__(raw_file, thermo)
+            self._bound_acquisition_source = source
+
+        def __setattr__(self, name: str, value: object) -> None:
+            if name in {
+                "_raw_file",
+                "_thermo",
+                "_bound_acquisition_source",
+            } and hasattr(self, name):
+                raise AttributeError(f"{name} is sealed on owner-bound RAW handles")
+            super().__setattr__(name, value)
+
+        def __delattr__(self, name: str) -> None:
+            if name in {
+                "_raw_file",
+                "_thermo",
+                "_bound_acquisition_source",
+            }:
+                raise AttributeError(f"{name} is sealed on owner-bound RAW handles")
+            super().__delattr__(name)
+
+        def __init_subclass__(cls, **kwargs: object) -> None:
+            raise TypeError("owner-bound RAW handles are final")
+
+        @property
+        def acquisition_source(self) -> AcquisitionSourceIdentity:
+            return self._bound_acquisition_source
+
+    def mint(
+        raw_file: Any,
+        thermo: _ThermoApi,
+        source: AcquisitionSourceIdentity,
+    ) -> RawFileHandle:
+        return OwnerBoundRawFileHandle(
+            raw_file,
+            thermo,
+            source,
+            _mint_token=mint_token,
+        )
+
+    def require(
+        raw: object,
+        expected: AcquisitionSourceIdentity,
+    ) -> RawFileHandle:
+        if not isinstance(raw, OwnerBoundRawFileHandle):
+            raise RawReaderError("RAW handle was not owner-bound by open_raw")
+        if raw.acquisition_source != expected:
+            raise RawReaderError(
+                "RAW handle is bound to a different acquisition source"
+            )
+        return raw
+
+    return mint, require
+
+
+_mint_owner_bound_raw_handle, require_owner_bound_raw_handle = (
+    _owner_bound_raw_handle_support()
+)
+
+
 def open_raw(
     path: Path,
     dll_dir: Path,
     *,
+    expected_acquisition_source: AcquisitionSourceIdentity | None = None,
     _import_module: Callable[[str], Any] = importlib.import_module,
     _thermo: _ThermoApi | None = None,
 ) -> RawFileHandle:
@@ -186,13 +287,106 @@ def open_raw(
     try:
         _ensure_assemblies_loaded(resolved_dll_dir, _import_module)
         thermo = _thermo or _load_thermo_api(_import_module)
+    except Exception as exc:
+        raise RawReaderError(
+            f"Failed to load Thermo DLL or open raw file: {exc}"
+        ) from exc
+    source_binding = _verify_expected_acquisition_source(
+        path,
+        expected_acquisition_source,
+    )
+    try:
         raw_file = thermo.raw_file_reader_adapter.FileFactory(str(path))
         raw_file.SelectInstrument(thermo.device_ms, 1)
     except Exception as exc:
         raise RawReaderError(
             f"Failed to load Thermo DLL or open raw file: {exc}"
         ) from exc
-    return RawFileHandle(raw_file, thermo)
+    try:
+        _verify_source_path_still_bound(path, source_binding)
+    except RawReaderError:
+        raw_file.Dispose()
+        raise
+    if source_binding is None:
+        return RawFileHandle(raw_file, thermo)
+    return _mint_owner_bound_raw_handle(
+        raw_file,
+        thermo,
+        source_binding.source,
+    )
+
+
+def _verify_expected_acquisition_source(
+    path: Path,
+    expected: AcquisitionSourceIdentity | None,
+) -> _VerifiedAcquisitionSourceBinding | None:
+    if expected is None:
+        return None
+    if not isinstance(expected, AcquisitionSourceIdentity):
+        raise RawReaderError(
+            "expected_acquisition_source must be an AcquisitionSourceIdentity"
+        )
+    try:
+        before = path.stat()
+        fingerprint = fingerprint_file_content(path)
+        after = path.stat()
+    except IdentityContractError as exc:
+        raise RawReaderError(
+            "unable to verify the expected acquisition source"
+        ) from exc
+    except OSError as exc:
+        raise RawReaderError(
+            "unable to verify the expected acquisition source"
+        ) from exc
+    if not os.path.samestat(before, after) or _stat_identity(before) != _stat_identity(
+        after
+    ):
+        raise RawReaderError("RAW source path changed while it was being verified")
+    if (
+        fingerprint.content_sha256 != expected.content_sha256
+        or fingerprint.byte_size != expected.byte_size
+    ):
+        raise RawReaderError(
+            "RAW path content does not match expected acquisition source"
+        )
+    return _VerifiedAcquisitionSourceBinding(
+        source=expected,
+        path_identity=_stat_identity(after),
+    )
+
+
+def _verify_source_path_still_bound(
+    path: Path,
+    binding: _VerifiedAcquisitionSourceBinding | None,
+) -> None:
+    if binding is None:
+        return
+    try:
+        current_binding = _verify_expected_acquisition_source(
+            path,
+            binding.source,
+        )
+    except RawReaderError as exc:
+        raise RawReaderError(
+            "RAW source content or path changed while the vendor handle was opening"
+        ) from exc
+    if (
+        current_binding is None
+        or current_binding.path_identity != binding.path_identity
+    ):
+        raise RawReaderError(
+            "RAW source content or path changed while the vendor handle was opening"
+        )
+
+
+def _stat_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
 
 
 def preflight_raw_reader(
