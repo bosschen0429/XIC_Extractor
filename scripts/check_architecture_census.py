@@ -141,6 +141,7 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "RuntimeAcquisitionReceipt",
             "RuntimeArtifactIoSample",
             "RuntimeArtifactRegistrationReceipt",
+            "RuntimeCancellationRequest",
             "RuntimeProcessTreePeakRssSample",
             "RuntimeResourceSettlementReceipt",
             "RuntimeTelemetrySamples",

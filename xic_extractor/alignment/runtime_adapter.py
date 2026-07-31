@@ -11,8 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING, Any
 
 from xic_extractor.alignment.process_execution import run_process_jobs
 from xic_extractor.evidence_artifacts import (
@@ -55,6 +55,11 @@ from xic_extractor.peak_detection.observation_batch import (
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
+if TYPE_CHECKING:
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSamplePeakGroupHypothesis,
+    )
+
 
 class AlignmentRuntimeAdapterError(ValueError):
     """Raised when Alignment process results cannot close shared runtime work."""
@@ -81,6 +86,8 @@ class AlignmentRuntimeProcessResult:
     cleanup_outcome: RuntimeResourceCleanupOutcome
     runtime_artifacts: tuple[EvidenceArtifactRef, ...] = ()
     peak_observation_batch: PeakObservationBatch | None = None
+    cross_sample_peak_groups: tuple[CrossSamplePeakGroupHypothesis, ...] | None = None
+    cross_sample_peak_group_upstream_artifact_ids: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.settlement, WorkUnitSettlement):
@@ -122,6 +129,12 @@ class AlignmentRuntimeProcessResult:
             )
         if self.peak_observation_batch is not None:
             _validate_peak_observation_result(self)
+        if self.cross_sample_peak_groups is not None:
+            _validate_cross_sample_peak_group_result(self)
+        elif self.cross_sample_peak_group_upstream_artifact_ids is not None:
+            raise AlignmentRuntimeAdapterError(
+                "cross-sample peak-group upstream IDs require a scientific result"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +142,9 @@ class AlignmentRuntimeApplicationResult:
     runtime: AttemptRuntime
     finalization: RuntimeFinalizationReceipt
     successful_observation_batches: tuple[tuple[str, PeakObservationBatch], ...] = ()
+    successful_cross_sample_peak_groups: tuple[
+        tuple[str, tuple[CrossSamplePeakGroupHypothesis, ...]], ...
+    ] = ()
 
     def __post_init__(self) -> None:
         attempt = self.runtime.manifest.attempt
@@ -189,6 +205,40 @@ class AlignmentRuntimeApplicationResult:
                 batch=batch,
                 registered_artifact_ids=registered_by_key[key],
             )
+        group_keys = tuple(
+            key for key, _groups in self.successful_cross_sample_peak_groups
+        )
+        if group_keys != tuple(
+            key for key in self.runtime.manifest.work_unit_keys if key in group_keys
+        ):
+            raise AlignmentRuntimeAdapterError(
+                "successful_cross_sample_peak_groups must follow manifest order"
+            )
+        if len(group_keys) != len(set(group_keys)):
+            raise AlignmentRuntimeAdapterError(
+                "successful cross-sample peak groups must bind unique manifest work"
+            )
+        if self.runtime.integrity_failure is not None and group_keys:
+            raise AlignmentRuntimeAdapterError(
+                "integrity-failed runtime cannot expose cross-sample peak groups"
+            )
+        for key, groups in self.successful_cross_sample_peak_groups:
+            settlement = settlements_by_key.get(key)
+            if (
+                settlement is None
+                or settlement.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
+                or settlement.owner_result_ref is None
+            ):
+                raise AlignmentRuntimeAdapterError(
+                    "cross-sample peak groups must bind accepted successful work"
+                )
+            _validate_cross_sample_peak_group_binding(
+                settlement=settlement,
+                groups=groups,
+                upstream_artifact_ids=(
+                    settlement.owner_result_ref.upstream_artifact_ids
+                ),
+            )
         if (
             self.successful_observation_batches
             or self.finalization.supervisor.terminal_outcome
@@ -248,6 +298,7 @@ def execute_alignment_process_runtime(
     *,
     worker: Callable[[Any], AlignmentRuntimeProcessResult],
     error_factory: Callable[[Any, Exception], AlignmentRuntimeProcessResult],
+    cancellation_factory: Callable[[Any], AlignmentRuntimeProcessResult] | None = None,
     max_workers: int,
     resource_reservations: Sequence[RuntimeResourceReservation],
     telemetry_provider: RuntimeTelemetryProvider,
@@ -268,19 +319,36 @@ def execute_alignment_process_runtime(
         or max_workers < 1
     ):
         raise AlignmentRuntimeAdapterError("max_workers must be a positive integer")
+    normalized_jobs = tuple(jobs)
     recovery_marker.record_launch(runtime)
     successful_observation_batches: dict[str, PeakObservationBatch] = {}
+    successful_cross_sample_peak_groups: dict[
+        str, tuple[CrossSamplePeakGroupHypothesis, ...]
+    ] = {}
+    observed_results: tuple[AlignmentRuntimeProcessResult, ...] = ()
 
     def provide_owner_batch(
         _aggregate: RuntimeAttemptAggregate,
     ) -> RuntimeWorkerBatchReceipt:
-        observed = run_process_jobs(
-            jobs,
-            worker=worker,
-            error_factory=error_factory,
-            max_workers=max_workers,
-            executor_factory=executor_factory,
-        )
+        nonlocal observed_results
+        if runtime.history.cancellation_accepted:
+            if cancellation_factory is None:
+                raise AlignmentRuntimeAdapterError(
+                    "cancelled Alignment runtime requires cancellation_factory"
+                )
+            observed = tuple(
+                cancellation_factory(job) for job in normalized_jobs
+            )
+        else:
+            observed = tuple(
+                run_process_jobs(
+                    normalized_jobs,
+                    worker=worker,
+                    error_factory=error_factory,
+                    max_workers=max_workers,
+                    executor_factory=executor_factory,
+                )
+            )
         if any(
             not isinstance(item, AlignmentRuntimeProcessResult) for item in observed
         ):
@@ -290,13 +358,16 @@ def execute_alignment_process_runtime(
         manifest_order = {
             key: index for index, key in enumerate(runtime.manifest.work_unit_keys)
         }
-        ordered = sorted(
-            observed,
-            key=lambda item: manifest_order.get(
-                item.settlement.work_unit_key,
-                len(manifest_order),
+        ordered = tuple(
+            sorted(
+                observed,
+                key=lambda item: manifest_order.get(
+                    item.settlement.work_unit_key,
+                    len(manifest_order),
+                ),
             ),
         )
+        observed_results = ordered
         for item in ordered:
             settlement = item.settlement
             if settlement.attempt != runtime.manifest.attempt:
@@ -349,6 +420,23 @@ def execute_alignment_process_runtime(
         persister=recovery_marker,
     )
     current = finalization.coordinator.state
+    accepted_by_key = {
+        settlement.work_unit_key: settlement
+        for settlement in current.runtime.settlements
+    }
+    for item in observed_results:
+        settlement = item.settlement
+        if (
+            accepted_by_key.get(settlement.work_unit_key) != settlement
+            or settlement.outcome is not WorkUnitTerminalOutcome.SUCCEEDED
+            or item.cross_sample_peak_groups is None
+        ):
+            continue
+        _coalesce_cross_sample_peak_groups(
+            successful_cross_sample_peak_groups,
+            work_unit_key=settlement.work_unit_key,
+            groups=item.cross_sample_peak_groups,
+        )
     if (
         not current.runtime.manifest_preflight_failed
         and not current.runtime.all_manifest_work_settled
@@ -366,6 +454,7 @@ def execute_alignment_process_runtime(
         )
     if current.runtime.integrity_failure is not None or current.failures:
         successful_observation_batches.clear()
+        successful_cross_sample_peak_groups.clear()
     return AlignmentRuntimeApplicationResult(
         runtime=current.runtime,
         finalization=finalization,
@@ -374,7 +463,89 @@ def execute_alignment_process_runtime(
             for key in current.runtime.manifest.work_unit_keys
             if key in successful_observation_batches
         ),
+        successful_cross_sample_peak_groups=tuple(
+            (key, successful_cross_sample_peak_groups[key])
+            for key in current.runtime.manifest.work_unit_keys
+            if key in successful_cross_sample_peak_groups
+        ),
     )
+
+
+def canonical_alignment_peak_group_result_bytes(
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+) -> bytes:
+    """Serialize one Alignment-owned scientific result without runtime policy."""
+
+    from xic_extractor.alignment.cross_sample_peak_groups import (
+        CrossSamplePeakGroupHypothesis,
+    )
+
+    if not isinstance(groups, tuple) or any(
+        not isinstance(group, CrossSamplePeakGroupHypothesis) for group in groups
+    ):
+        raise AlignmentRuntimeAdapterError(
+            "groups must be a tuple of CrossSamplePeakGroupHypothesis values"
+        )
+    return (
+        json.dumps(
+            {
+                "groups": [asdict(group) for group in groups],
+                "schema_version": "alignment_peak_group_result_v1",
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def resolve_alignment_application_peak_group_result(
+    application: AlignmentRuntimeApplicationResult,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+) -> tuple[str, EvidenceArtifactRef]:
+    """Resolve one exact owner-validated group carrier from an application result."""
+
+    if not isinstance(application, AlignmentRuntimeApplicationResult):
+        raise AlignmentRuntimeAdapterError(
+            "application must be AlignmentRuntimeApplicationResult"
+        )
+    if application.runtime.integrity_failure is not None:
+        raise AlignmentRuntimeAdapterError(
+            "integrity-failed Alignment runtime cannot resolve scientific results"
+        )
+    expected = canonical_alignment_peak_group_result_bytes(groups)
+    matches = tuple(
+        (work_unit_key, observed_groups)
+        for work_unit_key, observed_groups in (
+            application.successful_cross_sample_peak_groups
+        )
+        if canonical_alignment_peak_group_result_bytes(observed_groups) == expected
+    )
+    if len(matches) != 1:
+        raise AlignmentRuntimeAdapterError(
+            "Alignment application must contain exactly one matching group result"
+        )
+    work_unit_key, observed_groups = matches[0]
+    settlement = next(
+        (
+            item
+            for item in application.runtime.settlements
+            if item.work_unit_key == work_unit_key
+        ),
+        None,
+    )
+    if settlement is None or settlement.owner_result_ref is None:
+        raise AlignmentRuntimeAdapterError(
+            "matching Alignment group result is missing its owner artifact"
+        )
+    _validate_cross_sample_peak_group_binding(
+        settlement=settlement,
+        groups=observed_groups,
+        upstream_artifact_ids=settlement.owner_result_ref.upstream_artifact_ids,
+    )
+    return work_unit_key, settlement.owner_result_ref
 
 
 def _canonical_result_identity_bytes(
@@ -502,6 +673,91 @@ def _coalesce_observation_batch(
         )
 
 
+def _validate_cross_sample_peak_group_result(
+    result: AlignmentRuntimeProcessResult,
+) -> None:
+    groups = result.cross_sample_peak_groups
+    if groups is None:
+        raise AlignmentRuntimeAdapterError(
+            "cross_sample_peak_groups must be owner-produced"
+        )
+    settlement = result.settlement
+    if settlement.outcome is not WorkUnitTerminalOutcome.SUCCEEDED:
+        raise AlignmentRuntimeAdapterError(
+            "only successful Alignment work may carry cross-sample peak groups"
+        )
+    upstream_artifact_ids = result.cross_sample_peak_group_upstream_artifact_ids
+    if upstream_artifact_ids is None:
+        raise AlignmentRuntimeAdapterError(
+            "cross-sample peak groups require caller-provided upstream artifact IDs"
+        )
+    _validate_cross_sample_peak_group_binding(
+        settlement=settlement,
+        groups=groups,
+        upstream_artifact_ids=upstream_artifact_ids,
+    )
+
+
+def _validate_cross_sample_peak_group_binding(
+    *,
+    settlement: WorkUnitSettlement,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    upstream_artifact_ids: tuple[str, ...],
+) -> None:
+    artifact = settlement.owner_result_ref
+    if artifact is None:
+        raise AlignmentRuntimeAdapterError(
+            "cross-sample peak groups require an Alignment result artifact"
+        )
+    if artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
+        raise AlignmentRuntimeAdapterError(
+            "cross-sample peak groups require an Alignment-owned result artifact"
+        )
+    if not isinstance(upstream_artifact_ids, tuple) or any(
+        not isinstance(artifact_id, str) or not artifact_id
+        for artifact_id in upstream_artifact_ids
+    ):
+        raise AlignmentRuntimeAdapterError(
+            "cross-sample peak-group upstream artifact IDs must be an explicit tuple"
+        )
+    if artifact.upstream_artifact_ids != upstream_artifact_ids:
+        raise AlignmentRuntimeAdapterError(
+            "Alignment result artifact must close the caller-provided upstream IDs"
+        )
+    payload = canonical_alignment_peak_group_result_bytes(groups)
+    try:
+        verify_evidence_artifact_payload(
+            artifact,
+            _canonical_result_identity_bytes(
+                work_unit_key=settlement.work_unit_key,
+                content_sha256=hashlib.sha256(payload).hexdigest(),
+                byte_size=len(payload),
+            ),
+        )
+    except ValueError as exc:
+        raise AlignmentRuntimeAdapterError(
+            "Alignment result artifact does not bind the cross-sample peak groups"
+        ) from exc
+
+
+def _coalesce_cross_sample_peak_groups(
+    results: dict[str, tuple[CrossSamplePeakGroupHypothesis, ...]],
+    *,
+    work_unit_key: str,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+) -> None:
+    existing = results.get(work_unit_key)
+    if existing is None:
+        results[work_unit_key] = groups
+        return
+    if canonical_alignment_peak_group_result_bytes(existing) != (
+        canonical_alignment_peak_group_result_bytes(groups)
+    ):
+        raise AlignmentRuntimeAdapterError(
+            "replayed Alignment cross-sample peak groups conflict with accepted work"
+        )
+
+
 def _validate_alignment_application_batch(
     *,
     settlement: WorkUnitSettlement,
@@ -559,6 +815,8 @@ __all__ = [
     "AlignmentRuntimeAdapterError",
     "AlignmentRuntimeApplicationResult",
     "AlignmentRuntimeProcessResult",
+    "canonical_alignment_peak_group_result_bytes",
     "execute_alignment_process_runtime",
     "mint_alignment_process_result_artifact",
+    "resolve_alignment_application_peak_group_result",
 ]

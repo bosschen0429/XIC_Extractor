@@ -16,11 +16,14 @@ from typing import final
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
+    AttemptLifecycleEventKind,
     AttemptRuntime,
+    WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitSettlement,
     WorkUnitTerminalOutcome,
     _start_runtime_attempt,
+    append_attempt_lifecycle_event,
     settle_work_unit,
 )
 from xic_extractor.execution_runtime import (
@@ -60,6 +63,19 @@ from xic_extractor.processing_identity import ProcessingAttemptIdentity
 
 _RUNTIME_OWNER_MEASUREMENT_SOURCE = "execution_runtime_owner:v1"
 _RUNTIME_OWNER_MINT_TOKEN = object()
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCancellationRequest:
+    """One owner-bound request to accept cancellation for a runtime attempt."""
+
+    attempt: ProcessingAttemptIdentity
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.attempt, ProcessingAttemptIdentity):
+            raise RuntimeFinalizationContractError(
+                "cancellation request attempt must be owner-issued"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,13 +381,32 @@ def start_runtime_attempt(
     attempt: ProcessingAttemptIdentity,
     work_unit_keys: tuple[str, ...],
     owner_completeness_attestation: str | None,
+    cancellation_request: RuntimeCancellationRequest | None = None,
 ) -> AttemptRuntime:
-    """Create one running or preflight-terminalized runtime owner state."""
+    """Create one running, cancelled, or preflight-terminalized owner state."""
 
-    return _start_runtime_attempt(
+    if cancellation_request is not None:
+        if not isinstance(cancellation_request, RuntimeCancellationRequest):
+            raise RuntimeFinalizationContractError(
+                "cancellation_request must be a RuntimeCancellationRequest or None"
+            )
+        if cancellation_request.attempt != attempt:
+            raise RuntimeFinalizationContractError(
+                "cancellation request references a different runtime attempt"
+            )
+    runtime = _start_runtime_attempt(
         attempt=attempt,
         work_unit_keys=work_unit_keys,
         owner_completeness_attestation=owner_completeness_attestation,
+    )
+    if cancellation_request is None or runtime.manifest_preflight_failed:
+        return runtime
+    return replace(
+        runtime,
+        history=append_attempt_lifecycle_event(
+            runtime.history,
+            AttemptLifecycleEventKind.CANCELLATION_ACCEPTED,
+        ),
     )
 
 
@@ -603,14 +638,51 @@ def execute_runtime_attempt(
 
     Rejected manifest preflight remains a first-class owner state: the worker
     provider is not invoked, no resources are reserved, and the same terminal
-    receipt/persistence path closes the attempt. Consumers therefore cannot
-    split preparation or settlement from finalization.
+    receipt/persistence path closes the attempt. Accepted pre-dispatch
+    cancellation likewise skips the worker provider; the owner settles every
+    manifest work unit as cancelled and closes reserved resources as not
+    opened. Consumers therefore cannot split preparation or settlement from
+    finalization.
     """
 
     if not callable(worker_batch_provider):
         raise RuntimeFinalizationContractError("worker_batch_provider must be callable")
     aggregate = _prepare_runtime_attempt(runtime, reservations)
-    if not aggregate.runtime.manifest_preflight_failed:
+    if aggregate.runtime.history.cancellation_accepted:
+        attempt = aggregate.runtime.manifest.attempt
+        aggregate = _apply_runtime_worker_batch(
+            aggregate,
+            RuntimeWorkerBatchReceipt(
+                settlements=tuple(
+                    mint_work_unit_settlement(
+                        attempt=attempt,
+                        work_unit_key=work_unit_key,
+                        outcome=WorkUnitTerminalOutcome.CANCELLED,
+                        failure_detail=WorkUnitFailureDetail(
+                            category=WorkUnitFailureCategory.CANCELLATION,
+                            stage="runtime-owner-pre-dispatch",
+                            source_reference=(
+                                f"runtime-owner:{attempt.processing_attempt_id}"
+                            ),
+                            message=(
+                                "attempt cancellation accepted before worker dispatch"
+                            ),
+                        ),
+                    )
+                    for work_unit_key in aggregate.runtime.manifest.work_unit_keys
+                ),
+                resource_settlements=tuple(
+                    RuntimeResourceSettlementReceipt(
+                        attempt=attempt,
+                        resource_key=record.reservation.resource_key,
+                        open_outcome=RuntimeResourceOpenOutcome.NOT_OPENED,
+                        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+                    )
+                    for record in aggregate.state.resources
+                ),
+            ),
+        )
+    elif not aggregate.runtime.manifest_preflight_failed:
         aggregate = _apply_runtime_worker_batch(
             aggregate,
             worker_batch_provider(aggregate),
@@ -1227,6 +1299,7 @@ __all__ = [
     "RuntimeArtifactIoSample",
     "RuntimeArtifactRegistrationReceipt",
     "RuntimeAttemptAggregate",
+    "RuntimeCancellationRequest",
     "RuntimeFinalizationPersister",
     "RuntimeFinalizationReceipt",
     "RuntimeProcessTreePeakRssSample",

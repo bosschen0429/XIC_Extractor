@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.execution_runtime import AttemptRuntime
@@ -26,6 +26,13 @@ from .targeted_runtime_adapter import (
 )
 
 if TYPE_CHECKING:
+    from xic_extractor.extraction.targeted_diagnostic_delivery import (
+        TargetedDiagnosticDeliveryCandidate,
+    )
+    from xic_extractor.extraction.targeted_diagnostic_method import (
+        TargetedDiagnosticMethodRequest,
+        TargetedDiagnosticMethodResult,
+    )
     from xic_extractor.extractor import RunOutput
     from xic_extractor.peak_detection.model_selection import (
         ExpectedDiffApprovalRecord,
@@ -62,6 +69,23 @@ class TargetedRuntimeFinalizationPersister(Protocol):
     ) -> RuntimeFinalizationReceipt: ...
 
 
+class TargetedDiagnosticMethodRunner(Protocol):
+    def __call__(
+        self,
+        request: TargetedDiagnosticMethodRequest,
+        *,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> TargetedDiagnosticMethodResult | TargetedDiagnosticApplicationOutcome: ...
+
+
+class TargetedDiagnosticMethodRequestFactory(Protocol):
+    def __call__(
+        self,
+        request: TargetedApplicationRequest,
+        authoritative_legacy_output: RunOutput,
+    ) -> TargetedDiagnosticMethodRequest | None: ...
+
+
 @dataclass(frozen=True)
 class TargetedApplicationRequest:
     """Headless application input; callbacks are lifecycle adapters, not science."""
@@ -78,15 +102,48 @@ class TargetedApplicationRequest:
 
 
 @dataclass(frozen=True)
+class TargetedDiagnosticApplicationOutcome:
+    """Adapter-neutral diagnostic settlement; legacy always remains active."""
+
+    status: Literal["staged_candidate", "quarantined"]
+    method_result: TargetedDiagnosticMethodResult | None
+    delivery_candidate: TargetedDiagnosticDeliveryCandidate | None
+    quarantine_reason: str = ""
+
+
+@dataclass(frozen=True)
+class TargetedApplicationExecution:
+    """One adapter-neutral run; legacy remains active during diagnostic migration."""
+
+    active_output: RunOutput
+    diagnostic_method_result: TargetedDiagnosticMethodResult | None = None
+    diagnostic_outcome: TargetedDiagnosticApplicationOutcome | None = None
+
+
+@dataclass(frozen=True)
 class TargetedApplicationService:
     runner: TargetedRunner
     runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
     runtime_finalization_persister: TargetedRuntimeFinalizationPersister | None = None
     runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
+    diagnostic_method_runner: TargetedDiagnosticMethodRunner | None = None
+    diagnostic_method_request_factory: TargetedDiagnosticMethodRequestFactory | None = (
+        None
+    )
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
+        """Preserve the existing application API while using the canonical path."""
+
+        return self.execute_application(request).active_output
+
+    def execute_application(
+        self,
+        request: TargetedApplicationRequest,
+    ) -> TargetedApplicationExecution:
+        """Run legacy authority and an optional bounded diagnostic successor once."""
+
         resolved_request = _resolve_application_request(request)
-        return self.runner(
+        active_output = self.runner(
             resolved_request.config,
             list(resolved_request.targets),
             progress_callback=resolved_request.progress_callback,
@@ -96,6 +153,32 @@ class TargetedApplicationService:
             model_selection_expected_diff_approvals=(
                 resolved_request.model_selection_expected_diff_approvals
             ),
+        )
+        diagnostic_runner = self.diagnostic_method_runner
+        diagnostic_factory = self.diagnostic_method_request_factory
+        if diagnostic_runner is None and diagnostic_factory is None:
+            return TargetedApplicationExecution(active_output=active_output)
+        if diagnostic_runner is None or diagnostic_factory is None:
+            raise TargetedRuntimeAdapterError(
+                "diagnostic method runner and request factory must be "
+                "configured together"
+            )
+        diagnostic_request = diagnostic_factory(resolved_request, active_output)
+        if diagnostic_request is None:
+            return TargetedApplicationExecution(active_output=active_output)
+        diagnostic_execution = diagnostic_runner(
+            diagnostic_request,
+            should_stop=resolved_request.should_stop,
+        )
+        if isinstance(diagnostic_execution, TargetedDiagnosticApplicationOutcome):
+            return TargetedApplicationExecution(
+                active_output=active_output,
+                diagnostic_method_result=diagnostic_execution.method_result,
+                diagnostic_outcome=diagnostic_execution,
+            )
+        return TargetedApplicationExecution(
+            active_output=active_output,
+            diagnostic_method_result=diagnostic_execution,
         )
 
     def execute_runtime_lifecycle(
@@ -152,6 +235,26 @@ class TargetedApplicationService:
             telemetry_provider=telemetry_provider,
             finalization_persister=finalization_persister,
         )
+
+    def execute_diagnostic_method(
+        self,
+        request: TargetedDiagnosticMethodRequest,
+    ) -> TargetedDiagnosticMethodResult:
+        """Run the bounded no-RAW method through this canonical service owner."""
+
+        if self.diagnostic_method_runner is None:
+            raise TargetedRuntimeAdapterError(
+                "TargetedApplicationService requires diagnostic_method_runner "
+                "for execute_diagnostic_method"
+            )
+        observed = self.diagnostic_method_runner(request)
+        if isinstance(observed, TargetedDiagnosticApplicationOutcome):
+            if observed.method_result is None:
+                raise TargetedRuntimeAdapterError(
+                    "diagnostic application outcome has no method result"
+                )
+            return observed.method_result
+        return observed
 
 
 def build_targeted_application_request(
