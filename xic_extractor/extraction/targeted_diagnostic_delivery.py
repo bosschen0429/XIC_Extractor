@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Literal, cast
 
 from xic_extractor.alignment.runtime_adapter import (
@@ -183,7 +185,6 @@ def settle_targeted_diagnostic_delivery_candidate(
     request: TargetedDiagnosticMethodRequest,
     alignment_runtime: AlignmentRuntimeApplicationResult,
     targeted_runtime: TargetedRuntimeLifecycleApplicationResult,
-    authoritative_legacy_csv_bytes: bytes,
     prior_current_delivery_id: str,
 ) -> TargetedDiagnosticDeliveryCandidate:
     """Mint delivery candidates only after exact runtime and legacy parity gates."""
@@ -230,10 +231,6 @@ def settle_targeted_diagnostic_delivery_candidate(
         attempt=attempt,
     )
     _required_text(prior_current_delivery_id, field="prior_current_delivery_id")
-    _require_exact_bytes(
-        authoritative_legacy_csv_bytes,
-        field="authoritative_legacy_csv_bytes",
-    )
 
     candidate_lineage = _candidate_lineage(alignment_inputs, attempt=attempt)
     alignment_runtime_artifacts = _registered_runtime_artifacts(
@@ -333,6 +330,10 @@ def settle_targeted_diagnostic_delivery_candidate(
         ),
     )
     candidate_csv_bytes = output_path.read_bytes()
+    authoritative_legacy_csv_bytes = _render_authoritative_legacy_csv_bytes(
+        request,
+        attempt_dir=output_path.parent,
+    )
     if candidate_csv_bytes != authoritative_legacy_csv_bytes:
         return _quarantined(
             result,
@@ -388,6 +389,27 @@ def settle_targeted_diagnostic_delivery_candidate(
         stage_candidate=stage,
         seal_candidate=seal,
     )
+
+
+def _render_authoritative_legacy_csv_bytes(
+    request: TargetedDiagnosticMethodRequest,
+    *,
+    attempt_dir: Path,
+) -> bytes:
+    """Render current legacy bytes without depending on retained product output."""
+
+    attempt_dir.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(
+        prefix=".authoritative-legacy-",
+        dir=attempt_dir,
+    ) as temporary_dir:
+        output_path = Path(temporary_dir) / "xic_results.csv"
+        write_wide_csv(
+            replace(request.peak_config, output_csv=output_path),
+            request.targets,
+            request.authoritative_legacy_output.file_results,
+        )
+        return output_path.read_bytes()
 
 
 def _successor_writer_file_results(
@@ -790,12 +812,6 @@ def _validate_staged_candidate(
         raise TargetedDiagnosticDeliveryError(
             "staged delivery artifacts are outside the full lineage"
         )
-
-
-def _require_exact_bytes(value: object, *, field: str) -> bytes:
-    if not isinstance(value, bytes):
-        raise TargetedDiagnosticDeliveryError(f"{field} must be exact bytes")
-    return value
 
 
 def _required_text(value: object, *, field: str) -> str:

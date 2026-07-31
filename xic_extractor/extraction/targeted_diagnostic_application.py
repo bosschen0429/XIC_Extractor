@@ -33,7 +33,6 @@ from xic_extractor.extraction.targeted_diagnostic_delivery import (
     settle_targeted_diagnostic_delivery_candidate,
 )
 from xic_extractor.extraction.targeted_diagnostic_method import (
-    TargetedDiagnosticMethodParityError,
     TargetedDiagnosticMethodRequest,
     targeted_attempt_namespace_component,
 )
@@ -274,23 +273,23 @@ def execute_spawned_targeted_diagnostic_method(
                 "delivery not staged and legacy remains active"
             ),
         )
-    legacy_csv_path = request.peak_config.output_csv
-    if not legacy_csv_path.is_file():
-        raise TargetedMethodRuntimeError(
-            "authoritative legacy xic_results.csv is missing after legacy execution"
-        )
     delivery = settle_targeted_diagnostic_delivery_candidate(
         result,
         request=request,
         alignment_runtime=alignment,
         targeted_runtime=targeted,
-        authoritative_legacy_csv_bytes=legacy_csv_path.read_bytes(),
         prior_current_delivery_id=request.prior_current_delivery_id,
     )
+    if delivery.status == "quarantined":
+        return TargetedDiagnosticApplicationOutcome(
+            status="quarantined",
+            method_result=result,
+            delivery_candidate=delivery,
+            quarantine_reason=delivery.quarantine_reason,
+        )
     if delivery.status != "staged_candidate":
-        raise TargetedDiagnosticMethodParityError(
-            delivery.quarantine_reason
-            or "successful successor attempt did not reach exact delivery"
+        raise TargetedMethodRuntimeError(
+            "diagnostic delivery settlement returned an unsupported status"
         )
     return TargetedDiagnosticApplicationOutcome(
         status="staged_candidate",

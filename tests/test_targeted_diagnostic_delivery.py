@@ -81,25 +81,12 @@ def test_true_spawned_runtime_writes_and_stages_exact_candidate(
         fixture.attempt,
     )
     legacy_bytes = _legacy_csv_bytes(tmp_path, request)
-    for output in (
-        request.authoritative_legacy_output,
-        result.authoritative_legacy_output,
-    ):
-        legacy_observed = next(
-            item for item in output.file_results if item.sample_name == "observed-a"
-        )
-        legacy_observed.results["Analyte"] = replace(
-            legacy_observed.results["Analyte"],
-            reported_rt=999.0,
-            nl_token="tampered-legacy-token",
-        )
 
     delivery = settle_targeted_diagnostic_delivery_candidate(
         result,
         request=request,
         alignment_runtime=alignment,
         targeted_runtime=targeted,
-        authoritative_legacy_csv_bytes=legacy_bytes,
         prior_current_delivery_id="legacy-seal:prior-current",
     )
 
@@ -149,7 +136,6 @@ def test_arbitrary_targeted_owner_payload_cannot_stage(tmp_path: Path) -> None:
             request=request,
             alignment_runtime=alignment,
             targeted_runtime=arbitrary,
-            authoritative_legacy_csv_bytes=b"must-not-be-written",
             prior_current_delivery_id="legacy-seal:prior-current",
         )
 
@@ -181,7 +167,6 @@ def test_arbitrary_alignment_owner_payload_cannot_stage(tmp_path: Path) -> None:
             request=request,
             alignment_runtime=arbitrary,
             targeted_runtime=targeted,
-            authoritative_legacy_csv_bytes=b"must-not-be-written",
             prior_current_delivery_id="legacy-seal:prior-current",
         )
     assert alignment.finalization_record.terminal_outcome is (
@@ -207,7 +192,6 @@ def test_mismatched_alignment_groups_cannot_stage(tmp_path: Path) -> None:
             request=request,
             alignment_runtime=alignment,
             targeted_runtime=targeted,
-            authoritative_legacy_csv_bytes=b"must-not-be-written",
             prior_current_delivery_id="legacy-seal:prior-current",
         )
 
@@ -244,7 +228,6 @@ def test_unsuccessful_runtime_evidence_is_quarantined_without_writer(
         request=request,
         alignment_runtime=alignment,
         targeted_runtime=targeted,
-        authoritative_legacy_csv_bytes=b"must-not-be-compared",
         prior_current_delivery_id="legacy-seal:prior-current",
     )
 
@@ -271,19 +254,38 @@ def test_internal_writer_conflict_quarantines_and_preserves_prior_current(
         request,
         fixture.attempt,
     )
+    expected_successor_bytes = _legacy_csv_bytes(tmp_path, request)
+    for output in (
+        request.authoritative_legacy_output,
+        result.authoritative_legacy_output,
+    ):
+        legacy_observed = next(
+            item for item in output.file_results if item.sample_name == "observed-a"
+        )
+        legacy_observed.results["Analyte"] = replace(
+            legacy_observed.results["Analyte"],
+            reported_rt=999.0,
+            nl_token="tampered-legacy-token",
+        )
     delivery = settle_targeted_diagnostic_delivery_candidate(
         result,
         request=request,
         alignment_runtime=alignment,
         targeted_runtime=targeted,
-        authoritative_legacy_csv_bytes=b"different-authoritative-bytes\n",
         prior_current_delivery_id="legacy-seal:prior-current",
     )
 
+    candidate_path = (
+        request.peak_config.output_csv.parent
+        / "successor_attempts"
+        / targeted_attempt_namespace_component(result.processing_attempt_id)
+        / "xic_results.csv"
+    )
     assert delivery.status == "quarantined"
     assert delivery.method_result_artifact is not None
     assert delivery.diagnostic_csv_artifact is None
     assert delivery.prior_current_delivery_id == "legacy-seal:prior-current"
+    assert candidate_path.read_bytes() == expected_successor_bytes
 
 
 def _true_runtime_path(

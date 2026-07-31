@@ -44,11 +44,12 @@ def test_cli_and_gui_use_production_composition_for_spawned_method(
     def legacy_runner(actual_config, actual_targets, **_kwargs):
         request = requests_by_output[actual_config.output_csv]
         assert actual_targets == list(request.targets)
-        write_wide_csv(
-            actual_config,
-            actual_targets,
-            request.authoritative_legacy_output.file_results,
-        )
+        if actual_config.keep_intermediate_csv:
+            write_wide_csv(
+                actual_config,
+                actual_targets,
+                request.authoritative_legacy_output.file_results,
+            )
         calls["legacy"] += 1
         return request.authoritative_legacy_output
 
@@ -100,6 +101,8 @@ def test_cli_and_gui_use_production_composition_for_spawned_method(
         assert worker.wait(30_000)
 
     assert calls == {"legacy": 2, "provider": 2}
+    assert cli_request.peak_config.output_csv.is_file()
+    assert not gui_request.peak_config.output_csv.exists()
     for request in (cli_request, gui_request):
         attempt_dir = (
             request.peak_config.output_csv.parent
@@ -174,12 +177,7 @@ def test_production_composition_exposes_delivery_and_whole_attempt_rollback(
 ) -> None:
     request, _fixture = _method_request(tmp_path)
 
-    def legacy_runner(actual_config, actual_targets, **_kwargs):
-        write_wide_csv(
-            actual_config,
-            actual_targets,
-            request.authoritative_legacy_output.file_results,
-        )
+    def legacy_runner(_actual_config, _actual_targets, **_kwargs):
         return request.authoritative_legacy_output
 
     def request_provider(_application_request, _actual_output):
@@ -209,6 +207,71 @@ def test_production_composition_exposes_delivery_and_whole_attempt_rollback(
     assert rolled_back.status == "rolled_back"
     assert rolled_back.prior_current_delivery_id == request.prior_current_delivery_id
     assert rolled_back.active_output == request.authoritative_legacy_output
+    assert request.peak_config.keep_intermediate_csv is False
+    assert not request.peak_config.output_csv.exists()
+
+
+def test_production_composition_ignores_stale_unretained_legacy_csv(
+    tmp_path: Path,
+) -> None:
+    request, _fixture = _method_request(tmp_path)
+    stale_bytes = b"stale output from an earlier run\r\n"
+    request.peak_config.output_csv.write_bytes(stale_bytes)
+
+    with targeted_diagnostic_request_provider(
+        lambda _application_request, _actual_output: request,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+    ):
+        execution = build_canonical_targeted_application_service(
+            lambda _config, _targets, **_kwargs: request.authoritative_legacy_output
+        ).execute_application(
+            build_targeted_application_request(
+                request.peak_config,
+                list(request.targets),
+            )
+        )
+
+    outcome = execution.diagnostic_outcome
+    assert outcome is not None
+    assert outcome.status == "staged_candidate"
+    assert request.peak_config.output_csv.read_bytes() == stale_bytes
+
+
+def test_production_composition_preserves_delivery_quarantine(
+    tmp_path: Path,
+) -> None:
+    request, _fixture = _method_request(tmp_path)
+    request.authoritative_legacy_output.file_results.reverse()
+
+    def legacy_runner(actual_config, actual_targets, **_kwargs):
+        write_wide_csv(
+            actual_config,
+            actual_targets,
+            request.authoritative_legacy_output.file_results,
+        )
+        return request.authoritative_legacy_output
+
+    with targeted_diagnostic_request_provider(
+        lambda _application_request, _actual_output: request,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+    ):
+        execution = build_canonical_targeted_application_service(
+            legacy_runner
+        ).execute_application(
+            build_targeted_application_request(
+                request.peak_config,
+                list(request.targets),
+            )
+        )
+
+    outcome = execution.diagnostic_outcome
+    assert execution.active_output is request.authoritative_legacy_output
+    assert outcome is not None
+    assert outcome.status == "quarantined"
+    assert outcome.method_result is not None
+    assert outcome.delivery_candidate is not None
+    assert outcome.delivery_candidate.status == "quarantined"
+    assert outcome.quarantine_reason == "diagnostic CSV hard-exact conflict"
 
 
 def test_cancellation_after_targeted_settlement_prevents_delivery_stage(
