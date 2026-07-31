@@ -8,6 +8,10 @@ import pytest
 
 from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.configuration.target_identity import (
+    mint_target_list_snapshot,
+    resolve_target_definition,
+)
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.ms1_backfill import backfill_ms1_candidates
@@ -194,6 +198,73 @@ def test_adapter_rejects_inferred_discovery_evidence(tmp_path: Path) -> None:
         )
 
 
+def test_adapter_rejects_target_without_cid_nl_definition(tmp_path: Path) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    raw = _FakeRaw((8.0,))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    no_nl_target_value = replace(
+        fixture.target.definition.target,
+        neutral_loss_da=None,
+        nl_ppm_warn=None,
+        nl_ppm_max=None,
+    )
+    no_nl_snapshot = mint_target_list_snapshot(
+        (no_nl_target_value,),
+        identity_namespace="target-list:adapter-no-nl",
+    )
+
+    with pytest.raises(
+        TargetedRealDataAdapterError,
+        match="target lacks a CID-NL definition",
+    ):
+        adapt_current_discovery_sample_target(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            target=resolve_target_definition(no_nl_snapshot, "Analyte"),
+            candidates=candidates,
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+        )
+
+
+def test_adapter_rejects_noncanonical_baseline_integration(tmp_path: Path) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    raw = _FakeRaw((8.0,))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+
+    with pytest.raises(
+        TargetedRealDataAdapterError,
+        match="requires canonical asls baseline integration",
+    ):
+        adapt_current_discovery_sample_target(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            target=fixture.target,
+            candidates=candidates,
+            settings=settings,
+            peak_config=replace(
+                peak_config,
+                baseline_integration_method="linear_edge",
+            ),
+            raw=raw,
+        )
+
+
 def test_adapter_seals_empty_target_universe_without_raw_acquisition(
     tmp_path: Path,
 ) -> None:
@@ -287,6 +358,10 @@ class _FakeRaw:
             for index, rt in enumerate(scan_rts)
         )
         self.batch_calls = 0
+
+    @property
+    def raw_chromatogram_call_count(self) -> int:
+        return self.batch_calls
 
     def extract_xic(
         self,

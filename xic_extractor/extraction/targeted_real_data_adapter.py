@@ -22,7 +22,6 @@ from xic_extractor.acquisition_contract import (
 from xic_extractor.alignment.targeted_hypothesis_alignment import (
     TargetedHypothesisAlignmentInput,
 )
-from xic_extractor.artifact_lineage import canonical_evidence_artifact_closure
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.discovery.models import (
@@ -45,6 +44,7 @@ from xic_extractor.extraction.handoff_spine_runtime import (
 )
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.neutral_loss import MS2ProductEvidence
+from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support_ref,
 )
@@ -68,6 +68,7 @@ from xic_extractor.peak_detection.selection_decision import (
 from xic_extractor.peak_detection.traces import trace_from_xic_request
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
+    canonical_evidence_artifact_closure,
     resolve_request_acquisition_source,
 )
 from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
@@ -122,6 +123,15 @@ def adapt_current_discovery_sample_target(
         peak_config=peak_config,
         raw=raw,
     )
+    target_value = target.definition.target
+    neutral_loss_da = target_value.neutral_loss_da
+    if neutral_loss_da is None:
+        raise TargetedRealDataAdapterError("target lacks a CID-NL definition")
+    baseline_integration_method: BaselineMethod = "asls"
+    if peak_config.baseline_integration_method != baseline_integration_method:
+        raise TargetedRealDataAdapterError(
+            "peak_config requires canonical asls baseline integration"
+        )
     bounded = tuple(
         sorted(
             (item for item in candidates if _matches_target(item, target=target)),
@@ -157,7 +167,6 @@ def adapt_current_discovery_sample_target(
         )
         for candidate in bounded
     )
-    target_value = target.definition.target
     targeted_rt_min, targeted_rt_max, _anchor_used, _anchor_rt = get_rt_window(
         raw,
         target_value,
@@ -201,7 +210,7 @@ def adapt_current_discovery_sample_target(
             peak_result=receipt_detection.result,
             rt=receipt_detection.rt,
             intensity=receipt_detection.intensity,
-            baseline_integration_method=peak_config.baseline_integration_method,
+            baseline_integration_method=baseline_integration_method,
             ms1_morphology_smoothing_window_points=(
                 peak_config.ms1_morphology_smoothing_window_points
             ),
@@ -235,7 +244,7 @@ def adapt_current_discovery_sample_target(
             peak_result=detection.result,
             rt=detection.rt,
             intensity=detection.intensity,
-            baseline_integration_method=peak_config.baseline_integration_method,
+            baseline_integration_method=baseline_integration_method,
             ms1_morphology_smoothing_window_points=(
                 peak_config.ms1_morphology_smoothing_window_points
             ),
@@ -323,9 +332,12 @@ def adapt_current_discovery_sample_target(
             peak_observation=observation,
             chromatographic_support=event,
         )
-        expected_product = (
-            target.definition.target.mz - target.definition.target.neutral_loss_da
-        )
+        hypothesis_artifact = hypothesis.artifact
+        if hypothesis_artifact is None:
+            raise TargetedRealDataAdapterError(
+                "CID-NL hypothesis owner omitted its evidence artifact"
+            )
+        expected_product = target_value.mz - neutral_loss_da
         projection = mint_targeted_cid_nl_projection_ref(
             processing_owners=processing_owners,
             sample=sample,
@@ -355,14 +367,13 @@ def adapt_current_discovery_sample_target(
                 evidence.artifact,
                 support.artifact,
                 event.artifact,
-                hypothesis.artifact,
+                hypothesis_artifact,
                 projection.artifact,
             )
         )
 
     lineage = canonical_evidence_artifact_closure(
-        processing_request_id=processing_owners.request.processing_request_id,
-        processing_attempt_id=processing_owners.attempt.processing_attempt_id,
+        producer_attempt=processing_owners.attempt,
         artifacts=tuple(artifacts),
     )
     completion = complete_targeted_candidate_discovery(
@@ -557,6 +568,8 @@ def _validate_inputs(**values: object) -> None:
         if not isinstance(values[name], kind):
             raise TargetedRealDataAdapterError(f"{name} has the wrong owner type")
     candidates = values["candidates"]
+    if not isinstance(candidates, tuple):
+        raise TargetedRealDataAdapterError("candidates has the wrong owner type")
     if any(not isinstance(item, DiscoveryCandidate) for item in candidates):
         raise TargetedRealDataAdapterError(
             "candidates must contain current DiscoveryCandidate values"
