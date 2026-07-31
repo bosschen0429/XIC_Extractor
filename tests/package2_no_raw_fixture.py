@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from xic_extractor.config import Target
+from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
     mint_target_list_snapshot,
     resolve_target_definition,
     target_list_snapshot_payload,
 )
+from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.targeted_candidate_set import (
     TargetedCandidateSetMember,
     TargetedCandidateSetRef,
@@ -20,6 +21,10 @@ from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.extraction.cid_nl_evidence_projection import (
     TargetedCidNlProjectionRef,
     mint_targeted_cid_nl_projection_ref,
+)
+from xic_extractor.extraction.targeted_inputs import (
+    ResolvedTargetedInputs,
+    build_targeted_processing_request_identity,
 )
 from xic_extractor.neutral_loss import MS2ProductEvidence
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
@@ -216,6 +221,48 @@ def build_package2_no_raw_fixture(
         samples=samples,
         target=target,
         other_target=other_target,
+        owners=owners,
+    )
+
+
+def build_package2_targeted_raw_fixture(
+    tmp_path: Path,
+    *,
+    sample_stems: tuple[str, ...],
+    peak_config: ExtractionConfig,
+    current_discovery_settings: DiscoverySettings | None = None,
+) -> Package2NoRawFixture:
+    """Rebind the Package 2 fixture to the real Targeted RAW request owner."""
+
+    fixture = build_package2_no_raw_fixture(
+        tmp_path,
+        sample_stems=sample_stems,
+    )
+    request = build_targeted_processing_request_identity(
+        peak_config,
+        target_snapshot=fixture.target.snapshot,
+        raw_paths=[tmp_path / f"{stem}.synthetic" for stem in sample_stems],
+        resolved_inputs=ResolvedTargetedInputs(
+            injection_order={
+                stem: order for order, stem in enumerate(sample_stems, start=1)
+            },
+            rt_prior_library={},
+            model_selection_expected_diff_approvals=None,
+        ),
+        current_discovery_settings=current_discovery_settings,
+    )
+    attempt = issue_processing_attempt(request)
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=attempt,
+        sample_snapshot=fixture.samples[0].snapshot,
+        sample_resolutions=fixture.samples,
+        target_snapshot=fixture.target.snapshot,
+    )
+    return replace(
+        fixture,
+        request=request,
+        attempt=attempt,
         owners=owners,
     )
 

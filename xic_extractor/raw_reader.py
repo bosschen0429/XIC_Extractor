@@ -21,6 +21,8 @@ EXPECTED_THERMO_DLLS = (
     "ThermoFisher.CommonCore.Data.dll",
     "ThermoFisher.CommonCore.RawFileReader.dll",
 )
+THERMO_RAW_ACQUISITION_FORMAT = "thermo_raw"
+THERMO_RAW_OBSERVATION_NAMESPACE = "thermo_raw_file_reader:Device.MS:1"
 
 _ASSEMBLIES_LOADED = False
 
@@ -356,6 +358,14 @@ def _verify_expected_acquisition_source(
     if not isinstance(expected, AcquisitionSourceIdentity):
         raise RawReaderError(
             "expected_acquisition_source must be an AcquisitionSourceIdentity"
+        )
+    if (
+        expected.acquisition_format != THERMO_RAW_ACQUISITION_FORMAT
+        or expected.observation_namespace != THERMO_RAW_OBSERVATION_NAMESPACE
+    ):
+        raise RawReaderError(
+            "expected acquisition source does not describe the Thermo RAW "
+            "MS-controller-1 adapter"
         )
     try:
         before = path.stat()

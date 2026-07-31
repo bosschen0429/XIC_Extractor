@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.package2_no_raw_fixture import build_package2_targeted_raw_fixture
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -51,7 +51,12 @@ def test_real_data_runtime_accounts_successful_raw_and_xic_work(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+        current_discovery_settings=_settings(),
+    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -136,7 +141,12 @@ def test_real_data_runtime_terminalizes_adapter_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+        current_discovery_settings=_settings(),
+    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -192,7 +202,12 @@ def test_real_data_runtime_quarantines_artifacts_after_projection_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+        current_discovery_settings=_settings(),
+    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -253,7 +268,12 @@ def test_real_data_runtime_quarantines_complete_result_after_cleanup_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+        current_discovery_settings=_settings(),
+    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -303,7 +323,12 @@ def test_real_data_runtime_preflight_failure_skips_raw_and_finalizes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+        current_discovery_settings=_settings(),
+    )
     job = _job(
         fixture,
         candidates=(),
@@ -342,7 +367,12 @@ def test_real_data_runtime_cancellation_skips_raw_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+        current_discovery_settings=_settings(),
+    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -394,7 +424,12 @@ def test_real_data_runtime_result_rejects_unbound_acquisition_projection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+        current_discovery_settings=_settings(),
+    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -436,7 +471,12 @@ def test_real_data_runtime_keeps_empty_universe_inside_atomic_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+        current_discovery_settings=_settings(),
+    )
     job = _job(
         fixture,
         candidates=(),
@@ -480,6 +520,61 @@ def test_real_data_adapter_exposes_only_atomic_runtime_entry() -> None:
         "TargetedRealDataRuntimeJob",
         "execute_current_discovery_sample_target_runtime",
     )
+
+
+def test_real_data_runtime_job_rejects_unbound_peak_config(
+    tmp_path: Path,
+) -> None:
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=peak_config,
+        current_discovery_settings=settings,
+    )
+
+    with pytest.raises(
+        TargetedRealDataRuntimeError,
+        match="peak_config scientific settings do not match processing request",
+    ):
+        _job(
+            fixture,
+            candidates=(),
+            settings=settings,
+            peak_config=replace(peak_config, peak_rel_height=0.5),
+            tmp_path=tmp_path,
+        )
+
+
+def test_real_data_runtime_job_rejects_unbound_discovery_settings(
+    tmp_path: Path,
+) -> None:
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=peak_config,
+        current_discovery_settings=settings,
+    )
+    changed_settings = replace(
+        settings,
+        neutral_loss_profile=None,
+        product_search_ppm=settings.product_search_ppm + 1.0,
+    )
+
+    with pytest.raises(
+        TargetedRealDataRuntimeError,
+        match="Discovery scientific settings do not match processing request",
+    ):
+        _job(
+            fixture,
+            candidates=(),
+            settings=changed_settings,
+            peak_config=peak_config,
+            tmp_path=tmp_path,
+        )
 
 
 def _job(

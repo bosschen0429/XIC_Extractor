@@ -177,7 +177,7 @@ def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> 
     source = build_acquisition_source_identity(
         raw_path,
         acquisition_format="thermo_raw",
-        observation_namespace="thermo:raw:v1",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
     raw = _FakeRaw()
 
@@ -190,6 +190,44 @@ def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> 
     )
 
     assert handle.acquisition_source == source
+
+
+@pytest.mark.parametrize(
+    ("acquisition_format", "observation_namespace"),
+    (
+        ("synthetic_no_raw", "thermo_raw_file_reader:Device.MS:1"),
+        ("thermo_raw", "thermo_raw_file_reader:Device.MS:2"),
+    ),
+)
+def test_open_raw_rejects_source_identity_for_wrong_adapter_semantics(
+    tmp_path: Path,
+    acquisition_format: str,
+    observation_namespace: str,
+) -> None:
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.raw_reader import RawReaderError, open_raw, reset_reader_state
+
+    reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"sample-a")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=acquisition_format,
+        observation_namespace=observation_namespace,
+    )
+
+    with pytest.raises(
+        RawReaderError,
+        match="does not describe the Thermo RAW MS-controller-1 adapter",
+    ):
+        open_raw(
+            raw_path,
+            tmp_path,
+            expected_acquisition_source=source,
+            _import_module=_working_imports(),
+            _thermo=_fake_thermo(_FakeRaw()),
+        )
 
 
 def test_owner_bound_raw_handle_seals_payload_and_source(tmp_path: Path) -> None:
@@ -209,12 +247,12 @@ def test_owner_bound_raw_handle_seals_payload_and_source(tmp_path: Path) -> None
     source = build_acquisition_source_identity(
         raw_path,
         acquisition_format="thermo_raw",
-        observation_namespace="thermo:raw:v1",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
     other_source = build_acquisition_source_identity(
         other_path,
         acquisition_format="thermo_raw",
-        observation_namespace="thermo:raw:v1",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
     raw = _FakeRaw()
     thermo = _fake_thermo(raw)
@@ -253,7 +291,7 @@ def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) ->
     source = build_acquisition_source_identity(
         raw_path,
         acquisition_format="thermo_raw",
-        observation_namespace="thermo:raw:v1",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
     raw = _FakeRaw()
     handle = RawFileHandle(raw, _fake_thermo(raw))
@@ -278,7 +316,7 @@ def test_open_raw_rejects_path_content_from_another_source(tmp_path: Path) -> No
     expected_source = build_acquisition_source_identity(
         expected_path,
         acquisition_format="thermo_raw",
-        observation_namespace="thermo:raw:v1",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
 
     with pytest.raises(
@@ -309,7 +347,7 @@ def test_open_raw_rejects_source_path_replacement_during_vendor_open(
     source = build_acquisition_source_identity(
         raw_path,
         acquisition_format="thermo_raw",
-        observation_namespace="thermo:raw:v1",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
     raw = _FakeRaw()
     thermo = _fake_thermo(raw)
@@ -349,7 +387,7 @@ def test_open_raw_rechecks_content_after_vendor_open(
     source = build_acquisition_source_identity(
         raw_path,
         acquisition_format="thermo_raw",
-        observation_namespace="thermo:raw:v1",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
     )
     raw = _FakeRaw()
     thermo = _fake_thermo(raw)

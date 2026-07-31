@@ -47,6 +47,14 @@ from xic_extractor.execution_runtime_owner import (
     execute_runtime_attempt,
     mint_work_unit_settlement,
 )
+from xic_extractor.extraction.targeted_inputs import (
+    TARGETED_PROCESSING_ALGORITHM_VERSION,
+    TARGETED_PROCESSING_CONTRACT_VERSION,
+    TARGETED_PROCESSING_INPUT_SCHEMA_VERSION,
+    TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY,
+    TARGETED_SCIENTIFIC_SETTING_FIELDS,
+    targeted_real_data_discovery_settings_payload,
+)
 from xic_extractor.extraction.targeted_real_data_adapter import (
     TargetedRealDataAdapterResult,
     _adapt_current_discovery_sample_target,
@@ -110,7 +118,45 @@ class TargetedRealDataRuntimeJob:
             raise TargetedRealDataRuntimeError(
                 "candidates must contain current DiscoveryCandidate values"
             )
+        _validate_request_bound_scientific_settings(self)
         _required_text(self.work_unit_key, field="work_unit_key")
+
+
+def _validate_request_bound_scientific_settings(
+    job: TargetedRealDataRuntimeJob,
+) -> None:
+    request = job.processing_owners.request
+    if (
+        request.scientific_input_schema_version
+        != TARGETED_PROCESSING_INPUT_SCHEMA_VERSION
+        or request.processing_algorithm_version
+        != TARGETED_PROCESSING_ALGORITHM_VERSION
+        or request.processing_contract_version
+        != TARGETED_PROCESSING_CONTRACT_VERSION
+    ):
+        raise TargetedRealDataRuntimeError(
+            "processing request does not use the supported Targeted scientific "
+            "contract"
+        )
+    request_inputs = json.loads(request.normalized_scientific_inputs_json)
+    expected_peak_settings = {
+        field: getattr(job.peak_config, field)
+        for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
+    }
+    if request_inputs.get("settings") != expected_peak_settings:
+        raise TargetedRealDataRuntimeError(
+            "peak_config scientific settings do not match processing request"
+        )
+    expected_discovery_settings = (
+        targeted_real_data_discovery_settings_payload(job.settings)
+    )
+    if (
+        request_inputs.get(TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY)
+        != expected_discovery_settings
+    ):
+        raise TargetedRealDataRuntimeError(
+            "Discovery scientific settings do not match processing request"
+        )
 
 
 @dataclass(frozen=True, slots=True)

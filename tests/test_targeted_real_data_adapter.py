@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.package2_no_raw_fixture import build_package2_targeted_raw_fixture
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.configuration.target_identity import (
     mint_target_list_snapshot,
@@ -45,7 +45,11 @@ PRODUCT_MZ = PRECURSOR_MZ - NEUTRAL_LOSS_DA
 def test_adapter_reacquires_one_current_candidate_into_targeted_lifecycle(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     discovery_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -85,7 +89,11 @@ def test_adapter_reacquires_one_current_candidate_into_targeted_lifecycle(
 
 
 def test_adapter_uses_targeted_gaussian15_boundary_owner(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     discovery_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -133,7 +141,11 @@ def test_adapter_uses_targeted_gaussian15_boundary_owner(tmp_path: Path) -> None
 def test_adapter_preserves_multiple_owner_backed_candidates_as_ambiguous(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     discovery_raw = _FakeRaw((7.8, 8.3))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -175,7 +187,11 @@ def test_adapter_preserves_multiple_owner_backed_candidates_as_ambiguous(
 def test_adapter_acquires_every_disjoint_candidate_receipt_window(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     discovery_raw = _FakeRaw((7.55, 8.45))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -228,7 +244,11 @@ def test_adapter_keeps_canonical_detection_inside_targeted_window(
 ) -> None:
     import xic_extractor.extraction.targeted_real_data_adapter as adapter_module
 
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     discovery_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = replace(
@@ -296,9 +316,10 @@ def test_adapter_keeps_canonical_detection_inside_targeted_window(
 def test_adapter_rejects_raw_handle_bound_to_another_acquisition_source(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(
+    fixture = build_package2_targeted_raw_fixture(
         tmp_path,
         sample_stems=("S1", "S2"),
+        peak_config=_peak_config(tmp_path),
     )
     discovery_raw = _FakeRaw((8.0,))
     settings = _settings()
@@ -336,7 +357,11 @@ def test_adapter_rejects_raw_handle_bound_to_another_acquisition_source(
 def test_adapter_rejects_adapter_that_only_claims_the_expected_source(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     forged_raw = _FakeRaw(
         (8.0,),
         acquisition_source=_source_for(fixture, "S1"),
@@ -368,7 +393,11 @@ def test_adapter_rejects_adapter_that_only_claims_the_expected_source(
 
 
 def test_adapter_rejects_candidate_receipt_drift(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     discovery_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -403,7 +432,11 @@ def test_adapter_rejects_candidate_receipt_drift(tmp_path: Path) -> None:
 
 
 def test_adapter_rejects_inferred_discovery_evidence(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     discovery_raw = _FakeRaw((8.0,), scan_precursor_mz=500.5)
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -438,7 +471,11 @@ def test_adapter_rejects_inferred_discovery_evidence(tmp_path: Path) -> None:
 
 
 def test_adapter_rejects_target_without_cid_nl_definition(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     raw = _FakeRaw(
         (8.0,),
         acquisition_source=_source_for(fixture, "S1"),
@@ -478,7 +515,11 @@ def test_adapter_rejects_target_without_cid_nl_definition(tmp_path: Path) -> Non
 
 
 def test_adapter_rejects_noncanonical_baseline_integration(tmp_path: Path) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     raw = _FakeRaw(
         (8.0,),
         acquisition_source=_source_for(fixture, "S1"),
@@ -513,7 +554,11 @@ def test_adapter_rejects_noncanonical_baseline_integration(tmp_path: Path) -> No
 def test_adapter_seals_empty_target_universe_without_raw_acquisition(
     tmp_path: Path,
 ) -> None:
-    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("S1",))
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
     raw = _FakeRaw((8.0,))
 
     result = adapt_current_discovery_sample_target(

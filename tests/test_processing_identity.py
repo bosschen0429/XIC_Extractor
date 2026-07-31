@@ -1,4 +1,5 @@
 import ast
+import json
 from dataclasses import fields, replace
 from pathlib import Path
 from uuid import UUID
@@ -7,9 +8,11 @@ import pytest
 
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
+from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_PROCESSING_ALGORITHM_VERSION,
     TARGETED_PROCESSING_CONTRACT_VERSION,
+    TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY,
     THERMO_RAW_OBSERVATION_NAMESPACE,
     ResolvedTargetedInputs,
     build_targeted_processing_request_identity,
@@ -203,6 +206,46 @@ def test_semantic_injection_order_reorder_changes_request(tmp_path: Path) -> Non
     )
 
     assert reversed_order.processing_request_id != forward.processing_request_id
+
+
+def test_real_data_discovery_settings_change_processing_request_identity(
+    tmp_path: Path,
+) -> None:
+    path = _raw(tmp_path / "sample_a.raw", b"source-a")
+    resolved = ResolvedTargetedInputs(
+        injection_order={"sample_a": 1},
+        rt_prior_library={},
+        model_selection_expected_diff_approvals=None,
+    )
+    settings = DiscoverySettings(
+        neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
+        product_search_ppm=50.0,
+    )
+    changed_settings = DiscoverySettings(
+        neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
+        product_search_ppm=55.0,
+    )
+
+    first = _request(
+        _config(tmp_path),
+        [path],
+        resolved=resolved,
+        current_discovery_settings=settings,
+    )
+    changed = _request(
+        _config(tmp_path),
+        [path],
+        resolved=resolved,
+        current_discovery_settings=changed_settings,
+    )
+
+    assert changed.processing_request_id != first.processing_request_id
+    request_inputs = json.loads(first.normalized_scientific_inputs_json)
+    snapshot = request_inputs[TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY]
+    assert snapshot["settings"]["product_search_ppm"] == 50.0
+    assert set(snapshot["settings"]) == {
+        field.name for field in fields(DiscoverySettings)
+    }
 
 
 def test_adapter_input_key_change_invalidates_request_not_source_content(
@@ -677,6 +720,7 @@ def _request(
     *,
     resolved: ResolvedTargetedInputs | None = None,
     targets: tuple[Target, ...] | None = None,
+    current_discovery_settings: DiscoverySettings | None = None,
 ):
     return build_targeted_processing_request_identity(
         config,
@@ -686,6 +730,7 @@ def _request(
         ),
         raw_paths=paths,
         resolved_inputs=resolved or _resolved_inputs(),
+        current_discovery_settings=current_discovery_settings,
     )
 
 
