@@ -18,7 +18,10 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
-from xic_extractor.extraction.handoff_spine_runtime import selected_handoff_peak
+from xic_extractor.extraction.handoff_spine_runtime import (
+    promote_targeted_boundary_hypothesis,
+    selected_handoff_peak,
+)
 from xic_extractor.extraction.istd_recovery import recover_istd_anchor_peak_if_needed
 from xic_extractor.extraction.peak_candidate_audit import append_peak_audit_rows
 from xic_extractor.extraction.result_assembly import build_extraction_result
@@ -35,20 +38,12 @@ from xic_extractor.output.messages import (
     build_diagnostic_records,
     istd_confidence_note,
 )
-from xic_extractor.peak_detection.chrom_peak_segment_projection import (
-    chrom_peak_segment_promoted_hypothesis_from_hypothesis,
-)
-from xic_extractor.peak_detection.chrom_peak_segments import ChromPeakSegmentPolicy
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.peak_detection.ms1_morphology import (
     configured_morphology_window_points,
 )
 from xic_extractor.peak_detection.selected_envelope import (
     SelectedEnvelopeBoundaryEvaluation,
-    SelectedEnvelopePolicy,
-)
-from xic_extractor.peak_detection.selected_envelope_projection import (
-    selected_envelope_promoted_hypothesis_from_hypothesis,
 )
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
@@ -368,8 +363,6 @@ def extract_one_target(
         model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
     )
     if handoff_peak.selected_hypothesis is not None:
-        selected_envelope_evaluation = None
-        chrom_segment_boundary_accepted = False
         guard_rt = audit_rt
         guard_intensity = audit_intensity
         if handoff_peak.trace_group is not None:
@@ -382,44 +375,15 @@ def extract_one_target(
             fallback_end=rt_max,
         )
         morphology_window_points = configured_morphology_window_points(config)
-        try:
-            promoted_hypothesis, selected_envelope_evaluation = (
-                selected_envelope_promoted_hypothesis_from_hypothesis(
-                    handoff_peak.selected_hypothesis,
-                    rt_values=guard_rt,
-                    intensity_values=guard_intensity,
-                    quantitation_context_rt_start=context_rt_start,
-                    quantitation_context_rt_end=context_rt_end,
-                    policy=SelectedEnvelopePolicy(
-                        morphology_trace_window_points=morphology_window_points,
-                    ),
-                )
-            )
-        except ValueError:
-            promoted_hypothesis = handoff_peak.selected_hypothesis
-        try:
-            chrom_promoted_hypothesis, chrom_segment_projection = (
-                chrom_peak_segment_promoted_hypothesis_from_hypothesis(
-                    handoff_peak.selected_hypothesis,
-                    rt_values=guard_rt,
-                    intensity_values=guard_intensity,
-                    quantitation_context_rt_start=context_rt_start,
-                    quantitation_context_rt_end=context_rt_end,
-                    selected_envelope_evaluation=selected_envelope_evaluation,
-                    policy=ChromPeakSegmentPolicy(
-                        morphology_trace_window_points=morphology_window_points,
-                    ),
-                )
-            )
-        except ValueError:
-            chrom_promoted_hypothesis = handoff_peak.selected_hypothesis
-            chrom_segment_projection = None
-        if (
-            chrom_segment_projection is not None
-            and chrom_segment_projection.accepted
-        ):
-            promoted_hypothesis = chrom_promoted_hypothesis
-            chrom_segment_boundary_accepted = True
+        boundary_promotion = promote_targeted_boundary_hypothesis(
+            handoff_peak.selected_hypothesis,
+            rt=guard_rt,
+            intensity=guard_intensity,
+            context_rt_start=context_rt_start,
+            context_rt_end=context_rt_end,
+            morphology_window_points=morphology_window_points,
+        )
+        promoted_hypothesis = boundary_promotion.hypothesis
         if promoted_hypothesis is not handoff_peak.selected_hypothesis:
             handoff_peak = replace(
                 handoff_peak,
@@ -430,15 +394,15 @@ def extract_one_target(
                 ),
             )
         if (
-            selected_envelope_evaluation is not None
+            boundary_promotion.selected_envelope_evaluation is not None
             and handoff_peak.selection_decision is not None
-            and not chrom_segment_boundary_accepted
+            and not boundary_promotion.chrom_segment_boundary_accepted
         ):
             handoff_peak = replace(
                 handoff_peak,
                 selection_decision=_selected_envelope_guarded_decision(
                     handoff_peak.selection_decision,
-                    selected_envelope_evaluation,
+                    boundary_promotion.selected_envelope_evaluation,
                 ),
             )
 

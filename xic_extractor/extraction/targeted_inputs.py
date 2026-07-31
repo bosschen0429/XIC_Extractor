@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -9,6 +10,7 @@ from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     target_list_snapshot_payload,
 )
+from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecord,
@@ -23,6 +25,10 @@ from xic_extractor.processing_identity import (
     build_acquisition_source_identity,
     build_processing_request_identity,
     fingerprint_file_content,
+)
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.rt_prior_library import LibraryEntry, load_library
 from xic_extractor.sample_metadata import (
@@ -39,8 +45,12 @@ from xic_extractor.target_pair_rt_calibration import (
 TARGETED_PROCESSING_INPUT_SCHEMA_VERSION = "targeted_extraction_inputs_v1"
 TARGETED_PROCESSING_ALGORITHM_VERSION = "targeted_extraction_algorithm_v1"
 TARGETED_PROCESSING_CONTRACT_VERSION = "targeted_processing_contract_v1"
-THERMO_RAW_ACQUISITION_FORMAT = "thermo_raw"
-THERMO_RAW_OBSERVATION_NAMESPACE = "thermo_raw_file_reader:Device.MS:1"
+TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY = (
+    "targeted_real_data_discovery_settings"
+)
+TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
+    "targeted_real_data_discovery_settings_v1"
+)
 TARGETED_SCIENTIFIC_SETTING_FIELDS = (
     "smooth_window",
     "smooth_polyorder",
@@ -114,6 +124,7 @@ def build_targeted_processing_request_identity(
     target_snapshot: TargetListSnapshot,
     raw_paths: Sequence[Path],
     resolved_inputs: ResolvedTargetedInputs,
+    current_discovery_settings: DiscoverySettings | None = None,
 ) -> ProcessingRequestIdentity:
     """Bind resolved Targeted extraction inputs to exact acquisition content."""
 
@@ -165,6 +176,12 @@ def build_targeted_processing_request_identity(
             _targeted_ms1_shape_identity_support_snapshot(config)
         ),
     }
+    if current_discovery_settings is not None:
+        scientific_inputs[TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY] = (
+            targeted_real_data_discovery_settings_payload(
+                current_discovery_settings
+            )
+        )
     return build_processing_request_identity(
         acquisition_sources=tuple(sources_by_stem.values()),
         acquisition_bindings=bindings,
@@ -173,6 +190,40 @@ def build_targeted_processing_request_identity(
         processing_contract_version=TARGETED_PROCESSING_CONTRACT_VERSION,
         scientific_inputs=scientific_inputs,
     )
+
+
+def targeted_real_data_discovery_settings_payload(
+    settings: DiscoverySettings,
+) -> dict[str, object]:
+    """Snapshot all Discovery settings so future consumers cannot escape lineage."""
+
+    if not isinstance(settings, DiscoverySettings):
+        raise IdentityContractError(
+            "current_discovery_settings must be DiscoverySettings"
+        )
+    raw_payload = {
+        "schema_version": TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION,
+        "settings": asdict(settings),
+    }
+    try:
+        normalized = json.loads(
+            json.dumps(
+                raw_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise IdentityContractError(
+            "current_discovery_settings must have canonical JSON content"
+        ) from exc
+    if not isinstance(normalized, dict):
+        raise IdentityContractError(
+            "current_discovery_settings must have canonical JSON content"
+        )
+    return normalized
 
 
 def _rt_prior_snapshot(

@@ -146,9 +146,16 @@ def read_discovery_batch_index(path: Path) -> DiscoveryBatchInput:
     )
 
 
-def read_discovery_candidates_csv(path: Path) -> tuple[DiscoveryCandidate, ...]:
+def read_discovery_candidates_csv(
+    path: Path,
+    *,
+    require_successor_columns: bool = False,
+) -> tuple[DiscoveryCandidate, ...]:
     rows, fieldnames = _read_csv_rows(path)
     has_successor_columns = _candidate_has_successor_columns(path, fieldnames)
+    if require_successor_columns and not has_successor_columns:
+        joined = ", ".join(DISCOVERY_SUCCESSOR_COLUMNS)
+        raise ValueError(f"{path}: current successor columns are required: {joined}")
     required_columns = (
         DISCOVERY_CANDIDATE_COLUMNS
         if has_successor_columns
@@ -188,7 +195,7 @@ def _read_csv_rows(
     path: Path,
 ) -> tuple[list[tuple[int, dict[str, str]]], tuple[str, ...]]:
     try:
-        with path.open(newline="", encoding="utf-8") as handle:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle)
             fieldnames = tuple(reader.fieldnames or ())
             return (

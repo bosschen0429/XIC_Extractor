@@ -47,6 +47,25 @@ def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths
     assert batch.review_csvs["Sample_A"] is None
 
 
+def test_read_discovery_batch_index_accepts_utf8_bom(tmp_path: Path) -> None:
+    from xic_extractor.alignment.csv_io import read_discovery_batch_index
+
+    index_path = tmp_path / "discovery_batch_index.csv"
+    index_path.write_text(
+        "\ufeffsample_stem,raw_file,candidate_csv,review_csv\n"
+        "Sample_A,Sample_A.raw,Sample_A/candidates.csv,Sample_A/review.csv\n",
+        encoding="utf-8",
+    )
+
+    batch = read_discovery_batch_index(index_path)
+
+    assert batch.sample_order == ("Sample_A",)
+    assert batch.raw_files["Sample_A"] == Path("Sample_A.raw")
+    assert batch.candidate_csvs["Sample_A"] == (
+        tmp_path / "Sample_A" / "candidates.csv"
+    )
+
+
 def test_read_discovery_batch_index_unescapes_known_formula_fields(
     tmp_path: Path,
 ) -> None:
@@ -145,6 +164,29 @@ def test_read_discovery_candidates_csv_accepts_legacy_rows_without_successor_col
 
     assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
     assert candidate.ms1_feature_row_id == "Sample_1|DNA_dR|500.123456|8.48"
+
+
+def test_read_discovery_candidates_csv_strict_mode_rejects_legacy_rows(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+
+    successor_columns = {"discovery_candidate_state", "ms1_feature_row_id"}
+    legacy_columns = tuple(
+        column
+        for column in DISCOVERY_CANDIDATE_COLUMNS
+        if column not in successor_columns
+    )
+    legacy_row = {
+        column: value
+        for column, value in _candidate_row().items()
+        if column in legacy_columns
+    }
+    csv_path = tmp_path / "discovery_candidates.csv"
+    _write_csv(csv_path, legacy_columns, [legacy_row])
+
+    with pytest.raises(ValueError, match="current successor columns are required"):
+        read_discovery_candidates_csv(csv_path, require_successor_columns=True)
 
 
 def test_read_discovery_candidates_csv_rejects_partial_successor_schema(

@@ -33,18 +33,23 @@ def collect_strict_nl_seeds(
             continue
 
         seeds.extend(
-            _seeds_from_scan(event.scan, raw_file=raw_file, settings=settings)
+            discovery_seeds_from_scan(
+                event.scan,
+                raw_file=raw_file,
+                settings=settings,
+            )
         )
 
     return tuple(seeds)
 
 
-def _seeds_from_scan(
+def discovery_seeds_from_scan(
     scan: Ms2Scan,
     *,
     raw_file: Path,
     settings: DiscoverySettings,
 ) -> tuple[DiscoverySeed, ...]:
+    """Apply the canonical Discovery seed owner to one already-read MS2 scan."""
     seeds: list[DiscoverySeed] = []
     for profile in settings.neutral_loss_profiles:
         seeds.extend(
