@@ -31,8 +31,11 @@ WRAPPED_DESTRUCTIVE_COMMANDS = [
 POSIX_SHELLS = {"bash", "sh"}
 POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
 
-RAW_BACKGROUND = re.compile(
-    r"\bStart-Process\b.*(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|preset)", re.IGNORECASE
+BACKGROUND_PROCESS = re.compile(r"^\s*(?:&\s*)?Start-Process\b", re.IGNORECASE)
+RAW_LAUNCH_SIGNAL = re.compile(
+    r"(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|--preset\b|run_alignment\b|"
+    r"--raw-dir\b|XIC_RAW_ROOT\b|THERMO_RAWFILE_READER)",
+    re.IGNORECASE,
 )
 EXEC_CONFIG_PATHS = [
     "AGENTS.md",
@@ -164,7 +167,10 @@ def main() -> int:
                 deny(reason)
                 return 0
 
-    if RAW_BACKGROUND.search(command):
+    effective_command = wrapped_payload if wrapped_payload is not None else command
+    if BACKGROUND_PROCESS.search(effective_command) and RAW_LAUNCH_SIGNAL.search(
+        effective_command
+    ):
         deny(
             "Background RAW launch through Start-Process is blocked. Use the documented foreground heartbeat/timing command shape, or get explicit external-terminal approval."
         )
@@ -188,9 +194,10 @@ def main() -> int:
             deny(reason)
             return 0
 
+    advisory_messages: list[str] = []
     normalized = f"{command}\n{payload}".replace("\\", "/")
     if any(path.replace("\\", "/") in normalized for path in EXEC_CONFIG_PATHS):
-        context(
+        advisory_messages.append(
             "Execution-affecting XIC agent config may be edited. After the change, run hook/script smoke checks, git diff --check, and a secret/local-path scan before closeout."
         )
 
@@ -198,7 +205,7 @@ def main() -> int:
     if is_write_like(event, command, payload) and mentions_any_path(
         combined_text, PRODUCT_SURFACE_PATHS
     ):
-        context(
+        advisory_messages.append(
             "Product/public surface may be edited. If this changes a maturity tier, output schema, "
             "review/replay behavior, selected area/counting, or matrix authority, consult the "
             "productization control plane compatibility index at "
@@ -208,6 +215,9 @@ def main() -> int:
             "docs/agent/product-validation-contract.md as applicable. Change the compatibility index only "
             "when a stable lane key or owner route changes. If none changes, say so explicitly."
         )
+
+    if advisory_messages:
+        context("\n\n".join(advisory_messages))
 
     return 0
 

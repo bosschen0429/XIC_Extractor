@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -119,6 +121,32 @@ def _assert_hook_contract(config: dict[str, object], *, root: Path = ROOT) -> No
     assert seen == EXPECTED_HOOKS
 
 
+def _run_configured_hook(
+    event_name: str, entry: dict[str, object]
+) -> subprocess.CompletedProcess[str]:
+    if os.name == "nt":
+        shell = shutil.which("pwsh") or shutil.which("powershell")
+        assert shell is not None, "PowerShell is required by commandWindows"
+        argv = [
+            shell,
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            str(entry["commandWindows"]),
+        ]
+    else:
+        argv = ["/bin/sh", "-c", str(entry["command"])]
+    return subprocess.run(
+        argv,
+        input=json.dumps(_minimal_payload(event_name)),
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
 def _run_pre_hook(command: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(HOOKS_DIR / "xic_pre_tool_guard.py")],
@@ -181,6 +209,24 @@ def test_existing_hook_behavior_fixture_runs_in_ordinary_pytest() -> None:
 
 def test_all_enabled_hook_references_resolve_start_and_noop() -> None:
     _assert_hook_contract(_load_hooks_config())
+
+
+def test_enabled_hook_commands_start_on_current_platform() -> None:
+    for event_name, entry in _enabled_hook_entries(_load_hooks_config()):
+        completed = _run_configured_hook(event_name, entry)
+        assert completed.returncode == 0, (
+            f"configured {event_name} command failed: {completed.stderr}"
+        )
+        assert completed.stdout == ""
+
+
+def test_configured_hook_command_rejects_missing_runner() -> None:
+    config = copy.deepcopy(_load_hooks_config())
+    event_name, entry = _enabled_hook_entries(config)[0]
+    field = "commandWindows" if os.name == "nt" else "command"
+    entry[field] = str(entry[field]).replace("python", "missing-codex-runner", 1)
+    completed = _run_configured_hook(event_name, entry)
+    assert completed.returncode != 0
 
 
 def test_hook_contract_rejects_missing_reference() -> None:
@@ -309,6 +355,50 @@ def test_pre_hook_does_not_deny_wrapped_read_only_search(wrapper: str) -> None:
     completed = _run_pre_hook(f"{wrapper} {json.dumps(payload)}")
     assert completed.returncode == 0
     assert completed.stdout == ""
+
+
+def test_pre_hook_blocks_wrapped_raw_launch_without_preset_token() -> None:
+    payload = (
+        "Start-Process python -ArgumentList "
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT "
+        "--dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR'"
+    )
+    completed = _run_pre_hook(f"pwsh -Command {json.dumps(payload)}")
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
+
+
+def test_pre_hook_emits_one_json_object_for_overlapping_advisories() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(HOOKS_DIR / "xic_pre_tool_guard.py")],
+        input=json.dumps(
+            {
+                "hook_event_name": "PreToolUse",
+                "turn_id": "config-smoke",
+                "tool_name": "apply_patch",
+                "tool_use_id": "config-smoke",
+                "cwd": str(ROOT),
+                "permission_mode": "default",
+                "tool_input": {
+                    "patch": (
+                        "*** Update File: "
+                        "docs/agent/product-validation-contract.md\n"
+                    )
+                },
+            }
+        ),
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    output = json.loads(completed.stdout)
+    message = output["hookSpecificOutput"]["additionalContext"]
+    assert "Execution-affecting XIC agent config" in message
+    assert "Product/public surface may be edited" in message
 
 
 def test_governance_index_closes_repository_side_residuals() -> None:
