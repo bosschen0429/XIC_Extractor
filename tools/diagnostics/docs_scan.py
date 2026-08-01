@@ -138,16 +138,34 @@ def is_local_path_scan_target(path: Path, rel_path: str) -> bool:
 def markdown_without_fenced_code(text: str) -> str:
     """Remove fenced code while preserving the surrounding line structure."""
 
+    def container_content(line: str) -> str:
+        """Remove Markdown list/blockquote containers for fence detection only."""
+
+        content = line
+        while True:
+            blockquote = re.match(r"^[ \t]*>[ \t]?", content)
+            if blockquote:
+                content = content[blockquote.end() :]
+                continue
+            list_item = re.match(
+                r"^[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+",
+                content,
+            )
+            if list_item:
+                content = content[list_item.end() :]
+                continue
+            return content
+
     visible: list[str] = []
     fence_character = ""
     fence_length = 0
     for line in text.splitlines():
+        logical_line = container_content(line)
         if not fence_character:
-            # A fence may be nested under a list and therefore have more than
-            # three columns of document-level indentation.  For governance
-            # parsing, an even-more-indented marker is also non-visible code,
-            # so accepting arbitrary leading whitespace is fail-closed.
-            opening = re.match(r"^[ \t]*(`{3,}|~{3,})", line)
+            # Container removal also covers list indentation.  Accepting any
+            # remaining whitespace is fail-closed for governance parsing: an
+            # even-more-indented marker is code, not visible contract text.
+            opening = re.match(r"^[ \t]*(`{3,}|~{3,})", logical_line)
             if opening:
                 marker = opening.group(1)
                 fence_character = marker[0]
@@ -159,7 +177,7 @@ def markdown_without_fenced_code(text: str) -> str:
         if re.match(
             rf"^[ \t]*{re.escape(fence_character)}"
             rf"{{{fence_length},}}[ \t]*$",
-            line,
+            logical_line,
         ):
             fence_character = ""
             fence_length = 0

@@ -445,6 +445,34 @@ def test_governance_index_ignores_nested_fenced_only_table() -> None:
     )
 
 
+def test_governance_index_ignores_blockquoted_fenced_only_table() -> None:
+    root = Path(__file__).parents[1]
+    path = "docs/agent/codex-operating-system.md"
+    text = (root / path).read_text(encoding="utf-8")
+    table_start = text.index("| Rule family |")
+    table_end = text.index("\n\n", table_start)
+    table = text[table_start:table_end]
+    quoted_table = "\n".join(f"> {line}" for line in table.splitlines())
+    text = (
+        text[:table_start]
+        + "> ```markdown\n"
+        + quoted_table
+        + "\n> ```"
+        + text[table_end:]
+    )
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    assert any(
+        "governance index must contain exactly the six declared rule families"
+        in problem.reason
+        for problem in result.problems
+    )
+
+
 def test_governance_index_rejects_unknown_rule_family() -> None:
     root = Path(__file__).parents[1]
     path = "docs/agent/codex-operating-system.md"
