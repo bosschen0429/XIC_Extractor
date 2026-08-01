@@ -1,0 +1,3514 @@
+{
+  "version": 2,
+  "schema_version": "r11_d0_productization_control_plane_retirement_evidence_v1",
+  "generated_at": "2026-08-01",
+  "activation_base_sha": "a2d5032befb2a4439daff8a018aa551e3607f5f6",
+  "transaction": "body_to_compatibility_index",
+  "transaction_status": "census_frozen_pre_edit",
+  "source_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
+  "source_hash": "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5",
+  "source_line_count": 5621,
+  "source_section_count": 166,
+  "raw_heading_like_line_count": 176,
+  "fenced_heading_like_lines_excluded_from_sections": [
+    "L824:## Productization intake",
+    "L848:## Promotion packet",
+    "L850:### Capability",
+    "L857:### Public surface",
+    "L863:### Domain authority",
+    "L869:### Behavior delta",
+    "L876:### Validation",
+    "L885:### Audit and replay",
+    "L891:### Stop/rollback",
+    "L1011:### YYYY-MM-DD - <lane>"
+  ],
+  "review_result": "draft_pre_edit",
+  "source_copy_readback_verified": false,
+  "source_copy_destination": "source_repo_path:docs/superpowers/plans/2026-06-15-productization-control-plane.md",
+  "source_copy_hash": "pending",
+  "active_followups": [
+    "absorb must_change claims into staged owners",
+    "write and read back exact private source copy",
+    "replace source body with compatibility index",
+    "run fixed-diff semantic review"
+  ],
+  "unresolved_claims": [],
+  "hard_zero_files": [
+    "docs/superpowers/validation/productization_status_index_v1.tsv",
+    "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+    "docs/superpowers/schemas/productization_control_plane_schema.v1.json"
+  ],
+  "source_sections": [
+    {
+      "section_id": "CP-SECTION-0001",
+      "heading": "XIC Extractor productization control plane",
+      "heading_level": 1,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1-L17",
+      "section_sha256": "e22b243658e04fcf5598a1f9a26b15253059f34a299c88ecd9eb4eab656c8f6b",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-AUTHORITY-PARTITION-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0002",
+      "heading": "Authority",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L18-L38",
+      "section_sha256": "4287d7c5c7f72992eb17397f04e4541b5b93c1f63b63424941259b8042e630f6",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-AUTHORITY-PARTITION-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0003",
+      "heading": "Purpose",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L39-L48",
+      "section_sha256": "ef648aa95e2d89df47c8e5d9fc64ed1e910222fd76317a0cc44ed3d758af9d5d",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-AUTHORITY-PARTITION-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0004",
+      "heading": "Hook enforcement",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L49-L61",
+      "section_sha256": "cdd27ff572aedcbd3d5d52b8e7519486ce809e1c9e4bc38ceba0daf71c79c016",
+      "disposition": "structured_owner_already_authoritative",
+      "claim_ids": [
+        "CP-HOOK-GUARDRAIL-001",
+        "CP-HOOK-NONAUTHORITY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0005",
+      "heading": "Current medium-term active lanes",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L62-L474",
+      "section_sha256": "58d200bcd00877ed7265e06f282cef762d6ae74f328785f755c5c65b4c847dfb",
+      "disposition": "structured_owner_already_authoritative",
+      "claim_ids": [
+        "CP-CURRENT-STATE-001",
+        "CP-BROAD-BACKFILL-NEG-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0006",
+      "heading": "Non-negotiable rule",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L475-L487",
+      "section_sha256": "85c0f2ee8ae608f41fb43dfc5c1124d3d21d4a0166f3325948038ad1b20a5308",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0007",
+      "heading": "Maturity labels",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L488-L499",
+      "section_sha256": "0640dd7dca0a514d21f251d5de940442ecc6661b977258dee05e929d86fbe190",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0008",
+      "heading": "Active productization board",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L500-L755",
+      "section_sha256": "8dac01bfc516b809577f8f19a2daf4b27fa2fb267c1ff14c577a93d7daed1b03",
+      "disposition": "structured_owner_already_authoritative",
+      "claim_ids": [
+        "CP-CURRENT-STATE-001",
+        "CP-BROAD-BACKFILL-NEG-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0009",
+      "heading": "WIP limits",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L756-L772",
+      "section_sha256": "f4f13b8893499763dc8687c12697ad0faf5b6b2204170f319873545102100cff",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0010",
+      "heading": "Weekly maintenance checklist",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L773-L776",
+      "section_sha256": "b7127a67aa9ed45ccb7223d982132e6d77c40bd6933b3e0abd4d79ee296c1061",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0011",
+      "heading": "1. Board hygiene",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L777-L784",
+      "section_sha256": "c2d19470a1fee27cf6be6d7a65634504a01e60779ae30d19bf592564a1f4535b",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0012",
+      "heading": "2. Contract hygiene",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L785-L792",
+      "section_sha256": "b44e8e22f21b0eeffe38c445f45c62138abdb3f6956f23339f2bc264e6e78b39",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0013",
+      "heading": "3. Promotion hygiene",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L793-L800",
+      "section_sha256": "d962df05632c285382aa834168c848d954e277347e4d71ef2eb4a7a3594f4328",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0014",
+      "heading": "4. Validation hygiene",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L801-L808",
+      "section_sha256": "254236afc14292af930f45d83a78b8bfa350a01e66557593f115cc074d743e2d",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0015",
+      "heading": "5. Drift cleanup",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L809-L818",
+      "section_sha256": "9b03bf9e95d03958ee2d9038ed8f51d30780e617e49c310dfca69d558f155a67",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0016",
+      "heading": "Pre-work checklist",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L819-L842",
+      "section_sha256": "8c3e2339580188949cf7e775d647eeaf2a6b1d8041e7e2682b1f25c7718535f3",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0017",
+      "heading": "Promotion packet template",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L843-L897",
+      "section_sha256": "b7d14703e36b7c2f5fda0dd492e33a3a8a3f456a91f6da9f325cdad3e2291397",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0018",
+      "heading": "Definition of done by tier change",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L898-L899",
+      "section_sha256": "ccc5213e882cc8b6787db1eb8f4c5af5bbe3de3d750b1244b43c71effa593ec4",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0019",
+      "heading": "`missing` -> `partial_internal`",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L900-L906",
+      "section_sha256": "cce2bcada5a4ba3b698a03625dc2498401fa60bc17018e40cee45b64ff3b864b",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0020",
+      "heading": "`partial_internal` -> `diagnostic_only`",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L907-L914",
+      "section_sha256": "6a5fd86ae1bfa696c1a1461c302de2e52030a70693d4aef1ff8944d6a6b0f62f",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0021",
+      "heading": "`diagnostic_only` -> `shadow_ready`",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L915-L922",
+      "section_sha256": "7672285ac360915696154a2e44acf6edeee3ce02d4370e4140de0b5ed6a5f734",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0022",
+      "heading": "`shadow_ready` -> `production_candidate`",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L923-L931",
+      "section_sha256": "4ef032c9a61b53fa7442a4de2f4c2bc87e146b8d1744bfb565ac64cf548ff9f3",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0023",
+      "heading": "`production_candidate` -> `production_surface`",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L932-L940",
+      "section_sha256": "8d3f3f708cc871e05e3765d79c31023b7d0f97c7586e204ee4d8cd7bf7f71d46",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0024",
+      "heading": "`production_surface` -> `production_ready`",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L941-L948",
+      "section_sha256": "10b450fd9d694256fa0ddba5f3626c6ec766c4dc00eebf56d95c6fb1ba30eeda",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0025",
+      "heading": "Monthly reset checklist",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L949-L960",
+      "section_sha256": "46d4ff2b15f27c4c3a939b987bf03f48f4ea2321783e92b6fa9df024b628abe4",
+      "disposition": "absorb",
+      "claim_ids": [
+        "CP-WORK-CYCLE-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0026",
+      "heading": "Historical immediate 2026-06 queue snapshot",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L961-L1005",
+      "section_sha256": "52b0b5a5edc93adc84088c99c477cdd325b456818fb9cb1c0c7bf470a8999c04",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0027",
+      "heading": "Maintenance log",
+      "heading_level": 2,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1006-L1020",
+      "section_sha256": "4fba247ad1bfed10318db952d7f63ab8053289873fa84f2bfe1a8524b215d83d",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0028",
+      "heading": "2026-07-22 - pt_pattern_diagnostic_artifact_lineage_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1021-L1050",
+      "section_sha256": "9734f2c0c68e8942ab159ba496ade0d316d782feb6c4a7cfab19716b82132f91",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0029",
+      "heading": "2026-07-17 - pt_pattern_discovery_diagnostic_v1_closeout",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1051-L1074",
+      "section_sha256": "aa3cf18edd43578f1d1ca92891bd45fe2c6abff65d7ae93d691722dfa4cd1360",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0030",
+      "heading": "2026-07-02 - pt_pattern_discovery_productization_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1075-L1120",
+      "section_sha256": "af1b1779bd04cc4707451028dbed4b8ee5088daf4a9002ec10f474c71dc81581",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0031",
+      "heading": "2026-06-26 - docs-cleanup routing",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1121-L1134",
+      "section_sha256": "20a4d1fdcbaff3ae67e6d9570e34cf5a7b70d07723dc62642b8bc99177481b02",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0032",
+      "heading": "2026-06-15 - Control plane initialized",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1135-L1143",
+      "section_sha256": "b65b1be258ef449ad68ffbb8c964df3860a44de436b8f66fe23a76be2d090c37",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0033",
+      "heading": "2026-06-15 - method_manifest_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1144-L1152",
+      "section_sha256": "3bd11d48351f5875268476dfba98700b5e4faf6fb24d95bfc9b51d22f173f701",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0034",
+      "heading": "2026-06-15 - targeted_schema_versioning_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1153-L1161",
+      "section_sha256": "6a7d0bde84311cf21d06401094d824c56cac44283011dc4c898ea74fe2091fc4",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0035",
+      "heading": "2026-06-15 - review_action_import_and_application_plan_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1162-L1170",
+      "section_sha256": "e4f1d653559f7e830b85d3089e19738e9c5373324f78a9ea60b34cb089f365cc",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0036",
+      "heading": "2026-06-15 - sample_metadata_contract_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1171-L1179",
+      "section_sha256": "99726d3f7169e5e210528227e8db592511231726e420998db3fd89b09fbdf6f3",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0037",
+      "heading": "2026-06-16 - review_action_audited_apply_copy_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1180-L1189",
+      "section_sha256": "82051e22c7b5040131f4954eedc224b7e9ecc803743de938a1e63c0603531844",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0038",
+      "heading": "2026-06-16 - sample_metadata_runtime_parity_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1190-L1199",
+      "section_sha256": "0b43092fdc2dc95ef40b73e6085e3368f7b8279bb53d3fa0c1161ced56fc8ebe",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0039",
+      "heading": "2026-06-16 - review_action_reintegration_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1200-L1208",
+      "section_sha256": "38e6179a6653e65396ea9db4411dab1529873063c322585b88547a0be93a7cc9",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0040",
+      "heading": "2026-06-17 - review_action_candidate_sidecar_verifier_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1209-L1239",
+      "section_sha256": "d0de6f4b69ec4bf7bdb8b8ac9f12759eb7a40e853f0ccc3af88f4fa317b5f957",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0041",
+      "heading": "2026-06-16 - sample_metadata_instrument_qc_projection_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1240-L1248",
+      "section_sha256": "82f0853db2a155db8b652b861840ecdf8ba242c8a4487d03a4b0705be97d6907",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0042",
+      "heading": "2026-06-17 - sample_metadata_alignment_column_order_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1249-L1258",
+      "section_sha256": "3de8ac2301d388125b6a53cb1d6174e0a0d8d6d72c2c89c9d52d04708094b9a9",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0043",
+      "heading": "2026-06-17 - sample_metadata_rt_normalization_anchor_resolver_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1259-L1268",
+      "section_sha256": "fd31df867b1b4e7f3829e9d8fad41c5baefe305917d98fb1d80127fc095ef01f",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0044",
+      "heading": "2026-06-16 - targeted_ms1_shape_identity_explicit_optin_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1269-L1279",
+      "section_sha256": "7ae16fc67be6d17a455dc4e3f8576f125f3d92b9ad838e4524ed03a0ec540775",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0045",
+      "heading": "2026-06-16 - standard_peak_seed_guard_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1280-L1288",
+      "section_sha256": "2a66158a435640c605d46d8b9a00eae18c65f72ff8929e73cb21f76d6ae60b7b",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0046",
+      "heading": "2026-06-17 - standard_peak_heldout_oracle_results_cli_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1289-L1301",
+      "section_sha256": "27209945327b2f3636666216763d943ac5130fed66efc41594e0b0040ea535a2",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0047",
+      "heading": "2026-06-17 - standard_peak_seed_guard_realdata_85raw_artifact_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1302-L1314",
+      "section_sha256": "82da7c111f7e01efa577761198f0ea7584435405b8fa63011405fcc7f06740f3",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0048",
+      "heading": "2026-06-17 - standard_peak_seed_guard_realdata_85raw_consolidated_no_raw_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1315-L1327",
+      "section_sha256": "3c6f50dda1dfb386bda78ea348b52a5f010b618a1ed4ec04d59aeaea7e1d77bf",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0049",
+      "heading": "2026-06-17 - standard_peak_heldout_oracle_source_audit_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1328-L1336",
+      "section_sha256": "0658d07429248103fabd62a7fb8299cba7f37008ada5450dee4bf3c56f11e4f7",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0050",
+      "heading": "2026-06-17 - standard_peak_heldout_oracle_observed_provenance_contract_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1337-L1348",
+      "section_sha256": "89a556275a07903f4417ee63c1ffab02be239113abb3540cea0bd3a43399222b",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0051",
+      "heading": "2026-06-17 - standard_peak_heldout_original_detected_guard_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1349-L1361",
+      "section_sha256": "3097add4d93f2bb48f9721e430c2babe6ea25fc74bfa4168ee30265ea2a85337",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0052",
+      "heading": "2026-06-17 - standard_peak_heldout_observed_source_crosscheck_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1362-L1377",
+      "section_sha256": "26604ed62b6a48e917514be156df6b4b87f03e0ee3fdc7cbf3b6964645561f57",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0053",
+      "heading": "2026-06-17 - standard_peak_oracle_gate_review_hardening_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1378-L1390",
+      "section_sha256": "644c87ba078db187f6e0866f48bd333fd32a6073dfb3eeb94ef34258402c85e2",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0054",
+      "heading": "2026-06-17 - product_decision_backfill_oracle_and_nlfail_limited_optin_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1391-L1399",
+      "section_sha256": "f0035231e469c1f0ac902555cb4c0495961ef02d45cb19f792ebe3d2d90a0cda",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0055",
+      "heading": "2026-06-17 - standard_peak_oracle_tolerance_ceiling_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1400-L1411",
+      "section_sha256": "745707c49379df08c5d921a88f2ecaadb7d297a3c020bdaebc384b922d444642",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0056",
+      "heading": "2026-06-17 - standard_peak_oracle_exact_threshold_float_fix_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1412-L1423",
+      "section_sha256": "5465a55f07386ccb82b5f8be78774ba33b88d2f58c354e4e7ae6881ca71f23d0",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0057",
+      "heading": "2026-06-17 - standard_peak_heldout_trace_reintegration_oracle_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1424-L1461",
+      "section_sha256": "967b4b614b2142c1469fe4ed103db86c491f16eee854f57c02d54bae15d61532",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0058",
+      "heading": "2026-06-17 - standard_peak_activation_scope_audit_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1462-L1495",
+      "section_sha256": "2749d2c2de53d189e19b457a6dc17d987f3615175ef23dc5ae387e78d7a4034e",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0059",
+      "heading": "2026-06-17 - standard_peak_narrow_expected_diff_acceptance_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1496-L1534",
+      "section_sha256": "24888791bbe13ffd1a6f7ad93bda680d30b7074b6761b87470c992d7c6b35cb0",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0060",
+      "heading": "2026-06-17 - standard_peak_narrow_product_writer_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1535-L1575",
+      "section_sha256": "0ea517534315bb17902d6a53c4f036664c33b0a0d21cbdc29ca7fb472b222ed4",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0061",
+      "heading": "2026-06-17 - standard_peak_low_scan_trace_oracle_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1576-L1604",
+      "section_sha256": "e66744200449e01105d12fea45bfe3a0418fc3e8870381e74bc0a4334685429a",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0062",
+      "heading": "2026-06-17 - standard_peak_low_scan_scoped_writer_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1605-L1643",
+      "section_sha256": "f641b073b4c8c7d8602de2f5418e8e73c8a00376e60495504aa4433b7adda029",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0063",
+      "heading": "2026-06-17 - standard_peak_low_scan_review_fix_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1644-L1677",
+      "section_sha256": "d5ca6cfeb699b4981cb92352e861443d34060f5ab15c158baf8ae902d9199d76",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0064",
+      "heading": "2026-06-17 - standard_peak_low_height_probe_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1678-L1735",
+      "section_sha256": "a9c9f009500bbe8c69b0736934cccc0147be1b3f31f4e6c898bb9aec9aacee51",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0065",
+      "heading": "2026-06-17 - standard_peak_apex_delta_probe_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1736-L1774",
+      "section_sha256": "d6b261cf9ad1f8ebfad4f01a5ae6371fc3f2c36caf1b2f7807eb83c9e03d50c3",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0066",
+      "heading": "2026-06-17 - standard_peak_width_probe_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1775-L1824",
+      "section_sha256": "226725847025ad85a69ad7706b363c18ab4d69f1b8d86ce2e6ddcb27780c2337",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0067",
+      "heading": "2026-06-17 - standard_peak_shape_margin_probe_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1825-L1870",
+      "section_sha256": "2e4a149a9ff17245da8c4d74348c5e6b7d802e80315ee5c437a0ac2bcf518833",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0068",
+      "heading": "2026-06-17 - targeted_ms1_shape_identity_limited_policy_gate_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1871-L1880",
+      "section_sha256": "9fe37391722a29977f0385b53aa59a157cf0c33fa015908e349d64f9c33aa30f",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0069",
+      "heading": "2026-06-17 - targeted_ms1_shape_identity_support_keyset_gate_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1881-L1890",
+      "section_sha256": "c23bbf632a7665ce529bc5c4e4ede22e2afc3fcaa80f2f15c1b167d0aa137ae9",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0070",
+      "heading": "2026-06-17 - targeted_ms1_shape_identity_default_rescue_blocker_audit_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1891-L1900",
+      "section_sha256": "5887ddc9b5b5c77cf8fbd5da16448f99e553e8cb10d447fbe4777bcc084dda2a",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0071",
+      "heading": "2026-06-17 - targeted_ms1_shape_identity_support_tsv_required_gate_review_fix_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1901-L1910",
+      "section_sha256": "34ac402ee278e8b735e3c7cd198fb3ae1cbe90a1e3f29f7052cb1814f830f177",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0072",
+      "heading": "2026-06-17 - targeted_ms1_shape_identity_support_tsv_required_spec_drift_fix_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1911-L1922",
+      "section_sha256": "af2a7b1a01148dc7be31aaa140ede7459e0238ee086cdf82e07fb0a4b6654e1d",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0073",
+      "heading": "2026-06-17 - targeted_ms1_shape_identity_auto_limited_cli_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1923-L1938",
+      "section_sha256": "86eafabf074699aa8b979342c4e9f7bca795675aa9ff5e45206cd2fc10a5ea31",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0074",
+      "heading": "2026-06-17 - targeted_ms1_shape_identity_auto_limited_review_fix_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1939-L1959",
+      "section_sha256": "3a3a022f7256a289a247fcf4c45b38cbc1fa316ca98b8f1896e6554179df1ee2",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0075",
+      "heading": "2026-06-17 - targeted_ms1_shape_identity_no_flag_default_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L1960-L2001",
+      "section_sha256": "84fc8363d80b171f9baf891119acbdb7bb7639c9dde1a75b6e9906318210f895",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0076",
+      "heading": "2026-06-17 - backfill_production_gate_research_input_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2002-L2028",
+      "section_sha256": "000cd70474d757267ab2160576fcaae64a280983f07162213067e35937063504",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0077",
+      "heading": "2026-06-17 - product_direction_low_manual_intervention_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2029-L2064",
+      "section_sha256": "4418e2e8e5119ad4ada8177a7846df6bb5d39a8182c46ec34d8015540740e743",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0078",
+      "heading": "2026-06-17 - standard_peak_low_height_bounded_reintegration_probe_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2065-L2100",
+      "section_sha256": "864b152c0b181f73eaf7e1142b42d1afe0c47ad7fc25f1944765b0aa090c6bc5",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0079",
+      "heading": "2026-06-17 - standard_peak_low_height_scoped_writer_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2101-L2135",
+      "section_sha256": "8d87f1fe1e796babebdee9b31ccc050985c6113282663cd28cf410e32b67a3a8",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0080",
+      "heading": "2026-06-17 - standard_peak_low_height_low_scan_scoped_writer_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2136-L2179",
+      "section_sha256": "50954fc982db9626a28aa3d99bca6cc8c909579782528ba6a32fb93cef032ff4",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0081",
+      "heading": "2026-06-17 - backfill_remaining_scope_evidence_class_blocker_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2180-L2211",
+      "section_sha256": "a3f11902840c3a43a545deaacbbc610b56913cc3df658ad330b55394b8e73fdd",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0082",
+      "heading": "2026-06-17 - standard_peak_reintegration_stability_audit_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2212-L2255",
+      "section_sha256": "0e9ccda400cf6d636daa56e0bde5624f6b3fed0287b2673b77a9c2d076a8788a",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0083",
+      "heading": "2026-06-17 - standard_peak_low_height_reintegration_stable_writer_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2256-L2321",
+      "section_sha256": "b1f1ba4cf483c8e82d8d1c03d1cfb0f1a0c3bd8c4b2a19f57300a7c159566ab6",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0084",
+      "heading": "2026-06-17 - standard_peak_all_stability_family_oracle_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2322-L2358",
+      "section_sha256": "6f27ee9f192b59bf7d6b36b3037c956d941269d36a0502246ff370452afa1201",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0085",
+      "heading": "2026-06-17 - standard_peak_generated_backfill_policy_explanation_v2",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2359-L2393",
+      "section_sha256": "946eb57dfbd499f5d1b0880fc4cefde98bc86bf644c33bbe642b53fd29ca0f61",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0086",
+      "heading": "2026-06-17 - standard_peak_policy_observed_oracle_writer_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2394-L2438",
+      "section_sha256": "52ab7ae0fc4aad24f1ece135f2d9c44bbcbc6a4f1c06063e91c1cc35e826f694",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0087",
+      "heading": "2026-06-17 - standard_peak_shape_clean_policy_explanation_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2439-L2484",
+      "section_sha256": "c5dbf1862b6406405954ef2d93eaaa00221ad8570f0049c24a3b2687863ad544",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0088",
+      "heading": "2026-06-17 - standard_peak_shape_clean_reintegration_stable_oracle_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2485-L2527",
+      "section_sha256": "50b66cd1b97f382925d94518d1297a9cb9756482b1f2793c1c468bfa2e91b6e0",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0089",
+      "heading": "2026-06-17 - standard_peak_generated_backfill_policy_path_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2528-L2584",
+      "section_sha256": "657165291aeb600416a258fda974484d3464450cc708e8cb0be6e55f132a4a08",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0090",
+      "heading": "2026-06-18 - bounded_non_broad_lane_acceptance_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2585-L2638",
+      "section_sha256": "1494483701ce8f1624a7bc70aebc5e264ac9529f4ecb2580b259b22b99f4b771",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0091",
+      "heading": "2026-06-18 - lockbox_label_collection_pack_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2639-L2707",
+      "section_sha256": "437ee64f762b71e598babfa1230d32a759f99604e39f2a60fb6ef65ed16060e5",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0092",
+      "heading": "2026-06-18 - lockbox_static_review_ux_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2708-L2763",
+      "section_sha256": "a8504ccc7d829cea29cb39d2f32f4f13b9b72b024137d98db5cb226bed87b943",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0093",
+      "heading": "2026-06-18 - lockbox_truth_summary_gate_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2764-L2816",
+      "section_sha256": "0b0a952cc510e17fa6e89e463a84fc024c8b4ab397207d823b9273950a993758",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0094",
+      "heading": "2026-06-18 - lockbox_next_action_plan_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2817-L2871",
+      "section_sha256": "e105b15648bff4f66c52e1a76a6672a8bb54a7a047515fd53d8e50267f703b82",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0095",
+      "heading": "2026-06-18 - lockbox_second_review_pack_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2872-L2931",
+      "section_sha256": "4e1016624bc10ac349768c7dd31c68d486d42a5d9633d79aff98f7c5e6249aa1",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0096",
+      "heading": "2026-06-18 - lockbox_reviewer_identity_guard_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2932-L2975",
+      "section_sha256": "d3c4dfb43a9776d306f6f06c925e86268cc4ba4ef9cbc9e695b2dc07df1592ec",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0097",
+      "heading": "2026-06-18 - lockbox_ai_challenge_packet_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L2976-L3028",
+      "section_sha256": "2a3a964acf1e534b0e545950b125f4ae798f6c9e1f45e13e4fe2f2538e55220a",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0098",
+      "heading": "2026-06-18 - lockbox_ai_challenge_result_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3029-L3062",
+      "section_sha256": "73f8820cb43af4c7c233057ae3cfcdb0f4bef4616be25cd577d5d94d67d7d7cd",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0099",
+      "heading": "2026-06-18 - lockbox_ai_challenge_owner_rule_resolution_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3063-L3113",
+      "section_sha256": "9772407b220be569b46b51e874235081034176b13414dc0d86ead43ea8039180",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0100",
+      "heading": "2026-06-18 - lockbox_second_review_ai_challenge_gate_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3114-L3158",
+      "section_sha256": "8539503dd4b56feef1cfece2942a55c6d6846a43838fd01b90104e9b707a3ac1",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0101",
+      "heading": "2026-06-18 - lockbox_single_owner_ai_challenge_gate_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3159-L3203",
+      "section_sha256": "5adcddc43602155a4a834deb16d1db761b0d10e3d3a294d12e9fcb17cd9e4076",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0102",
+      "heading": "2026-06-19 - QuantMatrix Default Product Activation v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3204-L3249",
+      "section_sha256": "693e6e2325e6c5ee06fa354e2cd05b674402adb909b1cf58d82d8eda19e528f1",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0103",
+      "heading": "2026-06-19 - Target-row identity gap stop-ship addendum",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3250-L3291",
+      "section_sha256": "818ae4495f719984f628e3a72ca22fcd4b4014bc8b0f422906c25115d2039f9c",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0104",
+      "heading": "2026-06-19 - Discovery precursor inference root-cause fix v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3292-L3340",
+      "section_sha256": "4e5d686d600bda03d024a7443aef0a177723571e4bfe447e1dc71f2583c52eca",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0105",
+      "heading": "2026-06-19 - QuantMatrix Product Ready Closeout v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3341-L3385",
+      "section_sha256": "8bcb5119dd61aa5ef776454d41dd3d3ed73d18abb19a28b0a6639f93ceb05fee",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0106",
+      "heading": "2026-06-19 - QuantMatrix Default Activation Dry-Run v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3386-L3428",
+      "section_sha256": "9ebab2d7343afe0a2f948976a0e42ef0b4db167d60c73817a39ede83122418f2",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0107",
+      "heading": "2026-06-19 - QuantMatrix Promotion Packet v2",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3429-L3471",
+      "section_sha256": "e5e766427b8583db59b677d9f7074db4160e7d3d2981fb653dcce2560906edef",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0108",
+      "heading": "2026-06-19 - QuantMatrix Real Bundle v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3472-L3516",
+      "section_sha256": "0857659be847026e595a51f3ee9429c58d2595ff4b76c6478bb28da4550e4c22",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0109",
+      "heading": "2026-06-19 - QuantMatrix Downstream Impact Smoke v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3517-L3557",
+      "section_sha256": "a19082ee51fb81e100c778656197c62da29e3808fa92202512eebbbf352bd830",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0110",
+      "heading": "2026-06-19 - QuantMatrix Promotion Validation Packet v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3558-L3597",
+      "section_sha256": "91e57ac77162456881f5b79606d2fd8b5dd10c5c69fe3e55479b83724f6e4a07",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0111",
+      "heading": "2026-06-19 - QuantMatrix Promotion Readiness v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3598-L3633",
+      "section_sha256": "597d644d420e7ed77a6a12d61e6f576ba694eeed5ebca077826f278309451272",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0112",
+      "heading": "2026-06-19 - Discovery row-identity/evidence contract gate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3634-L3670",
+      "section_sha256": "004d5459bd626c00bf0d3a6e4ee0fd9b9836fbe297b0e89e80e1f6907b173430",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0113",
+      "heading": "2026-06-19 - QuantMatrixVersion Review Report v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3671-L3699",
+      "section_sha256": "970754897e5a1b226f4e264c28339dbbfd8aec44cbdc1e8fdc9841ed01b27a0f",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0114",
+      "heading": "2026-06-19 - QuantMatrixVersion Activation v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3700-L3728",
+      "section_sha256": "cb3b0d1162a02e076087ce7f549a144b5cd8582952590ffda4226df1c5f2ff65",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0115",
+      "heading": "2026-06-19 - ProductionAcceptanceManifest v1 schema/checker",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3729-L3767",
+      "section_sha256": "45448a0235e7c1d2fb9d6dae983c324cc7e35c933c0ca2ba483e0da4058bc9a1",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0116",
+      "heading": "2026-06-19 - lockbox_shadow_automation_experiment_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3768-L3813",
+      "section_sha256": "c6cb7616eb320696c0e645eccadce8029714fcd22a31e826b0d80ac5d6013caf",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0117",
+      "heading": "2026-06-18 - productization_status_index_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3814-L3858",
+      "section_sha256": "fc911f511e42cde0f48da89629bfcb8ccead1b125f39da5825f83f031d4c447a",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0118",
+      "heading": "2026-06-18 - missing_overlay_evidence_recovery_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3859-L3892",
+      "section_sha256": "ac4b4be5fd2df2e5f642fff37ad315ee603b77614fe68265b58c0b4bb028c44f",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0119",
+      "heading": "2026-06-18 - peak_choice_truth_lockbox_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3893-L3933",
+      "section_sha256": "ac523dcf29e80ae8d87e911b67f0f0d900d1ceffb5d2342c74d950ef8b7417ed",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0120",
+      "heading": "2026-06-18 - productization_review_packet_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3934-L3968",
+      "section_sha256": "4e274bac7a6eb09b3e383355cf9c4038cc40fb44cf693f39df454d67d404087d",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0121",
+      "heading": "2026-06-18 - productization_authority_checker_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3969-L3994",
+      "section_sha256": "d24772eb4521e904028f271ec5002f8ea66c5200aeaf8f3d8f56d25c8c5e7171",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0122",
+      "heading": "2026-06-18 - productization_authority_mechanical_adjudication_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L3995-L4032",
+      "section_sha256": "215577e7638409980e99d35a398a283d48923fb45a5f0a628d6106227ba721cf",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0123",
+      "heading": "2026-06-18 - backfill_broad_autowrite_feasibility_gate_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4033-L4061",
+      "section_sha256": "25bf19384ddb78f6d31c9428569a8485dd5cdf14a38490202c24b43f7c259a5a",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0124",
+      "heading": "2026-06-18 - backfill_autowrite_ground_truth_strategy_reset_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4062-L4093",
+      "section_sha256": "7ce622196986b3a16b42930d7fe7aee4e9ca826bbad91df56a84f0ddbc1d6123",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0125",
+      "heading": "2026-06-17 - sample_metadata_no_output_parity_tier_closeout_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4094-L4123",
+      "section_sha256": "2bb1a622ccea0a7cf21e44168007ff67c0660b20f168f2d9cf3b8ecde0968a33",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0126",
+      "heading": "2026-06-17 - standard_peak_generated_policy_quality_explanation_sidecar_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4124-L4165",
+      "section_sha256": "c8ebe07a5a2052175682610812c3b0a25c0b2ef92d73f295c9aef56fa98c5729",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0127",
+      "heading": "2026-06-17 - handoff_state_refresh_after_shape_margin_commit_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4166-L4198",
+      "section_sha256": "3fc9130c2732fc8c85ce5777c1d432171282f55d3093bf84d0c841174bf3173c",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0128",
+      "heading": "2026-06-17 - provisional_production_candidate_gate_guard_audit_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4199-L4208",
+      "section_sha256": "e98c37f6e52fc84664d0d41a26e2e0282ac8b5576cdaf37f963a352585d6cfc8",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0129",
+      "heading": "2026-06-16 - method_manifest_artifact_replay_policy_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4209-L4218",
+      "section_sha256": "64493bcd9ffd2a01cb576240df7740c6f219e8f6dab9d1b570a359192078ee8c",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0130",
+      "heading": "2026-06-15 - alignment_output_contract_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4219-L4226",
+      "section_sha256": "d00fae2d0050b3802665c022a24b409bfb1c56c343e42bab344eece10b80cdac",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0131",
+      "heading": "2026-06-19 - discovery_row_identity_and_claim_resolved_matrix_decision_v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4227-L4250",
+      "section_sha256": "18af6e6c2baa5e518c4d5c6ebd8564f29f8dd4fee70eb86b2a62502cf8dbd298",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0132",
+      "heading": "2026-06-20 - CID-NL product-ready alignment evidence v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4251-L4308",
+      "section_sha256": "636f2911d49cf016ca9220591a49a618501271e607e161da92693fbd88c180a4",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0133",
+      "heading": "2026-06-20 - CID-NL default activation preflight v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4309-L4353",
+      "section_sha256": "74ea1be4d241677ad1f0e583a402111a2929d0c4b9d6741c3b390094ba13e0fd",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0134",
+      "heading": "2026-06-20 - CID-NL default activation bridge gate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4354-L4392",
+      "section_sha256": "1be1cb8fb576c23b129eb36aae28ddd14834caff537f8d15490adb31703bc26c",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0135",
+      "heading": "2026-06-20 - CID-NL default activation authority reconstruction gate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4393-L4426",
+      "section_sha256": "a230284f0ea8d0fcf029a940e61d7b41e44a706f07ff1e31fa94855ccfbd81fe",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0136",
+      "heading": "2026-06-20 - CID-NL default activation cell-local identity gate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4427-L4465",
+      "section_sha256": "f1b8397da8c0d845930ed012b0d3bb1e42941715ab1b6af9732d6e5ca157be67",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0137",
+      "heading": "2026-06-20 - CID-NL default activation remaining identity gate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4466-L4512",
+      "section_sha256": "e1aa67c35dd496a510a6931b0d5ae2d0723dc2ba6555a535adbd6c7ad1fa10e0",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0138",
+      "heading": "2026-06-20 - CID-NL default activation successor authority contract v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4513-L4551",
+      "section_sha256": "608e5edb52ba62c455601901fd1afb981ac6576b8b36c7d7436d7b4c644a6124",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0139",
+      "heading": "2026-06-20 - CID-NL default activation gallery review v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4552-L4593",
+      "section_sha256": "b0603e6eed8396d9d7d5a73dd5e7b2ac680e38c31f0b2e11ada7b08c05a69640",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0140",
+      "heading": "2026-06-20 - CID-NL gallery review semantics correction v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4594-L4622",
+      "section_sha256": "f57c8017fcd1b23d810fc034ac3c27dc114eeeac3bc139be1a4302ac9c3a2efd",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0141",
+      "heading": "2026-06-20 - CID-NL gallery Discovery-vs-Backfill review split v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4623-L4657",
+      "section_sha256": "b6e6af32962de8c5982976c78df3d3e7040cbef3ac133f18820c2d9b992a4a5b",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0142",
+      "heading": "2026-06-20 - CID-NL Evidence Review Gallery differential index v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4658-L4703",
+      "section_sha256": "038a4bc027fae40305b5ace9b85dc10302543e6608da024e13d71b636aec9af6",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0143",
+      "heading": "2026-06-20 - CID-NL paired differential overlay review v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4704-L4755",
+      "section_sha256": "0ce8318c7525d2a9a6f732322769bb97790f5f8539ecd8ff1a71a6f9e57ae0c1",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0144",
+      "heading": "2026-06-20 - overlay interpretation guide and differential wording v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4756-L4794",
+      "section_sha256": "e2c4a3bedfd5eee5581dbdb081ccd71dcb6f71c5311f73dfd855603353e41478",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0145",
+      "heading": "2026-06-21 - CID-NL feature-inclusion / identity-authority reframe v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4795-L4825",
+      "section_sha256": "6e482a9f0957bc41d1511c526146ac93a4446b340fdb2006b6c02c7c34448a29",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0146",
+      "heading": "2026-06-21 - CID-NL feature-inclusion gate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4826-L4874",
+      "section_sha256": "847e62ea1d37624335c0735804687f4df3241bde8e9ce9aa9625bdf57d7dda09",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0147",
+      "heading": "2026-06-21 - CID-NL activated-copy candidate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4875-L4929",
+      "section_sha256": "cc34ace9a3c10541797b44baab0a24c325651318ed3e020bc90b8640a502700c",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0148",
+      "heading": "2026-06-21 - CID-NL activation adopt gate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4930-L4974",
+      "section_sha256": "037c3d7902c30c8e356988d81fc54cc06bbc8126106ce331d4c7d311b50f98b4",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0149",
+      "heading": "2026-06-21 - CID-NL Default Product Activation v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L4975-L5035",
+      "section_sha256": "bf603d746d1043aeffc1cb365aeec7dd36327ccad92cb1013dc2811decab4f1f",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0150",
+      "heading": "2026-06-21 - CID-NL Discovery Lane Terminology Cleanup v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5036-L5065",
+      "section_sha256": "0749fd930d91b4388a7cf70e3f75422bab065f8dfc170efffc99ee743e68ec2c",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0151",
+      "heading": "2026-06-21 - CID-NL Discovery Release Slice Checker v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5066-L5089",
+      "section_sha256": "17efec2677f29d77cbedf8c51508de8512e1cb22cee8ed94ff2a08b822bea0b3",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0152",
+      "heading": "2026-06-21 - CID-NL Discovery Full-Scope Classification v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5090-L5118",
+      "section_sha256": "e2b05712304fcc5da3f84baaaf39bbdcdf14767976cf93d0edc00fd46282b886",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0153",
+      "heading": "2026-06-21 - CID-NL 85RAW Universe Closure v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5119-L5152",
+      "section_sha256": "137ab5b03e4ff18d39f15839c12f487334f19d864c667985f5abb8370ba2d35b",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0154",
+      "heading": "2026-06-21 - CID-NL Discovery Feature-Inclusion Boundary Clarification v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5153-L5184",
+      "section_sha256": "9a19af145e98f668b0a89473f74f345ab3e74023648aea2b73ed5aaca3d8cfa5",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0155",
+      "heading": "2026-06-21 - Backfill Expansion Census v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5185-L5218",
+      "section_sha256": "e69f83925c438f78a5e0c55267a7de6cb9e1c46888c1badc4eb5739e270145c2",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0156",
+      "heading": "2026-06-21 - Backfill Expansion Evidence Availability v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5219-L5254",
+      "section_sha256": "ef56690ff4706976d534b444d86d50467788ffb3bc7c747e11d62cc0c430fe47",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0157",
+      "heading": "2026-06-21 - Backfill Expansion Sample-Local MS1 Evidence v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5255-L5291",
+      "section_sha256": "47a3893f01ade1e92f3c9fa84c9d42d7fa8ca1a9fea6e75eb6c69c23d3d0f423",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0158",
+      "heading": "2026-06-21 - Backfill Expansion RAW Overlay Trace Identity v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5292-L5329",
+      "section_sha256": "ea2950fdff7efea460bd0f847858de5f1e0cebb75c64463a5aafbb8b20e6996c",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0159",
+      "heading": "2026-06-21 - Backfill Expansion Expected-Diff Provenance v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5330-L5369",
+      "section_sha256": "571f660901b31bd23b5a78aba4f59ce04a4899b62874349cb9d64949c60e0975",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0160",
+      "heading": "2026-06-21 - Backfill Expansion Candidate Replay v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5370-L5417",
+      "section_sha256": "da81428b9c430a13aeb5e8a94a04b054005d035287070c149426c01082664588",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0161",
+      "heading": "2026-06-21 - Backfill Expansion Full Evidence Chain v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5418-L5452",
+      "section_sha256": "27e63247bda8fd4c6f3e241a7177efda9ec5df1ae3ddf5e94815d67dbb72887c",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0162",
+      "heading": "2026-06-22 - Backfill Expansion Clean-Target Selective Default Activation v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5453-L5511",
+      "section_sha256": "9428a1cb438e707bf597b25196038be8ded31ac698c68470e5acb2938a384457",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0163",
+      "heading": "2026-06-23 - Row-Completion Confidence Shadow Gate v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5512-L5550",
+      "section_sha256": "ec13d9b087f938bcd2b2e5e347c723b798814ab7cecafe40989bd14664ecb602",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0164",
+      "heading": "2026-06-27 - Docs Placement Refactor No-Impact Record",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5551-L5566",
+      "section_sha256": "1d487642bf7e989fc9a33ddf64d29ee9b14d819c9cecdca5ea8f0c3fe5b881a9",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0165",
+      "heading": "2026-06-29 - Standard-Peak Evidence Cache RAW-Identity Fail-Closed Fix",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5567-L5582",
+      "section_sha256": "799dee1b1093d640617f42dd8e8c85cbe064e03ba49394d7a5b5a54b72a2add6",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    },
+    {
+      "section_id": "CP-SECTION-0166",
+      "heading": "2026-07-02 - Pt Pattern Diagnostic Gate Replay v1",
+      "heading_level": 3,
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L5583-L5621",
+      "section_sha256": "9da99a2821f12e3e59f0a40b3604622cfd5eb9b6ad445d567b4ea2caa553139a",
+      "disposition": "historical_only",
+      "claim_ids": [
+        "CP-HISTORY-001"
+      ]
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "CP-AUTHORITY-PARTITION-001",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L18-L38",
+      "source_excerpt_sha256": "4287d7c5c7f72992eb17397f04e4541b5b93c1f63b63424941259b8042e630f6",
+      "source_section_ids": [
+        "CP-SECTION-0002"
+      ],
+      "summary": "Structured owners hold mutable lane state, writer scope, and schema; narrative owners route stable semantics only.",
+      "disposition": "absorb",
+      "owner_path": "docs/product/productization.md",
+      "owner_anchor": "#authority-model",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/productization_status_index_v1.tsv; docs/superpowers/schemas/productization_authority_manifest.v1.json; docs/superpowers/schemas/productization_control_plane_schema.v1.json",
+      "must_change": true,
+      "bounded_changed_paths": [
+        "docs/product/productization.md"
+      ]
+    },
+    {
+      "claim_id": "CP-CURRENT-STATE-001",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L500-L755",
+      "source_excerpt_sha256": "8dac01bfc516b809577f8f19a2daf4b27fa2fb267c1ff14c577a93d7daed1b03",
+      "source_section_ids": [
+        "CP-SECTION-0008"
+      ],
+      "summary": "Mutable per-lane readiness and product/public-state fields are keyed by lane_id in the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "column=lane_id",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_control_plane_schema.v1.json#/required_lane_ids",
+      "must_change": false,
+      "bounded_changed_paths": []
+    },
+    {
+      "claim_id": "CP-HOOK-GUARDRAIL-001",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L49-L61",
+      "source_excerpt_sha256": "cdd27ff572aedcbd3d5d52b8e7519486ce809e1c9e4bc38ceba0daf71c79c016",
+      "source_section_ids": [
+        "CP-SECTION-0004"
+      ],
+      "summary": "Repo-local hooks provide deterministic reminders and bounded guards.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/agent/codex-operating-system.md",
+      "owner_anchor": "#current-repo-local-hooks",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": ".codex/hooks/xic_prompt_router.py; .codex/hooks/xic_pre_tool_guard.py; .codex/hooks/xic_post_tool_guard.py",
+      "must_change": true,
+      "bounded_changed_paths": [
+        "docs/agent/codex-operating-system.md"
+      ]
+    },
+    {
+      "claim_id": "CP-HOOK-NONAUTHORITY-001",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L49-L61",
+      "source_excerpt_sha256": "cdd27ff572aedcbd3d5d52b8e7519486ce809e1c9e4bc38ceba0daf71c79c016",
+      "source_section_ids": [
+        "CP-SECTION-0004"
+      ],
+      "summary": "Hooks are guardrails, not semantic or product-authority judges.",
+      "disposition": "absorb",
+      "owner_path": "docs/agent/codex-operating-system.md",
+      "owner_anchor": "#current-repo-local-hooks",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": ".codex/hooks/fixtures/assert_hook_outputs.py",
+      "must_change": true,
+      "bounded_changed_paths": [
+        "docs/agent/codex-operating-system.md"
+      ]
+    },
+    {
+      "claim_id": "CP-READINESS-SEMANTICS-001",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L488-L499",
+      "source_excerpt_sha256": "0640dd7dca0a514d21f251d5de940442ecc6661b977258dee05e929d86fbe190",
+      "source_section_ids": [
+        "CP-SECTION-0007"
+      ],
+      "summary": "Readiness vocabulary and promotion exit semantics are stable validation policy, not mutable lane state.",
+      "disposition": "absorb",
+      "owner_path": "docs/agent/product-validation-contract.md",
+      "owner_anchor": "#readiness-and-promotion-semantics",
+      "owner_anchor_status": "planned_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_control_plane_schema.v1.json#/allowed_readiness_statuses",
+      "must_change": true,
+      "bounded_changed_paths": [
+        "docs/agent/product-validation-contract.md"
+      ]
+    },
+    {
+      "claim_id": "CP-PROMOTION-PACKET-001",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L843-L897",
+      "source_excerpt_sha256": "b7d14703e36b7c2f5fda0dd492e33a3a8a3f456a91f6da9f325cdad3e2291397",
+      "source_section_ids": [
+        "CP-SECTION-0017"
+      ],
+      "summary": "Promotion requires capability, public surface, authority, behavior delta, validation, replay, and rollback evidence.",
+      "disposition": "absorb",
+      "owner_path": "docs/agent/product-validation-contract.md",
+      "owner_anchor": "#promotion-packet-contract",
+      "owner_anchor_status": "planned_unique",
+      "evidence_locator": "docs/agent/execution-gates.md#pr-verification-gate",
+      "must_change": true,
+      "bounded_changed_paths": [
+        "docs/agent/product-validation-contract.md"
+      ]
+    },
+    {
+      "claim_id": "CP-WORK-CYCLE-001",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L756-L772",
+      "source_excerpt_sha256": "f4f13b8893499763dc8687c12697ad0faf5b6b2204170f319873545102100cff",
+      "source_section_ids": [
+        "CP-SECTION-0009"
+      ],
+      "summary": "Productization work limits WIP and requires intake, maintenance, closeout, and explicit stop/exit rules.",
+      "disposition": "absorb",
+      "owner_path": "docs/agent/planning-workflows.md",
+      "owner_anchor": "#productization-work-cycle",
+      "owner_anchor_status": "planned_unique",
+      "evidence_locator": "docs/agent/planning-workflows.md#planning-and-review",
+      "must_change": true,
+      "bounded_changed_paths": [
+        "docs/agent/planning-workflows.md"
+      ]
+    },
+    {
+      "claim_id": "CP-BROAD-BACKFILL-NEG-001",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L62-L474",
+      "source_excerpt_sha256": "58d200bcd00877ed7265e06f282cef762d6ae74f328785f755c5c65b4c847dfb",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "The broad Backfill candidate/audit universe is not a writer pool and remains parked.",
+      "disposition": "absorb",
+      "owner_path": "docs/product/backfill.md",
+      "owner_anchor": "#current-evidence-compression",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/productization_status_index_v1.tsv#lane_id=broad_backfill_autowrite; docs/superpowers/schemas/productization_authority_manifest.v1.json#/parked_lanes/broad_backfill",
+      "must_change": false,
+      "bounded_changed_paths": []
+    },
+    {
+      "claim_id": "CP-EVIDENCE-NONAUTHORITY-001",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L475-L487",
+      "source_excerpt_sha256": "85c0f2ee8ae608f41fb43dfc5c1124d3d21d4a0166f3325948038ad1b20a5308",
+      "source_section_ids": [
+        "CP-SECTION-0006"
+      ],
+      "summary": "Diagnostics, evidence providers, reviews, and labels do not grant ProductWriter authority without activation and expected-diff contracts.",
+      "disposition": "absorb",
+      "owner_path": "docs/agent/product-validation-contract.md",
+      "owner_anchor": "#product-and-validation-discipline",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/lc-msms-evidence-rules.md#matrix-authority-boundary",
+      "must_change": true,
+      "bounded_changed_paths": [
+        "docs/agent/product-validation-contract.md"
+      ]
+    },
+    {
+      "claim_id": "CP-HISTORY-001",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L961-L5621",
+      "source_excerpt_sha256": "7a9b767d4cd4d0519863fac281e7fdbdd9e5a352c9099acbb5913754c82ebcb3",
+      "source_section_ids": [
+        "CP-SECTION-0026",
+        "CP-SECTION-0027",
+        "CP-SECTION-0028",
+        "CP-SECTION-0029",
+        "CP-SECTION-0030",
+        "CP-SECTION-0031",
+        "CP-SECTION-0032",
+        "CP-SECTION-0033",
+        "CP-SECTION-0034",
+        "CP-SECTION-0035",
+        "CP-SECTION-0036",
+        "CP-SECTION-0037",
+        "CP-SECTION-0038",
+        "CP-SECTION-0039",
+        "CP-SECTION-0040",
+        "CP-SECTION-0041",
+        "CP-SECTION-0042",
+        "CP-SECTION-0043",
+        "CP-SECTION-0044",
+        "CP-SECTION-0045",
+        "CP-SECTION-0046",
+        "CP-SECTION-0047",
+        "CP-SECTION-0048",
+        "CP-SECTION-0049",
+        "CP-SECTION-0050",
+        "CP-SECTION-0051",
+        "CP-SECTION-0052",
+        "CP-SECTION-0053",
+        "CP-SECTION-0054",
+        "CP-SECTION-0055",
+        "CP-SECTION-0056",
+        "CP-SECTION-0057",
+        "CP-SECTION-0058",
+        "CP-SECTION-0059",
+        "CP-SECTION-0060",
+        "CP-SECTION-0061",
+        "CP-SECTION-0062",
+        "CP-SECTION-0063",
+        "CP-SECTION-0064",
+        "CP-SECTION-0065",
+        "CP-SECTION-0066",
+        "CP-SECTION-0067",
+        "CP-SECTION-0068",
+        "CP-SECTION-0069",
+        "CP-SECTION-0070",
+        "CP-SECTION-0071",
+        "CP-SECTION-0072",
+        "CP-SECTION-0073",
+        "CP-SECTION-0074",
+        "CP-SECTION-0075",
+        "CP-SECTION-0076",
+        "CP-SECTION-0077",
+        "CP-SECTION-0078",
+        "CP-SECTION-0079",
+        "CP-SECTION-0080",
+        "CP-SECTION-0081",
+        "CP-SECTION-0082",
+        "CP-SECTION-0083",
+        "CP-SECTION-0084",
+        "CP-SECTION-0085",
+        "CP-SECTION-0086",
+        "CP-SECTION-0087",
+        "CP-SECTION-0088",
+        "CP-SECTION-0089",
+        "CP-SECTION-0090",
+        "CP-SECTION-0091",
+        "CP-SECTION-0092",
+        "CP-SECTION-0093",
+        "CP-SECTION-0094",
+        "CP-SECTION-0095",
+        "CP-SECTION-0096",
+        "CP-SECTION-0097",
+        "CP-SECTION-0098",
+        "CP-SECTION-0099",
+        "CP-SECTION-0100",
+        "CP-SECTION-0101",
+        "CP-SECTION-0102",
+        "CP-SECTION-0103",
+        "CP-SECTION-0104",
+        "CP-SECTION-0105",
+        "CP-SECTION-0106",
+        "CP-SECTION-0107",
+        "CP-SECTION-0108",
+        "CP-SECTION-0109",
+        "CP-SECTION-0110",
+        "CP-SECTION-0111",
+        "CP-SECTION-0112",
+        "CP-SECTION-0113",
+        "CP-SECTION-0114",
+        "CP-SECTION-0115",
+        "CP-SECTION-0116",
+        "CP-SECTION-0117",
+        "CP-SECTION-0118",
+        "CP-SECTION-0119",
+        "CP-SECTION-0120",
+        "CP-SECTION-0121",
+        "CP-SECTION-0122",
+        "CP-SECTION-0123",
+        "CP-SECTION-0124",
+        "CP-SECTION-0125",
+        "CP-SECTION-0126",
+        "CP-SECTION-0127",
+        "CP-SECTION-0128",
+        "CP-SECTION-0129",
+        "CP-SECTION-0130",
+        "CP-SECTION-0131",
+        "CP-SECTION-0132",
+        "CP-SECTION-0133",
+        "CP-SECTION-0134",
+        "CP-SECTION-0135",
+        "CP-SECTION-0136",
+        "CP-SECTION-0137",
+        "CP-SECTION-0138",
+        "CP-SECTION-0139",
+        "CP-SECTION-0140",
+        "CP-SECTION-0141",
+        "CP-SECTION-0142",
+        "CP-SECTION-0143",
+        "CP-SECTION-0144",
+        "CP-SECTION-0145",
+        "CP-SECTION-0146",
+        "CP-SECTION-0147",
+        "CP-SECTION-0148",
+        "CP-SECTION-0149",
+        "CP-SECTION-0150",
+        "CP-SECTION-0151",
+        "CP-SECTION-0152",
+        "CP-SECTION-0153",
+        "CP-SECTION-0154",
+        "CP-SECTION-0155",
+        "CP-SECTION-0156",
+        "CP-SECTION-0157",
+        "CP-SECTION-0158",
+        "CP-SECTION-0159",
+        "CP-SECTION-0160",
+        "CP-SECTION-0161",
+        "CP-SECTION-0162",
+        "CP-SECTION-0163",
+        "CP-SECTION-0164",
+        "CP-SECTION-0165",
+        "CP-SECTION-0166"
+      ],
+      "summary": "The dated queue and maintenance chronology are historical provenance only and must not remain current authority.",
+      "disposition": "historical_only",
+      "owner_path": "",
+      "owner_anchor": "",
+      "owner_anchor_status": "not_applicable",
+      "evidence_locator": "private source copy keyed by source_repo_path",
+      "must_change": false,
+      "bounded_changed_paths": []
+    },
+    {
+      "claim_id": "CP-LANE-BACKFILL-CURRENT-WRITE-READY-SCOPE",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L424",
+      "source_excerpt_sha256": "9fe4c3477b10186be35d9f8fa3fcae1641506dd2422c92113b25410a599b2acc",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=backfill_current_write_ready_scope; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=backfill_current_write_ready_scope",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/quant_matrix_default_product_activation_v1/quant_matrix_default_product_activation_summary.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_ready",
+        "row_count": "511",
+        "write_authority": "TRUE",
+        "product_authority_scope": "backfill_policy_write_ready_rows",
+        "product_effect": "default_quant_matrix_product_output",
+        "public_surface": "quant_matrix_default_product_activation_v1",
+        "control_plane_anchor": "QuantMatrix Default Product Activation v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+      }
+    },
+    {
+      "claim_id": "CP-WRITER-BACKFILL-CURRENT-WRITE-READY-SCOPE",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L424",
+      "source_excerpt_sha256": "9fe4c3477b10186be35d9f8fa3fcae1641506dd2422c92113b25410a599b2acc",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen ProductWriter authority scope and authorized count for lane_id=backfill_current_write_ready_scope; the JSON authority manifest is exclusive owner.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "owner_anchor": "#/current_authority/backfill",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/productization_status_index_v1.tsv#lane_id=backfill_current_write_ready_scope",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "row_count": "511",
+        "product_authority_scope": "backfill_policy_write_ready_rows"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-CID-NL-DEFAULT-PRODUCT-ACTIVATION-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L424",
+      "source_excerpt_sha256": "9fe4c3477b10186be35d9f8fa3fcae1641506dd2422c92113b25410a599b2acc",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=cid_nl_default_product_activation_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=cid_nl_default_product_activation_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/cid_nl_default_product_activation_v1/cid_nl_default_product_activation_summary.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_ready",
+        "row_count": "95",
+        "write_authority": "TRUE",
+        "product_authority_scope": "cid_nl_adopt_ready_feature_inclusion_95_cells",
+        "product_effect": "cid_nl_default_quant_matrix_product_output",
+        "public_surface": "cid_nl_default_product_activation_v1",
+        "control_plane_anchor": "CID-NL Default Product Activation v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+      }
+    },
+    {
+      "claim_id": "CP-WRITER-CID-NL-DEFAULT-PRODUCT-ACTIVATION-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L424",
+      "source_excerpt_sha256": "9fe4c3477b10186be35d9f8fa3fcae1641506dd2422c92113b25410a599b2acc",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen ProductWriter authority scope and authorized count for lane_id=cid_nl_default_product_activation_v1; the JSON authority manifest is exclusive owner.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "owner_anchor": "#/current_authority/cid_nl_default_activation",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/productization_status_index_v1.tsv#lane_id=cid_nl_default_product_activation_v1",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "row_count": "95",
+        "product_authority_scope": "cid_nl_adopt_ready_feature_inclusion_95_cells"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-BACKFILL-EXPANSION-DEFAULT-PRODUCT-ACTIVATION-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L376",
+      "source_excerpt_sha256": "0de1c513b09ed3485ada407cc3672261a9eacfc4acb30945131686128e654868",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=backfill_expansion_default_product_activation_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=backfill_expansion_default_product_activation_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/backfill_expansion_default_product_activation_v1/backfill_expansion_default_product_activation_summary.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_candidate",
+        "row_count": "666",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "candidate_replay_no_public_write",
+        "public_surface": "backfill_expansion_default_product_activation_v1",
+        "control_plane_anchor": "Backfill Expansion Full Evidence Chain v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-BACKFILL-EXPANSION-CLEAN-TARGET-SELECTIVE-PRODUCT-ACTIVATION-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L426",
+      "source_excerpt_sha256": "f909379e19b14d6c3772b23b4588b8497721cbbee5f3b410f35a0bcdd1c741a3",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=backfill_expansion_clean_target_selective_product_activation_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=backfill_expansion_clean_target_selective_product_activation_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/backfill_expansion_clean_target_selective_product_activation_v1/backfill_expansion_clean_target_selective_product_activation_summary.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_ready",
+        "row_count": "84",
+        "write_authority": "TRUE",
+        "product_authority_scope": "backfill_expansion_clean_target_selective_activation_84_cells",
+        "product_effect": "write_backfill_expansion_clean_target_selective_default_cell",
+        "public_surface": "backfill_expansion_clean_target_selective_product_activation_v1",
+        "control_plane_anchor": "Backfill Expansion Clean-Target Selective Default Activation v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+      }
+    },
+    {
+      "claim_id": "CP-WRITER-BACKFILL-EXPANSION-CLEAN-TARGET-SELECTIVE-PRODUCT-ACTIVATION-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L426",
+      "source_excerpt_sha256": "f909379e19b14d6c3772b23b4588b8497721cbbee5f3b410f35a0bcdd1c741a3",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen ProductWriter authority scope and authorized count for lane_id=backfill_expansion_clean_target_selective_product_activation_v1; the JSON authority manifest is exclusive owner.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "owner_anchor": "#/current_authority/backfill_expansion_clean_target_selective_activation",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/productization_status_index_v1.tsv#lane_id=backfill_expansion_clean_target_selective_product_activation_v1",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "row_count": "84",
+        "product_authority_scope": "backfill_expansion_clean_target_selective_activation_84_cells"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-BROAD-BACKFILL-AUTOWRITE",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L425",
+      "source_excerpt_sha256": "b8c5327d538ac6b068f9496c1873cc77be200965c8adccaa50c1d542a112f7a3",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=broad_backfill_autowrite; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=broad_backfill_autowrite",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "vault:Backfill Broad Autowrite Feasibility Gate V1.md",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "parked",
+        "row_count": "",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "none",
+        "public_surface": "decision_packet",
+        "control_plane_anchor": "park_broad_backfill"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-PRODUCTIZATION-AUTHORITY-FIREWALL-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L427",
+      "source_excerpt_sha256": "9fac667940ebfeddcc3accc0f5b9e749407e619fc7d390c8d10689e9e9ab63f6",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=productization_authority_firewall_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=productization_authority_firewall_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_candidate",
+        "row_count": "3",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "fail_closed_authority_manifest",
+        "public_surface": "schema_and_checker",
+        "control_plane_anchor": "productization_authority_manifest_v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-MECHANICAL-ADJUDICATION-CONTRACT-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L427",
+      "source_excerpt_sha256": "9fac667940ebfeddcc3accc0f5b9e749407e619fc7d390c8d10689e9e9ab63f6",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=mechanical_adjudication_contract_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=mechanical_adjudication_contract_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/mechanical_adjudication_index_v1.tsv",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_candidate",
+        "row_count": "4613",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "machine_decision_only",
+        "public_surface": "adjudication_index",
+        "control_plane_anchor": "mechanical_adjudication_index_v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-REVIEW-PACKET-WORKFLOW-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L428",
+      "source_excerpt_sha256": "973c01b0d1cc6043c2e192ff29f36a3d3535499d1d9cd7e6bf67ec258a8f7afe",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=review_packet_workflow_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=review_packet_workflow_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/review_queue_v1.tsv",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_candidate",
+        "row_count": "3015",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "structured_review_only",
+        "public_surface": "review_queue_schema",
+        "control_plane_anchor": "Review Packet / Approval Workflow v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-PEAK-CHOICE-TRUTH-LOCKBOX-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L428",
+      "source_excerpt_sha256": "973c01b0d1cc6043c2e192ff29f36a3d3535499d1d9cd7e6bf67ec258a8f7afe",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=peak_choice_truth_lockbox_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=peak_choice_truth_lockbox_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/lockbox_shadow_automation_experiment_v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_candidate",
+        "row_count": "72",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "shadow_only_contract_adapter_manifest",
+        "public_surface": "lockbox_shadow_automation_experiment_v1",
+        "control_plane_anchor": "lockbox_shadow_automation_experiment_v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-MISSING-OVERLAY-EVIDENCE-RECOVERY-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L429",
+      "source_excerpt_sha256": "9ce42aca20f60f0b9658facf6ad551db989f0d33fbfabb7fab313cd2a4fb977a",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=missing_overlay_evidence_recovery_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=missing_overlay_evidence_recovery_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/trace_overlay_recovery_report_v1.tsv",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_candidate",
+        "row_count": "1087",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "evidence_link_recovery_only",
+        "public_surface": "trace_overlay_recovery_report",
+        "control_plane_anchor": "Missing-Overlay Evidence Recovery v1"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-QUALITY-EXPLANATION-SIDECAR-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L429",
+      "source_excerpt_sha256": "9ce42aca20f60f0b9658facf6ad551db989f0d33fbfabb7fab313cd2a4fb977a",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=quality_explanation_sidecar_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=quality_explanation_sidecar_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/validation/backfill_generated_policy_externalized_artifacts_v1/backfill_generated_policy_externalized_artifacts_summary.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "diagnostic_only",
+        "row_count": "4613",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "explanation_only",
+        "public_surface": "quality_explanation_sidecar",
+        "control_plane_anchor": "quality_explanations and quality_blockers are explanation and triage inputs only"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-TARGETED-MS1-SHAPE-IDENTITY-LIMITED-RESCUE-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L430",
+      "source_excerpt_sha256": "707f26814fb14b5a9c1083604b6dc67d67ba65693527f8a47612eb18f1dee91f",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=targeted_ms1_shape_identity_limited_rescue_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=targeted_ms1_shape_identity_limited_rescue_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_ready",
+        "row_count": "2",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "detected_flagged_only",
+        "public_surface": "headless_limited_default",
+        "control_plane_anchor": "Targeted MS1 shape identity limited rescue remains production-ready"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-TARGETED-MS1-SHAPE-IDENTITY-BROADER-TARGETS",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L431",
+      "source_excerpt_sha256": "037963e601d431765e21b667b31e7e390bea028930a7171dda2bddfa2d186ac2",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=targeted_ms1_shape_identity_broader_targets; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=targeted_ms1_shape_identity_broader_targets",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "blocked",
+        "row_count": "0",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "none",
+        "public_surface": "explicit_block",
+        "control_plane_anchor": "GUI and broader targets remain blocked"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-SAMPLE-METADATA-ORDER-PROJECTION-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L432",
+      "source_excerpt_sha256": "87df3c53e695d2874a784aa226f45eb080f9f6b52abd20ce37da79238e2a6a48",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=sample_metadata_order_projection_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=sample_metadata_order_projection_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_ready",
+        "row_count": "0",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "no_output_order_projection",
+        "public_surface": "sample_metadata_v1_order_projection",
+        "control_plane_anchor": "sample_metadata cross-module parity"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-SAMPLE-METADATA-ROLE-VALUE-BEHAVIOR",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L432",
+      "source_excerpt_sha256": "87df3c53e695d2874a784aa226f45eb080f9f6b52abd20ce37da79238e2a6a48",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=sample_metadata_role_value_behavior; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=sample_metadata_role_value_behavior",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "blocked",
+        "row_count": "0",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "none",
+        "public_surface": "explicit_block",
+        "control_plane_anchor": "role/value behavior remains blocked"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-REVIEW-ACTION-CANDIDATE-SIDECAR-V1",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L433",
+      "source_excerpt_sha256": "6d1b7e6287b559a63f03a380a5327d8ffc13be4b6533867484520e577ed1321c",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=review_action_candidate_sidecar_v1; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=review_action_candidate_sidecar_v1",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "production_candidate",
+        "row_count": "0",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "identity_verification_only",
+        "public_surface": "review_action_candidate_sidecar",
+        "control_plane_anchor": "candidate-sidecar verifier is now production_candidate"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-REVIEW-ACTION-SELECTED-CANDIDATE-SWITCH",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L433",
+      "source_excerpt_sha256": "6d1b7e6287b559a63f03a380a5327d8ffc13be4b6533867484520e577ed1321c",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=review_action_selected_candidate_switch; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=review_action_selected_candidate_switch",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "parked",
+        "row_count": "0",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "none",
+        "public_surface": "explicit_park",
+        "control_plane_anchor": "selected candidate / manual boundary writer parked"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-REVIEW-ACTION-MANUAL-BOUNDARY-AREA-WRITER",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L434",
+      "source_excerpt_sha256": "c2109a85af16d418cf21bc3c878a66eef01699d7a8c9d92a7eeb18f1b5e91213",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=review_action_manual_boundary_area_writer; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=review_action_manual_boundary_area_writer",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "parked",
+        "row_count": "0",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "none",
+        "public_surface": "explicit_park",
+        "control_plane_anchor": "manual-boundary area writer parked"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-CALIBRATION-NORMALIZATION-ACTIVATION",
+      "polarity": "positive",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L435",
+      "source_excerpt_sha256": "2c1a0d32ef82536fb29395a71de364204474f04d8903beab72055e69f65b6e5e",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=calibration_normalization_activation; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=calibration_normalization_activation",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "frozen",
+        "row_count": "0",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "none",
+        "public_surface": "frozen_queue",
+        "control_plane_anchor": "calibration/normalization activation"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    },
+    {
+      "claim_id": "CP-LANE-GUI-REPLAY-PARITY",
+      "polarity": "negative",
+      "source_locator": "docs/superpowers/plans/2026-06-15-productization-control-plane.md:L435",
+      "source_excerpt_sha256": "2c1a0d32ef82536fb29395a71de364204474f04d8903beab72055e69f65b6e5e",
+      "source_section_ids": [
+        "CP-SECTION-0005"
+      ],
+      "summary": "Frozen current-state claim for lane_id=gui_replay_parity; values remain owned by the structured status index.",
+      "disposition": "structured_owner_already_authoritative",
+      "owner_path": "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "owner_anchor": "lane_id=gui_replay_parity",
+      "owner_anchor_status": "existing_unique",
+      "evidence_locator": "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "must_change": false,
+      "bounded_changed_paths": [],
+      "snapshot_only": {
+        "readiness_status": "out_of_scope",
+        "row_count": "0",
+        "write_authority": "FALSE",
+        "product_authority_scope": "",
+        "product_effect": "none",
+        "public_surface": "gui_out_of_scope",
+        "control_plane_anchor": "GUI replay / GUI parity is out of scope"
+      },
+      "field_authority": {
+        "readiness_and_lane_state": "docs/superpowers/validation/productization_status_index_v1.tsv",
+        "writer_scope_and_current_authorized_count": "not_applicable"
+      }
+    }
+  ],
+  "dependencies": {
+    "literal_path_referrers": [
+      ".codex/hooks/fixtures/assert_hook_outputs.py",
+      ".codex/hooks/xic_pre_tool_guard.py",
+      "AGENTS.md",
+      "docs/agent/codex-operating-system.md",
+      "docs/agent/product-validation-contract.md",
+      "docs/diagnostic-ledger.md",
+      "docs/project-layout.md",
+      "docs/solutions/README.md",
+      "docs/solutions/productization/cid-nl-default-activation-no-write-scope-removal.md",
+      "docs/solutions/templates/xic-solution-note-template.md",
+      "docs/solutions/validation/raw-backed-evidence-cache-identity.md",
+      "docs/superpowers/file-management/docs-cleanup/2026-06-29_docs-superpowers-topic-clusters.tsv",
+      "docs/superpowers/file-management/docs-cleanup/referrers/2026-06-25_codex-docs-cleanup_historical-referrer-rewrite-map.tsv",
+      "docs/superpowers/plans/2026-06-19-backfill-quant-matrix-productization-roadmap.md",
+      "docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md",
+      "docs/superpowers/plans/2026-07-02-local-ms1-feature-table-generator-implementation-plan.md",
+      "docs/superpowers/plans/2026-07-25-six-week-implementation-wave.md",
+      "docs/superpowers/plans/README.md",
+      "docs/superpowers/productization/evidence/2026-06-17_cc-framework-improvements_productization_handoff-prune_34cdf61d.md",
+      "docs/superpowers/productization/status/cc-framework-improvements-productization.md",
+      "docs/superpowers/validation/evidence_chain_source_of_truth.md",
+      "docs/superpowers/validation/evidence_chain_status_guide.html",
+      "tools/diagnostics/INDEX.md",
+      "tools/diagnostics/docs_policy.py",
+      "tools/diagnostics/docs_routing_review.py",
+      "tools/diagnostics/retire_docs.py"
+    ],
+    "relative_markdown_links": [
+      {
+        "referrer": "AGENTS.md",
+        "raw_target": "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      },
+      {
+        "referrer": "docs/product/README.md",
+        "raw_target": "../superpowers/plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      },
+      {
+        "referrer": "docs/product/backfill.md",
+        "raw_target": "../superpowers/plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      },
+      {
+        "referrer": "docs/product/instrument-qc-calibration.md",
+        "raw_target": "../superpowers/plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      },
+      {
+        "referrer": "docs/product/presets.md",
+        "raw_target": "../superpowers/plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      },
+      {
+        "referrer": "docs/product/productization.md",
+        "raw_target": "../superpowers/plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      },
+      {
+        "referrer": "docs/product/productization.md",
+        "raw_target": "../superpowers/plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      },
+      {
+        "referrer": "docs/product/quant-matrix.md",
+        "raw_target": "../superpowers/plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      },
+      {
+        "referrer": "docs/superpowers/plans/2026-06-19-backfill-quant-matrix-productization-roadmap.md",
+        "raw_target": "../plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      }
+    ],
+    "relative_html_links": [
+      {
+        "referrer": "docs/superpowers/validation/evidence_chain_status_guide.html",
+        "raw_target": "../plans/2026-06-15-productization-control-plane.md",
+        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+      }
+    ],
+    "control_plane_constant_consumers": [
+      ".codex/hooks/xic_hook_policy.py",
+      ".codex/hooks/xic_post_tool_guard.py",
+      ".codex/hooks/xic_prompt_router.py",
+      "scripts/check_cid_nl_discovery_release_slice.py",
+      "scripts/check_productization_state.py",
+      "tools/diagnostics/docs_policy.py"
+    ]
+  },
+  "control_plane_anchors": [
+    {
+      "lane_id": "backfill_current_write_ready_scope",
+      "control_plane_anchor": "QuantMatrix Default Product Activation v1",
+      "base_exact_occurrences": 1,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "cid_nl_default_product_activation_v1",
+      "control_plane_anchor": "CID-NL Default Product Activation v1",
+      "base_exact_occurrences": 1,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "backfill_expansion_default_product_activation_v1",
+      "control_plane_anchor": "Backfill Expansion Full Evidence Chain v1",
+      "base_exact_occurrences": 1,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "backfill_expansion_clean_target_selective_product_activation_v1",
+      "control_plane_anchor": "Backfill Expansion Clean-Target Selective Default Activation v1",
+      "base_exact_occurrences": 1,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "broad_backfill_autowrite",
+      "control_plane_anchor": "park_broad_backfill",
+      "base_exact_occurrences": 13,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "productization_authority_firewall_v1",
+      "control_plane_anchor": "productization_authority_manifest_v1",
+      "base_exact_occurrences": 2,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "mechanical_adjudication_contract_v1",
+      "control_plane_anchor": "mechanical_adjudication_index_v1",
+      "base_exact_occurrences": 4,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "review_packet_workflow_v1",
+      "control_plane_anchor": "Review Packet / Approval Workflow v1",
+      "base_exact_occurrences": 3,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "peak_choice_truth_lockbox_v1",
+      "control_plane_anchor": "lockbox_shadow_automation_experiment_v1",
+      "base_exact_occurrences": 2,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "missing_overlay_evidence_recovery_v1",
+      "control_plane_anchor": "Missing-Overlay Evidence Recovery v1",
+      "base_exact_occurrences": 1,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "quality_explanation_sidecar_v1",
+      "control_plane_anchor": "quality_explanations and quality_blockers are explanation and triage inputs only",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "targeted_ms1_shape_identity_limited_rescue_v1",
+      "control_plane_anchor": "Targeted MS1 shape identity limited rescue remains production-ready",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "targeted_ms1_shape_identity_broader_targets",
+      "control_plane_anchor": "GUI and broader targets remain blocked",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "sample_metadata_order_projection_v1",
+      "control_plane_anchor": "sample_metadata cross-module parity",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "sample_metadata_role_value_behavior",
+      "control_plane_anchor": "role/value behavior remains blocked",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "review_action_candidate_sidecar_v1",
+      "control_plane_anchor": "candidate-sidecar verifier is now production_candidate",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "review_action_selected_candidate_switch",
+      "control_plane_anchor": "selected candidate / manual boundary writer parked",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "review_action_manual_boundary_area_writer",
+      "control_plane_anchor": "manual-boundary area writer parked",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "calibration_normalization_activation",
+      "control_plane_anchor": "calibration/normalization activation",
+      "base_exact_occurrences": 1,
+      "replacement_requirement": "exact_unique_heading"
+    },
+    {
+      "lane_id": "gui_replay_parity",
+      "control_plane_anchor": "GUI replay / GUI parity is out of scope",
+      "base_exact_occurrences": 0,
+      "replacement_requirement": "exact_unique_heading"
+    }
+  ],
+  "must_change_owner_paths": [
+    "docs/agent/codex-operating-system.md",
+    "docs/agent/planning-workflows.md",
+    "docs/agent/product-validation-contract.md",
+    "docs/product/productization.md"
+  ],
+  "conditional_write_set": [
+    ".codex/hooks/fixtures/assert_hook_outputs.py",
+    ".codex/hooks/xic_hook_policy.py",
+    ".codex/hooks/xic_post_tool_guard.py",
+    ".codex/hooks/xic_pre_tool_guard.py",
+    ".codex/hooks/xic_prompt_router.py",
+    "AGENTS.md",
+    "docs/agent/codex-operating-system.md",
+    "docs/agent/planning-workflows.md",
+    "docs/agent/product-validation-contract.md",
+    "docs/diagnostic-ledger.md",
+    "docs/product/README.md",
+    "docs/product/backfill.md",
+    "docs/product/instrument-qc-calibration.md",
+    "docs/product/presets.md",
+    "docs/product/productization.md",
+    "docs/product/quant-matrix.md",
+    "docs/project-layout.md",
+    "docs/solutions/README.md",
+    "docs/solutions/productization/cid-nl-default-activation-no-write-scope-removal.md",
+    "docs/solutions/templates/xic-solution-note-template.md",
+    "docs/solutions/validation/raw-backed-evidence-cache-identity.md",
+    "docs/superpowers/file-management/docs-cleanup/2026-06-29_docs-superpowers-topic-clusters.tsv",
+    "docs/superpowers/file-management/docs-cleanup/referrers/2026-06-25_codex-docs-cleanup_historical-referrer-rewrite-map.tsv",
+    "docs/superpowers/plans/2026-06-19-backfill-quant-matrix-productization-roadmap.md",
+    "docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md",
+    "docs/superpowers/plans/2026-07-02-local-ms1-feature-table-generator-implementation-plan.md",
+    "docs/superpowers/plans/2026-07-25-six-week-implementation-wave.md",
+    "docs/superpowers/plans/README.md",
+    "docs/superpowers/productization/evidence/2026-06-17_cc-framework-improvements_productization_handoff-prune_34cdf61d.md",
+    "docs/superpowers/productization/status/cc-framework-improvements-productization.md",
+    "docs/superpowers/validation/evidence_chain_source_of_truth.md",
+    "docs/superpowers/validation/evidence_chain_status_guide.html",
+    "scripts/check_cid_nl_discovery_release_slice.py",
+    "scripts/check_productization_state.py",
+    "tools/diagnostics/INDEX.md",
+    "tools/diagnostics/docs_policy.py",
+    "tools/diagnostics/docs_routing_review.py",
+    "tools/diagnostics/retire_docs.py"
+  ],
+  "read_only_protected_surfaces": {
+    "exact_paths": [
+      "docs/superpowers/validation/productization_status_index_v1.tsv",
+      "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+      "docs/superpowers/schemas/productization_control_plane_schema.v1.json",
+      "docs/superpowers/plans/2026-07-02-resolver-convergence-and-baseline-order.md",
+      ".github/workflows/ci.yml",
+      "scripts/bootstrap_worktree.py",
+      "scripts/agent_sandbox_doctor.py"
+    ],
+    "prefixes": [
+      ".codex/hooks/",
+      ".codex/rules/",
+      ".codex/hooks.json",
+      "docs/superpowers/validation/",
+      "xic_extractor/",
+      "gui/"
+    ],
+    "rule": "A path listed in conditional_write_set remains read-only when it matches this protection set; same-path compatibility means no referrer rewrite is required there."
+  },
+  "permanent_root_map": [
+    {
+      "path": "AGENTS.md",
+      "purpose": "repo agent routing contract",
+      "owner": "self",
+      "required_landmarks": [
+        "Task Routes",
+        "parameter settings route",
+        "product route",
+        "evidence and validation route",
+        "architecture route",
+        "execution and review route",
+        "diagnostics and solutions route",
+        "productization route",
+        "layout and agent-system route"
+      ]
+    },
+    {
+      "path": "README.md",
+      "purpose": "public project entrypoint",
+      "owner": "self",
+      "required_landmarks": [
+        "Documentation",
+        "user route",
+        "product route",
+        "architecture route",
+        "layout route",
+        "LC-MS/MS evidence route"
+      ]
+    },
+    {
+      "path": "docs/architecture-contract.md",
+      "purpose": "architecture and dependency owner",
+      "owner": "self",
+      "required_landmarks": [
+        "Dependency Direction",
+        "Ownership Map",
+        "route from AGENTS, README, and project layout"
+      ]
+    },
+    {
+      "path": "docs/project-layout.md",
+      "purpose": "file placement and documentation lifecycle owner",
+      "owner": "self",
+      "required_landmarks": [
+        "file-placement purpose",
+        "docs source-of-truth and lifecycle route",
+        "architecture route",
+        "product route",
+        "Obsidian handoff route"
+      ]
+    }
+  ],
+  "governance_index_contract": {
+    "row_ids": [
+      "docs_lifecycle_retirement",
+      "destructive_git_filesystem",
+      "raw_background_launch",
+      "execution_affecting_config",
+      "product_public_surface",
+      "pr_validation_gate"
+    ],
+    "mechanism_enum": [
+      "hard_guard",
+      "ci_checker",
+      "advisory_context",
+      "human_decision"
+    ],
+    "hook_and_ci_behavior_change_allowed": false,
+    "residual_harness_gap_owner": "#166"
+  },
+  "bounded_static_tooling_paths": [
+    "scripts/check_productization_state.py",
+    "tools/diagnostics/docs_policy.py",
+    "tools/diagnostics/docs_scan.py",
+    "tools/diagnostics/docs_management_audit.py",
+    "tools/diagnostics/docs_routing_review.py",
+    "tools/diagnostics/docs_placement_guard.py",
+    "tools/diagnostics/retire_docs.py",
+    "tools/diagnostics/INDEX.md",
+    "tests/test_productization_state_index.py",
+    "tests/test_docs_policy.py",
+    "tests/test_docs_management_audit.py",
+    "tests/test_docs_placement_guard.py",
+    "tests/test_retire_docs.py"
+  ],
+  "owner_paths": [
+    "docs/agent/codex-operating-system.md",
+    "docs/agent/planning-workflows.md",
+    "docs/agent/product-validation-contract.md",
+    "docs/product/backfill.md",
+    "docs/product/productization.md",
+    "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+    "docs/superpowers/validation/productization_status_index_v1.tsv"
+  ],
+  "owner_anchors": [
+    "docs/agent/codex-operating-system.md#current-repo-local-hooks",
+    "docs/agent/planning-workflows.md#productization-work-cycle",
+    "docs/agent/product-validation-contract.md#product-and-validation-discipline",
+    "docs/agent/product-validation-contract.md#promotion-packet-contract",
+    "docs/agent/product-validation-contract.md#readiness-and-promotion-semantics",
+    "docs/product/backfill.md#current-evidence-compression",
+    "docs/product/productization.md#authority-model",
+    "docs/superpowers/schemas/productization_authority_manifest.v1.json#/current_authority/backfill",
+    "docs/superpowers/schemas/productization_authority_manifest.v1.json#/current_authority/backfill_expansion_clean_target_selective_activation",
+    "docs/superpowers/schemas/productization_authority_manifest.v1.json#/current_authority/cid_nl_default_activation",
+    "docs/superpowers/validation/productization_status_index_v1.tsvcolumn=lane_id",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=backfill_current_write_ready_scope",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=backfill_expansion_clean_target_selective_product_activation_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=backfill_expansion_default_product_activation_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=broad_backfill_autowrite",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=calibration_normalization_activation",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=cid_nl_default_product_activation_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=gui_replay_parity",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=mechanical_adjudication_contract_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=missing_overlay_evidence_recovery_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=peak_choice_truth_lockbox_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=productization_authority_firewall_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=quality_explanation_sidecar_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=review_action_candidate_sidecar_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=review_action_manual_boundary_area_writer",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=review_action_selected_candidate_switch",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=review_packet_workflow_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=sample_metadata_order_projection_v1",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=sample_metadata_role_value_behavior",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=targeted_ms1_shape_identity_broader_targets",
+    "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=targeted_ms1_shape_identity_limited_rescue_v1"
+  ],
+  "absorbed_claims": [
+    "CP-AUTHORITY-PARTITION-001",
+    "CP-CURRENT-STATE-001",
+    "CP-HISTORY-001",
+    "CP-HOOK-GUARDRAIL-001",
+    "CP-LANE-BACKFILL-CURRENT-WRITE-READY-SCOPE",
+    "CP-LANE-BACKFILL-EXPANSION-CLEAN-TARGET-SELECTIVE-PRODUCT-ACTIVATION-V1",
+    "CP-LANE-BACKFILL-EXPANSION-DEFAULT-PRODUCT-ACTIVATION-V1",
+    "CP-LANE-CALIBRATION-NORMALIZATION-ACTIVATION",
+    "CP-LANE-CID-NL-DEFAULT-PRODUCT-ACTIVATION-V1",
+    "CP-LANE-MECHANICAL-ADJUDICATION-CONTRACT-V1",
+    "CP-LANE-MISSING-OVERLAY-EVIDENCE-RECOVERY-V1",
+    "CP-LANE-PEAK-CHOICE-TRUTH-LOCKBOX-V1",
+    "CP-LANE-PRODUCTIZATION-AUTHORITY-FIREWALL-V1",
+    "CP-LANE-QUALITY-EXPLANATION-SIDECAR-V1",
+    "CP-LANE-REVIEW-ACTION-CANDIDATE-SIDECAR-V1",
+    "CP-LANE-REVIEW-PACKET-WORKFLOW-V1",
+    "CP-LANE-SAMPLE-METADATA-ORDER-PROJECTION-V1",
+    "CP-LANE-TARGETED-MS1-SHAPE-IDENTITY-LIMITED-RESCUE-V1",
+    "CP-PROMOTION-PACKET-001",
+    "CP-READINESS-SEMANTICS-001",
+    "CP-WORK-CYCLE-001",
+    "CP-WRITER-BACKFILL-CURRENT-WRITE-READY-SCOPE",
+    "CP-WRITER-BACKFILL-EXPANSION-CLEAN-TARGET-SELECTIVE-PRODUCT-ACTIVATION-V1",
+    "CP-WRITER-CID-NL-DEFAULT-PRODUCT-ACTIVATION-V1"
+  ],
+  "absorbed_negative_claims": [
+    "CP-BROAD-BACKFILL-NEG-001",
+    "CP-EVIDENCE-NONAUTHORITY-001",
+    "CP-HOOK-NONAUTHORITY-001",
+    "CP-LANE-BROAD-BACKFILL-AUTOWRITE",
+    "CP-LANE-GUI-REPLAY-PARITY",
+    "CP-LANE-REVIEW-ACTION-MANUAL-BOUNDARY-AREA-WRITER",
+    "CP-LANE-REVIEW-ACTION-SELECTED-CANDIDATE-SWITCH",
+    "CP-LANE-SAMPLE-METADATA-ROLE-VALUE-BEHAVIOR",
+    "CP-LANE-TARGETED-MS1-SHAPE-IDENTITY-BROADER-TARGETS"
+  ],
+  "exact_referrers": [
+    ".codex/hooks/fixtures/assert_hook_outputs.py",
+    ".codex/hooks/xic_pre_tool_guard.py",
+    "AGENTS.md",
+    "docs/agent/codex-operating-system.md",
+    "docs/agent/product-validation-contract.md",
+    "docs/diagnostic-ledger.md",
+    "docs/product/README.md",
+    "docs/product/backfill.md",
+    "docs/product/instrument-qc-calibration.md",
+    "docs/product/presets.md",
+    "docs/product/productization.md",
+    "docs/product/quant-matrix.md",
+    "docs/project-layout.md",
+    "docs/solutions/README.md",
+    "docs/solutions/productization/cid-nl-default-activation-no-write-scope-removal.md",
+    "docs/solutions/templates/xic-solution-note-template.md",
+    "docs/solutions/validation/raw-backed-evidence-cache-identity.md",
+    "docs/superpowers/file-management/docs-cleanup/2026-06-29_docs-superpowers-topic-clusters.tsv",
+    "docs/superpowers/file-management/docs-cleanup/referrers/2026-06-25_codex-docs-cleanup_historical-referrer-rewrite-map.tsv",
+    "docs/superpowers/plans/2026-06-19-backfill-quant-matrix-productization-roadmap.md",
+    "docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md",
+    "docs/superpowers/plans/2026-07-02-local-ms1-feature-table-generator-implementation-plan.md",
+    "docs/superpowers/plans/2026-07-25-six-week-implementation-wave.md",
+    "docs/superpowers/plans/README.md",
+    "docs/superpowers/productization/evidence/2026-06-17_cc-framework-improvements_productization_handoff-prune_34cdf61d.md",
+    "docs/superpowers/productization/status/cc-framework-improvements-productization.md",
+    "docs/superpowers/validation/evidence_chain_source_of_truth.md",
+    "docs/superpowers/validation/evidence_chain_status_guide.html",
+    "tools/diagnostics/INDEX.md",
+    "tools/diagnostics/docs_policy.py",
+    "tools/diagnostics/docs_routing_review.py",
+    "tools/diagnostics/retire_docs.py"
+  ],
+  "entries": [
+    {
+      "source_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
+      "transaction": "body_to_compatibility_index",
+      "review_result": "draft_pre_edit",
+      "owner_paths": [
+        "docs/agent/codex-operating-system.md",
+        "docs/agent/planning-workflows.md",
+        "docs/agent/product-validation-contract.md",
+        "docs/product/backfill.md",
+        "docs/product/productization.md",
+        "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+        "docs/superpowers/validation/productization_status_index_v1.tsv"
+      ],
+      "owner_anchors": [
+        "docs/agent/codex-operating-system.md#current-repo-local-hooks",
+        "docs/agent/planning-workflows.md#productization-work-cycle",
+        "docs/agent/product-validation-contract.md#product-and-validation-discipline",
+        "docs/agent/product-validation-contract.md#promotion-packet-contract",
+        "docs/agent/product-validation-contract.md#readiness-and-promotion-semantics",
+        "docs/product/backfill.md#current-evidence-compression",
+        "docs/product/productization.md#authority-model",
+        "docs/superpowers/schemas/productization_authority_manifest.v1.json#/current_authority/backfill",
+        "docs/superpowers/schemas/productization_authority_manifest.v1.json#/current_authority/backfill_expansion_clean_target_selective_activation",
+        "docs/superpowers/schemas/productization_authority_manifest.v1.json#/current_authority/cid_nl_default_activation",
+        "docs/superpowers/validation/productization_status_index_v1.tsvcolumn=lane_id",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=backfill_current_write_ready_scope",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=backfill_expansion_clean_target_selective_product_activation_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=backfill_expansion_default_product_activation_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=broad_backfill_autowrite",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=calibration_normalization_activation",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=cid_nl_default_product_activation_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=gui_replay_parity",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=mechanical_adjudication_contract_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=missing_overlay_evidence_recovery_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=peak_choice_truth_lockbox_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=productization_authority_firewall_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=quality_explanation_sidecar_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=review_action_candidate_sidecar_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=review_action_manual_boundary_area_writer",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=review_action_selected_candidate_switch",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=review_packet_workflow_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=sample_metadata_order_projection_v1",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=sample_metadata_role_value_behavior",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=targeted_ms1_shape_identity_broader_targets",
+        "docs/superpowers/validation/productization_status_index_v1.tsvlane_id=targeted_ms1_shape_identity_limited_rescue_v1"
+      ],
+      "absorbed_claims": [
+        "CP-AUTHORITY-PARTITION-001",
+        "CP-CURRENT-STATE-001",
+        "CP-HISTORY-001",
+        "CP-HOOK-GUARDRAIL-001",
+        "CP-LANE-BACKFILL-CURRENT-WRITE-READY-SCOPE",
+        "CP-LANE-BACKFILL-EXPANSION-CLEAN-TARGET-SELECTIVE-PRODUCT-ACTIVATION-V1",
+        "CP-LANE-BACKFILL-EXPANSION-DEFAULT-PRODUCT-ACTIVATION-V1",
+        "CP-LANE-CALIBRATION-NORMALIZATION-ACTIVATION",
+        "CP-LANE-CID-NL-DEFAULT-PRODUCT-ACTIVATION-V1",
+        "CP-LANE-MECHANICAL-ADJUDICATION-CONTRACT-V1",
+        "CP-LANE-MISSING-OVERLAY-EVIDENCE-RECOVERY-V1",
+        "CP-LANE-PEAK-CHOICE-TRUTH-LOCKBOX-V1",
+        "CP-LANE-PRODUCTIZATION-AUTHORITY-FIREWALL-V1",
+        "CP-LANE-QUALITY-EXPLANATION-SIDECAR-V1",
+        "CP-LANE-REVIEW-ACTION-CANDIDATE-SIDECAR-V1",
+        "CP-LANE-REVIEW-PACKET-WORKFLOW-V1",
+        "CP-LANE-SAMPLE-METADATA-ORDER-PROJECTION-V1",
+        "CP-LANE-TARGETED-MS1-SHAPE-IDENTITY-LIMITED-RESCUE-V1",
+        "CP-PROMOTION-PACKET-001",
+        "CP-READINESS-SEMANTICS-001",
+        "CP-WORK-CYCLE-001",
+        "CP-WRITER-BACKFILL-CURRENT-WRITE-READY-SCOPE",
+        "CP-WRITER-BACKFILL-EXPANSION-CLEAN-TARGET-SELECTIVE-PRODUCT-ACTIVATION-V1",
+        "CP-WRITER-CID-NL-DEFAULT-PRODUCT-ACTIVATION-V1"
+      ],
+      "absorbed_negative_claims": [
+        "CP-BROAD-BACKFILL-NEG-001",
+        "CP-EVIDENCE-NONAUTHORITY-001",
+        "CP-HOOK-NONAUTHORITY-001",
+        "CP-LANE-BROAD-BACKFILL-AUTOWRITE",
+        "CP-LANE-GUI-REPLAY-PARITY",
+        "CP-LANE-REVIEW-ACTION-MANUAL-BOUNDARY-AREA-WRITER",
+        "CP-LANE-REVIEW-ACTION-SELECTED-CANDIDATE-SWITCH",
+        "CP-LANE-SAMPLE-METADATA-ROLE-VALUE-BEHAVIOR",
+        "CP-LANE-TARGETED-MS1-SHAPE-IDENTITY-BROADER-TARGETS"
+      ],
+      "source_copy_readback_verified": false,
+      "source_copy_destination": "source_repo_path:docs/superpowers/plans/2026-06-15-productization-control-plane.md",
+      "source_copy_hash": "pending",
+      "source_hash": "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5",
+      "exact_referrers": [
+        ".codex/hooks/fixtures/assert_hook_outputs.py",
+        ".codex/hooks/xic_pre_tool_guard.py",
+        "AGENTS.md",
+        "docs/agent/codex-operating-system.md",
+        "docs/agent/product-validation-contract.md",
+        "docs/diagnostic-ledger.md",
+        "docs/product/README.md",
+        "docs/product/backfill.md",
+        "docs/product/instrument-qc-calibration.md",
+        "docs/product/presets.md",
+        "docs/product/productization.md",
+        "docs/product/quant-matrix.md",
+        "docs/project-layout.md",
+        "docs/solutions/README.md",
+        "docs/solutions/productization/cid-nl-default-activation-no-write-scope-removal.md",
+        "docs/solutions/templates/xic-solution-note-template.md",
+        "docs/solutions/validation/raw-backed-evidence-cache-identity.md",
+        "docs/superpowers/file-management/docs-cleanup/2026-06-29_docs-superpowers-topic-clusters.tsv",
+        "docs/superpowers/file-management/docs-cleanup/referrers/2026-06-25_codex-docs-cleanup_historical-referrer-rewrite-map.tsv",
+        "docs/superpowers/plans/2026-06-19-backfill-quant-matrix-productization-roadmap.md",
+        "docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md",
+        "docs/superpowers/plans/2026-07-02-local-ms1-feature-table-generator-implementation-plan.md",
+        "docs/superpowers/plans/2026-07-25-six-week-implementation-wave.md",
+        "docs/superpowers/plans/README.md",
+        "docs/superpowers/productization/evidence/2026-06-17_cc-framework-improvements_productization_handoff-prune_34cdf61d.md",
+        "docs/superpowers/productization/status/cc-framework-improvements-productization.md",
+        "docs/superpowers/validation/evidence_chain_source_of_truth.md",
+        "docs/superpowers/validation/evidence_chain_status_guide.html",
+        "tools/diagnostics/INDEX.md",
+        "tools/diagnostics/docs_policy.py",
+        "tools/diagnostics/docs_routing_review.py",
+        "tools/diagnostics/retire_docs.py"
+      ],
+      "active_followups": [
+        "absorb must_change claims into staged owners",
+        "write and read back exact private source copy",
+        "replace source body with compatibility index",
+        "run fixed-diff semantic review"
+      ],
+      "unresolved_claims": [],
+      "claim_ids": [
+        "CP-AUTHORITY-PARTITION-001",
+        "CP-CURRENT-STATE-001",
+        "CP-HOOK-GUARDRAIL-001",
+        "CP-HOOK-NONAUTHORITY-001",
+        "CP-READINESS-SEMANTICS-001",
+        "CP-PROMOTION-PACKET-001",
+        "CP-WORK-CYCLE-001",
+        "CP-BROAD-BACKFILL-NEG-001",
+        "CP-EVIDENCE-NONAUTHORITY-001",
+        "CP-HISTORY-001",
+        "CP-LANE-BACKFILL-CURRENT-WRITE-READY-SCOPE",
+        "CP-WRITER-BACKFILL-CURRENT-WRITE-READY-SCOPE",
+        "CP-LANE-CID-NL-DEFAULT-PRODUCT-ACTIVATION-V1",
+        "CP-WRITER-CID-NL-DEFAULT-PRODUCT-ACTIVATION-V1",
+        "CP-LANE-BACKFILL-EXPANSION-DEFAULT-PRODUCT-ACTIVATION-V1",
+        "CP-LANE-BACKFILL-EXPANSION-CLEAN-TARGET-SELECTIVE-PRODUCT-ACTIVATION-V1",
+        "CP-WRITER-BACKFILL-EXPANSION-CLEAN-TARGET-SELECTIVE-PRODUCT-ACTIVATION-V1",
+        "CP-LANE-BROAD-BACKFILL-AUTOWRITE",
+        "CP-LANE-PRODUCTIZATION-AUTHORITY-FIREWALL-V1",
+        "CP-LANE-MECHANICAL-ADJUDICATION-CONTRACT-V1",
+        "CP-LANE-REVIEW-PACKET-WORKFLOW-V1",
+        "CP-LANE-PEAK-CHOICE-TRUTH-LOCKBOX-V1",
+        "CP-LANE-MISSING-OVERLAY-EVIDENCE-RECOVERY-V1",
+        "CP-LANE-QUALITY-EXPLANATION-SIDECAR-V1",
+        "CP-LANE-TARGETED-MS1-SHAPE-IDENTITY-LIMITED-RESCUE-V1",
+        "CP-LANE-TARGETED-MS1-SHAPE-IDENTITY-BROADER-TARGETS",
+        "CP-LANE-SAMPLE-METADATA-ORDER-PROJECTION-V1",
+        "CP-LANE-SAMPLE-METADATA-ROLE-VALUE-BEHAVIOR",
+        "CP-LANE-REVIEW-ACTION-CANDIDATE-SIDECAR-V1",
+        "CP-LANE-REVIEW-ACTION-SELECTED-CANDIDATE-SWITCH",
+        "CP-LANE-REVIEW-ACTION-MANUAL-BOUNDARY-AREA-WRITER",
+        "CP-LANE-CALIBRATION-NORMALIZATION-ACTIVATION",
+        "CP-LANE-GUI-REPLAY-PARITY"
+      ]
+    }
+  ]
+}
