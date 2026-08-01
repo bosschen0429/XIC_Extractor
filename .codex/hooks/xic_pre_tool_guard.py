@@ -279,29 +279,23 @@ def contains_background_process(segment: str) -> bool:
 
 
 def has_raw_background_launch(segments: list[str]) -> bool:
-    assignments = {
-        match.group("name").lower(): segment[match.end() :]
-        for segment in segments
-        if (match := POWERSHELL_ASSIGNMENT.match(segment)) is not None
-    }
-    raw_assignments = {
-        name for name, value in assignments.items() if RAW_LAUNCH_SIGNAL.search(value)
-    }
-    changed = True
-    while changed:
-        changed = False
-        for name, value in assignments.items():
-            referenced = {item.lower() for item in POWERSHELL_VARIABLE.findall(value)}
-            if name not in raw_assignments and referenced & raw_assignments:
-                raw_assignments.add(name)
-                changed = True
+    raw_variables: set[str] = set()
     for segment in segments:
+        assignment = POWERSHELL_ASSIGNMENT.match(segment)
+        if assignment is not None:
+            name = assignment.group("name").lower()
+            value = segment[assignment.end() :]
+            referenced = {item.lower() for item in POWERSHELL_VARIABLE.findall(value)}
+            if RAW_LAUNCH_SIGNAL.search(value) or referenced & raw_variables:
+                raw_variables.add(name)
+            else:
+                raw_variables.discard(name)
         if not contains_background_process(segment):
             continue
         if RAW_LAUNCH_SIGNAL.search(segment):
             return True
         referenced = {name.lower() for name in POWERSHELL_VARIABLE.findall(segment)}
-        if referenced & raw_assignments:
+        if referenced & raw_variables:
             return True
     return False
 

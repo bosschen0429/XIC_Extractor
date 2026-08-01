@@ -471,6 +471,21 @@ def main() -> int:
         "Background RAW launch",
     )
 
+    ordered_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"$a='-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'; Start-Process python -ArgumentList $a; "
+                "$a='-c print(1)'\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", ordered_raw_background_payload),
+        "Background RAW launch",
+    )
+
     pre_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",

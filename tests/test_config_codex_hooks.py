@@ -562,6 +562,24 @@ def test_pre_hook_propagates_raw_argument_aliases() -> None:
     assert "Background RAW launch" in hook_output["permissionDecisionReason"]
 
 
+def test_pre_hook_resolves_raw_assignment_state_at_launch_time() -> None:
+    raw_then_safe = (
+        "$a='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
+        "Start-Process python -ArgumentList $a; $a='-c print(1)'"
+    )
+    completed = _run_pre_hook(f'pwsh -Command "{raw_then_safe}"')
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    safe_then_raw = (
+        "$a='-c print(1)'; Start-Process python -ArgumentList $a; "
+        "$a='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'"
+    )
+    completed = _run_pre_hook(f'pwsh -Command "{safe_then_raw}"')
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
 def test_pre_hook_blocks_raw_launch_inside_powershell_control_block() -> None:
     payload = (
         "if ($true) { Start-Process python -ArgumentList "
