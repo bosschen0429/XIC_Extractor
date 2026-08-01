@@ -85,14 +85,13 @@ def check_cid_nl_discovery_release_slice(
     _check_docs(
         roadmap=roadmap,
         handoff=handoff,
-        control_plane=control_plane,
         problems=problems,
     )
     for problem in check_cid_nl_discovery_full_scope_classification():
         problems.append(f"full_scope_classification: {problem}")
     for problem in check_cid_nl_85raw_universe_closure():
         problems.append(f"85raw_universe_closure: {problem}")
-    for problem in check_productization_state():
+    for problem in check_productization_state(control_plane_path=control_plane):
         problems.append(f"productization_state: {problem}")
     for problem in check_productization_authority():
         problems.append(f"productization_authority: {problem}")
@@ -251,7 +250,6 @@ def _check_docs(
     *,
     roadmap: Path,
     handoff: Path,
-    control_plane: Path,
     problems: list[str],
 ) -> None:
     required = {
@@ -263,13 +261,6 @@ def _check_docs(
             "CID-NL default product activation v1",
             "Do not expand CID-NL beyond 95 cells",
             "Broad Backfill auto-write remains parked",
-        ],
-        control_plane: [
-            "CID-NL Discovery Lane Terminology Cleanup v1",
-            "accepted_discovery_cell_count=95",
-            "legacy_quant_matrix_effect",
-            "CID-NL Discovery Full-Scope Classification v1",
-            "CID-NL 85RAW Universe Closure v1",
         ],
     }
     for path, anchors in required.items():

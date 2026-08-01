@@ -12,7 +12,6 @@ def test_current_cid_nl_discovery_release_slice_is_stable() -> None:
 def test_release_slice_handoff_can_name_later_active_goal(tmp_path) -> None:
     roadmap = tmp_path / "roadmap.md"
     handoff = tmp_path / "handoff.md"
-    control_plane = tmp_path / "control-plane.md"
     roadmap.write_text(
         "\n".join(
             [
@@ -33,24 +32,10 @@ def test_release_slice_handoff_can_name_later_active_goal(tmp_path) -> None:
         ),
         encoding="utf-8",
     )
-    control_plane.write_text(
-        "\n".join(
-            [
-                "CID-NL Discovery Lane Terminology Cleanup v1",
-                "accepted_discovery_cell_count=95",
-                "legacy_quant_matrix_effect",
-                "CID-NL Discovery Full-Scope Classification v1",
-                "CID-NL 85RAW Universe Closure v1",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
     problems: list[str] = []
     release_slice._check_docs(
         roadmap=roadmap,
         handoff=handoff,
-        control_plane=control_plane,
         problems=problems,
     )
 
