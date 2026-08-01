@@ -125,6 +125,55 @@ def test_permanent_root_contract_ignores_fenced_only_route() -> None:
     assert "required route must resolve: docs/product/README.md" in problems
 
 
+@pytest.mark.parametrize(
+    "code_only_route",
+    (
+        "`[sample](docs/product/README.md)`",
+        "``[sample](docs/product/README.md)``",
+        "``code\n[sample](docs/product/README.md)\n``",
+        "    [sample](docs/product/README.md)",
+        ">     [sample](docs/product/README.md)",
+    ),
+)
+def test_permanent_root_contract_ignores_non_fenced_code_only_route(
+    code_only_route: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\n" + code_only_route + "\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+@pytest.mark.parametrize(
+    "code_only_landmark",
+    (
+        "`This document owns`",
+        "``This document owns``",
+        "    This document owns",
+        ">     This document owns",
+    ),
+)
+def test_permanent_root_contract_ignores_non_fenced_code_only_landmark(
+    code_only_landmark: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "docs/architecture-contract.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("This document owns", "This document describes", 1)
+    text += "\n" + code_only_landmark + "\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required purpose landmark must occur exactly once: This document owns" in (
+        problems
+    )
+
+
 def test_permanent_root_contract_ignores_nested_fenced_only_route() -> None:
     root = Path(__file__).parents[1]
     rel_path = "AGENTS.md"

@@ -252,9 +252,76 @@ def markdown_without_fenced_code(text: str) -> str:
     return "\n".join(visible)
 
 
+def markdown_without_block_code(text: str) -> str:
+    """Remove fenced and indented code while preserving line structure."""
+
+    unfenced_lines: list[str] = []
+    for line in markdown_without_fenced_code(text).splitlines():
+        # A four-column top-level indent is an indented code block, not rendered
+        # contract text.  Strip the same construct inside blockquotes after
+        # consuming their container markers.  Treating uncertain deeply nested
+        # continuations as code is intentionally fail-closed for positive
+        # governance assertions.
+        logical_line = line
+        while True:
+            blockquote = re.match(r"^[ \t]{0,3}>[ \t]?", logical_line)
+            if blockquote is None:
+                break
+            logical_line = logical_line[blockquote.end() :]
+        if re.match(r"^(?: {4}|\t)", logical_line):
+            unfenced_lines.append("")
+        else:
+            unfenced_lines.append(line)
+
+    return "\n".join(unfenced_lines)
+
+
+def markdown_without_code(text: str) -> str:
+    """Remove all Markdown code surfaces while preserving line structure."""
+
+    unfenced = markdown_without_block_code(text)
+    visible: list[str] = []
+    index = 0
+    while index < len(unfenced):
+        if unfenced[index] != "`":
+            visible.append(unfenced[index])
+            index += 1
+            continue
+        run_end = index + 1
+        while run_end < len(unfenced) and unfenced[run_end] == "`":
+            run_end += 1
+        run_length = run_end - index
+        closing_start = run_end
+        closing_end = -1
+        while closing_start < len(unfenced):
+            closing_start = unfenced.find("`", closing_start)
+            if closing_start < 0:
+                break
+            candidate_end = closing_start + 1
+            while (
+                candidate_end < len(unfenced)
+                and unfenced[candidate_end] == "`"
+            ):
+                candidate_end += 1
+            if candidate_end - closing_start == run_length:
+                closing_end = candidate_end
+                break
+            closing_start = candidate_end
+        if closing_end < 0:
+            visible.append(unfenced[index:run_end])
+            index = run_end
+            continue
+        visible.extend(
+            "\n" if character == "\n" else " "
+            for character in unfenced[index:closing_end]
+        )
+        index = closing_end
+    return "".join(visible)
+
+
 def markdown_headings(text: str) -> tuple[str, ...]:
     headings: list[str] = []
-    for line in markdown_without_fenced_code(text).splitlines():
+    for line in markdown_without_code(text).splitlines():
         match = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
         if match:
             headings.append(match.group(1))
@@ -269,7 +336,7 @@ def markdown_heading_fragment(heading: str) -> str:
 
 
 def markdown_link_targets(text: str) -> tuple[str, ...]:
-    text = markdown_without_fenced_code(text)
+    text = markdown_without_code(text)
     targets: list[str] = []
     for raw in re.findall(r"\[[^\]]*\]\(([^)]+)\)", text):
         raw = raw.strip()
@@ -345,7 +412,7 @@ def permanent_root_contract_problems(
         return ()
     overrides = overrides or {}
     problems: list[str] = []
-    visible_text = markdown_without_fenced_code(text)
+    visible_text = markdown_without_code(text)
     headings = markdown_headings(visible_text)
     for heading in contract["required_headings"]:
         if headings.count(heading) != 1:
@@ -471,11 +538,11 @@ def governance_index_problems(
     )
 
     overrides = overrides or {}
-    text = markdown_without_fenced_code(text)
+    text = markdown_without_block_code(text)
     rows: list[list[str]] = []
     table_started = False
     for line in text.splitlines():
-        if not line.lstrip().startswith("|"):
+        if not line.startswith("|"):
             if table_started:
                 break
             continue

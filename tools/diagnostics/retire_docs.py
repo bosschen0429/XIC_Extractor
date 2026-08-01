@@ -404,13 +404,18 @@ def _vault_destination(fpath: Path, vault_archive: Path) -> Path:
     return vault_archive / fpath.name
 
 
-def _safe_vault_destination(fpath: Path, vault_archive: Path, source_text: str) -> Path:
+def _safe_vault_destination(
+    fpath: Path,
+    rel_path: str,
+    vault_archive: Path,
+    source_text: str,
+) -> Path:
     dest = _vault_destination(fpath, vault_archive)
     if not dest.exists():
         return dest
     if _vault_copy_matches(
         dest,
-        fpath.as_posix(),
+        rel_path,
         source_text,
     ):
         return dest
@@ -437,7 +442,7 @@ def _ensure_vault_copy(
         result.already_in_vault.append((rel_path, vault_match))
         return vault_match
 
-    dest = _safe_vault_destination(fpath, vault_archive, source_text)
+    dest = _safe_vault_destination(fpath, rel_path, vault_archive, source_text)
     result.copied_to_vault.append((rel_path, dest))
     if execute:
         vault_archive.mkdir(parents=True, exist_ok=True)

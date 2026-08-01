@@ -310,6 +310,37 @@ def test_retirement_does_not_trust_same_title_unrelated_vault_note(
     ) == text
 
 
+def test_retirement_uses_hash_suffix_when_archive_title_collides(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/specs/2026-07-01-backfill-spec.md"
+    spec = repo / rel
+    text = _completed_spec()
+    _write(spec, text)
+    archive_destination = vault / VAULT_ARCHIVE_DIR / spec.name
+    _write(archive_destination, "# Different archived note\n")
+
+    result = retire_files(
+        [spec],
+        repo,
+        vault,
+        execute=True,
+        evidence=_retirement_evidence(rel, text),
+    )
+
+    expected = archive_destination.with_name(
+        f"{archive_destination.stem}-{_sha256(text)[:12]}.md"
+    )
+    assert result.copied_to_vault == [(rel, expected)]
+    assert expected.read_text(encoding="utf-8") == text
+    assert archive_destination.read_text(encoding="utf-8") == (
+        "# Different archived note\n"
+    )
+    assert result.retired == [rel]
+
+
 def test_retirement_reuses_wrapped_vault_source_copy_with_matching_body(
     tmp_path: Path,
 ) -> None:

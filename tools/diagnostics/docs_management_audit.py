@@ -191,6 +191,7 @@ def audit_repo(
     *,
     allow_filesystem_handoff_fallback: bool = False,
     fail_on_completed_transient: bool = False,
+    require_retirement_history: bool = True,
 ) -> tuple[list[AuditMessage], dict[str, object]]:
     messages: list[AuditMessage] = []
     docs = sorted((root / "docs").rglob("*.md"))
@@ -262,6 +263,7 @@ def audit_repo(
     retirement_packet_review = committed_retirement_packet_review_for_repo(
         root,
         scan_paths,
+        require_historical_replay=require_retirement_history,
     )
     governance_path = root / "docs/agent/codex-operating-system.md"
     governance_problems = (
@@ -622,6 +624,8 @@ def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
 def committed_retirement_packet_review_for_repo(
     root: Path,
     scan_paths: Sequence[str],
+    *,
+    require_historical_replay: bool = True,
 ) -> dict[str, object]:
     checked_paths: list[str] = []
     problems: list[dict[str, str]] = []
@@ -644,6 +648,7 @@ def committed_retirement_packet_review_for_repo(
             root,
             rel_path,
             contract=contract,
+            require_historical_replay=require_historical_replay,
         ):
             problems.append({"path": rel_path, "problem": problem})
 
@@ -699,6 +704,7 @@ def committed_retirement_packet_review_for_repo(
         for problem in committed_same_path_retirement_packet_problems(
             root,
             rel_path,
+            require_historical_replay=require_historical_replay,
         ):
             problems.append({"path": rel_path, "problem": problem})
     return {
@@ -946,11 +952,13 @@ def run_audit(
     allow_filesystem_handoff_fallback: bool = False,
     include_vault: bool = True,
     fail_on_completed_transient: bool = False,
+    require_retirement_history: bool = True,
 ) -> AuditResult:
     repo_messages, repo_summary = audit_repo(
         root,
         allow_filesystem_handoff_fallback=allow_filesystem_handoff_fallback,
         fail_on_completed_transient=fail_on_completed_transient,
+        require_retirement_history=require_retirement_history,
     )
     if include_vault:
         resolved_vault = resolve_vault(root, vault)

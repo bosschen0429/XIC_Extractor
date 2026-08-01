@@ -417,6 +417,28 @@ def test_governance_index_ignores_fenced_only_table() -> None:
     )
 
 
+def test_governance_index_ignores_indented_code_only_table() -> None:
+    root = Path(__file__).parents[1]
+    path = "docs/agent/codex-operating-system.md"
+    text = (root / path).read_text(encoding="utf-8")
+    table_start = text.index("| Rule family |")
+    table_end = text.index("\n\n", table_start)
+    table = text[table_start:table_end]
+    indented_table = "\n".join(f"    {line}" for line in table.splitlines())
+    text = text[:table_start] + indented_table + text[table_end:]
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    assert any(
+        "governance index must contain exactly the six declared rule families"
+        in problem.reason
+        for problem in result.problems
+    )
+
+
 def test_governance_index_ignores_nested_fenced_only_table() -> None:
     root = Path(__file__).parents[1]
     path = "docs/agent/codex-operating-system.md"
@@ -585,7 +607,7 @@ def test_committed_same_path_retirement_packet_rejects_changed_hard_zero_path(
     )
 
 
-def test_registered_retirement_packet_passes_without_historical_git_objects(
+def test_registered_retirement_packet_rejects_missing_historical_git_objects(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -603,7 +625,10 @@ def test_registered_retirement_packet_passes_without_historical_git_objects(
         contract=contract,
     )
 
-    assert problems == ()
+    assert problems == (
+        "retirement packet historical replay is unavailable; fetch the "
+        "activation base and end commits before acceptance",
+    )
 
 
 @pytest.mark.parametrize(

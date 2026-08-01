@@ -1268,13 +1268,15 @@ def committed_same_path_retirement_packet_problems(
     packet_path: str,
     *,
     contract: Mapping[str, object] | None = None,
+    require_historical_replay: bool = True,
 ) -> tuple[str, ...]:
     """Validate a committed same-path retirement packet from a clean checkout.
 
     Registered packets are independently pinned by identity and canonical-text
-    digest. A shallow checkout can therefore validate the committed evidence
-    without fetching retired history. When both historical endpoints are
-    available, the validator additionally replays the fixed transaction window.
+    digest, but those pins do not replace replay of the retired preimage. An
+    acceptance check therefore fails closed when either historical endpoint is
+    unavailable. Callers performing isolated diagnostic fixture checks may opt
+    out explicitly without turning that result into acceptance evidence.
     """
 
     normalized_packet_path = _docs_scan.normalize_repo_rel_path(packet_path)
@@ -1370,10 +1372,10 @@ def committed_same_path_retirement_packet_problems(
     if not (base_available and end_available):
         if head_available:
             problems.extend(_current_owner_locator_problems(root, packet))
-        if registered_contract is None:
+        if require_historical_replay:
             problems.append(
-                "retirement packet history is unavailable and no registered "
-                "digest contract exists"
+                "retirement packet historical replay is unavailable; fetch the "
+                "activation base and end commits before acceptance"
             )
         return tuple(problems)
 

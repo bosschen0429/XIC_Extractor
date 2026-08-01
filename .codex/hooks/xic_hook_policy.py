@@ -100,6 +100,7 @@ PRODUCT_SURFACE_PATHS = [
     "docs/agent/architecture-public-contracts.md",
     "docs/superpowers/schemas/",
     "docs/superpowers/plans/",
+    "docs/superpowers/validation/productization_status_index_v1.tsv",
     "xic_extractor/extractor.py",
     "xic_extractor/signal_processing.py",
     "xic_extractor/output/",

@@ -236,6 +236,7 @@ def _run_audit(
     *,
     repo_only: bool = False,
     fail_on_completed_transient: bool = False,
+    require_retirement_history: bool = False,
 ):
     return run_audit(
         root,
@@ -243,6 +244,7 @@ def _run_audit(
         include_vault=not repo_only,
         fail_on_completed_transient=fail_on_completed_transient,
         allow_filesystem_handoff_fallback=True,
+        require_retirement_history=require_retirement_history,
     )
 
 
@@ -256,6 +258,24 @@ def test_repo_only_audit_skips_vault_blockers(tmp_path: Path) -> None:
     assert result.summary["vault"]["vault_skipped"] is True
     assert not any(msg.path == str(vault) for msg in result.messages)
     assert not any(msg.path == ".manifest.json" for msg in result.messages)
+
+
+def test_repo_only_audit_blocks_missing_retirement_history(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "missing-vault"
+    _clean_repo(root)
+
+    result = _run_audit(
+        root,
+        vault,
+        repo_only=True,
+        require_retirement_history=True,
+    )
+
+    assert any(
+        "retirement packet historical replay is unavailable" in message.message
+        for message in result.blockers
+    )
 
 
 def test_repo_only_completed_transient_spec_is_blocker(
