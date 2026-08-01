@@ -61,6 +61,8 @@ POWERSHELL_VARIABLE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_:]*")
 POWERSHELL_ASSIGNMENT = re.compile(
     r"^\s*(?P<name>\$[A-Za-z_][A-Za-z0-9_:]*)\s*=", re.IGNORECASE
 )
+POSIX_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+SHELL_REDIRECTION = re.compile(r"^(?:\d*)?(?:>>?|<<?|<>|>&|<&)(?P<target>.*)$")
 EXEC_CONFIG_PATHS = [
     "AGENTS.md",
     ".codex/hooks.json",
@@ -212,6 +214,16 @@ def normalize_wrapped_git_invocation(segment: str) -> str:
         tokens = shlex.split(strip_shell_control_prefixes(segment), posix=True)
     except ValueError:
         return segment
+    while tokens:
+        if POSIX_ASSIGNMENT.match(tokens[0]):
+            tokens = tokens[1:]
+            continue
+        redirection = SHELL_REDIRECTION.match(tokens[0])
+        if redirection is None:
+            break
+        tokens = tokens[1:]
+        if not redirection.group("target") and tokens:
+            tokens = tokens[1:]
     if tokens and tokens[0].lower() == "command":
         if any(token.lower() in {"-v", "-V"} for token in tokens[1:2]):
             return " ".join(tokens)
@@ -266,12 +278,22 @@ def contains_background_process(segment: str) -> bool:
 
 
 def has_raw_background_launch(segments: list[str]) -> bool:
-    raw_assignments = {
-        match.group("name").lower()
+    assignments = {
+        match.group("name").lower(): segment[match.end() :]
         for segment in segments
-        if RAW_LAUNCH_SIGNAL.search(segment)
         if (match := POWERSHELL_ASSIGNMENT.match(segment)) is not None
     }
+    raw_assignments = {
+        name for name, value in assignments.items() if RAW_LAUNCH_SIGNAL.search(value)
+    }
+    changed = True
+    while changed:
+        changed = False
+        for name, value in assignments.items():
+            referenced = {item.lower() for item in POWERSHELL_VARIABLE.findall(value)}
+            if name not in raw_assignments and referenced & raw_assignments:
+                raw_assignments.add(name)
+                changed = True
     for segment in segments:
         if not contains_background_process(segment):
             continue

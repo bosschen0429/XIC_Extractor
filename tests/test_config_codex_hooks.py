@@ -387,6 +387,14 @@ def test_pre_hook_normalizes_nested_git_invocations(git_invocation: str) -> None
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+@pytest.mark.parametrize("prefix", ["FOO=1 ", ">/tmp/xic-hook-log "])
+def test_pre_hook_normalizes_simple_command_prefixes(prefix: str) -> None:
+    payload = prefix + DESTRUCTIVE_TEXTS[0]
+    completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 @pytest.mark.parametrize("wrapper", WRAPPERS)
 @pytest.mark.parametrize(
     "tokens",
@@ -518,6 +526,18 @@ def test_pre_hook_correlates_raw_signals_across_powershell_statements() -> None:
     payload = (
         "$rawArgs='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
         "Start-Process python -ArgumentList $rawArgs"
+    )
+    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
+
+
+def test_pre_hook_propagates_raw_argument_aliases() -> None:
+    payload = (
+        "$a='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
+        "$b=$a; Start-Process python -ArgumentList $b"
     )
     completed = _run_pre_hook(f'pwsh -Command "{payload}"')
     output = json.loads(completed.stdout)

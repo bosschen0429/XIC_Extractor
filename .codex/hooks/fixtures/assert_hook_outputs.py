@@ -430,6 +430,32 @@ def main() -> int:
         "is blocked",
     )
 
+    assignment_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps("FOO=1 " + " ".join(("git", "reset", "--hard")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", assignment_reset_payload),
+        "is blocked",
+    )
+
+    aliased_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"$a='-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'; $b=$a; Start-Process python -ArgumentList $b\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", aliased_raw_background_payload),
+        "Background RAW launch",
+    )
+
     pre_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",
