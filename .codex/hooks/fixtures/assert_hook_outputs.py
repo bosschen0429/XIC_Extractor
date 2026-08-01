@@ -243,6 +243,20 @@ def main() -> int:
     }
     assert_hook_silent("xic_pre_tool_guard.py", non_raw_background_payload)
 
+    split_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"$rawArgs='-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'; Start-Process python -ArgumentList $rawArgs\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", split_raw_background_payload),
+        "Background RAW launch",
+    )
+
     execution_config_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",
@@ -281,6 +295,19 @@ def main() -> int:
     assert_contains(
         run_hook("xic_pre_tool_guard.py", wrapped_cleanup_payload),
         "interactive approval",
+    )
+
+    multiline_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc 'Write-Host ok\n"
+            + " ".join(("git", "reset", "--hard"))
+            + "'"
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", multiline_reset_payload),
+        "is blocked",
     )
 
     pre_payload = {

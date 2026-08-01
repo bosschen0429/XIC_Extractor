@@ -68,8 +68,11 @@ The hook set is intentionally small:
 - `PreToolUse`: blocks wrapped forms of destructive Git commands whose direct
   prefix rule is `forbidden`. Wrapped cleanup is conservatively denied because
   PreToolUse cannot express the direct rule's interactive `prompt`; silent
-  execution would bypass review. It also blocks background RAW launches through
-  `Start-Process` and adds context when edits touch
+  execution would bypass review. Wrapper inspection treats unquoted newlines as
+  command boundaries while preserving quoted content. It also blocks background
+  RAW launches through `Start-Process`, including launches whose RAW arguments
+  are prepared in another statement of the same shell payload, and adds context
+  when edits touch
   execution-affecting config, root agent contracts, or product/public surfaces
   that may need a routed productization-owner update.
 - `PostToolUse`: catches pytest runs that collected zero tests, and points the

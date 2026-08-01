@@ -37,7 +37,7 @@ WRAPPED_DESTRUCTIVE_COMMANDS = [
 
 POSIX_SHELLS = {"bash", "sh"}
 POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
-SHELL_SEPARATORS = {";", "&", "&&", "|", "||"}
+SHELL_SEPARATOR_CHARS = ";&|\n"
 MAX_WRAPPER_DEPTH = 3
 
 BACKGROUND_PROCESS = re.compile(r"^\s*(?:&\s*)?Start-Process\b", re.IGNORECASE)
@@ -152,7 +152,12 @@ def wrapped_shell_payload(command: str) -> str | None:
 
 def shell_command_segments(payload: str) -> list[str]:
     try:
-        lexer = shlex.shlex(payload, posix=True, punctuation_chars=";&|")
+        lexer = shlex.shlex(
+            payload, posix=True, punctuation_chars=SHELL_SEPARATOR_CHARS
+        )
+        # Keep unquoted newlines as command separators. Quoted newlines remain
+        # part of their token and therefore cannot manufacture a command.
+        lexer.whitespace = " \t\r"
         lexer.whitespace_split = True
         lexer.commenters = ""
         tokens = list(lexer)
@@ -162,7 +167,7 @@ def shell_command_segments(payload: str) -> list[str]:
     segments: list[str] = []
     current: list[str] = []
     for token in tokens:
-        if token in SHELL_SEPARATORS:
+        if token and all(char in SHELL_SEPARATOR_CHARS for char in token):
             if current:
                 segments.append(" ".join(current))
                 current = []
@@ -220,9 +225,9 @@ def main() -> int:
         if wrapped_payload is not None
         else shell_command_segments(command)
     )
-    if any(
-        BACKGROUND_PROCESS.search(segment) and RAW_LAUNCH_SIGNAL.search(segment)
-        for segment in effective_segments
+    effective_command = "\n".join(effective_segments)
+    if any(BACKGROUND_PROCESS.search(segment) for segment in effective_segments) and (
+        RAW_LAUNCH_SIGNAL.search(effective_command)
     ):
         deny(
             "Background RAW launch through Start-Process is blocked. Use the documented foreground heartbeat/timing command shape, or get explicit external-terminal approval."

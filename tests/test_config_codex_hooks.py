@@ -406,6 +406,22 @@ def test_pre_hook_blocks_compound_and_nested_wrapped_destructive_commands(
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+@pytest.mark.parametrize("wrapper", ["bash -lc", "pwsh -Command"])
+def test_pre_hook_blocks_multiline_wrapped_destructive_commands(wrapper: str) -> None:
+    payload = "Write-Host ok\n" + DESTRUCTIVE_TEXTS[0]
+    completed = _run_pre_hook(f"{wrapper} '{payload}'")
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_pre_hook_preserves_quoted_newline_in_wrapped_search() -> None:
+    needle = "prefix\n" + DESTRUCTIVE_TEXTS[0]
+    payload = f"rg -n {json.dumps(needle)} docs"
+    completed = _run_pre_hook(f"bash -lc '{payload}'")
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
 def test_pre_hook_preserves_quoted_separators_in_wrapped_search() -> None:
     needle = "prefix; " + " ".join(("git", "reset", "--hard"))
     payload = f"rg -n {json.dumps(needle)} docs"
@@ -421,6 +437,18 @@ def test_pre_hook_blocks_wrapped_raw_launch_without_preset_token() -> None:
         "--dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR'"
     )
     completed = _run_pre_hook(f"pwsh -Command {json.dumps(payload)}")
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
+
+
+def test_pre_hook_correlates_raw_signals_across_powershell_statements() -> None:
+    payload = (
+        "$rawArgs='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
+        "Start-Process python -ArgumentList $rawArgs"
+    )
+    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
     output = json.loads(completed.stdout)
     hook_output = output["hookSpecificOutput"]
     assert hook_output["permissionDecision"] == "deny"
