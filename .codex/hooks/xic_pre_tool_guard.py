@@ -26,6 +26,13 @@ WRAPPED_DESTRUCTIVE_COMMANDS = [
         re.compile(r"\bgit\s+checkout\s+--(?:\s|$)", re.IGNORECASE),
         "git checkout -- is blocked because it reverts files. Use targeted review and explicit user approval.",
     ),
+    (
+        re.compile(
+            r"\bgit\s+" r"clean\s+-(?:[^\s]*f[^\s]*d|[^\s]*d[^\s]*f|x?fd|fxd)\b",
+            re.IGNORECASE,
+        ),
+        "Wrapped cleanup with force/delete flags is denied because PreToolUse cannot request interactive approval.",
+    ),
 ]
 
 POSIX_SHELLS = {"bash", "sh"}

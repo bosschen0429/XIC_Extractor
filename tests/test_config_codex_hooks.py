@@ -16,13 +16,25 @@ HOOKS_CONFIG = ROOT / ".codex" / "hooks.json"
 HOOKS_DIR = ROOT / ".codex" / "hooks"
 RULES_PATH = ROOT / ".codex" / "rules" / "xic-safety.rules"
 OPERATING_SYSTEM = ROOT / "docs" / "agent" / "codex-operating-system.md"
-HOOK_SCRIPT_PATTERN = re.compile(
-    r"\.codex[\\/]+hooks[\\/]+(?P<script>[A-Za-z0-9_.-]+\.py)"
-)
+HOOK_COMMAND_PATTERNS = {
+    "command": re.compile(
+        r'^python3 "\$\(git rev-parse --show-toplevel\)/\.codex/hooks/'
+        r'(?P<script>[A-Za-z0-9_.-]+\.py)"$'
+    ),
+    "commandWindows": re.compile(
+        r'^python "\$\(git rev-parse --show-toplevel\)\\\.codex\\hooks\\'
+        r'(?P<script>[A-Za-z0-9_.-]+\.py)"$'
+    ),
+}
 EXPECTED_HOOKS = {
     "UserPromptSubmit": "xic_prompt_router.py",
     "PreToolUse": "xic_pre_tool_guard.py",
     "PostToolUse": "xic_post_tool_guard.py",
+}
+EXPECTED_MATCHERS = {
+    "UserPromptSubmit": None,
+    "PreToolUse": "Bash|apply_patch|Edit|Write",
+    "PostToolUse": "Bash|apply_patch|Edit|Write",
 }
 EXPECTED_GOVERNANCE_ROWS = {
     "docs_lifecycle_retirement",
@@ -44,11 +56,11 @@ def _load_hooks_config() -> dict[str, object]:
     return json.loads(HOOKS_CONFIG.read_text(encoding="utf-8"))
 
 
-def _script_reference(command: object) -> Path:
+def _script_reference(command: object, field: str) -> Path:
     assert isinstance(command, str) and command
-    matches = HOOK_SCRIPT_PATTERN.findall(command)
-    assert len(matches) == 1, f"expected one repo hook script in {command!r}"
-    return Path(".codex") / "hooks" / matches[0]
+    match = HOOK_COMMAND_PATTERNS[field].fullmatch(command)
+    assert match is not None, f"invalid {field} hook command shape: {command!r}"
+    return Path(".codex") / "hooks" / match.group("script")
 
 
 def _enabled_hook_entries(
@@ -56,12 +68,16 @@ def _enabled_hook_entries(
 ) -> list[tuple[str, dict[str, object]]]:
     hooks = config.get("hooks")
     assert isinstance(hooks, dict)
+    assert set(hooks) == set(EXPECTED_MATCHERS)
     entries: list[tuple[str, dict[str, object]]] = []
     for event_name, groups in hooks.items():
         assert isinstance(event_name, str)
         assert isinstance(groups, list)
         for group in groups:
             assert isinstance(group, dict)
+            assert group.get("matcher") == EXPECTED_MATCHERS[event_name], (
+                f"unexpected {event_name} matcher: {group.get('matcher')!r}"
+            )
             commands = group.get("hooks")
             assert isinstance(commands, list)
             for command in commands:
@@ -96,8 +112,8 @@ def _minimal_payload(event_name: str) -> dict[str, object]:
 def _assert_hook_contract(config: dict[str, object], *, root: Path = ROOT) -> None:
     seen: dict[str, str] = {}
     for event_name, entry in _enabled_hook_entries(config):
-        posix_ref = _script_reference(entry.get("command"))
-        windows_ref = _script_reference(entry.get("commandWindows"))
+        posix_ref = _script_reference(entry.get("command"), "command")
+        windows_ref = _script_reference(entry.get("commandWindows"), "commandWindows")
         assert posix_ref == windows_ref
         assert event_name not in seen, f"duplicate enabled hook event: {event_name}"
         seen[event_name] = posix_ref.name
@@ -229,6 +245,26 @@ def test_configured_hook_command_rejects_missing_runner() -> None:
     assert completed.returncode != 0
 
 
+@pytest.mark.parametrize("field", ["command", "commandWindows"])
+def test_hook_contract_rejects_invalid_platform_command_shape(field: str) -> None:
+    config = copy.deepcopy(_load_hooks_config())
+    entry = _enabled_hook_entries(config)[0][1]
+    entry[field] = str(entry[field]).replace("python", "missing-codex-runner", 1)
+    with pytest.raises(AssertionError, match=f"invalid {field} hook command shape"):
+        _assert_hook_contract(config)
+
+
+def test_hook_contract_rejects_narrowed_matcher() -> None:
+    config = copy.deepcopy(_load_hooks_config())
+    groups = config["hooks"]
+    assert isinstance(groups, dict)
+    pre_groups = groups["PreToolUse"]
+    assert isinstance(pre_groups, list)
+    pre_groups[0]["matcher"] = "Bash"
+    with pytest.raises(AssertionError, match="unexpected PreToolUse matcher"):
+        _enabled_hook_entries(config)
+
+
 def test_hook_contract_rejects_missing_reference() -> None:
     config = copy.deepcopy(_load_hooks_config())
     entry = _enabled_hook_entries(config)[0][1]
@@ -264,8 +300,6 @@ def test_hook_contract_rejects_nonstarting_script(tmp_path: Path) -> None:
     entry["commandWindows"] = str(entry["commandWindows"]).replace(
         "xic_prompt_router.py", "broken.py"
     )
-    config["hooks"] = {"UserPromptSubmit": [{"hooks": [entry]}]}
-
     with pytest.raises(AssertionError, match="did not start cleanly"):
         _assert_hook_contract(config, root=tmp_path)
 
@@ -337,9 +371,6 @@ def test_pre_hook_preserves_wrapped_destructive_owner_semantics(
 ) -> None:
     completed = _run_pre_hook(f"{wrapper} {json.dumps(' '.join(tokens))}")
     assert completed.returncode == 0
-    if tokens == ("git", "clean", "-fd"):
-        assert completed.stdout == ""
-        return
     output = json.loads(completed.stdout)
     hook_output = output["hookSpecificOutput"]
     assert hook_output["hookEventName"] == "PreToolUse"

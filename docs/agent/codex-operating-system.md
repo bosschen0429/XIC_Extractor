@@ -66,9 +66,10 @@ The hook set is intentionally small:
   appending chronological notes. They must not direct every branch to the same
   productization compatibility lane registry.
 - `PreToolUse`: blocks wrapped forms of destructive Git commands whose direct
-  prefix rule is `forbidden`; prompt-owned cleanup remains with the direct rule
-  because PreToolUse cannot express `ask`. It also blocks background RAW launches
-  through `Start-Process` and adds context when edits touch
+  prefix rule is `forbidden`. Wrapped cleanup is conservatively denied because
+  PreToolUse cannot express the direct rule's interactive `prompt`; silent
+  execution would bypass review. It also blocks background RAW launches through
+  `Start-Process` and adds context when edits touch
   execution-affecting config, root agent contracts, or product/public surfaces
   that may need a routed productization-owner update.
 - `PostToolUse`: catches pytest runs that collected zero tests, and points the

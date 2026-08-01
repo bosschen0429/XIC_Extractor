@@ -278,7 +278,10 @@ def main() -> int:
             "command": ("bash -lc " + json.dumps(" ".join(("git", "clean", "-fd"))))
         },
     }
-    assert_hook_silent("xic_pre_tool_guard.py", wrapped_cleanup_payload)
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrapped_cleanup_payload),
+        "interactive approval",
+    )
 
     pre_payload = {
         "hook_event_name": "PreToolUse",
