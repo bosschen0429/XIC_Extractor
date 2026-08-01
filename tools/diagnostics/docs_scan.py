@@ -138,14 +138,16 @@ def is_local_path_scan_target(path: Path, rel_path: str) -> bool:
 def markdown_without_fenced_code(text: str) -> str:
     """Remove fenced code while preserving the surrounding line structure."""
 
-    def container_content(line: str) -> str:
-        """Remove Markdown list/blockquote containers for fence detection only."""
+    def opening_container_content(line: str) -> tuple[str, int]:
+        """Remove opening containers and return the blockquote depth."""
 
         content = line
+        blockquote_depth = 0
         while True:
             blockquote = re.match(r"^[ \t]*>[ \t]?", content)
             if blockquote:
                 content = content[blockquote.end() :]
+                blockquote_depth += 1
                 continue
             list_item = re.match(
                 r"^[ \t]*(?:[-+*]|\d{1,9}[.)])[ \t]+",
@@ -154,14 +156,26 @@ def markdown_without_fenced_code(text: str) -> str:
             if list_item:
                 content = content[list_item.end() :]
                 continue
-            return content
+            return content, blockquote_depth
+
+    def closing_container_content(line: str, blockquote_depth: int) -> str | None:
+        """Remove only the blockquote context captured by the opening fence."""
+
+        content = line
+        for _ in range(blockquote_depth):
+            blockquote = re.match(r"^[ \t]*>[ \t]?", content)
+            if blockquote is None:
+                return None
+            content = content[blockquote.end() :]
+        return content
 
     visible: list[str] = []
     fence_character = ""
     fence_length = 0
+    fence_blockquote_depth = 0
     for line in text.splitlines():
-        logical_line = container_content(line)
         if not fence_character:
+            logical_line, blockquote_depth = opening_container_content(line)
             # Container removal also covers list indentation.  Accepting any
             # remaining whitespace is fail-closed for governance parsing: an
             # even-more-indented marker is code, not visible contract text.
@@ -170,17 +184,20 @@ def markdown_without_fenced_code(text: str) -> str:
                 marker = opening.group(1)
                 fence_character = marker[0]
                 fence_length = len(marker)
+                fence_blockquote_depth = blockquote_depth
                 visible.append("")
                 continue
             visible.append(line)
             continue
-        if re.match(
-            rf"^[ \t]*{re.escape(fence_character)}"
-            rf"{{{fence_length},}}[ \t]*$",
-            logical_line,
-        ):
+        logical_line = closing_container_content(line, fence_blockquote_depth)
+        if logical_line is not None and re.match(
+                rf"^[ \t]*{re.escape(fence_character)}"
+                rf"{{{fence_length},}}[ \t]*$",
+                logical_line,
+            ):
             fence_character = ""
             fence_length = 0
+            fence_blockquote_depth = 0
         visible.append("")
     return "\n".join(visible)
 

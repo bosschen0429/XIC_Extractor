@@ -167,6 +167,33 @@ def test_permanent_root_contract_ignores_blockquoted_fenced_only_route(
     assert "required route must resolve: docs/product/README.md" in problems
 
 
+@pytest.mark.parametrize(
+    "fenced_example",
+    (
+        ("```markdown\n"
+         "- ```\n"
+         "[fenced route](docs/product/README.md)\n"
+         "```\n"),
+        ("> ```markdown\n"
+         "> > ```\n"
+         "> [fenced route](docs/product/README.md)\n"
+         "> ```\n"),
+    ),
+)
+def test_permanent_root_contract_ignores_faux_closing_container_in_fence(
+    fenced_example: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\n" + fenced_example
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
 def test_dependency_census_resolves_relative_markdown_html_and_constant_consumers(
     tmp_path: Path,
 ) -> None:
