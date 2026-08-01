@@ -887,6 +887,24 @@ def _committed_packet_semantic_problems(
         or source_mapping.get("source_copy_readback_verified") is not True
     ):
         problems.append("retirement packet source-copy readback is not verified")
+    expected_destination = f"source_repo_path:{source_path}"
+    if (
+        packet.get("source_copy_destination") != expected_destination
+        or source_mapping.get("source_copy_destination") != expected_destination
+    ):
+        problems.append("retirement packet source-copy destination mismatch")
+    source_hash = packet.get("source_hash")
+    expected_note_title = (
+        f"{Path(source_path).stem}-source-{source_hash[:12]}"
+        if isinstance(source_hash, str)
+        else ""
+    )
+    if (
+        not expected_note_title
+        or packet.get("source_copy_note_title") != expected_note_title
+        or source_mapping.get("source_copy_note_title") != expected_note_title
+    ):
+        problems.append("retirement packet source-copy note title mismatch")
     for label, mapping in (("packet", packet), ("source mapping", source_mapping)):
         for field in ("active_followups", "unresolved_claims"):
             values = _string_list(mapping.get(field))
@@ -1245,6 +1263,8 @@ def committed_same_path_retirement_packet_problems(
             "activation_end_sha",
             "source_hash",
             "source_line_count",
+            "source_copy_destination",
+            "source_copy_note_title",
             "replacement_hash",
         ):
             if packet.get(field) != registered_contract.get(field):

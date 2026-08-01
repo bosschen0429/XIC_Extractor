@@ -38,6 +38,9 @@ PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL = (
     "docs/superpowers/file-management/docs-cleanup/"
     "2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json"
 )
+PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE = (
+    "2026-06-15-productization-control-plane-source-97778ff9fb5c"
+)
 COMMITTED_RETIREMENT_PACKET_CONTRACTS = {
     PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL: {
         "transaction": "body_to_compatibility_index",
@@ -48,11 +51,15 @@ COMMITTED_RETIREMENT_PACKET_CONTRACTS = {
             "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
         ),
         "source_line_count": 5621,
+        "source_copy_destination": f"source_repo_path:{CONTROL_PLANE_PATH}",
+        "source_copy_note_title": (
+            PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE
+        ),
         "replacement_hash": (
             "21f6f051b8167e1da4411a66df498964e9c6d1c814aa2dbc0ea773f6fef2f340"
         ),
         "packet_sha256": (
-            "15b7c3cba39611c2b01c57ba455564cdce8bf8659324e7a56036e977cc19e054"
+            "038b5be4470c1c4cf30092ab9e16679cf6bbce40e183e4e2693215aa75eebe70"
         ),
     }
 }

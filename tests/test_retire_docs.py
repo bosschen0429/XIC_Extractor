@@ -107,6 +107,9 @@ def test_source_copy_only_writes_and_reads_back_exact_bytes(tmp_path: Path) -> N
     assert result.error == ""
     assert result.readback_verified
     assert result.destination is not None
+    assert result.destination.stem == (
+        f"control-plane-source-{result.source_hash[:12]}"
+    )
     assert result.destination.read_bytes() == source.read_bytes()
 
 

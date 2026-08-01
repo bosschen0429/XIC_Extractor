@@ -621,9 +621,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: {copy_result.error}", file=sys.stderr)
             return 1
         mode = "verified" if args.execute else "dry-run"
+        note_title = (
+            copy_result.destination.stem if copy_result.destination is not None else ""
+        )
         print(
             f"Source copy {mode}: {copy_result.source_path}; "
             f"sha256={copy_result.source_hash}; "
+            f"note_title={note_title}; "
             f"readback_verified={str(copy_result.readback_verified).lower()}"
         )
         return 0 if (copy_result.readback_verified or not args.execute) else 1

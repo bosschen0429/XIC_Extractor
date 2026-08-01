@@ -129,6 +129,10 @@ def _same_path_fixture(
         capture_output=True,
     )
     source_hash = _source_hash(source)
+    source_copy_destination = f"source_repo_path:{source_path}"
+    source_copy_note_title = (
+        f"2026-06-15-productization-control-plane-source-{source_hash[:12]}"
+    )
     lines = source.encode("utf-8").splitlines(keepends=True)
     claim_hash = _source_hash(b"".join(lines[2:4]).decode("utf-8"))
     section_hash = source_hash
@@ -152,6 +156,8 @@ def _same_path_fixture(
         "transaction": "body_to_compatibility_index",
         "review_result": "pass_can_retire",
         "source_copy_readback_verified": True,
+        "source_copy_destination": source_copy_destination,
+        "source_copy_note_title": source_copy_note_title,
         "source_copy_hash": source_hash,
         "source_hash": source_hash,
         "replacement_hash": replacement_hash,
@@ -169,6 +175,8 @@ def _same_path_fixture(
         "source_path": source_path,
         "source_hash": source_hash,
         "source_copy_readback_verified": True,
+        "source_copy_destination": source_copy_destination,
+        "source_copy_note_title": source_copy_note_title,
         "source_copy_hash": source_hash,
         "replacement_hash": replacement_hash,
         "active_followups": [],
@@ -316,6 +324,8 @@ def _packet_contract(root: Path, evidence_path: str) -> dict[str, object]:
             "activation_end_sha",
             "source_hash",
             "source_line_count",
+            "source_copy_destination",
+            "source_copy_note_title",
             "replacement_hash",
         )
     } | {
@@ -365,6 +375,27 @@ def test_governance_index_rejects_mechanism_drift() -> None:
 
     assert any(
         "invalid governance enforcement index" in problem.reason
+        for problem in result.problems
+    )
+
+
+def test_governance_index_ignores_fenced_only_table() -> None:
+    root = Path(__file__).parents[1]
+    path = "docs/agent/codex-operating-system.md"
+    text = (root / path).read_text(encoding="utf-8")
+    table_start = text.index("| Rule family |")
+    table_end = text.index("\n\n", table_start)
+    table = text[table_start:table_end]
+    text = text[:table_start] + f"```markdown\n{table}\n```" + text[table_end:]
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    assert any(
+        "governance index must contain exactly the six declared rule families"
+        in problem.reason
         for problem in result.problems
     )
 
@@ -681,6 +712,72 @@ def test_registered_retirement_packet_rejects_transaction_tampering(
 
     assert any(
         "transaction must be body_to_compatibility_index" in problem
+        for problem in problems
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_problem"),
+    (
+        (
+            "source_copy_destination",
+            "source_repo_path:docs/superpowers/plans/another.md",
+            "source-copy destination mismatch",
+        ),
+        (
+            "source_copy_note_title",
+            "unrelated-private-note",
+            "source-copy note title mismatch",
+        ),
+    ),
+)
+def test_registered_retirement_packet_rejects_self_pinned_source_copy_locator(
+    tmp_path: Path,
+    field: str,
+    value: str,
+    expected_problem: str,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    packet[field] = value
+    packet["entries"][0][field] = value
+    _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    contract = _packet_contract(tmp_path, evidence_path)
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+        contract=contract,
+    )
+
+    assert any(expected_problem in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
+    ("target", "field", "expected_problem"),
+    (
+        ("source_sections", "section_sha256", "section CP-SECTION-001"),
+        ("claims", "source_excerpt_sha256", "claim CP-CLAIM-001"),
+    ),
+)
+def test_committed_retirement_replay_rejects_format_valid_wrong_source_hash(
+    tmp_path: Path,
+    target: str,
+    field: str,
+    expected_problem: str,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    packet[target][0][field] = "0" * 64
+    _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+    )
+
+    assert any(
+        expected_problem in problem and "source locator/hash mismatch" in problem
         for problem in problems
     )
 

@@ -114,6 +114,9 @@ Hosted lint/typecheck jobs use the GitHub uv cache keyed by `pyproject.toml` and
 environment per Python version and the runner-persistent local uv cache, and do
 not upload that cache through GitHub Actions. They record install/per-shard
 seconds in the job summary so future CI tuning is based on observed timing.
+The hosted lint checkout fetches full Git history because the docs lifecycle
+audit must replay registered retirement packets against their fixed activation
+base and end commits; a shallow packet/digest read is not the acceptance oracle.
 
 ```powershell
 uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check

@@ -47,6 +47,17 @@ def test_ci_workflow_uses_uv_cache_for_hosted_static_jobs() -> None:
         assert "uv.lock" in block
 
 
+def test_ci_docs_lifecycle_audit_fetches_retirement_history() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    lint_checkout = _job_block(workflow, "lint").split(
+        "- uses: astral-sh/setup-uv@v8.2.0",
+        1,
+    )[0]
+
+    assert "uses: actions/checkout@v6" in lint_checkout
+    assert "fetch-depth: 0" in lint_checkout
+
+
 def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 

@@ -135,16 +135,37 @@ def is_local_path_scan_target(path: Path, rel_path: str) -> bool:
     return path.is_file() and is_local_path_scan_rel_path(rel_path)
 
 
+def markdown_without_fenced_code(text: str) -> str:
+    """Remove fenced code while preserving the surrounding line structure."""
+
+    visible: list[str] = []
+    fence_character = ""
+    fence_length = 0
+    for line in text.splitlines():
+        if not fence_character:
+            opening = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})", line)
+            if opening:
+                marker = opening.group(1)
+                fence_character = marker[0]
+                fence_length = len(marker)
+                visible.append("")
+                continue
+            visible.append(line)
+            continue
+        if re.match(
+            rf"^[ \t]{{0,3}}{re.escape(fence_character)}"
+            rf"{{{fence_length},}}[ \t]*$",
+            line,
+        ):
+            fence_character = ""
+            fence_length = 0
+        visible.append("")
+    return "\n".join(visible)
+
+
 def markdown_headings(text: str) -> tuple[str, ...]:
     headings: list[str] = []
-    in_fence = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith(("```", "~~~")):
-            in_fence = not in_fence
-            continue
-        if in_fence:
-            continue
+    for line in markdown_without_fenced_code(text).splitlines():
         match = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
         if match:
             headings.append(match.group(1))
@@ -159,6 +180,7 @@ def markdown_heading_fragment(heading: str) -> str:
 
 
 def markdown_link_targets(text: str) -> tuple[str, ...]:
+    text = markdown_without_fenced_code(text)
     targets: list[str] = []
     for raw in re.findall(r"\[[^\]]*\]\(([^)]+)\)", text):
         raw = raw.strip()
@@ -234,17 +256,18 @@ def permanent_root_contract_problems(
         return ()
     overrides = overrides or {}
     problems: list[str] = []
-    headings = markdown_headings(text)
+    visible_text = markdown_without_fenced_code(text)
+    headings = markdown_headings(visible_text)
     for heading in contract["required_headings"]:
         if headings.count(heading) != 1:
             problems.append(f"required heading must occur exactly once: {heading}")
     for marker in contract["required_text"]:
-        if text.count(marker) != 1:
+        if visible_text.count(marker) != 1:
             problems.append(
                 f"required purpose landmark must occur exactly once: {marker}"
             )
 
-    resolved_routes = resolved_markdown_targets(rel_path, text)
+    resolved_routes = resolved_markdown_targets(rel_path, visible_text)
     for route in contract["required_routes"]:
         if resolved_routes.count(route) < 1:
             problems.append(f"required route must resolve: {route}")
@@ -359,6 +382,7 @@ def governance_index_problems(
     )
 
     overrides = overrides or {}
+    text = markdown_without_fenced_code(text)
     rows: list[list[str]] = []
     table_started = False
     for line in text.splitlines():

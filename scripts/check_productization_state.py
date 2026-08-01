@@ -29,6 +29,7 @@ from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     CONTROL_PLANE_PATH,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
+    PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE,
     PRODUCTIZATION_SCHEMA_REL,
     PRODUCTIZATION_STATUS_ANCHOR_PATH,
     PRODUCTIZATION_STATUS_INDEX_REL,
@@ -539,6 +540,8 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
         "",
         "The exact retired body is retained privately under",
         f"`source_repo_path:{CONTROL_PLANE_PATH}`.",
+        "Vault note title:",
+        f"`{PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE}`.",
         "The checked retirement transaction is recorded in the",
         (
             "[retirement evidence packet](../file-management/docs-cleanup/"

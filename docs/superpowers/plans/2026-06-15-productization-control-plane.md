@@ -27,6 +27,8 @@ owner route changes.
 
 The exact retired body is retained privately under
 `source_repo_path:docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
+Vault note title:
+`2026-06-15-productization-control-plane-source-97778ff9fb5c`.
 The checked retirement transaction is recorded in the
 [retirement evidence packet](../file-management/docs-cleanup/2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json).
 
