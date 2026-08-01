@@ -626,6 +626,63 @@ def test_committed_same_path_retirement_packet_passes_clean_checkout_review(
     assert problems == ()
 
 
+def test_committed_retirement_replay_survives_squash_merge(
+    tmp_path: Path,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    feature_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    activation_base = packet["activation_base_sha"]
+    activation_end = packet["activation_end_sha"]
+    subprocess.run(
+        ["git", "switch", "--detach", activation_base],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "merge", "--squash", feature_head],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "squash merge retirement",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    ancestry = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", activation_end, "HEAD"],
+        cwd=tmp_path,
+        check=False,
+        capture_output=True,
+    )
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+    )
+
+    assert ancestry.returncode == 1
+    assert problems == ()
+
+
 def test_committed_same_path_retirement_packet_rejects_changed_hard_zero_path(
     tmp_path: Path,
 ) -> None:
@@ -667,7 +724,7 @@ def test_registered_retirement_packet_rejects_missing_historical_git_objects(
 
     assert problems == (
         "retirement packet historical replay is unavailable; fetch the "
-        "activation base and end commits before acceptance",
+        "activation base history before acceptance",
     )
 
 

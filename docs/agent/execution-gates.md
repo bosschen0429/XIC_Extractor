@@ -115,8 +115,10 @@ environment per Python version and the runner-persistent local uv cache, and do
 not upload that cache through GitHub Actions. They record install/per-shard
 seconds in the job summary so future CI tuning is based on observed timing.
 The hosted lint checkout fetches full Git history because the docs lifecycle
-audit must replay registered retirement packets against their fixed activation
-base and end commits; a shallow packet/digest read is not the acceptance oracle.
+audit must replay registered retirement packets from their fixed activation
+base through the recorded activation end when it is reachable, or through the
+packet-introduction commit on current ancestry after squash merge. A shallow
+packet/digest read is not the acceptance oracle.
 
 ```powershell
 uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
