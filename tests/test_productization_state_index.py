@@ -236,6 +236,28 @@ def test_checker_normalizes_narrative_readiness_vocabulary(
     assert any("duplicates mutable structured state" in problem for problem in problems)
 
 
+@pytest.mark.parametrize(
+    "mutable_text",
+    (
+        "Current lane is production_ready.",
+        "The current authority contains 511 cells.",
+    ),
+)
+def test_checker_rejects_mutable_state_in_compatibility_lane_registry(
+    tmp_path: Path,
+    mutable_text: str,
+) -> None:
+    status_anchor = tmp_path / "productization-status-anchor.md"
+    status_anchor.write_text(
+        DEFAULT_HANDOFF.read_text(encoding="utf-8") + f"\n{mutable_text}\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(handoff_path=status_anchor)
+
+    assert any("mutable" in problem for problem in problems)
+
+
 def test_checker_rejects_regenerated_unregistered_control_anchor(
     tmp_path: Path,
 ) -> None:

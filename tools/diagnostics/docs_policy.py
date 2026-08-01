@@ -34,6 +34,28 @@ PRODUCTIZATION_STATUS_INDEX_REL = (
 PRODUCTIZATION_AUTHORITY_MANIFEST_REL = (
     "docs/superpowers/schemas/productization_authority_manifest.v1.json"
 )
+PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL = (
+    "docs/superpowers/file-management/docs-cleanup/"
+    "2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json"
+)
+COMMITTED_RETIREMENT_PACKET_CONTRACTS = {
+    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL: {
+        "transaction": "body_to_compatibility_index",
+        "source_path": CONTROL_PLANE_PATH,
+        "activation_base_sha": "a2d5032befb2a4439daff8a018aa551e3607f5f6",
+        "activation_end_sha": "f7736355feb3e3c3273e23cb0a32841cfd469a7b",
+        "source_hash": (
+            "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
+        ),
+        "source_line_count": 5621,
+        "replacement_hash": (
+            "21f6f051b8167e1da4411a66df498964e9c6d1c814aa2dbc0ea773f6fef2f340"
+        ),
+        "packet_sha256": (
+            "15b7c3cba39611c2b01c57ba455564cdce8bf8659324e7a56036e977cc19e054"
+        ),
+    }
+}
 MECHANICAL_ADJUDICATION_INDEX_REL = (
     "docs/superpowers/validation/mechanical_adjudication_index_v1.tsv"
 )

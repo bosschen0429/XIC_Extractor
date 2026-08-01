@@ -3,6 +3,7 @@
   "schema_version": "r11_d0_productization_control_plane_retirement_evidence_v1",
   "generated_at": "2026-08-01",
   "activation_base_sha": "a2d5032befb2a4439daff8a018aa551e3607f5f6",
+  "activation_end_sha": "f7736355feb3e3c3273e23cb0a32841cfd469a7b",
   "transaction": "body_to_compatibility_index",
   "transaction_status": "completed",
   "source_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md",

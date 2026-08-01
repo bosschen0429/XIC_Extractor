@@ -9,7 +9,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 
 from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
+    COMMITTED_RETIREMENT_PACKET_CONTRACTS,
     DOC_EXIT_RULE_MARKER,
     DOC_KIND_MARKER,
     DOC_KIND_VALUES,
@@ -191,10 +192,12 @@ def is_retirement_evidence_path(path: str) -> bool:
     )
 
 
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
+def _string_list(value: object) -> list[str] | None:
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
+        return None
+    return value
 
 
 def _normalized_evidence_path(value: object) -> str | None:
@@ -312,14 +315,15 @@ def _is_usable_retirement_evidence_entry(entry: object) -> bool:
         "absorbed_claims",
         "absorbed_negative_claims",
     ):
-        if not _string_list(entry.get(field_name)):
+        values = _string_list(entry.get(field_name))
+        if values is None or not values:
             return False
     if entry.get("source_copy_readback_verified") is not True:
         return False
     source_hash = entry.get("source_hash")
     if not isinstance(source_hash, str) or not source_hash.strip():
         return False
-    return not _string_list(entry.get("active_followups"))
+    return _string_list(entry.get("active_followups")) == []
 
 
 def retirement_evidence_by_path(
@@ -387,6 +391,33 @@ def _git_object_bytes(root: Path, ref: str, rel_path: str) -> bytes | None:
         timeout=10,
     )
     return result.stdout if result.returncode == 0 else None
+
+
+def _git_commit_available(root: Path, ref: str) -> bool:
+    result = subprocess.run(
+        ["git", "cat-file", "-e", f"{ref}^{{commit}}"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        timeout=10,
+    )
+    return result.returncode == 0
+
+
+def _git_is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        timeout=20,
+    )
+    return result.returncode == 0
+
+
+def _canonical_text_sha256(text: str) -> str:
+    canonical = text.replace("\r\n", "\n").replace("\r", "\n")
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _source_locator_line_range(
@@ -558,14 +589,16 @@ def same_path_replacement_problems(
         or evidence.get("source_copy_readback_verified") is not True
     ):
         add("private source-copy readback is not verified")
-    if _string_list(packet.get("active_followups")) or _string_list(
-        evidence.get("active_followups")
-    ):
-        add("active followups remain")
-    if _string_list(packet.get("unresolved_claims")) or _string_list(
-        evidence.get("unresolved_claims")
-    ):
-        add("unresolved claims remain")
+    for label, mapping in (("packet", packet), ("source mapping", evidence)):
+        for field, remaining_message in (
+            ("active_followups", "active followups remain"),
+            ("unresolved_claims", "unresolved claims remain"),
+        ):
+            values = _string_list(mapping.get(field))
+            if values is None:
+                add(f"{label} {field} must be a string list")
+            elif values:
+                add(f"{label} {remaining_message}")
 
     source_bytes = (
         source_bytes_override
@@ -719,9 +752,11 @@ def same_path_replacement_problems(
         add("section/claim mapping edges are not exactly reciprocal")
 
     entry_claim_ids = _string_list(evidence.get("claim_ids"))
-    if len(entry_claim_ids) != len(set(entry_claim_ids)) or set(entry_claim_ids) != set(
-        claim_ids
-    ):
+    if entry_claim_ids is None:
+        add("source mapping claim_ids must be a string list")
+    elif len(entry_claim_ids) != len(set(entry_claim_ids)) or set(
+        entry_claim_ids
+    ) != set(claim_ids):
         add("source mapping claim_ids are duplicated or incomplete")
     expected_absorbed = {
         claim.get("claim_id")
@@ -748,9 +783,13 @@ def same_path_replacement_problems(
     for label, mapping in (("packet", packet), ("source mapping", evidence)):
         absorbed = _string_list(mapping.get("absorbed_claims"))
         absorbed_negative = _string_list(mapping.get("absorbed_negative_claims"))
-        if len(absorbed) != len(set(absorbed)) or set(absorbed) != expected_absorbed:
+        if absorbed is None:
+            add(f"{label} absorbed_claims must be a string list")
+        elif len(absorbed) != len(set(absorbed)) or set(absorbed) != expected_absorbed:
             add(f"{label} absorbed_claims do not exactly match active positive claims")
-        if (
+        if absorbed_negative is None:
+            add(f"{label} absorbed_negative_claims must be a string list")
+        elif (
             len(absorbed_negative) != len(set(absorbed_negative))
             or set(absorbed_negative) != expected_absorbed_negative
         ):
@@ -789,10 +828,23 @@ def same_path_replacement_problems(
 def committed_same_path_retirement_packet_problems(
     root: Path,
     packet_path: str,
+    *,
+    contract: Mapping[str, object] | None = None,
 ) -> tuple[str, ...]:
-    """Validate a committed same-path retirement packet from a clean checkout."""
+    """Validate a committed same-path retirement packet from a clean checkout.
+
+    Registered packets are independently pinned by identity and canonical-text
+    digest. A shallow checkout can therefore validate the committed evidence
+    without fetching retired history. When both historical endpoints are
+    available, the validator additionally replays the fixed transaction window.
+    """
 
     normalized_packet_path = _docs_scan.normalize_repo_rel_path(packet_path)
+    registered_contract = (
+        contract
+        if contract is not None
+        else COMMITTED_RETIREMENT_PACKET_CONTRACTS.get(normalized_packet_path)
+    )
     try:
         packet_text = (root / normalized_packet_path).read_text(encoding="utf-8")
         packet = json.loads(packet_text)
@@ -800,50 +852,155 @@ def committed_same_path_retirement_packet_problems(
         return (f"retirement packet cannot be read: {exc}",)
     if not isinstance(packet, dict):
         return ("retirement packet must be a JSON object",)
+
+    problems: list[str] = []
+    if registered_contract is not None:
+        expected_digest = registered_contract.get("packet_sha256")
+        if (
+            not isinstance(expected_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_digest) is None
+        ):
+            problems.append("registered retirement packet digest is invalid")
+        elif _canonical_text_sha256(packet_text) != expected_digest:
+            problems.append("registered retirement packet digest mismatch")
+        for field in (
+            "transaction",
+            "source_path",
+            "activation_base_sha",
+            "activation_end_sha",
+            "source_hash",
+            "source_line_count",
+            "replacement_hash",
+        ):
+            if packet.get(field) != registered_contract.get(field):
+                problems.append(f"registered retirement packet {field} mismatch")
+        if packet.get("source_copy_hash") != registered_contract.get("source_hash"):
+            problems.append("registered retirement packet source_copy_hash mismatch")
+
     if packet.get("transaction") != "body_to_compatibility_index":
-        return ()
+        return tuple(problems)
 
     source_path = _normalized_evidence_path(packet.get("source_path"))
     activation_base = packet.get("activation_base_sha")
+    activation_end = packet.get("activation_end_sha")
     if source_path is None:
-        return ("retirement packet source_path must be repository-relative",)
+        problems.append("retirement packet source_path must be repository-relative")
+        return tuple(problems)
     if not isinstance(activation_base, str) or re.fullmatch(
         r"[0-9a-fA-F]{40}", activation_base
     ) is None:
-        return ("retirement packet activation_base_sha must be a full Git SHA",)
-    ancestor = subprocess.run(
-        ["git", "merge-base", "--is-ancestor", activation_base, "HEAD"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        timeout=20,
-    )
-    if ancestor.returncode != 0:
-        return ("retirement packet activation_base_sha is not an ancestor of HEAD",)
-    source_bytes = _git_object_bytes(root, activation_base, source_path)
-    if source_bytes is None:
-        return ("retirement packet source preimage is missing at activation_base_sha",)
+        problems.append(
+            "retirement packet activation_base_sha must be a full Git SHA"
+        )
+        return tuple(problems)
+    if not isinstance(activation_end, str) or re.fullmatch(
+        r"[0-9a-fA-F]{40}", activation_end
+    ) is None:
+        problems.append("retirement packet activation_end_sha must be a full Git SHA")
+        return tuple(problems)
+
     replacement_path = root / source_path
     try:
-        replacement_text = replacement_path.read_text(encoding="utf-8")
+        current_replacement_text = replacement_path.read_text(encoding="utf-8")
     except OSError as exc:
-        return (f"retirement packet replacement cannot be read: {exc}",)
+        problems.append(f"retirement packet replacement cannot be read: {exc}")
+        return tuple(problems)
+    if not is_productization_compatibility_index_text(current_replacement_text):
+        problems.append("retired source path is no longer a compatibility index")
 
-    entries = (
+    base_available = _git_commit_available(root, activation_base)
+    end_available = _git_commit_available(root, activation_end)
+    if end_available and not _git_is_ancestor(root, activation_end, "HEAD"):
+        problems.append(
+            "retirement packet activation_end_sha is not an ancestor of HEAD"
+        )
+        return tuple(problems)
+    if base_available and end_available and not _git_is_ancestor(
+        root, activation_base, activation_end
+    ):
+        problems.append(
+            "retirement packet activation_base_sha is not an ancestor of "
+            "activation_end_sha"
+        )
+        return tuple(problems)
+    if not (base_available and end_available):
+        if registered_contract is None:
+            problems.append(
+                "retirement packet history is unavailable and no registered "
+                "digest contract exists"
+            )
+        return tuple(problems)
+
+    source_bytes = _git_object_bytes(root, activation_base, source_path)
+    if source_bytes is None:
+        problems.append(
+            "retirement packet source preimage is missing at activation_base_sha"
+        )
+        return tuple(problems)
+    replacement_bytes = _git_object_bytes(root, activation_end, source_path)
+    if replacement_bytes is None:
+        problems.append(
+            "retirement packet replacement is missing at activation_end_sha"
+        )
+        return tuple(problems)
+    try:
+        replacement_text = replacement_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        problems.append("retirement packet historical replacement is not UTF-8")
+        return tuple(problems)
+
+    historical_entries: list[StagedMarkdown] = [
         StagedMarkdown("M", source_path, replacement_text),
         StagedMarkdown("A", normalized_packet_path, packet_text),
-    )
+    ]
+    claims = packet.get("claims")
+    owner_paths: set[str] = set()
+    if isinstance(claims, list):
+        for claim in claims:
+            if not isinstance(claim, dict):
+                continue
+            locator = claim.get("owner_locator")
+            if isinstance(locator, dict) and isinstance(locator.get("path"), str):
+                owner_paths.add(locator["path"])
+    for raw_owner_path in sorted(owner_paths):
+        owner_path = _normalized_evidence_path(raw_owner_path)
+        if owner_path is None:
+            continue
+        owner_bytes = _git_object_bytes(root, activation_end, owner_path)
+        if owner_bytes is None:
+            problems.append(
+                f"retirement packet owner path is missing at activation_end_sha: "
+                f"{owner_path}"
+            )
+            continue
+        try:
+            owner_text = owner_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            problems.append(
+                f"retirement packet owner path is not UTF-8 at "
+                f"activation_end_sha: {owner_path}"
+            )
+            continue
+        historical_entries.append(StagedMarkdown("M", owner_path, owner_text))
+    entries = tuple(historical_entries)
     placement_problems = same_path_replacement_problems(
         root,
         entries[0],
         packet_candidates={source_path: [packet]},
         entries=entries,
         source_bytes_override=source_bytes,
+        validate_dependencies=False,
     )
-    problems = [problem.reason for problem in placement_problems]
+    problems.extend(problem.reason for problem in placement_problems)
 
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{activation_base}...HEAD", "--"],
+        [
+            "git",
+            "diff",
+            "--name-only",
+            f"{activation_base}...{activation_end}",
+            "--",
+        ],
         cwd=root,
         check=False,
         capture_output=True,
@@ -852,7 +1009,7 @@ def committed_same_path_retirement_packet_problems(
         timeout=20,
     )
     if result.returncode != 0:
-        problems.append("retirement packet activation diff cannot be enumerated")
+        problems.append("retirement packet fixed activation diff cannot be enumerated")
         return tuple(problems)
     changed_paths = {
         _docs_scan.normalize_repo_rel_path(line)
@@ -972,7 +1129,9 @@ def deletion_retirement_problem(
         )
 
     owner_paths = _string_list(evidence.get("owner_paths"))
-    if not _owner_paths_exist(root, owner_paths, entries):
+    if owner_paths is None or not owner_paths or not _owner_paths_exist(
+        root, owner_paths, entries
+    ):
         return PlacementProblem(
             path=path,
             reason="retirement evidence owner_paths do not all exist in repo",
@@ -982,7 +1141,14 @@ def deletion_retirement_problem(
         )
 
     referrers = _exact_referrers(root, path, entries)
-    evidence_referrers = tuple(sorted(_string_list(evidence.get("exact_referrers"))))
+    raw_evidence_referrers = _string_list(evidence.get("exact_referrers"))
+    if raw_evidence_referrers is None:
+        return PlacementProblem(
+            path=path,
+            reason="retirement evidence exact_referrers must be a string list",
+            required_marker="Regenerate evidence with an exact string-list census.",
+        )
+    evidence_referrers = tuple(sorted(raw_evidence_referrers))
     if referrers:
         return PlacementProblem(
             path=path,

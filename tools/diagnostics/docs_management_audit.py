@@ -33,6 +33,7 @@ from tools.diagnostics.docs_placement_guard import (  # noqa: E402
     is_retirement_evidence_path,
 )
 from tools.diagnostics.docs_policy import (  # noqa: E402
+    COMMITTED_RETIREMENT_PACKET_CONTRACTS,
     DOC_CANONICAL_OWNER_FILES,
     PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
@@ -624,8 +625,32 @@ def committed_retirement_packet_review_for_repo(
 ) -> dict[str, object]:
     checked_paths: list[str] = []
     problems: list[dict[str, str]] = []
+    normalized_scan_paths = {
+        _docs_scan.normalize_repo_rel_path(path) for path in scan_paths
+    }
+    registered_paths_checked: set[str] = set()
+    for rel_path, contract in sorted(COMMITTED_RETIREMENT_PACKET_CONTRACTS.items()):
+        registered_paths_checked.add(rel_path)
+        checked_paths.append(rel_path)
+        if rel_path not in normalized_scan_paths or not (root / rel_path).is_file():
+            problems.append(
+                {
+                    "path": rel_path,
+                    "problem": "registered retirement packet is missing or untracked",
+                }
+            )
+            continue
+        for problem in committed_same_path_retirement_packet_problems(
+            root,
+            rel_path,
+            contract=contract,
+        ):
+            problems.append({"path": rel_path, "problem": problem})
+
     for rel_path in sorted(scan_paths):
         if not is_retirement_evidence_path(rel_path):
+            continue
+        if rel_path in registered_paths_checked:
             continue
         path = root / rel_path
         try:
@@ -662,14 +687,23 @@ def committed_retirement_packet_review_for_repo(
         ):
             continue
         checked_paths.append(rel_path)
+        problems.append(
+            {
+                "path": rel_path,
+                "problem": (
+                    "body_to_compatibility_index packet is not registered in the "
+                    "committed retirement contract"
+                ),
+            }
+        )
         for problem in committed_same_path_retirement_packet_problems(
             root,
             rel_path,
         ):
             problems.append({"path": rel_path, "problem": problem})
     return {
-        "checked_files": len(checked_paths),
-        "checked_paths": checked_paths,
+        "checked_files": len(set(checked_paths)),
+        "checked_paths": sorted(set(checked_paths)),
         "problems": problems,
         "status": "pass" if not problems else "fail",
     }

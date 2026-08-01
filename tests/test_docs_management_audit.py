@@ -13,7 +13,11 @@ from tools.diagnostics.docs_management_audit import (
     write_topic_clusters_tsv,
     write_topic_index_readmes,
 )
-from tools.diagnostics.docs_policy import GOVERNANCE_RULE_FAMILY_CONTRACTS
+from tools.diagnostics.docs_policy import (
+    CONTROL_PLANE_PATH,
+    GOVERNANCE_RULE_FAMILY_CONTRACTS,
+    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
+)
 
 CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
@@ -156,8 +160,20 @@ def _write_permanent_root_contracts(root: Path) -> None:
     )
 
 
+def _write_registered_retirement_contract(root: Path) -> None:
+    for rel_path in (
+        CONTROL_PLANE_PATH,
+        PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
+    ):
+        _write(
+            root / rel_path,
+            (PROJECT_ROOT / rel_path).read_text(encoding="utf-8"),
+        )
+
+
 def _clean_repo(root: Path) -> None:
     _write_permanent_root_contracts(root)
+    _write_registered_retirement_contract(root)
     _write(
         root / CURRENT_HANDOFF,
         "# Current handoff\n\nStatus: committed.\n",
@@ -1278,7 +1294,7 @@ def test_productization_routing_index_wins_over_backfill_body_mentions(
         if item["topic_key"] == "productization"
     )
     assert index_path in cluster["supporting_sample_paths"]
-    assert cluster["topic_owner_count"] == 0
+    assert cluster["topic_owner_count"] == 1
     assert index_path not in cluster["owner_paths"]
 
 
@@ -2159,6 +2175,7 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
     root.mkdir()
     subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
     _write_permanent_root_contracts(root)
+    _write_registered_retirement_contract(root)
     _clean_vault(vault)
     _write(
         root / ".gitignore",
@@ -2173,7 +2190,14 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
         "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
     )
     subprocess.run(
-        ["git", "add", ".gitignore", RETENTION_INVENTORY],
+        [
+            "git",
+            "add",
+            ".gitignore",
+            RETENTION_INVENTORY,
+            CONTROL_PLANE_PATH,
+            PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
+        ],
         cwd=root,
         check=True,
         capture_output=True,
@@ -2304,6 +2328,25 @@ def test_docs_audit_blocks_invalid_committed_retirement_packet(
         msg.severity == "blocker"
         and msg.path == packet_path
         and expected_problem in msg.message
+        for msg in result.messages
+    )
+
+
+def test_docs_audit_requires_registered_packet_when_control_plane_exists(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    (root / PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL).unlink()
+
+    result = _run_audit(root, vault)
+
+    assert any(
+        msg.severity == "blocker"
+        and msg.path == PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL
+        and "registered retirement packet is missing or untracked" in msg.message
         for msg in result.messages
     )
 
@@ -2462,5 +2505,5 @@ def test_clean_repo_and_vault_have_no_blockers(tmp_path: Path) -> None:
     result = _run_audit(root, vault)
 
     assert result.blockers == ()
-    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 2
+    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 3
     assert result.summary["repo"]["docs_routing_review"]["candidate_files"] == 0

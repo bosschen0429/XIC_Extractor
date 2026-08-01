@@ -111,6 +111,7 @@ def check_productization_state(
         rows,
         productization_summary_text,
         control_plane_text,
+        handoff_text,
         problems,
     )
     _check_product_topic_authority_partition(
@@ -483,6 +484,7 @@ def _check_narrative_authority_partition(
     rows: Sequence[Mapping[str, str]],
     productization_summary_text: str,
     control_plane_text: str,
+    status_anchor_text: str,
     problems: list[str],
 ) -> None:
     """Reject mutable structured state copied into narrative routing surfaces."""
@@ -494,6 +496,7 @@ def _check_narrative_authority_partition(
             for line in control_plane_text.splitlines()
             if not line.lstrip().startswith("#")
         ),
+        PRODUCTIZATION_STATUS_ANCHOR_PATH: status_anchor_text,
     }
     forbidden_literals = {
         row.get("product_authority_scope", "")

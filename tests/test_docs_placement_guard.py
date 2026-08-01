@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
 
 import pytest
 
+from tools.diagnostics import docs_placement_guard
 from tools.diagnostics.docs_placement_guard import (
     StagedMarkdown,
     check_doc_placement,
@@ -68,7 +70,29 @@ def _same_path_fixture(
         "2026-08-01-retirement-evidence.json"
     )
     source = "# Old control plane\n\n## Durable Claim\nStable capability rule.\n"
-    replacement = "# Productization compatibility index\n\nStable pointers only.\n"
+    replacement = "\n".join(
+        (
+            "# Productization compatibility index",
+            "",
+            "Doc placement: formal_repo_doc",
+            "Doc kind: manifest",
+            "Doc lifecycle: active",
+            "Repo owner: docs/product/productization.md",
+            "",
+            "This path is a compatibility lookup surface.",
+            "",
+            "## Authority routes",
+            "",
+            "Stable pointers only.",
+            "",
+            "## Historical source",
+            "",
+            "Historical source pointer.",
+            "",
+            "## Lane anchor index",
+            "",
+        )
+    )
     owner_path = "docs/product/backfill.md"
     _write(root, source_path, source)
     _write(root, owner_path, "# Backfill\n\n## Contract\nStable capability rule.\n")
@@ -185,6 +209,7 @@ def _commit_same_path_fixture(
     root: Path,
     *,
     hard_zero_files: list[str] | None = None,
+    protected_prefixes: list[str] | None = None,
 ) -> tuple[str, str]:
     source_path, evidence_path, replacement, packet = _same_path_fixture(root)
     activation_base = subprocess.run(
@@ -202,7 +227,7 @@ def _commit_same_path_fixture(
             "allowed_protected_writes": [],
             "read_only_protected_surfaces": {
                 "exact_paths": [],
-                "prefixes": [],
+                "prefixes": protected_prefixes or [],
                 "rule": "No protected writes are needed in this fixture.",
             },
         }
@@ -230,7 +255,56 @@ def _commit_same_path_fixture(
         check=True,
         capture_output=True,
     )
+    activation_end = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    packet["activation_end_sha"] = activation_end
+    _write(root, evidence_path, json.dumps(packet, indent=2) + "\n")
+    subprocess.run(
+        ["git", "add", evidence_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "register retirement evidence",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
     return source_path, evidence_path
+
+
+def _packet_contract(root: Path, evidence_path: str) -> dict[str, object]:
+    packet_text = (root / evidence_path).read_text(encoding="utf-8")
+    packet = json.loads(packet_text)
+    return {
+        field: packet[field]
+        for field in (
+            "transaction",
+            "source_path",
+            "activation_base_sha",
+            "activation_end_sha",
+            "source_hash",
+            "source_line_count",
+            "replacement_hash",
+        )
+    } | {
+        "packet_sha256": hashlib.sha256(packet_text.encode("utf-8")).hexdigest()
+    }
 
 
 def _problems(root: Path, status: str, path: str) -> list[str]:
@@ -295,6 +369,41 @@ def test_same_path_compatibility_replacement_with_complete_evidence_passes(
     assert result.problems == ()
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "expected_problem"),
+    (
+        (
+            "active_followups",
+            ["valid", 7],
+            "packet active_followups must be a string list",
+        ),
+        (
+            "absorbed_claims",
+            ["CP-CLAIM-001", None],
+            "packet absorbed_claims must be a string list",
+        ),
+    ),
+)
+def test_same_path_replacement_rejects_malformed_string_lists(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    expected_problem: str,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    packet[field] = value
+
+    result = _same_path_result(
+        tmp_path,
+        source_path,
+        evidence_path,
+        replacement,
+        packet,
+    )
+
+    assert any(expected_problem in problem.reason for problem in result.problems)
+
+
 def test_committed_same_path_retirement_packet_passes_clean_checkout_review(
     tmp_path: Path,
 ) -> None:
@@ -327,6 +436,84 @@ def test_committed_same_path_retirement_packet_rejects_changed_hard_zero_path(
         problem == f"retirement packet hard-zero paths changed: {source_path}"
         for problem in problems
     )
+
+
+def test_registered_retirement_packet_passes_without_historical_git_objects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    contract = _packet_contract(tmp_path, evidence_path)
+    monkeypatch.setattr(
+        docs_placement_guard,
+        "_git_commit_available",
+        lambda *_args: False,
+    )
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+        contract=contract,
+    )
+
+    assert problems == ()
+
+
+def test_registered_retirement_packet_rejects_transaction_tampering(
+    tmp_path: Path,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    contract = _packet_contract(tmp_path, evidence_path)
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    packet["transaction"] = "renamed_transaction"
+    _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+        contract=contract,
+    )
+
+    assert "registered retirement packet digest mismatch" in problems
+    assert "registered retirement packet transaction mismatch" in problems
+
+
+def test_committed_retirement_replays_fixed_historical_window(
+    tmp_path: Path,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(
+        tmp_path,
+        protected_prefixes=["docs/product"],
+    )
+    _write(tmp_path, "docs/product/backfill.md", "# Future owner revision\n")
+    subprocess.run(
+        ["git", "add", "docs/product/backfill.md"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "future owner revision",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+    )
+
+    assert problems == ()
 
 
 def test_same_path_replacement_rejects_incomplete_source_section_coverage(
