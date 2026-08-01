@@ -151,17 +151,23 @@ def markdown_without_fenced_code(text: str) -> str:
         match = re.match(r"^[ \t]*", value)
         return column_width(match.group(0)) if match is not None else 0
 
-    def opening_container_content(line: str) -> tuple[str, int, int]:
-        """Remove opening containers and return quote depth/list indentation."""
+    def opening_container_content(
+        line: str,
+    ) -> tuple[str, tuple[int, ...], int]:
+        """Remove opening containers and capture their indentation contract."""
 
         content = line
-        blockquote_depth = 0
+        blockquote_indents: list[int] = []
         list_indent_width = 0
         while True:
             blockquote = re.match(r"^[ \t]*>[ \t]?", content)
             if blockquote:
+                marker = blockquote.group(0)
+                quote_indent = column_width(marker[: marker.index(">")])
+                blockquote_indents.append(
+                    list_indent_width + (quote_indent if quote_indent > 3 else 0)
+                )
                 content = content[blockquote.end() :]
-                blockquote_depth += 1
                 # Closing detection consumes all indentation before this quote
                 # marker, so only list containers inside the final quote remain.
                 list_indent_width = 0
@@ -177,15 +183,26 @@ def markdown_without_fenced_code(text: str) -> str:
                 )
                 content = content[list_item.end() :]
                 continue
-            return content, blockquote_depth, list_indent_width
+            opening_indent = leading_indent_width(content)
+            final_container_indent = list_indent_width + (
+                opening_indent if opening_indent > 3 else 0
+            )
+            return content, tuple(blockquote_indents), final_container_indent
 
-    def closing_container_content(line: str, blockquote_depth: int) -> str | None:
+    def closing_container_content(
+        line: str,
+        blockquote_indents: tuple[int, ...],
+    ) -> str | None:
         """Remove only the blockquote context captured by the opening fence."""
 
         content = line
-        for _ in range(blockquote_depth):
+        for expected_indent in blockquote_indents:
             blockquote = re.match(r"^[ \t]*>[ \t]?", content)
             if blockquote is None:
+                return None
+            marker = blockquote.group(0)
+            actual_indent = column_width(marker[: marker.index(">")])
+            if not expected_indent <= actual_indent <= expected_indent + 3:
                 return None
             content = content[blockquote.end() :]
         return content
@@ -193,11 +210,11 @@ def markdown_without_fenced_code(text: str) -> str:
     visible: list[str] = []
     fence_character = ""
     fence_length = 0
-    fence_blockquote_depth = 0
+    fence_blockquote_indents: tuple[int, ...] = ()
     fence_container_indent_width = 0
     for line in text.splitlines():
         if not fence_character:
-            logical_line, blockquote_depth, list_indent_width = (
+            logical_line, blockquote_indents, container_indent_width = (
                 opening_container_content(line)
             )
             # Container removal also covers list indentation.  Accepting any
@@ -208,17 +225,17 @@ def markdown_without_fenced_code(text: str) -> str:
                 marker = opening.group(1)
                 fence_character = marker[0]
                 fence_length = len(marker)
-                fence_blockquote_depth = blockquote_depth
-                fence_container_indent_width = (
-                    list_indent_width + leading_indent_width(logical_line)
-                )
+                fence_blockquote_indents = blockquote_indents
+                fence_container_indent_width = container_indent_width
                 visible.append("")
                 continue
             visible.append(line)
             continue
-        logical_line = closing_container_content(line, fence_blockquote_depth)
+        logical_line = closing_container_content(line, fence_blockquote_indents)
         if (
             logical_line is not None
+            and leading_indent_width(logical_line)
+            >= fence_container_indent_width
             and leading_indent_width(logical_line)
             <= fence_container_indent_width + 3
             and re.match(
@@ -229,7 +246,7 @@ def markdown_without_fenced_code(text: str) -> str:
         ):
             fence_character = ""
             fence_length = 0
-            fence_blockquote_depth = 0
+            fence_blockquote_indents = ()
             fence_container_indent_width = 0
         visible.append("")
     return "\n".join(visible)
