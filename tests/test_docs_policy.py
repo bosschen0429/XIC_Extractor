@@ -133,6 +133,11 @@ def test_permanent_root_contract_ignores_fenced_only_route() -> None:
         "``code\n[sample](docs/product/README.md)\n``",
         "    [sample](docs/product/README.md)",
         ">     [sample](docs/product/README.md)",
+        "-     [sample](docs/product/README.md)",
+        "1.     [sample](docs/product/README.md)",
+        "> -     [sample](docs/product/README.md)",
+        "- -     [sample](docs/product/README.md)",
+        "-   \t[sample](docs/product/README.md)",
     ),
 )
 def test_permanent_root_contract_ignores_non_fenced_code_only_route(

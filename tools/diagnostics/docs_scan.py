@@ -255,6 +255,15 @@ def markdown_without_fenced_code(text: str) -> str:
 def markdown_without_block_code(text: str) -> str:
     """Remove fenced and indented code while preserving line structure."""
 
+    def column_width(value: str, *, start: int = 0) -> int:
+        column = start
+        for character in value:
+            if character == "\t":
+                column += 4 - (column % 4)
+            else:
+                column += 1
+        return column - start
+
     unfenced_lines: list[str] = []
     for line in markdown_without_fenced_code(text).splitlines():
         # A four-column top-level indent is an indented code block, not rendered
@@ -265,9 +274,21 @@ def markdown_without_block_code(text: str) -> str:
         logical_line = line
         while True:
             blockquote = re.match(r"^[ \t]{0,3}>[ \t]?", logical_line)
-            if blockquote is None:
+            if blockquote is not None:
+                logical_line = logical_line[blockquote.end() :]
+                continue
+            list_item = re.match(
+                r"^([ \t]{0,3})([-+*]|\d{1,9}[.)])([ \t]+)",
+                logical_line,
+            )
+            if list_item is None:
                 break
-            logical_line = logical_line[blockquote.end() :]
+            leading, marker, padding = list_item.groups()
+            padding_start = column_width(leading) + len(marker)
+            if column_width(padding, start=padding_start) > 4:
+                logical_line = "    "
+                break
+            logical_line = logical_line[list_item.end() :]
         if re.match(r"^(?: {4}|\t)", logical_line):
             unfenced_lines.append("")
         else:
