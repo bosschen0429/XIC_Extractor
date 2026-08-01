@@ -29,6 +29,7 @@ from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     CONTROL_PLANE_PATH,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
+    PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE,
     PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE,
     PRODUCTIZATION_SCHEMA_REL,
     PRODUCTIZATION_STATUS_ANCHOR_PATH,
@@ -380,6 +381,8 @@ def _check_authority_boundaries(
         output_change = any(value == "TRUE" for value in output_change_flags.values())
         is_writer_lane = row.get("lane_id") in WRITER_LANE_AUTHORITY
         if not is_writer_lane:
+            if row.get("may_touch_matrix") == "TRUE":
+                problems.append(f"row {index}: non-writer row may not touch matrix")
             if scope:
                 problems.append(f"row {index}: non-writer row has authority scope")
             if output_change:
@@ -542,6 +545,11 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
         f"`source_repo_path:{CONTROL_PLANE_PATH}`.",
         "Vault note title:",
         f"`{PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE}`.",
+        "Its searchable locator note is",
+        f"`{PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE}`; the",
+        "locator carries the stable `source_repo_path:` key while the source note "
+        "stays",
+        "byte-for-byte identical to the retired body.",
         "The checked retirement transaction is recorded in the",
         (
             "[retirement evidence packet](../file-management/docs-cleanup/"

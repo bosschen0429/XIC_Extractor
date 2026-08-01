@@ -1,9 +1,51 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 CONTROL_PLANE_PATH = "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+
+
+def source_copy_note_title(source_path: str, source_hash: str) -> str:
+    """Return the deterministic title of an exact retired source copy."""
+
+    return f"{Path(source_path).stem}-source-{source_hash[:12]}"
+
+
+def source_copy_locator_note_title(source_path: str, source_hash: str) -> str:
+    """Return the deterministic title of the searchable locator sidecar."""
+
+    return f"{source_copy_note_title(source_path, source_hash)}-locator"
+
+
+def source_copy_locator_text(source_path: str, source_hash: str) -> str:
+    """Render the non-authoritative locator without changing exact source bytes."""
+
+    exact_note_title = source_copy_note_title(source_path, source_hash)
+    return "\n".join(
+        (
+            "# Retired source locator",
+            "",
+            f"source_repo_path:{source_path}",
+            "",
+            f"Exact source note: [[{exact_note_title}]]",
+            "",
+            f"Source SHA-256: `{source_hash}`",
+            "",
+        )
+    )
+
+
+def source_copy_locator_sha256(source_path: str, source_hash: str) -> str:
+    """Hash the deterministic searchable locator sidecar."""
+
+    return hashlib.sha256(
+        source_copy_locator_text(source_path, source_hash).encode("utf-8")
+    ).hexdigest()
+
+
 PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS = (
     "# Productization compatibility index",
     "Doc placement: formal_repo_doc",
@@ -38,8 +80,18 @@ PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL = (
     "docs/superpowers/file-management/docs-cleanup/"
     "2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json"
 )
-PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE = (
-    "2026-06-15-productization-control-plane-source-97778ff9fb5c"
+PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH = (
+    "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
+)
+PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE = source_copy_note_title(
+    CONTROL_PLANE_PATH,
+    PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
+)
+PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE = (
+    source_copy_locator_note_title(
+        CONTROL_PLANE_PATH,
+        PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
+    )
 )
 COMMITTED_RETIREMENT_PACKET_CONTRACTS = {
     PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL: {
@@ -47,19 +99,24 @@ COMMITTED_RETIREMENT_PACKET_CONTRACTS = {
         "source_path": CONTROL_PLANE_PATH,
         "activation_base_sha": "a2d5032befb2a4439daff8a018aa551e3607f5f6",
         "activation_end_sha": "f7736355feb3e3c3273e23cb0a32841cfd469a7b",
-        "source_hash": (
-            "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
-        ),
+        "source_hash": PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
         "source_line_count": 5621,
         "source_copy_destination": f"source_repo_path:{CONTROL_PLANE_PATH}",
         "source_copy_note_title": (
             PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE
         ),
+        "source_copy_locator_note_title": (
+            PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE
+        ),
+        "source_copy_locator_sha256": source_copy_locator_sha256(
+            CONTROL_PLANE_PATH,
+            PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
+        ),
         "replacement_hash": (
             "21f6f051b8167e1da4411a66df498964e9c6d1c814aa2dbc0ea773f6fef2f340"
         ),
         "packet_sha256": (
-            "038b5be4470c1c4cf30092ab9e16679cf6bbce40e183e4e2693215aa75eebe70"
+            "8ba64498edc0f8f877369e3012cb2bf830dcaf1fc3b5f9545277760704f5b1e8"
         ),
     }
 }

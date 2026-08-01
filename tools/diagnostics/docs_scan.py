@@ -143,7 +143,11 @@ def markdown_without_fenced_code(text: str) -> str:
     fence_length = 0
     for line in text.splitlines():
         if not fence_character:
-            opening = re.match(r"^[ \t]{0,3}(`{3,}|~{3,})", line)
+            # A fence may be nested under a list and therefore have more than
+            # three columns of document-level indentation.  For governance
+            # parsing, an even-more-indented marker is also non-visible code,
+            # so accepting arbitrary leading whitespace is fail-closed.
+            opening = re.match(r"^[ \t]*(`{3,}|~{3,})", line)
             if opening:
                 marker = opening.group(1)
                 fence_character = marker[0]
@@ -153,7 +157,7 @@ def markdown_without_fenced_code(text: str) -> str:
             visible.append(line)
             continue
         if re.match(
-            rf"^[ \t]{{0,3}}{re.escape(fence_character)}"
+            rf"^[ \t]*{re.escape(fence_character)}"
             rf"{{{fence_length},}}[ \t]*$",
             line,
         ):

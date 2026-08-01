@@ -125,6 +125,23 @@ def test_permanent_root_contract_ignores_fenced_only_route() -> None:
     assert "required route must resolve: docs/product/README.md" in problems
 
 
+def test_permanent_root_contract_ignores_nested_fenced_only_route() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += (
+        "\n100. Example only\n"
+        "     ```markdown\n"
+        "     [fenced route](docs/product/README.md)\n"
+        "     ```\n"
+    )
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
 def test_dependency_census_resolves_relative_markdown_html_and_constant_consumers(
     tmp_path: Path,
 ) -> None:

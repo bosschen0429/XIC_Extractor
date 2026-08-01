@@ -643,6 +643,24 @@ def test_checker_rejects_non_writer_scope_without_write_flag(tmp_path: Path) -> 
     assert any("non-writer row has authority scope" in problem for problem in problems)
 
 
+def test_checker_rejects_non_writer_matrix_touch_without_write_flag(
+    tmp_path: Path,
+) -> None:
+    mutated = _mutated_index(
+        tmp_path,
+        "review_action_candidate_sidecar_v1",
+        {
+            "write_authority": "FALSE",
+            "product_authority_scope": "",
+            "may_touch_matrix": "TRUE",
+        },
+    )
+
+    problems = _check_with_index(mutated)
+
+    assert any("non-writer row may not touch matrix" in problem for problem in problems)
+
+
 def test_checker_rejects_non_writer_product_output_changes(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,

@@ -101,6 +101,12 @@ Agents should search Obsidian frontmatter or text for that key before reading
 full private notes. Do not store absolute vault paths in repo docs. The Obsidian
 pointer is provenance and deep context, not product authority.
 
+When exact byte preservation prevents adding that key to an original source
+copy, write and read back a deterministic adjacent `-locator` note instead.
+The locator must contain the stable key, link to the exact source-copy note,
+and pin both the source hash and its own content hash in the retirement packet.
+It is a discovery sidecar only and must not carry product authority.
+
 Use Obsidian/wiki skills as the private-vault side of the workflow:
 
 | Step | Skill route | Responsibility |

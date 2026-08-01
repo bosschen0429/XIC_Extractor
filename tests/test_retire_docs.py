@@ -111,6 +111,49 @@ def test_source_copy_only_writes_and_reads_back_exact_bytes(tmp_path: Path) -> N
         f"control-plane-source-{result.source_hash[:12]}"
     )
     assert result.destination.read_bytes() == source.read_bytes()
+    assert result.locator_readback_verified
+    assert result.locator_destination is not None
+    assert result.locator_destination.stem == (
+        f"control-plane-source-{result.source_hash[:12]}-locator"
+    )
+    locator_text = result.locator_destination.read_text(encoding="utf-8")
+    assert f"source_repo_path:{rel}" in locator_text
+    assert f"[[{result.destination.stem}]]" in locator_text
+    assert result.source_hash in locator_text
+    assert _sha256(locator_text) == result.locator_hash
+
+
+def test_source_copy_only_rejects_conflicting_locator_sidecar(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/plans/control-plane.md"
+    source = repo / rel
+    text = "# Source\n"
+    _write(source, text)
+    source_hash = _sha256(text)
+    locator = (
+        vault
+        / VAULT_ARCHIVE_DIR
+        / f"control-plane-source-{source_hash[:12]}-locator.md"
+    )
+    _write(locator, "# Unrelated note\n")
+
+    result = copy_source_only(
+        source,
+        repo,
+        vault,
+        evidence=_same_path_copy_evidence(rel, text),
+        execute=True,
+    )
+
+    assert result.error == "source-copy locator exists with different bytes"
+    assert not result.readback_verified
+    assert not result.locator_readback_verified
+    assert not (
+        vault
+        / VAULT_ARCHIVE_DIR
+        / f"control-plane-source-{source_hash[:12]}.md"
+    ).exists()
 
 
 def test_source_copy_only_rejects_stale_evidence_hash(tmp_path: Path) -> None:

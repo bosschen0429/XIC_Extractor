@@ -15,6 +15,10 @@ from tools.diagnostics.docs_placement_guard import (
     parse_name_status,
     staged_markdown,
 )
+from tools.diagnostics.docs_policy import (
+    source_copy_locator_note_title,
+    source_copy_locator_sha256,
+)
 
 
 def _write(root: Path, path: str, text: str) -> None:
@@ -133,6 +137,11 @@ def _same_path_fixture(
     source_copy_note_title = (
         f"2026-06-15-productization-control-plane-source-{source_hash[:12]}"
     )
+    source_copy_locator_note = source_copy_locator_note_title(
+        source_path,
+        source_hash,
+    )
+    source_copy_locator_hash = source_copy_locator_sha256(source_path, source_hash)
     lines = source.encode("utf-8").splitlines(keepends=True)
     claim_hash = _source_hash(b"".join(lines[2:4]).decode("utf-8"))
     section_hash = source_hash
@@ -158,6 +167,9 @@ def _same_path_fixture(
         "source_copy_readback_verified": True,
         "source_copy_destination": source_copy_destination,
         "source_copy_note_title": source_copy_note_title,
+        "source_copy_locator_note_title": source_copy_locator_note,
+        "source_copy_locator_sha256": source_copy_locator_hash,
+        "source_copy_locator_readback_verified": True,
         "source_copy_hash": source_hash,
         "source_hash": source_hash,
         "replacement_hash": replacement_hash,
@@ -177,6 +189,9 @@ def _same_path_fixture(
         "source_copy_readback_verified": True,
         "source_copy_destination": source_copy_destination,
         "source_copy_note_title": source_copy_note_title,
+        "source_copy_locator_note_title": source_copy_locator_note,
+        "source_copy_locator_sha256": source_copy_locator_hash,
+        "source_copy_locator_readback_verified": True,
         "source_copy_hash": source_hash,
         "replacement_hash": replacement_hash,
         "active_followups": [],
@@ -326,6 +341,8 @@ def _packet_contract(root: Path, evidence_path: str) -> dict[str, object]:
             "source_line_count",
             "source_copy_destination",
             "source_copy_note_title",
+            "source_copy_locator_note_title",
+            "source_copy_locator_sha256",
             "replacement_hash",
         )
     } | {
@@ -387,6 +404,34 @@ def test_governance_index_ignores_fenced_only_table() -> None:
     table_end = text.index("\n\n", table_start)
     table = text[table_start:table_end]
     text = text[:table_start] + f"```markdown\n{table}\n```" + text[table_end:]
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    assert any(
+        "governance index must contain exactly the six declared rule families"
+        in problem.reason
+        for problem in result.problems
+    )
+
+
+def test_governance_index_ignores_nested_fenced_only_table() -> None:
+    root = Path(__file__).parents[1]
+    path = "docs/agent/codex-operating-system.md"
+    text = (root / path).read_text(encoding="utf-8")
+    table_start = text.index("| Rule family |")
+    table_end = text.index("\n\n", table_start)
+    table = text[table_start:table_end]
+    nested_table = "\n".join(f"     {line}" for line in table.splitlines())
+    text = (
+        text[:table_start]
+        + "100. Example only\n     ```markdown\n"
+        + nested_table
+        + "\n     ```"
+        + text[table_end:]
+    )
 
     result = check_doc_placement(
         root,
@@ -728,6 +773,16 @@ def test_registered_retirement_packet_rejects_transaction_tampering(
             "source_copy_note_title",
             "unrelated-private-note",
             "source-copy note title mismatch",
+        ),
+        (
+            "source_copy_locator_note_title",
+            "unrelated-locator-note",
+            "source-copy locator note title mismatch",
+        ),
+        (
+            "source_copy_locator_sha256",
+            "0" * 64,
+            "source-copy locator digest mismatch",
         ),
     ),
 )
@@ -1124,6 +1179,22 @@ def test_same_path_replacement_rejects_failed_source_copy_readback(
     )
 
     assert any("source-copy readback" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_failed_source_copy_locator_readback(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    packet["source_copy_locator_readback_verified"] = False
+    packet["entries"][0]["source_copy_locator_readback_verified"] = False
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any(
+        "source-copy locator readback" in p.reason for p in result.problems
+    )
 
 
 def test_same_path_replacement_rejects_residual_dependency(tmp_path: Path) -> None:

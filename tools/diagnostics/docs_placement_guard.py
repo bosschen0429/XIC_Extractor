@@ -42,6 +42,9 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     is_productization_compatibility_index_text,
     is_productization_control_plane_path,
     is_superpowers_spec_lane_path,
+    source_copy_locator_note_title,
+    source_copy_locator_sha256,
+    source_copy_note_title,
 )
 
 ACTIVE_STUB_FIELDS = {
@@ -610,6 +613,11 @@ def same_path_replacement_problems(
         or evidence.get("source_copy_readback_verified") is not True
     ):
         add("private source-copy readback is not verified")
+    if (
+        packet.get("source_copy_locator_readback_verified") is not True
+        or evidence.get("source_copy_locator_readback_verified") is not True
+    ):
+        add("private source-copy locator readback is not verified")
     for label, mapping in (("packet", packet), ("source mapping", evidence)):
         for field, remaining_message in (
             ("active_followups", "active followups remain"),
@@ -887,6 +895,13 @@ def _committed_packet_semantic_problems(
         or source_mapping.get("source_copy_readback_verified") is not True
     ):
         problems.append("retirement packet source-copy readback is not verified")
+    if (
+        packet.get("source_copy_locator_readback_verified") is not True
+        or source_mapping.get("source_copy_locator_readback_verified") is not True
+    ):
+        problems.append(
+            "retirement packet source-copy locator readback is not verified"
+        )
     expected_destination = f"source_repo_path:{source_path}"
     if (
         packet.get("source_copy_destination") != expected_destination
@@ -895,7 +910,7 @@ def _committed_packet_semantic_problems(
         problems.append("retirement packet source-copy destination mismatch")
     source_hash = packet.get("source_hash")
     expected_note_title = (
-        f"{Path(source_path).stem}-source-{source_hash[:12]}"
+        source_copy_note_title(source_path, source_hash)
         if isinstance(source_hash, str)
         else ""
     )
@@ -905,6 +920,31 @@ def _committed_packet_semantic_problems(
         or source_mapping.get("source_copy_note_title") != expected_note_title
     ):
         problems.append("retirement packet source-copy note title mismatch")
+    expected_locator_note_title = (
+        source_copy_locator_note_title(source_path, source_hash)
+        if isinstance(source_hash, str)
+        else ""
+    )
+    if (
+        not expected_locator_note_title
+        or packet.get("source_copy_locator_note_title")
+        != expected_locator_note_title
+        or source_mapping.get("source_copy_locator_note_title")
+        != expected_locator_note_title
+    ):
+        problems.append("retirement packet source-copy locator note title mismatch")
+    expected_locator_hash = (
+        source_copy_locator_sha256(source_path, source_hash)
+        if isinstance(source_hash, str)
+        else ""
+    )
+    if (
+        not expected_locator_hash
+        or packet.get("source_copy_locator_sha256") != expected_locator_hash
+        or source_mapping.get("source_copy_locator_sha256")
+        != expected_locator_hash
+    ):
+        problems.append("retirement packet source-copy locator digest mismatch")
     for label, mapping in (("packet", packet), ("source mapping", source_mapping)):
         for field in ("active_followups", "unresolved_claims"):
             values = _string_list(mapping.get(field))
@@ -917,7 +957,12 @@ def _committed_packet_semantic_problems(
                     f"retirement packet {label} {field} must be empty"
                 )
 
-    sha_fields = ("source_hash", "source_copy_hash", "replacement_hash")
+    sha_fields = (
+        "source_hash",
+        "source_copy_hash",
+        "source_copy_locator_sha256",
+        "replacement_hash",
+    )
     for field in sha_fields:
         value = packet.get(field)
         if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
@@ -1265,6 +1310,8 @@ def committed_same_path_retirement_packet_problems(
             "source_line_count",
             "source_copy_destination",
             "source_copy_note_title",
+            "source_copy_locator_note_title",
+            "source_copy_locator_sha256",
             "replacement_hash",
         ):
             if packet.get(field) != registered_contract.get(field):

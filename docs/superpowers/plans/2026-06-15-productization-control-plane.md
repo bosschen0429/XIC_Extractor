@@ -29,6 +29,10 @@ The exact retired body is retained privately under
 `source_repo_path:docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
 Vault note title:
 `2026-06-15-productization-control-plane-source-97778ff9fb5c`.
+Its searchable locator note is
+`2026-06-15-productization-control-plane-source-97778ff9fb5c-locator`; the
+locator carries the stable `source_repo_path:` key while the source note stays
+byte-for-byte identical to the retired body.
 The checked retirement transaction is recorded in the
 [retirement evidence packet](../file-management/docs-cleanup/2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json).
 

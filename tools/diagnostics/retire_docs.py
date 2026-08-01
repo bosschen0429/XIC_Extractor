@@ -30,6 +30,10 @@ from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     classify_doc,
     normalize_path_text,
+    source_copy_locator_note_title,
+    source_copy_locator_sha256,
+    source_copy_locator_text,
+    source_copy_note_title,
 )
 
 VAULT_ARCHIVE_DIR = "XIC/Archives/Repo Retired"
@@ -113,6 +117,9 @@ class SourceCopyResult:
     destination: Path | None
     readback_verified: bool
     error: str = ""
+    locator_destination: Path | None = None
+    locator_hash: str = ""
+    locator_readback_verified: bool = False
 
 
 def find_retire_candidates(repo_root: Path) -> list[Path]:
@@ -236,7 +243,12 @@ def copy_source_only(
         )
 
     archive = vault_path / VAULT_ARCHIVE_DIR
-    destination = archive / (f"{source.stem}-source-{source_hash[:12]}{source.suffix}")
+    note_title = source_copy_note_title(rel, source_hash)
+    destination = archive / f"{note_title}{source.suffix}"
+    locator_title = source_copy_locator_note_title(rel, source_hash)
+    locator_destination = archive / f"{locator_title}.md"
+    locator_bytes = source_copy_locator_text(rel, source_hash).encode("utf-8")
+    locator_hash = source_copy_locator_sha256(rel, source_hash)
     if execute:
         archive.mkdir(parents=True, exist_ok=True)
         if destination.exists() and destination.read_bytes() != source_bytes:
@@ -247,20 +259,51 @@ def copy_source_only(
                 False,
                 "source-copy destination exists with different bytes",
             )
+        if (
+            locator_destination.exists()
+            and locator_destination.read_bytes() != locator_bytes
+        ):
+            return SourceCopyResult(
+                rel,
+                source_hash,
+                destination,
+                False,
+                "source-copy locator exists with different bytes",
+                locator_destination=locator_destination,
+                locator_hash=locator_hash,
+            )
         destination.write_bytes(source_bytes)
+        locator_destination.write_bytes(locator_bytes)
         verified = (
             destination.is_file()
             and destination.read_bytes() == source_bytes
             and _source_bytes_hash(destination.read_bytes()) == source_hash
         )
+        locator_verified = (
+            locator_destination.is_file()
+            and locator_destination.read_bytes() == locator_bytes
+            and _source_bytes_hash(locator_destination.read_bytes()) == locator_hash
+        )
     else:
         verified = destination.is_file() and destination.read_bytes() == source_bytes
+        locator_verified = (
+            locator_destination.is_file()
+            and locator_destination.read_bytes() == locator_bytes
+        )
+    error = ""
+    if execute and not verified:
+        error = "source-copy readback failed"
+    elif execute and not locator_verified:
+        error = "source-copy locator readback failed"
     return SourceCopyResult(
         rel,
         source_hash,
         destination,
         verified,
-        "" if (verified or not execute) else "source-copy readback failed",
+        error,
+        locator_destination=locator_destination,
+        locator_hash=locator_hash,
+        locator_readback_verified=locator_verified,
     )
 
 
@@ -624,13 +667,32 @@ def main(argv: list[str] | None = None) -> int:
         note_title = (
             copy_result.destination.stem if copy_result.destination is not None else ""
         )
+        locator_note_title = (
+            copy_result.locator_destination.stem
+            if copy_result.locator_destination is not None
+            else ""
+        )
         print(
             f"Source copy {mode}: {copy_result.source_path}; "
             f"sha256={copy_result.source_hash}; "
             f"note_title={note_title}; "
-            f"readback_verified={str(copy_result.readback_verified).lower()}"
+            f"readback_verified={str(copy_result.readback_verified).lower()}; "
+            f"locator_note_title={locator_note_title}; "
+            f"locator_sha256={copy_result.locator_hash}; "
+            "locator_readback_verified="
+            f"{str(copy_result.locator_readback_verified).lower()}"
         )
-        return 0 if (copy_result.readback_verified or not args.execute) else 1
+        return (
+            0
+            if (
+                not args.execute
+                or (
+                    copy_result.readback_verified
+                    and copy_result.locator_readback_verified
+                )
+            )
+            else 1
+        )
 
     if args.sweep:
         files = find_retire_candidates(repo_root)
