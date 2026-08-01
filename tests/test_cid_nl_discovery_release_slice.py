@@ -9,6 +9,20 @@ def test_current_cid_nl_discovery_release_slice_is_stable() -> None:
     assert release_slice.check_cid_nl_discovery_release_slice() == []
 
 
+def test_release_slice_control_plane_override_fails_closed(
+    tmp_path, capsys
+) -> None:
+    control_plane = tmp_path / "control-plane.md"
+    control_plane.write_text("# Invalid compatibility index\n", encoding="utf-8")
+
+    exit_code = release_slice.main(["--control-plane", str(control_plane)])
+
+    assert exit_code == 1
+    stderr = capsys.readouterr().err
+    assert "productization_state:" in stderr
+    assert "compatibility index must exactly match" in stderr
+
+
 def test_release_slice_handoff_can_name_later_active_goal(tmp_path) -> None:
     roadmap = tmp_path / "roadmap.md"
     handoff = tmp_path / "handoff.md"
