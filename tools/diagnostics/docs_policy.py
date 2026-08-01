@@ -26,7 +26,7 @@ PRODUCTIZATION_STATUS_HANDOFF_PATH = PRODUCTIZATION_STATUS_ANCHOR_PATH
 CLOSEOUT_DIR = "docs/superpowers/closeouts/"
 
 PRODUCTIZATION_SCHEMA_REL = (
-    "docs/superpowers/schemas/productization_control_plane_schema.v1.json"
+    "docs/superpowers/schemas/productization_control_plane_schema.v2.json"
 )
 PRODUCTIZATION_STATUS_INDEX_REL = (
     "docs/superpowers/validation/productization_status_index_v1.tsv"

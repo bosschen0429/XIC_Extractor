@@ -353,6 +353,33 @@ def test_governance_index_rejects_mechanism_drift() -> None:
     )
 
 
+def test_governance_index_rejects_unknown_rule_family() -> None:
+    root = Path(__file__).parents[1]
+    path = "docs/agent/codex-operating-system.md"
+    text = (root / path).read_text(encoding="utf-8")
+    known_row = (
+        "| `pr_validation_gate` | `docs/agent/execution-gates.md#pr-verification-gate` "
+        "| `ci_checker` | `tools/testing/test_shards.py` | "
+        "`.github/workflows/ci.yml` | `none` |"
+    )
+    unknown_row = (
+        "| `unregistered_guard` | "
+        "`docs/agent/execution-gates.md#pr-verification-gate` | `ci_checker` | "
+        "`tools/testing/test_shards.py` | `.github/workflows/ci.yml` | `none` |"
+    )
+    text = text.replace(known_row, f"{known_row}\n{unknown_row}", 1)
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    assert any(
+        "unknown rule family: unregistered_guard" in problem.reason
+        for problem in result.problems
+    )
+
+
 def test_same_path_compatibility_replacement_with_complete_evidence_passes(
     tmp_path: Path,
 ) -> None:
@@ -523,6 +550,32 @@ def test_same_path_replacement_rejects_incomplete_source_section_coverage(
     section = packet["source_sections"][0]
     section["source_locator"] = f"{source_path}:L3-L4"
     section["section_sha256"] = packet["claims"][0]["source_excerpt_sha256"]
+
+    result = _same_path_result(
+        tmp_path,
+        source_path,
+        evidence_path,
+        replacement,
+        packet,
+    )
+
+    assert any(
+        "exactly cover every HEAD preimage line" in p.reason
+        for p in result.problems
+    )
+
+
+def test_same_path_replacement_rejects_overlapping_final_section(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    duplicate = {
+        **packet["source_sections"][0],
+        "section_id": "CP-SECTION-002",
+    }
+    packet["source_sections"].append(duplicate)
+    packet["source_section_count"] = 2
+    packet["claims"][0]["source_section_ids"].append("CP-SECTION-002")
 
     result = _same_path_result(
         tmp_path,

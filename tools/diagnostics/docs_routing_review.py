@@ -50,7 +50,7 @@ PRODUCTIZATION_OWNER_ROUTE = (
     "docs/product/productization.md; "
     "docs/superpowers/validation/productization_status_index_v1.tsv; "
     "docs/superpowers/schemas/productization_authority_manifest.v1.json; "
-    "docs/superpowers/schemas/productization_control_plane_schema.v1.json; "
+    "docs/superpowers/schemas/productization_control_plane_schema.v2.json; "
     "docs/agent/product-validation-contract.md"
 )
 DOC_ROUTING_SIGNAL_PATTERNS = (

@@ -1,7 +1,7 @@
 """Check the machine-readable productization status index.
 
 This is a control-plane consistency guard. It validates the current lane status
-index against the authority manifest, productization status anchor document, and
+index against the authority manifest, compatibility lane registry, and
 control-plane anchors without touching ProductWriter, matrices, workbooks,
 selected peaks, or counted detections. The default anchor is not the active
 handoff for every branch; active branch handoffs are ignored local files such
@@ -42,6 +42,7 @@ DEFAULT_HANDOFF = DEFAULT_PRODUCTIZATION_STATUS_ANCHOR
 DEFAULT_CONTROL_PLANE = ROOT / CONTROL_PLANE_PATH
 PRODUCTIZATION_SUMMARY_REL = "docs/product/productization.md"
 DEFAULT_PRODUCTIZATION_SUMMARY = ROOT / PRODUCTIZATION_SUMMARY_REL
+EXPECTED_CONTROL_PLANE_SCHEMA_VERSION = "productization_control_plane_schema_v2"
 
 WRITER_LANE_AUTHORITY = {
     "backfill_current_write_ready_scope": {
@@ -129,6 +130,11 @@ def _check_schema_and_rows(
     rows: Sequence[Mapping[str, str]],
     problems: list[str],
 ) -> None:
+    if schema.get("schema_version") != EXPECTED_CONTROL_PLANE_SCHEMA_VERSION:
+        problems.append(
+            "unsupported productization control-plane schema_version; expected "
+            f"{EXPECTED_CONTROL_PLANE_SCHEMA_VERSION}"
+        )
     required = schema.get("required_status_index_columns")
     if not isinstance(required, list) or not all(
         isinstance(column, str) for column in required
@@ -427,7 +433,7 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
         ),
         (
             "- [Structured control schema]"
-            "(../schemas/productization_control_plane_schema.v1.json)"
+            f"(../schemas/{Path(PRODUCTIZATION_SCHEMA_REL).name})"
         ),
         (
             "- [Readiness and promotion contract]"
@@ -479,6 +485,24 @@ def _contains_normalized_phrase(text: str, phrase: str) -> bool:
     )
 
 
+def _contains_structured_field_assignment(text: str, field_name: str) -> bool:
+    """Return whether narrative text assigns a schema-derived mutable field."""
+
+    tokens = re.findall(r"[a-z0-9]+", field_name.casefold())
+    if not tokens:
+        return False
+    field_pattern = r"[\s_-]+".join(re.escape(token) for token in tokens)
+    return (
+        re.search(
+            rf"^\s*(?:[-*]\s*)?(?:\*\*|`)?{field_pattern}"
+            rf"(?:\*\*|`)?\s*[:=]",
+            text,
+            re.I | re.M,
+        )
+        is not None
+    )
+
+
 def _check_narrative_authority_partition(
     schema: Mapping[str, Any],
     rows: Sequence[Mapping[str, str]],
@@ -503,25 +527,32 @@ def _check_narrative_authority_partition(
         for row in rows
         if row.get("product_authority_scope", "")
     }
-    forbidden_literals.update(
-        {
-            "readiness_status",
-            "write_authority",
-            "row_count",
-            "may_touch_matrix",
-            "may_change_quant_output",
-            "may_change_workbook",
-            "may_change_selected_peak",
-            "may_change_selected_area",
-            "may_change_counted_detection",
-        }
-    )
+    stable_or_routing_fields = {
+        "schema_version",
+        "lane_id",
+        "control_plane_anchor",
+        "handoff_anchor",
+    }
+    required_columns = schema.get("required_status_index_columns", [])
+    mutable_field_names = {
+        column
+        for column in required_columns
+        if isinstance(column, str)
+        and column
+        and column not in stable_or_routing_fields
+    }
     forbidden_literals.update(
         status
         for status in schema.get("allowed_readiness_statuses", [])
         if isinstance(status, str) and status
     )
     for path, text in narrative_surfaces.items():
+        for field_name in sorted(mutable_field_names):
+            if _contains_structured_field_assignment(text, field_name):
+                problems.append(
+                    f"{path}: narrative surface duplicates mutable structured "
+                    f"state or authority: {field_name}"
+                )
         for literal in sorted(forbidden_literals):
             if _contains_normalized_phrase(text, literal):
                 problems.append(

@@ -258,9 +258,8 @@ def _check_docs(
             "reopen broad Backfill",
         ],
         handoff: [
-            "CID-NL default product activation v1",
-            "Do not expand CID-NL beyond 95 cells",
-            "Broad Backfill auto-write remains parked",
+            "cid_nl_default_product_activation_v1",
+            "broad_backfill_autowrite",
         ],
     }
     for path, anchors in required.items():

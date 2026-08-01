@@ -28,7 +28,8 @@ handoff files should be rare:
 - exceptional compatibility stubs whose exact path is intentionally part of a
   public workflow.
 
-Productization status anchors live under `docs/superpowers/productization/`.
+Productization compatibility lane registries live under
+`docs/superpowers/productization/`; mutable state does not.
 File-management manifests, referrer audits, and approval records live under
 `docs/superpowers/file-management/`. Branch closeout summaries live under
 `docs/superpowers/closeouts/`. Do not put those public records back under

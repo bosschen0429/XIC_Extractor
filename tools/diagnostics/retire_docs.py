@@ -52,6 +52,7 @@ KEEP_PATTERNS = {
     "README.md",
     "productization_authority_manifest.v1.json",
     "productization_control_plane_schema.v1.json",
+    "productization_control_plane_schema.v2.json",
 }
 
 KEEP_PREFIXES = ("docs/superpowers/plans/2026-06-15-productization-control-plane.md",)
@@ -202,7 +203,16 @@ def copy_source_only(
             False,
             "missing same-path source-copy evidence entry",
         )
-    if _string_list(entry.get("unresolved_claims")):
+    unresolved_claims = _string_list(entry.get("unresolved_claims"))
+    if unresolved_claims is None:
+        return SourceCopyResult(
+            rel,
+            "",
+            None,
+            False,
+            "source-copy evidence unresolved_claims must be a string list",
+        )
+    if unresolved_claims:
         return SourceCopyResult(
             rel,
             "",
@@ -271,10 +281,12 @@ def _vault_copy_matches(path: Path, rel_path: str, source_text: str) -> bool:
     return _source_hash(original_text) == _source_hash(source_text)
 
 
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
+def _string_list(value: object) -> list[str] | None:
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
+        return None
+    return value
 
 
 def _retirement_evidence_by_path(
@@ -318,16 +330,23 @@ def _retirement_evidence_blocker(
         "absorbed_claims",
         "absorbed_negative_claims",
     ):
-        if not _string_list(entry.get(field_name)):
+        values = _string_list(entry.get(field_name))
+        if values is None or not values:
             return f"retirement evidence missing {field_name}"
     if entry.get("source_copy_readback_verified") is not True:
         return "retirement evidence source copy readback is not verified"
     if entry.get("source_hash") != _source_hash(text):
         return "retirement evidence source_hash mismatch"
-    if _string_list(entry.get("active_followups")):
+    active_followups = _string_list(entry.get("active_followups"))
+    if active_followups is None:
+        return "retirement evidence active_followups must be a string list"
+    if active_followups:
         return "retirement evidence still has active followups"
 
-    evidence_referrers = tuple(sorted(_string_list(entry.get("exact_referrers"))))
+    raw_evidence_referrers = _string_list(entry.get("exact_referrers"))
+    if raw_evidence_referrers is None:
+        return "retirement evidence exact_referrers must be a string list"
+    evidence_referrers = tuple(sorted(raw_evidence_referrers))
     if referrers:
         if not stub_bound:
             return "exact repo referrers require retargeting or --stub-bound"

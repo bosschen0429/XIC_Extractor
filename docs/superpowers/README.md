@@ -23,7 +23,7 @@ storage after their stable public claims are represented in formal repo docs.
 | `schemas/` | checker-readable JSON Schema contracts and authority manifests | design narratives, command transcripts, validation chronology, or review-story galleries |
 | `validation/` | checker-readable validation packets, inventories, summaries, lockbox artifacts, and compact evidence | unbounded generated dumps or private reviewer rationale |
 | `fixtures/` | small test/checker fixtures and expected-output oracles | full validation bundles |
-| `productization/status/` | machine-readable or checker-facing productization status anchors | branch handoff state |
+| `productization/status/` | checker-facing stable productization lane-key registries | mutable lane state or branch handoff state |
 | `productization/evidence/` | compact public productization evidence summaries | active branch handoff or private diary |
 | `file-management/` | approved cleanup manifests, referrer audits, migration queues, and placement evidence | product behavior specs or handoff logs |
 | `closeouts/` | intentionally public branch closeout summaries and PR-body seeds | active handoff next actions |

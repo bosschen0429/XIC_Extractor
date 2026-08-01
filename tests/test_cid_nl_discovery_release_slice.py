@@ -23,7 +23,7 @@ def test_release_slice_control_plane_override_fails_closed(
     assert "compatibility index must exactly match" in stderr
 
 
-def test_release_slice_handoff_can_name_later_active_goal(tmp_path) -> None:
+def test_release_slice_accepts_stable_compatibility_lane_registry(tmp_path) -> None:
     roadmap = tmp_path / "roadmap.md"
     handoff = tmp_path / "handoff.md"
     roadmap.write_text(
@@ -38,10 +38,9 @@ def test_release_slice_handoff_can_name_later_active_goal(tmp_path) -> None:
     handoff.write_text(
         "\n".join(
             [
-                "Current objective: Backfill expansion productization.",
-                "CID-NL default product activation v1 remains production-ready.",
-                "Do not expand CID-NL beyond 95 cells.",
-                "Broad Backfill auto-write remains parked.",
+                "Stable lane keys:",
+                "cid_nl_default_product_activation_v1",
+                "broad_backfill_autowrite",
             ]
         ),
         encoding="utf-8",

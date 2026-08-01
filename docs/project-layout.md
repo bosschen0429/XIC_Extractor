@@ -201,7 +201,7 @@ archive 大桶：
 
 | Artifact | Repo target |
 |------|------|
-| productization checker/status anchor | `docs/superpowers/productization/status/` |
+| productization compatibility lane-key registry | `docs/superpowers/productization/status/` |
 | compact productization evidence summary | `docs/superpowers/productization/evidence/` |
 | exact cleanup manifest、referrer audit、approval record、source-of-truth queue | `docs/superpowers/file-management/` |
 | intentionally public PR/branch closeout summary | `docs/superpowers/closeouts/` |
@@ -524,7 +524,7 @@ Root `launch_gui.bat` 只服務本機開發雙擊啟動；release artifact 以
 
 | 類別 | 慣例 | 範例 |
 |------|------|------|
-| JSON schema contract | `docs/superpowers/schemas/<contract>.v1.json` | `productization_control_plane_schema.v1.json` |
+| JSON schema contract | `docs/superpowers/schemas/<contract>.vN.json` | `productization_control_plane_schema.v2.json` |
 | 過渡性 Markdown spec | `docs/superpowers/specs/<yyyy-mm-dd-topic>.md` | `2026-07-01-example-contract.md` |
 | 產品治理 owner | stable topic、status index、authority manifest、schema 各自擁有 | `docs/product/productization.md` |
 | Active stub | ignored local `docs/superpowers/handoffs/current/ACTIVE.local.md`; force-added repo stub only when intentionally public | `ACTIVE.local.md` |

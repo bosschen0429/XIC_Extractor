@@ -12,7 +12,7 @@ active lane, current writer counts, or promotion-packet status. Those live in
 `docs/superpowers/validation/productization_status_index_v1.tsv`, and
 `docs/superpowers/schemas/productization_authority_manifest.v1.json`.
 The schema at
-`docs/superpowers/schemas/productization_control_plane_schema.v1.json` owns the
+`docs/superpowers/schemas/productization_control_plane_schema.v2.json` owns the
 machine field and allowed-value contract. The dated control-plane path is a
 compatibility index only; its stable lookup route remains
 `docs/superpowers/plans/2026-06-15-productization-control-plane.md`.

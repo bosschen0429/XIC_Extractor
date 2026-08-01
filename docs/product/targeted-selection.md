@@ -52,7 +52,9 @@ Targeted selection is the product-facing decision path for known targets. It tur
 - Expected-diff packet for workbook/CSV or matrix-impacting changes.
 - Schema/versioning review when output fields or compatibility projection change.
 - RAW-tier evidence label matching the product claim.
-- Control-plane update when maturity, lane, or authority changes.
+- Structured productization-owner update when maturity, lane, or authority
+  changes: status index for lane state, authority manifest for writer scope,
+  and the promotion contract for readiness evidence.
 - The bounded CID-NL `targeted_output_v1` delivery claims and current test
   dispositions are indexed in the
   [public-output claim catalog](../superpowers/validation/cid_nl_public_output_claim_catalog_v1.tsv).

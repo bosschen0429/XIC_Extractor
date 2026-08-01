@@ -19,7 +19,7 @@ owner route changes.
 
 - [Lane-state index](../validation/productization_status_index_v1.tsv)
 - [Writer-authority manifest](../schemas/productization_authority_manifest.v1.json)
-- [Structured control schema](../schemas/productization_control_plane_schema.v1.json)
+- [Structured control schema](../schemas/productization_control_plane_schema.v2.json)
 - [Readiness and promotion contract](../../agent/product-validation-contract.md)
 - [Stable capability map](../../product/productization.md)
 

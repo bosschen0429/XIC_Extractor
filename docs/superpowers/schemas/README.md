@@ -70,8 +70,12 @@ or the relevant structured productization owner.
   not activate ProductWriter or the default quant matrix.
 - `productization_authority_manifest.v1.json`: productization authority manifest
   contract for current authority, owner, and activation state.
-- `productization_control_plane_schema.v1.json`: control-plane schema for
-  productization lane state, maturity, and active governance entries.
+- `productization_control_plane_schema.v1.json`: retained predecessor contract
+  for consumers pinned to the original field and allowed-value shape; it is not
+  the current checker default.
+- `productization_control_plane_schema.v2.json`: current control-plane schema
+  for productization lane state, maturity, authority rules, and the stable
+  compatibility-anchor registry.
 - `quant_matrix_version_schema.v1.json`: Phase 3 explicit
   `QuantMatrixVersion v1` activation output contract. It defines
   `quant_matrix`, `cell_provenance`, `row_summary`, expected-diff, and source

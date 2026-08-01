@@ -337,12 +337,19 @@ def governance_index_problems(
 
     overrides = overrides or {}
     rows: list[list[str]] = []
+    table_started = False
     for line in text.splitlines():
         if not line.lstrip().startswith("|"):
+            if table_started:
+                break
             continue
         cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
-        if cells and cells[0] in GOVERNANCE_RULE_FAMILY_CONTRACTS:
-            rows.append(cells)
+        if cells and cells[0] == "Rule family":
+            table_started = True
+            continue
+        if not table_started or all(set(cell) <= {"-", ":"} for cell in cells):
+            continue
+        rows.append(cells)
     problems: list[str] = []
     row_ids = [row[0] for row in rows]
     expected_ids = list(GOVERNANCE_RULE_FAMILY_CONTRACTS)
@@ -358,6 +365,9 @@ def governance_index_problems(
             problems.append(f"governance row {row[0]} must have exactly six cells")
             continue
         rule_id, owner, mechanism, executable, readback, residual = row
+        if rule_id not in GOVERNANCE_RULE_FAMILY_CONTRACTS:
+            problems.append(f"governance index contains unknown rule family: {rule_id}")
+            continue
         expected = GOVERNANCE_RULE_FAMILY_CONTRACTS[rule_id]
         actual = {
             "owner": owner,

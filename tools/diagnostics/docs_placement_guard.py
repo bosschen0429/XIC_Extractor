@@ -691,11 +691,13 @@ def same_path_replacement_problems(
         if line_range is not None:
             section_ranges.append(line_range)
     next_line = 1
+    ranges_are_exact = len(section_ranges) == len(sections)
     for start, end in sorted(section_ranges):
         if start != next_line:
-            break
+            ranges_are_exact = False
+            continue
         next_line = end + 1
-    if len(section_ranges) != len(sections) or next_line != len(source_lines) + 1:
+    if not ranges_are_exact or next_line != len(source_lines) + 1:
         add(
             "source section locators must exactly cover every HEAD preimage line "
             "once without gaps or overlaps"

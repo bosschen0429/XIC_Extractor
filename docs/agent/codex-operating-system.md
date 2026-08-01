@@ -64,7 +64,7 @@ The hook set is intentionally small:
   Handoff/closeout/compaction prompts remind the agent to first resolve the
   active branch handoff, then rewrite and prune that snapshot instead of
   appending chronological notes. They must not direct every branch to the same
-  productization status anchor.
+  productization compatibility lane registry.
 - `PreToolUse`: blocks clear destructive git commands and background RAW
   launches through `Start-Process`; adds context when edits touch
   execution-affecting config, root agent contracts, or product/public surfaces

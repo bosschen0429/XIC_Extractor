@@ -11,6 +11,7 @@ from scripts.check_productization_state import (
     DEFAULT_PRODUCTIZATION_SUMMARY,
     DEFAULT_SCHEMA,
     DEFAULT_STATUS_INDEX,
+    EXPECTED_CONTROL_PLANE_SCHEMA_VERSION,
     _render_compatibility_index,
     artifact_sha256,
     check_productization_state,
@@ -29,6 +30,8 @@ def test_status_schema_matches_index_header() -> None:
     assert header == schema["required_status_index_columns"]
     assert {row["lane_id"] for row in rows} == set(schema["required_lane_ids"])
     assert len(rows) == len(schema["required_lane_ids"])
+    assert DEFAULT_SCHEMA.name == "productization_control_plane_schema.v2.json"
+    assert schema["schema_version"] == EXPECTED_CONTROL_PLANE_SCHEMA_VERSION
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
@@ -256,6 +259,58 @@ def test_checker_rejects_mutable_state_in_compatibility_lane_registry(
     problems = check_productization_state(handoff_path=status_anchor)
 
     assert any("mutable" in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
+    "mutable_field",
+    (
+        "Lane group: product",
+        "Readiness status: production candidate",
+        "Owner: docs/product/example.md",
+        "Current artifact: docs/superpowers/validation/example.json",
+        "Artifact sha256: deadbeef",
+        "Row count: 1",
+        "Write authority: false",
+        "Product authority scope: example",
+        "May touch matrix: false",
+        "May change quant output: false",
+        "May change workbook: false",
+        "May change selected peak: false",
+        "May change selected area: false",
+        "May change counted detection: false",
+        "Product effect: diagnostic only",
+        "Public surface: example",
+        "Next checkpoint: promote after review",
+        "Expiration condition: replacement is accepted",
+        "Notes: mutable narrative state",
+    ),
+)
+def test_checker_derives_narrative_mutable_fields_from_schema(
+    tmp_path: Path,
+    mutable_field: str,
+) -> None:
+    status_anchor = tmp_path / "productization-status-anchor.md"
+    status_anchor.write_text(
+        DEFAULT_HANDOFF.read_text(encoding="utf-8") + f"\n{mutable_field}\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(handoff_path=status_anchor)
+
+    assert any("duplicates mutable structured state" in problem for problem in problems)
+
+
+def test_checker_rejects_predecessor_control_plane_schema() -> None:
+    predecessor = (
+        DEFAULT_SCHEMA.parent / "productization_control_plane_schema.v1.json"
+    )
+
+    problems = check_productization_state(schema_path=predecessor)
+
+    assert any(
+        "unsupported productization control-plane" in problem
+        for problem in problems
+    )
 
 
 def test_checker_rejects_regenerated_unregistered_control_anchor(

@@ -36,7 +36,7 @@ Use this roadmap with:
 - [Backfill product doc](../../product/backfill.md)
 - [Quant matrix product doc](../../product/quant-matrix.md)
 - [historical compatibility index](../plans/2026-06-15-productization-control-plane.md)
-- [productization status anchor](../productization/status/cc-framework-improvements-productization.md)
+- [productization compatibility lane registry](../productization/status/cc-framework-improvements-productization.md)
 - [Untargeted Method](../../product/untargeted-method.md)
 
 The status index remains the authority for current tier/lane; the authority

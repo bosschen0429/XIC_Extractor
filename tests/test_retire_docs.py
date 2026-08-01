@@ -4,6 +4,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics.retire_docs import (
     VAULT_ARCHIVE_DIR,
     copy_source_only,
@@ -126,6 +128,39 @@ def test_source_copy_only_rejects_stale_evidence_hash(tmp_path: Path) -> None:
 
     assert result.error == "source-copy evidence source_hash mismatch"
     assert not result.readback_verified
+
+
+@pytest.mark.parametrize(
+    "malformed_unresolved_claims",
+    ("CP-123", [1], {"id": "CP-123"}),
+)
+def test_source_copy_only_rejects_malformed_unresolved_claims(
+    tmp_path: Path,
+    malformed_unresolved_claims: object,
+) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/plans/control-plane.md"
+    source = repo / rel
+    _write(source, "# Source\n")
+    evidence = _same_path_copy_evidence(rel, "# Source\n")
+    entry = evidence["entries"][0]
+    assert isinstance(entry, dict)
+    entry["unresolved_claims"] = malformed_unresolved_claims
+
+    result = copy_source_only(
+        source,
+        repo,
+        vault,
+        evidence=evidence,
+        execute=True,
+    )
+
+    assert result.error == (
+        "source-copy evidence unresolved_claims must be a string list"
+    )
+    assert not result.readback_verified
+    assert result.destination is None
 
 
 def test_completed_unreferenced_spec_without_retirement_evidence_is_kept(
