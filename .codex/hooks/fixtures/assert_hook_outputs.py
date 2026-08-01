@@ -44,6 +44,23 @@ def assert_contains(value: object, expected: str) -> None:
         raise AssertionError(f"expected {expected!r} in {text}")
 
 
+def assert_hook_silent(script: str, event: dict[str, object]) -> None:
+    result = subprocess.run(
+        [sys.executable, str(HOOKS / script)],
+        input=json.dumps(event),
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if result.stdout.strip() or result.stderr.strip():
+        raise AssertionError(
+            f"expected silent {script} no-op, got "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+
+
 def main() -> int:
     prompt_payload = {
         "hook_event_name": "UserPromptSubmit",
@@ -201,6 +218,71 @@ def main() -> int:
             f"{skills_result.stdout!r}"
         )
 
+    raw_background_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "Bash",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {
+            "command": (
+                "Start-Process python -ArgumentList "
+                "'-m scripts.run_alignment --preset dna_dr'"
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", raw_background_payload),
+        "Background RAW launch",
+    )
+
+    non_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {"command": "Start-Process python -ArgumentList '-c print(1)'"},
+    }
+    assert_hook_silent("xic_pre_tool_guard.py", non_raw_background_payload)
+
+    execution_config_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "apply_patch",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {"patch": "*** Update File: .codex/hooks.json\n"},
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", execution_config_payload),
+        "Execution-affecting XIC agent config",
+    )
+
+    static_rule_search_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "Bash",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {
+            "command": (
+                "rg -n " + json.dumps(" ".join(("git", "reset", "--hard"))) + " docs"
+            )
+        },
+    }
+    assert_hook_silent("xic_pre_tool_guard.py", static_rule_search_payload)
+
+    wrapped_cleanup_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": ("bash -lc " + json.dumps(" ".join(("git", "clean", "-fd"))))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrapped_cleanup_payload),
+        "blocked by the hook",
+    )
+
     pre_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",
@@ -307,10 +389,7 @@ def main() -> int:
             post_status_index_payload,
             env_extra={
                 "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                    [
-                        "docs/superpowers/validation/"
-                        "productization_status_index_v1.tsv"
-                    ]
+                    ["docs/superpowers/validation/productization_status_index_v1.tsv"]
                 ),
             },
         ),
@@ -348,7 +427,7 @@ def main() -> int:
         "cwd": ".",
         "permission_mode": "default",
         "tool_input": {
-            "command": "rg -n \"index.lock|cannot lock ref\" docs .codex",
+            "command": 'rg -n "index.lock|cannot lock ref" docs .codex',
         },
         "tool_response": {
             "stdout": "docs/agent/parameter-settings.md:149:.git\\index.lock\n"

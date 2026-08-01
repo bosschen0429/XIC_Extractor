@@ -16,13 +16,13 @@ from xic_hook_policy import (
     run_docs_placement_guard,
 )
 
-DESTRUCTIVE_COMMANDS = [
+WRAPPED_DESTRUCTIVE_COMMANDS = [
     (
         re.compile(r"\bgit\s+reset\s+--hard\b", re.IGNORECASE),
         "git reset --hard is blocked. Do not discard user work; inspect the diff and ask for explicit rollback approval.",
     ),
     (
-        re.compile(r"\bgit\s+checkout\s+--\b", re.IGNORECASE),
+        re.compile(r"\bgit\s+checkout\s+--(?:\s|$)", re.IGNORECASE),
         "git checkout -- is blocked because it reverts files. Use targeted review and explicit user approval.",
     ),
     (
@@ -33,6 +33,11 @@ DESTRUCTIVE_COMMANDS = [
         "git clean with force/delete flags is blocked by the hook. Inspect untracked paths before deletion.",
     ),
 ]
+
+SHELL_WRAPPER = re.compile(
+    r"^\s*(?:bash|sh|pwsh|powershell)(?:\.exe)?\s+(?:-c|-lc|-Command)(?:\s|$)",
+    re.IGNORECASE,
+)
 
 RAW_BACKGROUND = re.compile(
     r"\bStart-Process\b.*(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|preset)", re.IGNORECASE
@@ -128,10 +133,11 @@ def main() -> int:
     if not command and not payload:
         return 0
 
-    for pattern, reason in DESTRUCTIVE_COMMANDS:
-        if pattern.search(command):
-            deny(reason)
-            return 0
+    if SHELL_WRAPPER.search(command):
+        for pattern, reason in WRAPPED_DESTRUCTIVE_COMMANDS:
+            if pattern.search(command):
+                deny(reason)
+                return 0
 
     if RAW_BACKGROUND.search(command):
         deny(
@@ -157,7 +163,7 @@ def main() -> int:
             deny(reason)
             return 0
 
-    normalized = command.replace("\\", "/")
+    normalized = f"{command}\n{payload}".replace("\\", "/")
     if any(path.replace("\\", "/") in normalized for path in EXEC_CONFIG_PATHS):
         context(
             "Execution-affecting XIC agent config may be edited. After the change, run hook/script smoke checks, git diff --check, and a secret/local-path scan before closeout."
