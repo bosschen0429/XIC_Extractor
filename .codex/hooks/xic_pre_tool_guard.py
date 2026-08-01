@@ -34,6 +34,7 @@ WRAPPED_CLEAN_REASON = (
 
 POSIX_SHELLS = {"bash", "sh"}
 POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
+SHELL_CONTROL_PREFIXES = {"then", "do", "else", "{", "(", "!"}
 SHELL_SEPARATOR_CHARS = ";&|\n"
 MAX_WRAPPER_DEPTH = 3
 
@@ -127,9 +128,17 @@ def wrapped_shell_payload(command: str) -> str | None:
     if tokens and tokens[0] == "&":
         tokens = tokens[1:]
     if tokens and executable_name(tokens[0]) == "env":
-        tokens = tokens[1:]
-        while tokens and "=" in tokens[0] and not tokens[0].startswith("-"):
-            tokens = tokens[1:]
+        shell_index = next(
+            (
+                index
+                for index, token in enumerate(tokens[1:], start=1)
+                if executable_name(token) in POSIX_SHELLS | POWERSHELLS
+            ),
+            None,
+        )
+        if shell_index is None:
+            return None
+        tokens = tokens[shell_index:]
     if not tokens:
         return None
 
@@ -175,9 +184,19 @@ def shell_command_segments(payload: str) -> list[str]:
     return segments
 
 
-def wrapped_git_clean_is_forced(segment: str) -> bool:
+def strip_shell_control_prefixes(segment: str) -> str:
     try:
         tokens = shlex.split(segment, posix=True)
+    except ValueError:
+        return segment
+    while tokens and tokens[0].lower() in SHELL_CONTROL_PREFIXES:
+        tokens = tokens[1:]
+    return " ".join(tokens)
+
+
+def wrapped_git_clean_is_forced(segment: str) -> bool:
+    try:
+        tokens = shlex.split(strip_shell_control_prefixes(segment), posix=True)
     except ValueError:
         return False
     if len(tokens) < 3:
@@ -234,8 +253,9 @@ def main() -> int:
     wrapped_payload = wrapped_shell_payload(command)
     if wrapped_payload is not None:
         for segment in wrapped_command_segments(command):
+            command_segment = strip_shell_control_prefixes(segment)
             for pattern, reason in WRAPPED_DESTRUCTIVE_COMMANDS:
-                if pattern.match(segment):
+                if pattern.match(command_segment):
                     deny(reason)
                     return 0
             if wrapped_git_clean_is_forced(segment):

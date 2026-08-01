@@ -357,6 +357,16 @@ WRAPPERS = [
 ]
 
 
+@pytest.mark.parametrize(
+    "wrapper",
+    ["env -u CI bash -lc", "env --unset=CI /bin/bash -lc"],
+)
+def test_pre_hook_locates_wrapped_shell_after_env_options(wrapper: str) -> None:
+    completed = _run_pre_hook(f"{wrapper} {json.dumps(DESTRUCTIVE_TEXTS[0])}")
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 @pytest.mark.parametrize("wrapper", WRAPPERS)
 @pytest.mark.parametrize(
     "tokens",
@@ -428,6 +438,19 @@ def test_pre_hook_blocks_compound_and_nested_wrapped_destructive_commands(
     nested = " ".join(tokens)
     payload = prefix + (json.dumps(nested) if prefix == "sh -c " else nested)
     completed = _run_pre_hook(f"{wrapper} {json.dumps(payload)}")
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "if true; then " + DESTRUCTIVE_TEXTS[0] + "; fi",
+        "while true; do " + DESTRUCTIVE_TEXTS[2] + "; done",
+    ],
+)
+def test_pre_hook_blocks_control_prefixed_destructive_commands(payload: str) -> None:
+    completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
     output = json.loads(completed.stdout)
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 

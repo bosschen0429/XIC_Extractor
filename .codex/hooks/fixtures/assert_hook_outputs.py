@@ -322,6 +322,34 @@ def main() -> int:
         "is blocked",
     )
 
+    conditional_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps(
+                "if true; then "
+                + " ".join(("git", "reset", "--hard"))
+                + "; fi"
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", conditional_reset_payload),
+        "is blocked",
+    )
+
+    env_option_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "env -u CI bash -lc "
+            + json.dumps(" ".join(("git", "reset", "--hard")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", env_option_reset_payload),
+        "is blocked",
+    )
+
     pre_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",

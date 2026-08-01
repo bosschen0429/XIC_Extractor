@@ -69,7 +69,8 @@ The hook set is intentionally small:
   prefix rule is `forbidden`. Wrapped forced cleanup, including short, combined,
   or long-form force flags, is conservatively denied because PreToolUse cannot
   express the direct rule's interactive `prompt`; silent execution would bypass
-  review. Wrapper inspection treats unquoted newlines as
+  review. Wrapper inspection locates supported shells after `env` options and
+  treats unquoted separators, newlines, and command-list control prefixes as
   command boundaries while preserving quoted content. It also blocks background
   RAW launches through `Start-Process`, including launches whose RAW arguments
   are prepared in another statement of the same shell payload, and adds context
