@@ -116,9 +116,11 @@ not upload that cache through GitHub Actions. They record install/per-shard
 seconds in the job summary so future CI tuning is based on observed timing.
 The hosted lint checkout fetches full Git history because the docs lifecycle
 audit must replay registered retirement packets from their fixed activation
-base through the recorded activation end when it is reachable, or through the
-packet-introduction commit on current ancestry after squash merge. A shallow
-packet/digest read is not the acceptance oracle.
+base through the commit that last wrote the registered packet on current
+ancestry. That endpoint is the final packet revision in authoring history and
+the squash commit in collapsed history, and it stays fixed across later commits
+that do not revise the packet. A shallow packet/digest read is not the
+acceptance oracle.
 
 ```powershell
 uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check

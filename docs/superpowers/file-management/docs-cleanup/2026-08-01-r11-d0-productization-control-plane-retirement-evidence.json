@@ -36,7 +36,7 @@
   "source_copy_locator_sha256": "16a4856152108f62d9ed8c7434f94d2a6af49a773fa2a102c1630ff042a6913a",
   "source_copy_locator_readback_verified": true,
   "source_copy_hash": "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5",
-  "replacement_hash": "21f6f051b8167e1da4411a66df498964e9c6d1c814aa2dbc0ea773f6fef2f340",
+  "replacement_hash": "723f81e4e51eaa00f3258da80be6620775bb1c6d07a7c1c8c834b76f894ab408",
   "active_followups": [],
   "unresolved_claims": [],
   "hard_zero_files": [
@@ -8572,6 +8572,7 @@
     ".codex/hooks/xic_post_tool_guard.py",
     ".codex/hooks/xic_pre_tool_guard.py",
     ".codex/hooks/xic_prompt_router.py",
+    ".github/workflows/ci.yml",
     "AGENTS.md",
     "docs/agent/codex-operating-system.md",
     "docs/agent/planning-workflows.md",
@@ -8600,6 +8601,7 @@
     "docs/superpowers/productization/status/cc-framework-improvements-productization.md",
     "docs/superpowers/schemas/productization_control_plane_schema.v1.json",
     "docs/superpowers/validation/ARTIFACT_INVENTORY.tsv",
+    "docs/superpowers/validation/cid_nl_public_output_claim_catalog_v1.tsv",
     "docs/superpowers/validation/evidence_chain_source_of_truth.md",
     "docs/superpowers/validation/evidence_chain_status_guide.html",
     "scripts/check_cid_nl_discovery_release_slice.py",
@@ -8610,11 +8612,14 @@
     "tools/diagnostics/retire_docs.py"
   ],
   "allowed_protected_writes": [
+    ".codex/hooks/fixtures/assert_hook_outputs.py",
+    ".codex/hooks/xic_hook_policy.py",
     ".codex/hooks/xic_post_tool_guard.py",
     ".codex/hooks/xic_pre_tool_guard.py",
     ".codex/hooks/xic_prompt_router.py",
-    "docs/superpowers/schemas/productization_control_plane_schema.v1.json",
+    ".github/workflows/ci.yml",
     "docs/superpowers/validation/ARTIFACT_INVENTORY.tsv",
+    "docs/superpowers/validation/cid_nl_public_output_claim_catalog_v1.tsv",
     "docs/superpowers/validation/evidence_chain_source_of_truth.md",
     "docs/superpowers/validation/evidence_chain_status_guide.html"
   ],
@@ -9627,7 +9632,7 @@
       "source_copy_locator_readback_verified": true,
       "source_copy_hash": "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5",
       "source_hash": "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5",
-      "replacement_hash": "21f6f051b8167e1da4411a66df498964e9c6d1c814aa2dbc0ea773f6fef2f340",
+      "replacement_hash": "723f81e4e51eaa00f3258da80be6620775bb1c6d07a7c1c8c834b76f894ab408",
       "exact_referrers": [
         ".codex/hooks/fixtures/assert_hook_outputs.py",
         ".codex/hooks/xic_pre_tool_guard.py",

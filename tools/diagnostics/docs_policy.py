@@ -113,10 +113,10 @@ COMMITTED_RETIREMENT_PACKET_CONTRACTS = {
             PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
         ),
         "replacement_hash": (
-            "21f6f051b8167e1da4411a66df498964e9c6d1c814aa2dbc0ea773f6fef2f340"
+            "723f81e4e51eaa00f3258da80be6620775bb1c6d07a7c1c8c834b76f894ab408"
         ),
         "packet_sha256": (
-            "8ba64498edc0f8f877369e3012cb2bf830dcaf1fc3b5f9545277760704f5b1e8"
+            "b4e9039f3bc4930012111141b8ec3334e1b9c6a60e9a0a02268e83ba8abd9dbf"
         ),
     }
 }

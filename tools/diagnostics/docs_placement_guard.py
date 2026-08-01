@@ -439,15 +439,15 @@ def _git_is_ancestor(root: Path, ancestor: str, descendant: str) -> bool:
     return result.returncode == 0
 
 
-def _git_path_introduction_commit(root: Path, rel_path: str) -> str | None:
-    """Return the unique commit that introduced ``rel_path`` on HEAD ancestry."""
+def _git_path_revision_commit(root: Path, rel_path: str) -> str | None:
+    """Return the commit that last wrote ``rel_path`` on HEAD ancestry."""
 
     result = subprocess.run(
         [
             "git",
             "log",
+            "--max-count=1",
             "--format=%H",
-            "--diff-filter=A",
             "HEAD",
             "--",
             rel_path,
@@ -1302,13 +1302,14 @@ def committed_same_path_retirement_packet_problems(
 
     Registered packets are independently pinned by identity and canonical-text
     digest, but those pins do not replace replay of the retired preimage. The
-    replay endpoint remains ``activation_end_sha`` while that commit is on
-    ``HEAD`` ancestry. After a squash merge, the authoring endpoint is no longer
-    reachable from merged history, so replay falls back to the commit that
-    introduced the packet on current ancestry (the squash commit). Both paths
-    retain a fixed historical window. An acceptance check fails closed when the
-    activation base or selected replay endpoint cannot be replayed. Callers
-    performing isolated diagnostic fixture checks may opt out explicitly
+    replay endpoint is the commit that last wrote the registered packet on
+    ``HEAD`` ancestry. That selects the final packet revision in authoring
+    history and the squash commit in collapsed history, while remaining fixed
+    across later commits that do not revise the packet. ``activation_end_sha``
+    remains the authoring checkpoint and ancestry proof; it is not assumed to
+    survive the repository's merge strategy. An acceptance check fails closed
+    when the activation base or selected replay endpoint cannot be replayed.
+    Callers performing isolated diagnostic fixture checks may opt out explicitly
     without turning that result into acceptance evidence.
     """
 
@@ -1407,22 +1408,17 @@ def committed_same_path_retirement_packet_problems(
             )
         return tuple(problems)
 
-    end_on_head = end_available and _git_is_ancestor(root, activation_end, "HEAD")
-    replay_end = (
-        activation_end
-        if end_on_head
-        else _git_path_introduction_commit(root, normalized_packet_path)
-    )
+    replay_end = _git_path_revision_commit(root, normalized_packet_path)
     if replay_end is None:
         problems.append(
-            "retirement packet introduction commit cannot be resolved uniquely "
+            "retirement packet revision commit cannot be resolved "
             "from HEAD ancestry"
         )
         return tuple(problems)
     if not _git_is_ancestor(root, activation_base, replay_end):
         problems.append(
             "retirement packet activation_base_sha is not an ancestor of the "
-            "packet introduction commit"
+            "packet revision commit"
         )
         return tuple(problems)
     if _git_object_bytes(root, activation_base, normalized_packet_path) is not None:
@@ -1440,7 +1436,7 @@ def committed_same_path_retirement_packet_problems(
     replacement_bytes = _git_object_bytes(root, replay_end, source_path)
     if replacement_bytes is None:
         problems.append(
-            "retirement packet replacement is missing at the packet introduction "
+            "retirement packet replacement is missing at the packet revision "
             "commit"
         )
         return tuple(problems)
@@ -1471,7 +1467,7 @@ def committed_same_path_retirement_packet_problems(
         if owner_bytes is None:
             problems.append(
                 f"retirement packet owner path is missing at the packet "
-                f"introduction commit: "
+                f"revision commit: "
                 f"{owner_path}"
             )
             continue
@@ -1480,7 +1476,7 @@ def committed_same_path_retirement_packet_problems(
         except UnicodeDecodeError:
             problems.append(
                 f"retirement packet owner path is not UTF-8 at the packet "
-                f"introduction commit: {owner_path}"
+                f"revision commit: {owner_path}"
             )
             continue
         historical_entries.append(StagedMarkdown("M", owner_path, owner_text))

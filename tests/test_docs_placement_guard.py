@@ -629,7 +629,49 @@ def test_committed_same_path_retirement_packet_passes_clean_checkout_review(
 def test_committed_retirement_replay_survives_squash_merge(
     tmp_path: Path,
 ) -> None:
-    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    source_path, evidence_path = _commit_same_path_fixture(
+        tmp_path,
+        protected_prefixes=["docs/product"],
+    )
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    activation_base = packet["activation_base_sha"]
+    activation_end = packet["activation_end_sha"]
+    replacement = (tmp_path / source_path).read_text(encoding="utf-8")
+    replacement += "\n## Post-activation compatibility correction\n"
+    owner_path = "docs/product/backfill.md"
+    owner_text = (tmp_path / owner_path).read_text(encoding="utf-8")
+    owner_text += "\nPost-activation owner correction.\n"
+    replacement_hash = _source_hash(replacement)
+    packet["replacement_hash"] = replacement_hash
+    packet["entries"][0]["replacement_hash"] = replacement_hash
+    packet["conditional_write_set"] = sorted(
+        [*packet["conditional_write_set"], owner_path]
+    )
+    packet["allowed_protected_writes"] = [owner_path]
+    _write(tmp_path, source_path, replacement)
+    _write(tmp_path, owner_path, owner_text)
+    _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    subprocess.run(
+        ["git", "add", source_path, owner_path, evidence_path],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "revise retirement packet after activation",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
     feature_head = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=tmp_path,
@@ -637,9 +679,12 @@ def test_committed_retirement_replay_survives_squash_merge(
         capture_output=True,
         text=True,
     ).stdout.strip()
-    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
-    activation_base = packet["activation_base_sha"]
-    activation_end = packet["activation_end_sha"]
+
+    assert committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+    ) == ()
+
     subprocess.run(
         ["git", "switch", "--detach", activation_base],
         cwd=tmp_path,
