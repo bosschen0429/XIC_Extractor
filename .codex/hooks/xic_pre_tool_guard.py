@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import sys
 
 from xic_hook_policy import (
@@ -27,10 +28,8 @@ WRAPPED_DESTRUCTIVE_COMMANDS = [
     ),
 ]
 
-SHELL_WRAPPER = re.compile(
-    r"^\s*(?:bash|sh|pwsh|powershell)(?:\.exe)?\s+(?:-c|-lc|-Command)(?:\s|$)",
-    re.IGNORECASE,
-)
+POSIX_SHELLS = {"bash", "sh"}
+POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
 
 RAW_BACKGROUND = re.compile(
     r"\bStart-Process\b.*(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|preset)", re.IGNORECASE
@@ -107,6 +106,38 @@ def tool_payload_text(event: dict[str, object]) -> str:
     return text_from_value(event.get("tool_input"))
 
 
+def executable_name(token: str) -> str:
+    return token.replace("\\", "/").rsplit("/", 1)[-1].lower()
+
+
+def wrapped_shell_payload(command: str) -> str | None:
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        return None
+    if tokens and tokens[0] == "&":
+        tokens = tokens[1:]
+    if tokens and executable_name(tokens[0]) == "env":
+        tokens = tokens[1:]
+        while tokens and "=" in tokens[0] and not tokens[0].startswith("-"):
+            tokens = tokens[1:]
+    if not tokens:
+        return None
+
+    shell = executable_name(tokens[0])
+    if shell in POSIX_SHELLS:
+        markers = {"-c", "-lc"}
+    elif shell in POWERSHELLS:
+        markers = {"-c", "-command"}
+    else:
+        return None
+
+    for index, token in enumerate(tokens[1:], start=1):
+        if token.lower() in markers and index + 1 < len(tokens):
+            return " ".join(tokens[index + 1 :])
+    return None
+
+
 def is_write_like(event: dict[str, object], command: str, payload: str) -> bool:
     tool_name = str(event.get("tool_name", "")).lower()
     if any(name in tool_name for name in ("apply_patch", "edit", "write")):
@@ -126,9 +157,10 @@ def main() -> int:
     if not command and not payload:
         return 0
 
-    if SHELL_WRAPPER.search(command):
+    wrapped_payload = wrapped_shell_payload(command)
+    if wrapped_payload is not None:
         for pattern, reason in WRAPPED_DESTRUCTIVE_COMMANDS:
-            if pattern.search(command):
+            if pattern.match(wrapped_payload):
                 deny(reason)
                 return 0
 

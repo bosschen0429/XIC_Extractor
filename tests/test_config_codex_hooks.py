@@ -268,7 +268,16 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
     assert completed.stdout == ""
 
 
-@pytest.mark.parametrize("wrapper", ["bash -lc", "pwsh -Command"])
+WRAPPERS = [
+    "bash -lc",
+    "/bin/bash -lc",
+    "env bash -lc",
+    "pwsh -Command",
+    "pwsh -NoProfile -Command",
+]
+
+
+@pytest.mark.parametrize("wrapper", WRAPPERS)
 @pytest.mark.parametrize(
     "tokens",
     [
@@ -289,6 +298,17 @@ def test_pre_hook_preserves_wrapped_destructive_owner_semantics(
     hook_output = output["hookSpecificOutput"]
     assert hook_output["hookEventName"] == "PreToolUse"
     assert hook_output["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize(
+    "wrapper", ["sh -c", "/bin/bash -lc", "pwsh -NoProfile -Command"]
+)
+def test_pre_hook_does_not_deny_wrapped_read_only_search(wrapper: str) -> None:
+    needle = " ".join(("git", "reset", "--hard"))
+    payload = f"rg -n {json.dumps(needle)} docs"
+    completed = _run_pre_hook(f"{wrapper} {json.dumps(payload)}")
+    assert completed.returncode == 0
+    assert completed.stdout == ""
 
 
 def test_governance_index_closes_repository_side_residuals() -> None:
