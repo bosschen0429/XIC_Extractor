@@ -378,6 +378,32 @@ def test_pre_hook_preserves_wrapped_destructive_owner_semantics(
 
 
 @pytest.mark.parametrize(
+    "flags",
+    [
+        ("-fd",),
+        ("-f", "-d"),
+        ("--force", "-d"),
+        ("-f",),
+        ("--force",),
+    ],
+)
+def test_pre_hook_denies_all_wrapped_forced_clean_forms(
+    flags: tuple[str, ...],
+) -> None:
+    payload = " ".join(("git", "clean", *flags))
+    completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_pre_hook_allows_wrapped_clean_dry_run() -> None:
+    payload = " ".join(("git", "clean", "-n", "-d"))
+    completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+@pytest.mark.parametrize(
     "wrapper", ["sh -c", "/bin/bash -lc", "pwsh -NoProfile -Command"]
 )
 def test_pre_hook_does_not_deny_wrapped_read_only_search(wrapper: str) -> None:

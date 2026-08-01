@@ -26,14 +26,11 @@ WRAPPED_DESTRUCTIVE_COMMANDS = [
         re.compile(r"\bgit\s+checkout\s+--(?:\s|$)", re.IGNORECASE),
         "git checkout -- is blocked because it reverts files. Use targeted review and explicit user approval.",
     ),
-    (
-        re.compile(
-            r"\bgit\s+" r"clean\s+-(?:[^\s]*f[^\s]*d|[^\s]*d[^\s]*f|x?fd|fxd)\b",
-            re.IGNORECASE,
-        ),
-        "Wrapped cleanup with force/delete flags is denied because PreToolUse cannot request interactive approval.",
-    ),
 ]
+WRAPPED_CLEAN_REASON = (
+    "Wrapped forced cleanup is denied because PreToolUse cannot request "
+    "interactive approval."
+)
 
 POSIX_SHELLS = {"bash", "sh"}
 POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
@@ -178,6 +175,28 @@ def shell_command_segments(payload: str) -> list[str]:
     return segments
 
 
+def wrapped_git_clean_is_forced(segment: str) -> bool:
+    try:
+        tokens = shlex.split(segment, posix=True)
+    except ValueError:
+        return False
+    if len(tokens) < 3:
+        return False
+    if executable_name(tokens[0]) not in {"git", "git.exe"}:
+        return False
+    if tokens[1].lower() != "clean":
+        return False
+
+    for token in tokens[2:]:
+        if token == "--":
+            return False
+        if token.lower() == "--force":
+            return True
+        if token.startswith("-") and not token.startswith("--") and "f" in token[1:]:
+            return True
+    return False
+
+
 def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
     payload = wrapped_shell_payload(command)
     if payload is None:
@@ -219,6 +238,9 @@ def main() -> int:
                 if pattern.match(segment):
                     deny(reason)
                     return 0
+            if wrapped_git_clean_is_forced(segment):
+                deny(WRAPPED_CLEAN_REASON)
+                return 0
 
     effective_segments = (
         wrapped_command_segments(command)

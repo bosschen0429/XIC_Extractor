@@ -297,6 +297,18 @@ def main() -> int:
         "interactive approval",
     )
 
+    wrapped_long_cleanup_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps(" ".join(("git", "clean", "--force", "-d")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrapped_long_cleanup_payload),
+        "interactive approval",
+    )
+
     multiline_reset_payload = {
         **static_rule_search_payload,
         "tool_input": {
