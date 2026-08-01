@@ -35,6 +35,28 @@
     "frozen",
     "out_of_scope"
   ],
+  "required_control_plane_anchors": {
+    "backfill_current_write_ready_scope": "QuantMatrix Default Product Activation v1",
+    "cid_nl_default_product_activation_v1": "CID-NL Default Product Activation v1",
+    "backfill_expansion_default_product_activation_v1": "Backfill Expansion Full Evidence Chain v1",
+    "backfill_expansion_clean_target_selective_product_activation_v1": "Backfill Expansion Clean-Target Selective Default Activation v1",
+    "broad_backfill_autowrite": "park_broad_backfill",
+    "productization_authority_firewall_v1": "productization_authority_manifest_v1",
+    "mechanical_adjudication_contract_v1": "mechanical_adjudication_index_v1",
+    "review_packet_workflow_v1": "Review Packet / Approval Workflow v1",
+    "peak_choice_truth_lockbox_v1": "lockbox_shadow_automation_experiment_v1",
+    "missing_overlay_evidence_recovery_v1": "Missing-Overlay Evidence Recovery v1",
+    "quality_explanation_sidecar_v1": "quality_explanations and quality_blockers are explanation and triage inputs only",
+    "targeted_ms1_shape_identity_limited_rescue_v1": "Targeted MS1 shape identity limited rescue remains production-ready",
+    "targeted_ms1_shape_identity_broader_targets": "GUI and broader targets remain blocked",
+    "sample_metadata_order_projection_v1": "sample_metadata cross-module parity",
+    "sample_metadata_role_value_behavior": "role/value behavior remains blocked",
+    "review_action_candidate_sidecar_v1": "candidate-sidecar verifier is now production_candidate",
+    "review_action_selected_candidate_switch": "selected candidate / manual boundary writer parked",
+    "review_action_manual_boundary_area_writer": "manual-boundary area writer parked",
+    "calibration_normalization_activation": "calibration/normalization activation",
+    "gui_replay_parity": "GUI replay / GUI parity is out of scope"
+  },
   "authority_rules": {
     "unregistered_scope_policy": "fail_closed",
     "allowed_product_writer_scopes": [

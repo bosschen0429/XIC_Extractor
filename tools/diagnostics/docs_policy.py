@@ -4,6 +4,16 @@ import re
 from dataclasses import dataclass
 
 CONTROL_PLANE_PATH = "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS = (
+    "# Productization compatibility index",
+    "Doc placement: formal_repo_doc",
+    "Doc kind: manifest",
+    "Doc lifecycle: active",
+    "This path is a compatibility lookup surface.",
+    "## Authority routes",
+    "## Historical source",
+    "## Lane anchor index",
+)
 HANDOFF_CURRENT_DIR = "docs/superpowers/handoffs/current/"
 HANDOFF_ARCHIVE_DIR = "docs/superpowers/handoffs/archive/"
 DEFAULT_LOCAL_ACTIVE_HANDOFF_PATH = f"{HANDOFF_CURRENT_DIR}ACTIVE.local.md"
@@ -215,6 +225,15 @@ GOVERNANCE_MECHANISM_VALUES = frozenset(
 
 def is_productization_control_plane_path(path: str) -> bool:
     return normalize_path_text(path).removeprefix("./") == CONTROL_PLANE_PATH
+
+
+def is_productization_compatibility_index_text(text: str) -> bool:
+    """Identify a previously retired control-plane compatibility preimage."""
+
+    return all(
+        text.count(marker) == 1
+        for marker in PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS
+    )
 
 
 DOC_ROOT_ALLOWLIST_FILES = {

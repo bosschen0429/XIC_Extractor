@@ -11,7 +11,7 @@ verdicts.
 | --- | --- |
 | Current per-lane readiness, owner, artifact, product effect, public surface, and next gate | [Productization status index](../superpowers/validation/productization_status_index_v1.tsv) |
 | ProductWriter scope and current authorized counts | [Productization authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json) |
-| Structured fields, required lane keys, allowed status values, and authority rules | [Productization control-plane schema](../superpowers/schemas/productization_control_plane_schema.v1.json) |
+| Structured fields, required lane keys, allowed status values, stable compatibility anchors, and authority rules | [Productization control-plane schema](../superpowers/schemas/productization_control_plane_schema.v1.json) |
 | Readiness vocabulary, promotion semantics, and promotion-packet requirements | [Product validation contract](../agent/product-validation-contract.md) |
 | Stable capability meaning and public boundaries | Matching `docs/product/*.md` topic owner |
 | Compatibility lookup from historical control-plane anchors | [Productization compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md) |
@@ -40,8 +40,8 @@ owner, the structured owner wins and the narrative must be corrected.
 
 - **Owns:** stable capability descriptions, topic-owner routing, and the
   field-level authority partition above.
-- **Does not own:** current lane status, current counts, ProductWriter scopes,
-  parked or blocked decisions, active WIP, or a specific promotion verdict.
+- **Does not own:** current lane state or counts, ProductWriter scopes, active
+  WIP, or a specific promotion verdict.
 - Validation packets and diagnostics support a decision; they do not become a
   second current-state board.
 - The compatibility index preserves stable lookup keys only. It must not grow a

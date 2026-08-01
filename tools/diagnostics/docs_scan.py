@@ -55,7 +55,27 @@ def normalize_repo_rel_path(path: str) -> str:
     normalized = path.replace("\\", "/")
     while normalized.startswith("./"):
         normalized = normalized[2:]
-    return posixpath.normpath(normalized)
+    normalized = posixpath.normpath(normalized)
+    if (
+        normalized in {"", ".", ".."}
+        or normalized.startswith(("/", "../"))
+        or re.match(r"^[A-Za-z]:/", normalized)
+    ):
+        raise ValueError(f"path must be repository-relative: {path!r}")
+    return normalized
+
+
+def resolve_repo_path(root: Path, path: str) -> Path:
+    """Resolve a repository-relative path without following links outside root."""
+
+    normalized = normalize_repo_rel_path(path)
+    resolved_root = root.resolve()
+    resolved_path = (resolved_root / normalized).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError(f"path resolves outside repository: {path!r}") from exc
+    return resolved_path
 
 
 def read_text(path: Path) -> str:
@@ -156,9 +176,13 @@ def resolve_repo_target(referrer: str, raw_target: str) -> str | None:
     target = raw_target.strip().strip("<>").split("#", 1)[0]
     if not target or "://" in target or target.startswith(("#", "/", "mailto:")):
         return None
-    return posixpath.normpath(
+    resolved = posixpath.normpath(
         str(PurePosixPath(referrer).parent / PurePosixPath(target))
     )
+    try:
+        return normalize_repo_rel_path(resolved)
+    except ValueError:
+        return None
 
 
 def resolved_markdown_targets(referrer: str, text: str) -> tuple[str, ...]:

@@ -106,6 +106,7 @@ def check_productization_state(
     _check_doc_anchors(rows, handoff_text, control_plane_text, problems)
     _check_compatibility_index(rows, control_plane_text, problems)
     _check_narrative_authority_partition(
+        schema,
         rows,
         productization_summary_text,
         control_plane_text,
@@ -130,6 +131,43 @@ def _check_schema_and_rows(
         problems.append("status index header must exactly match schema")
     allowed_statuses = set(schema.get("allowed_readiness_statuses", []))
     required_lane_ids = set(schema.get("required_lane_ids", []))
+    raw_anchor_contract = schema.get("required_control_plane_anchors")
+    if (
+        not isinstance(raw_anchor_contract, Mapping)
+        or not raw_anchor_contract
+        or not all(
+            isinstance(lane_id, str)
+            and isinstance(anchor, str)
+            and lane_id
+            and anchor
+            for lane_id, anchor in (
+                raw_anchor_contract.items()
+                if isinstance(raw_anchor_contract, Mapping)
+                else ()
+            )
+        )
+    ):
+        problems.append(
+            "schema required_control_plane_anchors must be a non-empty string map"
+        )
+        anchor_contract: Mapping[str, str] = {}
+    else:
+        anchor_contract = raw_anchor_contract
+        if set(anchor_contract) != required_lane_ids:
+            problems.append(
+                "schema required_control_plane_anchors must exactly cover "
+                "required_lane_ids"
+            )
+        duplicate_anchors = sorted(
+            anchor
+            for anchor, count in Counter(anchor_contract.values()).items()
+            if count > 1
+        )
+        if duplicate_anchors:
+            problems.append(
+                "schema required_control_plane_anchors contains duplicates: "
+                + ", ".join(duplicate_anchors)
+            )
     lane_ids = [row.get("lane_id", "") for row in rows]
     duplicates = sorted(
         lane_id for lane_id, count in Counter(lane_ids).items() if count > 1
@@ -148,6 +186,13 @@ def _check_schema_and_rows(
         if row.get("readiness_status") not in allowed_statuses:
             problems.append(
                 f"row {index}: invalid readiness_status {row.get('readiness_status')!r}"
+            )
+        lane_id = row.get("lane_id", "")
+        expected_anchor = anchor_contract.get(lane_id)
+        if expected_anchor and row.get("control_plane_anchor") != expected_anchor:
+            problems.append(
+                f"row {index}: control_plane_anchor violates the stable "
+                f"compatibility contract for {lane_id}"
             )
         for field in (
             "write_authority",
@@ -414,7 +459,20 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def _contains_normalized_phrase(text: str, phrase: str) -> bool:
+    text_tokens = tuple(re.findall(r"[a-z0-9]+", text.casefold()))
+    phrase_tokens = tuple(re.findall(r"[a-z0-9]+", phrase.casefold()))
+    if not phrase_tokens or len(phrase_tokens) > len(text_tokens):
+        return False
+    width = len(phrase_tokens)
+    return any(
+        text_tokens[index : index + width] == phrase_tokens
+        for index in range(len(text_tokens) - width + 1)
+    )
+
+
 def _check_narrative_authority_partition(
+    schema: Mapping[str, Any],
     rows: Sequence[Mapping[str, str]],
     productization_summary_text: str,
     control_plane_text: str,
@@ -437,24 +495,25 @@ def _check_narrative_authority_partition(
     }
     forbidden_literals.update(
         {
-            "readiness_status=",
-            "write_authority=",
-            "row_count=",
-            "may_touch_matrix=",
-            "may_change_quant_output=",
-            "may_change_workbook=",
-            "may_change_selected_peak=",
-            "may_change_selected_area=",
-            "may_change_counted_detection=",
-            "production_candidate",
-            "production_ready",
-            "diagnostic_only",
-            "out_of_scope",
+            "readiness_status",
+            "write_authority",
+            "row_count",
+            "may_touch_matrix",
+            "may_change_quant_output",
+            "may_change_workbook",
+            "may_change_selected_peak",
+            "may_change_selected_area",
+            "may_change_counted_detection",
         }
+    )
+    forbidden_literals.update(
+        status
+        for status in schema.get("allowed_readiness_statuses", [])
+        if isinstance(status, str) and status
     )
     for path, text in narrative_surfaces.items():
         for literal in sorted(forbidden_literals):
-            if literal in text:
+            if _contains_normalized_phrase(text, literal):
                 problems.append(
                     f"{path}: narrative surface duplicates mutable structured "
                     f"state or authority: {literal}"

@@ -2,6 +2,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.check_productization_state import (
     DEFAULT_AUTHORITY_MANIFEST,
     DEFAULT_CONTROL_PLANE,
@@ -9,6 +11,7 @@ from scripts.check_productization_state import (
     DEFAULT_PRODUCTIZATION_SUMMARY,
     DEFAULT_SCHEMA,
     DEFAULT_STATUS_INDEX,
+    _render_compatibility_index,
     artifact_sha256,
     check_productization_state,
 )
@@ -26,6 +29,9 @@ def test_status_schema_matches_index_header() -> None:
     assert header == schema["required_status_index_columns"]
     assert {row["lane_id"] for row in rows} == set(schema["required_lane_ids"])
     assert len(rows) == len(schema["required_lane_ids"])
+    assert schema["required_control_plane_anchors"] == {
+        row["lane_id"]: row["control_plane_anchor"] for row in rows
+    }
 
 
 def test_registered_default_scopes_have_writer_authority() -> None:
@@ -179,19 +185,76 @@ def test_checker_rejects_lane_id_fallback_without_exact_heading(
     assert any("exact unique Markdown heading" in problem for problem in problems)
 
 
+@pytest.mark.parametrize(
+    "state_assignment",
+    (
+        "readiness_status=production_candidate",
+        "READINESS STATUS = BLOCKED",
+    ),
+)
 def test_checker_rejects_narrative_structured_state_duplication(
     tmp_path: Path,
+    state_assignment: str,
 ) -> None:
     summary = tmp_path / "productization.md"
     summary.write_text(
         DEFAULT_PRODUCTIZATION_SUMMARY.read_text(encoding="utf-8")
-        + "\nreadiness_status=production_candidate\n",
+        + f"\n{state_assignment}\n",
         encoding="utf-8",
     )
 
     problems = check_productization_state(productization_summary_path=summary)
 
     assert any("duplicates mutable structured state" in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
+    "readiness_text",
+    (
+        "Production_Ready",
+        "PRODUCTION_READY",
+        "production ready",
+        "production-ready",
+        "BLOCKED",
+        "Parked",
+        "FROZEN",
+    ),
+)
+def test_checker_normalizes_narrative_readiness_vocabulary(
+    tmp_path: Path,
+    readiness_text: str,
+) -> None:
+    summary = tmp_path / "productization.md"
+    summary.write_text(
+        DEFAULT_PRODUCTIZATION_SUMMARY.read_text(encoding="utf-8")
+        + f"\nCurrent lane is {readiness_text}.\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(productization_summary_path=summary)
+
+    assert any("duplicates mutable structured state" in problem for problem in problems)
+
+
+def test_checker_rejects_regenerated_unregistered_control_anchor(
+    tmp_path: Path,
+) -> None:
+    header, rows = _read_tsv(DEFAULT_STATUS_INDEX)
+    rows[0]["control_plane_anchor"] = "Backfill is production_ready"
+    status_index = tmp_path / "productization-status.tsv"
+    with status_index.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, delimiter="\t", fieldnames=header)
+        writer.writeheader()
+        writer.writerows(rows)
+    control_plane = tmp_path / "compatibility-index.md"
+    control_plane.write_text(_render_compatibility_index(rows), encoding="utf-8")
+
+    problems = check_productization_state(
+        status_index_path=status_index,
+        control_plane_path=control_plane,
+    )
+
+    assert any("stable compatibility contract" in problem for problem in problems)
 
 
 def test_checker_rejects_state_bearing_compatibility_prose(tmp_path: Path) -> None:

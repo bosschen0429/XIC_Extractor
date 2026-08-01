@@ -238,6 +238,48 @@ def test_same_path_compatibility_replacement_with_complete_evidence_passes(
     assert result.problems == ()
 
 
+def test_existing_compatibility_index_update_does_not_require_retirement_packet(
+    tmp_path: Path,
+) -> None:
+    source_path, _, _, _ = _same_path_fixture(tmp_path)
+    repo_root = Path(__file__).parents[1]
+    compatibility = (repo_root / source_path).read_text(encoding="utf-8")
+    _write(tmp_path, source_path, compatibility)
+    subprocess.run(
+        ["git", "add", source_path],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "retired compatibility index",
+        ],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    updated = compatibility.replace(
+        "owner route changes.",
+        "owner route or stable lookup key changes.",
+        1,
+    )
+
+    result = check_doc_placement(
+        tmp_path,
+        [StagedMarkdown("M", source_path, updated)],
+    )
+
+    assert result.problems == ()
+
+
 def test_same_path_replacement_requires_evidence(tmp_path: Path) -> None:
     source_path, _, replacement, _ = _same_path_fixture(tmp_path)
 
@@ -270,6 +312,55 @@ def test_same_path_replacement_rejects_missing_owner_anchor(tmp_path: Path) -> N
     )
 
     assert any("owner Markdown heading" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_owner_locator_outside_repo(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    source_path, evidence_path, replacement, packet = _same_path_fixture(repo)
+    outside_owner = tmp_path / "outside-owner.md"
+    outside_owner.write_text("# Owner\n\n## Contract\n", encoding="utf-8")
+    packet["claims"][0]["owner_locator"]["path"] = "../outside-owner.md"
+
+    result = _same_path_result(
+        repo,
+        source_path,
+        evidence_path,
+        replacement,
+        packet,
+    )
+
+    assert any(
+        "owner locator path must be repository-relative" in p.reason
+        for p in result.problems
+    )
+
+
+def test_same_path_replacement_rejects_owner_locator_symlink_escape(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    source_path, evidence_path, replacement, packet = _same_path_fixture(repo)
+    outside_owner = tmp_path / "outside-owner.md"
+    outside_owner.write_text("# Owner\n\n## Contract\n", encoding="utf-8")
+    (repo / "owner-link.md").symlink_to(outside_owner)
+    packet["claims"][0]["owner_locator"]["path"] = "owner-link.md"
+
+    result = _same_path_result(
+        repo,
+        source_path,
+        evidence_path,
+        replacement,
+        packet,
+    )
+
+    assert any(
+        "owner locator path must resolve inside repository" in p.reason
+        for p in result.problems
+    )
 
 
 def test_same_path_replacement_rejects_placeholder_claim(tmp_path: Path) -> None:

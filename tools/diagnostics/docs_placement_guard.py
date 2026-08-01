@@ -38,6 +38,7 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     has_private_history_signal,
     is_invalid_superpowers_spec_payload_path,
     is_markdown_path,
+    is_productization_compatibility_index_text,
     is_productization_control_plane_path,
     is_superpowers_spec_lane_path,
 )
@@ -196,6 +197,15 @@ def _string_list(value: object) -> list[str]:
     return [item for item in value if isinstance(item, str)]
 
 
+def _normalized_evidence_path(value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return _docs_scan.normalize_repo_rel_path(value)
+    except ValueError:
+        return None
+
+
 def _source_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -277,10 +287,16 @@ def _owner_paths_exist(
 ) -> bool:
     staged_text_by_path = _staged_text_by_path(entries)
     for owner_path in owner_paths:
-        normalized = _docs_scan.normalize_repo_rel_path(owner_path)
+        normalized = _normalized_evidence_path(owner_path)
+        if normalized is None:
+            return False
         if normalized in staged_text_by_path:
             continue
-        if not (root / normalized).is_file():
+        try:
+            resolved = _docs_scan.resolve_repo_path(root, normalized)
+        except ValueError:
+            return False
+        if not resolved.is_file():
             return False
     return True
 
@@ -326,10 +342,9 @@ def retirement_evidence_by_path(
             if not _is_usable_retirement_evidence_entry(evidence_entry):
                 continue
             source_path = evidence_entry.get("source_path")
-            if isinstance(source_path, str) and source_path:
-                evidence_by_path[_docs_scan.normalize_repo_rel_path(source_path)] = (
-                    evidence_entry
-                )
+            normalized = _normalized_evidence_path(source_path)
+            if normalized is not None:
+                evidence_by_path[normalized] = evidence_entry
     return evidence_by_path
 
 
@@ -353,8 +368,8 @@ def retirement_evidence_packets_by_path(
             if not isinstance(item, dict):
                 continue
             source_path = item.get("source_path")
-            if isinstance(source_path, str) and source_path:
-                normalized = _docs_scan.normalize_repo_rel_path(source_path)
+            normalized = _normalized_evidence_path(source_path)
+            if normalized is not None:
                 packets.setdefault(normalized, []).append(data)
     return packets
 
@@ -418,11 +433,16 @@ def _owner_locator_problem(
     raw_path = locator.get("path")
     if not isinstance(raw_path, str) or not raw_path:
         return "owner locator path is missing"
-    path = _docs_scan.normalize_repo_rel_path(raw_path)
+    path = _normalized_evidence_path(raw_path)
+    if path is None:
+        return "owner locator path must be repository-relative"
     if path in staged_text_by_path:
         text = staged_text_by_path[path]
     else:
-        owner_path = root / path
+        try:
+            owner_path = _docs_scan.resolve_repo_path(root, path)
+        except ValueError:
+            return "owner locator path must resolve inside repository"
         if not owner_path.is_file():
             return f"owner path is missing: {path}"
         text = owner_path.read_text(encoding="utf-8", errors="strict")
@@ -496,7 +516,7 @@ def same_path_replacement_problems(
         item
         for item in packet.get("entries", [])
         if isinstance(item, dict)
-        and _docs_scan.normalize_repo_rel_path(str(item.get("source_path", ""))) == path
+        and _normalized_evidence_path(item.get("source_path")) == path
     ]
     if len(packet_entries) != 1:
         add(f"expected exactly one source mapping, found {len(packet_entries)}")
@@ -909,14 +929,16 @@ def check_entry(
     classification = classify_doc(path, text)
     problems: list[PlacementProblem] = []
     if is_productization_control_plane_path(path) and status == "M":
-        problems.extend(
-            same_path_replacement_problems(
-                root,
-                entry,
-                packet_candidates=packet_candidates or {},
-                entries=entries,
+        head_text = read_deleted_text(root, StagedMarkdown("D", path)) or ""
+        if not is_productization_compatibility_index_text(head_text):
+            problems.extend(
+                same_path_replacement_problems(
+                    root,
+                    entry,
+                    packet_candidates=packet_candidates or {},
+                    entries=entries,
+                )
             )
-        )
     if path in PERMANENT_ROOT_DOC_CONTRACTS:
         overrides = _staged_text_by_path(entries)
         overrides[path] = text

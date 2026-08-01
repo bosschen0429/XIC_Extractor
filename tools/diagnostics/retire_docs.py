@@ -291,7 +291,11 @@ def _retirement_evidence_by_path(
             continue
         source_path = entry.get("source_path")
         if isinstance(source_path, str) and source_path:
-            indexed[_docs_scan.normalize_repo_rel_path(source_path)] = entry
+            try:
+                normalized = _docs_scan.normalize_repo_rel_path(source_path)
+            except ValueError:
+                continue
+            indexed[normalized] = entry
     return indexed
 
 

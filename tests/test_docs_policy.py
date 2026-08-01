@@ -2,16 +2,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics.docs_policy import (
     DOC_ROUTING_SCHEMAS_INDEX_PATH,
     DOC_ROUTING_SPECS_INDEX_PATH,
     PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
     classify_doc_path,
+    is_productization_compatibility_index_text,
 )
 from tools.diagnostics.docs_scan import (
+    normalize_repo_rel_path,
     normalized_path_dependency_census,
     permanent_root_contract_problems,
+    resolve_repo_path,
+    resolve_repo_target,
 )
 
 
@@ -22,6 +28,57 @@ def test_permanent_root_contract_is_exactly_four_paths() -> None:
         "docs/architecture-contract.md",
         "docs/project-layout.md",
     }
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "../outside.md",
+        "../../outside.md",
+        "/tmp/outside.md",
+        "C:\\outside.md",
+        "\\\\server\\share\\outside.md",
+        ".",
+        "",
+    ),
+)
+def test_repo_relative_path_normalizer_rejects_escape_paths(path: str) -> None:
+    with pytest.raises(ValueError, match="repository-relative"):
+        normalize_repo_rel_path(path)
+
+
+def test_repo_relative_path_normalizer_accepts_internal_path() -> None:
+    assert normalize_repo_rel_path("./docs/product/../product/backfill.md") == (
+        "docs/product/backfill.md"
+    )
+
+
+def test_relative_link_resolution_rejects_repo_escape() -> None:
+    assert resolve_repo_target("docs/guide.md", "../../outside.md") is None
+
+
+def test_repo_path_resolution_rejects_symlink_escape(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside\n", encoding="utf-8")
+    (repo / "owner.md").symlink_to(outside)
+
+    with pytest.raises(ValueError, match="resolves outside repository"):
+        resolve_repo_path(repo, "owner.md")
+
+
+def test_current_control_plane_is_a_compatibility_index_preimage() -> None:
+    root = Path(__file__).parents[1]
+    text = (
+        root
+        / "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+    ).read_text(encoding="utf-8")
+
+    assert is_productization_compatibility_index_text(text)
+    assert not is_productization_compatibility_index_text(
+        "# Productization compatibility index\n"
+    )
 
 
 def test_current_permanent_root_contracts_have_positive_landmarks() -> None:
