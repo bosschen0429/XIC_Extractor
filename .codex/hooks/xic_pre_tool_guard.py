@@ -34,11 +34,20 @@ WRAPPED_CLEAN_REASON = (
 
 POSIX_SHELLS = {"bash", "sh"}
 POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
-SHELL_CONTROL_PREFIXES = {"then", "do", "else", "{", "(", "!"}
+SHELL_CONTROL_PREFIXES = {
+    "if",
+    "while",
+    "until",
+    "then",
+    "do",
+    "else",
+    "{",
+    "(",
+    "!",
+}
 SHELL_SEPARATOR_CHARS = ";&|\n"
 MAX_WRAPPER_DEPTH = 3
 
-BACKGROUND_PROCESS = re.compile(r"^\s*(?:&\s*)?Start-Process\b", re.IGNORECASE)
 RAW_LAUNCH_SIGNAL = re.compile(
     r"(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|--preset\b|run_alignment\b|"
     r"--raw-dir\b|XIC_RAW_ROOT\b|THERMO_RAWFILE_READER)",
@@ -216,6 +225,14 @@ def wrapped_git_clean_is_forced(segment: str) -> bool:
     return False
 
 
+def contains_background_process(segment: str) -> bool:
+    try:
+        tokens = shlex.split(segment, posix=True)
+    except ValueError:
+        return False
+    return any(executable_name(token) == "start-process" for token in tokens)
+
+
 def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
     payload = wrapped_shell_payload(command)
     if payload is None:
@@ -268,7 +285,7 @@ def main() -> int:
         else shell_command_segments(command)
     )
     effective_command = "\n".join(effective_segments)
-    if any(BACKGROUND_PROCESS.search(segment) for segment in effective_segments) and (
+    if any(contains_background_process(segment) for segment in effective_segments) and (
         RAW_LAUNCH_SIGNAL.search(effective_command)
     ):
         deny(

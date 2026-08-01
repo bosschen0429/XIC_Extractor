@@ -447,6 +447,8 @@ def test_pre_hook_blocks_compound_and_nested_wrapped_destructive_commands(
     [
         "if true; then " + DESTRUCTIVE_TEXTS[0] + "; fi",
         "while true; do " + DESTRUCTIVE_TEXTS[2] + "; done",
+        "if " + DESTRUCTIVE_TEXTS[0] + "; then :; fi",
+        "until " + DESTRUCTIVE_TEXTS[2] + "; do :; done",
     ],
 )
 def test_pre_hook_blocks_control_prefixed_destructive_commands(payload: str) -> None:
@@ -496,6 +498,18 @@ def test_pre_hook_correlates_raw_signals_across_powershell_statements() -> None:
     payload = (
         "$rawArgs='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
         "Start-Process python -ArgumentList $rawArgs"
+    )
+    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
+
+
+def test_pre_hook_blocks_raw_launch_inside_powershell_control_block() -> None:
+    payload = (
+        "if ($true) { Start-Process python -ArgumentList "
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT' }"
     )
     completed = _run_pre_hook(f'pwsh -Command "{payload}"')
     output = json.loads(completed.stdout)
