@@ -19,10 +19,10 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
   operations.
 - `.codex/hooks.json` and `.codex/hooks/*.py`: low-noise lifecycle checks.
 - `docs/superpowers/plans/2026-06-15-productization-control-plane.md`:
-  current canonical productization tier board and maintenance checklist.
-  Machine-checkable contracts live in `docs/superpowers/schemas/`; short-lived
-  Markdown development specs can live in `docs/superpowers/specs/`; durable
-  behavior narratives belong in product docs, named plans, or active stubs.
+  compatibility index for stable historical productization anchors. Mutable
+  lane state lives in the status index, writer authority in the authority
+  manifest, readiness/promotion semantics in the product-validation contract,
+  and stable capability narratives in product-topic owners.
 - `docs/superpowers/handoffs/current/ACTIVE.local.md`: ignored local
   plain-language continuation summary for the active branch or PR workflow. It
   is a compact current-state snapshot, not an append-only log. Rewrite and
@@ -57,8 +57,10 @@ The hook set is intentionally small:
   synthetic/no-RAW validation and generic heartbeat/schema work stay out of the
   RAW-launch gate unless the prompt explicitly names RAW execution or acceptance.
   The hook also blocks prompt text that looks like a pasted secret. Productization
-  prompts inject the control-plane requirement so maturity tier claims point to
-  `docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
+  prompts point first to
+  `docs/superpowers/plans/2026-06-15-productization-control-plane.md` as a
+  compatibility lookup, then route mutable lane state, writer authority, and
+  readiness/promotion decisions to their separate canonical owners.
   Handoff/closeout/compaction prompts remind the agent to first resolve the
   active branch handoff, then rewrite and prune that snapshot instead of
   appending chronological notes. They must not direct every branch to the same
@@ -66,11 +68,12 @@ The hook set is intentionally small:
 - `PreToolUse`: blocks clear destructive git commands and background RAW
   launches through `Start-Process`; adds context when edits touch
   execution-affecting config, root agent contracts, or product/public surfaces
-  that may need a control-plane update.
+  that may need a routed productization-owner update.
 - `PostToolUse`: catches pytest runs that collected zero tests, and points the
   agent to fix the node id instead of treating the run as validation. It also
-  reminds write-like product/public surface changes to update the
-  productization control plane or explicitly state that no maturity tier changed.
+  reminds write-like product/public surface changes to consult the
+  productization compatibility index, update the applicable structured owner, or
+  explicitly state that no maturity tier or authority changed.
   If product/control-plane state may have changed without a branch handoff being
   part of the update, it reminds closeout to resolve the active branch handoff
   or state why no branch handoff update is needed. It also reminds when a
@@ -96,6 +99,28 @@ Rules cover command prefixes where the desired behavior is stable:
 
 Rules apply to Codex approval policy and are evaluated from `.codex/rules/` when
 the project `.codex/` layer is trusted. Restart Codex after editing rules.
+
+## Governance Enforcement Index
+
+This is a derived read-back index, not a second policy owner. Each canonical
+owner defines the rule; the mechanism and representative case below describe
+what the current repo actually enforces. A missing owner/locator, mechanism
+mismatch, or behavior change fails the #160 governance read-back.
+
+| Rule family | Canonical owner | Mechanism | Executable locator | Representative read-back case | Residual gap |
+| --- | --- | --- | --- | --- | --- |
+| `docs_lifecycle_retirement` | `docs/agent/obsidian-handoff-contract.md#retirement-evidence-gate` | `ci_checker` | `tools/diagnostics/docs_placement_guard.py` | `tests/test_docs_placement_guard.py` | `none` |
+| `destructive_git_filesystem` | `docs/agent/codex-operating-system.md#current-repo-local-rules` | `hard_guard` | `.codex/rules/xic-safety.rules` | `.codex/hooks/fixtures/pretool_git_reset.json` | `#166` |
+| `raw_background_launch` | `docs/agent/execution-gates.md#raw-and-long-runs` | `hard_guard` | `.codex/hooks/xic_pre_tool_guard.py` | `none` | `#166` |
+| `execution_affecting_config` | `docs/agent/codex-operating-system.md#change-protocol` | `advisory_context` | `.codex/hooks/xic_pre_tool_guard.py` | `none` | `#166` |
+| `product_public_surface` | `docs/agent/architecture-public-contracts.md#public-contracts` | `advisory_context` | `.codex/hooks/xic_post_tool_guard.py` | `.codex/hooks/fixtures/posttool_product_surface_edit.json` | `#166` |
+| `pr_validation_gate` | `docs/agent/execution-gates.md#pr-verification-gate` | `ci_checker` | `tools/testing/test_shards.py` | `.github/workflows/ci.yml` | `none` |
+
+`#166` owns only the residual host-trust, fixture scheduling, and harness
+characterization gaps. #160 may correct stale authority pointers in advisory
+hook messages because retiring the old owner otherwise creates an active routing
+conflict; it does not change hook blocking behavior, rules, fixtures, CI,
+bootstrap, or doctor behavior.
 
 ## Adoption Rules
 

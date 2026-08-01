@@ -29,7 +29,11 @@ for the active task unless a hard gate below says otherwise.
   [`diagnostic-ledger.md`](docs/diagnostic-ledger.md),
   [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md), and
   [`docs/solutions/README.md`](docs/solutions/README.md)
-- Productization tiers:
+- Productization capabilities, mutable state, writer authority, and historical
+  anchor compatibility:
+  [`productization.md`](docs/product/productization.md),
+  [`productization_status_index_v1.tsv`](docs/superpowers/validation/productization_status_index_v1.tsv),
+  [`productization_authority_manifest.v1.json`](docs/superpowers/schemas/productization_authority_manifest.v1.json), and
   [`2026-06-15-productization-control-plane.md`](docs/superpowers/plans/2026-06-15-productization-control-plane.md)
 - Repo layout, agent system, engineering conventions, and opt-in XIC skills:
   [`project-layout.md`](docs/project-layout.md),

@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
 from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     DOC_CANONICAL_OWNER_FILES,
+    PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
     classify_doc_path,
     is_invalid_superpowers_spec_payload_path,
@@ -55,9 +56,7 @@ _repo_rel = _docs_scan.repo_rel
 
 DEFAULT_CONFIG = Path.home() / ".obsidian-wiki" / "config"
 LOCAL_ENV_FILES = (".env.xic-local", ".env")
-CANONICAL_METADATA_REVIEW_EXCLUDE_PREFIXES = (
-    "docs/superpowers/",
-)
+CANONICAL_METADATA_REVIEW_EXCLUDE_PREFIXES = ("docs/superpowers/",)
 
 STALE_HANDOFF_PATTERNS = (
     "no commit has been made",
@@ -112,8 +111,6 @@ class AuditResult:
         return tuple(msg for msg in self.messages if msg.severity == "blocker")
 
 
-
-
 def parse_yaml_frontmatter(text: str) -> dict[str, str]:
     """Parse YAML frontmatter between ``---`` delimiters.
 
@@ -144,8 +141,6 @@ def parse_yaml_frontmatter(text: str) -> dict[str, str]:
         current_key = key.strip()
         values[current_key] = value.strip().strip('"').strip("'")
     return values
-
-
 
 
 def _config_values(path: Path) -> dict[str, str]:
@@ -259,6 +254,17 @@ def audit_repo(
     structure_review = docs_structure_review_for_repo(scan_paths)
     completed_transient_review = completed_transient_review_for_repo(root, scan_paths)
     canonical_metadata_review = canonical_metadata_review_for_repo(root)
+    governance_path = root / "docs/agent/codex-operating-system.md"
+    governance_problems = (
+        list(
+            _docs_scan.governance_index_problems(
+                root,
+                _read_text(governance_path),
+            )
+        )
+        if governance_path.is_file()
+        else []
+    )
     routing_candidates = int(routing_review["candidate_files"])
     metadata_review_files = int(routing_review["metadata_review_files"])
     canonical_missing_metadata = int(
@@ -315,6 +321,15 @@ def audit_repo(
                     "inspect summary.repo.canonical_metadata_review."
                     f"top_missing_metadata ({canonical_missing_metadata} file(s))"
                 ),
+            )
+        )
+
+    for problem in governance_problems:
+        messages.append(
+            AuditMessage(
+                "blocker",
+                "docs/agent/codex-operating-system.md",
+                f"governance enforcement index: {problem}",
             )
         )
 
@@ -376,9 +391,7 @@ def audit_repo(
         )
 
     duplicate_topic_owner_groups = int(
-        routing_review["topic_cluster_group_counts"].get(
-            "potential_duplicate_owner", 0
-        )
+        routing_review["topic_cluster_group_counts"].get("potential_duplicate_owner", 0)
     )
     if duplicate_topic_owner_groups:
         messages.append(
@@ -417,6 +430,10 @@ def audit_repo(
         "docs_structure_review": structure_review,
         "completed_transient_review": completed_transient_review,
         "canonical_metadata_review": canonical_metadata_review,
+        "governance_enforcement_index": {
+            "problems": governance_problems,
+            "status": "pass" if not governance_problems else "fail",
+        },
         "handoff_retention": handoff_result.summary,
     }
     return messages, summary
@@ -508,6 +525,26 @@ def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
         if not path.exists() or not path.is_file():
             continue
         text = _read_text(path)
+        if rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
+            contract_problems = _docs_scan.permanent_root_contract_problems(
+                root,
+                rel_path,
+                text,
+            )
+            if not contract_problems:
+                continue
+            rows.append(
+                {
+                    "path": rel_path,
+                    "metadata_status": "invalid_permanent_root_contract",
+                    "metadata_missing_fields": "; ".join(contract_problems),
+                    "doc_kind": PERMANENT_ROOT_DOC_CONTRACTS[rel_path]["kind"],
+                    "doc_kind_source": "permanent_root_contract",
+                    "doc_lifecycle": "permanent",
+                    "repo_owner": "self",
+                }
+            )
+            continue
         classification = classify_doc(rel_path, text)
         if classification.metadata_status == "declared":
             continue
@@ -642,11 +679,11 @@ def audit_vault(vault: Path | None) -> tuple[list[AuditMessage], dict[str, objec
         if (vault / "_staging").exists()
         else []
     )
-    raw_files = [
-        path
-        for path in (vault / "_raw").glob("*")
-        if path.name != ".gitkeep"
-    ] if (vault / "_raw").exists() else []
+    raw_files = (
+        [path for path in (vault / "_raw").glob("*") if path.name != ".gitkeep"]
+        if (vault / "_raw").exists()
+        else []
+    )
 
     if staging_md:
         messages.append(
@@ -827,8 +864,6 @@ def write_topic_index_readmes(result: AuditResult, directory: Path) -> None:
     if isinstance(clusters_obj, list):
         clusters = [cluster for cluster in clusters_obj if isinstance(cluster, dict)]
     _write_topic_index_readmes(clusters, directory)
-
-
 
 
 def format_text(result: AuditResult) -> str:

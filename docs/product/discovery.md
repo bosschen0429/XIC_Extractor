@@ -12,6 +12,16 @@ workflow projection and Backfill/ProductWriter authority path.
 - Discovery produces candidate and review surfaces, not final product authority.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
+- CID-NL precursor inference supports both direct scan-precursor seeds and the
+  bounded `product_mz + neutral_loss` basis when the inferred precursor remains
+  within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
+  isolation precursor. The installed CLI exposes the same setting as
+  `--ms2-precursor-tol-da`.
+- Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
+  retain the sample/scan anchor plus precursor/product row identity so those
+  rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
+  measured scan-precursor, and delta provenance. This is a public identity and
+  replay contract even when the CSV column set is unchanged.
 - CID-NL, HCD-PI, Delta Mass, and future configured methods are Discovery
   methods when they are used to find features matching method-specific evidence
   settings. They produce feature candidates plus typed evidence, not

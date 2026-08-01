@@ -18,6 +18,25 @@
 `docs/architecture-contract.md`），**不**描述「軟體怎麼用」（那是 README.md
 與 `docs/user/`）。
 
+### Permanent root document contract
+
+Only the following exact four paths are permanent root authority documents.
+Their path supplies repo placement, kind, purpose, and self-ownership, so they
+do not need generic `Doc lifecycle` or `Doc exit rule` metadata. They still must
+retain every positive landmark and resolvable route below; no fifth path may
+inherit this exemption.
+
+| Path | Purpose / owner | Required landmarks and routes |
+| --- | --- | --- |
+| `AGENTS.md` | Repo agent routing contract / self | `Task Routes`; parameter settings; product index; evidence/validation; architecture; execution/review; diagnostics/solutions; productization; project layout and agent system |
+| `README.md` | Public project entrypoint / self | `Documentation`; user, product, architecture, project-layout, and LC-MS/MS evidence routes |
+| `docs/architecture-contract.md` | Architecture/dependency owner / self | ownership declaration; `Dependency Direction`; `Ownership Map`; reachable from `AGENTS.md`, `README.md`, and this file |
+| `docs/project-layout.md` | File-placement and documentation-lifecycle owner / self | file-placement purpose; docs source-of-truth/lifecycle route; architecture, product, and [Obsidian handoff](agent/obsidian-handoff-contract.md) routes |
+
+This exemption does not apply to other canonical owners or other Markdown at
+the repository or `docs/` root. Placement, purpose, owner, and route validation
+remain mandatory for all four paths.
+
 ## § 2 目錄地圖
 
 第一層完整清單。「PyInstaller」欄位指該目錄是否被打進 release bundle（由 `xic_extractor.spec` 決定）。
@@ -159,7 +178,10 @@ Selection、Quantitation Context、Instrument QC/Calibration。使用者操作�
 | Claim 類型 | Repo owner |
 |------|------|
 | Backfill / Discovery / Alignment / Presets / Productization / Evidence Spine / Quant Matrix / Run Provenance / Review Roundtrip / Sample Metadata/QC / Targeted Selection / Quantitation Context / Instrument QC/Calibration 等全局產品主題 | `docs/product/` 對應主題文件；實際 tier、writer authority、schema、validation verdict 仍查下列 owner |
-| 產品成熟度 tier、active lane、writer scope、promotion packet | `docs/superpowers/plans/2026-06-15-productization-control-plane.md`、`docs/superpowers/validation/productization_status_index_v1.tsv`、`docs/superpowers/schemas/productization_authority_manifest.v1.json` |
+| active lane 與當前 readiness state | `docs/superpowers/validation/productization_status_index_v1.tsv` |
+| writer scope 與當前 product authority | `docs/superpowers/schemas/productization_authority_manifest.v1.json` |
+| 成熟度語彙、promotion 規則與 packet contract | `docs/agent/product-validation-contract.md` |
+| 穩定 lane key 與舊 anchor 的 compatibility lookup | `docs/superpowers/plans/2026-06-15-productization-control-plane.md`；只路由到上述 owner，不儲存 mutable state |
 | LC-MS/MS evidence rule、Backfill evidence semantics、Gaussian15 area owner | `docs/lc-msms-evidence-rules.md` |
 | product-readiness wording、public-surface discipline | `docs/agent/product-validation-contract.md` |
 | validation verdict、rerun policy、known target/failure conclusion | `docs/diagnostic-ledger.md` 或 compact validation artifact |

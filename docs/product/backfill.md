@@ -29,6 +29,13 @@ or candidate tables into the matrix.
 - Family-level context can guide review, but product support must be tied to a
   same-peak, group-hypothesis, or PeakHypothesis-level authority record before
   it can promote a rescued cell.
+- Reusable standard-peak trace evidence caches are opt-in replay helpers, not
+  Backfill authority. A warm hit must match per-sample `path_stat_v1` RAW
+  identity: resolved path, size, mtime, device, and inode. Missing or mismatched
+  identity fails closed to normal RAW extraction; a same path string alone is
+  never sufficient cache identity. The reusable failure lesson and focused
+  evidence are retained in
+  [`raw-backed-evidence-cache-identity.md`](../solutions/validation/raw-backed-evidence-cache-identity.md).
 
 ## Current Evidence Compression
 

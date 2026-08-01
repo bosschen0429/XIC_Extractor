@@ -14,6 +14,7 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 import sys
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -24,6 +25,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     CONTROL_PLANE_PATH,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
@@ -38,6 +40,8 @@ DEFAULT_AUTHORITY_MANIFEST = ROOT / PRODUCTIZATION_AUTHORITY_MANIFEST_REL
 DEFAULT_PRODUCTIZATION_STATUS_ANCHOR = ROOT / PRODUCTIZATION_STATUS_ANCHOR_PATH
 DEFAULT_HANDOFF = DEFAULT_PRODUCTIZATION_STATUS_ANCHOR
 DEFAULT_CONTROL_PLANE = ROOT / CONTROL_PLANE_PATH
+PRODUCTIZATION_SUMMARY_REL = "docs/product/productization.md"
+DEFAULT_PRODUCTIZATION_SUMMARY = ROOT / PRODUCTIZATION_SUMMARY_REL
 
 WRITER_LANE_AUTHORITY = {
     "backfill_current_write_ready_scope": {
@@ -80,6 +84,7 @@ def check_productization_state(
     authority_manifest_path: Path = DEFAULT_AUTHORITY_MANIFEST,
     handoff_path: Path = DEFAULT_HANDOFF,
     control_plane_path: Path = DEFAULT_CONTROL_PLANE,
+    productization_summary_path: Path = DEFAULT_PRODUCTIZATION_SUMMARY,
     repo_root: Path = ROOT,
 ) -> list[str]:
     problems: list[str] = []
@@ -88,6 +93,10 @@ def check_productization_state(
     header, rows = _read_tsv(status_index_path, problems)
     handoff_text = _read_text(handoff_path, problems)
     control_plane_text = _read_text(control_plane_path, problems)
+    productization_summary_text = _read_text(
+        productization_summary_path,
+        problems,
+    )
     if not schema or not authority:
         return problems
 
@@ -95,6 +104,13 @@ def check_productization_state(
     _check_authority_boundaries(authority, rows, problems)
     _check_artifacts(rows, repo_root, problems)
     _check_doc_anchors(rows, handoff_text, control_plane_text, problems)
+    _check_compatibility_index(rows, control_plane_text, problems)
+    _check_narrative_authority_partition(
+        rows,
+        productization_summary_text,
+        control_plane_text,
+        problems,
+    )
     return problems
 
 
@@ -131,8 +147,7 @@ def _check_schema_and_rows(
             problems.append(f"row {index}: invalid schema_version")
         if row.get("readiness_status") not in allowed_statuses:
             problems.append(
-                f"row {index}: invalid readiness_status "
-                f"{row.get('readiness_status')!r}"
+                f"row {index}: invalid readiness_status {row.get('readiness_status')!r}"
             )
         for field in (
             "write_authority",
@@ -271,6 +286,15 @@ def _check_doc_anchors(
     control_plane_text: str,
     problems: list[str],
 ) -> None:
+    control_headings = Counter(_docs_scan.markdown_headings(control_plane_text))
+    declared_control_anchors = [row.get("control_plane_anchor", "") for row in rows]
+    duplicate_declared_anchors = sorted(
+        anchor
+        for anchor, count in Counter(declared_control_anchors).items()
+        if anchor and count > 1
+    )
+    for anchor in duplicate_declared_anchors:
+        problems.append(f"control-plane anchor is assigned to multiple rows: {anchor}")
     for index, row in enumerate(rows, start=2):
         lane_id = row.get("lane_id", "")
         handoff_anchor = row.get("handoff_anchor", "")
@@ -285,12 +309,160 @@ def _check_doc_anchors(
             and lane_id not in handoff_text
         ):
             problems.append(f"row {index}: handoff anchor not found")
-        if (
-            control_anchor
-            and control_anchor not in control_plane_text
-            and lane_id not in control_plane_text
-        ):
-            problems.append(f"row {index}: control-plane anchor not found")
+        if control_anchor and control_headings[control_anchor] != 1:
+            problems.append(
+                f"row {index}: control-plane anchor must be an exact unique "
+                f"Markdown heading (found {control_headings[control_anchor]})"
+            )
+        lane_key = f"Lane key: `{lane_id}`"
+        if lane_id and control_plane_text.count(lane_key) != 1:
+            problems.append(
+                f"row {index}: compatibility index must contain exactly one "
+                f"stable lane key"
+            )
+
+
+def _check_compatibility_index(
+    rows: Sequence[Mapping[str, str]],
+    control_plane_text: str,
+    problems: list[str],
+) -> None:
+    """Require the compatibility surface to stay a closed generated index."""
+
+    expected = _render_compatibility_index(rows)
+    if control_plane_text != expected:
+        problems.append(
+            f"{CONTROL_PLANE_PATH}: compatibility index must exactly match the "
+            "closed metadata, authority routes, historical pointer, and lane blocks"
+        )
+
+
+def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
+    lines = [
+        "# Productization compatibility index",
+        "",
+        "Doc placement: formal_repo_doc",
+        "Doc kind: manifest",
+        "Doc lifecycle: active",
+        "Repo owner: docs/product/productization.md",
+        "Doc exit rule: retain while stable control-plane path references exist.",
+        "",
+        (
+            "This path is a compatibility lookup surface. It preserves stable lane "
+            "keys and"
+        ),
+        (
+            "historical anchor names; it does not own mutable lane state, counts, "
+            "authority,"
+        ),
+        "promotion decisions, or product rules.",
+        "",
+        (
+            "When a hook or older referrer says to update the productization control "
+            "plane,"
+        ),
+        "treat that phrase as an instruction to consult this index and update the",
+        "applicable authority route. Modify this file only when a stable lane key or",
+        "owner route changes.",
+        "",
+        "## Authority routes",
+        "",
+        "- [Lane-state index](../validation/productization_status_index_v1.tsv)",
+        (
+            "- [Writer-authority manifest]"
+            "(../schemas/productization_authority_manifest.v1.json)"
+        ),
+        (
+            "- [Structured control schema]"
+            "(../schemas/productization_control_plane_schema.v1.json)"
+        ),
+        (
+            "- [Readiness and promotion contract]"
+            "(../../agent/product-validation-contract.md)"
+        ),
+        "- [Stable capability map](../../product/productization.md)",
+        "",
+        "## Historical source",
+        "",
+        "The exact retired body is retained privately under",
+        f"`source_repo_path:{CONTROL_PLANE_PATH}`.",
+        "The checked retirement transaction is recorded in the",
+        (
+            "[retirement evidence packet](../file-management/docs-cleanup/"
+            "2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json)."
+        ),
+        "",
+        "## Lane anchor index",
+        "",
+    ]
+    routes = (
+        "Routes: [state](../validation/productization_status_index_v1.tsv), "
+        "[writer authority](../schemas/productization_authority_manifest.v1.json), "
+        "[stable capability](../../product/productization.md)."
+    )
+    for row in rows:
+        lines.extend(
+            (
+                f"### {row.get('control_plane_anchor', '')}",
+                "",
+                f"Lane key: `{row.get('lane_id', '')}`",
+                "",
+                routes,
+                "",
+            )
+        )
+    return "\n".join(lines)
+
+
+def _check_narrative_authority_partition(
+    rows: Sequence[Mapping[str, str]],
+    productization_summary_text: str,
+    control_plane_text: str,
+    problems: list[str],
+) -> None:
+    """Reject mutable structured state copied into narrative routing surfaces."""
+
+    narrative_surfaces = {
+        PRODUCTIZATION_SUMMARY_REL: productization_summary_text,
+        CONTROL_PLANE_PATH: "\n".join(
+            line
+            for line in control_plane_text.splitlines()
+            if not line.lstrip().startswith("#")
+        ),
+    }
+    forbidden_literals = {
+        row.get("product_authority_scope", "")
+        for row in rows
+        if row.get("product_authority_scope", "")
+    }
+    forbidden_literals.update(
+        {
+            "readiness_status=",
+            "write_authority=",
+            "row_count=",
+            "may_touch_matrix=",
+            "may_change_quant_output=",
+            "may_change_workbook=",
+            "may_change_selected_peak=",
+            "may_change_selected_area=",
+            "may_change_counted_detection=",
+            "production_candidate",
+            "production_ready",
+            "diagnostic_only",
+            "out_of_scope",
+        }
+    )
+    for path, text in narrative_surfaces.items():
+        for literal in sorted(forbidden_literals):
+            if literal in text:
+                problems.append(
+                    f"{path}: narrative surface duplicates mutable structured "
+                    f"state or authority: {literal}"
+                )
+        if re.search(r"\b\d+\s+(?:accepted\s+)?(?:rows?|cells?)\b", text, re.I):
+            problems.append(
+                f"{path}: narrative surface duplicates a mutable row/cell count"
+            )
 
 
 def _mapping_path(root: Mapping[str, Any], *keys: str) -> Mapping[str, Any] | None:

@@ -1,92 +1,81 @@
 # Productization
 
-Productization is the capability map and promotion boundary for all XIC product
-surfaces. It tracks which capabilities are public, which are diagnostic-only or
-shadow-ready, and what steps are needed to promote them. If a dated report
-conflicts with this page or the control plane/status index/authority manifest,
-treat the dated report as historical.
+Productization is the stable capability map and authority router for XIC product
+surfaces. It explains which owner answers which question; it does not repeat the
+mutable lane board, current accepted counts, writer scopes, or promotion
+verdicts.
 
 ## Authority Model
 
-| Decision | Authority |
+| Question | Exclusive authority |
 | --- | --- |
-| Maturity tier, active lane, WIP owner, promotion packet gate | [Productization control plane](../superpowers/plans/2026-06-15-productization-control-plane.md) |
-| Machine-checkable productization state | [Status index](../superpowers/validation/productization_status_index_v1.tsv) |
-| ProductWriter scope and accepted authority records | [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json) |
-| Validation retention and externalization | [RETENTION.md](../superpowers/validation/RETENTION.md) and `ARTIFACT_INVENTORY.tsv` |
-| Product topic meaning | `docs/product/*.md` topic pages |
-| Historical reasoning/provenance | Dated reports, plans, specs, and private Obsidian notes |
+| Current per-lane readiness, owner, artifact, product effect, public surface, and next gate | [Productization status index](../superpowers/validation/productization_status_index_v1.tsv) |
+| ProductWriter scope and current authorized counts | [Productization authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json) |
+| Structured fields, required lane keys, allowed status values, and authority rules | [Productization control-plane schema](../superpowers/schemas/productization_control_plane_schema.v1.json) |
+| Readiness vocabulary, promotion semantics, and promotion-packet requirements | [Product validation contract](../agent/product-validation-contract.md) |
+| Stable capability meaning and public boundaries | Matching `docs/product/*.md` topic owner |
+| Compatibility lookup from historical control-plane anchors | [Productization compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md) |
+| Historical chronology and retired reasoning | Retirement evidence plus the private source copy keyed by `source_repo_path` |
 
-## Current Product-Authorized Scopes
+Narrative owners must not restate mutable status-index fields or authority-
+manifest values. If narrative wording conflicts with an unchanged structured
+owner, the structured owner wins and the narrative must be corrected.
 
-The current product-authorized write scopes are exactly:
+## Capability Map
 
-- `backfill_policy_write_ready_rows`: 511 Backfill cells.
-- `cid_nl_adopt_ready_feature_inclusion_95_cells`: 95 CID-NL Discovery cells.
-- `backfill_expansion_clean_target_selective_activation_84_cells`: 84
-  clean-target selective Backfill expansion cells.
-
-The 666-cell Backfill expansion replay remains `production_candidate` with no
-write authority, and broad 4613-row Backfill auto-write remains parked.
-
-## Current Contract Map
-
-| Area | Existing surface | Current limit | Promotion gate |
-| --- | --- | --- | --- |
-| Domain evidence | `EvidenceDecisionSemantics`, `EvidenceVector`, `PeakHypothesis`, `IntegrationResult`, targeted product projection | Not every writer consumes one canonical projection | Freeze/adapt canonical detection contract |
-| Targeted outputs | CSV/workbook fields (`Product State`, `Counted Detection`) | Display fields are not the full audit trail | Schema version plus canonical projection adapter |
-| Review workflow | `Review Queue`, candidate/boundary sidecars, HTML review report | No full import/reintegration/audit loop | `ReviewAction` import, recompute, and durable action log |
-| Run provenance | `Run Metadata`, `config_hash`, `target_config_hash`, CLI/config loading | Hashes are fragments, not a complete replay manifest | JSON method manifest with input hashes, settings, sample metadata, CLI args, runtime, schema versions |
-| Sample metadata/QC | Injection-order source, ISTD rolling RT prior, instrument-QC sidecars | No shared sample metadata contract for all product runs | `sample_metadata_v1` with QC/blank/calibrator/batch roles and provenance |
-| Alignment | `AlignedCell`, `ProductionDecisionSet`, matrix/review/audit TSVs | Sidecars and validation profiles are not ProductWriter authority | Output-level contract plus expected-diff gate |
-| Backfill | ProductWriter-gated scoped writer paths, authority manifest, expected-diff packets | Candidate/audit universe is not the writer pool; broad auto-write parked | Explicit authority contract, expected-diff evidence, focused output tests |
-| Calibration/normalization | Calibration previews, QC evidence, activation gates | Shadow/diagnostic evidence must not write primary matrix | Transfer oracle, blocked-row gate, expected diff, then activation/export contract |
-| Reports/diagnostics | HTML reports, TSV sidecars, diagnostic probes | Presentation and observability are not decision authority | Reports consume canonical decisions; reusable probes go in `tools/diagnostics/` |
-| Mature-tool comparisons | Skyline/MZmine/OpenMS/XCMS notes, smoke reports, expressibility runbooks | Define product floor/differentiators, not implementation authority | Repo-owned method/contract change with tests and expected diff |
-| Skyline expressibility | Transition-list probes, smoke manifests, runbooks | Evaluation evidence only, not export support | Explicit export/support contract before treating as product surface |
-
-Dated method and literature reports are historical background after their
-stable claims are absorbed here, in topic pages, and in
-[Untargeted Method](untargeted-method.md). They cannot override the control
-plane, status index, authority manifest, or the current owner docs.
+| Area | Stable capability | Canonical topic owner |
+| --- | --- | --- |
+| Domain evidence | Typed observations, hypotheses, evidence vectors, decisions, integration results, and audit records remain distinct from product projection | [Evidence Spine](evidence-spine.md) |
+| Discovery | Method-specific evidence providers create sample-local candidates without directly granting matrix authority | [Discovery](discovery.md) |
+| Alignment | Cross-sample correspondence and group hypotheses remain separate from candidate generation and publication | [Alignment](alignment.md) |
+| Backfill | Evidence-based recovery reaches product outputs only through an explicit authority and expected-diff path | [Backfill](backfill.md) |
+| Quant output | Accepted values, cell provenance, and matrix-version contracts are public output responsibilities | [Quant Matrix](quant-matrix.md) |
+| Targeted selection | Configured identity and bounded rescue behavior have their own public and evidence boundaries | [Targeted Selection](targeted-selection.md) |
+| Review | Human or automated review stays auditable and cannot silently become writer authority | [Review Roundtrip](review-roundtrip.md) |
+| Run replay | Inputs, configuration, versions, and artifacts remain traceable through explicit provenance | [Run Provenance](run-provenance.md) |
+| Sample metadata and QC | Sample roles and QC projections are typed inputs, not implicit activation authority | [Sample Metadata and QC](sample-metadata-qc.md) |
+| Presets | Reproducible CLI/GUI bundles route behavior but do not create independent product authority | [Presets](presets.md) |
 
 ## Boundaries
 
-- **Owns**: capability map, maturity tiers, promotion boundaries, authority
-  routing between topic pages.
-- **Does not own**: current active lane or WIP limit (see control plane),
-  ProductWriter scope or accepted cells (see authority manifest and status
-  index), specific RAW-backed validation verdicts (see validation packets and
-  diagnostic ledger), implementation details for future PRs (see relevant specs
-  and tests).
+- **Owns:** stable capability descriptions, topic-owner routing, and the
+  field-level authority partition above.
+- **Does not own:** current lane status, current counts, ProductWriter scopes,
+  parked or blocked decisions, active WIP, or a specific promotion verdict.
+- Validation packets and diagnostics support a decision; they do not become a
+  second current-state board.
+- The compatibility index preserves stable lookup keys only. It must not grow a
+  new maintenance log or duplicate rule prose from canonical owners.
 
-## Promotion Priorities
+## Promotion Inputs
 
-1. Preserve and formalize existing evidence/model-selection objects instead of
-   rewriting them.
-2. Make run replay explicit through method manifests.
-3. Turn review worklists into review roundtrip plus audited recomputation.
-4. Make sample metadata/QC a first-class contract before activating
-   correction/normalization behavior.
-5. Align output-level naming and schema ownership before downstream consumers
-   depend on a TSV or workbook change.
+A product-surface change should route to the promotion contract when it can
+change selected values, counted detections, matrix identity, output schema,
+CLI/config/GUI behavior, review/replay behavior, or writer authority. The
+promotion packet records the proposed behavior delta, required non-changes,
+evidence, expected diff, replay, downstream smoke, stop condition, and rollback.
+
+Stable implementation priorities remain:
+
+1. Reuse existing evidence and decision owners before adding a parallel model.
+2. Make public behavior and replay inputs explicit before downstream consumers
+   depend on them.
+3. Keep review, diagnostic, and presentation surfaces outside writer authority
+   until an explicit activation contract proves the expected product diff.
 
 ## Pitfalls
 
-- Treating `diagnostic_only`, `shadow_ready`, or `production_candidate` outputs
-  as if they may write product matrices.
-- Reading a dated report as newer authority than the control plane, status
-  index, or authority manifest.
-- Adding another sidecar/report when the missing piece is replay, schema
-  versioning, review import, or activation authority.
-- Treating `config_hash` as a full method hash.
-- Rebuilding `EvidenceVector`, `PeakHypothesis`, or `IntegrationResult` instead
-  of freezing/adapting the existing model.
+- Copying status-index rows or authority-manifest counts into narrative docs.
+- Treating a dated plan, validation result, sidecar, or report as current
+  product authority.
+- Adding another summary when the missing piece is schema, replay, review
+  import, expected diff, or activation authority.
+- Treating a configuration hash as a complete method/replay manifest.
 
 ## See Also
 
-- [Productization control plane](../superpowers/plans/2026-06-15-productization-control-plane.md)
-- [Status index](../superpowers/validation/productization_status_index_v1.tsv)
-- [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
+- [Product topic index](README.md)
+- [Product validation contract](../agent/product-validation-contract.md)
+- [Productization compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Validation retention](../superpowers/validation/RETENTION.md)
-- [Untargeted Method](untargeted-method.md)
+- [Project layout and documentation lifecycle](../project-layout.md)

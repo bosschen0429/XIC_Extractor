@@ -9,16 +9,20 @@ Rewritten development notes may become repo source-of-truth only after their
 stable claims are routed to the correct owner. This file owns product-readiness
 language and product-surface discipline; it does not own active maturity tier,
 active lane, current writer counts, or promotion-packet status. Those live in
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`,
 `docs/superpowers/validation/productization_status_index_v1.tsv`, and
 `docs/superpowers/schemas/productization_authority_manifest.v1.json`.
+The schema at
+`docs/superpowers/schemas/productization_control_plane_schema.v1.json` owns the
+machine field and allowed-value contract. The dated control-plane path is a
+compatibility index only; its stable lookup route remains
+`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
 
 When converting a historical note into official documentation:
 
 - extract stable rules and remove local paths, command diaries, and sample-level
   investigation detail;
 - state the validation tier behind the claim;
-- point product authority claims to the control plane, status index, authority
+- point product authority claims to the status index, authority
   manifest, activation artifact, or expected-diff artifact that actually carries
   the authority; cite validation notes only as evidence/provenance;
 - do not silently change selected peak, selected area, counted detection,
@@ -27,8 +31,65 @@ When converting a historical note into official documentation:
 Candidate rows, diagnostic sidecars, quality explanations, round-trip oracles,
 ISTD comparisons, and review packets are evidence or routing inputs. They do
 not create ProductWriter or matrix-writing authority unless a separate
-activation/export contract, expected-diff gate, and current control-plane entry
+activation/export contract, expected-diff gate, and current structured lane entry
 say so.
+
+## Readiness And Promotion Semantics
+
+The persisted readiness vocabulary is:
+
+| Status | Meaning |
+| --- | --- |
+| `diagnostic_only` | Runnable evidence or observability surface with no product authority. It needs a promote, kill, externalize, or missing-evidence exit rule. |
+| `production_candidate` | A bounded behavior and proposed product diff have reviewable evidence, but activation is not implied. |
+| `production_ready` | The named capability has passed its declared validation and public-contract gate. Writer authority still requires a registered manifest scope. |
+| `parked` | Deliberately not being advanced until a named reopening condition is met. |
+| `blocked` | A concrete missing oracle, contract, or prerequisite prevents safe promotion. |
+| `frozen` | The current contract is intentionally held stable; changes require a new authority decision. |
+| `out_of_scope` | The lane is intentionally excluded from the current product boundary. |
+
+Only values allowed by the structured schema may appear in the current status
+index. Historical planning labels such as `missing`, `partial_internal`,
+`shadow_ready`, and `production_surface` are not persisted current-state values.
+Their durable intent is carried by the evidence and public-surface gates below,
+not by maintaining a second transition ladder.
+
+Promotion is evidence-driven, not an automatic adjacent-status transition:
+
+1. Name the capability owner and current structured lane record.
+2. Name the public surface and the exact behavior that changes and must not
+   change.
+3. Bind the proposed scope to domain evidence, expected-diff evidence, focused
+   tests, replay/provenance, and the appropriate real-data or manual-review tier.
+4. Prove downstream schema/output behavior and a rollback path.
+5. Update structured state only in the product-authority change that has
+   authority to do so.
+
+No readiness word by itself grants ProductWriter, matrix, selected-value, or
+counted-detection authority. Parked, blocked, diagnostic, frozen, and
+out-of-scope lanes must not write; a production-ready non-writer remains a
+non-writer unless the authority manifest registers a scope.
+
+## Promotion Packet Contract
+
+Every proposed promotion packet must record, in the PR body or another bounded
+review surface:
+
+- capability name, previous state, proposed state, and owner;
+- affected CLI, config, GUI, output, report, schema/version, and downstream
+  consumer;
+- domain decision owner, accepted evidence, and why a writer or renderer is not
+  recomputing domain logic;
+- behavior delta, required non-changes, affected rows/targets/samples, and an
+  expected-diff artifact when product values or identity can change;
+- synthetic/focused validation plus the method-appropriate real-data or manual
+  review tier;
+- replay/provenance, manifest binding, and review/action audit trail;
+- stop condition, rollback action, and residual risk.
+
+Missing owner, unresolved authority, absent expected diff for a product-value
+change, insufficient evidence, or no rollback path stops promotion. Tests
+passing alone never establishes production readiness.
 
 ## Product And Validation Discipline
 

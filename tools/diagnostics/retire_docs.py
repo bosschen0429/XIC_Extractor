@@ -11,6 +11,7 @@ Usage examples:
     uv run python tools/diagnostics/retire_docs.py --sweep --execute
     uv run python tools/diagnostics/retire_docs.py FILE [FILE ...]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,9 +54,7 @@ KEEP_PATTERNS = {
     "productization_control_plane_schema.v1.json",
 }
 
-KEEP_PREFIXES = (
-    "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-)
+KEEP_PREFIXES = ("docs/superpowers/plans/2026-06-15-productization-control-plane.md",)
 RETIREMENT_EVIDENCE_DIR = "docs/superpowers/file-management/docs-cleanup/"
 RETIREMENT_EVIDENCE_TOKENS = ("retirement-evidence", "retirement_evidence")
 
@@ -106,6 +105,15 @@ class RetireResult:
     errors: list[tuple[str, str]] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class SourceCopyResult:
+    source_path: str
+    source_hash: str
+    destination: Path | None
+    readback_verified: bool
+    error: str = ""
+
+
 def find_retire_candidates(repo_root: Path) -> list[Path]:
     candidates: list[Path] = []
     for dir_rel in RETIRE_CANDIDATES:
@@ -120,17 +128,16 @@ def find_retire_candidates(repo_root: Path) -> list[Path]:
 
 
 def _scan_paths(repo_root: Path) -> tuple[str, ...]:
-    return (
-        _docs_scan.git_visible_paths(repo_root)
-        or _docs_scan.fallback_local_path_scan_paths(repo_root)
-    )
+    return _docs_scan.git_visible_paths(
+        repo_root
+    ) or _docs_scan.fallback_local_path_scan_paths(repo_root)
 
 
 def _exact_referrers(repo_root: Path, rel_path: str) -> tuple[str, ...]:
-    normalized = normalize_path_text(rel_path).lstrip("./")
+    normalized = _docs_scan.normalize_repo_rel_path(rel_path)
     referrers: list[str] = []
     for scan_rel in _scan_paths(repo_root):
-        scan_rel = normalize_path_text(scan_rel).lstrip("./")
+        scan_rel = _docs_scan.normalize_repo_rel_path(scan_rel)
         if scan_rel == normalized:
             continue
         if _is_retirement_evidence_path(scan_rel):
@@ -144,7 +151,7 @@ def _exact_referrers(repo_root: Path, rel_path: str) -> tuple[str, ...]:
 
 
 def _is_retirement_evidence_path(path: str) -> bool:
-    normalized = normalize_path_text(path).lstrip("./").lower()
+    normalized = _docs_scan.normalize_repo_rel_path(path).lower()
     filename = Path(normalized).name
     return (
         normalized.startswith(RETIREMENT_EVIDENCE_DIR)
@@ -157,12 +164,102 @@ def _source_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _source_bytes_hash(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def copy_source_only(
+    source: Path,
+    repo_root: Path,
+    vault_path: Path,
+    *,
+    evidence: dict[str, object],
+    execute: bool = False,
+) -> SourceCopyResult:
+    """Copy an exact source preimage to private history without repo mutation."""
+
+    try:
+        rel = source.relative_to(repo_root).as_posix()
+    except ValueError:
+        return SourceCopyResult("", "", None, False, "source is outside repo root")
+    if not source.is_file():
+        return SourceCopyResult(rel, "", None, False, "source does not exist")
+    if evidence.get("transaction") != "body_to_compatibility_index":
+        return SourceCopyResult(
+            rel,
+            "",
+            None,
+            False,
+            "evidence transaction is not body_to_compatibility_index",
+        )
+    entries = _retirement_evidence_by_path(evidence)
+    entry = entries.get(rel)
+    if entry is None or entry.get("transaction") != "body_to_compatibility_index":
+        return SourceCopyResult(
+            rel,
+            "",
+            None,
+            False,
+            "missing same-path source-copy evidence entry",
+        )
+    if _string_list(entry.get("unresolved_claims")):
+        return SourceCopyResult(
+            rel,
+            "",
+            None,
+            False,
+            "source-copy evidence has unresolved claims",
+        )
+
+    source_bytes = source.read_bytes()
+    source_hash = _source_bytes_hash(source_bytes)
+    if (
+        evidence.get("source_hash") != source_hash
+        or entry.get("source_hash") != source_hash
+    ):
+        return SourceCopyResult(
+            rel,
+            source_hash,
+            None,
+            False,
+            "source-copy evidence source_hash mismatch",
+        )
+
+    archive = vault_path / VAULT_ARCHIVE_DIR
+    destination = archive / (f"{source.stem}-source-{source_hash[:12]}{source.suffix}")
+    if execute:
+        archive.mkdir(parents=True, exist_ok=True)
+        if destination.exists() and destination.read_bytes() != source_bytes:
+            return SourceCopyResult(
+                rel,
+                source_hash,
+                destination,
+                False,
+                "source-copy destination exists with different bytes",
+            )
+        destination.write_bytes(source_bytes)
+        verified = (
+            destination.is_file()
+            and destination.read_bytes() == source_bytes
+            and _source_bytes_hash(destination.read_bytes()) == source_hash
+        )
+    else:
+        verified = destination.is_file() and destination.read_bytes() == source_bytes
+    return SourceCopyResult(
+        rel,
+        source_hash,
+        destination,
+        verified,
+        "" if (verified or not execute) else "source-copy readback failed",
+    )
+
+
 def _vault_copy_matches(path: Path, rel_path: str, source_text: str) -> bool:
     vault_text = path.read_text(encoding="utf-8", errors="ignore")
     if _source_hash(vault_text) == _source_hash(source_text):
         return True
 
-    normalized_rel = normalize_path_text(rel_path).lstrip("./")
+    normalized_rel = _docs_scan.normalize_repo_rel_path(rel_path)
     normalized_vault_text = normalize_path_text(vault_text)
     if normalized_rel not in normalized_vault_text:
         return False
@@ -194,7 +291,7 @@ def _retirement_evidence_by_path(
             continue
         source_path = entry.get("source_path")
         if isinstance(source_path, str) and source_path:
-            indexed[normalize_path_text(source_path).lstrip("./")] = entry
+            indexed[_docs_scan.normalize_repo_rel_path(source_path)] = entry
     return indexed
 
 
@@ -442,6 +539,15 @@ def main(argv: list[str] | None = None) -> int:
             "same-path compatibility stubs instead of keeping them."
         ),
     )
+    parser.add_argument(
+        "--source-copy-only",
+        action="store_true",
+        help=(
+            "Copy and read back an exact private source preimage for a "
+            "same-path body_to_compatibility_index transaction; never mutate "
+            "the repo source."
+        ),
+    )
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--vault-path", type=Path, default=None)
     parser.add_argument(
@@ -464,6 +570,40 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     repo_root = args.repo_root.resolve()
+
+    if args.source_copy_only:
+        if args.sweep or args.stub_bound or len(args.files) != 1:
+            parser.error(
+                "--source-copy-only requires exactly one file and cannot use "
+                "--sweep or --stub-bound"
+            )
+            return 1
+        if args.evidence is None:
+            parser.error("--source-copy-only requires --evidence")
+            return 1
+        source = (
+            args.files[0].resolve()
+            if args.files[0].is_absolute()
+            else (repo_root / args.files[0]).resolve()
+        )
+        evidence = json.loads(args.evidence.read_text(encoding="utf-8"))
+        copy_result = copy_source_only(
+            source,
+            repo_root,
+            vault_path,
+            evidence=evidence,
+            execute=args.execute,
+        )
+        if copy_result.error:
+            print(f"ERROR: {copy_result.error}", file=sys.stderr)
+            return 1
+        mode = "verified" if args.execute else "dry-run"
+        print(
+            f"Source copy {mode}: {copy_result.source_path}; "
+            f"sha256={copy_result.source_hash}; "
+            f"readback_verified={str(copy_result.readback_verified).lower()}"
+        )
+        return 0 if (copy_result.readback_verified or not args.execute) else 1
 
     if args.sweep:
         files = find_retire_candidates(repo_root)
@@ -511,8 +651,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if result.stubbed:
         print(
-            f"\n{'Stubbed' if args.execute else 'Would stub'} "
-            f"({len(result.stubbed)}):"
+            f"\n{'Stubbed' if args.execute else 'Would stub'} ({len(result.stubbed)}):"
         )
         for rel, owner in result.stubbed:
             print(f"  {rel} -> {owner}")

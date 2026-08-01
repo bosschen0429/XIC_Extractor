@@ -89,6 +89,134 @@ DOC_LIFECYCLES_REQUIRING_EXIT_RULE = {
     "rejected",
 }
 
+# These are the only documents whose permanent path supplies placement, kind,
+# purpose, and self-ownership. Generic lifecycle/exit metadata is waived, but
+# their positive landmarks and routes are validated separately.
+PERMANENT_ROOT_DOC_CONTRACTS = {
+    "AGENTS.md": {
+        "kind": "agent_route_contract",
+        "purpose": "repo agent routing contract",
+        "owner": "self",
+        "required_headings": ("XIC Extractor Agent Contract", "Task Routes"),
+        "required_text": ("Task Routes",),
+        "required_routes": (
+            "docs/agent/parameter-settings.md",
+            "docs/product/README.md",
+            "docs/agent/product-validation-contract.md",
+            "docs/architecture-contract.md",
+            "docs/agent/execution-gates.md",
+            "tools/diagnostics/INDEX.md",
+            "docs/solutions/README.md",
+            "docs/product/productization.md",
+            "docs/project-layout.md",
+            "docs/agent/codex-operating-system.md",
+        ),
+        "required_referrers": (),
+    },
+    "README.md": {
+        "kind": "public_project_entrypoint",
+        "purpose": "public project entrypoint",
+        "owner": "self",
+        "required_headings": ("XIC Extractor", "Documentation"),
+        "required_text": ("Documentation",),
+        "required_routes": (
+            "docs/user/README.md",
+            "docs/product/README.md",
+            "docs/architecture-contract.md",
+            "docs/project-layout.md",
+            "docs/lc-msms-evidence-rules.md",
+        ),
+        "required_referrers": (),
+    },
+    "docs/architecture-contract.md": {
+        "kind": "architecture_dependency_owner",
+        "purpose": "architecture and dependency owner",
+        "owner": "self",
+        "required_headings": (
+            "Architecture Contract",
+            "Dependency Direction",
+            "Ownership Map",
+        ),
+        "required_text": ("This document owns",),
+        "required_routes": (),
+        "required_referrers": (
+            "AGENTS.md",
+            "README.md",
+            "docs/project-layout.md",
+        ),
+    },
+    "docs/project-layout.md": {
+        "kind": "file_placement_lifecycle_owner",
+        "purpose": "file placement and documentation lifecycle owner",
+        "owner": "self",
+        "required_headings": ("Project Layout", "Permanent root document contract"),
+        "required_text": ("目錄收納規則單一可信來源", "source-of-truth 與歷程邊界"),
+        "required_routes": (
+            "docs/architecture-contract.md",
+            "docs/product",
+            "docs/agent/obsidian-handoff-contract.md",
+        ),
+        "required_referrers": (),
+    },
+}
+PERMANENT_ROOT_METADATA_FIELDS_WAIVED = frozenset(
+    {DOC_LIFECYCLE_MARKER.rstrip(":"), DOC_EXIT_RULE_MARKER.rstrip(":")}
+)
+
+GOVERNANCE_RULE_FAMILY_CONTRACTS = {
+    "docs_lifecycle_retirement": {
+        "owner": "docs/agent/obsidian-handoff-contract.md#retirement-evidence-gate",
+        "mechanism": "ci_checker",
+        "executable": "tools/diagnostics/docs_placement_guard.py",
+        "readback": "tests/test_docs_placement_guard.py",
+        "residual": "none",
+    },
+    "destructive_git_filesystem": {
+        "owner": "docs/agent/codex-operating-system.md#current-repo-local-rules",
+        "mechanism": "hard_guard",
+        "executable": ".codex/rules/xic-safety.rules",
+        "readback": ".codex/hooks/fixtures/pretool_git_reset.json",
+        "residual": "#166",
+    },
+    "raw_background_launch": {
+        "owner": "docs/agent/execution-gates.md#raw-and-long-runs",
+        "mechanism": "hard_guard",
+        "executable": ".codex/hooks/xic_pre_tool_guard.py",
+        "readback": "none",
+        "residual": "#166",
+    },
+    "execution_affecting_config": {
+        "owner": "docs/agent/codex-operating-system.md#change-protocol",
+        "mechanism": "advisory_context",
+        "executable": ".codex/hooks/xic_pre_tool_guard.py",
+        "readback": "none",
+        "residual": "#166",
+    },
+    "product_public_surface": {
+        "owner": "docs/agent/architecture-public-contracts.md#public-contracts",
+        "mechanism": "advisory_context",
+        "executable": ".codex/hooks/xic_post_tool_guard.py",
+        "readback": ".codex/hooks/fixtures/posttool_product_surface_edit.json",
+        "residual": "#166",
+    },
+    "pr_validation_gate": {
+        "owner": "docs/agent/execution-gates.md#pr-verification-gate",
+        "mechanism": "ci_checker",
+        "executable": "tools/testing/test_shards.py",
+        "readback": ".github/workflows/ci.yml",
+        "residual": "none",
+    },
+}
+GOVERNANCE_RULE_FAMILY_IDS = tuple(GOVERNANCE_RULE_FAMILY_CONTRACTS)
+GOVERNANCE_MECHANISM_VALUES = frozenset(
+    {"hard_guard", "ci_checker", "advisory_context", "human_decision"}
+)
+
+
+def is_productization_control_plane_path(path: str) -> bool:
+    return normalize_path_text(path).removeprefix("./") == CONTROL_PLANE_PATH
+
+
 DOC_ROOT_ALLOWLIST_FILES = {
     "docs/architecture-contract.md",
     "docs/diagnostic-ledger.md",
@@ -404,8 +532,7 @@ def is_misplaced_handoff_public_record_path(path: str) -> bool:
         return False
     filename = normalized.rsplit("/", 1)[-1]
     return any(
-        pattern.search(filename)
-        for pattern in MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS
+        pattern.search(filename) for pattern in MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS
     )
 
 
@@ -431,10 +558,7 @@ def is_high_risk_repo_doc_path(path: str) -> bool:
 
 def is_lifecycle_managed_doc_path(path: str) -> bool:
     normalized = normalize_path_text(path).lstrip("./")
-    return any(
-        path_is_under(normalized, root)
-        for root in DOC_LIFECYCLE_MANAGED_DIRS
-    )
+    return any(path_is_under(normalized, root) for root in DOC_LIFECYCLE_MANAGED_DIRS)
 
 
 def is_docs_root_file_path(path: str) -> bool:
@@ -507,8 +631,7 @@ def classify_doc_path(path: str) -> DocPathClassification:
         DOC_ROUTING_SCHEMAS_INDEX_PATH,
     }
     is_superpowers_spec = (
-        normalized_lower.startswith(SUPERPOWERS_SPEC_DIR)
-        and not is_specs_index
+        normalized_lower.startswith(SUPERPOWERS_SPEC_DIR) and not is_specs_index
     )
     is_docs_root_file = is_docs_root_file_path(normalized)
     is_allowed_docs_root_file = normalized in DOC_ROOT_ALLOWLIST_FILES

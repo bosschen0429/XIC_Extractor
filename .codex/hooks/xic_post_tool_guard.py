@@ -13,7 +13,9 @@ from xic_hook_policy import (
     HANDOFF_CURRENT_DIR,
     HANDOFF_MAX_LINES,
     PRODUCT_SURFACE_PATHS,
+    PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_STATUS_HANDOFF_PATH,
+    PRODUCTIZATION_STATUS_INDEX_REL,
     branch_slug,
     is_git_add_command,
     is_productization_status_handoff,
@@ -35,9 +37,17 @@ ZERO_TEST_PATTERNS = [
 ]
 
 LOCK_ERROR_PATTERNS = [
-    re.compile(r"(?:fatal|error):.*(?:\.git[\\/]+index\.lock|index\.lock)", re.IGNORECASE | re.DOTALL),
-    re.compile(r"(?:unable to create|could not create|file exists).*\.git[\\/]+index\.lock", re.IGNORECASE | re.DOTALL),
-    re.compile(r"another git process.*(?:index\.lock|repository)", re.IGNORECASE | re.DOTALL),
+    re.compile(
+        r"(?:fatal|error):.*(?:\.git[\\/]+index\.lock|index\.lock)",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"(?:unable to create|could not create|file exists).*\.git[\\/]+index\.lock",
+        re.IGNORECASE | re.DOTALL,
+    ),
+    re.compile(
+        r"another git process.*(?:index\.lock|repository)", re.IGNORECASE | re.DOTALL
+    ),
     re.compile(r"(?:cannot|could not|failed to|unable to)\s+lock\s+ref", re.IGNORECASE),
 ]
 GIT_COMMAND = re.compile(r"(?:^|[;&|()\r\n])\s*git(?:\.exe)?\s+", re.IGNORECASE)
@@ -78,7 +88,9 @@ def error_text_from_response(value: object) -> str:
         parts: list[str] = []
         for key, item in value.items():
             key_text = str(key).lower()
-            if key_text in {"stderr", "error", "error_message"} and isinstance(item, str):
+            if key_text in {"stderr", "error", "error_message"} and isinstance(
+                item, str
+            ):
                 parts.append(item)
             elif isinstance(item, (dict, list)):
                 nested = error_text_from_response(item)
@@ -225,7 +237,9 @@ def branch_header(path: str) -> str:
 
 def is_active_branch_handoff_path(path: str, root: str, branch: str) -> bool:
     normalized = normalize_path_text(path).lstrip("./")
-    if is_productization_status_handoff(normalized) or not path_is_current_handoff(normalized):
+    if is_productization_status_handoff(normalized) or not path_is_current_handoff(
+        normalized
+    ):
         return False
     if normalized == DEFAULT_LOCAL_ACTIVE_HANDOFF_PATH:
         return True
@@ -285,7 +299,9 @@ def main() -> int:
     error_text = error_text_from_response(tool_response)
     combined = f"{command}\n{response_text}"
 
-    if "pytest" in command.lower() and any(pattern.search(combined) for pattern in ZERO_TEST_PATTERNS):
+    if "pytest" in command.lower() and any(
+        pattern.search(combined) for pattern in ZERO_TEST_PATTERNS
+    ):
         emit(
             {
                 "decision": "block",
@@ -349,13 +365,11 @@ def main() -> int:
             branch,
         )
         tool_mentions_managed_surface = (
-            tool_mentions_product or tool_mentions_control_plane or tool_mentions_handoff
+            tool_mentions_product
+            or tool_mentions_control_plane
+            or tool_mentions_handoff
         )
-        paths = (
-            changed_paths(root)
-            if tool_mentions_managed_surface
-            else []
-        )
+        paths = changed_paths(root) if tool_mentions_managed_surface else []
         paths_touch_product = touches_product_surface(paths)
         paths_touch_control_plane = touches_control_plane(paths)
         paths_touch_handoff = touches_handoff(paths)
@@ -366,13 +380,18 @@ def main() -> int:
         worktree_needs_control_plane = paths_touch_product and not (
             paths_touch_control_plane or tool_mentions_control_plane
         )
-        tool_needs_control_plane = tool_mentions_product and not tool_mentions_control_plane
+        tool_needs_control_plane = (
+            tool_mentions_product and not tool_mentions_control_plane
+        )
         if tool_needs_control_plane or worktree_needs_control_plane:
             contexts.append(
-                "Product/public surface changes are present, but the productization control plane "
-                "is not changed. Before closeout, update "
-                f"{CONTROL_PLANE_PATH} or explicitly "
-                "state why this work does not change any maturity tier or active lane."
+                "Product/public surface changes are present, but no routed productization owner update is obvious. "
+                f"Before closeout, consult the productization control plane compatibility index at {CONTROL_PLANE_PATH}; "
+                f"update mutable lane state in {PRODUCTIZATION_STATUS_INDEX_REL}, writer authority in "
+                f"{PRODUCTIZATION_AUTHORITY_MANIFEST_REL}, and readiness/promotion rules in "
+                "docs/agent/product-validation-contract.md as applicable, or explicitly state why this work changes "
+                "no maturity tier, active lane, or authority. Change the compatibility index only when a stable lane "
+                "key or owner route changes."
             )
 
         handoff_missing_from_tool = (

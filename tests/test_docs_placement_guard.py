@@ -49,9 +49,332 @@ def _retirement_evidence(
     }
 
 
+def _same_path_fixture(
+    root: Path,
+) -> tuple[str, str, str, dict[str, object]]:
+    source_path = "/".join(
+        (
+            "docs",
+            "superpowers",
+            "plans",
+            "2026-06-15-productization-control-plane.md",
+        )
+    )
+    evidence_path = (
+        "docs/superpowers/file-management/docs-cleanup/"
+        "2026-08-01-retirement-evidence.json"
+    )
+    source = "# Old control plane\n\n## Durable Claim\nStable capability rule.\n"
+    replacement = "# Productization compatibility index\n\nStable pointers only.\n"
+    owner_path = "docs/product/backfill.md"
+    _write(root, source_path, source)
+    _write(root, owner_path, "# Backfill\n\n## Contract\nStable capability rule.\n")
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "add", source_path, owner_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    lines = source.encode("utf-8").splitlines(keepends=True)
+    section_hash = _source_hash(b"".join(lines[2:4]).decode("utf-8"))
+    source_hash = _source_hash(source)
+    replacement_hash = _source_hash(replacement)
+    claim = {
+        "claim_id": "CP-CLAIM-001",
+        "polarity": "positive",
+        "source_locator": f"{source_path}:L3-L4",
+        "source_excerpt_sha256": section_hash,
+        "source_section_ids": ["CP-SECTION-001"],
+        "summary": "Backfill contract owns the stable capability rule.",
+        "disposition": "absorb",
+        "owner_locator": {
+            "path": owner_path,
+            "kind": "markdown_heading",
+            "heading": "Contract",
+        },
+    }
+    source_mapping = {
+        "source_path": source_path,
+        "transaction": "body_to_compatibility_index",
+        "review_result": "pass_can_retire",
+        "source_copy_readback_verified": True,
+        "source_copy_hash": source_hash,
+        "source_hash": source_hash,
+        "replacement_hash": replacement_hash,
+        "active_followups": [],
+        "unresolved_claims": [],
+        "claim_ids": ["CP-CLAIM-001"],
+        "absorbed_claims": ["CP-CLAIM-001"],
+        "absorbed_negative_claims": [],
+    }
+    packet: dict[str, object] = {
+        "transaction": "body_to_compatibility_index",
+        "transaction_status": "completed",
+        "review_result": "pass_can_retire",
+        "source_path": source_path,
+        "source_hash": source_hash,
+        "source_copy_readback_verified": True,
+        "source_copy_hash": source_hash,
+        "replacement_hash": replacement_hash,
+        "active_followups": [],
+        "unresolved_claims": [],
+        "absorbed_claims": ["CP-CLAIM-001"],
+        "absorbed_negative_claims": [],
+        "source_section_count": 1,
+        "source_sections": [
+            {
+                "section_id": "CP-SECTION-001",
+                "source_locator": f"{source_path}:L3-L4",
+                "section_sha256": section_hash,
+                "disposition": "absorb",
+                "claim_ids": ["CP-CLAIM-001"],
+            }
+        ],
+        "claims": [claim],
+        "dependencies": {
+            "literal_path_referrers": [],
+            "relative_markdown_links": [],
+            "relative_html_links": [],
+            "control_plane_constant_consumers": [],
+        },
+        "entries": [source_mapping],
+    }
+    return source_path, evidence_path, replacement, packet
+
+
+def _same_path_result(
+    root: Path,
+    source_path: str,
+    evidence_path: str,
+    replacement: str,
+    packet: dict[str, object],
+    *extra_entries: StagedMarkdown,
+):
+    return check_doc_placement(
+        root,
+        [
+            StagedMarkdown("M", source_path, replacement),
+            StagedMarkdown("A", evidence_path, json.dumps(packet)),
+            *extra_entries,
+        ],
+    )
+
+
 def _problems(root: Path, status: str, path: str) -> list[str]:
     result = check_doc_placement(root, [StagedMarkdown(status, path)])
     return [problem.reason for problem in result.problems]
+
+
+def test_permanent_root_contract_rejects_missing_landmark_and_non_repo_placement() -> (
+    None
+):
+    root = Path(__file__).parents[1]
+    path = "AGENTS.md"
+    text = (root / path).read_text(encoding="utf-8")
+    text = text.replace("## Task Routes", "## Routes", 1)
+    text += "\nDoc placement: private_obsidian_note\n"
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    reasons = [problem.reason for problem in result.problems]
+    assert any("invalid permanent root contract" in reason for reason in reasons)
+    assert any("not a repo-trackable placement" in reason for reason in reasons)
+
+
+def test_governance_index_rejects_mechanism_drift() -> None:
+    root = Path(__file__).parents[1]
+    path = "docs/agent/codex-operating-system.md"
+    text = (root / path).read_text(encoding="utf-8")
+    owner = "docs/agent/execution-gates.md#raw-and-long-runs"
+    text = text.replace(
+        f"| `raw_background_launch` | `{owner}` | `hard_guard` |",
+        f"| `raw_background_launch` | `{owner}` | `human_decision` |",
+        1,
+    )
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    assert any(
+        "invalid governance enforcement index" in problem.reason
+        for problem in result.problems
+    )
+
+
+def test_same_path_compatibility_replacement_with_complete_evidence_passes(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+
+    result = _same_path_result(
+        tmp_path,
+        source_path,
+        evidence_path,
+        replacement,
+        packet,
+    )
+
+    assert result.problems == ()
+
+
+def test_same_path_replacement_requires_evidence(tmp_path: Path) -> None:
+    source_path, _, replacement, _ = _same_path_fixture(tmp_path)
+
+    result = check_doc_placement(
+        tmp_path,
+        [StagedMarkdown("M", source_path, replacement)],
+    )
+
+    assert any("exactly one evidence packet" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_stale_source_hash(tmp_path: Path) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    packet["source_hash"] = "0" * 64
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any("source_hash" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_missing_owner_anchor(tmp_path: Path) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    claim = packet["claims"][0]
+    claim["owner_locator"]["heading"] = "Missing heading"
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any("owner Markdown heading" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_placeholder_claim(tmp_path: Path) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    packet["claims"][0]["summary"] = "placeholder"
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any("placeholder semantics" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_duplicate_claim_mapping(tmp_path: Path) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    packet["claims"].append(dict(packet["claims"][0]))
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any(
+        "claim IDs are missing or duplicated" in p.reason for p in result.problems
+    )
+
+
+def test_same_path_replacement_rejects_nonreciprocal_section_claim_edge(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    section = dict(packet["source_sections"][0])
+    section["section_id"] = "CP-SECTION-002"
+    packet["source_sections"].append(section)
+    packet["source_section_count"] = 2
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any("not exactly reciprocal" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_incomplete_absorbed_negative_projection(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    claim = packet["claims"][0]
+    claim["polarity"] = "negative"
+    packet["absorbed_claims"] = []
+    packet["absorbed_negative_claims"] = [claim["claim_id"]]
+    packet["entries"][0]["absorbed_claims"] = []
+    packet["entries"][0]["absorbed_negative_claims"] = []
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any(
+        "source mapping absorbed_negative_claims do not exactly match" in p.reason
+        for p in result.problems
+    )
+
+
+def test_same_path_replacement_rejects_unresolved_claim(tmp_path: Path) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    packet["unresolved_claims"] = ["CP-UNRESOLVED"]
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any("unresolved claims remain" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_failed_source_copy_readback(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    packet["source_copy_readback_verified"] = False
+
+    result = _same_path_result(
+        tmp_path, source_path, evidence_path, replacement, packet
+    )
+
+    assert any("source-copy readback" in p.reason for p in result.problems)
+
+
+def test_same_path_replacement_rejects_residual_dependency(tmp_path: Path) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    referrer = StagedMarkdown(
+        "A",
+        "docs/product/referrer.md",
+        f"# Referrer\n\nSee `{source_path}`.\n",
+    )
+
+    result = _same_path_result(
+        tmp_path,
+        source_path,
+        evidence_path,
+        replacement,
+        packet,
+        referrer,
+    )
+
+    assert any("dependency/referrer census" in p.reason for p in result.problems)
 
 
 def test_high_risk_dated_implementation_plan_without_marker_fails(
@@ -264,8 +587,7 @@ def test_superpowers_specs_non_markdown_payload_fails(
 
 def test_parse_name_status_keeps_specs_non_markdown_payloads() -> None:
     entries, ignored_deletions = parse_name_status(
-        "A\tdocs/superpowers/specs/example-schema.json\n"
-        "A\toutput/private.json\n"
+        "A\tdocs/superpowers/specs/example-schema.json\nA\toutput/private.json\n"
     )
 
     assert ignored_deletions == 0
@@ -386,8 +708,7 @@ def test_repo_subcontract_doc_without_owner_fails(tmp_path: Path) -> None:
 
 def test_branch_closeout_summary_with_pr_body_seed_passes(tmp_path: Path) -> None:
     path = (
-        "docs/superpowers/closeouts/"
-        "2026-07-01_codex-example_branch-closeout-summary.md"
+        "docs/superpowers/closeouts/2026-07-01_codex-example_branch-closeout-summary.md"
     )
     _write(
         tmp_path,
@@ -449,10 +770,7 @@ def test_handoff_archive_cleanup_evidence_without_marker_fails(tmp_path: Path) -
 
 
 def test_handoff_archive_private_diary_without_marker_fails(tmp_path: Path) -> None:
-    path = (
-        "docs/superpowers/handoffs/archive/"
-        "2026-07-01_codex-example_branch-diary.md"
-    )
+    path = "docs/superpowers/handoffs/archive/2026-07-01_codex-example_branch-diary.md"
     _write(
         tmp_path,
         path,
@@ -521,8 +839,7 @@ def test_productization_status_handoff_remains_canonical(tmp_path: Path) -> None
 
 def test_branch_closeout_summary_still_requires_pr_body_seed(tmp_path: Path) -> None:
     path = (
-        "docs/superpowers/closeouts/"
-        "2026-07-01_codex-example_branch-closeout-summary.md"
+        "docs/superpowers/closeouts/2026-07-01_codex-example_branch-closeout-summary.md"
     )
     _write(tmp_path, path, "# Branch closeout\n\n## Verification\n")
 
@@ -650,9 +967,7 @@ def test_non_allowlisted_docs_root_markdown_fails(tmp_path: Path) -> None:
 
 
 def test_non_lifecycle_deletions_are_ignored_by_placement_guard() -> None:
-    entries, ignored_deletions = parse_name_status(
-        "D\tdocs/product/backfill.md\n"
-    )
+    entries, ignored_deletions = parse_name_status("D\tdocs/product/backfill.md\n")
 
     result = check_doc_placement(
         Path("."),
@@ -809,6 +1124,5 @@ def test_cli_reads_staged_blob_not_worktree_after_divergence(tmp_path: Path) -> 
     )
 
     assert any(
-        "lacks placement marker" in problem.reason
-        for problem in result.problems
+        "lacks placement marker" in problem.reason for problem in result.problems
     )

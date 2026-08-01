@@ -6,6 +6,7 @@ from pathlib import Path
 
 from tools.diagnostics.retire_docs import (
     VAULT_ARCHIVE_DIR,
+    copy_source_only,
     find_retire_candidates,
     retire_files,
 )
@@ -66,6 +67,65 @@ def _retirement_evidence(
             }
         ],
     }
+
+
+def _same_path_copy_evidence(rel: str, text: str) -> dict[str, object]:
+    source_hash = _sha256(text)
+    return {
+        "transaction": "body_to_compatibility_index",
+        "source_hash": source_hash,
+        "entries": [
+            {
+                "source_path": rel,
+                "transaction": "body_to_compatibility_index",
+                "source_hash": source_hash,
+                "unresolved_claims": [],
+            }
+        ],
+    }
+
+
+def test_source_copy_only_writes_and_reads_back_exact_bytes(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/plans/control-plane.md"
+    source = repo / rel
+    text = "# Source\r\n\r\nExact history.\r\n"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(text.encode("utf-8"))
+
+    result = copy_source_only(
+        source,
+        repo,
+        vault,
+        evidence=_same_path_copy_evidence(rel, text),
+        execute=True,
+    )
+
+    assert result.error == ""
+    assert result.readback_verified
+    assert result.destination is not None
+    assert result.destination.read_bytes() == source.read_bytes()
+
+
+def test_source_copy_only_rejects_stale_evidence_hash(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/plans/control-plane.md"
+    source = repo / rel
+    _write(source, "# Source\n")
+    evidence = _same_path_copy_evidence(rel, "# Different source\n")
+
+    result = copy_source_only(
+        source,
+        repo,
+        vault,
+        evidence=evidence,
+        execute=True,
+    )
+
+    assert result.error == "source-copy evidence source_hash mismatch"
+    assert not result.readback_verified
 
 
 def test_completed_unreferenced_spec_without_retirement_evidence_is_kept(
@@ -164,9 +224,9 @@ def test_retirement_does_not_trust_same_title_unrelated_vault_note(
         (rel, vault / VAULT_ARCHIVE_DIR / "2026-07-01-backfill-spec.md")
     ]
     assert result.retired == [rel]
-    assert (
-        vault / VAULT_ARCHIVE_DIR / "2026-07-01-backfill-spec.md"
-    ).read_text(encoding="utf-8") == text
+    assert (vault / VAULT_ARCHIVE_DIR / "2026-07-01-backfill-spec.md").read_text(
+        encoding="utf-8"
+    ) == text
 
 
 def test_retirement_reuses_wrapped_vault_source_copy_with_matching_body(

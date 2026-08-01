@@ -5,9 +5,90 @@ from pathlib import Path
 from tools.diagnostics.docs_policy import (
     DOC_ROUTING_SCHEMAS_INDEX_PATH,
     DOC_ROUTING_SPECS_INDEX_PATH,
+    PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
     classify_doc_path,
 )
+from tools.diagnostics.docs_scan import (
+    normalized_path_dependency_census,
+    permanent_root_contract_problems,
+)
+
+
+def test_permanent_root_contract_is_exactly_four_paths() -> None:
+    assert set(PERMANENT_ROOT_DOC_CONTRACTS) == {
+        "AGENTS.md",
+        "README.md",
+        "docs/architecture-contract.md",
+        "docs/project-layout.md",
+    }
+
+
+def test_current_permanent_root_contracts_have_positive_landmarks() -> None:
+    root = Path(__file__).parents[1]
+
+    for rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
+        assert (
+            permanent_root_contract_problems(
+                root,
+                rel_path,
+                (root / rel_path).read_text(encoding="utf-8"),
+            )
+            == ()
+        )
+
+
+def test_permanent_root_contract_rejects_missing_route_and_wrong_owner() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\nRepo owner: docs/product/productization.md\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert any("required route must resolve" in problem for problem in problems)
+    assert any("conflicting Repo owner" in problem for problem in problems)
+
+
+def test_dependency_census_resolves_relative_markdown_html_and_constant_consumers(
+    tmp_path: Path,
+) -> None:
+    target = "/".join(
+        (
+            "docs",
+            "superpowers",
+            "plans",
+            "2026-06-15-productization-control-plane.md",
+        )
+    )
+    files = {
+        "docs/guide/ref.md": (
+            "[control](../superpowers/plans/"
+            "2026-06-15-productization-control-plane.md)\n"
+        ),
+        "docs/report.html": (
+            '<a href="superpowers/plans/'
+            '2026-06-15-productization-control-plane.md">control</a>\n'
+        ),
+        "notes.txt": f"literal: {target}\n",
+        "tools/check.py": "from policy import " + "CONTROL_" + "PLANE_PATH\n",
+    }
+    for rel_path, text in files.items():
+        path = tmp_path / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    census = normalized_path_dependency_census(
+        tmp_path,
+        target,
+        scan_paths=tuple(files),
+    )
+
+    assert census["literal_path_referrers"] == ["notes.txt"]
+    assert census["relative_markdown_links"][0]["referrer"] == "docs/guide/ref.md"
+    assert census["relative_html_links"][0]["referrer"] == "docs/report.html"
+    assert census["control_plane_constant_consumers"] == ["tools/check.py"]
 
 
 def test_docs_policy_marks_validation_as_route_retained_contract_surface() -> None:
