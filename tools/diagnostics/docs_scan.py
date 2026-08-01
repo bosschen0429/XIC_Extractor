@@ -169,7 +169,10 @@ def markdown_link_targets(text: str) -> tuple[str, ...]:
         if target:
             targets.append(target)
     for match in re.finditer(
-        r"^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|(\S+))",
+        (
+            r"^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*"
+            r"(?:\n[ \t]*)?(?:<([^>\n]+)>|([^\s]+))"
+        ),
         text,
         re.M,
     ):
@@ -180,9 +183,16 @@ def markdown_link_targets(text: str) -> tuple[str, ...]:
 
 
 def html_link_targets(text: str) -> tuple[str, ...]:
-    return tuple(
-        re.findall(r"\bhref\s*=\s*[\"']([^\"']+)[\"']", text, re.I)
-    )
+    targets: list[str] = []
+    for match in re.finditer(
+        r"\bhref\s*=\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s\"'=<>`]+))",
+        text,
+        re.I,
+    ):
+        target = next((value for value in match.groups() if value is not None), "")
+        if target:
+            targets.append(target)
+    return tuple(targets)
 
 
 def resolve_repo_target(referrer: str, raw_target: str) -> str | None:

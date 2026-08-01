@@ -273,6 +273,11 @@ def _check_schema_and_rows(
     if extra:
         problems.append("unregistered lane_id values: " + ", ".join(extra))
     for index, row in enumerate(rows, start=2):
+        unexpected_columns = set(row) - set(required)
+        if unexpected_columns or any(value is None for value in row.values()):
+            problems.append(
+                f"row {index}: cell cardinality must exactly match schema header"
+            )
         if row.get("schema_version") != "productization_status_index_v1":
             problems.append(f"row {index}: invalid schema_version")
         if row.get("readiness_status") not in allowed_statuses:

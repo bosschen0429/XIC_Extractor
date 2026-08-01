@@ -490,7 +490,7 @@ def test_registered_retirement_packet_passes_without_historical_git_objects(
     monkeypatch.setattr(
         docs_placement_guard,
         "_git_commit_available",
-        lambda *_args: False,
+        lambda _root, ref: ref == "HEAD",
     )
 
     problems = committed_same_path_retirement_packet_problems(
@@ -588,6 +588,72 @@ def test_registered_retirement_packet_shallow_review_rejects_referrer_mismatch(
     assert any("exact_referrers mismatch" in problem for problem in problems)
 
 
+@pytest.mark.parametrize(
+    ("owner_path", "owner_text", "owner_locator", "expected_problem"),
+    (
+        (
+            "docs/product/backfill.md",
+            "",
+            {
+                "path": "docs/product/backfill.md",
+                "kind": "markdown_heading",
+                "heading": "Missing heading",
+            },
+            "owner Markdown heading is missing or non-unique",
+        ),
+        (
+            "docs/product/owner.tsv",
+            "key\npresent\n",
+            {
+                "path": "docs/product/owner.tsv",
+                "kind": "tsv_key",
+                "column": "key",
+                "value": "missing",
+            },
+            "owner TSV key is missing or non-unique",
+        ),
+        (
+            "docs/product/owner.json",
+            '{"present": true}\n',
+            {
+                "path": "docs/product/owner.json",
+                "kind": "json_pointer",
+                "pointer": "/missing",
+            },
+            "owner JSON pointer is missing",
+        ),
+    ),
+)
+def test_registered_retirement_packet_shallow_review_resolves_owner_locators(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    owner_path: str,
+    owner_text: str,
+    owner_locator: dict[str, str],
+    expected_problem: str,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    if owner_text:
+        _write(tmp_path, owner_path, owner_text)
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    packet["claims"][0]["owner_locator"] = owner_locator
+    _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    contract = _packet_contract(tmp_path, evidence_path)
+    monkeypatch.setattr(
+        docs_placement_guard,
+        "_git_commit_available",
+        lambda _root, ref: ref == "HEAD",
+    )
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+        contract=contract,
+    )
+
+    assert any(expected_problem in problem for problem in problems)
+
+
 def test_registered_retirement_packet_rejects_transaction_tampering(
     tmp_path: Path,
 ) -> None:
@@ -631,12 +697,12 @@ def test_committed_retirement_replays_historical_exact_referrers(
         historical_referrers={
             "docs/guide/ref.md": (
                 "[control][control-plane]\n\n"
-                "[control-plane]: ../superpowers/plans/"
+                "[control-plane]:\n  ../superpowers/plans/"
                 "2026-06-15-productization-control-plane.md\n"
             ),
             "docs/report.html": (
-                '<a HREF = "superpowers/plans/'
-                '2026-06-15-productization-control-plane.md">control</a>\n'
+                "<a HREF=superpowers/plans/"
+                "2026-06-15-productization-control-plane.md>control</a>\n"
             ),
         },
     )

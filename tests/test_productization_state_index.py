@@ -348,6 +348,20 @@ def test_checker_rejects_schema_authority_rule_drift(
     assert any(expected_problem in problem for problem in problems)
 
 
+def test_checker_rejects_status_row_with_extra_cell(tmp_path: Path) -> None:
+    lines = DEFAULT_STATUS_INDEX.read_text(encoding="utf-8").splitlines()
+    lines[1] += "\tshadow_value"
+    mutated = tmp_path / "productization-status.tsv"
+    mutated.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    problems = check_productization_state(status_index_path=mutated)
+
+    assert any(
+        "row 2: cell cardinality must exactly match schema header" in problem
+        for problem in problems
+    )
+
+
 def test_checker_rejects_regenerated_unregistered_control_anchor(
     tmp_path: Path,
 ) -> None:

@@ -393,7 +393,7 @@ def _git_object_bytes(root: Path, ref: str, rel_path: str) -> bytes | None:
     return result.stdout if result.returncode == 0 else None
 
 
-def _git_commit_available(root: Path, ref: str) -> bool:
+def _is_exact_git_root(root: Path) -> bool:
     top_level = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
         cwd=root,
@@ -409,7 +409,11 @@ def _git_commit_available(root: Path, ref: str) -> bool:
         discovered_root = Path(top_level.stdout.strip()).resolve()
     except OSError:
         return False
-    if discovered_root != root.resolve():
+    return discovered_root == root.resolve()
+
+
+def _git_commit_available(root: Path, ref: str) -> bool:
+    if not _is_exact_git_root(root):
         return False
     result = subprocess.run(
         ["git", "cat-file", "-e", f"{ref}^{{commit}}"],
@@ -1123,6 +1127,28 @@ def _committed_packet_semantic_problems(
     return tuple(problems)
 
 
+def _current_owner_locator_problems(
+    root: Path,
+    packet: Mapping[str, object],
+) -> tuple[str, ...]:
+    problems: list[str] = []
+    claims = packet.get("claims")
+    if not isinstance(claims, list):
+        return ()
+    for claim in claims:
+        if not isinstance(claim, Mapping):
+            continue
+        owner = claim.get("owner_locator")
+        if not isinstance(owner, Mapping):
+            continue
+        owner_problem = _owner_locator_problem(root, dict(owner), {})
+        if owner_problem:
+            problems.append(
+                f"retirement packet claim {claim.get('claim_id')}: {owner_problem}"
+            )
+    return tuple(problems)
+
+
 def _historical_text_overrides(root: Path, ref: str) -> dict[str, str] | None:
     result = subprocess.run(
         ["git", "ls-tree", "-r", "--name-only", ref],
@@ -1258,6 +1284,7 @@ def committed_same_path_retirement_packet_problems(
     if not is_productization_compatibility_index_text(current_replacement_text):
         problems.append("retired source path is no longer a compatibility index")
 
+    head_available = _git_commit_available(root, "HEAD")
     base_available = _git_commit_available(root, activation_base)
     end_available = _git_commit_available(root, activation_end)
     if end_available and not _git_is_ancestor(root, activation_end, "HEAD"):
@@ -1274,6 +1301,8 @@ def committed_same_path_retirement_packet_problems(
         )
         return tuple(problems)
     if not (base_available and end_available):
+        if head_available:
+            problems.extend(_current_owner_locator_problems(root, packet))
         if registered_contract is None:
             problems.append(
                 "retirement packet history is unavailable and no registered "

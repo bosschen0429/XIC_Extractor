@@ -127,12 +127,12 @@ def test_dependency_census_resolves_relative_markdown_html_and_constant_consumer
     files = {
         "docs/guide/ref.md": (
             "[control][control-plane]\n\n"
-            "[control-plane]: ../superpowers/plans/"
+            "[control-plane]:\n  ../superpowers/plans/"
             "2026-06-15-productization-control-plane.md\n"
         ),
         "docs/report.html": (
-            '<a HREF = "superpowers/plans/'
-            '2026-06-15-productization-control-plane.md">control</a>\n'
+            "<a HREF=superpowers/plans/"
+            "2026-06-15-productization-control-plane.md>control</a>\n"
         ),
         "notes.txt": f"literal: {target}\n",
         "tools/check.py": "from policy import " + "CONTROL_" + "PLANE_PATH\n",
