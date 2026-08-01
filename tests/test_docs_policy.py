@@ -126,11 +126,12 @@ def test_dependency_census_resolves_relative_markdown_html_and_constant_consumer
     )
     files = {
         "docs/guide/ref.md": (
-            "[control](../superpowers/plans/"
-            "2026-06-15-productization-control-plane.md)\n"
+            "[control][control-plane]\n\n"
+            "[control-plane]: ../superpowers/plans/"
+            "2026-06-15-productization-control-plane.md\n"
         ),
         "docs/report.html": (
-            '<a href="superpowers/plans/'
+            '<a HREF = "superpowers/plans/'
             '2026-06-15-productization-control-plane.md">control</a>\n'
         ),
         "notes.txt": f"literal: {target}\n",
@@ -148,8 +149,26 @@ def test_dependency_census_resolves_relative_markdown_html_and_constant_consumer
     )
 
     assert census["literal_path_referrers"] == ["notes.txt"]
-    assert census["relative_markdown_links"][0]["referrer"] == "docs/guide/ref.md"
-    assert census["relative_html_links"][0]["referrer"] == "docs/report.html"
+    assert census["relative_markdown_links"] == [
+        {
+            "referrer": "docs/guide/ref.md",
+            "raw_target": (
+                "../superpowers/plans/"
+                "2026-06-15-productization-control-plane.md"
+            ),
+            "resolved_path": target,
+        }
+    ]
+    assert census["relative_html_links"] == [
+        {
+            "referrer": "docs/report.html",
+            "raw_target": (
+                "superpowers/plans/"
+                "2026-06-15-productization-control-plane.md"
+            ),
+            "resolved_path": target,
+        }
+    ]
     assert census["control_plane_constant_consumers"] == ["tools/check.py"]
 
 

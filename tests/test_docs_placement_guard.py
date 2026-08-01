@@ -56,6 +56,8 @@ def _retirement_evidence(
 
 def _same_path_fixture(
     root: Path,
+    *,
+    historical_referrers: dict[str, str] | None = None,
 ) -> tuple[str, str, str, dict[str, object]]:
     source_path = "/".join(
         (
@@ -96,9 +98,17 @@ def _same_path_fixture(
     owner_path = "docs/product/backfill.md"
     _write(root, source_path, source)
     _write(root, owner_path, "# Backfill\n\n## Contract\nStable capability rule.\n")
+    for referrer_path, referrer_text in (historical_referrers or {}).items():
+        _write(root, referrer_path, referrer_text)
     subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
     subprocess.run(
-        ["git", "add", source_path, owner_path],
+        [
+            "git",
+            "add",
+            source_path,
+            owner_path,
+            *(historical_referrers or {}),
+        ],
         cwd=root,
         check=True,
         capture_output=True,
@@ -150,6 +160,7 @@ def _same_path_fixture(
         "claim_ids": ["CP-CLAIM-001"],
         "absorbed_claims": ["CP-CLAIM-001"],
         "absorbed_negative_claims": [],
+        "exact_referrers": sorted(historical_referrers or {}),
     }
     packet: dict[str, object] = {
         "transaction": "body_to_compatibility_index",
@@ -164,6 +175,7 @@ def _same_path_fixture(
         "unresolved_claims": [],
         "absorbed_claims": ["CP-CLAIM-001"],
         "absorbed_negative_claims": [],
+        "exact_referrers": sorted(historical_referrers or {}),
         "source_line_count": len(lines),
         "source_section_count": 1,
         "source_sections": [
@@ -210,8 +222,12 @@ def _commit_same_path_fixture(
     *,
     hard_zero_files: list[str] | None = None,
     protected_prefixes: list[str] | None = None,
+    historical_referrers: dict[str, str] | None = None,
 ) -> tuple[str, str]:
-    source_path, evidence_path, replacement, packet = _same_path_fixture(root)
+    source_path, evidence_path, replacement, packet = _same_path_fixture(
+        root,
+        historical_referrers=historical_referrers,
+    )
     activation_base = subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=root,
@@ -486,6 +502,92 @@ def test_registered_retirement_packet_passes_without_historical_git_objects(
     assert problems == ()
 
 
+@pytest.mark.parametrize(
+    ("target", "field", "value", "expected_problem"),
+    (
+        (
+            "packet",
+            "review_result",
+            "needs_work",
+            "review_result must be pass_can_retire",
+        ),
+        (
+            "source_mapping",
+            "source_copy_readback_verified",
+            False,
+            "source-copy readback is not verified",
+        ),
+        (
+            "packet",
+            "active_followups",
+            ["still open"],
+            "packet active_followups must be empty",
+        ),
+        (
+            "claim",
+            "summary",
+            "placeholder",
+            "claim CP-CLAIM-001 has placeholder semantics",
+        ),
+    ),
+)
+def test_registered_retirement_packet_shallow_review_rejects_semantic_tampering(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target: str,
+    field: str,
+    value: object,
+    expected_problem: str,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    if target == "packet":
+        packet[field] = value
+    elif target == "source_mapping":
+        packet["entries"][0][field] = value
+    else:
+        packet["claims"][0][field] = value
+    _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    contract = _packet_contract(tmp_path, evidence_path)
+    monkeypatch.setattr(
+        docs_placement_guard,
+        "_git_commit_available",
+        lambda *_args: False,
+    )
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+        contract=contract,
+    )
+
+    assert any(expected_problem in problem for problem in problems)
+
+
+def test_registered_retirement_packet_shallow_review_rejects_referrer_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    packet["exact_referrers"] = ["docs/referrer.md"]
+    _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    contract = _packet_contract(tmp_path, evidence_path)
+    monkeypatch.setattr(
+        docs_placement_guard,
+        "_git_commit_available",
+        lambda *_args: False,
+    )
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+        contract=contract,
+    )
+
+    assert any("exact_referrers mismatch" in problem for problem in problems)
+
+
 def test_registered_retirement_packet_rejects_transaction_tampering(
     tmp_path: Path,
 ) -> None:
@@ -503,6 +605,61 @@ def test_registered_retirement_packet_rejects_transaction_tampering(
 
     assert "registered retirement packet digest mismatch" in problems
     assert "registered retirement packet transaction mismatch" in problems
+
+    updated_contract = _packet_contract(tmp_path, evidence_path)
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+        contract=updated_contract,
+    )
+
+    assert any(
+        "transaction must be body_to_compatibility_index" in problem
+        for problem in problems
+    )
+
+
+def test_committed_retirement_replays_historical_exact_referrers(
+    tmp_path: Path,
+) -> None:
+    target = (
+        "docs/superpowers/plans/"
+        "2026-06-15-productization-control-plane.md"
+    )
+    _, evidence_path = _commit_same_path_fixture(
+        tmp_path,
+        historical_referrers={
+            "docs/guide/ref.md": (
+                "[control][control-plane]\n\n"
+                "[control-plane]: ../superpowers/plans/"
+                "2026-06-15-productization-control-plane.md\n"
+            ),
+            "docs/report.html": (
+                '<a HREF = "superpowers/plans/'
+                '2026-06-15-productization-control-plane.md">control</a>\n'
+            ),
+        },
+    )
+
+    assert committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+    ) == ()
+
+    packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
+    assert packet["source_path"] == target
+    packet["exact_referrers"] = []
+    packet["entries"][0]["exact_referrers"] = []
+    _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    contract = _packet_contract(tmp_path, evidence_path)
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+        contract=contract,
+    )
+
+    assert "retirement packet historical exact_referrers mismatch" in problems
 
 
 def test_committed_retirement_replays_fixed_historical_window(

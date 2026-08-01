@@ -7,8 +7,9 @@ future activation gates.
 
 ## Contract
 
-- `sample_metadata_v1` is production-ready only for no-output-change sample
-  identity, injection-order projection, and lookup parity.
+- The accepted `sample_metadata_v1` contract covers no-output-change sample
+  identity, injection-order projection, and lookup parity. Consult the status
+  index for current lane readiness.
 - Within `sample_metadata_v1`, `sample_name` is the owner-stable,
   case-sensitive primary sample key. `raw_stem` is a lookup alias only;
   injection order, role, batch, matrix, group, and exclusion fields do not

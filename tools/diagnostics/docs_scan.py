@@ -122,14 +122,17 @@ def fallback_local_path_scan_paths(root: Path) -> tuple[str, ...]:
     return tuple(sorted(paths))
 
 
-def is_local_path_scan_target(path: Path, rel_path: str) -> bool:
+def is_local_path_scan_rel_path(rel_path: str) -> bool:
     if rel_path in LOCAL_PATH_SCAN_EXCLUSIONS:
         return False
-    if not path.is_file():
-        return False
-    if path.name in LOCAL_PATH_SCAN_TEXT_FILENAMES:
+    rel = PurePosixPath(rel_path)
+    if rel.name in LOCAL_PATH_SCAN_TEXT_FILENAMES:
         return True
-    return path.suffix.lower() in LOCAL_PATH_SCAN_TEXT_SUFFIXES
+    return rel.suffix.lower() in LOCAL_PATH_SCAN_TEXT_SUFFIXES
+
+
+def is_local_path_scan_target(path: Path, rel_path: str) -> bool:
+    return path.is_file() and is_local_path_scan_rel_path(rel_path)
 
 
 def markdown_headings(text: str) -> tuple[str, ...]:
@@ -165,11 +168,21 @@ def markdown_link_targets(text: str) -> tuple[str, ...]:
             target = raw.split(maxsplit=1)[0]
         if target:
             targets.append(target)
+    for match in re.finditer(
+        r"^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|(\S+))",
+        text,
+        re.M,
+    ):
+        target = (match.group(1) or match.group(2) or "").strip()
+        if target:
+            targets.append(target)
     return tuple(targets)
 
 
 def html_link_targets(text: str) -> tuple[str, ...]:
-    return tuple(re.findall(r"href=[\"']([^\"']+)[\"']", text))
+    return tuple(
+        re.findall(r"\bhref\s*=\s*[\"']([^\"']+)[\"']", text, re.I)
+    )
 
 
 def resolve_repo_target(referrer: str, raw_target: str) -> str | None:

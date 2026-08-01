@@ -394,6 +394,23 @@ def _git_object_bytes(root: Path, ref: str, rel_path: str) -> bytes | None:
 
 
 def _git_commit_available(root: Path, ref: str) -> bool:
+    top_level = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=10,
+    )
+    if top_level.returncode != 0:
+        return False
+    try:
+        discovered_root = Path(top_level.stdout.strip()).resolve()
+    except OSError:
+        return False
+    if discovered_root != root.resolve():
+        return False
     result = subprocess.run(
         ["git", "cat-file", "-e", f"{ref}^{{commit}}"],
         cwd=root,
@@ -827,6 +844,336 @@ def same_path_replacement_problems(
     return problems
 
 
+def _committed_packet_semantic_problems(
+    packet: Mapping[str, object],
+    source_path: str,
+) -> tuple[str, ...]:
+    """Validate packet semantics that do not require historical Git objects."""
+
+    problems: list[str] = []
+    raw_entries = packet.get("entries")
+    entries = raw_entries if isinstance(raw_entries, list) else []
+    source_entries = [
+        item
+        for item in entries
+        if isinstance(item, Mapping)
+        and _normalized_evidence_path(item.get("source_path")) == source_path
+    ]
+    if len(source_entries) != 1:
+        return (
+            "retirement packet must contain exactly one matching source mapping",
+        )
+    source_mapping = source_entries[0]
+    if (
+        packet.get("transaction") != "body_to_compatibility_index"
+        or source_mapping.get("transaction") != "body_to_compatibility_index"
+    ):
+        problems.append(
+            "retirement packet transaction must be body_to_compatibility_index"
+        )
+    if packet.get("transaction_status") != "completed":
+        problems.append("retirement packet transaction_status must be completed")
+    if (
+        packet.get("review_result") != "pass_can_retire"
+        or source_mapping.get("review_result") != "pass_can_retire"
+    ):
+        problems.append("retirement packet review_result must be pass_can_retire")
+    if (
+        packet.get("source_copy_readback_verified") is not True
+        or source_mapping.get("source_copy_readback_verified") is not True
+    ):
+        problems.append("retirement packet source-copy readback is not verified")
+    for label, mapping in (("packet", packet), ("source mapping", source_mapping)):
+        for field in ("active_followups", "unresolved_claims"):
+            values = _string_list(mapping.get(field))
+            if values is None:
+                problems.append(
+                    f"retirement packet {label} {field} must be a string list"
+                )
+            elif values:
+                problems.append(
+                    f"retirement packet {label} {field} must be empty"
+                )
+
+    sha_fields = ("source_hash", "source_copy_hash", "replacement_hash")
+    for field in sha_fields:
+        value = packet.get(field)
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            problems.append(f"retirement packet {field} must be a SHA-256 digest")
+        if source_mapping.get(field) != value:
+            problems.append(f"retirement packet source mapping {field} mismatch")
+    if packet.get("source_copy_hash") != packet.get("source_hash"):
+        problems.append("retirement packet source_copy_hash must equal source_hash")
+    if not isinstance(packet.get("source_line_count"), int) or packet.get(
+        "source_line_count"
+    ) < 1:
+        problems.append("retirement packet source_line_count must be positive")
+
+    raw_sections = packet.get("source_sections")
+    raw_claims = packet.get("claims")
+    sections = raw_sections if isinstance(raw_sections, list) else []
+    claims = raw_claims if isinstance(raw_claims, list) else []
+    if not isinstance(raw_sections, list) or packet.get("source_section_count") != len(
+        sections
+    ):
+        problems.append("retirement packet source section census is incomplete")
+    if not isinstance(raw_claims, list) or not claims:
+        problems.append("retirement packet claim census is missing")
+    section_ids = [
+        item.get("section_id") for item in sections if isinstance(item, Mapping)
+    ]
+    claim_ids = [item.get("claim_id") for item in claims if isinstance(item, Mapping)]
+    if (
+        len(section_ids) != len(sections)
+        or any(not isinstance(value, str) or not value for value in section_ids)
+        or len(section_ids) != len(set(section_ids))
+    ):
+        problems.append("retirement packet source section IDs are invalid")
+    if (
+        len(claim_ids) != len(claims)
+        or any(not isinstance(value, str) or not value for value in claim_ids)
+        or len(claim_ids) != len(set(claim_ids))
+    ):
+        problems.append("retirement packet claim IDs are invalid")
+    section_id_set = {value for value in section_ids if isinstance(value, str)}
+    claim_id_set = {value for value in claim_ids if isinstance(value, str)}
+    allowed_dispositions = {
+        "absorb",
+        "structured_owner_already_authoritative",
+        "historical_only",
+    }
+    section_edges: set[tuple[str, str]] = set()
+    for section in sections:
+        if not isinstance(section, Mapping):
+            problems.append("retirement packet source section must be an object")
+            continue
+        section_id = section.get("section_id")
+        if section.get("disposition") not in allowed_dispositions:
+            problems.append(
+                f"retirement packet section {section_id} has invalid disposition"
+            )
+        locator = section.get("source_locator")
+        if not isinstance(locator, str) or re.fullmatch(
+            rf"{re.escape(source_path)}:L\d+(?:-L\d+)?", locator
+        ) is None:
+            problems.append(
+                f"retirement packet section {section_id} has invalid source locator"
+            )
+        digest = section.get("section_sha256")
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            problems.append(
+                f"retirement packet section {section_id} has invalid digest"
+            )
+        mapped_claims = _string_list(section.get("claim_ids"))
+        if (
+            mapped_claims is None
+            or not mapped_claims
+            or len(mapped_claims) != len(set(mapped_claims))
+            or not set(mapped_claims) <= claim_id_set
+        ):
+            problems.append(
+                f"retirement packet section {section_id} has invalid claim mapping"
+            )
+        elif isinstance(section_id, str):
+            section_edges.update((section_id, claim_id) for claim_id in mapped_claims)
+
+    claim_edges: set[tuple[str, str]] = set()
+    expected_positive: set[str] = set()
+    expected_negative: set[str] = set()
+    for claim in claims:
+        if not isinstance(claim, Mapping):
+            problems.append("retirement packet claim must be an object")
+            continue
+        claim_id = claim.get("claim_id")
+        if claim.get("disposition") not in allowed_dispositions:
+            problems.append(
+                f"retirement packet claim {claim_id} has invalid disposition"
+            )
+        summary = claim.get("summary")
+        if (
+            not isinstance(summary, str)
+            or not summary.strip()
+            or summary.strip().casefold()
+            in {"placeholder", "todo", "claim is present in owner"}
+        ):
+            problems.append(
+                f"retirement packet claim {claim_id} has placeholder semantics"
+            )
+        polarity = claim.get("polarity")
+        if polarity not in {"positive", "negative"}:
+            problems.append(f"retirement packet claim {claim_id} has invalid polarity")
+        locator = claim.get("source_locator")
+        if not isinstance(locator, str) or re.fullmatch(
+            rf"{re.escape(source_path)}:L\d+(?:-L\d+)?", locator
+        ) is None:
+            problems.append(
+                f"retirement packet claim {claim_id} has invalid source locator"
+            )
+        digest = claim.get("source_excerpt_sha256")
+        if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            problems.append(f"retirement packet claim {claim_id} has invalid digest")
+        mapped_sections = _string_list(claim.get("source_section_ids"))
+        if (
+            mapped_sections is None
+            or not mapped_sections
+            or len(mapped_sections) != len(set(mapped_sections))
+            or not set(mapped_sections) <= section_id_set
+        ):
+            problems.append(
+                f"retirement packet claim {claim_id} has invalid section mapping"
+            )
+        elif isinstance(claim_id, str):
+            claim_edges.update(
+                (section_id, claim_id) for section_id in mapped_sections
+            )
+        owner = claim.get("owner_locator")
+        owner_path = owner.get("path") if isinstance(owner, Mapping) else None
+        owner_kind = owner.get("kind") if isinstance(owner, Mapping) else None
+        owner_shape_valid = False
+        if isinstance(owner, Mapping) and _normalized_evidence_path(owner_path):
+            if owner_kind == "markdown_heading":
+                owner_shape_valid = isinstance(owner.get("heading"), str) and bool(
+                    owner.get("heading")
+                )
+            elif owner_kind == "tsv_column":
+                owner_shape_valid = isinstance(owner.get("column"), str) and bool(
+                    owner.get("column")
+                )
+            elif owner_kind == "tsv_key":
+                owner_shape_valid = all(
+                    isinstance(owner.get(field), str) and bool(owner.get(field))
+                    for field in ("column", "value")
+                )
+            elif owner_kind == "json_pointer":
+                owner_shape_valid = isinstance(owner.get("pointer"), str) and bool(
+                    owner.get("pointer")
+                )
+        if not owner_shape_valid:
+            problems.append(
+                f"retirement packet claim {claim_id} has invalid owner locator"
+            )
+        if (
+            isinstance(claim_id, str)
+            and claim.get("disposition") != "historical_only"
+        ):
+            if polarity == "positive":
+                expected_positive.add(claim_id)
+            elif polarity == "negative":
+                expected_negative.add(claim_id)
+    if section_edges != claim_edges:
+        problems.append("retirement packet section/claim edges are not reciprocal")
+
+    mapped_claim_ids = _string_list(source_mapping.get("claim_ids"))
+    if (
+        mapped_claim_ids is None
+        or len(mapped_claim_ids) != len(set(mapped_claim_ids))
+        or set(mapped_claim_ids) != claim_id_set
+    ):
+        problems.append("retirement packet source mapping claim IDs are incomplete")
+    for label, mapping in (("packet", packet), ("source mapping", source_mapping)):
+        for field, expected in (
+            ("absorbed_claims", expected_positive),
+            ("absorbed_negative_claims", expected_negative),
+        ):
+            values = _string_list(mapping.get(field))
+            if (
+                values is None
+                or len(values) != len(set(values))
+                or set(values) != expected
+            ):
+                problems.append(
+                    f"retirement packet {label} {field} projection mismatch"
+                )
+
+    normalized_referrers: dict[str, list[str] | None] = {}
+    for label, mapping in (("packet", packet), ("source mapping", source_mapping)):
+        values = _string_list(mapping.get("exact_referrers"))
+        if values is None:
+            problems.append(
+                f"retirement packet {label} exact_referrers must be a string list"
+            )
+            normalized_referrers[label] = None
+            continue
+        normalized = [_normalized_evidence_path(value) for value in values]
+        if (
+            any(value is None for value in normalized)
+            or len(values) != len(set(values))
+            or values != sorted(values)
+            or any(
+                value != normalized_value
+                for value, normalized_value in zip(values, normalized)
+            )
+        ):
+            problems.append(
+                f"retirement packet {label} exact_referrers must be sorted, "
+                "unique repository-relative paths"
+            )
+            normalized_referrers[label] = None
+        else:
+            normalized_referrers[label] = values
+    if (
+        normalized_referrers.get("packet") is not None
+        and normalized_referrers.get("source mapping") is not None
+        and normalized_referrers["packet"] != normalized_referrers["source mapping"]
+    ):
+        problems.append(
+            "retirement packet exact_referrers mismatch between packet and "
+            "source mapping"
+        )
+    return tuple(problems)
+
+
+def _historical_text_overrides(root: Path, ref: str) -> dict[str, str] | None:
+    result = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", ref],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=20,
+    )
+    if result.returncode != 0:
+        return None
+    overrides: dict[str, str] = {}
+    for raw_path in result.stdout.splitlines():
+        if not raw_path.strip():
+            continue
+        path = _docs_scan.normalize_repo_rel_path(raw_path)
+        if not _docs_scan.is_local_path_scan_rel_path(path):
+            continue
+        data = _git_object_bytes(root, ref, path)
+        if data is None:
+            continue
+        try:
+            overrides[path] = data.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+    return overrides
+
+
+def _historical_exact_referrers(
+    root: Path,
+    ref: str,
+    source_path: str,
+) -> tuple[str, ...] | None:
+    overrides = _historical_text_overrides(root, ref)
+    if overrides is None:
+        return None
+    census = _docs_scan.normalized_path_dependency_census(
+        root,
+        source_path,
+        scan_paths=tuple(overrides),
+        overrides=overrides,
+    )
+    referrers = set(census["literal_path_referrers"])
+    referrers.update(
+        item["referrer"] for item in census["relative_markdown_links"]
+    )
+    referrers.update(item["referrer"] for item in census["relative_html_links"])
+    return tuple(sorted(referrers))
+
+
 def committed_same_path_retirement_packet_problems(
     root: Path,
     packet_path: str,
@@ -879,15 +1226,16 @@ def committed_same_path_retirement_packet_problems(
         if packet.get("source_copy_hash") != registered_contract.get("source_hash"):
             problems.append("registered retirement packet source_copy_hash mismatch")
 
-    if packet.get("transaction") != "body_to_compatibility_index":
-        return tuple(problems)
-
     source_path = _normalized_evidence_path(packet.get("source_path"))
-    activation_base = packet.get("activation_base_sha")
-    activation_end = packet.get("activation_end_sha")
     if source_path is None:
         problems.append("retirement packet source_path must be repository-relative")
         return tuple(problems)
+    problems.extend(_committed_packet_semantic_problems(packet, source_path))
+    if packet.get("transaction") != "body_to_compatibility_index":
+        return tuple(problems)
+
+    activation_base = packet.get("activation_base_sha")
+    activation_end = packet.get("activation_end_sha")
     if not isinstance(activation_base, str) or re.fullmatch(
         r"[0-9a-fA-F]{40}", activation_base
     ) is None:
@@ -994,6 +1342,15 @@ def committed_same_path_retirement_packet_problems(
         validate_dependencies=False,
     )
     problems.extend(problem.reason for problem in placement_problems)
+    historical_referrers = _historical_exact_referrers(
+        root,
+        activation_base,
+        source_path,
+    )
+    if historical_referrers is None:
+        problems.append("retirement packet historical referrers cannot be enumerated")
+    elif packet.get("exact_referrers") != list(historical_referrers):
+        problems.append("retirement packet historical exact_referrers mismatch")
 
     result = subprocess.run(
         [

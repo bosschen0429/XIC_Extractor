@@ -313,6 +313,41 @@ def test_checker_rejects_predecessor_control_plane_schema() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("mutation", "expected_problem"),
+    (
+        ("missing", "authority_rules must be an object"),
+        ("extra", "authority_rules keys must exactly match"),
+        ("open", "unregistered_scope_policy must be fail_closed"),
+        ("scope", "allowed scopes drifted from registered writer lanes"),
+        ("boolean", "quality_explanations_cannot_write must be true"),
+    ),
+)
+def test_checker_rejects_schema_authority_rule_drift(
+    tmp_path: Path,
+    mutation: str,
+    expected_problem: str,
+) -> None:
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    rules = schema["authority_rules"]
+    if mutation == "missing":
+        del schema["authority_rules"]
+    elif mutation == "extra":
+        rules["unimplemented_future_rule"] = True
+    elif mutation == "open":
+        rules["unregistered_scope_policy"] = "allow"
+    elif mutation == "scope":
+        rules["allowed_product_writer_scopes"].pop()
+    else:
+        rules["quality_explanations_cannot_write"] = False
+    mutated = tmp_path / "schema.json"
+    mutated.write_text(json.dumps(schema), encoding="utf-8")
+
+    problems = check_productization_state(schema_path=mutated)
+
+    assert any(expected_problem in problem for problem in problems)
+
+
 def test_checker_rejects_regenerated_unregistered_control_anchor(
     tmp_path: Path,
 ) -> None:
@@ -383,6 +418,52 @@ def test_checker_rejects_product_topic_mutable_authority_scope(
     assert any(
         "docs/product/backfill.md: product topic owner duplicates mutable "
         "authority scope: backfill_policy_write_ready_rows" in problem
+        for problem in problems
+    )
+
+
+@pytest.mark.parametrize(
+    "readiness_text",
+    (
+        "broad_backfill_autowrite remains parked",
+        "park_broad_backfill is blocked",
+        "Broad auto-write from the full candidate universe is production-ready",
+        "Broad auto-write — parked",
+        "Broad Backfill: blocked",
+    ),
+)
+def test_checker_rejects_product_topic_lane_readiness_assignment(
+    tmp_path: Path,
+    readiness_text: str,
+) -> None:
+    product_topics = tmp_path / "docs/product"
+    product_topics.mkdir(parents=True)
+    (product_topics / "backfill.md").write_text(
+        f"# Backfill\n\n- {readiness_text}.\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(product_topic_dir=product_topics)
+
+    assert any(
+        "product topic owner duplicates mutable readiness for "
+        "broad_backfill_autowrite" in problem
+        for problem in problems
+    )
+
+
+def test_checker_allows_non_lane_artifact_readiness_label(tmp_path: Path) -> None:
+    product_topics = tmp_path / "docs/product"
+    product_topics.mkdir(parents=True)
+    (product_topics / "backfill.md").write_text(
+        "# Backfill\n\nThis validation artifact remains diagnostic_only.\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(product_topic_dir=product_topics)
+
+    assert not any(
+        "product topic owner duplicates mutable readiness" in problem
         for problem in problems
     )
 

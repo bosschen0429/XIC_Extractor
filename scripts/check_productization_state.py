@@ -66,6 +66,45 @@ WRITE_FORBIDDEN_STATUSES = {
     "out_of_scope",
 }
 NON_AUTHORITY_LANE_GROUPS = {"review", "truth", "evidence"}
+AUTHORITY_RULE_KEYS = {
+    "unregistered_scope_policy",
+    "allowed_product_writer_scopes",
+    "parked_blocked_diagnostic_frozen_out_of_scope_must_not_write",
+    "quality_explanations_cannot_write",
+    "review_truth_or_recovery_artifacts_cannot_write",
+    "handoff_and_control_plane_anchor_required",
+}
+AUTHORITY_TRUE_RULES = AUTHORITY_RULE_KEYS - {
+    "unregistered_scope_policy",
+    "allowed_product_writer_scopes",
+}
+PRODUCT_TOPIC_BY_LANE_GROUP = {
+    "backfill": "backfill.md",
+    "calibration": "instrument-qc-calibration.md",
+    "cid_nl": "discovery.md",
+    "gui": "untargeted-gui.md",
+    "review": "review-roundtrip.md",
+    "review_action": "review-roundtrip.md",
+    "sample_metadata": "sample-metadata-qc.md",
+    "targeted_ms1": "targeted-selection.md",
+    "truth": "review-roundtrip.md",
+}
+ADDITIONAL_PRODUCTIZATION_NARRATIVE_OWNER_PATHS = (
+    "docs/superpowers/plans/2026-06-19-backfill-quant-matrix-productization-roadmap.md",
+    "docs/superpowers/validation/evidence_chain_source_of_truth.md",
+)
+READINESS_IDENTITY_STOP_WORDS = {
+    "a",
+    "and",
+    "are",
+    "for",
+    "is",
+    "only",
+    "remain",
+    "remains",
+    "the",
+    "v1",
+}
 CANONICAL_TEXT_HASH_EXTENSIONS = {
     ".csv",
     ".html",
@@ -102,8 +141,9 @@ def check_productization_state(
     if not schema or not authority:
         return problems
 
+    authority_rules = _check_schema_authority_rules(schema, problems)
     _check_schema_and_rows(schema, header, rows, problems)
-    _check_authority_boundaries(authority, rows, problems)
+    _check_authority_boundaries(authority_rules, authority, rows, problems)
     _check_artifacts(rows, repo_root, problems)
     _check_doc_anchors(rows, handoff_text, control_plane_text, problems)
     _check_compatibility_index(rows, control_plane_text, problems)
@@ -116,12 +156,50 @@ def check_productization_state(
         problems,
     )
     _check_product_topic_authority_partition(
+        schema,
         authority,
         rows,
         product_topic_dir or (repo_root / "docs/product"),
+        repo_root,
         problems,
     )
     return problems
+
+
+def _check_schema_authority_rules(
+    schema: Mapping[str, Any],
+    problems: list[str],
+) -> Mapping[str, Any]:
+    raw_rules = schema.get("authority_rules")
+    if not isinstance(raw_rules, Mapping):
+        problems.append("schema authority_rules must be an object")
+        return {}
+    actual_keys = set(raw_rules)
+    if actual_keys != AUTHORITY_RULE_KEYS:
+        problems.append(
+            "schema authority_rules keys must exactly match the enforced contract; "
+            f"missing={sorted(AUTHORITY_RULE_KEYS - actual_keys)!r}, "
+            f"extra={sorted(actual_keys - AUTHORITY_RULE_KEYS)!r}"
+        )
+    if raw_rules.get("unregistered_scope_policy") != "fail_closed":
+        problems.append(
+            "schema authority_rules unregistered_scope_policy must be fail_closed"
+        )
+    raw_scopes = raw_rules.get("allowed_product_writer_scopes")
+    if (
+        not isinstance(raw_scopes, list)
+        or not raw_scopes
+        or not all(isinstance(scope, str) and scope for scope in raw_scopes)
+        or len(raw_scopes) != len(set(raw_scopes))
+    ):
+        problems.append(
+            "schema authority_rules allowed_product_writer_scopes must be a "
+            "non-empty unique string list"
+        )
+    for rule in sorted(AUTHORITY_TRUE_RULES):
+        if raw_rules.get(rule) is not True:
+            problems.append(f"schema authority_rules {rule} must be true")
+    return raw_rules
 
 
 def _check_schema_and_rows(
@@ -222,6 +300,7 @@ def _check_schema_and_rows(
 
 
 def _check_authority_boundaries(
+    authority_rules: Mapping[str, Any],
     authority: Mapping[str, Any],
     rows: Sequence[Mapping[str, str]],
     problems: list[str],
@@ -231,10 +310,20 @@ def _check_authority_boundaries(
     if not isinstance(policy, Mapping) or not isinstance(current, Mapping):
         problems.append("authority manifest missing policy/current backfill")
         return
+    if policy.get("unregistered_scope_policy") != authority_rules.get(
+        "unregistered_scope_policy"
+    ):
+        problems.append("authority manifest unregistered scope policy drifted")
+    raw_schema_scopes = authority_rules.get("allowed_product_writer_scopes", [])
+    schema_scopes = {
+        scope for scope in raw_schema_scopes if isinstance(scope, str) and scope
+    }
     allowed_scopes = set(policy.get("product_writer_allowed_scopes", []))
+    if allowed_scopes != schema_scopes:
+        problems.append("authority manifest allowed scopes drifted from schema")
     expected_scopes = {item["scope"] for item in WRITER_LANE_AUTHORITY.values()}
-    if allowed_scopes != expected_scopes:
-        problems.append("authority manifest allowed scopes drifted")
+    if schema_scopes != expected_scopes:
+        problems.append("schema allowed scopes drifted from registered writer lanes")
     authority_rows = [row for row in rows if row.get("write_authority") == "TRUE"]
     writer_lane_ids = {row.get("lane_id", "") for row in authority_rows}
     expected_writer_lane_ids = set(WRITER_LANE_AUTHORITY)
@@ -593,13 +682,92 @@ def _duplicates_structured_count(text: str, count: str) -> bool:
     return False
 
 
+def _narrative_units(text: str) -> tuple[str, ...]:
+    """Join wrapped prose while keeping bullets and headings as unit boundaries."""
+
+    units: list[str] = []
+    current: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if current:
+                units.append(" ".join(current))
+                current = []
+            continue
+        starts_unit = line.startswith(("#", "- ", "* ", "|"))
+        if starts_unit and current:
+            units.append(" ".join(current))
+            current = []
+        current.append(line)
+    if current:
+        units.append(" ".join(current))
+    return tuple(units)
+
+
+def _readiness_assignment(
+    text: str,
+    row: Mapping[str, str],
+    readiness_statuses: Sequence[str],
+) -> str | None:
+    identity_text = " ".join(
+        row.get(field, "")
+        for field in ("lane_id", "control_plane_anchor", "handoff_anchor")
+    )
+    readiness_tokens = {
+        token
+        for status in readiness_statuses
+        for token in re.findall(r"[a-z0-9]+", status.casefold())
+    }
+    identity_tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", identity_text.casefold())
+        if token not in READINESS_IDENTITY_STOP_WORDS
+        and token not in readiness_tokens
+        and len(token) > 1
+    }
+    if len(identity_tokens) < 2:
+        return None
+    for unit in _narrative_units(text):
+        unit_tokens = re.findall(r"[a-z0-9]+", unit.casefold())
+        for status in readiness_statuses:
+            status_tokens = re.findall(r"[a-z0-9]+", status.casefold())
+            width = len(status_tokens)
+            for index in range(len(unit_tokens) - width + 1):
+                if unit_tokens[index : index + width] != status_tokens:
+                    continue
+                preceding = unit_tokens[max(0, index - 5) : index]
+                has_assignment_verb = bool(set(preceding) & {
+                    "are",
+                    "is",
+                    "remain",
+                    "remains",
+                    "stay",
+                    "stays",
+                })
+                local_identity_count = len(
+                    identity_tokens
+                    & set(unit_tokens[max(0, index - 12) : index])
+                )
+                adjacent_identity_count = len(
+                    identity_tokens
+                    & set(unit_tokens[max(0, index - 4) : index])
+                )
+                if (
+                    has_assignment_verb and local_identity_count >= 2
+                ) or adjacent_identity_count >= 2:
+                    return status
+    return None
+
+
 def _check_product_topic_authority_partition(
+    schema: Mapping[str, Any],
     authority: Mapping[str, Any],
     rows: Sequence[Mapping[str, str]],
     product_topic_dir: Path,
+    repo_root: Path,
     problems: list[str],
 ) -> None:
-    """Keep mutable structured counts/scopes out of product topic owners."""
+    """Keep mutable structured counts/scopes/readiness out of topic owners."""
 
     if not product_topic_dir.is_dir():
         return
@@ -609,9 +777,22 @@ def _check_product_topic_authority_partition(
         for row in rows
         if row.get("product_authority_scope", "")
     }
-    for path in sorted(product_topic_dir.glob("*.md")):
+    readiness_statuses = [
+        status
+        for status in schema.get("allowed_readiness_statuses", [])
+        if isinstance(status, str) and status
+    ]
+    topic_paths = [(path, False) for path in sorted(product_topic_dir.glob("*.md"))]
+    for rel_path in ADDITIONAL_PRODUCTIZATION_NARRATIVE_OWNER_PATHS:
+        path = repo_root / rel_path
+        if path.is_file():
+            topic_paths.append((path, True))
+    for path, accepts_all_lane_groups in topic_paths:
         text = _read_text(path, problems)
-        rel_path = f"docs/product/{path.name}"
+        try:
+            rel_path = path.relative_to(repo_root).as_posix()
+        except ValueError:
+            rel_path = f"docs/product/{path.name}"
         for scope in sorted(authority_scopes):
             if _contains_normalized_phrase(text, scope):
                 problems.append(
@@ -623,6 +804,22 @@ def _check_product_topic_authority_partition(
                 problems.append(
                     f"{rel_path}: product topic owner duplicates mutable "
                     f"structured row/cell count: {count}"
+                )
+        for row in rows:
+            if not accepts_all_lane_groups and (
+                PRODUCT_TOPIC_BY_LANE_GROUP.get(row.get("lane_group", ""))
+                != path.name
+            ):
+                continue
+            duplicated_status = _readiness_assignment(
+                text,
+                row,
+                readiness_statuses,
+            )
+            if duplicated_status is not None:
+                problems.append(
+                    f"{rel_path}: product topic owner duplicates mutable "
+                    f"readiness for {row.get('lane_id', '')}: {duplicated_status}"
                 )
 
 

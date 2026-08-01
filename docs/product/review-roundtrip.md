@@ -45,10 +45,11 @@ approved product changes.
 - Typed review actions must be validated and planned before any mutation.
   Apply steps require stable identifiers, recompute rules, sidecar contracts,
   and approved expected-diff evidence.
-- Current review-action support is limited to identity verification and
-  candidate-sidecar planning. Selected-candidate switching and
-  manual-boundary area recomputation are parked until stable IDs, recompute
-  rules, and expected-diff apply contracts exist.
+- The implemented review-action contract is limited to identity verification
+  and candidate-sidecar planning. Selected-candidate switching and
+  manual-boundary area recomputation have no product apply authority until
+  stable IDs, recompute rules, and expected-diff apply contracts exist. Consult
+  the status index for current lane readiness.
 - Peak-choice truth labels are separate from product authority. They can
   inform future automation only through a later goal with authority and
   expected-diff gates.

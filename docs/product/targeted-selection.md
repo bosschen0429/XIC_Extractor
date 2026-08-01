@@ -7,7 +7,11 @@ Targeted selection is the product-facing decision path for known targets. It tur
 - Product targeted output is a workflow-owned projection from evidence and selection decisions. Shared evidence providers inform but do not choose targeted product state.
 - Region, boundary, and selected-envelope logic are candidate and model-selection surfaces. They require expected-diff review before changing selected peak, area, confidence, reason, product state, counted detection, workbook, or matrix values.
 - Selected-hypothesis public behavior must preserve compatibility projections unless an explicit schema/versioning plan changes downstream contracts.
-- MS1 shape-identity limited rescue is production-ready only for the headless limited `5-hmdC + 5-medC` policy and only writes `detected_flagged` under its expected-diff gate. Broader targets, GUI wiring, and default broad NL_FAIL rescue remain blocked without a new target-family evidence gate.
+- The bounded headless `5-hmdC + 5-medC` contract is the only MS1
+  shape-identity rescue scope with accepted `detected_flagged` expected-diff
+  evidence. It grants no authority to broader targets, GUI wiring, or default
+  broad NL_FAIL rescue; those require a new target-family evidence gate.
+  Consult the status index for current lane readiness.
 - Target-pair RT auto-reselection and calibration artifacts are activation-gated selection aids, not default authority unless the status index, authority manifest, promotion contract, and focused tests say so.
 - Targeted expected-diff approvals must reference runtime product
   `PeakHypothesis` candidate IDs. Overlay-only or audit-table candidate IDs can

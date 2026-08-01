@@ -44,21 +44,22 @@ manifest owns the current writer surface; the promotion contract owns promotion
 requirements. This roadmap records direction and phase order. Deepresearch
 notes are background inputs and cannot grant write authority.
 
-## Current Baseline
+## Baseline Routes
 
-- Current Backfill product authority remains exactly 511 cells.
-- Broad Backfill auto-write remains parked.
-- `4613` remains the candidate/audit universe, not a writable pool.
-- `3015` trace-matched unresolved rows remain review/adjudication targets, not
-  writer rows.
-- `1087` missing-overlay rows remain evidence gaps, not negative truth.
-- Lockbox/owner-clean evidence remains non-authoritative challenge evidence.
-- Manual wrong-peak/no-peak controls remain negative controls.
+- The status index exclusively owns current Backfill maturity and lane state.
+- The authority manifest exclusively owns active writer scopes and their
+  structured counts.
+- The candidate/audit universe is not a writable pool.
+- Trace-matched unresolved rows are review/adjudication targets, not writer
+  rows.
+- Missing-overlay rows are evidence gaps, not negative truth.
+- Lockbox/owner-clean evidence is non-authoritative challenge evidence.
+- Manual wrong-peak/no-peak controls are negative controls.
 - Phase 0/1 do not change ProductWriter, matrix, workbook, selected peak/area,
   counted detection, GUI, default extraction, or broad Backfill authority.
 
-Important nuance: parked broad Backfill means broad uncontracted writer
-behavior is parked. Contracted accepted Backfill is the product direction.
+The broad uncontracted writer boundary and any reopening state are read from
+the status index. Contracted accepted Backfill is the product direction.
 
 ## Dismantled Direction
 

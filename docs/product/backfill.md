@@ -14,8 +14,9 @@ or candidate tables into the matrix.
   detection.
 - Any broader Backfill publication requires an explicit public authority
   contract, expected-diff evidence, and focused output tests.
-- Broad auto-write from the full candidate universe is parked. The
-  candidate/audit universe is not the writer pool.
+- Broad auto-write from the full candidate universe has no registered writer
+  authority. The candidate/audit universe is not the writer pool; consult the
+  status index for current lane readiness.
 - Current expansion priorities: mechanical adjudication, structured review,
   truth acquisition, trace-evidence recovery, and evidence provenance -- before
   any new writer scope.
@@ -39,10 +40,10 @@ or candidate tables into the matrix.
 
 ## Current Evidence Compression
 
-The broad Backfill auto-write decision is parked, not unresolved. The retained
-decision packet is still an authority/status anchor, so it must not be shortened
-or moved until the status index and authority manifest point at a replacement
-compact artifact with updated hashes.
+The broad Backfill auto-write decision is retained as provenance, not as a
+current status owner. It must not be shortened or moved until the status index
+and authority manifest point at a replacement compact artifact with updated
+hashes.
 
 Stable claims already absorbed here:
 

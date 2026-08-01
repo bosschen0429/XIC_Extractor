@@ -355,13 +355,10 @@ Evidence states:
   expected-diff/provenance contract to only the projected-pass clean target
   cells and replay a matrix/provenance packet through the existing
   `ProductionAcceptanceManifest` and `QuantMatrixVersion` writer path. The
-  current bounded activation covers 84 cells across 7 rows, excludes the 28
-  projected-held cells, excludes the 37 boundary-review cells, and excludes the
-  29 off-target hold/remap cells. Its registered scope is
-  `backfill_expansion_clean_target_selective_activation_84_cells`. It changes
-  only the bounded default matrix output/provenance artifacts for those 84
-  cells and does not change workbook, GUI, selected peak, selected area, counted
-  detection, broad Backfill, or the parked 666-cell replay boundary.
+  accepted bounded activation contract changes only its registered default
+  matrix output/provenance surface; it does not change workbook, GUI, selected
+  peak, selected area, counted detection, or broad Backfill. The status index
+  and authority manifest exclusively own the current lane, scope, and counts.
   Optional manual review labels may annotate peak-mode, boundary, and review
   action for remap/boundary debugging; they are reviewer evidence, not a manual
   allowlist and not ProductWriter authority.
@@ -439,7 +436,7 @@ numbers, and active scope sizes belong in the machine-readable artifacts.
 | --- | --- | --- |
 | Backfill current | Backfill policy, same-peak support, sample-local evidence, value provenance, and expected diff. | Writer authority is limited to the registered scope in the authority manifest and status index. |
 | CID-NL Discovery | Successor self evidence, CID-NL tag evidence, MS1/RT/family context, identity reconstruction, expected diff, and quant matrix replay. | CID-NL/MS2 evidence is not direct writer authority; it must be consumed by a bounded activation contract. |
-| Backfill expansion | Census, availability, sample-local MS1 identity, RAW trace identity, expected diff/provenance, activation replay, shift-aware standard-peak support, own-max metric support, selective source-family projection, and MS1 product-authority sidecar. | Expansion does not unlock broad Backfill. The current 84-cell clean-target selective scope is active writer authority only because the bounded full-chain gate, expected diff, provenance replay, authority manifest, and status index adopted it under the promotion contract. The remaining 666-cell packet and diagnostic pass sets are not authority. |
+| Backfill expansion | Census, availability, sample-local MS1 identity, RAW trace identity, expected diff/provenance, activation replay, shift-aware standard-peak support, own-max metric support, selective source-family projection, and MS1 product-authority sidecar. | Expansion does not unlock broad Backfill. Only a scope registered by the authority manifest and status index after the bounded full-chain gate, expected diff, and provenance replay has writer authority; candidate and diagnostic pass sets are not authority. |
 | Broad Backfill candidate universe | Candidate, review, overlay, lockbox, recovery, economics, and locality evidence. | No write authority unless a new activation/export contract and manifest scope are added. |
 | Targeted review actions | Expected-diff gate over product state, counted detection, review state, candidate sidecar, or manual-boundary state. | Mutating actions require approved expected diff and fail closed on stale/missing baseline. |
 
