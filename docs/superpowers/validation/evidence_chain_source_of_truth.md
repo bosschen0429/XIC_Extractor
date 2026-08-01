@@ -49,7 +49,7 @@ different questions:
 | `docs/product/domain-glossary.md` | Stable domain vocabulary, lane boundaries, and the shared evidence spine. | Current counts, active tier, writer scopes. |
 | `docs/architecture-contract.md` | Dependency direction and the rule that evidence providers feed the spine before any matrix/export contract. | Current validation packet status. |
 | `docs/lc-msms-evidence-rules.md` | Domain interpretation of MS1/MS2/RT/Backfill evidence and promotion constraints. | Current product lane state. |
-| `docs/superpowers/plans/2026-06-15-productization-control-plane.md` | Narrative tier board, active lane, and promotion history. | Low-level evidence fields. |
+| `docs/superpowers/plans/2026-06-15-productization-control-plane.md` | Compatibility lookup for retired control-plane lane keys and historical anchors. | Current tier, lane, writer scope, or promotion state. |
 | `docs/superpowers/validation/productization_status_index_v1.tsv` | Machine-checkable current lane status and public-surface flags. | Domain meaning of each evidence field. |
 | `docs/superpowers/schemas/productization_authority_manifest.v1.json` | Allowed and forbidden writer scopes. Unknown scopes fail closed. | Scientific sufficiency of evidence providers. |
 | `docs/superpowers/validation/ARTIFACT_INVENTORY.tsv` | Retention and externalization of validation artifacts. | Evidence-chain semantics. |
@@ -58,8 +58,8 @@ different questions:
 Rule: if a durable evidence provider, evidence state, gate, or authority
 boundary changes, update this file in the same change set. If a tier, active
 lane, writer scope, matrix schema, selected area, counted detection, workbook,
-or default output changes, also update the owning control-plane or manifest
-artifact.
+or default output changes, also update the applicable status index, authority
+manifest, control schema, and promotion contract.
 
 ## Shared Evidence Spine
 
@@ -355,13 +355,10 @@ Evidence states:
   expected-diff/provenance contract to only the projected-pass clean target
   cells and replay a matrix/provenance packet through the existing
   `ProductionAcceptanceManifest` and `QuantMatrixVersion` writer path. The
-  current bounded activation covers 84 cells across 7 rows, excludes the 28
-  projected-held cells, excludes the 37 boundary-review cells, and excludes the
-  29 off-target hold/remap cells. Its registered scope is
-  `backfill_expansion_clean_target_selective_activation_84_cells`. It changes
-  only the bounded default matrix output/provenance artifacts for those 84
-  cells and does not change workbook, GUI, selected peak, selected area, counted
-  detection, broad Backfill, or the parked 666-cell replay boundary.
+  accepted bounded activation contract changes only its registered default
+  matrix output/provenance surface; it does not change workbook, GUI, selected
+  peak, selected area, counted detection, or broad Backfill. The status index
+  and authority manifest exclusively own the current lane, scope, and counts.
   Optional manual review labels may annotate peak-mode, boundary, and review
   action for remap/boundary debugging; they are reviewer evidence, not a manual
   allowlist and not ProductWriter authority.
@@ -439,7 +436,7 @@ numbers, and active scope sizes belong in the machine-readable artifacts.
 | --- | --- | --- |
 | Backfill current | Backfill policy, same-peak support, sample-local evidence, value provenance, and expected diff. | Writer authority is limited to the registered scope in the authority manifest and status index. |
 | CID-NL Discovery | Successor self evidence, CID-NL tag evidence, MS1/RT/family context, identity reconstruction, expected diff, and quant matrix replay. | CID-NL/MS2 evidence is not direct writer authority; it must be consumed by a bounded activation contract. |
-| Backfill expansion | Census, availability, sample-local MS1 identity, RAW trace identity, expected diff/provenance, activation replay, shift-aware standard-peak support, own-max metric support, selective source-family projection, and MS1 product-authority sidecar. | Expansion does not unlock broad Backfill. The current 84-cell clean-target selective scope is active writer authority only because the bounded full-chain gate, expected diff, provenance replay, authority manifest, status index, and control plane explicitly adopted it. The remaining 666-cell packet and diagnostic pass sets are not authority. |
+| Backfill expansion | Census, availability, sample-local MS1 identity, RAW trace identity, expected diff/provenance, activation replay, shift-aware standard-peak support, own-max metric support, selective source-family projection, and MS1 product-authority sidecar. | Expansion does not unlock broad Backfill. Only a scope registered by the authority manifest and status index after the bounded full-chain gate, expected diff, and provenance replay has writer authority; candidate and diagnostic pass sets are not authority. |
 | Broad Backfill candidate universe | Candidate, review, overlay, lockbox, recovery, economics, and locality evidence. | No write authority unless a new activation/export contract and manifest scope are added. |
 | Targeted review actions | Expected-diff gate over product state, counted detection, review state, candidate sidecar, or manual-boundary state. | Mutating actions require approved expected diff and fail closed on stale/missing baseline. |
 
@@ -473,9 +470,10 @@ When adding or changing evidence:
 3. Update `docs/lc-msms-evidence-rules.md` when the scientific/domain
    interpretation changes.
 4. Update `productization_status_index_v1.tsv`,
-   `productization_authority_manifest.v1.json`, and the control plane only
-   when tier, active lane, writer scope, public surface, default matrix,
-   workbook, counted detection, selected peak, or selected area changes.
+   `productization_authority_manifest.v1.json`, the structured control schema,
+   and the promotion contract only when tier, active lane, writer scope, public
+   surface, default matrix, workbook, counted detection, selected peak, or
+   selected area changes.
 5. Update `ARTIFACT_INVENTORY.tsv` when a new durable artifact is retained or
    externalized.
 6. Add or update focused tests/checkers when a machine-readable contract is

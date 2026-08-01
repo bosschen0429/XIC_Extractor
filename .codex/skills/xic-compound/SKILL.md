@@ -28,7 +28,7 @@ unfinished speculation.
 1. Check dirty scope with `git status --short --branch`. Do not fold unrelated
    local edits into the note.
 2. Gather only durable evidence: changed files, commands actually run, output
-   artifact paths, reviewer findings, and relevant control-plane/spec entries.
+   artifact paths, reviewer findings, and relevant productization/spec entries.
 3. Search first:
    ```powershell
    rg -n "<topic>|<module>|<error>|<artifact>" docs\solutions docs\superpowers\notes docs\superpowers\plans
@@ -38,8 +38,8 @@ unfinished speculation.
    `docs/solutions/templates/xic-solution-note-template.md`.
 5. Keep it short and searchable. Prefer stable reason codes, artifact paths,
    and commands over transcript narrative.
-6. If the note affects productization maturity, reference the control plane
-   instead of duplicating the full tier board.
+6. If the note affects productization maturity, reference the status index and
+   promotion contract instead of duplicating mutable tier state.
 7. Run `git diff --check`. For docs-only notes, also manually check YAML
    frontmatter delimiters and unquoted `: ` / ` #` in scalar values.
 
@@ -63,5 +63,5 @@ A useful note lets a future agent answer:
 - What should I do first next time?
 
 Common failure: writing a second handoff. If the document mostly says "current
-status" instead of "reusable lesson", put it in the handoff or control plane
-instead.
+status" instead of "reusable lesson", put continuation state in the handoff and
+product state in the status index instead.

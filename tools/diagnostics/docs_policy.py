@@ -1,9 +1,61 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 CONTROL_PLANE_PATH = "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+
+
+def source_copy_note_title(source_path: str, source_hash: str) -> str:
+    """Return the deterministic title of an exact retired source copy."""
+
+    return f"{Path(source_path).stem}-source-{source_hash[:12]}"
+
+
+def source_copy_locator_note_title(source_path: str, source_hash: str) -> str:
+    """Return the deterministic title of the searchable locator sidecar."""
+
+    return f"{source_copy_note_title(source_path, source_hash)}-locator"
+
+
+def source_copy_locator_text(source_path: str, source_hash: str) -> str:
+    """Render the non-authoritative locator without changing exact source bytes."""
+
+    exact_note_title = source_copy_note_title(source_path, source_hash)
+    return "\n".join(
+        (
+            "# Retired source locator",
+            "",
+            f"source_repo_path:{source_path}",
+            "",
+            f"Exact source note: [[{exact_note_title}]]",
+            "",
+            f"Source SHA-256: `{source_hash}`",
+            "",
+        )
+    )
+
+
+def source_copy_locator_sha256(source_path: str, source_hash: str) -> str:
+    """Hash the deterministic searchable locator sidecar."""
+
+    return hashlib.sha256(
+        source_copy_locator_text(source_path, source_hash).encode("utf-8")
+    ).hexdigest()
+
+
+PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS = (
+    "# Productization compatibility index",
+    "Doc placement: formal_repo_doc",
+    "Doc kind: manifest",
+    "Doc lifecycle: active",
+    "This path is a compatibility lookup surface.",
+    "## Authority routes",
+    "## Historical source",
+    "## Lane anchor index",
+)
 HANDOFF_CURRENT_DIR = "docs/superpowers/handoffs/current/"
 HANDOFF_ARCHIVE_DIR = "docs/superpowers/handoffs/archive/"
 DEFAULT_LOCAL_ACTIVE_HANDOFF_PATH = f"{HANDOFF_CURRENT_DIR}ACTIVE.local.md"
@@ -16,7 +68,7 @@ PRODUCTIZATION_STATUS_HANDOFF_PATH = PRODUCTIZATION_STATUS_ANCHOR_PATH
 CLOSEOUT_DIR = "docs/superpowers/closeouts/"
 
 PRODUCTIZATION_SCHEMA_REL = (
-    "docs/superpowers/schemas/productization_control_plane_schema.v1.json"
+    "docs/superpowers/schemas/productization_control_plane_schema.v2.json"
 )
 PRODUCTIZATION_STATUS_INDEX_REL = (
     "docs/superpowers/validation/productization_status_index_v1.tsv"
@@ -24,6 +76,50 @@ PRODUCTIZATION_STATUS_INDEX_REL = (
 PRODUCTIZATION_AUTHORITY_MANIFEST_REL = (
     "docs/superpowers/schemas/productization_authority_manifest.v1.json"
 )
+PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL = (
+    "docs/superpowers/file-management/docs-cleanup/"
+    "2026-08-01-r11-d0-productization-control-plane-retirement-evidence.json"
+)
+PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH = (
+    "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
+)
+PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE = source_copy_note_title(
+    CONTROL_PLANE_PATH,
+    PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
+)
+PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE = (
+    source_copy_locator_note_title(
+        CONTROL_PLANE_PATH,
+        PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
+    )
+)
+COMMITTED_RETIREMENT_PACKET_CONTRACTS = {
+    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL: {
+        "transaction": "body_to_compatibility_index",
+        "source_path": CONTROL_PLANE_PATH,
+        "activation_base_sha": "a2d5032befb2a4439daff8a018aa551e3607f5f6",
+        "activation_end_sha": "f7736355feb3e3c3273e23cb0a32841cfd469a7b",
+        "source_hash": PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
+        "source_line_count": 5621,
+        "source_copy_destination": f"source_repo_path:{CONTROL_PLANE_PATH}",
+        "source_copy_note_title": (
+            PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_NOTE_TITLE
+        ),
+        "source_copy_locator_note_title": (
+            PRODUCTIZATION_CONTROL_PLANE_SOURCE_COPY_LOCATOR_NOTE_TITLE
+        ),
+        "source_copy_locator_sha256": source_copy_locator_sha256(
+            CONTROL_PLANE_PATH,
+            PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH,
+        ),
+        "replacement_hash": (
+            "723f81e4e51eaa00f3258da80be6620775bb1c6d07a7c1c8c834b76f894ab408"
+        ),
+        "packet_sha256": (
+            "b4e9039f3bc4930012111141b8ec3334e1b9c6a60e9a0a02268e83ba8abd9dbf"
+        ),
+    }
+}
 MECHANICAL_ADJUDICATION_INDEX_REL = (
     "docs/superpowers/validation/mechanical_adjudication_index_v1.tsv"
 )
@@ -88,6 +184,143 @@ DOC_LIFECYCLES_REQUIRING_EXIT_RULE = {
     "superseded",
     "rejected",
 }
+
+# These are the only documents whose permanent path supplies placement, kind,
+# purpose, and self-ownership. Generic lifecycle/exit metadata is waived, but
+# their positive landmarks and routes are validated separately.
+PERMANENT_ROOT_DOC_CONTRACTS = {
+    "AGENTS.md": {
+        "kind": "agent_route_contract",
+        "purpose": "repo agent routing contract",
+        "owner": "self",
+        "required_headings": ("XIC Extractor Agent Contract", "Task Routes"),
+        "required_text": ("Task Routes",),
+        "required_routes": (
+            "docs/agent/parameter-settings.md",
+            "docs/product/README.md",
+            "docs/agent/product-validation-contract.md",
+            "docs/architecture-contract.md",
+            "docs/agent/execution-gates.md",
+            "tools/diagnostics/INDEX.md",
+            "docs/solutions/README.md",
+            "docs/product/productization.md",
+            "docs/project-layout.md",
+            "docs/agent/codex-operating-system.md",
+        ),
+        "required_referrers": (),
+    },
+    "README.md": {
+        "kind": "public_project_entrypoint",
+        "purpose": "public project entrypoint",
+        "owner": "self",
+        "required_headings": ("XIC Extractor", "Documentation"),
+        "required_text": ("Documentation",),
+        "required_routes": (
+            "docs/user/README.md",
+            "docs/product/README.md",
+            "docs/architecture-contract.md",
+            "docs/project-layout.md",
+            "docs/lc-msms-evidence-rules.md",
+        ),
+        "required_referrers": (),
+    },
+    "docs/architecture-contract.md": {
+        "kind": "architecture_dependency_owner",
+        "purpose": "architecture and dependency owner",
+        "owner": "self",
+        "required_headings": (
+            "Architecture Contract",
+            "Dependency Direction",
+            "Ownership Map",
+        ),
+        "required_text": ("This document owns",),
+        "required_routes": (),
+        "required_referrers": (
+            "AGENTS.md",
+            "README.md",
+            "docs/project-layout.md",
+        ),
+    },
+    "docs/project-layout.md": {
+        "kind": "file_placement_lifecycle_owner",
+        "purpose": "file placement and documentation lifecycle owner",
+        "owner": "self",
+        "required_headings": ("Project Layout", "Permanent root document contract"),
+        "required_text": ("目錄收納規則單一可信來源", "source-of-truth 與歷程邊界"),
+        "required_routes": (
+            "docs/architecture-contract.md",
+            "docs/product",
+            "docs/agent/obsidian-handoff-contract.md",
+        ),
+        "required_referrers": (),
+    },
+}
+PERMANENT_ROOT_METADATA_FIELDS_WAIVED = frozenset(
+    {DOC_LIFECYCLE_MARKER.rstrip(":"), DOC_EXIT_RULE_MARKER.rstrip(":")}
+)
+
+GOVERNANCE_RULE_FAMILY_CONTRACTS = {
+    "docs_lifecycle_retirement": {
+        "owner": "docs/agent/obsidian-handoff-contract.md#retirement-evidence-gate",
+        "mechanism": "ci_checker",
+        "executable": "tools/diagnostics/docs_placement_guard.py",
+        "readback": "tests/test_docs_placement_guard.py",
+        "residual": "none",
+    },
+    "destructive_git_filesystem": {
+        "owner": "docs/agent/codex-operating-system.md#current-repo-local-rules",
+        "mechanism": "hard_guard",
+        "executable": ".codex/rules/xic-safety.rules",
+        "readback": ".codex/hooks/fixtures/pretool_git_reset.json",
+        "residual": "#166",
+    },
+    "raw_background_launch": {
+        "owner": "docs/agent/execution-gates.md#raw-and-long-runs",
+        "mechanism": "hard_guard",
+        "executable": ".codex/hooks/xic_pre_tool_guard.py",
+        "readback": "none",
+        "residual": "#166",
+    },
+    "execution_affecting_config": {
+        "owner": "docs/agent/codex-operating-system.md#change-protocol",
+        "mechanism": "advisory_context",
+        "executable": ".codex/hooks/xic_pre_tool_guard.py",
+        "readback": "none",
+        "residual": "#166",
+    },
+    "product_public_surface": {
+        "owner": "docs/agent/architecture-public-contracts.md#public-contracts",
+        "mechanism": "advisory_context",
+        "executable": ".codex/hooks/xic_post_tool_guard.py",
+        "readback": ".codex/hooks/fixtures/posttool_product_surface_edit.json",
+        "residual": "#166",
+    },
+    "pr_validation_gate": {
+        "owner": "docs/agent/execution-gates.md#pr-verification-gate",
+        "mechanism": "ci_checker",
+        "executable": "tools/testing/test_shards.py",
+        "readback": ".github/workflows/ci.yml",
+        "residual": "none",
+    },
+}
+GOVERNANCE_RULE_FAMILY_IDS = tuple(GOVERNANCE_RULE_FAMILY_CONTRACTS)
+GOVERNANCE_MECHANISM_VALUES = frozenset(
+    {"hard_guard", "ci_checker", "advisory_context", "human_decision"}
+)
+
+
+def is_productization_control_plane_path(path: str) -> bool:
+    return normalize_path_text(path).removeprefix("./") == CONTROL_PLANE_PATH
+
+
+def is_productization_compatibility_index_text(text: str) -> bool:
+    """Identify a previously retired control-plane compatibility preimage."""
+
+    return all(
+        text.count(marker) == 1
+        for marker in PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS
+    )
+
 
 DOC_ROOT_ALLOWLIST_FILES = {
     "docs/architecture-contract.md",
@@ -404,8 +637,7 @@ def is_misplaced_handoff_public_record_path(path: str) -> bool:
         return False
     filename = normalized.rsplit("/", 1)[-1]
     return any(
-        pattern.search(filename)
-        for pattern in MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS
+        pattern.search(filename) for pattern in MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS
     )
 
 
@@ -431,10 +663,7 @@ def is_high_risk_repo_doc_path(path: str) -> bool:
 
 def is_lifecycle_managed_doc_path(path: str) -> bool:
     normalized = normalize_path_text(path).lstrip("./")
-    return any(
-        path_is_under(normalized, root)
-        for root in DOC_LIFECYCLE_MANAGED_DIRS
-    )
+    return any(path_is_under(normalized, root) for root in DOC_LIFECYCLE_MANAGED_DIRS)
 
 
 def is_docs_root_file_path(path: str) -> bool:
@@ -507,8 +736,7 @@ def classify_doc_path(path: str) -> DocPathClassification:
         DOC_ROUTING_SCHEMAS_INDEX_PATH,
     }
     is_superpowers_spec = (
-        normalized_lower.startswith(SUPERPOWERS_SPEC_DIR)
-        and not is_specs_index
+        normalized_lower.startswith(SUPERPOWERS_SPEC_DIR) and not is_specs_index
     )
     is_docs_root_file = is_docs_root_file_path(normalized)
     is_allowed_docs_root_file = normalized in DOC_ROOT_ALLOWLIST_FILES

@@ -4,8 +4,11 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics.retire_docs import (
     VAULT_ARCHIVE_DIR,
+    copy_source_only,
     find_retire_candidates,
     retire_files,
 )
@@ -16,7 +19,7 @@ from tools.diagnostics.retire_docs import (
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    path.write_bytes(text.encode("utf-8"))
 
 
 def _completed_spec(owner: str = "docs/product/backfill.md") -> str:
@@ -66,6 +69,144 @@ def _retirement_evidence(
             }
         ],
     }
+
+
+def _same_path_copy_evidence(rel: str, text: str) -> dict[str, object]:
+    source_hash = _sha256(text)
+    return {
+        "transaction": "body_to_compatibility_index",
+        "source_hash": source_hash,
+        "entries": [
+            {
+                "source_path": rel,
+                "transaction": "body_to_compatibility_index",
+                "source_hash": source_hash,
+                "unresolved_claims": [],
+            }
+        ],
+    }
+
+
+def test_source_copy_only_writes_and_reads_back_exact_bytes(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/plans/control-plane.md"
+    source = repo / rel
+    text = "# Source\r\n\r\nExact history.\r\n"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(text.encode("utf-8"))
+
+    result = copy_source_only(
+        source,
+        repo,
+        vault,
+        evidence=_same_path_copy_evidence(rel, text),
+        execute=True,
+    )
+
+    assert result.error == ""
+    assert result.readback_verified
+    assert result.destination is not None
+    assert result.destination.stem == (
+        f"control-plane-source-{result.source_hash[:12]}"
+    )
+    assert result.destination.read_bytes() == source.read_bytes()
+    assert result.locator_readback_verified
+    assert result.locator_destination is not None
+    assert result.locator_destination.stem == (
+        f"control-plane-source-{result.source_hash[:12]}-locator"
+    )
+    locator_text = result.locator_destination.read_text(encoding="utf-8")
+    assert f"source_repo_path:{rel}" in locator_text
+    assert f"[[{result.destination.stem}]]" in locator_text
+    assert result.source_hash in locator_text
+    assert _sha256(locator_text) == result.locator_hash
+
+
+def test_source_copy_only_rejects_conflicting_locator_sidecar(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/plans/control-plane.md"
+    source = repo / rel
+    text = "# Source\n"
+    _write(source, text)
+    source_hash = _sha256(text)
+    locator = (
+        vault
+        / VAULT_ARCHIVE_DIR
+        / f"control-plane-source-{source_hash[:12]}-locator.md"
+    )
+    _write(locator, "# Unrelated note\n")
+
+    result = copy_source_only(
+        source,
+        repo,
+        vault,
+        evidence=_same_path_copy_evidence(rel, text),
+        execute=True,
+    )
+
+    assert result.error == "source-copy locator exists with different bytes"
+    assert not result.readback_verified
+    assert not result.locator_readback_verified
+    assert not (
+        vault
+        / VAULT_ARCHIVE_DIR
+        / f"control-plane-source-{source_hash[:12]}.md"
+    ).exists()
+
+
+def test_source_copy_only_rejects_stale_evidence_hash(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/plans/control-plane.md"
+    source = repo / rel
+    _write(source, "# Source\n")
+    evidence = _same_path_copy_evidence(rel, "# Different source\n")
+
+    result = copy_source_only(
+        source,
+        repo,
+        vault,
+        evidence=evidence,
+        execute=True,
+    )
+
+    assert result.error == "source-copy evidence source_hash mismatch"
+    assert not result.readback_verified
+
+
+@pytest.mark.parametrize(
+    "malformed_unresolved_claims",
+    ("CP-123", [1], {"id": "CP-123"}),
+)
+def test_source_copy_only_rejects_malformed_unresolved_claims(
+    tmp_path: Path,
+    malformed_unresolved_claims: object,
+) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/plans/control-plane.md"
+    source = repo / rel
+    _write(source, "# Source\n")
+    evidence = _same_path_copy_evidence(rel, "# Source\n")
+    entry = evidence["entries"][0]
+    assert isinstance(entry, dict)
+    entry["unresolved_claims"] = malformed_unresolved_claims
+
+    result = copy_source_only(
+        source,
+        repo,
+        vault,
+        evidence=evidence,
+        execute=True,
+    )
+
+    assert result.error == (
+        "source-copy evidence unresolved_claims must be a string list"
+    )
+    assert not result.readback_verified
+    assert result.destination is None
 
 
 def test_completed_unreferenced_spec_without_retirement_evidence_is_kept(
@@ -164,9 +305,83 @@ def test_retirement_does_not_trust_same_title_unrelated_vault_note(
         (rel, vault / VAULT_ARCHIVE_DIR / "2026-07-01-backfill-spec.md")
     ]
     assert result.retired == [rel]
-    assert (
-        vault / VAULT_ARCHIVE_DIR / "2026-07-01-backfill-spec.md"
-    ).read_text(encoding="utf-8") == text
+    assert (vault / VAULT_ARCHIVE_DIR / "2026-07-01-backfill-spec.md").read_text(
+        encoding="utf-8"
+    ) == text
+
+
+def test_retirement_uses_hash_suffix_when_archive_title_collides(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/specs/2026-07-01-backfill-spec.md"
+    spec = repo / rel
+    text = _completed_spec()
+    _write(spec, text)
+    archive_destination = vault / VAULT_ARCHIVE_DIR / spec.name
+    _write(archive_destination, "# Different archived note\n")
+
+    result = retire_files(
+        [spec],
+        repo,
+        vault,
+        execute=True,
+        evidence=_retirement_evidence(rel, text),
+    )
+
+    expected = archive_destination.with_name(
+        f"{archive_destination.stem}-{_sha256(text)[:12]}.md"
+    )
+    assert result.copied_to_vault == [(rel, expected)]
+    assert expected.read_text(encoding="utf-8") == text
+    assert archive_destination.read_text(encoding="utf-8") == (
+        "# Different archived note\n"
+    )
+    assert result.retired == [rel]
+
+
+def test_retirement_refuses_to_overwrite_all_hash_collision_destinations(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/specs/2026-07-01-backfill-spec.md"
+    spec = repo / rel
+    text = _completed_spec()
+    source_hash = _sha256(text)
+    _write(spec, text)
+    archive_destination = vault / VAULT_ARCHIVE_DIR / spec.name
+    collision_paths = (
+        archive_destination,
+        archive_destination.with_name(
+            f"{archive_destination.stem}-{source_hash[:12]}.md"
+        ),
+        archive_destination.with_name(
+            f"{archive_destination.stem}-{source_hash}.md"
+        ),
+    )
+    for index, collision_path in enumerate(collision_paths):
+        _write(collision_path, f"# Different archived note {index}\n")
+
+    result = retire_files(
+        [spec],
+        repo,
+        vault,
+        execute=True,
+        evidence=_retirement_evidence(rel, text),
+    )
+
+    assert result.errors == [
+        (rel, "vault archive destinations all contain different content")
+    ]
+    assert result.copied_to_vault == []
+    assert result.retired == []
+    assert spec.read_text(encoding="utf-8") == text
+    for index, collision_path in enumerate(collision_paths):
+        assert collision_path.read_text(encoding="utf-8") == (
+            f"# Different archived note {index}\n"
+        )
 
 
 def test_retirement_reuses_wrapped_vault_source_copy_with_matching_body(

@@ -2029,13 +2029,16 @@ LC-MS evidence diagnostics and must not claim product behavior readiness.
 ### `docs_placement_guard.py`
 
 **Purpose**: Check staged A/M/R/C Markdown files for repo/Obsidian placement
-markers before commit and block lifecycle-managed Markdown deletions unless the
-same staged diff includes matching retirement evidence. Non-lifecycle deletions
-are ignored.
+markers before commit; block lifecycle-managed Markdown deletions without
+matching retirement evidence; and fail closed on a same-path
+`body_to_compatibility_index` transaction unless its preimage, private
+source-copy readback, claim census, typed owner locators, replacement hash, and
+normalized dependency census all agree. Non-lifecycle deletions are ignored.
 **Topic group**: `docs_placement_guard.py` + `.codex/hooks/xic_hook_policy.py`
 **Governing doc**: `docs/agent/obsidian-handoff-contract.md`
 **Status note**: Reads staged git metadata, staged Markdown/JSON text, deleted
-source blobs, source hashes, and exact repo referrers only. It does not read RAW,
+or replaced source blobs, source/claim hashes, exact headings, relative links,
+literal referrers, and named constant consumers. It does not read RAW,
 mutate files, stage changes, alter product output, copy to Obsidian, or decide
 semantic product absorption. Hook integration runs the same checker after shell
 `git add` and before shell `git commit`; failures report paths, reasons, and
@@ -2117,7 +2120,9 @@ notes after lifecycle metadata, retirement evidence, source-copy readback flag,
 source hash, and exact repo referrers are checked. Unreferenced completed docs
 leave the repo only with matching `pass_can_retire` evidence; referrer-bound
 docs are kept unless `--stub-bound` is explicitly supplied to create a short
-compatibility stub with matching referrer evidence.
+compatibility stub with matching referrer evidence. For a protected same-path
+replacement, `--source-copy-only` copies and reads back the exact preimage
+without deleting, stubbing, or editing the repo source.
 **Topic group**: `docs_management_audit.py` + `retire_docs.py`
 **Governing doc**: `docs/project-layout.md`;
 `docs/agent/obsidian-handoff-contract.md`
@@ -2126,6 +2131,9 @@ schema, JSON, TSV, active/draft lifecycle docs, missing-metadata docs, and
 control-plane anchors; it does not decide product authority or validation
 readiness. Product absorption review must happen before retirement and be
 recorded in the evidence JSON supplied through `--evidence`.
+`--source-copy-only --execute` also requires that evidence, verifies both
+top-level and source-entry hashes, and reports only the stable repo source key
+and hash; the repository evidence stores no private absolute vault path.
 
 ---
 

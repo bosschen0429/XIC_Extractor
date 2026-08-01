@@ -9,10 +9,23 @@ def test_current_cid_nl_discovery_release_slice_is_stable() -> None:
     assert release_slice.check_cid_nl_discovery_release_slice() == []
 
 
-def test_release_slice_handoff_can_name_later_active_goal(tmp_path) -> None:
+def test_release_slice_control_plane_override_fails_closed(
+    tmp_path, capsys
+) -> None:
+    control_plane = tmp_path / "control-plane.md"
+    control_plane.write_text("# Invalid compatibility index\n", encoding="utf-8")
+
+    exit_code = release_slice.main(["--control-plane", str(control_plane)])
+
+    assert exit_code == 1
+    stderr = capsys.readouterr().err
+    assert "productization_state:" in stderr
+    assert "compatibility index must exactly match" in stderr
+
+
+def test_release_slice_accepts_stable_compatibility_lane_registry(tmp_path) -> None:
     roadmap = tmp_path / "roadmap.md"
     handoff = tmp_path / "handoff.md"
-    control_plane = tmp_path / "control-plane.md"
     roadmap.write_text(
         "\n".join(
             [
@@ -25,32 +38,17 @@ def test_release_slice_handoff_can_name_later_active_goal(tmp_path) -> None:
     handoff.write_text(
         "\n".join(
             [
-                "Current objective: Backfill expansion productization.",
-                "CID-NL default product activation v1 remains production-ready.",
-                "Do not expand CID-NL beyond 95 cells.",
-                "Broad Backfill auto-write remains parked.",
+                "Stable lane keys:",
+                "cid_nl_default_product_activation_v1",
+                "broad_backfill_autowrite",
             ]
         ),
         encoding="utf-8",
     )
-    control_plane.write_text(
-        "\n".join(
-            [
-                "CID-NL Discovery Lane Terminology Cleanup v1",
-                "accepted_discovery_cell_count=95",
-                "legacy_quant_matrix_effect",
-                "CID-NL Discovery Full-Scope Classification v1",
-                "CID-NL 85RAW Universe Closure v1",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
     problems: list[str] = []
     release_slice._check_docs(
         roadmap=roadmap,
         handoff=handoff,
-        control_plane=control_plane,
         problems=problems,
     )
 

@@ -28,8 +28,14 @@ if str(ROOT) not in sys.path:
 
 
 from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
+from tools.diagnostics.docs_placement_guard import (  # noqa: E402
+    committed_same_path_retirement_packet_problems,
+    is_retirement_evidence_path,
+)
 from tools.diagnostics.docs_policy import (  # noqa: E402
+    COMMITTED_RETIREMENT_PACKET_CONTRACTS,
     DOC_CANONICAL_OWNER_FILES,
+    PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
     classify_doc_path,
     is_invalid_superpowers_spec_payload_path,
@@ -55,9 +61,7 @@ _repo_rel = _docs_scan.repo_rel
 
 DEFAULT_CONFIG = Path.home() / ".obsidian-wiki" / "config"
 LOCAL_ENV_FILES = (".env.xic-local", ".env")
-CANONICAL_METADATA_REVIEW_EXCLUDE_PREFIXES = (
-    "docs/superpowers/",
-)
+CANONICAL_METADATA_REVIEW_EXCLUDE_PREFIXES = ("docs/superpowers/",)
 
 STALE_HANDOFF_PATTERNS = (
     "no commit has been made",
@@ -112,8 +116,6 @@ class AuditResult:
         return tuple(msg for msg in self.messages if msg.severity == "blocker")
 
 
-
-
 def parse_yaml_frontmatter(text: str) -> dict[str, str]:
     """Parse YAML frontmatter between ``---`` delimiters.
 
@@ -144,8 +146,6 @@ def parse_yaml_frontmatter(text: str) -> dict[str, str]:
         current_key = key.strip()
         values[current_key] = value.strip().strip('"').strip("'")
     return values
-
-
 
 
 def _config_values(path: Path) -> dict[str, str]:
@@ -191,6 +191,7 @@ def audit_repo(
     *,
     allow_filesystem_handoff_fallback: bool = False,
     fail_on_completed_transient: bool = False,
+    require_retirement_history: bool = True,
 ) -> tuple[list[AuditMessage], dict[str, object]]:
     messages: list[AuditMessage] = []
     docs = sorted((root / "docs").rglob("*.md"))
@@ -259,10 +260,34 @@ def audit_repo(
     structure_review = docs_structure_review_for_repo(scan_paths)
     completed_transient_review = completed_transient_review_for_repo(root, scan_paths)
     canonical_metadata_review = canonical_metadata_review_for_repo(root)
+    retirement_packet_review = committed_retirement_packet_review_for_repo(
+        root,
+        scan_paths,
+        require_historical_replay=require_retirement_history,
+    )
+    governance_path = root / "docs/agent/codex-operating-system.md"
+    governance_problems = (
+        list(
+            _docs_scan.governance_index_problems(
+                root,
+                _read_text(governance_path),
+            )
+        )
+        if governance_path.is_file()
+        else []
+    )
     routing_candidates = int(routing_review["candidate_files"])
     metadata_review_files = int(routing_review["metadata_review_files"])
     canonical_missing_metadata = int(
         canonical_metadata_review["missing_metadata_files"]
+    )
+    invalid_permanent_rows = [
+        row
+        for row in canonical_metadata_review["top_missing_metadata"]
+        if row["metadata_status"] == "invalid_permanent_root_contract"
+    ]
+    ordinary_canonical_metadata_count = (
+        canonical_missing_metadata - len(invalid_permanent_rows)
     )
     if routing_candidates:
         invalid_count = int(
@@ -305,7 +330,7 @@ def audit_repo(
             )
         )
 
-    if canonical_missing_metadata:
+    if ordinary_canonical_metadata_count:
         messages.append(
             AuditMessage(
                 "warning",
@@ -313,8 +338,37 @@ def audit_repo(
                 (
                     "canonical docs metadata review found missing metadata; "
                     "inspect summary.repo.canonical_metadata_review."
-                    f"top_missing_metadata ({canonical_missing_metadata} file(s))"
+                    "top_missing_metadata "
+                    f"({ordinary_canonical_metadata_count} file(s))"
                 ),
+            )
+        )
+
+    for row in invalid_permanent_rows:
+        messages.append(
+            AuditMessage(
+                "blocker",
+                str(row["path"]),
+                "invalid permanent-root contract: "
+                + str(row["metadata_missing_fields"]),
+            )
+        )
+
+    for row in retirement_packet_review["problems"]:
+        messages.append(
+            AuditMessage(
+                "blocker",
+                str(row["path"]),
+                "committed retirement packet: " + str(row["problem"]),
+            )
+        )
+
+    for problem in governance_problems:
+        messages.append(
+            AuditMessage(
+                "blocker",
+                "docs/agent/codex-operating-system.md",
+                f"governance enforcement index: {problem}",
             )
         )
 
@@ -376,9 +430,7 @@ def audit_repo(
         )
 
     duplicate_topic_owner_groups = int(
-        routing_review["topic_cluster_group_counts"].get(
-            "potential_duplicate_owner", 0
-        )
+        routing_review["topic_cluster_group_counts"].get("potential_duplicate_owner", 0)
     )
     if duplicate_topic_owner_groups:
         messages.append(
@@ -417,6 +469,11 @@ def audit_repo(
         "docs_structure_review": structure_review,
         "completed_transient_review": completed_transient_review,
         "canonical_metadata_review": canonical_metadata_review,
+        "committed_retirement_packet_review": retirement_packet_review,
+        "governance_enforcement_index": {
+            "problems": governance_problems,
+            "status": "pass" if not governance_problems else "fail",
+        },
         "handoff_retention": handoff_result.summary,
     }
     return messages, summary
@@ -506,8 +563,40 @@ def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
             continue
         path = root / rel_path
         if not path.exists() or not path.is_file():
+            if rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
+                rows.append(
+                    {
+                        "path": rel_path,
+                        "metadata_status": "invalid_permanent_root_contract",
+                        "metadata_missing_fields": "permanent root path is missing",
+                        "doc_kind": PERMANENT_ROOT_DOC_CONTRACTS[rel_path]["kind"],
+                        "doc_kind_source": "permanent_root_contract",
+                        "doc_lifecycle": "permanent",
+                        "repo_owner": "self",
+                    }
+                )
             continue
         text = _read_text(path)
+        if rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
+            contract_problems = _docs_scan.permanent_root_contract_problems(
+                root,
+                rel_path,
+                text,
+            )
+            if not contract_problems:
+                continue
+            rows.append(
+                {
+                    "path": rel_path,
+                    "metadata_status": "invalid_permanent_root_contract",
+                    "metadata_missing_fields": "; ".join(contract_problems),
+                    "doc_kind": PERMANENT_ROOT_DOC_CONTRACTS[rel_path]["kind"],
+                    "doc_kind_source": "permanent_root_contract",
+                    "doc_lifecycle": "permanent",
+                    "repo_owner": "self",
+                }
+            )
+            continue
         classification = classify_doc(rel_path, text)
         if classification.metadata_status == "declared":
             continue
@@ -529,6 +618,100 @@ def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
         "missing_metadata_files": len(rows),
         "missing_metadata": rows,
         "top_missing_metadata": rows[:25],
+    }
+
+
+def committed_retirement_packet_review_for_repo(
+    root: Path,
+    scan_paths: Sequence[str],
+    *,
+    require_historical_replay: bool = True,
+) -> dict[str, object]:
+    checked_paths: list[str] = []
+    problems: list[dict[str, str]] = []
+    normalized_scan_paths = {
+        _docs_scan.normalize_repo_rel_path(path) for path in scan_paths
+    }
+    registered_paths_checked: set[str] = set()
+    for rel_path, contract in sorted(COMMITTED_RETIREMENT_PACKET_CONTRACTS.items()):
+        registered_paths_checked.add(rel_path)
+        checked_paths.append(rel_path)
+        if rel_path not in normalized_scan_paths or not (root / rel_path).is_file():
+            problems.append(
+                {
+                    "path": rel_path,
+                    "problem": "registered retirement packet is missing or untracked",
+                }
+            )
+            continue
+        for problem in committed_same_path_retirement_packet_problems(
+            root,
+            rel_path,
+            contract=contract,
+            require_historical_replay=require_historical_replay,
+        ):
+            problems.append({"path": rel_path, "problem": problem})
+
+    for rel_path in sorted(scan_paths):
+        if not is_retirement_evidence_path(rel_path):
+            continue
+        if rel_path in registered_paths_checked:
+            continue
+        path = root / rel_path
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            checked_paths.append(rel_path)
+            problems.append(
+                {
+                    "path": rel_path,
+                    "problem": f"retirement packet cannot be read: {exc}",
+                }
+            )
+            continue
+        except json.JSONDecodeError:
+            checked_paths.append(rel_path)
+            problems.append(
+                {
+                    "path": rel_path,
+                    "problem": "retirement packet is not valid JSON",
+                }
+            )
+            continue
+        if not isinstance(data, dict):
+            checked_paths.append(rel_path)
+            problems.append(
+                {
+                    "path": rel_path,
+                    "problem": "retirement packet must be a JSON object",
+                }
+            )
+            continue
+        if data.get("transaction") != (
+            "body_to_compatibility_index"
+        ):
+            continue
+        checked_paths.append(rel_path)
+        problems.append(
+            {
+                "path": rel_path,
+                "problem": (
+                    "body_to_compatibility_index packet is not registered in the "
+                    "committed retirement contract"
+                ),
+            }
+        )
+        for problem in committed_same_path_retirement_packet_problems(
+            root,
+            rel_path,
+            require_historical_replay=require_historical_replay,
+        ):
+            problems.append({"path": rel_path, "problem": problem})
+    return {
+        "checked_files": len(set(checked_paths)),
+        "checked_paths": sorted(set(checked_paths)),
+        "problems": problems,
+        "status": "pass" if not problems else "fail",
     }
 
 
@@ -642,11 +825,11 @@ def audit_vault(vault: Path | None) -> tuple[list[AuditMessage], dict[str, objec
         if (vault / "_staging").exists()
         else []
     )
-    raw_files = [
-        path
-        for path in (vault / "_raw").glob("*")
-        if path.name != ".gitkeep"
-    ] if (vault / "_raw").exists() else []
+    raw_files = (
+        [path for path in (vault / "_raw").glob("*") if path.name != ".gitkeep"]
+        if (vault / "_raw").exists()
+        else []
+    )
 
     if staging_md:
         messages.append(
@@ -769,11 +952,13 @@ def run_audit(
     allow_filesystem_handoff_fallback: bool = False,
     include_vault: bool = True,
     fail_on_completed_transient: bool = False,
+    require_retirement_history: bool = True,
 ) -> AuditResult:
     repo_messages, repo_summary = audit_repo(
         root,
         allow_filesystem_handoff_fallback=allow_filesystem_handoff_fallback,
         fail_on_completed_transient=fail_on_completed_transient,
+        require_retirement_history=require_retirement_history,
     )
     if include_vault:
         resolved_vault = resolve_vault(root, vault)
@@ -827,8 +1012,6 @@ def write_topic_index_readmes(result: AuditResult, directory: Path) -> None:
     if isinstance(clusters_obj, list):
         clusters = [cluster for cluster in clusters_obj if isinstance(cluster, dict)]
     _write_topic_index_readmes(clusters, directory)
-
-
 
 
 def format_text(result: AuditResult) -> str:

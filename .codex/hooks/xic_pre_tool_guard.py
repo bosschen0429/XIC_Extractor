@@ -7,6 +7,8 @@ import sys
 
 from xic_hook_policy import (
     PRODUCT_SURFACE_PATHS,
+    PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
+    PRODUCTIZATION_STATUS_INDEX_REL,
     git_commit_uses_autostage_or_pathspec,
     is_git_commit_command,
     is_shell_command_event,
@@ -24,12 +26,17 @@ DESTRUCTIVE_COMMANDS = [
         "git checkout -- is blocked because it reverts files. Use targeted review and explicit user approval.",
     ),
     (
-        re.compile(r"\bgit\s+clean\s+-(?:[^\s]*f[^\s]*d|[^\s]*d[^\s]*f|x?fd|fxd)\b", re.IGNORECASE),
+        re.compile(
+            r"\bgit\s+clean\s+-(?:[^\s]*f[^\s]*d|[^\s]*d[^\s]*f|x?fd|fxd)\b",
+            re.IGNORECASE,
+        ),
         "git clean with force/delete flags is blocked by the hook. Inspect untracked paths before deletion.",
     ),
 ]
 
-RAW_BACKGROUND = re.compile(r"\bStart-Process\b.*(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|preset)", re.IGNORECASE)
+RAW_BACKGROUND = re.compile(
+    r"\bStart-Process\b.*(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|preset)", re.IGNORECASE
+)
 EXEC_CONFIG_PATHS = [
     "AGENTS.md",
     ".codex/hooks.json",
@@ -157,12 +164,18 @@ def main() -> int:
         )
 
     combined_text = f"{command}\n{payload}"
-    if is_write_like(event, command, payload) and mentions_any_path(combined_text, PRODUCT_SURFACE_PATHS):
+    if is_write_like(event, command, payload) and mentions_any_path(
+        combined_text, PRODUCT_SURFACE_PATHS
+    ):
         context(
             "Product/public surface may be edited. If this changes a maturity tier, output schema, "
-            "review/replay behavior, selected area/counting, or matrix authority, update "
-            "docs/superpowers/plans/2026-06-15-productization-control-plane.md. "
-            "If it does not, say explicitly that no control-plane tier update is needed."
+            "review/replay behavior, selected area/counting, or matrix authority, consult the "
+            "productization control plane compatibility index at "
+            "docs/superpowers/plans/2026-06-15-productization-control-plane.md; update mutable lane "
+            f"state in {PRODUCTIZATION_STATUS_INDEX_REL}, writer authority in "
+            f"{PRODUCTIZATION_AUTHORITY_MANIFEST_REL}, and readiness/promotion rules in "
+            "docs/agent/product-validation-contract.md as applicable. Change the compatibility index only "
+            "when a stable lane key or owner route changes. If none changes, say so explicitly."
         )
 
     return 0

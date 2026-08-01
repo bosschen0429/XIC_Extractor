@@ -11,6 +11,7 @@ Usage examples:
     uv run python tools/diagnostics/retire_docs.py --sweep --execute
     uv run python tools/diagnostics/retire_docs.py FILE [FILE ...]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,6 +30,10 @@ from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     classify_doc,
     normalize_path_text,
+    source_copy_locator_note_title,
+    source_copy_locator_sha256,
+    source_copy_locator_text,
+    source_copy_note_title,
 )
 
 VAULT_ARCHIVE_DIR = "XIC/Archives/Repo Retired"
@@ -51,11 +56,10 @@ KEEP_PATTERNS = {
     "README.md",
     "productization_authority_manifest.v1.json",
     "productization_control_plane_schema.v1.json",
+    "productization_control_plane_schema.v2.json",
 }
 
-KEEP_PREFIXES = (
-    "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-)
+KEEP_PREFIXES = ("docs/superpowers/plans/2026-06-15-productization-control-plane.md",)
 RETIREMENT_EVIDENCE_DIR = "docs/superpowers/file-management/docs-cleanup/"
 RETIREMENT_EVIDENCE_TOKENS = ("retirement-evidence", "retirement_evidence")
 
@@ -106,6 +110,18 @@ class RetireResult:
     errors: list[tuple[str, str]] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class SourceCopyResult:
+    source_path: str
+    source_hash: str
+    destination: Path | None
+    readback_verified: bool
+    error: str = ""
+    locator_destination: Path | None = None
+    locator_hash: str = ""
+    locator_readback_verified: bool = False
+
+
 def find_retire_candidates(repo_root: Path) -> list[Path]:
     candidates: list[Path] = []
     for dir_rel in RETIRE_CANDIDATES:
@@ -120,17 +136,16 @@ def find_retire_candidates(repo_root: Path) -> list[Path]:
 
 
 def _scan_paths(repo_root: Path) -> tuple[str, ...]:
-    return (
-        _docs_scan.git_visible_paths(repo_root)
-        or _docs_scan.fallback_local_path_scan_paths(repo_root)
-    )
+    return _docs_scan.git_visible_paths(
+        repo_root
+    ) or _docs_scan.fallback_local_path_scan_paths(repo_root)
 
 
 def _exact_referrers(repo_root: Path, rel_path: str) -> tuple[str, ...]:
-    normalized = normalize_path_text(rel_path).lstrip("./")
+    normalized = _docs_scan.normalize_repo_rel_path(rel_path)
     referrers: list[str] = []
     for scan_rel in _scan_paths(repo_root):
-        scan_rel = normalize_path_text(scan_rel).lstrip("./")
+        scan_rel = _docs_scan.normalize_repo_rel_path(scan_rel)
         if scan_rel == normalized:
             continue
         if _is_retirement_evidence_path(scan_rel):
@@ -144,7 +159,7 @@ def _exact_referrers(repo_root: Path, rel_path: str) -> tuple[str, ...]:
 
 
 def _is_retirement_evidence_path(path: str) -> bool:
-    normalized = normalize_path_text(path).lstrip("./").lower()
+    normalized = _docs_scan.normalize_repo_rel_path(path).lower()
     filename = Path(normalized).name
     return (
         normalized.startswith(RETIREMENT_EVIDENCE_DIR)
@@ -157,12 +172,147 @@ def _source_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _source_bytes_hash(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def copy_source_only(
+    source: Path,
+    repo_root: Path,
+    vault_path: Path,
+    *,
+    evidence: dict[str, object],
+    execute: bool = False,
+) -> SourceCopyResult:
+    """Copy an exact source preimage to private history without repo mutation."""
+
+    try:
+        rel = source.relative_to(repo_root).as_posix()
+    except ValueError:
+        return SourceCopyResult("", "", None, False, "source is outside repo root")
+    if not source.is_file():
+        return SourceCopyResult(rel, "", None, False, "source does not exist")
+    if evidence.get("transaction") != "body_to_compatibility_index":
+        return SourceCopyResult(
+            rel,
+            "",
+            None,
+            False,
+            "evidence transaction is not body_to_compatibility_index",
+        )
+    entries = _retirement_evidence_by_path(evidence)
+    entry = entries.get(rel)
+    if entry is None or entry.get("transaction") != "body_to_compatibility_index":
+        return SourceCopyResult(
+            rel,
+            "",
+            None,
+            False,
+            "missing same-path source-copy evidence entry",
+        )
+    unresolved_claims = _string_list(entry.get("unresolved_claims"))
+    if unresolved_claims is None:
+        return SourceCopyResult(
+            rel,
+            "",
+            None,
+            False,
+            "source-copy evidence unresolved_claims must be a string list",
+        )
+    if unresolved_claims:
+        return SourceCopyResult(
+            rel,
+            "",
+            None,
+            False,
+            "source-copy evidence has unresolved claims",
+        )
+
+    source_bytes = source.read_bytes()
+    source_hash = _source_bytes_hash(source_bytes)
+    if (
+        evidence.get("source_hash") != source_hash
+        or entry.get("source_hash") != source_hash
+    ):
+        return SourceCopyResult(
+            rel,
+            source_hash,
+            None,
+            False,
+            "source-copy evidence source_hash mismatch",
+        )
+
+    archive = vault_path / VAULT_ARCHIVE_DIR
+    note_title = source_copy_note_title(rel, source_hash)
+    destination = archive / f"{note_title}{source.suffix}"
+    locator_title = source_copy_locator_note_title(rel, source_hash)
+    locator_destination = archive / f"{locator_title}.md"
+    locator_bytes = source_copy_locator_text(rel, source_hash).encode("utf-8")
+    locator_hash = source_copy_locator_sha256(rel, source_hash)
+    if execute:
+        archive.mkdir(parents=True, exist_ok=True)
+        if destination.exists() and destination.read_bytes() != source_bytes:
+            return SourceCopyResult(
+                rel,
+                source_hash,
+                destination,
+                False,
+                "source-copy destination exists with different bytes",
+            )
+        if (
+            locator_destination.exists()
+            and locator_destination.read_bytes() != locator_bytes
+        ):
+            return SourceCopyResult(
+                rel,
+                source_hash,
+                destination,
+                False,
+                "source-copy locator exists with different bytes",
+                locator_destination=locator_destination,
+                locator_hash=locator_hash,
+            )
+        destination.write_bytes(source_bytes)
+        locator_destination.write_bytes(locator_bytes)
+        verified = (
+            destination.is_file()
+            and destination.read_bytes() == source_bytes
+            and _source_bytes_hash(destination.read_bytes()) == source_hash
+        )
+        locator_verified = (
+            locator_destination.is_file()
+            and locator_destination.read_bytes() == locator_bytes
+            and _source_bytes_hash(locator_destination.read_bytes()) == locator_hash
+        )
+    else:
+        verified = destination.is_file() and destination.read_bytes() == source_bytes
+        locator_verified = (
+            locator_destination.is_file()
+            and locator_destination.read_bytes() == locator_bytes
+        )
+    error = ""
+    if execute and not verified:
+        error = "source-copy readback failed"
+    elif execute and not locator_verified:
+        error = "source-copy locator readback failed"
+    return SourceCopyResult(
+        rel,
+        source_hash,
+        destination,
+        verified,
+        error,
+        locator_destination=locator_destination,
+        locator_hash=locator_hash,
+        locator_readback_verified=locator_verified,
+    )
+
+
 def _vault_copy_matches(path: Path, rel_path: str, source_text: str) -> bool:
     vault_text = path.read_text(encoding="utf-8", errors="ignore")
     if _source_hash(vault_text) == _source_hash(source_text):
         return True
 
-    normalized_rel = normalize_path_text(rel_path).lstrip("./")
+    normalized_rel = _docs_scan.normalize_repo_rel_path(rel_path)
     normalized_vault_text = normalize_path_text(vault_text)
     if normalized_rel not in normalized_vault_text:
         return False
@@ -174,10 +324,12 @@ def _vault_copy_matches(path: Path, rel_path: str, source_text: str) -> bool:
     return _source_hash(original_text) == _source_hash(source_text)
 
 
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str)]
+def _string_list(value: object) -> list[str] | None:
+    if not isinstance(value, list) or any(
+        not isinstance(item, str) or not item.strip() for item in value
+    ):
+        return None
+    return value
 
 
 def _retirement_evidence_by_path(
@@ -194,7 +346,11 @@ def _retirement_evidence_by_path(
             continue
         source_path = entry.get("source_path")
         if isinstance(source_path, str) and source_path:
-            indexed[normalize_path_text(source_path).lstrip("./")] = entry
+            try:
+                normalized = _docs_scan.normalize_repo_rel_path(source_path)
+            except ValueError:
+                continue
+            indexed[normalized] = entry
     return indexed
 
 
@@ -217,16 +373,23 @@ def _retirement_evidence_blocker(
         "absorbed_claims",
         "absorbed_negative_claims",
     ):
-        if not _string_list(entry.get(field_name)):
+        values = _string_list(entry.get(field_name))
+        if values is None or not values:
             return f"retirement evidence missing {field_name}"
     if entry.get("source_copy_readback_verified") is not True:
         return "retirement evidence source copy readback is not verified"
     if entry.get("source_hash") != _source_hash(text):
         return "retirement evidence source_hash mismatch"
-    if _string_list(entry.get("active_followups")):
+    active_followups = _string_list(entry.get("active_followups"))
+    if active_followups is None:
+        return "retirement evidence active_followups must be a string list"
+    if active_followups:
         return "retirement evidence still has active followups"
 
-    evidence_referrers = tuple(sorted(_string_list(entry.get("exact_referrers"))))
+    raw_evidence_referrers = _string_list(entry.get("exact_referrers"))
+    if raw_evidence_referrers is None:
+        return "retirement evidence exact_referrers must be a string list"
+    evidence_referrers = tuple(sorted(raw_evidence_referrers))
     if referrers:
         if not stub_bound:
             return "exact repo referrers require retargeting or --stub-bound"
@@ -241,17 +404,27 @@ def _vault_destination(fpath: Path, vault_archive: Path) -> Path:
     return vault_archive / fpath.name
 
 
-def _safe_vault_destination(fpath: Path, vault_archive: Path, source_text: str) -> Path:
+def _safe_vault_destination(
+    fpath: Path,
+    rel_path: str,
+    vault_archive: Path,
+    source_text: str,
+) -> Path | None:
     dest = _vault_destination(fpath, vault_archive)
-    if not dest.exists():
-        return dest
-    if _vault_copy_matches(
+    source_hash = _source_hash(source_text)
+    candidates = (
         dest,
-        fpath.as_posix(),
-        source_text,
-    ):
-        return dest
-    return dest.with_name(f"{dest.stem}-{_source_hash(source_text)[:12]}{dest.suffix}")
+        dest.with_name(f"{dest.stem}-{source_hash[:12]}{dest.suffix}"),
+        dest.with_name(f"{dest.stem}-{source_hash}{dest.suffix}"),
+    )
+    for candidate in candidates:
+        if not candidate.exists() or _vault_copy_matches(
+            candidate,
+            rel_path,
+            source_text,
+        ):
+            return candidate
+    return None
 
 
 def _ensure_vault_copy(
@@ -262,7 +435,7 @@ def _ensure_vault_copy(
     result: RetireResult,
     *,
     execute: bool,
-) -> Path:
+) -> Path | None:
     source_text = fpath.read_text(encoding="utf-8", errors="ignore")
     vault_match = _find_in_vault(
         fpath.name,
@@ -274,7 +447,12 @@ def _ensure_vault_copy(
         result.already_in_vault.append((rel_path, vault_match))
         return vault_match
 
-    dest = _safe_vault_destination(fpath, vault_archive, source_text)
+    dest = _safe_vault_destination(fpath, rel_path, vault_archive, source_text)
+    if dest is None:
+        result.errors.append(
+            (rel_path, "vault archive destinations all contain different content")
+        )
+        return None
     result.copied_to_vault.append((rel_path, dest))
     if execute:
         vault_archive.mkdir(parents=True, exist_ok=True)
@@ -380,7 +558,7 @@ def retire_files(
             result.kept.append((rel, evidence_blocker))
             continue
 
-        _ensure_vault_copy(
+        vault_copy = _ensure_vault_copy(
             fpath,
             rel,
             vault_path,
@@ -388,6 +566,8 @@ def retire_files(
             result,
             execute=execute,
         )
+        if vault_copy is None:
+            continue
 
         if referrers and stub_bound:
             owner = classify_doc(rel, text).repo_owner
@@ -442,6 +622,15 @@ def main(argv: list[str] | None = None) -> int:
             "same-path compatibility stubs instead of keeping them."
         ),
     )
+    parser.add_argument(
+        "--source-copy-only",
+        action="store_true",
+        help=(
+            "Copy and read back an exact private source preimage for a "
+            "same-path body_to_compatibility_index transaction; never mutate "
+            "the repo source."
+        ),
+    )
     parser.add_argument("--repo-root", type=Path, default=Path("."))
     parser.add_argument("--vault-path", type=Path, default=None)
     parser.add_argument(
@@ -464,6 +653,63 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     repo_root = args.repo_root.resolve()
+
+    if args.source_copy_only:
+        if args.sweep or args.stub_bound or len(args.files) != 1:
+            parser.error(
+                "--source-copy-only requires exactly one file and cannot use "
+                "--sweep or --stub-bound"
+            )
+            return 1
+        if args.evidence is None:
+            parser.error("--source-copy-only requires --evidence")
+            return 1
+        source = (
+            args.files[0].resolve()
+            if args.files[0].is_absolute()
+            else (repo_root / args.files[0]).resolve()
+        )
+        evidence = json.loads(args.evidence.read_text(encoding="utf-8"))
+        copy_result = copy_source_only(
+            source,
+            repo_root,
+            vault_path,
+            evidence=evidence,
+            execute=args.execute,
+        )
+        if copy_result.error:
+            print(f"ERROR: {copy_result.error}", file=sys.stderr)
+            return 1
+        mode = "verified" if args.execute else "dry-run"
+        note_title = (
+            copy_result.destination.stem if copy_result.destination is not None else ""
+        )
+        locator_note_title = (
+            copy_result.locator_destination.stem
+            if copy_result.locator_destination is not None
+            else ""
+        )
+        print(
+            f"Source copy {mode}: {copy_result.source_path}; "
+            f"sha256={copy_result.source_hash}; "
+            f"note_title={note_title}; "
+            f"readback_verified={str(copy_result.readback_verified).lower()}; "
+            f"locator_note_title={locator_note_title}; "
+            f"locator_sha256={copy_result.locator_hash}; "
+            "locator_readback_verified="
+            f"{str(copy_result.locator_readback_verified).lower()}"
+        )
+        return (
+            0
+            if (
+                not args.execute
+                or (
+                    copy_result.readback_verified
+                    and copy_result.locator_readback_verified
+                )
+            )
+            else 1
+        )
 
     if args.sweep:
         files = find_retire_candidates(repo_root)
@@ -511,8 +757,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if result.stubbed:
         print(
-            f"\n{'Stubbed' if args.execute else 'Would stub'} "
-            f"({len(result.stubbed)}):"
+            f"\n{'Stubbed' if args.execute else 'Would stub'} ({len(result.stubbed)}):"
         )
         for rel, owner in result.stubbed:
             print(f"  {rel} -> {owner}")

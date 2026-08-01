@@ -5,22 +5,29 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics.docs_management_audit import (
     run_audit,
     write_routing_manifest_tsv,
     write_topic_clusters_tsv,
     write_topic_index_readmes,
 )
+from tools.diagnostics.docs_policy import (
+    CONTROL_PLANE_PATH,
+    GOVERNANCE_RULE_FAMILY_CONTRACTS,
+    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
+)
 
 CURRENT_HANDOFF = (
-    "docs/superpowers/handoffs/current/"
-    "codex-docs-cleanup-official-docs-and-handoff.md"
+    "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
 )
 CLOSEOUT_SUMMARY = (
     "docs/superpowers/closeouts/"
     "2026-06-26_codex-docs-cleanup_branch-closeout-summary.md"
 )
 RETENTION_INVENTORY = "docs/superpowers/handoffs/RETENTION.tsv"
+PROJECT_ROOT = Path(__file__).parents[1]
 
 
 def _write(path: Path, text: str) -> None:
@@ -28,7 +35,145 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _write_permanent_root_contracts(root: Path) -> None:
+    route_targets = (
+        "docs/agent/parameter-settings.md",
+        "docs/product/README.md",
+        "docs/agent/product-validation-contract.md",
+        "docs/agent/execution-gates.md",
+        "tools/diagnostics/INDEX.md",
+        "docs/solutions/README.md",
+        "docs/product/productization.md",
+        "docs/agent/codex-operating-system.md",
+        "docs/user/README.md",
+        "docs/agent/obsidian-handoff-contract.md",
+    )
+    for rel_path in route_targets:
+        _write(root / rel_path, f"# {Path(rel_path).stem}\n")
+    _write(
+        root / "docs/agent/codex-operating-system.md",
+        (PROJECT_ROOT / "docs/agent/codex-operating-system.md").read_text(
+            encoding="utf-8"
+        ),
+    )
+    governance_paths: set[str] = set()
+    for contract in GOVERNANCE_RULE_FAMILY_CONTRACTS.values():
+        governance_paths.add(str(contract["owner"]).partition("#")[0])
+        for field in ("executable", "readback"):
+            locator = str(contract[field])
+            if locator != "none":
+                governance_paths.add(locator)
+    for rel_path in sorted(governance_paths):
+        source = PROJECT_ROOT / rel_path
+        _write(root / rel_path, source.read_text(encoding="utf-8"))
+    _write(
+        root / "docs/lc-msms-evidence-rules.md",
+        "\n".join(
+            [
+                "# LC-MS/MS evidence rules",
+                "",
+                "Doc placement: formal_repo_doc",
+                "Doc kind: product_doc",
+                "Doc lifecycle: active",
+                "Repo owner: docs/lc-msms-evidence-rules.md",
+                "Doc exit rule: retire after a replacement owner absorbs the rules.",
+            ]
+        )
+        + "\n",
+    )
+    _write(
+        root / "AGENTS.md",
+        "\n".join(
+            [
+                "# XIC Extractor Agent Contract",
+                "",
+                "## Task Routes",
+                "",
+                "- [Parameters](docs/agent/parameter-settings.md)",
+                "- [Product](docs/product/README.md)",
+                "- [Validation](docs/agent/product-validation-contract.md)",
+                "- [Architecture](docs/architecture-contract.md)",
+                "- [Execution](docs/agent/execution-gates.md)",
+                "- [Diagnostics](tools/diagnostics/INDEX.md)",
+                "- [Solutions](docs/solutions/README.md)",
+                "- [Productization](docs/product/productization.md)",
+                "- [Layout](docs/project-layout.md)",
+                "- [Agent system](docs/agent/codex-operating-system.md)",
+            ]
+        )
+        + "\n",
+    )
+    _write(
+        root / "README.md",
+        "\n".join(
+            [
+                "# XIC Extractor",
+                "",
+                "## Documentation",
+                "",
+                "- [Users](docs/user/README.md)",
+                "- [Product](docs/product/README.md)",
+                "- [Architecture](docs/architecture-contract.md)",
+                "- [Layout](docs/project-layout.md)",
+                "- [Evidence](docs/lc-msms-evidence-rules.md)",
+            ]
+        )
+        + "\n",
+    )
+    _write(
+        root / "docs/architecture-contract.md",
+        "\n".join(
+            [
+                "# Architecture Contract",
+                "",
+                "This document owns the dependency contract.",
+                "",
+                "## Dependency Direction",
+                "",
+                "Domain points inward.",
+                "",
+                "## Ownership Map",
+                "",
+                "Owners are explicit.",
+            ]
+        )
+        + "\n",
+    )
+    _write(
+        root / "docs/project-layout.md",
+        "\n".join(
+            [
+                "# Project Layout",
+                "",
+                "[Architecture](architecture-contract.md)",
+                "[Product](product)",
+                "[Handoff](agent/obsidian-handoff-contract.md)",
+                "",
+                "## Permanent root document contract",
+                "",
+                "目錄收納規則單一可信來源",
+                "",
+                "source-of-truth 與歷程邊界",
+            ]
+        )
+        + "\n",
+    )
+
+
+def _write_registered_retirement_contract(root: Path) -> None:
+    for rel_path in (
+        CONTROL_PLANE_PATH,
+        PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
+    ):
+        _write(
+            root / rel_path,
+            (PROJECT_ROOT / rel_path).read_text(encoding="utf-8"),
+        )
+
+
 def _clean_repo(root: Path) -> None:
+    _write_permanent_root_contracts(root)
+    _write_registered_retirement_contract(root)
     _write(
         root / CURRENT_HANDOFF,
         "# Current handoff\n\nStatus: committed.\n",
@@ -91,6 +236,7 @@ def _run_audit(
     *,
     repo_only: bool = False,
     fail_on_completed_transient: bool = False,
+    require_retirement_history: bool = False,
 ):
     return run_audit(
         root,
@@ -98,6 +244,7 @@ def _run_audit(
         include_vault=not repo_only,
         fail_on_completed_transient=fail_on_completed_transient,
         allow_filesystem_handoff_fallback=True,
+        require_retirement_history=require_retirement_history,
     )
 
 
@@ -111,6 +258,24 @@ def test_repo_only_audit_skips_vault_blockers(tmp_path: Path) -> None:
     assert result.summary["vault"]["vault_skipped"] is True
     assert not any(msg.path == str(vault) for msg in result.messages)
     assert not any(msg.path == ".manifest.json" for msg in result.messages)
+
+
+def test_repo_only_audit_blocks_missing_retirement_history(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "missing-vault"
+    _clean_repo(root)
+
+    result = _run_audit(
+        root,
+        vault,
+        repo_only=True,
+        require_retirement_history=True,
+    )
+
+    assert any(
+        "retirement packet historical replay is unavailable" in message.message
+        for message in result.blockers
+    )
 
 
 def test_repo_only_completed_transient_spec_is_blocker(
@@ -436,10 +601,7 @@ def test_repo_docs_routing_review_reports_private_history_candidates(
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    candidate_path = (
-        "docs/superpowers/plans/"
-        "2026-07-01-backfill-implementation-plan.md"
-    )
+    candidate_path = "docs/superpowers/plans/2026-07-01-backfill-implementation-plan.md"
     _write(
         root / candidate_path,
         "\n".join(
@@ -457,9 +619,7 @@ def test_repo_docs_routing_review_reports_private_history_candidates(
     review = result.summary["repo"]["docs_routing_review"]
     assert review["candidate_files"] == 1
     assert review["disposition_counts"] == {"formalize_then_obsidian": 1}
-    assert review["doc_route_counts"] == {
-        "repo_distilled_plus_obsidian_original": 1
-    }
+    assert review["doc_route_counts"] == {"repo_distilled_plus_obsidian_original": 1}
     assert review["candidate_digestion_status_counts"] == {
         "needs_distillation_to_owner_and_obsidian": 1
     }
@@ -470,12 +630,10 @@ def test_repo_docs_routing_review_reports_private_history_candidates(
     assert review["top_candidates"][0]["doc_lifecycle"] == "unknown"
     assert review["top_candidates"][0]["doc_exit_rule"] == "missing"
     assert review["top_candidates"][0]["lifecycle_status"] == "missing_lifecycle"
-    assert "wiki-ingest/wiki-update" in review["top_candidates"][0][
-        "wiki_skill_route"
-    ]
-    assert "distill stable repo claims" in review["top_candidates"][0][
-        "wiki_next_action"
-    ]
+    assert "wiki-ingest/wiki-update" in review["top_candidates"][0]["wiki_skill_route"]
+    assert (
+        "distill stable repo claims" in review["top_candidates"][0]["wiki_next_action"]
+    )
     assert review["top_candidates"][0]["doc_route"] == (
         "repo_distilled_plus_obsidian_original"
     )
@@ -483,9 +641,10 @@ def test_repo_docs_routing_review_reports_private_history_candidates(
     assert review["top_candidates"][0]["digestion_status"] == (
         "needs_distillation_to_owner_and_obsidian"
     )
-    assert "distill stable repo claims" in review["top_candidates"][0][
-        "digestion_next_action"
-    ]
+    assert (
+        "distill stable repo claims"
+        in review["top_candidates"][0]["digestion_next_action"]
+    )
     assert review["top_candidates"][0]["obsidian_original_hint"] == (
         f"source_repo_path:{candidate_path}"
     )
@@ -493,9 +652,7 @@ def test_repo_docs_routing_review_reports_private_history_candidates(
     assert review["top_candidates"][0]["information_value"] == (
         "backfill and quant matrix"
     )
-    assert "docs/product/backfill.md" in review["top_candidates"][0][
-        "repo_owner_hint"
-    ]
+    assert "docs/product/backfill.md" in review["top_candidates"][0]["repo_owner_hint"]
     assert review["top_candidates"][0]["obsidian_lane"].endswith("/Plans")
     assert any(
         msg.severity == "warning" and "repo docs routing review" in msg.message
@@ -511,8 +668,7 @@ def test_repo_docs_routing_review_prefers_topic_over_generic_roadmap(
     _clean_repo(root)
     _clean_vault(vault)
     candidate_path = (
-        "docs/superpowers/plans/"
-        "2026-07-01-cid-nl-discovery-product-roadmap.md"
+        "docs/superpowers/plans/2026-07-01-cid-nl-discovery-product-roadmap.md"
     )
     _write(
         root / candidate_path,
@@ -585,9 +741,7 @@ def test_repo_docs_routing_review_reports_exact_referrers(
     assert candidate["exact_referrers"] == 1
     assert candidate["sample_referrers"] == "docs/product/backfill.md"
     assert candidate["destructive_allowed_now"] == "no"
-    assert candidate["obsidian_original_hint"] == (
-        f"source_repo_path:{candidate_path}"
-    )
+    assert candidate["obsidian_original_hint"] == (f"source_repo_path:{candidate_path}")
     assert candidate["repo_pointer_required"] == "yes"
 
 
@@ -681,11 +835,7 @@ def test_write_routing_manifest_tsv_is_not_limited_to_top_candidates(
     _clean_vault(vault)
     for index in range(30):
         _write(
-            root
-            / (
-                "docs/superpowers/plans/"
-                f"2026-07-{index + 1:02d}-bulk-plan.md"
-            ),
+            root / (f"docs/superpowers/plans/2026-07-{index + 1:02d}-bulk-plan.md"),
             "# Bulk plan\n\nImplementation diary and command transcript.\n",
         )
     manifest_path = tmp_path / "routing-manifest.tsv"
@@ -775,8 +925,7 @@ def test_generated_routing_manifest_is_not_counted_as_candidate_referrer(
         "# Backfill plan\n\nImplementation diary and command transcript.\n",
     )
     manifest_path = (
-        root
-        / "docs/superpowers/file-management/docs-cleanup/"
+        root / "docs/superpowers/file-management/docs-cleanup/"
         "2026-07-01_docs-superpowers-routing-manifest.tsv"
     )
 
@@ -784,9 +933,9 @@ def test_generated_routing_manifest_is_not_counted_as_candidate_referrer(
     write_routing_manifest_tsv(first_result, manifest_path)
     second_result = _run_audit(root, vault)
 
-    candidate = second_result.summary["repo"]["docs_routing_review"][
-        "top_candidates"
-    ][0]
+    candidate = second_result.summary["repo"]["docs_routing_review"]["top_candidates"][
+        0
+    ]
     assert candidate["path"] == candidate_path
     assert candidate["referrer_status"] == "none"
 
@@ -804,8 +953,7 @@ def test_generated_topic_indexes_are_not_counted_as_candidate_referrers(
         "# Backfill plan\n\nImplementation diary and command transcript.\n",
     )
     _write(
-        root
-        / "docs/superpowers/file-management/docs-cleanup/"
+        root / "docs/superpowers/file-management/docs-cleanup/"
         "2026-07-01_docs-superpowers-topic-clusters.tsv",
         f"path\n{candidate_path}\n",
     )
@@ -816,9 +964,7 @@ def test_generated_topic_indexes_are_not_counted_as_candidate_referrers(
 
     result = _run_audit(root, vault)
 
-    candidate = result.summary["repo"]["docs_routing_review"][
-        "top_candidates"
-    ][0]
+    candidate = result.summary["repo"]["docs_routing_review"]["top_candidates"][0]
     assert candidate["path"] == candidate_path
     assert candidate["referrer_status"] == "none"
 
@@ -836,17 +982,14 @@ def test_source_copy_stub_batch_is_not_counted_as_candidate_referrer(
         "# Backfill plan\n\nImplementation diary and command transcript.\n",
     )
     _write(
-        root
-        / "docs/superpowers/file-management/docs-cleanup/"
+        root / "docs/superpowers/file-management/docs-cleanup/"
         "2026-07-01_obsidian-source-copy-stub-batch.md",
         f"# Source-Copy Batch\n\n| Source path |\n| --- |\n| `{candidate_path}` |\n",
     )
 
     result = _run_audit(root, vault)
 
-    candidate = result.summary["repo"]["docs_routing_review"][
-        "top_candidates"
-    ][0]
+    candidate = result.summary["repo"]["docs_routing_review"]["top_candidates"][0]
     assert candidate["path"] == candidate_path
     assert candidate["referrer_status"] == "none"
 
@@ -907,14 +1050,10 @@ def test_repo_docs_routing_review_scans_superpowers_without_moving_validation(
     review = result.summary["repo"]["docs_routing_review"]
     assert review["candidate_files"] == 0
     assert review["route_retained_files"] == review["kept_files"]
-    assert review["all_disposition_counts"][
-        "keep_repo_validation_or_fixture"
-    ] == 1
+    assert review["all_disposition_counts"]["keep_repo_validation_or_fixture"] == 1
     assert review["all_doc_route_counts"]["repo_product_doc"] >= 1
     assert review["top_candidates"] == []
-    assert validation_path not in {
-        item["path"] for item in review["top_candidates"]
-    }
+    assert validation_path not in {item["path"] for item in review["top_candidates"]}
     assert not [
         msg for msg in result.messages if "repo docs routing review" in msg.message
     ]
@@ -975,8 +1114,7 @@ def test_repo_docs_routing_review_reports_canonical_missing_metadata(
     }
     assert readme_path in retained_review_paths
     assert any(
-        msg.severity == "warning"
-        and "repo docs metadata review" in msg.message
+        msg.severity == "warning" and "repo docs metadata review" in msg.message
         for msg in result.messages
     )
 
@@ -1019,8 +1157,7 @@ def test_repo_docs_topic_review_flags_duplicate_topic_owners(
     assert first_path in cluster["sample_paths"]
     assert second_path in cluster["sample_paths"]
     assert any(
-        msg.severity == "warning"
-        and "possible duplicate topic owners" in msg.message
+        msg.severity == "warning" and "possible duplicate topic owners" in msg.message
         for msg in result.messages
     )
 
@@ -1100,9 +1237,7 @@ def test_sample_metadata_contract_gets_own_topic_before_run_provenance(
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    sample_metadata_path = (
-        "docs/superpowers/validation/sample-metadata-contract.md"
-    )
+    sample_metadata_path = "docs/superpowers/validation/sample-metadata-contract.md"
     _write(
         root / sample_metadata_path,
         "\n".join(
@@ -1162,10 +1297,7 @@ def test_productization_routing_index_wins_over_backfill_body_mentions(
                 "Doc kind: goal",
                 "Doc lifecycle: active",
                 "Repo owner: docs/product/productization.md",
-                (
-                    "Doc exit rule: update when productization goal routing "
-                    "changes."
-                ),
+                ("Doc exit rule: update when productization goal routing changes."),
                 "",
                 "Backfill roadmap entries can be linked here, but this page is",
                 "the productization goal routing index.",
@@ -1182,7 +1314,7 @@ def test_productization_routing_index_wins_over_backfill_body_mentions(
         if item["topic_key"] == "productization"
     )
     assert index_path in cluster["supporting_sample_paths"]
-    assert cluster["topic_owner_count"] == 0
+    assert cluster["topic_owner_count"] == 1
     assert index_path not in cluster["owner_paths"]
 
 
@@ -1429,9 +1561,7 @@ def test_artifact_inventory_referrer_counts_as_authority_anchor(
         if support_path in item["supporting_sample_paths"]
     )
     assert "authority_or_status_anchor:1" in cluster["support_retention_counts"]
-    retained_review_paths = {
-        item["path"] for item in review["route_retained_reviews"]
-    }
+    retained_review_paths = {item["path"] for item in review["route_retained_reviews"]}
     assert support_path not in retained_review_paths
 
 
@@ -1474,9 +1604,7 @@ def test_mechanical_referrer_anchor_is_not_docs_followup_queue(
     )
     assert "mechanical_referrer_anchor:1" in cluster["support_retention_counts"]
     assert support_path in cluster["bound_support_sample_paths"]
-    retained_review_paths = {
-        item["path"] for item in review["route_retained_reviews"]
-    }
+    retained_review_paths = {item["path"] for item in review["route_retained_reviews"]}
     assert support_path not in retained_review_paths
 
 
@@ -1530,9 +1658,7 @@ def test_active_support_with_docs_referrer_stays_out_of_followup_queue(
         if support_path in item["supporting_sample_paths"]
     )
     assert "active_support_surface:2" in cluster["support_retention_counts"]
-    retained_review_paths = {
-        item["path"] for item in review["route_retained_reviews"]
-    }
+    retained_review_paths = {item["path"] for item in review["route_retained_reviews"]}
     assert support_path not in retained_review_paths
 
 
@@ -1589,9 +1715,7 @@ def test_archived_retention_anchor_stays_out_of_followup_queue(
         if support_path in item["supporting_sample_paths"]
     )
     assert "archived_retention_anchor:1" in cluster["support_retention_counts"]
-    retained_review_paths = {
-        item["path"] for item in review["route_retained_reviews"]
-    }
+    retained_review_paths = {item["path"] for item in review["route_retained_reviews"]}
     assert support_path not in retained_review_paths
 
 
@@ -1669,9 +1793,9 @@ def test_write_topic_index_readmes_creates_navigation_only_indexes(
     result = _run_audit(root, vault)
     write_topic_index_readmes(result, index_dir)
 
-    readme = (
-        index_dir / "backfill-and-quant-matrix" / "README.md"
-    ).read_text(encoding="utf-8")
+    readme = (index_dir / "backfill-and-quant-matrix" / "README.md").read_text(
+        encoding="utf-8"
+    )
     assert "Doc placement: ignored_artifact" in readme
     assert "Doc kind: manifest" in readme
     assert "navigation and cleanup index" in readme
@@ -1708,10 +1832,7 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
         _write(root / path, "# Backfill support\n\n" + "\n".join(support_body))
     _write(
         root / "docs/superpowers/validation/productization_status_index_v1.tsv",
-        (
-            "lane\tcurrent_artifact\n"
-            f"broad_backfill\t{authority_bound_path}\n"
-        ),
+        (f"lane\tcurrent_artifact\nbroad_backfill\t{authority_bound_path}\n"),
     )
     _write(
         root / "docs/superpowers/schemas/productization_authority_manifest.v1.json",
@@ -1738,17 +1859,15 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
 
     assert "authority_or_status_anchor:1" in cluster["support_retention_counts"]
     assert "exact_referrer_bound_support:1" in cluster["support_retention_counts"]
-    assert "archived_compressible_support:1" in cluster[
-        "support_retention_counts"
-    ]
+    assert "archived_compressible_support:1" in cluster["support_retention_counts"]
     assert authority_bound_path in cluster["bound_support_sample_paths"]
     assert exact_ref_path in cluster["bound_support_sample_paths"]
     assert compressible_path in cluster["compressible_support_sample_paths"]
 
     write_topic_index_readmes(result, index_dir)
-    readme = (
-        index_dir / "backfill-and-quant-matrix" / "README.md"
-    ).read_text(encoding="utf-8")
+    readme = (index_dir / "backfill-and-quant-matrix" / "README.md").read_text(
+        encoding="utf-8"
+    )
     assert "### Bound Support Samples" in readme
     assert f"- `{authority_bound_path}`" in readme
     assert f"- `{compressible_path}`" in readme
@@ -1959,11 +2078,7 @@ def test_unmarked_superpowers_specs_path_is_transient_specs_lane(
     structure = result.summary["repo"]["docs_structure_review"]
     assert structure["retired_lane_files"] == 0
     assert structure["invalid_spec_payload_files"] == 0
-    assert any(
-        item
-        for item in review["top_candidates"]
-        if item["path"] == spec_path
-    )
+    assert any(item for item in review["top_candidates"] if item["path"] == spec_path)
 
 
 def test_docs_structure_review_reports_non_markdown_specs_payload(
@@ -2079,6 +2194,8 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
     vault = tmp_path / "vault"
     root.mkdir()
     subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    _write_permanent_root_contracts(root)
+    _write_registered_retirement_contract(root)
     _clean_vault(vault)
     _write(
         root / ".gitignore",
@@ -2093,7 +2210,14 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
         "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
     )
     subprocess.run(
-        ["git", "add", ".gitignore", RETENTION_INVENTORY],
+        [
+            "git",
+            "add",
+            ".gitignore",
+            RETENTION_INVENTORY,
+            CONTROL_PLANE_PATH,
+            PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
+        ],
         cwd=root,
         check=True,
         capture_output=True,
@@ -2118,16 +2242,131 @@ def test_canonical_metadata_review_reports_root_authority_missing_metadata(
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["canonical_metadata_review"]
-    assert review["missing_metadata_files"] == 1
-    row = review["top_missing_metadata"][0]
+    rows = review["top_missing_metadata"]
+    row = next(item for item in rows if item["path"] == "AGENTS.md")
     assert row["path"] == "AGENTS.md"
-    assert row["metadata_status"] == "missing_metadata"
-    assert row["metadata_missing_fields"] == (
-        "Doc placement; Repo owner; Doc kind; Doc lifecycle; Doc exit rule"
-    )
+    assert row["metadata_status"] == "invalid_permanent_root_contract"
+    assert "required heading must occur exactly once" in row["metadata_missing_fields"]
     assert any(
-        msg.severity == "warning"
-        and "canonical docs metadata review" in msg.message
+        msg.severity == "blocker" and msg.path == "AGENTS.md"
+        for msg in result.messages
+    )
+
+
+def test_canonical_metadata_review_blocks_missing_permanent_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    (root / "README.md").unlink()
+
+    result = _run_audit(root, vault)
+
+    assert any(
+        msg.severity == "blocker"
+        and msg.path == "README.md"
+        and "permanent root path is missing" in msg.message
+        for msg in result.messages
+    )
+
+
+@pytest.mark.parametrize(
+    ("packet_text", "expected_problem"),
+    (
+        (
+            json.dumps(
+                {
+                    "transaction": "body_to_compatibility_index",
+                    "source_path": (
+                        "docs/superpowers/plans/"
+                        "2026-06-15-productization-control-plane.md"
+                    ),
+                    "activation_base_sha": "not-a-sha",
+                }
+            ),
+            "activation_base_sha must be a full Git SHA",
+        ),
+        ("{", "retirement packet is not valid JSON"),
+    ),
+)
+def test_docs_audit_blocks_invalid_committed_retirement_packet(
+    tmp_path: Path,
+    packet_text: str,
+    expected_problem: str,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    packet_path = (
+        "docs/superpowers/file-management/docs-cleanup/"
+        "2026-08-01-retirement-evidence.json"
+    )
+    _write(
+        root / packet_path,
+        packet_text,
+    )
+    subprocess.run(["git", "add", packet_path], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "invalid packet fixture",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+    result = _run_audit(root, vault)
+
+    assert any(
+        msg.severity == "blocker"
+        and msg.path == packet_path
+        and expected_problem in msg.message
+        for msg in result.messages
+    )
+
+
+def test_docs_audit_requires_registered_packet_when_control_plane_exists(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    (root / PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL).unlink()
+
+    result = _run_audit(root, vault)
+
+    assert any(
+        msg.severity == "blocker"
+        and msg.path == PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL
+        and "registered retirement packet is missing or untracked" in msg.message
         for msg in result.messages
     )
 
@@ -2286,5 +2525,5 @@ def test_clean_repo_and_vault_have_no_blockers(tmp_path: Path) -> None:
     result = _run_audit(root, vault)
 
     assert result.blockers == ()
-    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 2
+    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 3
     assert result.summary["repo"]["docs_routing_review"]["candidate_files"] == 0

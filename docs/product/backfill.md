@@ -14,8 +14,9 @@ or candidate tables into the matrix.
   detection.
 - Any broader Backfill publication requires an explicit public authority
   contract, expected-diff evidence, and focused output tests.
-- Broad auto-write from the full candidate universe is parked. The
-  candidate/audit universe is not the writer pool.
+- Broad auto-write from the full candidate universe has no registered writer
+  authority. The candidate/audit universe is not the writer pool; consult the
+  status index for current lane readiness.
 - Current expansion priorities: mechanical adjudication, structured review,
   truth acquisition, trace-evidence recovery, and evidence provenance -- before
   any new writer scope.
@@ -29,21 +30,29 @@ or candidate tables into the matrix.
 - Family-level context can guide review, but product support must be tied to a
   same-peak, group-hypothesis, or PeakHypothesis-level authority record before
   it can promote a rescued cell.
+- Reusable standard-peak trace evidence caches are opt-in replay helpers, not
+  Backfill authority. A warm hit must match per-sample `path_stat_v1` RAW
+  identity: resolved path, size, mtime, device, and inode. Missing or mismatched
+  identity fails closed to normal RAW extraction; a same path string alone is
+  never sufficient cache identity. The reusable failure lesson and focused
+  evidence are retained in
+  [`raw-backed-evidence-cache-identity.md`](../solutions/validation/raw-backed-evidence-cache-identity.md).
 
 ## Current Evidence Compression
 
-The broad Backfill auto-write decision is parked, not unresolved. The retained
-decision packet is still an authority/status anchor, so it must not be shortened
-or moved until the status index and authority manifest point at a replacement
-compact artifact with updated hashes.
+The broad Backfill auto-write decision is retained as provenance, not as a
+current status owner. It must not be shortened or moved until the status index
+and authority manifest point at a replacement compact artifact with updated
+hashes.
 
 Stable claims already absorbed here:
 
-- The 4613-row candidate/audit universe is not a writer pool.
-- Current Backfill product authority is the scoped 511 `write_ready` cells.
-- The remaining 4102 rows are outside writer authority; this includes 3015
-  trace-matched rows with no approved evidence class or passing oracle, and
-  1087 rows missing trace/overlay evidence.
+- The candidate/audit universe is not a writer pool.
+- Current Backfill product authority is only the registered `write_ready` scope
+  named by the status index and authority manifest.
+- All remaining candidates stay outside writer authority, including
+  trace-matched candidates with no approved evidence class or passing oracle
+  and candidates missing trace/overlay evidence.
 - Profile-only separation, quality blockers, round-trip reintegration, and
   ISTD behavior cannot become broad ProductWriter predicates.
 - Broad Backfill can reopen only through a new independent truth source for
@@ -68,8 +77,8 @@ write scope.
 
 - **Owns**: authority-gated writer path, accepted quantification values,
   promotion gates, evidence-chain lifecycle, expansion packet evaluation.
-- **Does not own**: current maturity tier or active lane (see control plane and
-  status index), candidate-level truth for unresolved rows (see validation
+- **Does not own**: current maturity tier or active lane (see status index),
+  candidate-level truth for unresolved rows (see validation
   packets and adjudication), sample-level private investigation details.
 - The candidate/audit universe feeds review and classification, not automatic
   matrix writing.
@@ -82,7 +91,7 @@ write scope.
 | Candidate or audit rows | Rows available for review, classification, or evidence recovery | Validation packets, adjudication index |
 | Trace-matched unresolved rows | Rows with some trace-level evidence but insufficient authority | Evidence lifecycle, adjudication surfaces |
 | Missing-overlay rows | Rows blocked by absent or insufficient overlay evidence | Evidence availability packets, blocker reports |
-| Expansion packets | Proposed future writer changes | Control plane, authority manifest, expected-diff packet, output tests |
+| Expansion packets | Proposed future writer changes | Status index, authority manifest, promotion contract, expected-diff packet, output tests |
 | Evidence-chain packet | Structured source evidence for review or approval | Evidence lifecycle, provenance owners |
 | Approval decision | Human or machine-readable approval state | Review roundtrip, authority manifest gates |
 
@@ -106,12 +115,12 @@ Before changing Backfill product behavior, require the relevant subset of:
   provenance-valid sidecars.
 - Treating a family/window match as same-peak evidence without typed anchor,
   selected mode, or PeakHypothesis-level support.
-- Updating a topic summary while leaving the control plane, status index, or
-  authority manifest stale after a real authority change.
+- Updating a topic summary while leaving the status index, authority manifest,
+  or promotion contract stale after a real authority change.
 
 ## See Also
 
-- [Productization control plane](../superpowers/plans/2026-06-15-productization-control-plane.md)
+- [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Status index](../superpowers/validation/productization_status_index_v1.tsv)
 - [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
 - [Adjudication schema](../superpowers/schemas/mechanical_adjudication_schema.v1.json)

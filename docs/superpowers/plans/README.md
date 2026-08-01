@@ -3,23 +3,26 @@
 Doc placement: repo_support_doc
 Doc kind: plan
 Doc lifecycle: active
-Repo owner: docs/superpowers/plans/2026-06-15-productization-control-plane.md
+Repo owner: docs/product/productization.md
 Doc exit rule: Update when productization plan routing or active reading order changes.
 
 Status: routing index
 
-This directory contains a mix of active control-plane documents, current
+This directory contains a mix of active productization documents, current
 blueprints, completed implementation plans, and historical provenance. A dated
 plan is not active by default.
 
 ## Active Reading Order
 
-1. `2026-06-15-productization-control-plane.md` for tier, active lane, writer
-   authority, and current broad uncontracted Backfill parked state.
+1. `../validation/productization_status_index_v1.tsv` for current tier/lane,
+   `../schemas/productization_authority_manifest.v1.json` for writer scope, and
+   `../../agent/product-validation-contract.md` for promotion requirements.
+   `2026-06-15-productization-control-plane.md` is compatibility lookup only.
 2. The branch-specific current handoff named by the goal or PR workflow for
-   continuation state. Use
-   `../productization/status/cc-framework-improvements-productization.md` only when
-   working on that productization status-anchor branch.
+   continuation state. The file
+   `../productization/status/cc-framework-improvements-productization.md` is a
+   checker-facing stable lane-key registry, never a branch handoff or mutable
+   status board.
 3. `2026-06-19-backfill-quant-matrix-productization-roadmap.md` for the current
    Backfill / quant-matrix roadmap direction when that lane is active.
 4. `docs/product/backfill.md`, `docs/product/quant-matrix.md`, and the current

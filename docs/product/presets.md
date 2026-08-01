@@ -18,7 +18,7 @@ they are not product authority by themselves.
 - Preset runs should be reproducible from documented CLI/config surfaces and
   metadata, not from branch-local command diaries.
 - `dna_dr_product_ready` is the CLI alignment preset for replaying the
-  registered productization tail, including the current clean-target 84-cell
+  registered productization tail, including the registered clean-target
   Backfill activation when sample universe, expected-diff packet, and authority
   scope match. It does not create GUI behavior, broaden Backfill or CID-NL
   authority, or make candidate-only evidence publishable.
@@ -84,8 +84,8 @@ Rules:
   TOML resource format, reproducibility guarantees for preset-backed runs.
 - **Does not own**: ProductWriter authority or accepted publication scope (see
   [productization.md](productization.md)), exact command recipes for every
-  validation run (see runner docs), release readiness (see control plane and
-  status index).
+  validation run (see runner docs), release readiness (see status index and
+  product validation contract).
 
 ## Verification
 
@@ -111,7 +111,7 @@ Before changing preset behavior, require the relevant subset of:
 - [Parameter settings](../agent/parameter-settings.md)
 - [Preset code](../../xic_extractor/presets/)
 - [Preset TOML data](../../xic_extractor/presets/data/)
-- [Productization control plane](../superpowers/plans/2026-06-15-productization-control-plane.md)
+- [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Status index](../superpowers/validation/productization_status_index_v1.tsv)
 - [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
 - [Diagnostic ledger](../diagnostic-ledger.md)

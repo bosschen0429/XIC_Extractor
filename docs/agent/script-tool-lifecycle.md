@@ -71,7 +71,7 @@ The 90 scripts divide into these bounded responsibility families:
 | Repository or CI gates | 3 | Sandbox doctor, architecture census, diagnostics-index checker |
 | Review-action tooling | 8 | Review planning, label import, changeset application, and review validation |
 | Performance, parity, or validation tooling | 13 | Benchmarks, workbook comparisons, harnesses, and RAW/XIC equivalence characterization |
-| Productization evidence and control plane | 54 | Bounded build/check/activation/reconstruction chains; retain until their artifact and authority consumers are reowned |
+| Productization evidence and governance | 54 | Bounded build/check/activation/reconstruction chains; retain until their artifact and authority consumers are reowned |
 
 These counts are a review snapshot, not a second machine registry. New files
 must be classified by the rules above; they must not merely increment this

@@ -75,4 +75,4 @@ contract promotes a correction or gate.
 - [Evidence spine](evidence-spine.md)
 - [Review roundtrip](review-roundtrip.md)
 - [Productization](productization.md)
-- [Productization control plane](../superpowers/plans/2026-06-15-productization-control-plane.md)
+- [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)

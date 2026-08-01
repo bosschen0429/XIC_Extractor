@@ -26,6 +26,40 @@ migration policy. Stable runners and validation command shapes remain in
   critical-thinking review angle: strongest assumption, stale-artifact risk,
   cheaper existing oracle, or condition that would invalidate the path.
 
+## Productization Work Cycle
+
+Productization planning limits active work instead of turning every diagnostic
+idea into a lane. Per maintenance cycle, keep at most one primary productization
+lane, one supporting-infrastructure lane, and one diagnostic-only lane. Starting
+another requires closing one as promoted, parked with an explicit reopening
+condition, externalized/killed, or abandoned with a reason.
+
+Before work starts, record the lane key, current structured state, intended
+state for this change, capability owner, affected public surface, expected
+behavior diff and required non-changes, evidence tier, stop/rollback rule, and
+downstream consumer. If product values or identity may change and no
+expected-diff plan exists, stop the intake.
+
+At maintenance and closeout:
+
+- verify current state only against the structured status index and authority
+  manifest, not a branch diary or compatibility index;
+- confirm new diagnostics, reports, and sidecars have a promote, kill,
+  externalize, or missing-evidence exit rule;
+- check schema/version, CLI/config/GUI documentation, downstream handoff,
+  expected diff, replay/provenance, and reviewer/audit records where relevant;
+- name the validation evidence actually used and do not equate tests passing
+  with production readiness;
+- remove stale ownerless plans and conflicting narrative state instead of
+  appending another board;
+- resolve only the active branch's handoff when one exists, and fold normal
+  durable closeout into the PR body.
+
+Periodically count active lanes. If the WIP limit is exceeded, freeze new work,
+select one lane to advance, and select one to park, kill, archive, or
+externalize. Review aging diagnostic artifacts and ownerless public docs before
+adding new ones.
+
 ## Stacked PR And Ledger Ownership
 
 Stacked PRs are allowed only when each PR has one owner surface and can pass CI
@@ -34,7 +68,7 @@ stacked PR series, write or inspect a stack map that lists:
 
 - base and head branch for every PR;
 - repeated files across PRs, especially global ledgers such as productization
-  status indexes, control-plane plans, active handoffs, and artifact
+  status indexes, authority manifests, schemas, active handoffs, and artifact
   inventories;
 - tracked fixtures versus externalized local artifacts;
 - which PR owns schema/product behavior, which PR owns artifact hygiene, and

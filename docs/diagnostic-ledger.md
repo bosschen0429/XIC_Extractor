@@ -19,15 +19,14 @@ known, where the evidence lives, and when a rerun is justified.
 
 This file is also not the live productization tier board. Product maturity tier,
 active lane, current writer counts, promotion-packet status, and Backfill
-authority scopes are owned by
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`, the
-productization status index
-`docs/superpowers/validation/productization_status_index_v1.tsv`, and the
-authority manifest
-`docs/superpowers/schemas/productization_authority_manifest.v1.json`. When this
-ledger cites a historical validation note, treat it as diagnostic/rerun memory
-unless the current control plane or a current authority artifact still promotes
-the same claim.
+authority scopes are owned by the productization status index
+`docs/superpowers/validation/productization_status_index_v1.tsv`, the authority
+manifest
+`docs/superpowers/schemas/productization_authority_manifest.v1.json`, and the
+promotion contract `docs/agent/product-validation-contract.md`. When this ledger
+cites a historical validation note, treat it as diagnostic/rerun memory unless
+a current structured authority artifact still promotes the same claim. The
+dated productization control-plane path is compatibility lookup only.
 
 ## Use Rules
 
@@ -43,7 +42,7 @@ the same claim.
   Small diagnostic snapshots that must survive worktrees belong under
   `docs/superpowers/fixtures/` with a source note and hash.
 - If a rerun changes a durable conclusion, update this ledger in the same PR.
-- If a later control-plane or authority-manifest entry changes maturity tier,
+- If a later status-index or authority-manifest entry changes maturity tier,
   writer scope, or product authority after a ledger entry was written, defer to
   the later productization authority and update this ledger only when the
   diagnostic/rerun conclusion itself changes.

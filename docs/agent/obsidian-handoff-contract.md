@@ -101,6 +101,12 @@ Agents should search Obsidian frontmatter or text for that key before reading
 full private notes. Do not store absolute vault paths in repo docs. The Obsidian
 pointer is provenance and deep context, not product authority.
 
+When exact byte preservation prevents adding that key to an original source
+copy, write and read back a deterministic adjacent `-locator` note instead.
+The locator must contain the stable key, link to the exact source-copy note,
+and pin both the source hash and its own content hash in the retirement packet.
+It is a discovery sidecar only and must not carry product authority.
+
 Use Obsidian/wiki skills as the private-vault side of the workflow:
 
 | Step | Skill route | Responsibility |
@@ -300,7 +306,7 @@ repo owner first.
 | Formal repo docs | `docs/user/`, `docs/product/`, `docs/agent/`, `docs/architecture/`, `docs/validation/`, `docs/superpowers/schemas/`, transient Markdown specs, named plans, ledgers | Public user guides, product contracts, product state, validation policy, source-of-truth claims, active development specs with exit rules | private diary, raw transcripts, obsolete branch sequencing, JSON schemas inside `specs/` |
 | Branch handoff stub | `docs/superpowers/handoffs/current/ACTIVE.local.md` or branch-named ignored local handoff | Current objective, decisions, validation, blocker, next actions, optional Obsidian pointer | long logs, full chat history, private sample investigation |
 | Branch closeout summary | PR body by default; `docs/superpowers/closeouts/` only when intentionally public | Branch-level narrative and PR-body seed: problem, solution, verification, residual risk, evidence links | raw transcript, private diary, Obsidian-only context, unchecked product claims |
-| Productization status anchor | `docs/superpowers/productization/status/cc-framework-improvements-productization.md` | Productization checker anchor phrases and shared status reminders | branch-specific current objectives |
+| Productization compatibility lane registry | `docs/superpowers/productization/status/cc-framework-improvements-productization.md` | Stable checker lookup keys only | mutable lane state, writer scope, or branch-specific current objectives |
 | PR body | GitHub PR description | Durable closeout: problem, solution, verification, residual risk | raw handoff paste or private Obsidian-only context |
 | Obsidian note | User-approved private vault | Long-form research, development diary, exploratory analysis, detailed private notes | secrets, credentials, repo-only source-of-truth claims |
 | Global `$handoff` output | OS temp conversation handoff | Temporary cross-session transfer | repo authority or PR closeout |
@@ -566,8 +572,8 @@ Use this split for formal repo targets:
 
 | Target family | Use for | Examples |
 | --- | --- | --- |
-| `docs/product/productization.md` | public productization current-state, promotion-boundary, and authority-routing summary | distilled current capability map |
-| existing productization machine owners | active machine-readable tier/status/authority/schema artifacts | control plane, status index, authority manifest, and schema JSON stay at current paths until a focused checker-aware path migration |
+| `docs/product/productization.md` | public stable-capability, promotion-boundary, and authority-routing summary | distilled capability map |
+| existing productization machine owners | active machine-readable tier/status/authority/schema artifacts | status index, authority manifest, and schema JSON stay at current paths until a focused checker-aware path migration |
 | `docs/validation/` | retained validation packets, summaries, and checker-readable evidence | retained packet READMEs, result summaries, lockbox public review packets |
 | `docs/validation/fixtures/` | minimal or curated validation fixtures and expected-result oracles | TSV/CSV fixtures, Skyline expressibility oracles |
 | `docs/validation/schemas/` | schemas for validation/review artifacts | lockbox label, review packet, truth label schemas |

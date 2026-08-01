@@ -233,6 +233,25 @@ def main() -> int:
         "Product/public surface may be edited",
     )
 
+    status_index_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "apply_patch",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {
+            "patch": (
+                "*** Update File: docs/superpowers/validation/"
+                "productization_status_index_v1.tsv\n"
+            ),
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", status_index_payload),
+        "Product/public surface may be edited",
+    )
+
     post_subdir_payload = {
         "hook_event_name": "PostToolUse",
         "turn_id": "fixture",
@@ -264,6 +283,37 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_post_tool_guard.py", post_apply_patch_payload),
+        "productization control plane",
+    )
+
+    post_status_index_payload = {
+        "hook_event_name": "PostToolUse",
+        "turn_id": "fixture",
+        "tool_name": "apply_patch",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {
+            "patch": (
+                "*** Update File: docs/superpowers/validation/"
+                "productization_status_index_v1.tsv\n"
+            ),
+        },
+        "tool_response": {"stdout": "", "stderr": ""},
+    }
+    assert_contains(
+        run_hook(
+            "xic_post_tool_guard.py",
+            post_status_index_payload,
+            env_extra={
+                "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
+                    [
+                        "docs/superpowers/validation/"
+                        "productization_status_index_v1.tsv"
+                    ]
+                ),
+            },
+        ),
         "productization control plane",
     )
 
@@ -912,6 +962,7 @@ def main() -> int:
 
     for path in (
         "docs/user/targeted-extraction.md",
+        "docs/superpowers/validation/productization_status_index_v1.tsv",
         "scripts/run_new_cli.py",
         "xic_extractor/extractor.py",
         "xic_extractor/signal_processing.py",

@@ -5,12 +5,19 @@ import json
 import re
 import sys
 
-from xic_hook_policy import CONTROL_PLANE_PATH, HANDOFF_CURRENT_DIR
+from xic_hook_policy import (
+    CONTROL_PLANE_PATH,
+    HANDOFF_CURRENT_DIR,
+    PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
+    PRODUCTIZATION_STATUS_INDEX_REL,
+)
 
 SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(r"\bOPENAI_API_KEY\s*=\s*['\"]?[^'\"\s]+", re.IGNORECASE),
-    re.compile(r"\b(?:api[_-]?key|token|password)\s*[:=]\s*['\"]?[^'\"\s]{12,}", re.IGNORECASE),
+    re.compile(
+        r"\b(?:api[_-]?key|token|password)\s*[:=]\s*['\"]?[^'\"\s]{12,}", re.IGNORECASE
+    ),
 ]
 
 ARCHITECTURE_PATTERNS = [
@@ -185,9 +192,7 @@ def main() -> int:
     # Pure performance/RAW execution prompts use their focused preflight. Any
     # mixed behavior edit keeps architecture preflight as well; a run or
     # performance gate must not hide the pre-edit contract.
-    if matches(ARCHITECTURE_PATTERNS) and (
-        edit_intent or not (perf or raw_validation)
-    ):
+    if matches(ARCHITECTURE_PATTERNS) and (edit_intent or not (perf or raw_validation)):
         contexts.append(
             "XIC high-risk work detected: before edits, use xic-architecture-preflight. "
             "Name existing owner/helper reuse, evidence-provider role, call-cost model, "
@@ -216,9 +221,12 @@ def main() -> int:
     if matches(PRODUCTIZATION_PATTERNS):
         contexts.append(
             "XIC productization context detected: before claiming a feature is productized, read "
-            f"{CONTROL_PLANE_PATH}. "
-            "Name the current/proposed maturity tier and, if the tier or active lane changes, update the board "
-            "or explicitly state why no control-plane update is needed."
+            f"the productization control plane compatibility index at {CONTROL_PLANE_PATH}. "
+            f"Read mutable lane state from {PRODUCTIZATION_STATUS_INDEX_REL}, writer authority from "
+            f"{PRODUCTIZATION_AUTHORITY_MANIFEST_REL}, and readiness/promotion rules from "
+            "docs/agent/product-validation-contract.md. Name the current/proposed maturity tier and "
+            "update only the applicable canonical owner, or explicitly state why no routed owner update is needed. "
+            "Change the compatibility index itself only when a stable lane key or owner route changes."
         )
 
     if any(re.search(pattern, prompt, re.IGNORECASE) for pattern in HANDOFF_PATTERNS):
@@ -231,7 +239,9 @@ def main() -> int:
             "rejected paths still likely to recur, and next 1-3 actions. "
             "For PR closeout, condense the current handoff into the PR body and archive only completed phase summaries that must remain in repo. "
             "The global $handoff skill writes a temporary conversation handoff; it is not the repo branch handoff. "
-            f"If productization tier or active lane changed, sync {CONTROL_PLANE_PATH} too. "
+            f"If productization tier or active lane changed, sync {PRODUCTIZATION_STATUS_INDEX_REL} and any "
+            f"applicable authority in {PRODUCTIZATION_AUTHORITY_MANIFEST_REL}; use {CONTROL_PLANE_PATH} only "
+            "to resolve stable lane keys and owner routes. "
             "Hooks only remind; the executing agent owns the handoff rewrite."
         )
 

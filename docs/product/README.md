@@ -61,9 +61,9 @@ If a topic file conflicts with an owner listed below, the owner wins.
 
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Architecture contract](../architecture-contract.md)
-- [Productization control plane](../superpowers/plans/2026-06-15-productization-control-plane.md)
-  and its [status index](../superpowers/validation/productization_status_index_v1.tsv)
-  / [authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
+- [Productization status index](../superpowers/validation/productization_status_index_v1.tsv)
+- [Productization authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
+- [Product validation contract](../agent/product-validation-contract.md)
 
 ## Contributor Rules
 
@@ -77,8 +77,8 @@ If a topic file conflicts with an owner listed below, the owner wins.
 - Topic pages do not change maturity tier, active lane, writer authority,
   matrix behavior, schema, or validation verdicts.
 - Product-story HTML can stay here only as an explainer. If it conflicts with
-  topic pages, the control plane, status index, or authority manifest, those
-  owners win.
+  topic pages, status index, authority manifest, or product validation
+  contract, those owners win.
 
 ### Shared Conventions
 

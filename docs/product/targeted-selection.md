@@ -7,8 +7,12 @@ Targeted selection is the product-facing decision path for known targets. It tur
 - Product targeted output is a workflow-owned projection from evidence and selection decisions. Shared evidence providers inform but do not choose targeted product state.
 - Region, boundary, and selected-envelope logic are candidate and model-selection surfaces. They require expected-diff review before changing selected peak, area, confidence, reason, product state, counted detection, workbook, or matrix values.
 - Selected-hypothesis public behavior must preserve compatibility projections unless an explicit schema/versioning plan changes downstream contracts.
-- MS1 shape-identity limited rescue is production-ready only for the headless limited `5-hmdC + 5-medC` policy and only writes `detected_flagged` under its expected-diff gate. Broader targets, GUI wiring, and default broad NL_FAIL rescue remain blocked without a new target-family evidence gate.
-- Target-pair RT auto-reselection and calibration artifacts are activation-gated selection aids, not default authority unless the control plane and focused tests say so.
+- The bounded headless `5-hmdC + 5-medC` contract is the only MS1
+  shape-identity rescue scope with accepted `detected_flagged` expected-diff
+  evidence. It grants no authority to broader targets, GUI wiring, or default
+  broad NL_FAIL rescue; those require a new target-family evidence gate.
+  Consult the status index for current lane readiness.
+- Target-pair RT auto-reselection and calibration artifacts are activation-gated selection aids, not default authority unless the status index, authority manifest, promotion contract, and focused tests say so.
 - Targeted expected-diff approvals must reference runtime product
   `PeakHypothesis` candidate IDs. Overlay-only or audit-table candidate IDs can
   explain support, but they are not valid product-switch inputs.
@@ -52,7 +56,9 @@ Targeted selection is the product-facing decision path for known targets. It tur
 - Expected-diff packet for workbook/CSV or matrix-impacting changes.
 - Schema/versioning review when output fields or compatibility projection change.
 - RAW-tier evidence label matching the product claim.
-- Control-plane update when maturity, lane, or authority changes.
+- Structured productization-owner update when maturity, lane, or authority
+  changes: status index for lane state, authority manifest for writer scope,
+  and the promotion contract for readiness evidence.
 - The bounded CID-NL `targeted_output_v1` delivery claims and current test
   dispositions are indexed in the
   [public-output claim catalog](../superpowers/validation/cid_nl_public_output_claim_catalog_v1.tsv).

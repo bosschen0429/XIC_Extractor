@@ -1619,10 +1619,10 @@ Select-String -Path $scanPaths `
 
 ## Productization Control-Plane Impact
 
-The first diagnostic implementation pass did not require a control-plane tier
+The first diagnostic implementation pass did not require a status-index tier
 change. The product goal has now changed: this branch is the active
 `pt_pattern_discovery_productization_v1` lane in
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`.
+`docs/superpowers/validation/productization_status_index_v1.tsv`.
 
 Current tier remains `diagnostic_only`. This branch does not target product
 promotion: its closeout target is a trustworthy diagnostic method-development

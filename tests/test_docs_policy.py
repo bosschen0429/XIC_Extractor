@@ -2,12 +2,396 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics.docs_policy import (
     DOC_ROUTING_SCHEMAS_INDEX_PATH,
     DOC_ROUTING_SPECS_INDEX_PATH,
+    PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
     classify_doc_path,
+    is_productization_compatibility_index_text,
 )
+from tools.diagnostics.docs_scan import (
+    normalize_repo_rel_path,
+    normalized_path_dependency_census,
+    permanent_root_contract_problems,
+    resolve_repo_path,
+    resolve_repo_target,
+)
+
+
+def test_permanent_root_contract_is_exactly_four_paths() -> None:
+    assert set(PERMANENT_ROOT_DOC_CONTRACTS) == {
+        "AGENTS.md",
+        "README.md",
+        "docs/architecture-contract.md",
+        "docs/project-layout.md",
+    }
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "../outside.md",
+        "../../outside.md",
+        "/tmp/outside.md",
+        "C:\\outside.md",
+        "\\\\server\\share\\outside.md",
+        ".",
+        "",
+    ),
+)
+def test_repo_relative_path_normalizer_rejects_escape_paths(path: str) -> None:
+    with pytest.raises(ValueError, match="repository-relative"):
+        normalize_repo_rel_path(path)
+
+
+def test_repo_relative_path_normalizer_accepts_internal_path() -> None:
+    assert normalize_repo_rel_path("./docs/product/../product/backfill.md") == (
+        "docs/product/backfill.md"
+    )
+
+
+def test_relative_link_resolution_rejects_repo_escape() -> None:
+    assert resolve_repo_target("docs/guide.md", "../../outside.md") is None
+
+
+def test_repo_path_resolution_rejects_symlink_escape(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside\n", encoding="utf-8")
+    try:
+        (repo / "owner.md").symlink_to(outside)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows runner lacks symbolic-link privilege")
+        raise
+
+    with pytest.raises(ValueError, match="resolves outside repository"):
+        resolve_repo_path(repo, "owner.md")
+
+
+def test_current_control_plane_is_a_compatibility_index_preimage() -> None:
+    root = Path(__file__).parents[1]
+    text = (
+        root
+        / "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+    ).read_text(encoding="utf-8")
+
+    assert is_productization_compatibility_index_text(text)
+    assert not is_productization_compatibility_index_text(
+        "# Productization compatibility index\n"
+    )
+
+
+def test_current_permanent_root_contracts_have_positive_landmarks() -> None:
+    root = Path(__file__).parents[1]
+
+    for rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
+        assert (
+            permanent_root_contract_problems(
+                root,
+                rel_path,
+                (root / rel_path).read_text(encoding="utf-8"),
+            )
+            == ()
+        )
+
+
+def test_permanent_root_contract_rejects_missing_route_and_wrong_owner() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\nRepo owner: docs/product/productization.md\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert any("required route must resolve" in problem for problem in problems)
+    assert any("conflicting Repo owner" in problem for problem in problems)
+
+
+def test_permanent_root_contract_ignores_fenced_only_route() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\n```markdown\n[fenced route](docs/product/README.md)\n```\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+@pytest.mark.parametrize(
+    "code_only_route",
+    (
+        "`[sample](docs/product/README.md)`",
+        "``[sample](docs/product/README.md)``",
+        "``code\n[sample](docs/product/README.md)\n``",
+        "    [sample](docs/product/README.md)",
+        ">     [sample](docs/product/README.md)",
+        "-     [sample](docs/product/README.md)",
+        "1.     [sample](docs/product/README.md)",
+        "> -     [sample](docs/product/README.md)",
+        "- -     [sample](docs/product/README.md)",
+        "-   \t[sample](docs/product/README.md)",
+    ),
+)
+def test_permanent_root_contract_ignores_non_fenced_code_only_route(
+    code_only_route: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\n" + code_only_route + "\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+@pytest.mark.parametrize(
+    "non_link_route",
+    (
+        "[unused]: docs/product/README.md",
+        "![sample](docs/product/README.md)",
+        "<!-- [sample](docs/product/README.md) -->",
+        r"\[sample](docs/product/README.md)",
+    ),
+)
+def test_permanent_root_contract_requires_rendered_clickable_route(
+    non_link_route: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\n" + non_link_route + "\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+def test_permanent_root_contract_uses_first_reference_definition() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += (
+        "\n[sample][route]\n\n"
+        "[route]: missing-product-owner.md\n"
+        "[route]: docs/product/README.md\n"
+    )
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+@pytest.mark.parametrize(
+    "code_only_landmark",
+    (
+        "`This document owns`",
+        "``This document owns``",
+        "    This document owns",
+        ">     This document owns",
+    ),
+)
+def test_permanent_root_contract_ignores_non_fenced_code_only_landmark(
+    code_only_landmark: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "docs/architecture-contract.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("This document owns", "This document describes", 1)
+    text += "\n" + code_only_landmark + "\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required purpose landmark must occur exactly once: This document owns" in (
+        problems
+    )
+
+
+def test_permanent_root_contract_ignores_html_comment_only_heading() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace(
+        "# XIC Extractor Agent Contract",
+        "# XIC Extractor Repository",
+        1,
+    )
+    text += "\n<!--\n# XIC Extractor Agent Contract\n-->\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required heading must occur exactly once: XIC Extractor Agent Contract" in (
+        problems
+    )
+
+
+def test_permanent_root_contract_ignores_html_comment_only_landmark() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "docs/architecture-contract.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("This document owns", "This document describes", 1)
+    text += "\n<!-- This document owns -->\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required purpose landmark must occur exactly once: This document owns" in (
+        problems
+    )
+
+
+def test_permanent_root_contract_ignores_nested_fenced_only_route() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += (
+        "\n100. Example only\n"
+        "     ```markdown\n"
+        "     [fenced route](docs/product/README.md)\n"
+        "     ```\n"
+    )
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+@pytest.mark.parametrize(
+    "fenced_example",
+    (
+        ("> ```markdown\n"
+         "> [fenced route](docs/product/README.md)\n"
+         "> ```\n"),
+        ("> 1. ```markdown\n"
+         ">    [fenced route](docs/product/README.md)\n"
+         ">    ```\n"),
+    ),
+)
+def test_permanent_root_contract_ignores_blockquoted_fenced_only_route(
+    fenced_example: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\n" + fenced_example
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+@pytest.mark.parametrize(
+    "fenced_example",
+    (
+        ("```markdown\n"
+         "- ```\n"
+         "[fenced route](docs/product/README.md)\n"
+         "```\n"),
+        ("> ```markdown\n"
+         "> > ```\n"
+         "> [fenced route](docs/product/README.md)\n"
+         "> ```\n"),
+        ("```markdown\n"
+         "    ```\n"
+         "[fenced route](docs/product/README.md)\n"
+         "```\n"),
+        ("> ```markdown\n"
+         ">     ```\n"
+         "> [fenced route](docs/product/README.md)\n"
+         "> ```\n"),
+        ("- ```markdown\n"
+         "```\n"
+         "[fenced route](docs/product/README.md)\n"
+         "  ```\n"),
+        ("- > ```markdown\n"
+         "> ```\n"
+         "> [fenced route](docs/product/README.md)\n"
+         "  > ```\n"),
+    ),
+)
+def test_permanent_root_contract_ignores_faux_closing_container_in_fence(
+    fenced_example: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\n" + fenced_example
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+def test_dependency_census_resolves_relative_markdown_html_and_constant_consumers(
+    tmp_path: Path,
+) -> None:
+    target = "/".join(
+        (
+            "docs",
+            "superpowers",
+            "plans",
+            "2026-06-15-productization-control-plane.md",
+        )
+    )
+    files = {
+        "docs/guide/ref.md": (
+            "[control][control-plane]\n\n"
+            "[control-plane]:\n  ../superpowers/plans/"
+            "2026-06-15-productization-control-plane.md\n"
+        ),
+        "docs/report.html": (
+            "<a HREF=superpowers/plans/"
+            "2026-06-15-productization-control-plane.md>control</a>\n"
+        ),
+        "notes.txt": f"literal: {target}\n",
+        "tools/check.py": "from policy import " + "CONTROL_" + "PLANE_PATH\n",
+    }
+    for rel_path, text in files.items():
+        path = tmp_path / rel_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    census = normalized_path_dependency_census(
+        tmp_path,
+        target,
+        scan_paths=tuple(files),
+    )
+
+    assert census["literal_path_referrers"] == ["notes.txt"]
+    assert census["relative_markdown_links"] == [
+        {
+            "referrer": "docs/guide/ref.md",
+            "raw_target": (
+                "../superpowers/plans/"
+                "2026-06-15-productization-control-plane.md"
+            ),
+            "resolved_path": target,
+        }
+    ]
+    assert census["relative_html_links"] == [
+        {
+            "referrer": "docs/report.html",
+            "raw_target": (
+                "superpowers/plans/"
+                "2026-06-15-productization-control-plane.md"
+            ),
+            "resolved_path": target,
+        }
+    ]
+    assert census["control_plane_constant_consumers"] == ["tools/check.py"]
 
 
 def test_docs_policy_marks_validation_as_route_retained_contract_surface() -> None:

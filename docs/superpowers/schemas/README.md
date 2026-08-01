@@ -14,11 +14,13 @@ review-story galleries, design specs, or historical design archives.
 
 Historical or visual design context belongs in Obsidian or a named validation
 artifact lane after its durable product claim is represented in `docs/product/`
-or the relevant control-plane owner.
+or the relevant structured productization owner.
 
 ## Active Reading Order
 
-1. Control plane for authority and maturity state.
+1. Productization status index for maturity/lane state, authority manifest for
+   writer scope, structured control schema for allowed keys, and product
+   validation contract for promotion semantics.
 2. Current handoff for continuation state.
 3. Current roadmap/blueprint for phase order.
 4. The specific schema named by the active goal.
@@ -68,8 +70,12 @@ or the relevant control-plane owner.
   not activate ProductWriter or the default quant matrix.
 - `productization_authority_manifest.v1.json`: productization authority manifest
   contract for current authority, owner, and activation state.
-- `productization_control_plane_schema.v1.json`: control-plane schema for
-  productization lane state, maturity, and active governance entries.
+- `productization_control_plane_schema.v1.json`: retained predecessor contract
+  for consumers pinned to the original field and allowed-value shape; it is not
+  the current checker default.
+- `productization_control_plane_schema.v2.json`: current control-plane schema
+  for productization lane state, maturity, authority rules, and the stable
+  compatibility-anchor registry.
 - `quant_matrix_version_schema.v1.json`: Phase 3 explicit
   `QuantMatrixVersion v1` activation output contract. It defines
   `quant_matrix`, `cell_provenance`, `row_summary`, expected-diff, and source
@@ -136,9 +142,9 @@ or the relevant control-plane owner.
 
 ## Rule
 
-If a schema conflicts with the control plane, current handoff, or current
-Backfill quant-matrix product blueprint, stop and resolve the conflict instead
-of silently following the older schema.
+If a schema conflicts with its structured state/authority owner, the current
+handoff, or the current Backfill quant-matrix product blueprint, stop and
+resolve the conflict instead of silently following the older schema.
 
 The Issue #125 CID-NL schema metadata is enforced by
 `xic_extractor.discovery.cid_nl_oracle_contract`. Focused negative tests submit

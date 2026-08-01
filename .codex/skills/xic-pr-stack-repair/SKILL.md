@@ -32,7 +32,8 @@ Read `references/repair-checklist.md`, then produce a stack map covering:
   explicit opt-in flag.
 - Keep global ledgers and active handoffs out of intermediate PRs unless that
   PR truly owns the ledger update.
-- Preserve machine-required handoff/control-plane anchors when pruning docs.
+- Preserve machine-required handoff, status, authority, schema, and compatibility
+  anchors when pruning docs.
 - Collapse local repair noise into logical commits before publishing.
 - If GitHub Actions checks do not appear after a ref change, diagnose token,
   event, filter, branch-protection, and approval causes before rewriting or

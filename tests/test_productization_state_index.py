@@ -2,15 +2,21 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.check_productization_state import (
     DEFAULT_AUTHORITY_MANIFEST,
     DEFAULT_CONTROL_PLANE,
     DEFAULT_HANDOFF,
+    DEFAULT_PRODUCTIZATION_SUMMARY,
     DEFAULT_SCHEMA,
     DEFAULT_STATUS_INDEX,
+    EXPECTED_CONTROL_PLANE_SCHEMA_VERSION,
+    _render_compatibility_index,
     artifact_sha256,
     check_productization_state,
 )
+from tools.diagnostics.docs_scan import markdown_headings
 
 
 def test_productization_state_index_accepts_current_artifacts() -> None:
@@ -24,6 +30,11 @@ def test_status_schema_matches_index_header() -> None:
     assert header == schema["required_status_index_columns"]
     assert {row["lane_id"] for row in rows} == set(schema["required_lane_ids"])
     assert len(rows) == len(schema["required_lane_ids"])
+    assert DEFAULT_SCHEMA.name == "productization_control_plane_schema.v2.json"
+    assert schema["schema_version"] == EXPECTED_CONTROL_PLANE_SCHEMA_VERSION
+    assert schema["required_control_plane_anchors"] == {
+        row["lane_id"]: row["control_plane_anchor"] for row in rows
+    }
 
 
 def test_registered_default_scopes_have_writer_authority() -> None:
@@ -140,276 +151,374 @@ def test_peak_choice_lockbox_status_points_to_shadow_automation_design() -> None
     assert row["product_effect"] == "shadow_only_contract_adapter_manifest"
     assert row["row_count"] == "72"
     assert "shadow_scoring_contract_adapter_v1_ready" in row["notes"]
-    assert "53 owner-clean Gaussian15 cases as non-authoritative accept challenges" in (
-        row["notes"]
+    assert (
+        "53 owner-clean Gaussian15 cases as non-authoritative accept challenges"
+        in (row["notes"])
     )
     assert "6 manual negative controls as reject hard stops" in row["notes"]
     assert row["write_authority"] == "FALSE"
 
 
-def test_control_plane_lockbox_shadow_adapter_route_is_current() -> None:
+def test_compatibility_index_preserves_exact_unique_status_anchors() -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    section = _section(
-        text,
-        "### 2026-06-19 - lockbox_shadow_automation_experiment_v1",
-        "### 2026-06-18 - productization_status_index_v1",
+    headings = markdown_headings(text)
+    _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
+
+    for row in rows:
+        assert headings.count(row["control_plane_anchor"]) == 1
+        assert text.count(f"Lane key: `{row['lane_id']}`") == 1
+
+
+def test_checker_rejects_lane_id_fallback_without_exact_heading(
+    tmp_path: Path,
+) -> None:
+    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
+    _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
+    row = rows[0]
+    text = text.replace(
+        f"## {row['control_plane_anchor']}",
+        f"This prose retains {row['control_plane_anchor']} and {row['lane_id']}.",
+        1,
+    )
+    mutated = tmp_path / "compatibility-index.md"
+    mutated.write_text(text, encoding="utf-8")
+
+    problems = _check_with_control_plane(mutated)
+
+    assert any("exact unique Markdown heading" in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
+    "state_assignment",
+    (
+        "readiness_status=production_candidate",
+        "READINESS STATUS = BLOCKED",
+    ),
+)
+def test_checker_rejects_narrative_structured_state_duplication(
+    tmp_path: Path,
+    state_assignment: str,
+) -> None:
+    summary = tmp_path / "productization.md"
+    summary.write_text(
+        DEFAULT_PRODUCTIZATION_SUMMARY.read_text(encoding="utf-8")
+        + f"\n{state_assignment}\n",
+        encoding="utf-8",
     )
 
-    assert "shadow_scoring_contract_adapter_v1_ready" in section
-    assert "define_production_acceptance_manifest_v1" in section
-    assert "ProductionAcceptanceManifest v1" in section
-    assert "implement the shadow-only scoring experiment" not in section
-    assert "No ProductWriter, matrix, workbook" in section
-    assert "Phase 2 `ProductionAcceptanceManifest v1`, expected-diff" not in section
-    assert "define `ProductionAcceptanceManifest v1` in a separate goal" not in section
-    assert "Phase 3 QuantMatrixVersion Activation" in section
+    problems = check_productization_state(productization_summary_path=summary)
+
+    assert any("duplicates mutable structured state" in problem for problem in problems)
 
 
-def test_control_plane_production_acceptance_manifest_contract_is_current() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    section = _section(
-        text,
-        "### 2026-06-19 - ProductionAcceptanceManifest v1 schema/checker",
-        "### 2026-06-19 - lockbox_shadow_automation_experiment_v1",
+@pytest.mark.parametrize(
+    "readiness_text",
+    (
+        "Production_Ready",
+        "PRODUCTION_READY",
+        "production ready",
+        "production-ready",
+        "BLOCKED",
+        "Parked",
+        "FROZEN",
+    ),
+)
+def test_checker_normalizes_narrative_readiness_vocabulary(
+    tmp_path: Path,
+    readiness_text: str,
+) -> None:
+    summary = tmp_path / "productization.md"
+    summary.write_text(
+        DEFAULT_PRODUCTIZATION_SUMMARY.read_text(encoding="utf-8")
+        + f"\nCurrent lane is {readiness_text}.\n",
+        encoding="utf-8",
     )
 
-    assert "production_acceptance_manifest_schema.v1.json" in section
-    assert "scripts/check_production_acceptance_manifest.py" in section
-    assert "peak_hypothesis_id + sample_stem" in section
-    assert "feature_family_id is context/provenance only" in section
-    assert "No ProductWriter, matrix, workbook" in section
-    assert "Phase 3 QuantMatrixVersion Activation" in section
+    problems = check_productization_state(productization_summary_path=summary)
+
+    assert any("duplicates mutable structured state" in problem for problem in problems)
 
 
-def test_control_plane_quant_matrix_version_activation_is_current() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    section = _section(
-        text,
-        "### 2026-06-19 - QuantMatrixVersion Activation v1",
-        "### 2026-06-19 - ProductionAcceptanceManifest v1 schema/checker",
+@pytest.mark.parametrize(
+    "mutable_text",
+    (
+        "Current lane is production_ready.",
+        "The current authority contains 511 cells.",
+    ),
+)
+def test_checker_rejects_mutable_state_in_compatibility_lane_registry(
+    tmp_path: Path,
+    mutable_text: str,
+) -> None:
+    status_anchor = tmp_path / "productization-status-anchor.md"
+    status_anchor.write_text(
+        DEFAULT_HANDOFF.read_text(encoding="utf-8") + f"\n{mutable_text}\n",
+        encoding="utf-8",
     )
 
-    assert "quant_matrix_version_schema.v1.json" in section
-    assert "scripts/build_quant_matrix_version.py" in section
-    assert "quant_matrix.tsv" in section
-    assert "cell_provenance.tsv" in section
-    assert "row_summary.tsv" in section
-    assert "expected-diff" in section
-    assert "detected-only view is reconstructable" in section
-    assert "No ProductWriter default extraction" in section
-    assert "Phase 4 Gallery/Report Alignment" in section
+    problems = check_productization_state(handoff_path=status_anchor)
+
+    assert any("mutable" in problem for problem in problems)
 
 
-def test_control_plane_quant_matrix_review_report_is_current() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    section = _section(
-        text,
-        "### 2026-06-19 - QuantMatrixVersion Review Report v1",
-        "### 2026-06-19 - QuantMatrixVersion Activation v1",
+@pytest.mark.parametrize(
+    "mutable_field",
+    (
+        "Lane group: product",
+        "Readiness status: production candidate",
+        "Owner: docs/product/example.md",
+        "Current artifact: docs/superpowers/validation/example.json",
+        "Artifact sha256: deadbeef",
+        "Row count: 1",
+        "Write authority: false",
+        "Product authority scope: example",
+        "May touch matrix: false",
+        "May change quant output: false",
+        "May change workbook: false",
+        "May change selected peak: false",
+        "May change selected area: false",
+        "May change counted detection: false",
+        "Product effect: diagnostic only",
+        "Public surface: example",
+        "Next checkpoint: promote after review",
+        "Expiration condition: replacement is accepted",
+        "Notes: mutable narrative state",
+    ),
+)
+def test_checker_derives_narrative_mutable_fields_from_schema(
+    tmp_path: Path,
+    mutable_field: str,
+) -> None:
+    status_anchor = tmp_path / "productization-status-anchor.md"
+    status_anchor.write_text(
+        DEFAULT_HANDOFF.read_text(encoding="utf-8") + f"\n{mutable_field}\n",
+        encoding="utf-8",
     )
 
-    assert "quant_matrix_review_report_schema.v1.json" in section
-    assert "scripts/build_quant_matrix_version_report.py" in section
-    assert "quant_matrix_review_rows.tsv" in section
-    assert "quant_matrix_review_summary.json" in section
-    assert "quant_matrix_review_report.html" in section
-    assert "review-only report adapter" in section
-    assert "No ProductWriter default extraction" in section
-    assert "QuantMatrix Promotion Readiness v1" in section
+    problems = check_productization_state(handoff_path=status_anchor)
+
+    assert any("duplicates mutable structured state" in problem for problem in problems)
 
 
-def test_control_plane_quant_matrix_promotion_readiness_is_current() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    section = _section(
-        text,
-        "### 2026-06-19 - QuantMatrix Promotion Readiness v1",
-        "### 2026-06-19 - QuantMatrixVersion Review Report v1",
+def test_checker_rejects_predecessor_control_plane_schema() -> None:
+    predecessor = (
+        DEFAULT_SCHEMA.parent / "productization_control_plane_schema.v1.json"
     )
 
-    assert "quant_matrix_promotion_readiness_schema.v1.json" in section
-    assert "scripts/check_quant_matrix_promotion_readiness.py" in section
-    assert "quant_matrix_promotion_readiness_summary.json" in section
-    assert "quant_matrix_promotion_readiness_checks.tsv" in section
-    assert "contract-ready/science-inconclusive" in section
-    assert "focused tests prove the gate behavior only" in section
-    assert "artifact-bound passing large-cohort" in section
-    assert "No ProductWriter default extraction" in section
-    assert "broad Backfill authority changed" in section
-    assert "Do not run RAW/85RAW unless" in section
-    assert "an active goal names that tier" in section
+    problems = check_productization_state(schema_path=predecessor)
 
-
-def test_control_plane_quant_matrix_validation_packet_is_current() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    section = _section(
-        text,
-        "### 2026-06-19 - QuantMatrix Promotion Validation Packet v1",
-        "### 2026-06-19 - QuantMatrix Promotion Readiness v1",
+    assert any(
+        "unsupported productization control-plane" in problem
+        for problem in problems
     )
 
-    assert "quant_matrix_validation_evidence_schema.v1.json" in section
-    assert "scripts/build_quant_matrix_promotion_validation_packet.py" in section
-    assert "quant_matrix_validation_evidence_v1.json" in section
-    assert "quant_matrix_validation_evidence_rows.tsv" in section
-    assert "readiness_integration_fixture" in section
-    assert "large-cohort evidence is `pass`" in section
-    assert "heldout-oracle evidence is `pass`" in section
-    assert "downstream-impact evidence is `missing`" in section
-    assert "`production_ready=false`" in section
-    assert "`may_promote_default_quant_matrix=false`" in section
-    assert "No ProductWriter default extraction" in section
-    assert "Do not treat this packet as `production_ready`" in section
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_problem"),
+    (
+        ("missing", "authority_rules must be an object"),
+        ("extra", "authority_rules keys must exactly match"),
+        ("open", "unregistered_scope_policy must be fail_closed"),
+        ("scope", "allowed scopes drifted from registered writer lanes"),
+        ("boolean", "quality_explanations_cannot_write must be true"),
+        ("matrix_requirements", "matrix_write_requires must exactly match"),
+        ("forbidden_sources", "forbidden_authority_sources must exactly match"),
+    ),
+)
+def test_checker_rejects_schema_authority_rule_drift(
+    tmp_path: Path,
+    mutation: str,
+    expected_problem: str,
+) -> None:
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    rules = schema["authority_rules"]
+    if mutation == "missing":
+        del schema["authority_rules"]
+    elif mutation == "extra":
+        rules["unimplemented_future_rule"] = True
+    elif mutation == "open":
+        rules["unregistered_scope_policy"] = "allow"
+    elif mutation == "scope":
+        rules["allowed_product_writer_scopes"].pop()
+    elif mutation == "matrix_requirements":
+        rules["matrix_write_requires"].pop()
+    elif mutation == "forbidden_sources":
+        rules["forbidden_authority_sources"].pop()
+    else:
+        rules["quality_explanations_cannot_write"] = False
+    mutated = tmp_path / "schema.json"
+    mutated.write_text(json.dumps(schema), encoding="utf-8")
+
+    problems = check_productization_state(schema_path=mutated)
+
+    assert any(expected_problem in problem for problem in problems)
 
 
-def test_control_plane_quant_matrix_product_ready_closeout_is_current() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    section = _section(
-        text,
-        "### 2026-06-19 - QuantMatrix Product Ready Closeout v1",
-        "### 2026-06-19 - QuantMatrix Default Activation Dry-Run v1",
+@pytest.mark.parametrize(
+    "policy_key",
+    ("matrix_write_requires", "forbidden_authority_sources"),
+)
+def test_checker_rejects_weakened_manifest_authority_policy(
+    tmp_path: Path,
+    policy_key: str,
+) -> None:
+    authority = json.loads(DEFAULT_AUTHORITY_MANIFEST.read_text(encoding="utf-8"))
+    authority["authority_policy"][policy_key] = []
+    mutated = tmp_path / "authority.json"
+    mutated.write_text(json.dumps(authority), encoding="utf-8")
+
+    problems = check_productization_state(authority_manifest_path=mutated)
+
+    assert f"authority manifest {policy_key} drifted from schema" in problems
+
+
+def test_checker_rejects_status_row_with_extra_cell(tmp_path: Path) -> None:
+    lines = DEFAULT_STATUS_INDEX.read_text(encoding="utf-8").splitlines()
+    lines[1] += "\tshadow_value"
+    mutated = tmp_path / "productization-status.tsv"
+    mutated.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    problems = check_productization_state(status_index_path=mutated)
+
+    assert any(
+        "row 2: cell cardinality must exactly match schema header" in problem
+        for problem in problems
     )
 
-    assert "quant_matrix_product_ready_closeout_schema.v1.json" in section
-    assert "scripts/build_quant_matrix_product_ready_closeout.py" in section
-    assert "quant_matrix_product_ready_closeout_v1" in section
-    assert "`product_ready_default_matrix_candidate`" in section
-    assert "`requires_product_writer_activation_commit=true`" in section
-    assert "`explicit_activation_not_in_this_commit=true`" in section
-    assert "Status-index update: not needed" in section
-    assert "No ProductWriter default extraction" in section
-    assert "current 511-cell writer authority" in section
 
+def test_checker_rejects_regenerated_unregistered_control_anchor(
+    tmp_path: Path,
+) -> None:
+    header, rows = _read_tsv(DEFAULT_STATUS_INDEX)
+    rows[0]["control_plane_anchor"] = "Backfill is production_ready"
+    status_index = tmp_path / "productization-status.tsv"
+    with status_index.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, delimiter="\t", fieldnames=header)
+        writer.writeheader()
+        writer.writerows(rows)
+    control_plane = tmp_path / "compatibility-index.md"
+    control_plane.write_text(_render_compatibility_index(rows), encoding="utf-8")
 
-def test_control_plane_quant_matrix_default_product_activation_is_current() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    section = _section(
-        text,
-        "### 2026-06-19 - QuantMatrix Default Product Activation v1",
-        "### 2026-06-19 - QuantMatrix Product Ready Closeout v1",
+    problems = check_productization_state(
+        status_index_path=status_index,
+        control_plane_path=control_plane,
     )
 
-    assert "quant_matrix_default_product_activation_schema.v1.json" in section
-    assert "scripts/build_quant_matrix_default_product_activation.py" in section
-    assert "quant_matrix_default_product_activation_v1" in section
-    assert "`product_ready_default_matrix_activated`" in section
-    assert "`default_output/quant_matrix.tsv`" in section
-    assert "`cell_provenance.tsv`" in section
-    assert "`row_summary.tsv`" in section
-    assert "511 expected" in section
-    assert "511 accepted Backfill" in section
-    assert "17489 detected" in section
-    assert "No workbook, GUI, selected peak" in section
-    assert "Status-index update: updated" in section
+    assert any("stable compatibility contract" in problem for problem in problems)
 
 
-def test_control_plane_backfill_expansion_candidate_replay_is_current() -> None:
+def test_checker_rejects_state_bearing_compatibility_prose(tmp_path: Path) -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    start = "### 2026-06-21 - Backfill Expansion Candidate Replay v1"
-    section = _section(
-        text,
-        start,
-        "### 2026-06-21 - Backfill Expansion Full Evidence Chain v1",
+    text = text.replace(
+        "## Lane anchor index",
+        "Lane example remains parked for this run.\n\n## Lane anchor index",
+        1,
+    )
+    mutated = tmp_path / "compatibility-index.md"
+    mutated.write_text(text, encoding="utf-8")
+
+    problems = _check_with_control_plane(mutated)
+
+    assert any("closed metadata" in problem for problem in problems)
+
+
+def test_checker_rejects_product_topic_mutable_structured_count(
+    tmp_path: Path,
+) -> None:
+    product_topics = tmp_path / "docs/product"
+    product_topics.mkdir(parents=True)
+    (product_topics / "backfill.md").write_text(
+        "# Backfill\n\nThe current writer owns 511 matrix cells.\n",
+        encoding="utf-8",
     )
 
-    assert "backfill_expansion_default_product_activation_v1" in section
-    assert "production_candidate" in section
-    assert "write_authority=FALSE" in section
-    assert "666-cell packet" in section
-    assert "dry-run replay" in section
-    assert "shift-aware" in section
-    assert "own-max" in section
-    assert "263 held cells" in section
-    assert "Broad\n  Backfill remains parked" in section
-    assert "no public ProductWriter authority" in section
-    assert "Control-plane decision: updated" in section
+    problems = check_productization_state(product_topic_dir=product_topics)
 
-
-def test_control_plane_backfill_expansion_clean_target_activation_is_current() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    start = (
-        "### 2026-06-22 - Backfill Expansion Clean-Target "
-        "Selective Default Activation v1"
-    )
-    section = text[text.index(start) :]
-
-    assert "backfill_expansion_clean_target_selective_product_activation_v1" in section
-    assert "production-ready writer lane" in section
-    assert "backfill_expansion_clean_target_selective_activation_84_cells" in section
-    assert "changes exactly 84" in section
-    assert "0 unused" in section
-    assert "28 projected-held clean-target cells" in section
-    assert "boundary-review cells" in section
-    assert "29 off-target hold/remap cells" in section
-    assert "no workbook/GUI change" in section
-    assert "CLI/GUI preset" in section
-    assert "Control-plane decision: updated" in section
-
-
-def test_control_plane_current_summary_routes_to_promotion_packet_v2() -> None:
-    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
-    summary = _section(
-        text,
-        "Lockbox Shadow Scoring Contract Adapter v1 turns",
-        "Missing-Overlay Evidence Recovery v1",
+    assert any(
+        "docs/product/backfill.md: product topic owner duplicates mutable "
+        "structured row/cell count: 511" in problem
+        for problem in problems
     )
 
-    assert "Phase 2" in summary
-    assert "`ProductionAcceptanceManifest v1` is now defined" in summary
-    assert "Phase 3" in summary
-    assert "Phase 3 `QuantMatrixVersion Activation`" in summary
-    assert "is now implemented as an explicit manifest-driven activation" in summary
-    assert "Phase 4" in summary
-    assert "`Gallery/Report Alignment` is now implemented" in summary
-    assert "Phase 5" in summary
-    assert "`Validation/Promotion Readiness` is now" in summary
-    assert "contract correctness" in summary
-    assert "scientific confidence" in summary
-    assert "`QuantMatrix Promotion Validation Packet v1`" in summary
-    assert "`contract_ready_science_inconclusive`" in summary
-    assert "`may_promote_default_quant_matrix=false`" in summary
-    assert "Phase 6" in summary
-    assert "tier/status strings" in summary
-    assert "Phase 7" in summary
-    assert "current real\n511-cell `QuantMatrixVersion` bundle" in summary
-    assert "Phase 8" in summary
-    assert "`QuantMatrix Promotion Packet v2`" in summary
-    assert "`production_ready_candidate_packet`" in summary
-    assert "`production_ready=true`" in summary
-    assert "`may_promote_default_quant_matrix=true`" in summary
-    assert "candidate\npromotion packet" in summary
-    assert "ProductWriter default extraction" in summary
-    assert "default matrix authority" in summary
-    assert "later expected-diff activation gate" in summary
-    assert "Phase 9" in summary
-    assert "default activation dry-run expected-diff gate" in summary
-    assert "511 expected, 511 written, and 0\nunused expected-diff rows" in summary
-    assert "writes no default matrix files" in summary
-    assert "changes no\nProductWriter/default behavior" in summary
-    assert "Phase 10" in summary
-    assert "`product_ready_default_matrix_candidate`" in summary
-    assert "separate explicit ProductWriter activation commit" in summary
-    assert "default outputs, workbook/GUI" in summary
-    assert "current 511-cell authority" in summary
-    assert "Phase 11" in summary
-    assert "`product_ready_default_matrix_activated`" in summary
-    assert "default output `quant_matrix.tsv`" in summary
-    assert "511 accepted Backfill" in summary
-    assert "large-cohort" in summary
-    assert "heldout-oracle evidence" in summary
-    assert "`Validation/Promotion Readiness`" in summary
-    assert "`QuantMatrixVersion Activation`" in summary
-    assert "`backfill_expansion_default_product_activation_v1`" in summary
-    assert "`production_candidate`" in summary
-    assert "374/666 full-chain pass" in summary
-    assert "292 held" in summary
-    assert "not a public default" in summary
-    assert "backfill_expansion_clean_target_selective_activation_84_cells" in summary
-    assert "84 cells" in summary
-    assert "28\nprojected-held clean-target cells" in summary
-    assert "Next checkpoint is Phase 2" not in summary
-    assert "Next checkpoint is Phase 3" not in summary
-    assert "Next checkpoint is Phase 4" not in summary
-    assert "Next checkpoint is Phase 5" not in summary
+
+def test_checker_rejects_product_topic_mutable_authority_scope(
+    tmp_path: Path,
+) -> None:
+    product_topics = tmp_path / "docs/product"
+    product_topics.mkdir(parents=True)
+    (product_topics / "backfill.md").write_text(
+        "# Backfill\n\nCurrent scope: backfill_policy_write_ready_rows.\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(product_topic_dir=product_topics)
+
+    assert any(
+        "docs/product/backfill.md: product topic owner duplicates mutable "
+        "authority scope: backfill_policy_write_ready_rows" in problem
+        for problem in problems
+    )
+
+
+@pytest.mark.parametrize(
+    "readiness_text",
+    (
+        "broad_backfill_autowrite remains parked",
+        "park_broad_backfill is blocked",
+        "Broad auto-write from the full candidate universe is production-ready",
+        "Broad auto-write — parked",
+        "Broad Backfill: blocked",
+    ),
+)
+def test_checker_rejects_product_topic_lane_readiness_assignment(
+    tmp_path: Path,
+    readiness_text: str,
+) -> None:
+    product_topics = tmp_path / "docs/product"
+    product_topics.mkdir(parents=True)
+    (product_topics / "backfill.md").write_text(
+        f"# Backfill\n\n- {readiness_text}.\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(product_topic_dir=product_topics)
+
+    assert any(
+        "product topic owner duplicates mutable readiness for "
+        "broad_backfill_autowrite" in problem
+        for problem in problems
+    )
+
+
+def test_checker_allows_non_lane_artifact_readiness_label(tmp_path: Path) -> None:
+    product_topics = tmp_path / "docs/product"
+    product_topics.mkdir(parents=True)
+    (product_topics / "backfill.md").write_text(
+        "# Backfill\n\nThis validation artifact remains diagnostic_only.\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(product_topic_dir=product_topics)
+
+    assert not any(
+        "product topic owner duplicates mutable readiness" in problem
+        for problem in problems
+    )
+
+
+def test_checker_rejects_compatibility_owner_route_drift(tmp_path: Path) -> None:
+    text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
+    text = text.replace(
+        "../schemas/productization_authority_manifest.v1.json",
+        "../schemas/wrong-authority.json",
+        1,
+    )
+    mutated = tmp_path / "compatibility-index.md"
+    mutated.write_text(text, encoding="utf-8")
+
+    problems = _check_with_control_plane(mutated)
+
+    assert any("closed metadata" in problem for problem in problems)
 
 
 def test_schemas_readme_lists_quant_matrix_version_schema() -> None:
@@ -521,8 +630,7 @@ def test_checker_rejects_parked_broad_backfill_authority(tmp_path: Path) -> None
 
     assert any("parked lane grants authority" in problem for problem in problems)
     assert any(
-        "broad_backfill_autowrite must stay parked" in problem
-        for problem in problems
+        "broad_backfill_autowrite must stay parked" in problem for problem in problems
     )
 
 
@@ -559,6 +667,24 @@ def test_checker_rejects_non_writer_scope_without_write_flag(tmp_path: Path) -> 
     assert any("non-writer row has authority scope" in problem for problem in problems)
 
 
+def test_checker_rejects_non_writer_matrix_touch_without_write_flag(
+    tmp_path: Path,
+) -> None:
+    mutated = _mutated_index(
+        tmp_path,
+        "review_action_candidate_sidecar_v1",
+        {
+            "write_authority": "FALSE",
+            "product_authority_scope": "",
+            "may_touch_matrix": "TRUE",
+        },
+    )
+
+    problems = _check_with_index(mutated)
+
+    assert any("non-writer row may not touch matrix" in problem for problem in problems)
+
+
 def test_checker_rejects_non_writer_product_output_changes(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
@@ -574,8 +700,7 @@ def test_checker_rejects_non_writer_product_output_changes(tmp_path: Path) -> No
     problems = _check_with_index(mutated)
 
     assert any(
-        "non-writer row changes product output" in problem
-        for problem in problems
+        "non-writer row changes product output" in problem for problem in problems
     )
 
 
@@ -642,6 +767,10 @@ def _check_with_index(path: Path) -> list[str]:
     )
 
 
+def _check_with_control_plane(path: Path) -> list[str]:
+    return check_productization_state(control_plane_path=path)
+
+
 def _mutated_index(
     tmp_path: Path,
     lane_id: str,
@@ -666,9 +795,3 @@ def _read_tsv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         return list(reader.fieldnames or []), list(reader)
-
-
-def _section(text: str, start: str, end: str) -> str:
-    start_index = text.index(start)
-    end_index = text.index(end, start_index)
-    return text[start_index:end_index]

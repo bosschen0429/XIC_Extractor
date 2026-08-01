@@ -73,7 +73,7 @@ themselves.
 ## See Also
 
 - [Backfill](backfill.md) | [Alignment](alignment.md) | [Productization](productization.md)
-- [Productization control plane plan](../superpowers/plans/2026-06-15-productization-control-plane.md)
+- [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Status index](../superpowers/validation/productization_status_index_v1.tsv) | [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
 - [Peak model selection](peak-model-selection.md)
 - [Run provenance](run-provenance.md)

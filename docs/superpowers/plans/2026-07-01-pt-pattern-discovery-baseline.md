@@ -564,5 +564,5 @@ Before code starts, the implementation plan must name concrete tests for:
 This draft changes no current maturity tier, no active writer scope, no selected
 area, no counted detection, and no Matrix authority by itself. A future
 implementation that changes output schemas or active Matrix behavior must update
-the productization control plane, product docs, expected-diff contracts, and
-focused tests in the same PR.
+the status index, authority manifest, promotion contract, product docs,
+expected-diff contracts, and focused tests in the same PR.

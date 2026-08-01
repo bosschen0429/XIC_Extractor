@@ -1,73 +1,39 @@
-# XIC productization status anchor
+# XIC productization compatibility lane registry
 
 Doc placement: repo_support_doc
 Doc kind: product_doc
 Doc lifecycle: active
 Repo owner: docs/product/productization.md
-Doc exit rule: Update when productization status-anchor phrases or checker expectations change; retire only after checkers and docs stop depending on this path.
+Doc exit rule: Update only when a stable lane key is added or retired; retire after checkers stop using this compatibility path.
 
-Updated: 2026-06-25
-Kind: `productization_status_anchor`
-Branch: `n/a`
-Status: shared productization anchor for productization checks and older
-planning surfaces; not a branch current handoff.
+Kind: `productization_compatibility_lane_registry`
 
-This file is not the active handoff for every branch. Branch work must use a
-local ignored current handoff such as
-`docs/superpowers/handoffs/current/ACTIVE.local.md`; use a branch-named ignored
-local handoff only when multiple local branches need simultaneous state.
+This file is a checker lookup registry, not a current-state board or branch
+handoff. Mutable lane state and writer scope belong only to
+`docs/superpowers/validation/productization_status_index_v1.tsv` and
+`docs/superpowers/schemas/productization_authority_manifest.v1.json`.
+Promotion requirements belong to
+`docs/agent/product-validation-contract.md`.
 
-Durable tier authority lives in
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`,
-`docs/superpowers/schemas/productization_authority_manifest.v1.json`, and
-`docs/superpowers/validation/productization_status_index_v1.tsv`.
+## Stable lane keys
 
-## Product State
-
-- The default product tier remains `product_ready_default_matrix_activated`.
-- `backfill_current_write_ready_scope` remains the existing 511-cell Backfill
-  authority from #88.
-- `cid_nl_default_product_activation_v1` remains the 95-cell CID-NL Discovery
-  authority from #95.
-- `backfill_expansion_clean_target_selective_product_activation_v1` remains the
-  bounded 84-cell Backfill expansion authority from #96.
-- Broad Backfill auto-write remains parked.
-- Row-completion confidence product-gate mode remains a non-mutating
-  `shadow_ready` gate only. It does not change matrix values, workbook/GUI
-  behavior, selected peak, selected area, counted detection, ProductWriter
-  authority, Backfill authority, active lane, default preset behavior, or
-  persisted identifiers.
-
-## Boundary Decisions
-
-- Do not expand CID-NL beyond 95 cells without a new expected-diff and
-  authority update.
-- Do not grant broad Backfill auto-write without explicit authority.
-- Keep row-completion confidence evidence non-mutating unless a future
-  activation contract changes writer authority through the control plane.
-- Any CI red must be diagnosed from logs and stack boundary first, then fixed at
-  the owner boundary.
-
-## Status Index Anchors
-
-Retain these anchor phrases for productization state checks:
-
-- `product_ready_default_matrix_activated`
-- `CID-NL default product activation v1`
-- `Backfill Expansion Default Product Activation v1`
-- `Backfill Expansion Full Evidence Chain v1`
-- `Backfill Expansion Clean-Target Selective Default Activation v1`
-- Broad Backfill auto-write remains parked
-- Goal 0/1 hardening added
-- machine-adjudicated without granting new writer authority
-- Goal 2 added Review Packet / Approval Workflow v1
-- lockbox_shadow_automation_experiment_v1
-- Goal 4 added Missing-Overlay Evidence Recovery v1
-- keep only as explanation/triage
-- Targeted MS1 shape identity limited rescue remains production-ready
-- GUI and broader targets remain blocked
-- `sample_metadata_v1` remains production-ready for no-output ordering
-- roles/batch/matrix/exclusion must not alter quant output
-- ReviewAction selected-candidate switch and manual-boundary area recompute remain parked
-- manual-boundary area recompute remain parked
-- classification and planning only
+- `backfill_current_write_ready_scope`
+- `cid_nl_default_product_activation_v1`
+- `backfill_expansion_default_product_activation_v1`
+- `backfill_expansion_clean_target_selective_product_activation_v1`
+- `broad_backfill_autowrite`
+- `productization_authority_firewall_v1`
+- `mechanical_adjudication_contract_v1`
+- `review_packet_workflow_v1`
+- `peak_choice_truth_lockbox_v1`
+- `missing_overlay_evidence_recovery_v1`
+- `quality_explanation_sidecar_v1`
+- `targeted_ms1_shape_identity_limited_rescue_v1`
+- `targeted_ms1_shape_identity_broader_targets`
+- `sample_metadata_order_projection_v1`
+- `sample_metadata_role_value_behavior`
+- `review_action_candidate_sidecar_v1`
+- `review_action_selected_candidate_switch`
+- `review_action_manual_boundary_area_writer`
+- `calibration_normalization_activation`
+- `gui_replay_parity`

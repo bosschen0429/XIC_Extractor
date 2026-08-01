@@ -144,9 +144,9 @@ canonical repo vocabulary for that separate field.
 
 Only `optimization_ready` opens the code-edit handoff to
 `xic-architecture-preflight`. Route actual RAW launch or artifact acceptance to
-`xic-raw-validation`. Consult the productization control plane only when the
-evidence could change a maturity tier, active lane, ProductWriter authority, or
-product gate state.
+`xic-raw-validation`. Consult the productization status index, authority
+manifest, and promotion contract only when the evidence could change a maturity
+tier, active lane, ProductWriter authority, or product gate state.
 
 Completion criterion: every packet field has observed evidence, a reasoned
 `N/A`, or an explicit unknown for the selected branch; claims remain
