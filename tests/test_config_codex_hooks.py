@@ -350,6 +350,7 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
 
 WRAPPERS = [
     "bash -lc",
+    "bash -xc",
     "/bin/bash -lc",
     "env bash -lc",
     "pwsh -Command",
@@ -363,6 +364,21 @@ WRAPPERS = [
 )
 def test_pre_hook_locates_wrapped_shell_after_env_options(wrapper: str) -> None:
     completed = _run_pre_hook(f"{wrapper} {json.dumps(DESTRUCTIVE_TEXTS[0])}")
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize(
+    "git_invocation",
+    [
+        "command git",
+        "/usr/bin/git",
+        "git -C /tmp",
+    ],
+)
+def test_pre_hook_normalizes_nested_git_invocations(git_invocation: str) -> None:
+    payload = " ".join((git_invocation, "reset", "--hard"))
+    completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
     output = json.loads(completed.stdout)
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
@@ -516,6 +532,14 @@ def test_pre_hook_blocks_raw_launch_inside_powershell_control_block() -> None:
     hook_output = output["hookSpecificOutput"]
     assert hook_output["permissionDecision"] == "deny"
     assert "Background RAW launch" in hook_output["permissionDecisionReason"]
+
+
+def test_pre_hook_does_not_treat_start_process_text_as_a_raw_launch() -> None:
+    completed = _run_pre_hook(
+        'bash -lc "echo Start-Process run_alignment"'
+    )
+    assert completed.returncode == 0
+    assert completed.stdout == ""
 
 
 def test_pre_hook_emits_one_json_object_for_overlapping_advisories() -> None:

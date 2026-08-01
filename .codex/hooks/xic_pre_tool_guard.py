@@ -12,9 +12,12 @@ from xic_hook_policy import (
     PRODUCTIZATION_STATUS_INDEX_REL,
     git_commit_uses_autostage_or_pathspec,
     is_git_commit_command,
+    is_git_executable,
     is_shell_command_event,
+    is_shell_command_flag,
     mentions_any_path,
     run_docs_placement_guard,
+    skip_git_global_options,
 )
 
 WRAPPED_DESTRUCTIVE_COMMANDS = [
@@ -152,15 +155,11 @@ def wrapped_shell_payload(command: str) -> str | None:
         return None
 
     shell = executable_name(tokens[0])
-    if shell in POSIX_SHELLS:
-        markers = {"-c", "-lc"}
-    elif shell in POWERSHELLS:
-        markers = {"-c", "-command"}
-    else:
+    if shell not in POSIX_SHELLS | POWERSHELLS:
         return None
 
     for index, token in enumerate(tokens[1:], start=1):
-        if token.lower() in markers and index + 1 < len(tokens):
+        if is_shell_command_flag(tokens[0], token.lower()) and index + 1 < len(tokens):
             return " ".join(tokens[index + 1 :])
     return None
 
@@ -203,9 +202,22 @@ def strip_shell_control_prefixes(segment: str) -> str:
     return " ".join(tokens)
 
 
-def wrapped_git_clean_is_forced(segment: str) -> bool:
+def normalize_wrapped_git_invocation(segment: str) -> str:
     try:
         tokens = shlex.split(strip_shell_control_prefixes(segment), posix=True)
+    except ValueError:
+        return segment
+    if tokens and tokens[0].lower() == "command":
+        tokens = tokens[1:]
+    if not tokens or not is_git_executable(tokens[0]):
+        return " ".join(tokens)
+    subcommand_index = skip_git_global_options(tokens, 1)
+    return " ".join(("git", *tokens[subcommand_index:]))
+
+
+def wrapped_git_clean_is_forced(segment: str) -> bool:
+    try:
+        tokens = shlex.split(normalize_wrapped_git_invocation(segment), posix=True)
     except ValueError:
         return False
     if len(tokens) < 3:
@@ -230,7 +242,12 @@ def contains_background_process(segment: str) -> bool:
         tokens = shlex.split(segment, posix=True)
     except ValueError:
         return False
-    return any(executable_name(token) == "start-process" for token in tokens)
+    for index, token in enumerate(tokens):
+        if executable_name(token) != "start-process":
+            continue
+        if index == 0 or tokens[index - 1].lower() in SHELL_CONTROL_PREFIXES:
+            return True
+    return False
 
 
 def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
@@ -270,7 +287,7 @@ def main() -> int:
     wrapped_payload = wrapped_shell_payload(command)
     if wrapped_payload is not None:
         for segment in wrapped_command_segments(command):
-            command_segment = strip_shell_control_prefixes(segment)
+            command_segment = normalize_wrapped_git_invocation(segment)
             for pattern, reason in WRAPPED_DESTRUCTIVE_COMMANDS:
                 if pattern.match(command_segment):
                     deny(reason)
