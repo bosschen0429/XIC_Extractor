@@ -409,17 +409,22 @@ def _safe_vault_destination(
     rel_path: str,
     vault_archive: Path,
     source_text: str,
-) -> Path:
+) -> Path | None:
     dest = _vault_destination(fpath, vault_archive)
-    if not dest.exists():
-        return dest
-    if _vault_copy_matches(
+    source_hash = _source_hash(source_text)
+    candidates = (
         dest,
-        rel_path,
-        source_text,
-    ):
-        return dest
-    return dest.with_name(f"{dest.stem}-{_source_hash(source_text)[:12]}{dest.suffix}")
+        dest.with_name(f"{dest.stem}-{source_hash[:12]}{dest.suffix}"),
+        dest.with_name(f"{dest.stem}-{source_hash}{dest.suffix}"),
+    )
+    for candidate in candidates:
+        if not candidate.exists() or _vault_copy_matches(
+            candidate,
+            rel_path,
+            source_text,
+        ):
+            return candidate
+    return None
 
 
 def _ensure_vault_copy(
@@ -430,7 +435,7 @@ def _ensure_vault_copy(
     result: RetireResult,
     *,
     execute: bool,
-) -> Path:
+) -> Path | None:
     source_text = fpath.read_text(encoding="utf-8", errors="ignore")
     vault_match = _find_in_vault(
         fpath.name,
@@ -443,6 +448,11 @@ def _ensure_vault_copy(
         return vault_match
 
     dest = _safe_vault_destination(fpath, rel_path, vault_archive, source_text)
+    if dest is None:
+        result.errors.append(
+            (rel_path, "vault archive destinations all contain different content")
+        )
+        return None
     result.copied_to_vault.append((rel_path, dest))
     if execute:
         vault_archive.mkdir(parents=True, exist_ok=True)
@@ -548,7 +558,7 @@ def retire_files(
             result.kept.append((rel, evidence_blocker))
             continue
 
-        _ensure_vault_copy(
+        vault_copy = _ensure_vault_copy(
             fpath,
             rel,
             vault_path,
@@ -556,6 +566,8 @@ def retire_files(
             result,
             execute=execute,
         )
+        if vault_copy is None:
+            continue
 
         if referrers and stub_bound:
             owner = classify_doc(rel, text).repo_owner

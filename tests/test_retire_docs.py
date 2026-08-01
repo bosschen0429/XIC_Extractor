@@ -341,6 +341,49 @@ def test_retirement_uses_hash_suffix_when_archive_title_collides(
     assert result.retired == [rel]
 
 
+def test_retirement_refuses_to_overwrite_all_hash_collision_destinations(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    rel = "docs/superpowers/specs/2026-07-01-backfill-spec.md"
+    spec = repo / rel
+    text = _completed_spec()
+    source_hash = _sha256(text)
+    _write(spec, text)
+    archive_destination = vault / VAULT_ARCHIVE_DIR / spec.name
+    collision_paths = (
+        archive_destination,
+        archive_destination.with_name(
+            f"{archive_destination.stem}-{source_hash[:12]}.md"
+        ),
+        archive_destination.with_name(
+            f"{archive_destination.stem}-{source_hash}.md"
+        ),
+    )
+    for index, collision_path in enumerate(collision_paths):
+        _write(collision_path, f"# Different archived note {index}\n")
+
+    result = retire_files(
+        [spec],
+        repo,
+        vault,
+        execute=True,
+        evidence=_retirement_evidence(rel, text),
+    )
+
+    assert result.errors == [
+        (rel, "vault archive destinations all contain different content")
+    ]
+    assert result.copied_to_vault == []
+    assert result.retired == []
+    assert spec.read_text(encoding="utf-8") == text
+    for index, collision_path in enumerate(collision_paths):
+        assert collision_path.read_text(encoding="utf-8") == (
+            f"# Different archived note {index}\n"
+        )
+
+
 def test_retirement_reuses_wrapped_vault_source_copy_with_matching_body(
     tmp_path: Path,
 ) -> None:
