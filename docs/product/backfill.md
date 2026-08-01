@@ -75,8 +75,8 @@ write scope.
 
 - **Owns**: authority-gated writer path, accepted quantification values,
   promotion gates, evidence-chain lifecycle, expansion packet evaluation.
-- **Does not own**: current maturity tier or active lane (see control plane and
-  status index), candidate-level truth for unresolved rows (see validation
+- **Does not own**: current maturity tier or active lane (see status index),
+  candidate-level truth for unresolved rows (see validation
   packets and adjudication), sample-level private investigation details.
 - The candidate/audit universe feeds review and classification, not automatic
   matrix writing.
@@ -89,7 +89,7 @@ write scope.
 | Candidate or audit rows | Rows available for review, classification, or evidence recovery | Validation packets, adjudication index |
 | Trace-matched unresolved rows | Rows with some trace-level evidence but insufficient authority | Evidence lifecycle, adjudication surfaces |
 | Missing-overlay rows | Rows blocked by absent or insufficient overlay evidence | Evidence availability packets, blocker reports |
-| Expansion packets | Proposed future writer changes | Control plane, authority manifest, expected-diff packet, output tests |
+| Expansion packets | Proposed future writer changes | Status index, authority manifest, promotion contract, expected-diff packet, output tests |
 | Evidence-chain packet | Structured source evidence for review or approval | Evidence lifecycle, provenance owners |
 | Approval decision | Human or machine-readable approval state | Review roundtrip, authority manifest gates |
 
@@ -113,12 +113,12 @@ Before changing Backfill product behavior, require the relevant subset of:
   provenance-valid sidecars.
 - Treating a family/window match as same-peak evidence without typed anchor,
   selected mode, or PeakHypothesis-level support.
-- Updating a topic summary while leaving the control plane, status index, or
-  authority manifest stale after a real authority change.
+- Updating a topic summary while leaving the status index, authority manifest,
+  or promotion contract stale after a real authority change.
 
 ## See Also
 
-- [Productization control plane](../superpowers/plans/2026-06-15-productization-control-plane.md)
+- [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)
 - [Status index](../superpowers/validation/productization_status_index_v1.tsv)
 - [Authority manifest](../superpowers/schemas/productization_authority_manifest.v1.json)
 - [Adjudication schema](../superpowers/schemas/mechanical_adjudication_schema.v1.json)

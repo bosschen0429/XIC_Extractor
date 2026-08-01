@@ -68,7 +68,7 @@ stacked PR series, write or inspect a stack map that lists:
 
 - base and head branch for every PR;
 - repeated files across PRs, especially global ledgers such as productization
-  status indexes, control-plane plans, active handoffs, and artifact
+  status indexes, authority manifests, schemas, active handoffs, and artifact
   inventories;
 - tracked fixtures versus externalized local artifacts;
 - which PR owns schema/product behavior, which PR owns artifact hygiene, and

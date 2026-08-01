@@ -27,7 +27,8 @@ request.
 - "Launch 85RAW now." Use `xic-raw-validation` for launch/acceptance preflight;
   this skill can only define the performance decision the run should close.
 - "Can this diagnostic evidence advance product tier?" Read or update the
-  productization control plane after performance evidence exists.
+  productization status index and promotion contract after performance evidence
+  exists.
 
 ## Borderline
 

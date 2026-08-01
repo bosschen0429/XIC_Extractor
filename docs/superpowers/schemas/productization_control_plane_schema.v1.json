@@ -1,6 +1,6 @@
 {
   "schema_version": "productization_control_plane_schema_v1",
-  "purpose": "Machine-checkable current productization lane status. This index summarizes current authority and blockers; it does not replace the control plane narrative.",
+  "purpose": "Machine-checkable contract for productization status fields, lane keys, authority rules, and stable compatibility anchors. Mutable state lives in the status index and writer scope lives in the authority manifest.",
   "required_status_index_columns": [
     "schema_version",
     "lane_id",

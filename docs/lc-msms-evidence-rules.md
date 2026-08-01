@@ -27,8 +27,8 @@ RT, morphology, standards, library matches, and future learned models are inputs
 to evidence, hypothesis, model-selection, audit, or activation contracts.
 
 For Backfill and other explicit matrix activations, current write authority is
-granted only through the active control-plane scope and its associated
-authority artifacts. In current terminology, a `ProductionAcceptanceManifest`
+granted only through the authority manifest, status index, expected diff, and
+promotion contract. In current terminology, a `ProductionAcceptanceManifest`
 can grant per-cell write authority only when the later activation path binds it
 to expected diff, provenance, and the current productization authority scope.
 `QuantMatrixVersion` / default activation outputs are the writer surface. A
@@ -36,9 +36,10 @@ candidate row, `write_ready` label, quality blocker, sidecar, replay, or review
 packet outside that activation chain is not matrix authority by itself.
 
 This document owns durable evidence semantics, not live maturity tier, active
-lane, or current writer counts. Read those from the productization control
-plane, `docs/superpowers/validation/productization_status_index_v1.tsv`, and
-`docs/superpowers/schemas/productization_authority_manifest.v1.json`.
+lane, or current writer counts. Read lane/readiness from
+`docs/superpowers/validation/productization_status_index_v1.tsv`, writer scope
+from `docs/superpowers/schemas/productization_authority_manifest.v1.json`, and
+promotion semantics from `docs/agent/product-validation-contract.md`.
 
 ## MS1 Morphology And Area Owner
 

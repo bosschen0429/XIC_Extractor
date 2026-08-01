@@ -4,6 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics.docs_placement_guard import (
     StagedMarkdown,
     check_doc_placement,
@@ -91,15 +93,16 @@ def _same_path_fixture(
         check=True,
         capture_output=True,
     )
-    lines = source.encode("utf-8").splitlines(keepends=True)
-    section_hash = _source_hash(b"".join(lines[2:4]).decode("utf-8"))
     source_hash = _source_hash(source)
+    lines = source.encode("utf-8").splitlines(keepends=True)
+    claim_hash = _source_hash(b"".join(lines[2:4]).decode("utf-8"))
+    section_hash = source_hash
     replacement_hash = _source_hash(replacement)
     claim = {
         "claim_id": "CP-CLAIM-001",
         "polarity": "positive",
         "source_locator": f"{source_path}:L3-L4",
-        "source_excerpt_sha256": section_hash,
+        "source_excerpt_sha256": claim_hash,
         "source_section_ids": ["CP-SECTION-001"],
         "summary": "Backfill contract owns the stable capability rule.",
         "disposition": "absorb",
@@ -136,11 +139,12 @@ def _same_path_fixture(
         "unresolved_claims": [],
         "absorbed_claims": ["CP-CLAIM-001"],
         "absorbed_negative_claims": [],
+        "source_line_count": len(lines),
         "source_section_count": 1,
         "source_sections": [
             {
                 "section_id": "CP-SECTION-001",
-                "source_locator": f"{source_path}:L3-L4",
+                "source_locator": f"{source_path}:L1-L4",
                 "section_sha256": section_hash,
                 "disposition": "absorb",
                 "claim_ids": ["CP-CLAIM-001"],
@@ -236,6 +240,28 @@ def test_same_path_compatibility_replacement_with_complete_evidence_passes(
     )
 
     assert result.problems == ()
+
+
+def test_same_path_replacement_rejects_incomplete_source_section_coverage(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    section = packet["source_sections"][0]
+    section["source_locator"] = f"{source_path}:L3-L4"
+    section["section_sha256"] = packet["claims"][0]["source_excerpt_sha256"]
+
+    result = _same_path_result(
+        tmp_path,
+        source_path,
+        evidence_path,
+        replacement,
+        packet,
+    )
+
+    assert any(
+        "exactly cover every HEAD preimage line" in p.reason
+        for p in result.problems
+    )
 
 
 def test_existing_compatibility_index_update_does_not_require_retirement_packet(
@@ -346,7 +372,12 @@ def test_same_path_replacement_rejects_owner_locator_symlink_escape(
     source_path, evidence_path, replacement, packet = _same_path_fixture(repo)
     outside_owner = tmp_path / "outside-owner.md"
     outside_owner.write_text("# Owner\n\n## Contract\n", encoding="utf-8")
-    (repo / "owner-link.md").symlink_to(outside_owner)
+    try:
+        (repo / "owner-link.md").symlink_to(outside_owner)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows runner lacks symbolic-link privilege")
+        raise
     packet["claims"][0]["owner_locator"]["path"] = "owner-link.md"
 
     result = _same_path_result(

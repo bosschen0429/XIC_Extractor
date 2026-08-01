@@ -155,8 +155,9 @@ model, branch stub requirements, and PR-closeout condensation are canonical in
 `docs/agent/obsidian-handoff-contract.md`; follow it for which file to write, and
 never update a handoff whose `Branch:` / `Status:` belongs to another branch. The
 active handoff is a short continuation snapshot, not the productization tier
-authority; tier history and lane evidence belong in the control plane, specs,
-validation notes, PR body, or Obsidian.
+authority; current tier/lane state belongs in the status index, writer scope in
+the authority manifest, and supporting history/evidence in specs, validation
+notes, the PR body, or Obsidian.
 
 Before each meaningful checkpoint, compact-risk pause, or closeout:
 

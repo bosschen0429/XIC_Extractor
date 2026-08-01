@@ -134,7 +134,8 @@ Current handoff is an input to closeout, not the durable endpoint.
 handoff 不是產品權威。若文件衝突:
 
 1. `git status` / `git diff` 決定目前工作樹實況。
-2. productization control plane 決定 maturity tier、active lane、WIP owner、promotion gate。
-3. product docs、named plans、schemas 決定 schema、CLI/config/output 行為契約。
-4. validation notes 決定 RAW/benchmark evidence。
-5. handoff 只做白話摘要、接手順序、下一步建議。
+2. productization status index 決定 maturity tier 與 active lane；authority
+   manifest 決定 writer scope；promotion contract 決定 promotion gate。
+3. current handoff 決定 branch WIP 與接手順序，但不授予產品權威。
+4. product docs、named plans、schemas 決定 schema、CLI/config/output 行為契約。
+5. validation notes 決定 RAW/benchmark evidence。

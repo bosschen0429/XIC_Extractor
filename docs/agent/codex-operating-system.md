@@ -28,9 +28,9 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
   is a compact current-state snapshot, not an append-only log. Rewrite and
   prune it when status changes; use a branch-named ignored local file only when
   multiple branches need simultaneous state. Handoffs do not override the
-  control plane, named specs, validation notes, PR body, or git state. Keep them
-  under about 200 lines unless explicitly justified. Completed phase history
-  belongs in Obsidian by default.
+  structured productization owners, named specs, validation notes, PR body, or
+  git state. Keep them under about 200 lines unless explicitly justified.
+  Completed phase history belongs in Obsidian by default.
 - `docs/superpowers/handoffs/RETENTION.tsv`: cleanup inventory for git-tracked
   handoff exceptions only. Force-added files under handoff `current/` or
   `archive/` need one row so PR closeout can distinguish active stubs, public
@@ -86,8 +86,8 @@ narrow it.
 Global skills such as `handoff` and `worktree-report` are convenience
 entrypoints, not pinned XIC authority. If a global skill differs from this
 version-controlled repo contract, follow this repo's `AGENTS.md`, this operating
-document, the control plane, and the hook fixtures. Update the global skill
-later only as an environment-maintenance follow-up.
+document, the structured productization owners, and the hook fixtures. Update
+the global skill later only as an environment-maintenance follow-up.
 
 ## Current Repo-Local Rules
 

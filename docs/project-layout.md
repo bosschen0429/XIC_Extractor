@@ -526,7 +526,7 @@ Root `launch_gui.bat` 只服務本機開發雙擊啟動；release artifact 以
 |------|------|------|
 | JSON schema contract | `docs/superpowers/schemas/<contract>.v1.json` | `productization_control_plane_schema.v1.json` |
 | 過渡性 Markdown spec | `docs/superpowers/specs/<yyyy-mm-dd-topic>.md` | `2026-07-01-example-contract.md` |
-| 全局計畫 owner | `docs/superpowers/plans/<explicit-owner>.md` | `2026-06-15-productization-control-plane.md` |
+| 產品治理 owner | stable topic、status index、authority manifest、schema 各自擁有 | `docs/product/productization.md` |
 | Active stub | ignored local `docs/superpowers/handoffs/current/ACTIVE.local.md`; force-added repo stub only when intentionally public | `ACTIVE.local.md` |
 | 測試檔 | `tests/test_<module>_<behavior>.py`，**扁平結構，不鏡像 src** | `test_alignment_owner_clustering.py` |
 | CLI 入口 | `scripts/run_<purpose>.py` | `scripts/run_extraction.py` |

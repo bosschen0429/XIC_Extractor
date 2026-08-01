@@ -46,6 +46,13 @@ DOC_ROUTE_REPO_DISTILLED_PLUS_OBSIDIAN_ORIGINAL = (
 )
 DOC_ROUTE_REPO_PRODUCT_DOC = "repo_product_doc"
 DOC_ROUTE_NEEDS_DECISION = "needs_route_decision"
+PRODUCTIZATION_OWNER_ROUTE = (
+    "docs/product/productization.md; "
+    "docs/superpowers/validation/productization_status_index_v1.tsv; "
+    "docs/superpowers/schemas/productization_authority_manifest.v1.json; "
+    "docs/superpowers/schemas/productization_control_plane_schema.v1.json; "
+    "docs/agent/product-validation-contract.md"
+)
 DOC_ROUTING_SIGNAL_PATTERNS = (
     ("command_evidence", re.compile(r"\b(?:git add|git commit|uv run|pytest)\b")),
     ("branch_or_pr_history", re.compile(r"\b(?:Branch|PR Body Seed|Commit Split):")),
@@ -111,10 +118,7 @@ DOC_ROUTING_TOPIC_RULES = (
     (
         "productization",
         ("productization", "maturity", "active lane", "productwriter"),
-        (
-            "docs/product/productization.md; "
-            "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
-        ),
+        PRODUCTIZATION_OWNER_ROUTE,
     ),
     (
         "run provenance",
@@ -255,18 +259,12 @@ DOC_ROUTING_OWNER_TOPIC_RULES = (
     (
         "docs/product/productization.md",
         "productization",
-        (
-            "docs/product/productization.md; "
-            "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
-        ),
+        PRODUCTIZATION_OWNER_ROUTE,
     ),
     (
         "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
         "productization",
-        (
-            "docs/product/productization.md; "
-            "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
-        ),
+        PRODUCTIZATION_OWNER_ROUTE,
     ),
     (
         "docs/product/run-provenance.md",
@@ -374,10 +372,7 @@ def _topic_hint(path: str, text: str) -> tuple[str, str]:
     if path_haystack in productization_routing_paths:
         return (
             "productization",
-            (
-                "docs/product/productization.md; "
-                "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
-            ),
+            PRODUCTIZATION_OWNER_ROUTE,
         )
     if path_haystack == "docs/superpowers/readme.md":
         return (

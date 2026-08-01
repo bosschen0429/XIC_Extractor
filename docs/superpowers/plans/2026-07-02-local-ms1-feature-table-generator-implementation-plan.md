@@ -84,7 +84,7 @@ threshold are previous-threshold evidence until rerun.
 - Create `scripts/build_local_ms1_feature_table.py`: CLI wrapper around the generator.
 - Create `tests/test_build_local_ms1_feature_table_cli.py`: CLI tests with monkeypatched RAW opening/generator calls.
 - Modify `docs/product/discovery.md`: absorb durable local MS1 feature source contract.
-- Modify `docs/superpowers/plans/2026-06-15-productization-control-plane.md`: keep productization lane explicit as `diagnostic_only` for detector/runtime outputs.
+- Modify `docs/superpowers/validation/productization_status_index_v1.tsv` only if lane state changes; detector/runtime outputs remain `diagnostic_only`.
 - Modify `tools/testing/test_shards.py`: add `tests/test_ms1_scan_index.py`, `tests/test_local_ms1_features.py`, and `tests/test_build_local_ms1_feature_table_cli.py` to the explicit shard map when required.
 
 ## Architecture Preflight
@@ -2124,13 +2124,13 @@ python -m pytest tests/test_local_ms1_features.py -q
 
 Expected: pass. If synthetic peak smoothing turns an expected `OK` into `WEAK_SUPPORT`, adjust only the test settings thresholds, not the production defaults.
 
-### Task 4: CLI, Product Docs, Control Plane, And Focused Contracts
+### Task 4: CLI, Product Docs, Productization State, And Focused Contracts
 
 **Files:**
 - Create: `scripts/build_local_ms1_feature_table.py`
 - Test: `tests/test_build_local_ms1_feature_table_cli.py`
 - Modify: `docs/product/discovery.md`
-- Modify: `docs/superpowers/plans/2026-06-15-productization-control-plane.md`
+- Modify: `docs/superpowers/validation/productization_status_index_v1.tsv` only if lane state changes.
 - Modify: `tools/testing/test_shards.py` only if needed.
 
 **Interfaces:**
@@ -2398,7 +2398,9 @@ screening evidence with `area_contract = screening_only` and
 `quant_ready = false`.
 ```
 
-In `docs/superpowers/plans/2026-06-15-productization-control-plane.md`, keep the Pt lane status diagnostic-only for detector/runtime by adding or preserving:
+In `docs/superpowers/validation/productization_status_index_v1.tsv`, keep the Pt
+lane readiness `diagnostic_only` for detector/runtime outputs. Preserve the
+stable product boundary in `docs/product/discovery.md`:
 
 ```markdown
 Local MS1 feature table generator outputs are `diagnostic_only` / feature-source

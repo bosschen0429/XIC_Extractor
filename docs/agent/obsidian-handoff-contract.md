@@ -566,8 +566,8 @@ Use this split for formal repo targets:
 
 | Target family | Use for | Examples |
 | --- | --- | --- |
-| `docs/product/productization.md` | public productization current-state, promotion-boundary, and authority-routing summary | distilled current capability map |
-| existing productization machine owners | active machine-readable tier/status/authority/schema artifacts | control plane, status index, authority manifest, and schema JSON stay at current paths until a focused checker-aware path migration |
+| `docs/product/productization.md` | public stable-capability, promotion-boundary, and authority-routing summary | distilled capability map |
+| existing productization machine owners | active machine-readable tier/status/authority/schema artifacts | status index, authority manifest, and schema JSON stay at current paths until a focused checker-aware path migration |
 | `docs/validation/` | retained validation packets, summaries, and checker-readable evidence | retained packet READMEs, result summaries, lockbox public review packets |
 | `docs/validation/fixtures/` | minimal or curated validation fixtures and expected-result oracles | TSV/CSV fixtures, Skyline expressibility oracles |
 | `docs/validation/schemas/` | schemas for validation/review artifacts | lockbox label, review packet, truth label schemas |

@@ -220,7 +220,7 @@ directions.
   JSON registry and grants no owner, lifecycle, public-output, or product
   authority.
 - Human decisions remain in this contract, `docs/architecture-contract.md`,
-  `docs/project-layout.md`, and the existing artifact/product control-plane
+  `docs/project-layout.md`, and the existing artifact/product governance
   owners. Census rows point to those owners instead of copying their claims.
 - The checker rebuilds Python module paths, Grimp's static internal import graph,
   declared console scripts, and declared package-discovery patterns from current

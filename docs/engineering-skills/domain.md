@@ -32,7 +32,7 @@ Before substantial work, read the nearest applicable sources:
 - `docs/product/domain-glossary.md`, if present
 - `docs/adr/`, if present
 - the relevant docs referenced by `AGENTS.md`
-- current handoff/control-plane docs when the task touches productization state
+- current handoff and structured productization owners when the task touches productization state
 
 If `docs/product/domain-glossary.md` or `docs/adr/` do not exist yet, proceed
 silently. Their absence is not itself a blocker. Use existing productization
@@ -101,7 +101,7 @@ should name:
 - whether it can affect product output
 - which public contract is at risk, if any
 - which evidence or validation tier would close the decision
-- whether handoff/control-plane updates are required
+- whether handoff or structured productization-owner updates are required
 
 For workflow-only changes, say that no productization tier or active lane state
 changes.

@@ -17,10 +17,11 @@ local ignored current handoff such as
 `docs/superpowers/handoffs/current/ACTIVE.local.md`; use a branch-named ignored
 local handoff only when multiple local branches need simultaneous state.
 
-Durable tier authority lives in
-`docs/superpowers/plans/2026-06-15-productization-control-plane.md`,
-`docs/superpowers/schemas/productization_authority_manifest.v1.json`, and
-`docs/superpowers/validation/productization_status_index_v1.tsv`.
+Durable lane/readiness state lives in
+`docs/superpowers/validation/productization_status_index_v1.tsv`; writer scope
+lives in `docs/superpowers/schemas/productization_authority_manifest.v1.json`;
+promotion requirements live in `docs/agent/product-validation-contract.md`.
+The dated productization control-plane path is compatibility lookup only.
 
 ## Product State
 
@@ -44,7 +45,8 @@ Durable tier authority lives in
   authority update.
 - Do not grant broad Backfill auto-write without explicit authority.
 - Keep row-completion confidence evidence non-mutating unless a future
-  activation contract changes writer authority through the control plane.
+  activation contract changes the status index and authority manifest through
+  the promotion contract.
 - Any CI red must be diagnosed from logs and stack boundary first, then fixed at
   the owner boundary.
 

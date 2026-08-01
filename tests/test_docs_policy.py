@@ -62,7 +62,12 @@ def test_repo_path_resolution_rejects_symlink_escape(tmp_path: Path) -> None:
     repo.mkdir()
     outside = tmp_path / "outside.md"
     outside.write_text("outside\n", encoding="utf-8")
-    (repo / "owner.md").symlink_to(outside)
+    try:
+        (repo / "owner.md").symlink_to(outside)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows runner lacks symbolic-link privilege")
+        raise
 
     with pytest.raises(ValueError, match="resolves outside repository"):
         resolve_repo_path(repo, "owner.md")

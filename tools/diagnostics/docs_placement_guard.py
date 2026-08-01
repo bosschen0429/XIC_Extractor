@@ -385,11 +385,11 @@ def _head_bytes(root: Path, rel_path: str) -> bytes | None:
     return result.stdout if result.returncode == 0 else None
 
 
-def _hash_source_locator(
+def _source_locator_line_range(
     source_path: str,
     source_bytes: bytes,
     locator: object,
-) -> str | None:
+) -> tuple[int, int] | None:
     if not isinstance(locator, str):
         return None
     match = re.fullmatch(
@@ -403,6 +403,19 @@ def _hash_source_locator(
     lines = source_bytes.splitlines(keepends=True)
     if start < 1 or end < start or end > len(lines):
         return None
+    return start, end
+
+
+def _hash_source_locator(
+    source_path: str,
+    source_bytes: bytes,
+    locator: object,
+) -> str | None:
+    line_range = _source_locator_line_range(source_path, source_bytes, locator)
+    if line_range is None:
+        return None
+    start, end = line_range
+    lines = source_bytes.splitlines(keepends=True)
     return hashlib.sha256(b"".join(lines[start - 1 : end])).hexdigest()
 
 
@@ -553,6 +566,9 @@ def same_path_replacement_problems(
         add("source preimage is missing from HEAD")
         return problems
     source_hash = hashlib.sha256(source_bytes).hexdigest()
+    source_lines = source_bytes.splitlines(keepends=True)
+    if packet.get("source_line_count") != len(source_lines):
+        add("source_line_count does not match the HEAD preimage")
     if (
         packet.get("source_hash") != source_hash
         or evidence.get("source_hash") != source_hash
@@ -596,6 +612,7 @@ def same_path_replacement_problems(
     }
     staged_text_by_path = _staged_text_by_path(entries)
     section_claim_edges: set[tuple[str, str]] = set()
+    section_ranges: list[tuple[int, int]] = []
     for section in sections:
         if not isinstance(section, dict):
             add("source section entry must be an object")
@@ -623,6 +640,23 @@ def same_path_replacement_problems(
         )
         if actual_section_hash != section.get("section_sha256"):
             add(f"section {section_id} source locator/hash mismatch")
+        line_range = _source_locator_line_range(
+            path,
+            source_bytes,
+            section.get("source_locator"),
+        )
+        if line_range is not None:
+            section_ranges.append(line_range)
+    next_line = 1
+    for start, end in sorted(section_ranges):
+        if start != next_line:
+            break
+        next_line = end + 1
+    if len(section_ranges) != len(sections) or next_line != len(source_lines) + 1:
+        add(
+            "source section locators must exactly cover every HEAD preimage line "
+            "once without gaps or overlaps"
+        )
     claim_section_edges: set[tuple[str, str]] = set()
     for claim in claims:
         if not isinstance(claim, dict):

@@ -261,9 +261,9 @@ writer parity. Any selected-peak, boundary, area, confidence/reason,
 counted-state, Matrix, or CSV value/byte difference stops this migration and
 requires a separately authorized behavior-change contract.
 
-No productization control-plane update is required for this slice: maturity
-tier, active lane, review/replay behavior, selected values and counting,
-Matrix authority, output schemas, and writer authority are unchanged.
+No productization status-index or authority-manifest update is required for this
+slice: maturity tier, active lane, review/replay behavior, selected values and
+counting, Matrix authority, output schemas, and writer authority are unchanged.
 
 Current stack layer: PR #152 (`codex/package-0-identity-core`) squash-merged to
 `master` as `2a7c582d`. PR #153 (`codex/package-0-attempt-lifecycle`)
@@ -300,8 +300,8 @@ tracer tests. Deferred Pt work remains excluded.
 
 This section is the canonical progress tracker for this implementation wave.
 It tracks execution and consumer wiring; it does not replace the productization
-control plane, grant writer authority, or reinterpret a passing unit test as an
-end-to-end method result.
+structured owners, grant writer authority, or reinterpret a passing unit test
+as an end-to-end method result.
 
 Update this section after each merged logical slice, package-gate decision,
 scope change, or new evidence tier, and before a branch handoff or PR closeout.
@@ -480,7 +480,7 @@ inputs, not work-package research tasks:
 | Independent oracle and no-RAW packet contract | `docs/superpowers/plans/2026-07-24-cid-nl-nl116-oracle-acceptance-contract.md`; `docs/superpowers/validation/cid_nl_oracle_packet_preflight_v1/README.md` |
 | Runtime lifecycle, cleanup, retry, and metrics | `docs/product/execution-runtime.md` |
 | Frozen legacy and Targeted-output behavior | `docs/superpowers/validation/cid_nl_legacy_baseline_v1/`; `docs/superpowers/validation/cid_nl_targeted_csv_contract_v1/` |
-| Product maturity and promotion authority | `docs/superpowers/plans/2026-06-15-productization-control-plane.md`; `docs/superpowers/validation/productization_status_index_v1.tsv`; `docs/superpowers/schemas/productization_authority_manifest.v1.json` |
+| Product maturity and promotion authority | `docs/superpowers/validation/productization_status_index_v1.tsv`; `docs/superpowers/schemas/productization_authority_manifest.v1.json`; `docs/agent/product-validation-contract.md` |
 
 An input is reopened only when its checksum, public contract, owner, or
 implementation assumption has materially changed. A new timestamp alone is not

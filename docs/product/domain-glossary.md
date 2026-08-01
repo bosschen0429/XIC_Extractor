@@ -8,7 +8,7 @@ Doc exit rule: Update when stable vocabulary, lane boundaries, or authority conc
 
 This file is the single stable vocabulary owner for XIC Extractor. Keep
 volatile productization status, counts, current tier assignments, and current
-blockers in the active handoff and control plane docs, not here.
+blockers in the status index, authority manifest, and active handoff, not here.
 
 ## Product Shape
 
@@ -154,8 +154,8 @@ concerns explain ambiguity and review priority, not the detected call itself.
   scopes and cells currently authorized to write.
 - `maturity tier`: validation-readiness vocabulary:
   `diagnostic_only`, `shadow_ready`, `production_candidate`, or
-  `production_ready`. Current assignments live in the control plane and status
-  index, not in this glossary.
+  `production_ready`. Current assignments live in the status index, not in this
+  glossary.
 - `activation contract`: explicit evidence, tests, authority, and expected-diff
   conditions required before diagnostic or shadow behavior may affect product
   values.
@@ -164,7 +164,7 @@ concerns explain ambiguity and review priority, not the detected call itself.
 - `promotion gate`: the evidence and approval conditions required before a
   capability advances to a stronger maturity or authority state.
 - `active lane`: the current priority development area and WIP assignment
-  recorded in the productization control plane.
+  recorded in the status index and current branch handoff.
 - `adjudication`: machine classification of a candidate. It can route work, but
   it is not by itself permission to write product output.
 - `review packet`: a structured human-review surface. It is not free-form value
@@ -257,5 +257,6 @@ Do not create another hand-maintained product glossary. A user-facing glossary,
 if needed, belongs under `docs/user/` as a reader-specific projection that links
 back to this vocabulary owner.
 
-Use the productization control plane and current handoff for live state. Use
-ADRs for durable architecture decisions that need rationale and alternatives.
+Use the productization status index, authority manifest, promotion contract,
+and current handoff for live state. Use ADRs for durable architecture decisions
+that need rationale and alternatives.

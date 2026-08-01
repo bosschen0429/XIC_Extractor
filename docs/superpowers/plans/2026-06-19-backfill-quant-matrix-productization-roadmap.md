@@ -3,8 +3,8 @@
 Doc placement: repo_support_doc
 Doc kind: plan
 Doc lifecycle: active
-Repo owner: docs/product/backfill.md; docs/product/quant-matrix.md; docs/superpowers/plans/2026-06-15-productization-control-plane.md
-Doc exit rule: Retire or move to Obsidian after the Backfill/quant-matrix product docs and productization control plane fully absorb this roadmap direction.
+Repo owner: docs/product/backfill.md; docs/product/quant-matrix.md
+Doc exit rule: Retire or move to Obsidian after the Backfill/quant-matrix product docs and structured productization owners fully absorb this roadmap direction.
 
 Updated: 2026-06-19
 Status: direction-reset roadmap
@@ -23,8 +23,9 @@ default quant matrix = detected + accepted Backfill
 write authority = ProductionAcceptanceManifest only
 ```
 
-Use the Backfill/quant-matrix product docs plus the productization control plane
-as the authoritative roadmap. The retired Backfill quant-matrix blueprint and
+Use the Backfill/quant-matrix product docs plus the status index, authority
+manifest, and promotion contract as the authoritative roadmap. The retired
+Backfill quant-matrix blueprint and
 the 2026-06-18 evidence-lifecycle blueprint are superseded and retained only as
 Obsidian/source-history inputs.
 
@@ -34,13 +35,14 @@ Use this roadmap with:
 
 - [Backfill product doc](../../product/backfill.md)
 - [Quant matrix product doc](../../product/quant-matrix.md)
-- [productization control plane](../plans/2026-06-15-productization-control-plane.md)
+- [historical compatibility index](../plans/2026-06-15-productization-control-plane.md)
 - [productization status anchor](../productization/status/cc-framework-improvements-productization.md)
 - [Untargeted Method](../../product/untargeted-method.md)
 
-The control plane remains the authority for current tier, active lane, and
-current writer surface. This roadmap records direction and phase order.
-Deepresearch notes are background inputs and cannot grant write authority.
+The status index remains the authority for current tier/lane; the authority
+manifest owns the current writer surface; the promotion contract owns promotion
+requirements. This roadmap records direction and phase order. Deepresearch
+notes are background inputs and cannot grant write authority.
 
 ## Current Baseline
 
@@ -109,7 +111,7 @@ Done when:
   closes;
 - old 2026-06-18 blueprint is superseded;
 - cleanup map exists;
-- no control-plane update is needed unless tier/lane/authority actually changed.
+- no structured status/authority update is needed unless tier/lane/authority actually changed.
 
 ### Phase 1 - Shadow Scoring Contract Adapter v1
 
@@ -174,8 +176,8 @@ Stop if a proposed goal:
 - hides detected/backfilled/manual/missing/rejected provenance;
 - runs RAW/85RAW without the active phase naming that validation tier.
 
-## Control Plane
+## Structured Productization State
 
-No control-plane tier update is needed for Phase 0 because current maturity,
+No status-index or authority-manifest update is needed for Phase 0 because current maturity,
 active lane, writer authority, selected values, counting behavior, ProductWriter
 authority, and broad uncontracted Backfill state do not change.
