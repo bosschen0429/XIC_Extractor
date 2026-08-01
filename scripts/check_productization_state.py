@@ -85,6 +85,7 @@ def check_productization_state(
     handoff_path: Path = DEFAULT_HANDOFF,
     control_plane_path: Path = DEFAULT_CONTROL_PLANE,
     productization_summary_path: Path = DEFAULT_PRODUCTIZATION_SUMMARY,
+    product_topic_dir: Path | None = None,
     repo_root: Path = ROOT,
 ) -> list[str]:
     problems: list[str] = []
@@ -110,6 +111,12 @@ def check_productization_state(
         rows,
         productization_summary_text,
         control_plane_text,
+        problems,
+    )
+    _check_product_topic_authority_partition(
+        authority,
+        rows,
+        product_topic_dir or (repo_root / "docs/product"),
         problems,
     )
     return problems
@@ -522,6 +529,67 @@ def _check_narrative_authority_partition(
             problems.append(
                 f"{path}: narrative surface duplicates a mutable row/cell count"
             )
+
+
+def _structured_integer_values(value: object) -> set[str]:
+    values: set[str] = set()
+    if isinstance(value, bool):
+        return values
+    if isinstance(value, int):
+        values.add(str(value))
+    elif isinstance(value, Mapping):
+        for item in value.values():
+            values.update(_structured_integer_values(item))
+    elif isinstance(value, list):
+        for item in value:
+            values.update(_structured_integer_values(item))
+    return values
+
+
+def _duplicates_structured_count(text: str, count: str) -> bool:
+    tokens = tuple(re.findall(r"[a-z0-9]+", text.casefold()))
+    for index, token in enumerate(tokens):
+        if token != count:
+            continue
+        if any(
+            item in {"row", "rows", "cell", "cells"}
+            for item in tokens[index + 1 : index + 4]
+        ):
+            return True
+    return False
+
+
+def _check_product_topic_authority_partition(
+    authority: Mapping[str, Any],
+    rows: Sequence[Mapping[str, str]],
+    product_topic_dir: Path,
+    problems: list[str],
+) -> None:
+    """Keep mutable structured counts/scopes out of product topic owners."""
+
+    if not product_topic_dir.is_dir():
+        return
+    structured_counts = _structured_integer_values(authority)
+    authority_scopes = {
+        row.get("product_authority_scope", "")
+        for row in rows
+        if row.get("product_authority_scope", "")
+    }
+    for path in sorted(product_topic_dir.glob("*.md")):
+        text = _read_text(path, problems)
+        rel_path = f"docs/product/{path.name}"
+        for scope in sorted(authority_scopes):
+            if _contains_normalized_phrase(text, scope):
+                problems.append(
+                    f"{rel_path}: product topic owner duplicates mutable "
+                    f"authority scope: {scope}"
+                )
+        for count in sorted(structured_counts, key=lambda item: (len(item), item)):
+            if _duplicates_structured_count(text, count):
+                problems.append(
+                    f"{rel_path}: product topic owner duplicates mutable "
+                    f"structured row/cell count: {count}"
+                )
 
 
 def _mapping_path(root: Mapping[str, Any], *keys: str) -> Mapping[str, Any] | None:

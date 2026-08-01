@@ -18,7 +18,7 @@ they are not product authority by themselves.
 - Preset runs should be reproducible from documented CLI/config surfaces and
   metadata, not from branch-local command diaries.
 - `dna_dr_product_ready` is the CLI alignment preset for replaying the
-  registered productization tail, including the current clean-target 84-cell
+  registered productization tail, including the registered clean-target
   Backfill activation when sample universe, expected-diff packet, and authority
   scope match. It does not create GUI behavior, broaden Backfill or CID-NL
   authority, or make candidate-only evidence publishable.

@@ -272,6 +272,44 @@ def test_checker_rejects_state_bearing_compatibility_prose(tmp_path: Path) -> No
     assert any("closed metadata" in problem for problem in problems)
 
 
+def test_checker_rejects_product_topic_mutable_structured_count(
+    tmp_path: Path,
+) -> None:
+    product_topics = tmp_path / "docs/product"
+    product_topics.mkdir(parents=True)
+    (product_topics / "backfill.md").write_text(
+        "# Backfill\n\nThe current writer owns 511 matrix cells.\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(product_topic_dir=product_topics)
+
+    assert any(
+        "docs/product/backfill.md: product topic owner duplicates mutable "
+        "structured row/cell count: 511" in problem
+        for problem in problems
+    )
+
+
+def test_checker_rejects_product_topic_mutable_authority_scope(
+    tmp_path: Path,
+) -> None:
+    product_topics = tmp_path / "docs/product"
+    product_topics.mkdir(parents=True)
+    (product_topics / "backfill.md").write_text(
+        "# Backfill\n\nCurrent scope: backfill_policy_write_ready_rows.\n",
+        encoding="utf-8",
+    )
+
+    problems = check_productization_state(product_topic_dir=product_topics)
+
+    assert any(
+        "docs/product/backfill.md: product topic owner duplicates mutable "
+        "authority scope: backfill_policy_write_ready_rows" in problem
+        for problem in problems
+    )
+
+
 def test_checker_rejects_compatibility_owner_route_drift(tmp_path: Path) -> None:
     text = DEFAULT_CONTROL_PLANE.read_text(encoding="utf-8")
     text = text.replace(

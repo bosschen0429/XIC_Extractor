@@ -9,6 +9,7 @@ import pytest
 from tools.diagnostics.docs_placement_guard import (
     StagedMarkdown,
     check_doc_placement,
+    committed_same_path_retirement_packet_problems,
     parse_name_status,
     staged_markdown,
 )
@@ -180,6 +181,58 @@ def _same_path_result(
     )
 
 
+def _commit_same_path_fixture(
+    root: Path,
+    *,
+    hard_zero_files: list[str] | None = None,
+) -> tuple[str, str]:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(root)
+    activation_base = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    packet.update(
+        {
+            "activation_base_sha": activation_base,
+            "hard_zero_files": hard_zero_files or [],
+            "conditional_write_set": [source_path, evidence_path],
+            "allowed_protected_writes": [],
+            "read_only_protected_surfaces": {
+                "exact_paths": [],
+                "prefixes": [],
+                "rule": "No protected writes are needed in this fixture.",
+            },
+        }
+    )
+    _write(root, source_path, replacement)
+    _write(root, evidence_path, json.dumps(packet, indent=2) + "\n")
+    subprocess.run(
+        ["git", "add", source_path, evidence_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "retire control plane",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    return source_path, evidence_path
+
+
 def _problems(root: Path, status: str, path: str) -> list[str]:
     result = check_doc_placement(root, [StagedMarkdown(status, path)])
     return [problem.reason for problem in result.problems]
@@ -240,6 +293,40 @@ def test_same_path_compatibility_replacement_with_complete_evidence_passes(
     )
 
     assert result.problems == ()
+
+
+def test_committed_same_path_retirement_packet_passes_clean_checkout_review(
+    tmp_path: Path,
+) -> None:
+    _, evidence_path = _commit_same_path_fixture(tmp_path)
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+    )
+
+    assert problems == ()
+
+
+def test_committed_same_path_retirement_packet_rejects_changed_hard_zero_path(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path = _commit_same_path_fixture(
+        tmp_path,
+        hard_zero_files=[
+            "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+        ],
+    )
+
+    problems = committed_same_path_retirement_packet_problems(
+        tmp_path,
+        evidence_path,
+    )
+
+    assert any(
+        problem == f"retirement packet hard-zero paths changed: {source_path}"
+        for problem in problems
+    )
 
 
 def test_same_path_replacement_rejects_incomplete_source_section_coverage(

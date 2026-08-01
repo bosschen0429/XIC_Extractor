@@ -28,6 +28,10 @@ if str(ROOT) not in sys.path:
 
 
 from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
+from tools.diagnostics.docs_placement_guard import (  # noqa: E402
+    committed_same_path_retirement_packet_problems,
+    is_retirement_evidence_path,
+)
 from tools.diagnostics.docs_policy import (  # noqa: E402
     DOC_CANONICAL_OWNER_FILES,
     PERMANENT_ROOT_DOC_CONTRACTS,
@@ -254,6 +258,10 @@ def audit_repo(
     structure_review = docs_structure_review_for_repo(scan_paths)
     completed_transient_review = completed_transient_review_for_repo(root, scan_paths)
     canonical_metadata_review = canonical_metadata_review_for_repo(root)
+    retirement_packet_review = committed_retirement_packet_review_for_repo(
+        root,
+        scan_paths,
+    )
     governance_path = root / "docs/agent/codex-operating-system.md"
     governance_problems = (
         list(
@@ -269,6 +277,14 @@ def audit_repo(
     metadata_review_files = int(routing_review["metadata_review_files"])
     canonical_missing_metadata = int(
         canonical_metadata_review["missing_metadata_files"]
+    )
+    invalid_permanent_rows = [
+        row
+        for row in canonical_metadata_review["top_missing_metadata"]
+        if row["metadata_status"] == "invalid_permanent_root_contract"
+    ]
+    ordinary_canonical_metadata_count = (
+        canonical_missing_metadata - len(invalid_permanent_rows)
     )
     if routing_candidates:
         invalid_count = int(
@@ -311,7 +327,7 @@ def audit_repo(
             )
         )
 
-    if canonical_missing_metadata:
+    if ordinary_canonical_metadata_count:
         messages.append(
             AuditMessage(
                 "warning",
@@ -319,8 +335,28 @@ def audit_repo(
                 (
                     "canonical docs metadata review found missing metadata; "
                     "inspect summary.repo.canonical_metadata_review."
-                    f"top_missing_metadata ({canonical_missing_metadata} file(s))"
+                    "top_missing_metadata "
+                    f"({ordinary_canonical_metadata_count} file(s))"
                 ),
+            )
+        )
+
+    for row in invalid_permanent_rows:
+        messages.append(
+            AuditMessage(
+                "blocker",
+                str(row["path"]),
+                "invalid permanent-root contract: "
+                + str(row["metadata_missing_fields"]),
+            )
+        )
+
+    for row in retirement_packet_review["problems"]:
+        messages.append(
+            AuditMessage(
+                "blocker",
+                str(row["path"]),
+                "committed retirement packet: " + str(row["problem"]),
             )
         )
 
@@ -430,6 +466,7 @@ def audit_repo(
         "docs_structure_review": structure_review,
         "completed_transient_review": completed_transient_review,
         "canonical_metadata_review": canonical_metadata_review,
+        "committed_retirement_packet_review": retirement_packet_review,
         "governance_enforcement_index": {
             "problems": governance_problems,
             "status": "pass" if not governance_problems else "fail",
@@ -523,6 +560,18 @@ def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
             continue
         path = root / rel_path
         if not path.exists() or not path.is_file():
+            if rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
+                rows.append(
+                    {
+                        "path": rel_path,
+                        "metadata_status": "invalid_permanent_root_contract",
+                        "metadata_missing_fields": "permanent root path is missing",
+                        "doc_kind": PERMANENT_ROOT_DOC_CONTRACTS[rel_path]["kind"],
+                        "doc_kind_source": "permanent_root_contract",
+                        "doc_lifecycle": "permanent",
+                        "repo_owner": "self",
+                    }
+                )
             continue
         text = _read_text(path)
         if rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
@@ -566,6 +615,63 @@ def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
         "missing_metadata_files": len(rows),
         "missing_metadata": rows,
         "top_missing_metadata": rows[:25],
+    }
+
+
+def committed_retirement_packet_review_for_repo(
+    root: Path,
+    scan_paths: Sequence[str],
+) -> dict[str, object]:
+    checked_paths: list[str] = []
+    problems: list[dict[str, str]] = []
+    for rel_path in sorted(scan_paths):
+        if not is_retirement_evidence_path(rel_path):
+            continue
+        path = root / rel_path
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            checked_paths.append(rel_path)
+            problems.append(
+                {
+                    "path": rel_path,
+                    "problem": f"retirement packet cannot be read: {exc}",
+                }
+            )
+            continue
+        except json.JSONDecodeError:
+            checked_paths.append(rel_path)
+            problems.append(
+                {
+                    "path": rel_path,
+                    "problem": "retirement packet is not valid JSON",
+                }
+            )
+            continue
+        if not isinstance(data, dict):
+            checked_paths.append(rel_path)
+            problems.append(
+                {
+                    "path": rel_path,
+                    "problem": "retirement packet must be a JSON object",
+                }
+            )
+            continue
+        if data.get("transaction") != (
+            "body_to_compatibility_index"
+        ):
+            continue
+        checked_paths.append(rel_path)
+        for problem in committed_same_path_retirement_packet_problems(
+            root,
+            rel_path,
+        ):
+            problems.append({"path": rel_path, "problem": problem})
+    return {
+        "checked_files": len(checked_paths),
+        "checked_paths": checked_paths,
+        "problems": problems,
+        "status": "pass" if not problems else "fail",
     }
 
 

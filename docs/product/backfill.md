@@ -46,11 +46,12 @@ compact artifact with updated hashes.
 
 Stable claims already absorbed here:
 
-- The 4613-row candidate/audit universe is not a writer pool.
-- Current Backfill product authority is the scoped 511 `write_ready` cells.
-- The remaining 4102 rows are outside writer authority; this includes 3015
-  trace-matched rows with no approved evidence class or passing oracle, and
-  1087 rows missing trace/overlay evidence.
+- The candidate/audit universe is not a writer pool.
+- Current Backfill product authority is only the registered `write_ready` scope
+  named by the status index and authority manifest.
+- All remaining candidates stay outside writer authority, including
+  trace-matched candidates with no approved evidence class or passing oracle
+  and candidates missing trace/overlay evidence.
 - Profile-only separation, quality blockers, round-trip reintegration, and
   ISTD behavior cannot become broad ProductWriter predicates.
 - Broad Backfill can reopen only through a new independent truth source for

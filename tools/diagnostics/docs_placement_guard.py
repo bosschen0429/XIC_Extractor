@@ -375,8 +375,12 @@ def retirement_evidence_packets_by_path(
 
 
 def _head_bytes(root: Path, rel_path: str) -> bytes | None:
+    return _git_object_bytes(root, "HEAD", rel_path)
+
+
+def _git_object_bytes(root: Path, ref: str, rel_path: str) -> bytes | None:
     result = subprocess.run(
-        ["git", "show", f"HEAD:{rel_path}"],
+        ["git", "show", f"{ref}:{rel_path}"],
         cwd=root,
         check=False,
         capture_output=True,
@@ -503,6 +507,8 @@ def same_path_replacement_problems(
     *,
     packet_candidates: dict[str, list[dict[str, object]]],
     entries: Sequence[StagedMarkdown],
+    source_bytes_override: bytes | None = None,
+    validate_dependencies: bool = True,
 ) -> list[PlacementProblem]:
     path = _docs_scan.normalize_repo_rel_path(entry.path)
     problems: list[PlacementProblem] = []
@@ -561,7 +567,11 @@ def same_path_replacement_problems(
     ):
         add("unresolved claims remain")
 
-    source_bytes = _head_bytes(root, path)
+    source_bytes = (
+        source_bytes_override
+        if source_bytes_override is not None
+        else _head_bytes(root, path)
+    )
     if source_bytes is None:
         add("source preimage is missing from HEAD")
         return problems
@@ -749,27 +759,180 @@ def same_path_replacement_problems(
                 "active negative claims"
             )
 
-    evidence_path = ""
-    for item in entries:
-        if not is_retirement_evidence_path(item.path) or item.staged_text is None:
-            continue
-        try:
-            candidate = json.loads(item.staged_text)
-        except json.JSONDecodeError:
-            continue
-        if candidate == packet:
-            evidence_path = _docs_scan.normalize_repo_rel_path(item.path)
-            break
-    census = _docs_scan.normalized_path_dependency_census(
-        root,
-        path,
-        scan_paths=tuple(set(_scan_paths(root)) | set(staged_text_by_path)),
-        overrides=staged_text_by_path,
-        excluded_paths=(evidence_path,) if evidence_path else (),
-    )
-    if packet.get("dependencies") != census:
-        add("normalized dependency/referrer census changed or has residual omissions")
+    if validate_dependencies:
+        evidence_path = ""
+        for item in entries:
+            if not is_retirement_evidence_path(item.path) or item.staged_text is None:
+                continue
+            try:
+                candidate = json.loads(item.staged_text)
+            except json.JSONDecodeError:
+                continue
+            if candidate == packet:
+                evidence_path = _docs_scan.normalize_repo_rel_path(item.path)
+                break
+        census = _docs_scan.normalized_path_dependency_census(
+            root,
+            path,
+            scan_paths=tuple(set(_scan_paths(root)) | set(staged_text_by_path)),
+            overrides=staged_text_by_path,
+            excluded_paths=(evidence_path,) if evidence_path else (),
+        )
+        if packet.get("dependencies") != census:
+            add(
+                "normalized dependency/referrer census changed or has "
+                "residual omissions"
+            )
     return problems
+
+
+def committed_same_path_retirement_packet_problems(
+    root: Path,
+    packet_path: str,
+) -> tuple[str, ...]:
+    """Validate a committed same-path retirement packet from a clean checkout."""
+
+    normalized_packet_path = _docs_scan.normalize_repo_rel_path(packet_path)
+    try:
+        packet_text = (root / normalized_packet_path).read_text(encoding="utf-8")
+        packet = json.loads(packet_text)
+    except (OSError, json.JSONDecodeError) as exc:
+        return (f"retirement packet cannot be read: {exc}",)
+    if not isinstance(packet, dict):
+        return ("retirement packet must be a JSON object",)
+    if packet.get("transaction") != "body_to_compatibility_index":
+        return ()
+
+    source_path = _normalized_evidence_path(packet.get("source_path"))
+    activation_base = packet.get("activation_base_sha")
+    if source_path is None:
+        return ("retirement packet source_path must be repository-relative",)
+    if not isinstance(activation_base, str) or re.fullmatch(
+        r"[0-9a-fA-F]{40}", activation_base
+    ) is None:
+        return ("retirement packet activation_base_sha must be a full Git SHA",)
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", activation_base, "HEAD"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        timeout=20,
+    )
+    if ancestor.returncode != 0:
+        return ("retirement packet activation_base_sha is not an ancestor of HEAD",)
+    source_bytes = _git_object_bytes(root, activation_base, source_path)
+    if source_bytes is None:
+        return ("retirement packet source preimage is missing at activation_base_sha",)
+    replacement_path = root / source_path
+    try:
+        replacement_text = replacement_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return (f"retirement packet replacement cannot be read: {exc}",)
+
+    entries = (
+        StagedMarkdown("M", source_path, replacement_text),
+        StagedMarkdown("A", normalized_packet_path, packet_text),
+    )
+    placement_problems = same_path_replacement_problems(
+        root,
+        entries[0],
+        packet_candidates={source_path: [packet]},
+        entries=entries,
+        source_bytes_override=source_bytes,
+    )
+    problems = [problem.reason for problem in placement_problems]
+
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"{activation_base}...HEAD", "--"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=20,
+    )
+    if result.returncode != 0:
+        problems.append("retirement packet activation diff cannot be enumerated")
+        return tuple(problems)
+    changed_paths = {
+        _docs_scan.normalize_repo_rel_path(line)
+        for line in result.stdout.splitlines()
+        if line.strip()
+    }
+
+    def normalized_list(field: str) -> set[str] | None:
+        value = packet.get(field)
+        if not isinstance(value, list) or any(
+            not isinstance(item, str) or not item for item in value
+        ):
+            problems.append(f"retirement packet {field} must be a path list")
+            return None
+        try:
+            return {_docs_scan.normalize_repo_rel_path(item) for item in value}
+        except ValueError:
+            problems.append(
+                f"retirement packet {field} contains a non-repository path"
+            )
+            return None
+
+    hard_zero = normalized_list("hard_zero_files")
+    conditional = normalized_list("conditional_write_set")
+    allowed_protected = normalized_list("allowed_protected_writes")
+    protection = packet.get("read_only_protected_surfaces")
+    if not isinstance(protection, dict):
+        problems.append("retirement packet read_only_protected_surfaces is missing")
+        return tuple(problems)
+    exact_paths_raw = protection.get("exact_paths")
+    prefixes_raw = protection.get("prefixes")
+    if (
+        not isinstance(exact_paths_raw, list)
+        or not isinstance(prefixes_raw, list)
+        or any(
+            not isinstance(item, str) or not item
+            for item in (*exact_paths_raw, *prefixes_raw)
+        )
+    ):
+        problems.append("retirement packet protected surfaces must be path lists")
+        return tuple(problems)
+    try:
+        exact_paths = {
+            _docs_scan.normalize_repo_rel_path(item)
+            for item in exact_paths_raw
+        }
+        prefixes = tuple(
+            _docs_scan.normalize_repo_rel_path(item).rstrip("/") + "/"
+            for item in prefixes_raw
+        )
+    except ValueError:
+        problems.append("retirement packet protected surfaces contain invalid paths")
+        return tuple(problems)
+
+    if hard_zero is not None:
+        touched_hard_zero = sorted(changed_paths & hard_zero)
+        if touched_hard_zero:
+            problems.append(
+                "retirement packet hard-zero paths changed: "
+                + ", ".join(touched_hard_zero)
+            )
+    protected_changes = {
+        path
+        for path in changed_paths
+        if path in exact_paths or any(path.startswith(prefix) for prefix in prefixes)
+    }
+    if allowed_protected is not None and protected_changes != allowed_protected:
+        problems.append(
+            "retirement packet allowed_protected_writes does not exactly match "
+            "the activation-base diff"
+        )
+    if (
+        allowed_protected is not None
+        and conditional is not None
+        and not allowed_protected <= conditional
+    ):
+        problems.append(
+            "retirement packet protected writes are not all in conditional_write_set"
+        )
+    return tuple(problems)
 
 
 def deletion_retirement_problem(

@@ -5,12 +5,15 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics.docs_management_audit import (
     run_audit,
     write_routing_manifest_tsv,
     write_topic_clusters_tsv,
     write_topic_index_readmes,
 )
+from tools.diagnostics.docs_policy import GOVERNANCE_RULE_FAMILY_CONTRACTS
 
 CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
@@ -20,6 +23,7 @@ CLOSEOUT_SUMMARY = (
     "2026-06-26_codex-docs-cleanup_branch-closeout-summary.md"
 )
 RETENTION_INVENTORY = "docs/superpowers/handoffs/RETENTION.tsv"
+PROJECT_ROOT = Path(__file__).parents[1]
 
 
 def _write(path: Path, text: str) -> None:
@@ -27,7 +31,133 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def _write_permanent_root_contracts(root: Path) -> None:
+    route_targets = (
+        "docs/agent/parameter-settings.md",
+        "docs/product/README.md",
+        "docs/agent/product-validation-contract.md",
+        "docs/agent/execution-gates.md",
+        "tools/diagnostics/INDEX.md",
+        "docs/solutions/README.md",
+        "docs/product/productization.md",
+        "docs/agent/codex-operating-system.md",
+        "docs/user/README.md",
+        "docs/agent/obsidian-handoff-contract.md",
+    )
+    for rel_path in route_targets:
+        _write(root / rel_path, f"# {Path(rel_path).stem}\n")
+    _write(
+        root / "docs/agent/codex-operating-system.md",
+        (PROJECT_ROOT / "docs/agent/codex-operating-system.md").read_text(
+            encoding="utf-8"
+        ),
+    )
+    governance_paths: set[str] = set()
+    for contract in GOVERNANCE_RULE_FAMILY_CONTRACTS.values():
+        governance_paths.add(str(contract["owner"]).partition("#")[0])
+        for field in ("executable", "readback"):
+            locator = str(contract[field])
+            if locator != "none":
+                governance_paths.add(locator)
+    for rel_path in sorted(governance_paths):
+        source = PROJECT_ROOT / rel_path
+        _write(root / rel_path, source.read_text(encoding="utf-8"))
+    _write(
+        root / "docs/lc-msms-evidence-rules.md",
+        "\n".join(
+            [
+                "# LC-MS/MS evidence rules",
+                "",
+                "Doc placement: formal_repo_doc",
+                "Doc kind: product_doc",
+                "Doc lifecycle: active",
+                "Repo owner: docs/lc-msms-evidence-rules.md",
+                "Doc exit rule: retire after a replacement owner absorbs the rules.",
+            ]
+        )
+        + "\n",
+    )
+    _write(
+        root / "AGENTS.md",
+        "\n".join(
+            [
+                "# XIC Extractor Agent Contract",
+                "",
+                "## Task Routes",
+                "",
+                "- [Parameters](docs/agent/parameter-settings.md)",
+                "- [Product](docs/product/README.md)",
+                "- [Validation](docs/agent/product-validation-contract.md)",
+                "- [Architecture](docs/architecture-contract.md)",
+                "- [Execution](docs/agent/execution-gates.md)",
+                "- [Diagnostics](tools/diagnostics/INDEX.md)",
+                "- [Solutions](docs/solutions/README.md)",
+                "- [Productization](docs/product/productization.md)",
+                "- [Layout](docs/project-layout.md)",
+                "- [Agent system](docs/agent/codex-operating-system.md)",
+            ]
+        )
+        + "\n",
+    )
+    _write(
+        root / "README.md",
+        "\n".join(
+            [
+                "# XIC Extractor",
+                "",
+                "## Documentation",
+                "",
+                "- [Users](docs/user/README.md)",
+                "- [Product](docs/product/README.md)",
+                "- [Architecture](docs/architecture-contract.md)",
+                "- [Layout](docs/project-layout.md)",
+                "- [Evidence](docs/lc-msms-evidence-rules.md)",
+            ]
+        )
+        + "\n",
+    )
+    _write(
+        root / "docs/architecture-contract.md",
+        "\n".join(
+            [
+                "# Architecture Contract",
+                "",
+                "This document owns the dependency contract.",
+                "",
+                "## Dependency Direction",
+                "",
+                "Domain points inward.",
+                "",
+                "## Ownership Map",
+                "",
+                "Owners are explicit.",
+            ]
+        )
+        + "\n",
+    )
+    _write(
+        root / "docs/project-layout.md",
+        "\n".join(
+            [
+                "# Project Layout",
+                "",
+                "[Architecture](architecture-contract.md)",
+                "[Product](product)",
+                "[Handoff](agent/obsidian-handoff-contract.md)",
+                "",
+                "## Permanent root document contract",
+                "",
+                "目錄收納規則單一可信來源",
+                "",
+                "source-of-truth 與歷程邊界",
+            ]
+        )
+        + "\n",
+    )
+
+
 def _clean_repo(root: Path) -> None:
+    _write_permanent_root_contracts(root)
     _write(
         root / CURRENT_HANDOFF,
         "# Current handoff\n\nStatus: committed.\n",
@@ -2028,6 +2158,7 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
     vault = tmp_path / "vault"
     root.mkdir()
     subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    _write_permanent_root_contracts(root)
     _clean_vault(vault)
     _write(
         root / ".gitignore",
@@ -2067,13 +2198,112 @@ def test_canonical_metadata_review_reports_root_authority_missing_metadata(
     result = _run_audit(root, vault)
 
     review = result.summary["repo"]["canonical_metadata_review"]
-    assert review["missing_metadata_files"] == 1
-    row = review["top_missing_metadata"][0]
+    rows = review["top_missing_metadata"]
+    row = next(item for item in rows if item["path"] == "AGENTS.md")
     assert row["path"] == "AGENTS.md"
     assert row["metadata_status"] == "invalid_permanent_root_contract"
     assert "required heading must occur exactly once" in row["metadata_missing_fields"]
     assert any(
-        msg.severity == "warning" and "canonical docs metadata review" in msg.message
+        msg.severity == "blocker" and msg.path == "AGENTS.md"
+        for msg in result.messages
+    )
+
+
+def test_canonical_metadata_review_blocks_missing_permanent_root(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    (root / "README.md").unlink()
+
+    result = _run_audit(root, vault)
+
+    assert any(
+        msg.severity == "blocker"
+        and msg.path == "README.md"
+        and "permanent root path is missing" in msg.message
+        for msg in result.messages
+    )
+
+
+@pytest.mark.parametrize(
+    ("packet_text", "expected_problem"),
+    (
+        (
+            json.dumps(
+                {
+                    "transaction": "body_to_compatibility_index",
+                    "source_path": (
+                        "docs/superpowers/plans/"
+                        "2026-06-15-productization-control-plane.md"
+                    ),
+                    "activation_base_sha": "not-a-sha",
+                }
+            ),
+            "activation_base_sha must be a full Git SHA",
+        ),
+        ("{", "retirement packet is not valid JSON"),
+    ),
+)
+def test_docs_audit_blocks_invalid_committed_retirement_packet(
+    tmp_path: Path,
+    packet_text: str,
+    expected_problem: str,
+) -> None:
+    root = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    _clean_repo(root)
+    _clean_vault(vault)
+    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "fixture",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    packet_path = (
+        "docs/superpowers/file-management/docs-cleanup/"
+        "2026-08-01-retirement-evidence.json"
+    )
+    _write(
+        root / packet_path,
+        packet_text,
+    )
+    subprocess.run(["git", "add", packet_path], cwd=root, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-m",
+            "invalid packet fixture",
+        ],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+    result = _run_audit(root, vault)
+
+    assert any(
+        msg.severity == "blocker"
+        and msg.path == packet_path
+        and expected_problem in msg.message
         for msg in result.messages
     )
 

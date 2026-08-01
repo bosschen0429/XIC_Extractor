@@ -36,8 +36,7 @@
   "unresolved_claims": [],
   "hard_zero_files": [
     "docs/superpowers/validation/productization_status_index_v1.tsv",
-    "docs/superpowers/schemas/productization_authority_manifest.v1.json",
-    "docs/superpowers/schemas/productization_control_plane_schema.v1.json"
+    "docs/superpowers/schemas/productization_authority_manifest.v1.json"
   ],
   "source_sections": [
     {
@@ -8358,7 +8357,6 @@
       "AGENTS.md",
       "docs/agent/codex-operating-system.md",
       "docs/agent/product-validation-contract.md",
-      "docs/diagnostic-ledger.md",
       "docs/project-layout.md",
       "docs/solutions/README.md",
       "docs/solutions/productization/cid-nl-default-activation-no-write-scope-removal.md",
@@ -8366,15 +8364,10 @@
       "docs/solutions/validation/raw-backed-evidence-cache-identity.md",
       "docs/superpowers/file-management/docs-cleanup/2026-06-29_docs-superpowers-topic-clusters.tsv",
       "docs/superpowers/file-management/docs-cleanup/referrers/2026-06-25_codex-docs-cleanup_historical-referrer-rewrite-map.tsv",
-      "docs/superpowers/plans/2026-06-19-backfill-quant-matrix-productization-roadmap.md",
-      "docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md",
-      "docs/superpowers/plans/2026-07-02-local-ms1-feature-table-generator-implementation-plan.md",
-      "docs/superpowers/plans/2026-07-25-six-week-implementation-wave.md",
-      "docs/superpowers/plans/README.md",
       "docs/superpowers/productization/evidence/2026-06-17_cc-framework-improvements_productization_handoff-prune_34cdf61d.md",
-      "docs/superpowers/productization/status/cc-framework-improvements-productization.md",
       "docs/superpowers/validation/evidence_chain_source_of_truth.md",
-      "docs/superpowers/validation/evidence_chain_status_guide.html",
+      "tests/test_docs_placement_guard.py",
+      "tests/test_docs_policy.py",
       "tools/diagnostics/INDEX.md",
       "tools/diagnostics/docs_policy.py",
       "tools/diagnostics/docs_routing_review.py",
@@ -8384,11 +8377,6 @@
       {
         "referrer": "AGENTS.md",
         "raw_target": "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-        "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
-      },
-      {
-        "referrer": "docs/product/README.md",
-        "raw_target": "../superpowers/plans/2026-06-15-productization-control-plane.md",
         "resolved_path": "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
       },
       {
@@ -8605,6 +8593,8 @@
     "docs/superpowers/plans/README.md",
     "docs/superpowers/productization/evidence/2026-06-17_cc-framework-improvements_productization_handoff-prune_34cdf61d.md",
     "docs/superpowers/productization/status/cc-framework-improvements-productization.md",
+    "docs/superpowers/schemas/productization_control_plane_schema.v1.json",
+    "docs/superpowers/validation/ARTIFACT_INVENTORY.tsv",
     "docs/superpowers/validation/evidence_chain_source_of_truth.md",
     "docs/superpowers/validation/evidence_chain_status_guide.html",
     "scripts/check_cid_nl_discovery_release_slice.py",
@@ -8614,12 +8604,22 @@
     "tools/diagnostics/docs_routing_review.py",
     "tools/diagnostics/retire_docs.py"
   ],
+  "allowed_protected_writes": [
+    ".codex/hooks/xic_post_tool_guard.py",
+    ".codex/hooks/xic_pre_tool_guard.py",
+    ".codex/hooks/xic_prompt_router.py",
+    "docs/superpowers/schemas/productization_control_plane_schema.v1.json",
+    "docs/superpowers/validation/ARTIFACT_INVENTORY.tsv",
+    "docs/superpowers/validation/evidence_chain_source_of_truth.md",
+    "docs/superpowers/validation/evidence_chain_status_guide.html"
+  ],
   "read_only_protected_surfaces": {
     "exact_paths": [
+      "docs/superpowers/schemas/productization_control_plane_schema.v1.json",
       "docs/superpowers/validation/productization_status_index_v1.tsv",
       "docs/superpowers/schemas/productization_authority_manifest.v1.json",
-      "docs/superpowers/schemas/productization_control_plane_schema.v1.json",
       "docs/superpowers/plans/2026-07-02-resolver-convergence-and-baseline-order.md",
+      ".codex/hooks.json",
       ".github/workflows/ci.yml",
       "scripts/bootstrap_worktree.py",
       "scripts/agent_sandbox_doctor.py"
@@ -8627,12 +8627,11 @@
     "prefixes": [
       ".codex/hooks/",
       ".codex/rules/",
-      ".codex/hooks.json",
       "docs/superpowers/validation/",
       "xic_extractor/",
       "gui/"
     ],
-    "rule": "A path listed in conditional_write_set remains read-only when it matches this protection set; same-path compatibility means no referrer rewrite is required there."
+    "rule": "Protected paths may change only when explicitly listed in allowed_protected_writes; hard_zero_files remain unchanged. Same-path compatibility means no referrer rewrite is required there."
   },
   "permanent_root_map": [
     {
@@ -8702,7 +8701,9 @@
       "advisory_context",
       "human_decision"
     ],
-    "hook_and_ci_behavior_change_allowed": false,
+    "hook_advisory_routing_change_allowed": true,
+    "hook_deny_behavior_change_allowed": false,
+    "ci_behavior_change_allowed": false,
     "residual_harness_gap_owner": "#166"
   },
   "bounded_static_tooling_paths": [
