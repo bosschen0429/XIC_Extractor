@@ -366,6 +366,21 @@ def main() -> int:
         "Background RAW launch",
     )
 
+    assigned_process_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"$proc = Start-Process python -PassThru "
+                "-ArgumentList '-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", assigned_process_payload),
+        "Background RAW launch",
+    )
+
     env_option_reset_payload = {
         **static_rule_search_payload,
         "tool_input": {

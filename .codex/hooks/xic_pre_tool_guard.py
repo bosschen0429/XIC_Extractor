@@ -48,6 +48,7 @@ SHELL_CONTROL_PREFIXES = {
     "{",
     "(",
     "!",
+    "=",
 }
 SHELL_SEPARATOR_CHARS = ";&|\n"
 MAX_WRAPPER_DEPTH = 3

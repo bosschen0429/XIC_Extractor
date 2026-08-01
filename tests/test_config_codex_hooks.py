@@ -208,8 +208,24 @@ def _governance_rows() -> list[list[str]]:
 
 
 def _assert_repo_locator(locator: str) -> None:
-    path_text = locator.split("#", 1)[0].split("::", 1)[0]
-    assert (ROOT / path_text).exists(), f"missing governance locator: {locator}"
+    owner_text, _, symbol = locator.partition("::")
+    path_text, _, fragment = owner_text.partition("#")
+    path = ROOT / path_text
+    assert path.exists(), f"missing governance locator: {locator}"
+    if fragment:
+        headings = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("#"):
+                continue
+            title = line.lstrip("#").strip().lower()
+            slug = re.sub(r"[^\w\- ]", "", title)
+            headings.append(re.sub(r"\s+", "-", slug))
+        assert fragment in headings, f"missing governance heading: {locator}"
+    if symbol:
+        source = path.read_text(encoding="utf-8")
+        assert re.search(rf"\b{re.escape(symbol)}\b", source), (
+            f"missing governance symbol: {locator}"
+        )
 
 
 def test_existing_hook_behavior_fixture_runs_in_ordinary_pytest() -> None:
@@ -558,6 +574,18 @@ def test_pre_hook_blocks_raw_launch_inside_powershell_control_block() -> None:
     assert "Background RAW launch" in hook_output["permissionDecisionReason"]
 
 
+def test_pre_hook_blocks_raw_launch_on_assignment_rhs() -> None:
+    payload = (
+        "$proc = Start-Process python -PassThru -ArgumentList "
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'"
+    )
+    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
+
+
 def test_pre_hook_does_not_treat_start_process_text_as_a_raw_launch() -> None:
     completed = _run_pre_hook(
         'bash -lc "echo Start-Process run_alignment"'
@@ -616,3 +644,10 @@ def test_governance_index_closes_repository_side_residuals() -> None:
         _assert_repo_locator(locator)
         _assert_repo_locator(representative)
         assert residual == "none"
+
+
+def test_governance_locator_rejects_stale_fragment_and_symbol() -> None:
+    with pytest.raises(AssertionError, match="missing governance heading"):
+        _assert_repo_locator("docs/agent/codex-operating-system.md#missing-heading")
+    with pytest.raises(AssertionError, match="missing governance symbol"):
+        _assert_repo_locator("tools/diagnostics/docs_policy.py::missing_symbol")
