@@ -424,7 +424,7 @@ def markdown_link_targets(text: str) -> tuple[str, ...]:
         label = _normalized_reference_label(match.group(1))
         target = (match.group(2) or match.group(3) or "").strip()
         if target:
-            definitions[label] = target
+            definitions.setdefault(label, target)
 
     reference_pattern = re.compile(
         r"\[((?:\\.|[^\]\\\n])*)\]\[((?:\\.|[^\]\\\n])*)\]"

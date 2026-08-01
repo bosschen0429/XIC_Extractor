@@ -177,6 +177,22 @@ def test_permanent_root_contract_requires_rendered_clickable_route(
     assert "required route must resolve: docs/product/README.md" in problems
 
 
+def test_permanent_root_contract_uses_first_reference_definition() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += (
+        "\n[sample][route]\n\n"
+        "[route]: missing-product-owner.md\n"
+        "[route]: docs/product/README.md\n"
+    )
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
 @pytest.mark.parametrize(
     "code_only_landmark",
     (
