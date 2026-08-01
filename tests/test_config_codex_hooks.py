@@ -357,9 +357,35 @@ def test_pre_hook_does_not_deny_wrapped_read_only_search(wrapper: str) -> None:
     assert completed.stdout == ""
 
 
+@pytest.mark.parametrize(
+    ("wrapper", "prefix", "tokens"),
+    [
+        ("bash -lc", "cd /tmp && ", ("git", "reset", "--hard")),
+        ("pwsh -Command", "Write-Host ok; ", ("git", "checkout", "--", "file")),
+        ("bash -lc", "sh -c ", ("git", "reset", "--hard")),
+    ],
+)
+def test_pre_hook_blocks_compound_and_nested_wrapped_destructive_commands(
+    wrapper: str, prefix: str, tokens: tuple[str, ...]
+) -> None:
+    nested = " ".join(tokens)
+    payload = prefix + (json.dumps(nested) if prefix == "sh -c " else nested)
+    completed = _run_pre_hook(f"{wrapper} {json.dumps(payload)}")
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_pre_hook_preserves_quoted_separators_in_wrapped_search() -> None:
+    needle = "prefix; " + " ".join(("git", "reset", "--hard"))
+    payload = f"rg -n {json.dumps(needle)} docs"
+    completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
 def test_pre_hook_blocks_wrapped_raw_launch_without_preset_token() -> None:
     payload = (
-        "Start-Process python -ArgumentList "
+        "Write-Host ok; Start-Process python -ArgumentList "
         "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT "
         "--dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR'"
     )

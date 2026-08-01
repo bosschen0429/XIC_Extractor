@@ -30,6 +30,8 @@ WRAPPED_DESTRUCTIVE_COMMANDS = [
 
 POSIX_SHELLS = {"bash", "sh"}
 POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
+SHELL_SEPARATORS = {";", "&", "&&", "|", "||"}
+MAX_WRAPPER_DEPTH = 3
 
 BACKGROUND_PROCESS = re.compile(r"^\s*(?:&\s*)?Start-Process\b", re.IGNORECASE)
 RAW_LAUNCH_SIGNAL = re.compile(
@@ -141,6 +143,44 @@ def wrapped_shell_payload(command: str) -> str | None:
     return None
 
 
+def shell_command_segments(payload: str) -> list[str]:
+    try:
+        lexer = shlex.shlex(payload, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
+    except ValueError:
+        return []
+
+    segments: list[str] = []
+    current: list[str] = []
+    for token in tokens:
+        if token in SHELL_SEPARATORS:
+            if current:
+                segments.append(" ".join(current))
+                current = []
+            continue
+        current.append(token)
+    if current:
+        segments.append(" ".join(current))
+    return segments
+
+
+def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
+    payload = wrapped_shell_payload(command)
+    if payload is None:
+        return []
+
+    segments = shell_command_segments(payload)
+    if depth >= MAX_WRAPPER_DEPTH:
+        return segments
+
+    expanded = list(segments)
+    for segment in segments:
+        expanded.extend(wrapped_command_segments(segment, depth=depth + 1))
+    return expanded
+
+
 def is_write_like(event: dict[str, object], command: str, payload: str) -> bool:
     tool_name = str(event.get("tool_name", "")).lower()
     if any(name in tool_name for name in ("apply_patch", "edit", "write")):
@@ -162,14 +202,20 @@ def main() -> int:
 
     wrapped_payload = wrapped_shell_payload(command)
     if wrapped_payload is not None:
-        for pattern, reason in WRAPPED_DESTRUCTIVE_COMMANDS:
-            if pattern.match(wrapped_payload):
-                deny(reason)
-                return 0
+        for segment in wrapped_command_segments(command):
+            for pattern, reason in WRAPPED_DESTRUCTIVE_COMMANDS:
+                if pattern.match(segment):
+                    deny(reason)
+                    return 0
 
-    effective_command = wrapped_payload if wrapped_payload is not None else command
-    if BACKGROUND_PROCESS.search(effective_command) and RAW_LAUNCH_SIGNAL.search(
-        effective_command
+    effective_segments = (
+        wrapped_command_segments(command)
+        if wrapped_payload is not None
+        else shell_command_segments(command)
+    )
+    if any(
+        BACKGROUND_PROCESS.search(segment) and RAW_LAUNCH_SIGNAL.search(segment)
+        for segment in effective_segments
     ):
         deny(
             "Background RAW launch through Start-Process is blocked. Use the documented foreground heartbeat/timing command shape, or get explicit external-terminal approval."
