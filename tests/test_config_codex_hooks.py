@@ -355,6 +355,7 @@ WRAPPERS = [
     "env bash -lc",
     "pwsh -Command",
     "pwsh -NoProfile -Command",
+    "cmd /c",
 ]
 
 
@@ -372,6 +373,9 @@ def test_pre_hook_locates_wrapped_shell_after_env_options(wrapper: str) -> None:
     "git_invocation",
     [
         "command git",
+        "command -p git",
+        "exec git",
+        "exec -a safe-name git",
         "/usr/bin/git",
         "git -C /tmp",
     ],
@@ -538,6 +542,16 @@ def test_pre_hook_does_not_treat_start_process_text_as_a_raw_launch() -> None:
     completed = _run_pre_hook(
         'bash -lc "echo Start-Process run_alignment"'
     )
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_pre_hook_does_not_cross_correlate_unrelated_raw_text() -> None:
+    payload = (
+        "Write-Host run_alignment; "
+        "Start-Process python -ArgumentList '-c print(1)'"
+    )
+    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
     assert completed.returncode == 0
     assert completed.stdout == ""
 

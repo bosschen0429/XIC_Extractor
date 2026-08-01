@@ -37,6 +37,7 @@ WRAPPED_CLEAN_REASON = (
 
 POSIX_SHELLS = {"bash", "sh"}
 POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
+CMD_SHELLS = {"cmd", "cmd.exe"}
 SHELL_CONTROL_PREFIXES = {
     "if",
     "while",
@@ -55,6 +56,10 @@ RAW_LAUNCH_SIGNAL = re.compile(
     r"(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|--preset\b|run_alignment\b|"
     r"--raw-dir\b|XIC_RAW_ROOT\b|THERMO_RAWFILE_READER)",
     re.IGNORECASE,
+)
+POWERSHELL_VARIABLE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_:]*")
+POWERSHELL_ASSIGNMENT = re.compile(
+    r"^\s*(?P<name>\$[A-Za-z_][A-Za-z0-9_:]*)\s*=", re.IGNORECASE
 )
 EXEC_CONFIG_PATHS = [
     "AGENTS.md",
@@ -144,7 +149,7 @@ def wrapped_shell_payload(command: str) -> str | None:
             (
                 index
                 for index, token in enumerate(tokens[1:], start=1)
-                if executable_name(token) in POSIX_SHELLS | POWERSHELLS
+                if executable_name(token) in POSIX_SHELLS | POWERSHELLS | CMD_SHELLS
             ),
             None,
         )
@@ -155,7 +160,7 @@ def wrapped_shell_payload(command: str) -> str | None:
         return None
 
     shell = executable_name(tokens[0])
-    if shell not in POSIX_SHELLS | POWERSHELLS:
+    if shell not in POSIX_SHELLS | POWERSHELLS | CMD_SHELLS:
         return None
 
     for index, token in enumerate(tokens[1:], start=1):
@@ -208,7 +213,17 @@ def normalize_wrapped_git_invocation(segment: str) -> str:
     except ValueError:
         return segment
     if tokens and tokens[0].lower() == "command":
+        if any(token.lower() in {"-v", "-V"} for token in tokens[1:2]):
+            return " ".join(tokens)
         tokens = tokens[1:]
+        while tokens and tokens[0].startswith("-"):
+            tokens = tokens[1:]
+    if tokens and tokens[0].lower() == "exec":
+        tokens = tokens[1:]
+        while tokens and tokens[0].startswith("-"):
+            option = tokens.pop(0)
+            if option == "-a" and tokens:
+                tokens.pop(0)
     if not tokens or not is_git_executable(tokens[0]):
         return " ".join(tokens)
     subcommand_index = skip_git_global_options(tokens, 1)
@@ -246,6 +261,24 @@ def contains_background_process(segment: str) -> bool:
         if executable_name(token) != "start-process":
             continue
         if index == 0 or tokens[index - 1].lower() in SHELL_CONTROL_PREFIXES:
+            return True
+    return False
+
+
+def has_raw_background_launch(segments: list[str]) -> bool:
+    raw_assignments = {
+        match.group("name").lower()
+        for segment in segments
+        if RAW_LAUNCH_SIGNAL.search(segment)
+        if (match := POWERSHELL_ASSIGNMENT.match(segment)) is not None
+    }
+    for segment in segments:
+        if not contains_background_process(segment):
+            continue
+        if RAW_LAUNCH_SIGNAL.search(segment):
+            return True
+        referenced = {name.lower() for name in POWERSHELL_VARIABLE.findall(segment)}
+        if referenced & raw_assignments:
             return True
     return False
 
@@ -301,10 +334,7 @@ def main() -> int:
         if wrapped_payload is not None
         else shell_command_segments(command)
     )
-    effective_command = "\n".join(effective_segments)
-    if any(contains_background_process(segment) for segment in effective_segments) and (
-        RAW_LAUNCH_SIGNAL.search(effective_command)
-    ):
+    if has_raw_background_launch(effective_segments):
         deny(
             "Background RAW launch through Start-Process is blocked. Use the documented foreground heartbeat/timing command shape, or get explicit external-terminal approval."
         )

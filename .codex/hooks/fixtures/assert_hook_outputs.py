@@ -402,6 +402,34 @@ def main() -> int:
         "is blocked",
     )
 
+    cmd_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "cmd /c "
+            + json.dumps(" ".join(("git", "reset", "--hard")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", cmd_reset_payload),
+        "is blocked",
+    )
+
+    exec_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps(
+                " ".join(
+                    ("exec", "-a", "safe-name", "/usr/bin/git", "reset", "--hard")
+                )
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", exec_reset_payload),
+        "is blocked",
+    )
+
     pre_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",
