@@ -340,9 +340,44 @@ def markdown_without_code(text: str) -> str:
     return "".join(visible)
 
 
+def _is_escaped(text: str, index: int) -> bool:
+    backslashes = 0
+    index -= 1
+    while index >= 0 and text[index] == "\\":
+        backslashes += 1
+        index -= 1
+    return backslashes % 2 == 1
+
+
+def markdown_without_html_comments(text: str) -> str:
+    """Remove Markdown HTML comments while preserving line structure."""
+
+    visible: list[str] = []
+    index = 0
+    while index < len(text):
+        if text.startswith("<!--", index) and not _is_escaped(text, index):
+            comment_end = text.find("-->", index + 4)
+            end = len(text) if comment_end < 0 else comment_end + 3
+            visible.extend(
+                "\n" if character == "\n" else " "
+                for character in text[index:end]
+            )
+            index = end
+            continue
+        visible.append(text[index])
+        index += 1
+    return "".join(visible)
+
+
+def markdown_visible_text(text: str) -> str:
+    """Remove Markdown surfaces that do not produce visible contract text."""
+
+    return markdown_without_html_comments(markdown_without_code(text))
+
+
 def markdown_headings(text: str) -> tuple[str, ...]:
     headings: list[str] = []
-    for line in markdown_without_code(text).splitlines():
+    for line in markdown_visible_text(text).splitlines():
         match = re.match(r"^#{1,6}\s+(.+?)\s*$", line)
         if match:
             headings.append(match.group(1))
@@ -357,9 +392,17 @@ def markdown_heading_fragment(heading: str) -> str:
 
 
 def markdown_link_targets(text: str) -> tuple[str, ...]:
-    text = markdown_without_code(text)
+    text = markdown_visible_text(text)
     targets: list[str] = []
-    for raw in re.findall(r"\[[^\]]*\]\(([^)]+)\)", text):
+    occupied_spans: list[tuple[int, int]] = []
+    inline_pattern = re.compile(r"\[((?:\\.|[^\]\\])*)\]\(([^)\n]+)\)")
+    for match in inline_pattern.finditer(text):
+        occupied_spans.append(match.span())
+        if _is_escaped(text, match.start()) or (
+            match.start() > 0 and text[match.start() - 1] == "!"
+        ):
+            continue
+        raw = match.group(2)
         raw = raw.strip()
         if raw.startswith("<") and ">" in raw:
             target = raw[1 : raw.index(">")]
@@ -367,21 +410,59 @@ def markdown_link_targets(text: str) -> tuple[str, ...]:
             target = raw.split(maxsplit=1)[0]
         if target:
             targets.append(target)
+    definitions: dict[str, str] = {}
+    definition_spans: list[tuple[int, int]] = []
     for match in re.finditer(
         (
-            r"^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*"
+            r"^[ \t]{0,3}\[((?:\\.|[^\]\\\n])+?)\]:[ \t]*"
             r"(?:\n[ \t]*)?(?:<([^>\n]+)>|([^\s]+))"
         ),
         text,
         re.M,
     ):
-        target = (match.group(1) or match.group(2) or "").strip()
+        definition_spans.append(match.span())
+        label = _normalized_reference_label(match.group(1))
+        target = (match.group(2) or match.group(3) or "").strip()
         if target:
-            targets.append(target)
+            definitions[label] = target
+
+    reference_pattern = re.compile(
+        r"\[((?:\\.|[^\]\\\n])*)\]\[((?:\\.|[^\]\\\n])*)\]"
+    )
+    for match in reference_pattern.finditer(text):
+        occupied_spans.append(match.span())
+        if _is_escaped(text, match.start()) or (
+            match.start() > 0 and text[match.start() - 1] == "!"
+        ):
+            continue
+        label = _normalized_reference_label(match.group(2) or match.group(1))
+        if label in definitions:
+            targets.append(definitions[label])
+
+    shortcut_pattern = re.compile(r"\[((?:\\.|[^\]\\\n])+?)\]")
+    excluded_spans = occupied_spans + definition_spans
+    for match in shortcut_pattern.finditer(text):
+        if any(start <= match.start() < end for start, end in excluded_spans):
+            continue
+        if _is_escaped(text, match.start()) or (
+            match.start() > 0 and text[match.start() - 1] == "!"
+        ):
+            continue
+        if match.end() < len(text) and text[match.end()] in "([:":
+            continue
+        label = _normalized_reference_label(match.group(1))
+        if label in definitions:
+            targets.append(definitions[label])
     return tuple(targets)
 
 
+def _normalized_reference_label(label: str) -> str:
+    unescaped = re.sub(r"\\([!\"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~])", r"\1", label)
+    return " ".join(unescaped.casefold().split())
+
+
 def html_link_targets(text: str) -> tuple[str, ...]:
+    text = markdown_without_html_comments(text)
     targets: list[str] = []
     for match in re.finditer(
         r"\bhref\s*=\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s\"'=<>`]+))",
@@ -433,7 +514,7 @@ def permanent_root_contract_problems(
         return ()
     overrides = overrides or {}
     problems: list[str] = []
-    visible_text = markdown_without_code(text)
+    visible_text = markdown_visible_text(text)
     headings = markdown_headings(visible_text)
     for heading in contract["required_headings"]:
         if headings.count(heading) != 1:
@@ -559,22 +640,40 @@ def governance_index_problems(
     )
 
     overrides = overrides or {}
-    text = markdown_without_block_code(text)
+    text = markdown_without_html_comments(markdown_without_block_code(text))
     rows: list[list[str]] = []
-    table_started = False
-    for line in text.splitlines():
-        if not line.startswith("|"):
-            if table_started:
-                break
-            continue
-        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
-        if cells and cells[0] == "Rule family":
-            table_started = True
-            continue
-        if not table_started or all(set(cell) <= {"-", ":"} for cell in cells):
-            continue
-        rows.append(cells)
     problems: list[str] = []
+    lines = text.splitlines()
+    header_index = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if line.startswith("|")
+            and _markdown_table_cells(line)
+            and _markdown_table_cells(line)[0] == "Rule family"
+        ),
+        None,
+    )
+    if header_index is None or header_index + 1 >= len(lines):
+        problems.append("governance index must contain a rendered Markdown table")
+    else:
+        header_cells = _markdown_table_cells(lines[header_index])
+        delimiter_cells = _markdown_table_cells(lines[header_index + 1])
+        valid_delimiter = (
+            len(header_cells) == 6
+            and len(delimiter_cells) == len(header_cells)
+            and all(
+                re.fullmatch(r":?-{3,}:?", cell) is not None
+                for cell in delimiter_cells
+            )
+        )
+        if not valid_delimiter:
+            problems.append("governance index must contain a rendered Markdown table")
+        else:
+            for line in lines[header_index + 2 :]:
+                if not line.startswith("|"):
+                    break
+                rows.append(_markdown_table_cells(line))
     row_ids = [row[0] for row in rows]
     expected_ids = list(GOVERNANCE_RULE_FAMILY_CONTRACTS)
     if len(rows) != len(expected_ids) or set(row_ids) != set(expected_ids):
@@ -643,3 +742,7 @@ def governance_index_problems(
         if residual not in {"none", "#166"}:
             problems.append(f"governance row {rule_id} residual must be none or #166")
     return tuple(problems)
+
+
+def _markdown_table_cells(line: str) -> list[str]:
+    return [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]

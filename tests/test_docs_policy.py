@@ -155,6 +155,29 @@ def test_permanent_root_contract_ignores_non_fenced_code_only_route(
 
 
 @pytest.mark.parametrize(
+    "non_link_route",
+    (
+        "[unused]: docs/product/README.md",
+        "![sample](docs/product/README.md)",
+        "<!-- [sample](docs/product/README.md) -->",
+        r"\[sample](docs/product/README.md)",
+    ),
+)
+def test_permanent_root_contract_requires_rendered_clickable_route(
+    non_link_route: str,
+) -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("(docs/product/README.md)", "(missing-product-owner.md)", 1)
+    text += "\n" + non_link_route + "\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required route must resolve: docs/product/README.md" in problems
+
+
+@pytest.mark.parametrize(
     "code_only_landmark",
     (
         "`This document owns`",
@@ -171,6 +194,38 @@ def test_permanent_root_contract_ignores_non_fenced_code_only_landmark(
     text = (root / rel_path).read_text(encoding="utf-8")
     text = text.replace("This document owns", "This document describes", 1)
     text += "\n" + code_only_landmark + "\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required purpose landmark must occur exactly once: This document owns" in (
+        problems
+    )
+
+
+def test_permanent_root_contract_ignores_html_comment_only_heading() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "AGENTS.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace(
+        "# XIC Extractor Agent Contract",
+        "# XIC Extractor Repository",
+        1,
+    )
+    text += "\n<!--\n# XIC Extractor Agent Contract\n-->\n"
+
+    problems = permanent_root_contract_problems(root, rel_path, text)
+
+    assert "required heading must occur exactly once: XIC Extractor Agent Contract" in (
+        problems
+    )
+
+
+def test_permanent_root_contract_ignores_html_comment_only_landmark() -> None:
+    root = Path(__file__).parents[1]
+    rel_path = "docs/architecture-contract.md"
+    text = (root / rel_path).read_text(encoding="utf-8")
+    text = text.replace("This document owns", "This document describes", 1)
+    text += "\n<!-- This document owns -->\n"
 
     problems = permanent_root_contract_problems(root, rel_path, text)
 

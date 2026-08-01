@@ -439,6 +439,46 @@ def test_governance_index_ignores_indented_code_only_table() -> None:
     )
 
 
+def test_governance_index_requires_table_delimiter() -> None:
+    root = Path(__file__).parents[1]
+    path = "docs/agent/codex-operating-system.md"
+    text = (root / path).read_text(encoding="utf-8")
+    table_start = text.index("| Rule family |")
+    delimiter_start = text.index("\n", table_start) + 1
+    delimiter_end = text.index("\n", delimiter_start)
+    text = text[:delimiter_start] + text[delimiter_end + 1 :]
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    assert any(
+        "governance index must contain a rendered Markdown table" in problem.reason
+        for problem in result.problems
+    )
+
+
+def test_governance_index_ignores_html_comment_only_table() -> None:
+    root = Path(__file__).parents[1]
+    path = "docs/agent/codex-operating-system.md"
+    text = (root / path).read_text(encoding="utf-8")
+    table_start = text.index("| Rule family |")
+    table_end = text.index("\n\n", table_start)
+    table = text[table_start:table_end]
+    text = text[:table_start] + f"<!--\n{table}\n-->" + text[table_end:]
+
+    result = check_doc_placement(
+        root,
+        [StagedMarkdown("M", path, text)],
+    )
+
+    assert any(
+        "governance index must contain a rendered Markdown table" in problem.reason
+        for problem in result.problems
+    )
+
+
 def test_governance_index_ignores_nested_fenced_only_table() -> None:
     root = Path(__file__).parents[1]
     path = "docs/agent/codex-operating-system.md"

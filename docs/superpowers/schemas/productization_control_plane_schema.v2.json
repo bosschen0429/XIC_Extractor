@@ -64,6 +64,18 @@
       "cid_nl_adopt_ready_feature_inclusion_95_cells",
       "backfill_expansion_clean_target_selective_activation_84_cells"
     ],
+    "matrix_write_requires": [
+      "registered_product_authority_scope",
+      "expected_diff_acceptance",
+      "focused_output_contract_tests"
+    ],
+    "forbidden_authority_sources": [
+      "quality_explanations",
+      "quality_blockers",
+      "round_trip_oracle_as_peak_choice_truth",
+      "istd_anchor_as_analyte_area_truth",
+      "broad_backfill_candidate_universe"
+    ],
     "parked_blocked_diagnostic_frozen_out_of_scope_must_not_write": true,
     "quality_explanations_cannot_write": true,
     "review_truth_or_recovery_artifacts_cannot_write": true,

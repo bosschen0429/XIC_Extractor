@@ -321,6 +321,8 @@ def test_checker_rejects_predecessor_control_plane_schema() -> None:
         ("open", "unregistered_scope_policy must be fail_closed"),
         ("scope", "allowed scopes drifted from registered writer lanes"),
         ("boolean", "quality_explanations_cannot_write must be true"),
+        ("matrix_requirements", "matrix_write_requires must exactly match"),
+        ("forbidden_sources", "forbidden_authority_sources must exactly match"),
     ),
 )
 def test_checker_rejects_schema_authority_rule_drift(
@@ -338,6 +340,10 @@ def test_checker_rejects_schema_authority_rule_drift(
         rules["unregistered_scope_policy"] = "allow"
     elif mutation == "scope":
         rules["allowed_product_writer_scopes"].pop()
+    elif mutation == "matrix_requirements":
+        rules["matrix_write_requires"].pop()
+    elif mutation == "forbidden_sources":
+        rules["forbidden_authority_sources"].pop()
     else:
         rules["quality_explanations_cannot_write"] = False
     mutated = tmp_path / "schema.json"
@@ -346,6 +352,24 @@ def test_checker_rejects_schema_authority_rule_drift(
     problems = check_productization_state(schema_path=mutated)
 
     assert any(expected_problem in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
+    "policy_key",
+    ("matrix_write_requires", "forbidden_authority_sources"),
+)
+def test_checker_rejects_weakened_manifest_authority_policy(
+    tmp_path: Path,
+    policy_key: str,
+) -> None:
+    authority = json.loads(DEFAULT_AUTHORITY_MANIFEST.read_text(encoding="utf-8"))
+    authority["authority_policy"][policy_key] = []
+    mutated = tmp_path / "authority.json"
+    mutated.write_text(json.dumps(authority), encoding="utf-8")
+
+    problems = check_productization_state(authority_manifest_path=mutated)
+
+    assert f"authority manifest {policy_key} drifted from schema" in problems
 
 
 def test_checker_rejects_status_row_with_extra_cell(tmp_path: Path) -> None:

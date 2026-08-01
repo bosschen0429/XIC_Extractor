@@ -71,6 +71,8 @@ NON_AUTHORITY_LANE_GROUPS = {"review", "truth", "evidence"}
 AUTHORITY_RULE_KEYS = {
     "unregistered_scope_policy",
     "allowed_product_writer_scopes",
+    "matrix_write_requires",
+    "forbidden_authority_sources",
     "parked_blocked_diagnostic_frozen_out_of_scope_must_not_write",
     "quality_explanations_cannot_write",
     "review_truth_or_recovery_artifacts_cannot_write",
@@ -79,6 +81,24 @@ AUTHORITY_RULE_KEYS = {
 AUTHORITY_TRUE_RULES = AUTHORITY_RULE_KEYS - {
     "unregistered_scope_policy",
     "allowed_product_writer_scopes",
+    "matrix_write_requires",
+    "forbidden_authority_sources",
+}
+EXPECTED_MATRIX_WRITE_REQUIREMENTS = {
+    "registered_product_authority_scope",
+    "expected_diff_acceptance",
+    "focused_output_contract_tests",
+}
+EXPECTED_FORBIDDEN_AUTHORITY_SOURCES = {
+    "quality_explanations",
+    "quality_blockers",
+    "round_trip_oracle_as_peak_choice_truth",
+    "istd_anchor_as_analyte_area_truth",
+    "broad_backfill_candidate_universe",
+}
+AUTHORITY_LIST_RULE_EXPECTATIONS = {
+    "matrix_write_requires": EXPECTED_MATRIX_WRITE_REQUIREMENTS,
+    "forbidden_authority_sources": EXPECTED_FORBIDDEN_AUTHORITY_SOURCES,
 }
 PRODUCT_TOPIC_BY_LANE_GROUP = {
     "backfill": "backfill.md",
@@ -201,6 +221,17 @@ def _check_schema_authority_rules(
     for rule in sorted(AUTHORITY_TRUE_RULES):
         if raw_rules.get(rule) is not True:
             problems.append(f"schema authority_rules {rule} must be true")
+    for rule, expected_values in AUTHORITY_LIST_RULE_EXPECTATIONS.items():
+        values = raw_rules.get(rule)
+        if (
+            not isinstance(values, list)
+            or not all(isinstance(value, str) and value for value in values)
+            or len(values) != len(set(values))
+            or set(values) != expected_values
+        ):
+            problems.append(
+                f"schema authority_rules {rule} must exactly match the enforced policy"
+            )
     return raw_rules
 
 
@@ -328,6 +359,16 @@ def _check_authority_boundaries(
     allowed_scopes = set(policy.get("product_writer_allowed_scopes", []))
     if allowed_scopes != schema_scopes:
         problems.append("authority manifest allowed scopes drifted from schema")
+    for rule in AUTHORITY_LIST_RULE_EXPECTATIONS:
+        schema_values = authority_rules.get(rule)
+        manifest_values = policy.get(rule)
+        if (
+            not isinstance(manifest_values, list)
+            or len(manifest_values) != len(set(manifest_values))
+            or not isinstance(schema_values, list)
+            or set(manifest_values) != set(schema_values)
+        ):
+            problems.append(f"authority manifest {rule} drifted from schema")
     expected_scopes = {item["scope"] for item in WRITER_LANE_AUTHORITY.values()}
     if schema_scopes != expected_scopes:
         problems.append("schema allowed scopes drifted from registered writer lanes")
