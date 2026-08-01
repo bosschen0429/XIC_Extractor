@@ -277,11 +277,14 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
         ("git", "clean", "-fd"),
     ],
 )
-def test_pre_hook_blocks_wrapped_destructive_commands(
+def test_pre_hook_preserves_wrapped_destructive_owner_semantics(
     wrapper: str, tokens: tuple[str, ...]
 ) -> None:
     completed = _run_pre_hook(f"{wrapper} {json.dumps(' '.join(tokens))}")
     assert completed.returncode == 0
+    if tokens == ("git", "clean", "-fd"):
+        assert completed.stdout == ""
+        return
     output = json.loads(completed.stdout)
     hook_output = output["hookSpecificOutput"]
     assert hook_output["hookEventName"] == "PreToolUse"
