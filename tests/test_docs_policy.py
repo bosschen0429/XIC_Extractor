@@ -178,6 +178,14 @@ def test_permanent_root_contract_ignores_blockquoted_fenced_only_route(
          "> > ```\n"
          "> [fenced route](docs/product/README.md)\n"
          "> ```\n"),
+        ("```markdown\n"
+         "    ```\n"
+         "[fenced route](docs/product/README.md)\n"
+         "```\n"),
+        ("> ```markdown\n"
+         ">     ```\n"
+         "> [fenced route](docs/product/README.md)\n"
+         "> ```\n"),
     ),
 )
 def test_permanent_root_contract_ignores_faux_closing_container_in_fence(
