@@ -77,8 +77,19 @@ peaks must come from the parent's exact M2 target/attempt-bound candidate
 universe; one sample cannot contribute multiple competing full-universe
 receipts. Candidate-universe membership alone is not component membership:
 each component must carry explicit owner-bound membership evidence for its
-component ID and exact observations. Same-sample peaks from another target or
-attempt are outside scope.
+component ID and exact observations. The M3 owner seals those components,
+candidate universes, and M2 mapping decisions into one immutable partition
+receipt. H1b settlement, split lineage, and same-identity aggregation must all
+reuse that exact receipt; a settlement cannot be replayed against a stale,
+partial, expanded, or repartitioned component set. Same-sample peaks from
+another target or attempt are outside scope.
+
+A single-parent candidate universe may be partitioned by explicit M3 membership
+evidence because no competing parent allocation exists. A multi-parent universe
+retains M2's full mapping closure: only the exact `candidate_mapped` peak may
+enter that parent's component. Held one-to-many or many-to-one evidence remains
+unallocated/scientifically uncertain; broad universe membership cannot assign
+or reuse one physical peak across competing parents.
 
 Repeated components disfavor the one-component model but do not prove `H2`.
 Components retain their physical observations, candidate-universe receipts,
@@ -93,7 +104,8 @@ Split lifecycle semantics are explicit:
   parent Backfill/numeric projection;
 - `split_supported` requires resolved `H1b` or `H2`, supersedes the parent,
   creates explicit child lineage, and recomputes each child's `S` from its own
-  direct SUPPORT cells. Parent threshold status is never inherited.
+  direct SUPPORT cells. Child censuses are owner-minted and internally
+  consistent; parent threshold status is never inherited.
 
 The implementation lives in `alignment/identity_settlement.py` and the local
 landmark owner in `alignment/drift_evidence.py`. Both advertise

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import inspect
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -10,12 +10,14 @@ import pytest
 import xic_extractor.alignment.identity_settlement as identity_settlement_module
 from tests.issue161_no_raw_fixture import issue161_peak
 from tests.test_alignment_conservative_backfill import (
+    _peak,
     _recovery_universe,
     _spine,
     _study_fixture,
 )
 from xic_extractor.alignment.conservative_backfill import (
     assess_conservative_backfill_group,
+    map_conservative_backfill_candidates,
 )
 from xic_extractor.alignment.drift_evidence import (
     LocalFeatureLandmarkEvidence,
@@ -24,12 +26,15 @@ from xic_extractor.alignment.drift_evidence import (
 )
 from xic_extractor.alignment.identity_settlement import (
     IdentityModelEvidence,
+    SplitChildSupportCensus,
     SplitComponentEvidence,
+    SplitComponentPartitionEvidence,
     SplitLineageDecision,
     aggregate_same_identity_components,
     assess_split_lineage,
     mint_identity_relation_evidence,
     mint_split_component_evidence,
+    mint_split_component_partition_evidence,
     settle_identity_model,
 )
 
@@ -38,20 +43,19 @@ def test_split_lifecycle_preserves_evidence_and_blocks_only_candidate_onward(
     tmp_path: Path,
 ) -> None:
     parent, components, universes, _fixture = _parent_and_components(tmp_path)
-    uncertain = _settlement(parent, relation="unresolved")
+    partition = _partition(parent, components, universes)
+    uncertain = _settlement(parent, partition, relation="unresolved")
 
     watch = assess_split_lineage(
         parent_group=parent,
-        components=components,
-        candidate_universes=universes,
+        component_partition=partition,
         lifecycle_state="split_watch",
         identity_settlement=uncertain,
         evidence_refs=("split:visual-review",),
     )
     candidate = assess_split_lineage(
         parent_group=parent,
-        components=components,
-        candidate_universes=universes,
+        component_partition=partition,
         lifecycle_state="split_candidate",
         identity_settlement=uncertain,
         evidence_refs=("split:repeated-components",),
@@ -75,12 +79,12 @@ def test_split_supported_creates_exact_children_and_recomputes_s(
     tmp_path: Path,
 ) -> None:
     parent, components, universes, _fixture = _parent_and_components(tmp_path)
-    same_identity = _settlement(parent, relation="same_identity")
+    partition = _partition(parent, components, universes)
+    same_identity = _settlement(parent, partition, relation="same_identity")
 
     decision = assess_split_lineage(
         parent_group=parent,
-        components=components,
-        candidate_universes=universes,
+        component_partition=partition,
         lifecycle_state="split_supported",
         identity_settlement=same_identity,
         evidence_refs=("split:resolved-same-identity",),
@@ -98,9 +102,7 @@ def test_split_supported_creates_exact_children_and_recomputes_s(
     )
     assert tuple(child.direct_support_count_s for child in decision.children) == (1, 1)
     assert tuple(child.minimum_support_k for child in decision.children) == (2, 2)
-    assert not any(
-        child.meets_direct_support_threshold for child in decision.children
-    )
+    assert not any(child.meets_direct_support_threshold for child in decision.children)
     assert all(
         child.parent_group_hypothesis_id
         == parent.group_context.group.group_hypothesis_id
@@ -111,14 +113,18 @@ def test_split_supported_creates_exact_children_and_recomputes_s(
 
 def test_split_supported_rejects_unresolved_identity(tmp_path: Path) -> None:
     parent, components, universes, _fixture = _parent_and_components(tmp_path)
+    partition = _partition(parent, components, universes)
 
     with pytest.raises(ValueError, match="resolved H1b or H2"):
         assess_split_lineage(
             parent_group=parent,
-            components=components,
-            candidate_universes=universes,
+            component_partition=partition,
             lifecycle_state="split_supported",
-            identity_settlement=_settlement(parent, relation="unresolved"),
+            identity_settlement=_settlement(
+                parent,
+                partition,
+                relation="unresolved",
+            ),
             evidence_refs=("split:insufficient",),
         )
 
@@ -132,6 +138,7 @@ def test_physical_observation_cannot_transfer_between_components(
         mint_split_component_evidence(
             parent_group=parent,
             candidate_universes=universes,
+            candidate_mapping_decisions=(components[0].candidate_mapping_decisions),
             component_id="component-b",
             peak_observations=(components[0].peak_observations[0],),
             direct_support_cells=(components[0].direct_support_cells[0],),
@@ -140,14 +147,7 @@ def test_physical_observation_cannot_transfer_between_components(
     )
 
     with pytest.raises(ValueError, match="physical peak cannot be transferred"):
-        assess_split_lineage(
-            parent_group=parent,
-            components=duplicated,
-            candidate_universes=universes,
-            lifecycle_state="split_watch",
-            identity_settlement=_settlement(parent, relation="unresolved"),
-            evidence_refs=("split:adversarial-transfer",),
-        )
+        _partition(parent, duplicated, universes)
 
 
 def test_component_observations_reject_crossed_target_and_attempt(
@@ -196,6 +196,7 @@ def test_candidate_universe_alone_does_not_mint_component_membership(
         mint_split_component_evidence(
             parent_group=parent,
             candidate_universes=universes,
+            candidate_mapping_decisions=(components[0].candidate_mapping_decisions),
             component_id="component-c",
             peak_observations=(components[1].peak_observations[-1],),
             direct_support_cells=(),
@@ -230,24 +231,30 @@ def test_duplicate_candidate_universes_for_one_sample_are_rejected(
         (universes[0], conflicting),
     ):
         with pytest.raises(ValueError, match="unique by sample"):
-            assess_split_lineage(
+            mint_split_component_partition_evidence(
                 parent_group=parent,
                 components=components,
                 candidate_universes=duplicate_universes,
-                lifecycle_state="split_watch",
-                identity_settlement=_settlement(parent, relation="unresolved"),
-                evidence_refs=("split:duplicate-universe",),
+                candidate_mapping_decisions=(components[0].candidate_mapping_decisions),
+                component_pattern="repeated_multiple_components",
+                evidence_refs=("partition:duplicate-universe",),
             )
 
 
 def test_split_lineage_decision_cannot_be_caller_forged(tmp_path: Path) -> None:
     parent, components, universes, _fixture = _parent_and_components(tmp_path)
+    partition = _partition(parent, components, universes)
 
     with pytest.raises(ValueError, match="minted by their owner"):
         SplitLineageDecision(
             lifecycle_state="split_supported",
             parent_group=parent,
-            identity_settlement=_settlement(parent, relation="unresolved"),
+            identity_settlement=_settlement(
+                parent,
+                partition,
+                relation="unresolved",
+            ),
+            component_partition=partition,
             components=components,
             candidate_universes=universes,
             evidence_refs=("split:forged",),
@@ -266,30 +273,32 @@ def test_same_identity_or_and_area_aggregation_require_resolved_h1b(
         tmp_path,
         add_second_s1_peak=True,
     )
-    same_identity = _settlement(parent, relation="same_identity")
-    unresolved = _settlement(parent, relation="unresolved")
-    two_identities = _settlement(parent, relation="different_identities")
+    partition = _partition(parent, components, universes)
+    same_identity = _settlement(parent, partition, relation="same_identity")
+    unresolved = _settlement(parent, partition, relation="unresolved")
+    two_identities = _settlement(
+        parent,
+        partition,
+        relation="different_identities",
+    )
 
     supported_same_identity = assess_split_lineage(
         parent_group=parent,
-        components=components,
-        candidate_universes=universes,
+        component_partition=partition,
         lifecycle_state="split_supported",
         identity_settlement=same_identity,
         evidence_refs=("split:resolved-same-identity",),
     )
     candidate_unresolved = assess_split_lineage(
         parent_group=parent,
-        components=components,
-        candidate_universes=universes,
+        component_partition=partition,
         lifecycle_state="split_candidate",
         identity_settlement=unresolved,
         evidence_refs=("split:unresolved",),
     )
     supported_two_identities = assess_split_lineage(
         parent_group=parent,
-        components=components,
-        candidate_universes=universes,
+        component_partition=partition,
         lifecycle_state="split_supported",
         identity_settlement=two_identities,
         evidence_refs=("split:resolved-two-identities",),
@@ -305,11 +314,7 @@ def test_same_identity_or_and_area_aggregation_require_resolved_h1b(
         for component in components
         for observation in component.peak_observations
     )
-    sample_s1 = (
-        components[0]
-        .peak_observations[0]
-        .content.canonical_sample_identity_id
-    )
+    sample_s1 = components[0].peak_observations[0].content.canonical_sample_identity_id
     expected_s1 = sum(
         observation.content.integration.area_raw_counts_seconds
         for component in components
@@ -322,10 +327,176 @@ def test_same_identity_or_and_area_aggregation_require_resolved_h1b(
     assert summary.product_authority == "none"
 
 
+def test_h1b_settlement_cannot_be_reused_with_a_different_partition(
+    tmp_path: Path,
+) -> None:
+    parent, components, universes, _fixture = _parent_and_components(
+        tmp_path,
+        add_second_s1_peak=True,
+    )
+    full_partition = _partition(parent, components, universes)
+    settlement = _settlement(parent, full_partition, relation="same_identity")
+    reduced_components = (
+        components[0],
+        mint_split_component_evidence(
+            parent_group=parent,
+            candidate_universes=universes,
+            candidate_mapping_decisions=(components[1].candidate_mapping_decisions),
+            component_id="component-b",
+            peak_observations=(components[1].peak_observations[0],),
+            direct_support_cells=components[1].direct_support_cells,
+            membership_evidence_refs=components[1].membership_evidence_refs,
+        ),
+    )
+    reduced_partition = _partition(parent, reduced_components, universes)
+
+    with pytest.raises(ValueError, match="same exact partition"):
+        assess_split_lineage(
+            parent_group=parent,
+            component_partition=reduced_partition,
+            lifecycle_state="split_supported",
+            identity_settlement=settlement,
+            evidence_refs=("split:crossed-partition",),
+        )
+
+
+def test_multi_parent_component_membership_requires_exact_m2_allocation(
+    tmp_path: Path,
+) -> None:
+    fixture = _study_fixture(
+        tmp_path,
+        ("a1", "a2", "b1", "b2", "missing"),
+    )
+    early = assess_conservative_backfill_group(
+        _spine(
+            fixture,
+            support_apex_by_sample={"a1": 7.8, "a2": 7.8},
+            invocation="component-allocation-early",
+        ).cells,
+        sample_population=fixture.samples,
+    )
+    late = assess_conservative_backfill_group(
+        _spine(
+            fixture,
+            support_apex_by_sample={"b1": 8.2, "b2": 8.2},
+            invocation="component-allocation-late",
+        ).cells,
+        sample_population=fixture.samples,
+    )
+    early_peak = _peak(fixture, "missing", apex_rt=7.8)
+    late_peak = _peak(fixture, "missing", apex_rt=8.2)
+    universe = _recovery_universe(
+        fixture,
+        (late, early),
+        "missing",
+        (early_peak, late_peak),
+    )
+    mapping_decisions = map_conservative_backfill_candidates(
+        (late, early),
+        sample=fixture.sample("missing"),
+        candidate_universes=(universe,),
+    )
+    early_support = next(
+        cell for cell in early.source_cells if cell.content.method_result == "SUPPORT"
+    )
+    late_support = next(
+        cell for cell in late.source_cells if cell.content.method_result == "SUPPORT"
+    )
+    assert early_support.peak_observation is not None
+    assert late_support.peak_observation is not None
+
+    early_component = mint_split_component_evidence(
+        parent_group=early,
+        candidate_universes=(universe,),
+        candidate_mapping_decisions=mapping_decisions,
+        component_id="component-early",
+        peak_observations=(early_support.peak_observation, early_peak),
+        direct_support_cells=(early_support,),
+        membership_evidence_refs=("membership:m2-early",),
+    )
+
+    assert early_component.peak_observations[-1] is early_peak
+    with pytest.raises(ValueError, match="exact M2 mapped peak"):
+        mint_split_component_evidence(
+            parent_group=late,
+            candidate_universes=(universe,),
+            candidate_mapping_decisions=mapping_decisions,
+            component_id="component-late",
+            peak_observations=(late_support.peak_observation, early_peak),
+            direct_support_cells=(late_support,),
+            membership_evidence_refs=("membership:cross-parent-reuse",),
+        )
+
+    held_universe = _recovery_universe(
+        fixture,
+        (early, late),
+        "missing",
+        (early_peak,),
+    )
+    held_decisions = map_conservative_backfill_candidates(
+        (early, late),
+        sample=fixture.sample("missing"),
+        candidate_universes=(held_universe,),
+    )
+    assert {decision.disposition for decision in held_decisions} == {"hold"}
+    with pytest.raises(ValueError, match="exact M2 mapped peak"):
+        mint_split_component_evidence(
+            parent_group=early,
+            candidate_universes=(held_universe,),
+            candidate_mapping_decisions=held_decisions,
+            component_id="component-held",
+            peak_observations=(early_support.peak_observation, early_peak),
+            direct_support_cells=(early_support,),
+            membership_evidence_refs=("membership:held-multi-parent",),
+        )
+
+
+def test_split_child_census_cannot_be_replaced_or_caller_forged(
+    tmp_path: Path,
+) -> None:
+    parent, components, universes, _fixture = _parent_and_components(tmp_path)
+    partition = _partition(parent, components, universes)
+    decision = assess_split_lineage(
+        parent_group=parent,
+        component_partition=partition,
+        lifecycle_state="split_supported",
+        identity_settlement=_settlement(
+            parent,
+            partition,
+            relation="same_identity",
+        ),
+        evidence_refs=("split:child-census-authority",),
+    )
+    child = decision.children[0]
+
+    with pytest.raises(ValueError, match="_mint_token"):
+        replace(
+            child,
+            direct_support_count_s=999,
+            meets_direct_support_threshold=True,
+        )
+    with pytest.raises(ValueError, match="minted by their owner"):
+        SplitChildSupportCensus(
+            parent_group_hypothesis_id=child.parent_group_hypothesis_id,
+            child_group_hypothesis_id=child.child_group_hypothesis_id,
+            component_id=child.component_id,
+            peak_observations=child.peak_observations,
+            direct_support_cells=child.direct_support_cells,
+            activation_eligible_sample_ids=child.activation_eligible_sample_ids,
+            direct_support_sample_ids=child.direct_support_sample_ids,
+            sample_count_n=999,
+            minimum_support_k=child.minimum_support_k,
+            direct_support_count_s=999,
+            meets_direct_support_threshold=True,
+            _mint_token=object(),
+        )
+
+
 def test_shadow_split_contract_has_no_writer_or_selected_value_fields() -> None:
     owner_fields = {
         field.name
-        for field in fields(SplitComponentEvidence)
+        for owner in (SplitComponentEvidence, SplitComponentPartitionEvidence)
+        for field in fields(owner)
     }
     assert owner_fields.isdisjoint(
         {
@@ -408,10 +579,12 @@ def _parent_and_components(
                 (cell_s1.peak_observation, second_s1_peak),
             ),
         )
+    candidate_mapping_decisions = ()
     components = (
         mint_split_component_evidence(
             parent_group=parent,
             candidate_universes=candidate_universes,
+            candidate_mapping_decisions=candidate_mapping_decisions,
             component_id="component-a",
             peak_observations=(cell_s1.peak_observation,),
             direct_support_cells=(cell_s1,),
@@ -420,6 +593,7 @@ def _parent_and_components(
         mint_split_component_evidence(
             parent_group=parent,
             candidate_universes=candidate_universes,
+            candidate_mapping_decisions=candidate_mapping_decisions,
             component_id="component-b",
             peak_observations=tuple(component_b_peaks),
             direct_support_cells=(cell_s2,),
@@ -429,7 +603,18 @@ def _parent_and_components(
     return parent, components, candidate_universes, fixture
 
 
-def _settlement(parent, *, relation):
+def _partition(parent, components, candidate_universes):
+    return mint_split_component_partition_evidence(
+        parent_group=parent,
+        components=components,
+        candidate_universes=candidate_universes,
+        candidate_mapping_decisions=components[0].candidate_mapping_decisions,
+        component_pattern="repeated_multiple_components",
+        evidence_refs=("partition:preregistered-components",),
+    )
+
+
+def _settlement(parent, component_partition, *, relation):
     group = parent.group_context.group
     sample_stems = tuple(sorted(owner.sample_stem for owner in group.owners))
     landmarks = tuple(
@@ -458,6 +643,7 @@ def _settlement(parent, *, relation):
                 )
             ),
             component_pattern="repeated_multiple_components",
+            component_partition=component_partition,
             trajectory=assess_local_trajectory(
                 LocalTrajectoryEvidenceLookup(points=landmarks),
                 sample_stems,
@@ -473,6 +659,7 @@ def _append_observation(parent, candidate_universes, components, observation):
         mint_split_component_evidence(
             parent_group=parent,
             candidate_universes=candidate_universes,
+            candidate_mapping_decisions=components[1].candidate_mapping_decisions,
             component_id=components[1].component_id,
             peak_observations=(*components[1].peak_observations, observation),
             direct_support_cells=components[1].direct_support_cells,

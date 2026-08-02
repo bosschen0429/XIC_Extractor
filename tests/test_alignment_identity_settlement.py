@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
+from pathlib import Path
 
 import pytest
 
@@ -59,18 +60,23 @@ from xic_extractor.alignment.identity_settlement import (
     ),
 )
 def test_h1a_h1b_h2_h3_truth_table_is_explicit_and_shadow_only(
+    tmp_path: Path,
     relation,
     component_pattern,
     trajectory_status,
     model,
     state,
 ) -> None:
-    group = _group()
+    group, component_partition = _group_and_partition(
+        tmp_path,
+        component_pattern,
+    )
     decision = settle_identity_model(
         IdentityModelEvidence(
             group=group,
             identity_evidence=_identity_evidence(group, relation),
             component_pattern=component_pattern,
+            component_partition=component_partition,
             trajectory=_trajectory(group, trajectory_status),
             reason_codes=("preregistered_truth_case",),
         )
@@ -85,13 +91,17 @@ def test_h1a_h1b_h2_h3_truth_table_is_explicit_and_shadow_only(
     assert decision.allow_area_aggregation is (model == "H1b")
 
 
-def test_repeated_components_do_not_prove_two_identities() -> None:
-    group = _group()
+def test_repeated_components_do_not_prove_two_identities(tmp_path: Path) -> None:
+    group, component_partition = _group_and_partition(
+        tmp_path,
+        "repeated_multiple_components",
+    )
     decision = settle_identity_model(
         IdentityModelEvidence(
             group=group,
             identity_evidence=None,
             component_pattern="repeated_multiple_components",
+            component_partition=component_partition,
             trajectory=_trajectory(group, "assessable"),
             reason_codes=("two_components_observed",),
         )
@@ -103,6 +113,20 @@ def test_repeated_components_do_not_prove_two_identities() -> None:
     assert "repeated_components_do_not_resolve_identity" in decision.reason_codes
 
 
+def test_repeated_component_pattern_requires_exact_partition_evidence() -> None:
+    group = _group()
+
+    with pytest.raises(ValueError, match="owner-bound partition evidence"):
+        IdentityModelEvidence(
+            group=group,
+            identity_evidence=_identity_evidence(group, "same_identity"),
+            component_pattern="repeated_multiple_components",
+            component_partition=None,
+            trajectory=_trajectory(group, "assessable"),
+            reason_codes=("unbound_component_pattern",),
+        )
+
+
 @pytest.mark.parametrize("status", ("missing_landmarks", "poor_landmarks"))
 def test_missing_or_poor_landmarks_cannot_resolve_same_identity(status) -> None:
     group = _group()
@@ -111,6 +135,7 @@ def test_missing_or_poor_landmarks_cannot_resolve_same_identity(status) -> None:
             group=group,
             identity_evidence=_identity_evidence(group, "same_identity"),
             component_pattern="single_component",
+            component_partition=None,
             trajectory=_trajectory(group, status),
             reason_codes=("direct_identity_but_trajectory_unassessable",),
         )
@@ -134,6 +159,7 @@ def test_identity_and_trajectory_evidence_are_bound_to_the_exact_group() -> None
             group=group,
             identity_evidence=other_identity,
             component_pattern="single_component",
+            component_partition=None,
             trajectory=_trajectory(group, "assessable"),
             reason_codes=("crossed_group_identity",),
         )
@@ -143,17 +169,24 @@ def test_identity_and_trajectory_evidence_are_bound_to_the_exact_group() -> None
             group=group,
             identity_evidence=_identity_evidence(group, "same_identity"),
             component_pattern="single_component",
+            component_partition=None,
             trajectory=_trajectory(other_group, "assessable"),
             reason_codes=("crossed_group_trajectory",),
         )
 
 
-def test_derived_identity_decision_cannot_be_caller_forged() -> None:
-    group = _group()
+def test_derived_identity_decision_cannot_be_caller_forged(
+    tmp_path: Path,
+) -> None:
+    group, component_partition = _group_and_partition(
+        tmp_path,
+        "repeated_multiple_components",
+    )
     evidence = IdentityModelEvidence(
         group=group,
         identity_evidence=None,
         component_pattern="repeated_multiple_components",
+        component_partition=component_partition,
         trajectory=_trajectory(group, "assessable"),
         reason_codes=("unresolved",),
     )
@@ -203,6 +236,18 @@ def _group(sample_stems: tuple[str, str] = ("sample-a", "sample-b")):
     )
     assert len(groups) == 1
     return groups[0]
+
+
+def _group_and_partition(tmp_path: Path, component_pattern):
+    if component_pattern != "repeated_multiple_components":
+        return _group(), None
+    from tests.test_alignment_split_lineage import (
+        _parent_and_components,
+        _partition,
+    )
+
+    parent, components, universes, _fixture = _parent_and_components(tmp_path)
+    return parent.group_context.group, _partition(parent, components, universes)
 
 
 def _identity_evidence(group, relation):
