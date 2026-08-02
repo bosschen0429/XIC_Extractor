@@ -71,7 +71,7 @@ adding a parallel framework.
 | `PeakHypothesis` | Candidate chromatographic identity, selected integration, typed evidence, and audit | `peak_detection.hypotheses`; current builder is still Targeted-shaped |
 | `PeakHypothesisSelectionDecision` | Deterministic sample-local hypothesis selection/externalization | `peak_detection.selection_decision` |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample membership and canonical group-hypothesis identity | `alignment.cross_sample_peak_groups` |
-| `CellObservation` | Sample × group observation state, optional selected integration, evidence, and provenance | Missing workflow-neutral type; current facts are mixed into `AlignedCell` |
+| `CellObservationRef` | Sample × existing-group closure over orthogonal technical, method-result, identity, human-review, and authority axes | Bounded CID-NL M1 owner exists under `alignment.cell_observations`; production callers remain unmigrated |
 | `BackfillRequest` / `BackfillResult` | Revisit a missing group cell using explicit group/hypothesis context; return observation facts and audit, never a writer decision | Current request plan and owner-Backfill result are Untargeted-specific starting points |
 
 `PeakHypothesis` kernel identity is the hypothesis ID, trace-group reference,
@@ -101,39 +101,48 @@ and Matrix projection. The successor seam must not copy that full interface.
   membership. A configured Targeted identity may propose/constrain the group;
   it cannot create positive membership without a selected hypothesis or a
   provenance-valid Backfill observation.
-- A `CellObservation` represents one required sample × group cell. It has one
-  observation state, zero or one selected integration, typed evidence, and
-  origin provenance. `observed` requires a selected integration. `missing`
-  means no completed evaluation result; `absent` means a completed evaluation
-  found no supported hypothesis. Neither state may carry a deliverable numeric
-  value. `unassessable`, `ambiguous`, and `failed` also remain non-numeric.
+- A `CellObservationRef` represents one required sample × already-existing
+  group cell and binds both the group label and its complete canonical
+  hypothesis membership. Technical availability and CID-NL method result are
+  separate axes. SUPPORT requires one owner-backed physical observation and
+  hypothesis; HOLD may retain one observation without fabricating support;
+  REJECT and technical states need no hypothesis. A human disposition must
+  cite the exact current method-assessment artifact. None of these axes grants
+  a deliverable numeric value.
 - A `BackfillRequest` requires an established group/target context and an
   eligible non-observed sample cell. A `BackfillResult` returns one
   `CellObservation` plus audit provenance and never writes a product surface.
 
-## Observation State
+## Orthogonal Assessment And Cell Axes
 
-Keep the shared state small. Record orthogonal facts on separate axes instead
-of multiplying user-visible intermediate labels.
+Keep each claim on its owner axis instead of multiplying or collapsing
+user-visible intermediate labels.
 
-| Axis | Values | Meaning |
+| Axis | M1 values | Meaning |
 | --- | --- | --- |
-| `observation_state` | `observed`, `missing`, `absent`, `unassessable`, `ambiguous`, `failed` | What can be claimed about the sample-local signal |
-| `observation_origin` | `discovery`, `alignment`, `backfill` | Which operation produced the current cell state |
-| `selection_state` | selected-hypothesis decision/audit | Which candidate, if any, represents the observation |
-| workflow projection | Targeted product state or Untargeted Matrix decision | Whether and how the observation is delivered |
+| technical/evidence availability | `evaluated`, `unsupported`, `failed`, `not_evaluated` | Whether a supported acquisition/search completed |
+| CID-NL method result | `SUPPORT`, `HOLD`, `REJECT`, or `None` | What this completed method attempt claims; non-evaluated technical states require `None` |
+| identity/model result | existing/provisional `group_hypothesis_id`, canonical `group_owner_ids`, exact target IDs, and the SUPPORT assessment closure that formed the group | Which exact target-bound, already-established group membership is being evaluated; no M3 or cross-run stability claim |
+| human review | no disposition or an owner-resolved human review ref citing the current assessment artifact | Human decision provenance over this exact assessment; machine logic cannot author final `unassessable` |
+| product authority | always `none` in M1 | Matrix, count, fill, write, export, and activation remain outside this contract |
 
-`missing` is the explicit pre-evaluation or not-yet-completed cell state. It
-may enter Backfill eligibility, but it must not silently become zero.
-`absent` is a completed evaluation conclusion that no supported hypothesis was
-found. `unassessable` is a reviewed evidence conclusion, not a synonym for
-“waiting for review.” A Backfill-origin `observed` value is still distinct
-from a Discovery-origin `observed` value through provenance, without inventing
-a second positive observation state. Review-queue status is workflow metadata,
-not an observation state.
+Internal ambiguity and set-level-only scan relations produce HOLD, not a public
+fifth method result. Different scans may retain individual and set-level
+relations in one assessment; at least one strict unique relation still makes
+the method result SUPPORT. A completed search with qualifying CID-NL evidence
+but no usable physical MS1 peak produces method-specific REJECT; it does not
+assert chemical absence. Non-qualifying or missing positive evidence alone
+proves neither a completed search nor a negative result. Technical failure,
+HOLD, and internal ambiguity must never serialize as REJECT, zero, absence, or
+human `unassessable`.
 
-Debug and method-development artifacts may carry finer reason tags. Product
-projections must collapse them into their own short, documented vocabulary.
+The cell is created only after another sample's SUPPORT has established an
+existing/provisional group. The cell consumes the exact owner-validated group
+context, including target identity and every SUPPORT assessment/hypothesis that
+formed the group; equal-looking or cross-target groups fail closed. HOLD and
+REJECT assessments may persist without a
+cell when no group exists. Backfill eligibility and post-Backfill product
+projection remain #162 responsibilities.
 
 ## Lifecycle Operations
 
@@ -266,9 +275,10 @@ This is not the complete kernel tracer. The remaining gaps are:
    interface.
 3. Untargeted Alignment uses `TraceGroup` and `IntegrationResult`, but it does
    not construct the same sample-local `PeakHypothesis` path as Targeted.
-4. Targeted cross-sample RT, paired-area, and MS1-shape support does not produce
-   the Untargeted `CrossSamplePeakGroupHypothesis` or a workflow-neutral
-   `CellObservation`.
+4. A bounded CID-NL M1 adapter now produces an existing provisional
+   `CrossSamplePeakGroupHypothesis` and minimal `CellObservationRef`, then fans
+   the same refs to two no-write diagnostic views. Targeted and Untargeted
+   production callers have not adopted that interface; #162 owns adoption.
 5. `AlignedCell` mixes observation facts, debug/evidence sidecars, gap-fill
    provenance, identity decisions, and Matrix/product projection.
 6. Targeted CLI baseline/support/final orchestration is not shared by GUI or
@@ -281,9 +291,10 @@ This is not the complete kernel tracer. The remaining gaps are:
    contradict the supplied signals.
    The DDA CID-NL owner composes exact scan refs, aggregates repeated in-peak
    scans into one event, and the existing `PeakHypothesis` now consumes that
-   typed event through a diagnostic owner-backed branch. It still has no
-   cross-sample group, `CellObservation`, Backfill, selection, or product
-   authority, and Pt/Delta Mass multi-observation roles remain undefined.
+   typed event through a diagnostic owner-backed branch. The bounded M1
+   assessment/group/cell spine now closes this CID-NL reference path without
+   Backfill, selection, or product authority. Pt/Delta Mass multi-observation
+   roles remain undefined.
 8. Legacy `feature_family_id` / `public_family_id` remain compatibility labels.
    `group_hypothesis_id` is the successor cross-sample identity.
 
@@ -314,11 +325,13 @@ The tracer does not need to migrate every Discovery provider, Alignment
 diagnostic, or Backfill authority path.
 
 The scientific-reference fixture, identity-decomposition characterization,
-bounded `PeakObservationRef`, DDA CID-NL scan support, chromatographic event,
-and owner-backed `PeakHypothesis` fixtures now satisfy the first
-direct-evidence → physical-observation → applicability → method-hypothesis
-chain. The same `peak_detection` owner composes the existing hypothesis model;
-lineage and provider-local `DetectedFeature` do not mint another one.
+bounded `PeakObservationRef`, DDA CID-NL individual/set relations, complete
+method assessment, chromatographic event, owner-backed `PeakHypothesis`,
+provisional group, and minimal `CellObservationRef` now satisfy the bounded
+direct-evidence → physical-observation → method-assessment → relation →
+hypothesis → group → cell chain. The same `peak_detection` owner composes the
+existing hypothesis model; lineage and provider-local `DetectedFeature` do not
+mint another one.
 The Package 1 no-RAW runtime fixture now also reaches that physical-observation
 owner from capability-bound batched `XICRequest` values in both Targeted and
 Alignment process consumers. The batch receipt retains acquisition coordinates
@@ -326,10 +339,10 @@ and call counts while owner-supplied integration facts are revalidated against
 the acquired trace; it does not perform hypothesis selection or projection.
 Role-bearing multi-observation Pt/Delta Mass composition remains required before
 that separate method can claim the same seam, but Pt is deferred and does not
-block the current CID-NL tracer. CID-NL completion proceeds through explicit
-diagnostic selection/externalization and then group/cell decisions. Runtime
-candidate-universe completeness and DDA co-isolation remain evidence unknowns;
-DIA is explicitly outside the current lab method. Targeted output and Untargeted
+block the current CID-NL tracer. M1 executes only a no-RAW reference fixture;
+runtime candidate-universe completeness, production caller adoption, DDA
+co-isolation, and valley-time calibration remain unknown or deferred. DIA is
+explicitly outside the current lab method. Targeted output and Untargeted
 Matrix authority remain unchanged.
 
 ## Failure, Validation, And Rollback
@@ -341,9 +354,9 @@ Highest-risk failure modes:
 | Shared comparison changes the selected Targeted peak or delivered bytes | Targeted hard-exact golden and expected-diff gate | Stop; keep the legacy Targeted path authoritative and narrow/redraw the seam |
 | Shared group/cell semantics alter Untargeted Matrix identity or values | Existing Matrix/identity characterization plus zero-unapproved-diff assertion | Stop before projection; legacy Alignment/Matrix remains authoritative |
 | Workflow adapter reintroduces hidden scientific selection | Dependency/static scan plus interface-level tracer tests | Move behavior behind the kernel interface or reject the adapter |
-| A non-observed cell becomes zero or a numeric delivery value | State/value invariant tests across both projections | Fail closed; no artifact publication |
+| A HOLD, REJECT, or technical-state cell becomes zero or a numeric delivery value | Orthogonal-axis/value invariant tests across both projections | Fail closed; no artifact publication |
 | Backfill creates a first hit or group identity | Backfill precondition and provenance tests | Reject the request and retain the original missing/unattempted state |
-| `missing` and assessed `absent` collapse into one token | State-transition tests for Discovery → Alignment → Backfill | Fail the tracer; preserve both states and block projection |
+| technical availability and method result collapse into one token | Assessment/cell truth-table tests across evaluated, unsupported, failed, HOLD, and REJECT paths | Fail the tracer; preserve both axes and block projection |
 
 Implementation must begin as an opt-in, no-write dual run. The legacy path
 remains the behavior oracle until the tracer gates pass. A failed tracer is
@@ -375,6 +388,6 @@ This contract constrains those tickets but does not resolve them by implication.
 - Current implementation gaps are explicit and are not presented as target
   architecture.
 - The CID-NL / NL116 tracer has a dual-projection, no-authority acceptance
-  contract.
+  contract and an executable no-RAW M1 reference spine.
 - No output, selected-value, counting, Matrix, Backfill-write, activation, or
   export authority is granted.
