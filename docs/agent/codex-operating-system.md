@@ -65,8 +65,16 @@ The hook set is intentionally small:
   active branch handoff, then rewrite and prune that snapshot instead of
   appending chronological notes. They must not direct every branch to the same
   productization compatibility lane registry.
-- `PreToolUse`: blocks clear destructive git commands and background RAW
-  launches through `Start-Process`; adds context when edits touch
+- `PreToolUse`: blocks wrapped forms of destructive Git commands whose direct
+  prefix rule is `forbidden`. Wrapped forced cleanup, including short, combined,
+  or long-form force flags, is conservatively denied because PreToolUse cannot
+  express the direct rule's interactive `prompt`; silent execution would bypass
+  review. Wrapper inspection locates supported shells after `env` options and
+  treats unquoted separators, newlines, and command-list control prefixes as
+  command boundaries while preserving quoted content. It also blocks background
+  RAW launches through `Start-Process`, including launches whose RAW arguments
+  are prepared in another statement of the same shell payload, and adds context
+  when edits touch
   execution-affecting config, root agent contracts, or product/public surfaces
   that may need a routed productization-owner update.
 - `PostToolUse`: catches pytest runs that collected zero tests, and points the
@@ -110,17 +118,16 @@ mismatch, or behavior change fails the #160 governance read-back.
 | Rule family | Canonical owner | Mechanism | Executable locator | Representative read-back case | Residual gap |
 | --- | --- | --- | --- | --- | --- |
 | `docs_lifecycle_retirement` | `docs/agent/obsidian-handoff-contract.md#retirement-evidence-gate` | `ci_checker` | `tools/diagnostics/docs_placement_guard.py` | `tests/test_docs_placement_guard.py` | `none` |
-| `destructive_git_filesystem` | `docs/agent/codex-operating-system.md#current-repo-local-rules` | `hard_guard` | `.codex/rules/xic-safety.rules` | `.codex/hooks/fixtures/pretool_git_reset.json` | `#166` |
-| `raw_background_launch` | `docs/agent/execution-gates.md#raw-and-long-runs` | `hard_guard` | `.codex/hooks/xic_pre_tool_guard.py` | `none` | `#166` |
-| `execution_affecting_config` | `docs/agent/codex-operating-system.md#change-protocol` | `advisory_context` | `.codex/hooks/xic_pre_tool_guard.py` | `none` | `#166` |
-| `product_public_surface` | `docs/agent/architecture-public-contracts.md#public-contracts` | `advisory_context` | `.codex/hooks/xic_post_tool_guard.py` | `.codex/hooks/fixtures/posttool_product_surface_edit.json` | `#166` |
+| `destructive_git_filesystem` | `docs/agent/codex-operating-system.md#current-repo-local-rules` | `hard_guard` | `.codex/rules/xic-safety.rules` | `tests/test_config_codex_hooks.py` | `none` |
+| `raw_background_launch` | `docs/agent/execution-gates.md#raw-and-long-runs` | `hard_guard` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
+| `execution_affecting_config` | `docs/agent/codex-operating-system.md#change-protocol` | `advisory_context` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
+| `product_public_surface` | `docs/agent/architecture-public-contracts.md#public-contracts` | `advisory_context` | `.codex/hooks/xic_post_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
 | `pr_validation_gate` | `docs/agent/execution-gates.md#pr-verification-gate` | `ci_checker` | `tools/testing/test_shards.py` | `.github/workflows/ci.yml` | `none` |
 
-`#166` owns only the residual host-trust, fixture scheduling, and harness
-characterization gaps. #160 may correct stale authority pointers in advisory
-hook messages because retiring the old owner otherwise creates an active routing
-conflict; it does not change hook blocking behavior, rules, fixtures, CI,
-bootstrap, or doctor behavior.
+The repository-side hook/config gaps are closed by the ordinary `docs-config`
+contract in `tests/test_config_codex_hooks.py`. This read-back does not claim
+that CI can observe whether a particular Codex host has trusted or activated the
+project layer; that remains a host-runtime check under Trust And Review.
 
 ## Adoption Rules
 
@@ -166,7 +173,6 @@ Before closeout:
 git diff --check
 Get-Content .codex\hooks\fixtures\prompt_architecture.json -Raw | python .codex\hooks\xic_prompt_router.py
 Get-Content .codex\hooks\fixtures\prompt_productization.json -Raw | python .codex\hooks\xic_prompt_router.py
-Get-Content .codex\hooks\fixtures\pretool_git_reset.json -Raw | python .codex\hooks\xic_pre_tool_guard.py
 Get-Content .codex\hooks\fixtures\pretool_product_surface_edit.json -Raw | python .codex\hooks\xic_pre_tool_guard.py
 Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | python .codex\hooks\xic_post_tool_guard.py
 Get-Content .codex\hooks\fixtures\posttool_product_surface_edit.json -Raw | python .codex\hooks\xic_post_tool_guard.py
@@ -181,6 +187,14 @@ paths, and accidentally tracked local Codex config.
 Project-local hooks require Codex hook trust. Use `/hooks` in Codex to inspect,
 review, trust, or disable changed hook definitions. New or modified hook
 definitions are skipped until trusted by the runtime.
+
+Keep repository contract and host activation as separate results:
+
+- `repository_contract=production_candidate` only when the clean-checkout
+  `docs-config` hook/config tests pass;
+- `host_activation=verified` only after the current Codex runtime reports the
+  project rules/hooks trusted and a real host smoke exercises them. Otherwise
+  report `host_activation=not_verified`; CI must not promote this state.
 
 ## What Not To Automate Yet
 

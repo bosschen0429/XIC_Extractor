@@ -44,6 +44,23 @@ def assert_contains(value: object, expected: str) -> None:
         raise AssertionError(f"expected {expected!r} in {text}")
 
 
+def assert_hook_silent(script: str, event: dict[str, object]) -> None:
+    result = subprocess.run(
+        [sys.executable, str(HOOKS / script)],
+        input=json.dumps(event),
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if result.stdout.strip() or result.stderr.strip():
+        raise AssertionError(
+            f"expected silent {script} no-op, got "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+
+
 def main() -> int:
     prompt_payload = {
         "hook_event_name": "UserPromptSubmit",
@@ -201,6 +218,274 @@ def main() -> int:
             f"{skills_result.stdout!r}"
         )
 
+    raw_background_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "Bash",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {
+            "command": (
+                "Start-Process python -ArgumentList "
+                "'-m scripts.run_alignment --preset dna_dr'"
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", raw_background_payload),
+        "Background RAW launch",
+    )
+
+    non_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {"command": "Start-Process python -ArgumentList '-c print(1)'"},
+    }
+    assert_hook_silent("xic_pre_tool_guard.py", non_raw_background_payload)
+
+    split_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"$rawArgs='-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'; Start-Process python -ArgumentList $rawArgs\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", split_raw_background_payload),
+        "Background RAW launch",
+    )
+
+    execution_config_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "apply_patch",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {"patch": "*** Update File: .codex/hooks.json\n"},
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", execution_config_payload),
+        "Execution-affecting XIC agent config",
+    )
+
+    static_rule_search_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "Bash",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {
+            "command": (
+                "rg -n " + json.dumps(" ".join(("git", "reset", "--hard"))) + " docs"
+            )
+        },
+    }
+    assert_hook_silent("xic_pre_tool_guard.py", static_rule_search_payload)
+
+    wrapped_cleanup_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": ("bash -lc " + json.dumps(" ".join(("git", "clean", "-fd"))))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrapped_cleanup_payload),
+        "interactive approval",
+    )
+
+    wrapped_long_cleanup_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps(" ".join(("git", "clean", "--force", "-d")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrapped_long_cleanup_payload),
+        "interactive approval",
+    )
+
+    multiline_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc 'Write-Host ok\n"
+            + " ".join(("git", "reset", "--hard"))
+            + "'"
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", multiline_reset_payload),
+        "is blocked",
+    )
+
+    conditional_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps(
+                "if true; then "
+                + " ".join(("git", "reset", "--hard"))
+                + "; fi"
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", conditional_reset_payload),
+        "is blocked",
+    )
+
+    condition_list_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps(
+                "if " + " ".join(("git", "reset", "--hard")) + "; then :; fi"
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", condition_list_reset_payload),
+        "is blocked",
+    )
+
+    controlled_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"if ($true) { Start-Process python -ArgumentList "
+                "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT' }\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", controlled_raw_background_payload),
+        "Background RAW launch",
+    )
+
+    assigned_process_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"$proc = Start-Process python -PassThru "
+                "-ArgumentList '-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", assigned_process_payload),
+        "Background RAW launch",
+    )
+
+    env_option_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "env -u CI bash -lc "
+            + json.dumps(" ".join(("git", "reset", "--hard")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", env_option_reset_payload),
+        "is blocked",
+    )
+
+    combined_flag_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -xc "
+            + json.dumps(" ".join(("git", "reset", "--hard")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", combined_flag_reset_payload),
+        "is blocked",
+    )
+
+    nested_git_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps("command /usr/bin/git -C /tmp reset --hard")
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", nested_git_reset_payload),
+        "is blocked",
+    )
+
+    cmd_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "cmd /c "
+            + json.dumps(" ".join(("git", "reset", "--hard")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", cmd_reset_payload),
+        "is blocked",
+    )
+
+    exec_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps(
+                " ".join(
+                    ("exec", "-a", "safe-name", "/usr/bin/git", "reset", "--hard")
+                )
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", exec_reset_payload),
+        "is blocked",
+    )
+
+    assignment_reset_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": "bash -lc "
+            + json.dumps("FOO=1 " + " ".join(("git", "reset", "--hard")))
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", assignment_reset_payload),
+        "is blocked",
+    )
+
+    aliased_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"$a='-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'; $b=$a; Start-Process python -ArgumentList $b\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", aliased_raw_background_payload),
+        "Background RAW launch",
+    )
+
+    ordered_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "pwsh -Command \"$a='-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'; Start-Process python -ArgumentList $a; "
+                "$a='-c print(1)'\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", ordered_raw_background_payload),
+        "Background RAW launch",
+    )
+
     pre_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",
@@ -307,10 +592,7 @@ def main() -> int:
             post_status_index_payload,
             env_extra={
                 "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                    [
-                        "docs/superpowers/validation/"
-                        "productization_status_index_v1.tsv"
-                    ]
+                    ["docs/superpowers/validation/productization_status_index_v1.tsv"]
                 ),
             },
         ),
@@ -348,7 +630,7 @@ def main() -> int:
         "cwd": ".",
         "permission_mode": "default",
         "tool_input": {
-            "command": "rg -n \"index.lock|cannot lock ref\" docs .codex",
+            "command": 'rg -n "index.lock|cannot lock ref" docs .codex',
         },
         "tool_response": {
             "stdout": "docs/agent/parameter-settings.md:149:.git\\index.lock\n"
