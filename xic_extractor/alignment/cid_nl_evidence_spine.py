@@ -155,6 +155,7 @@ class CidNlReferenceSpine:
             raise CidNlEvidenceSpineError(
                 "reference spine group and support hypotheses do not close"
             )
+        canonical_group_owner_ids = tuple(sorted(self.group.owner_ids))
         if (
             not isinstance(self.cells, tuple)
             or any(not isinstance(item, CellObservationRef) for item in self.cells)
@@ -171,6 +172,10 @@ class CidNlReferenceSpine:
             if cell.content.group_hypothesis_id != self.group.group_hypothesis_id:
                 raise CidNlEvidenceSpineError(
                     "reference spine cell belongs to a different group"
+                )
+            if cell.content.group_owner_ids != canonical_group_owner_ids:
+                raise CidNlEvidenceSpineError(
+                    "reference spine cell group membership was substituted"
                 )
         cell_hypotheses = tuple(
             cell.peak_hypothesis
@@ -420,6 +425,10 @@ def _validate_projection(
     if cell.content.group_hypothesis_id != group.group_hypothesis_id:
         raise CidNlEvidenceSpineError(
             "reference projection cell belongs to a different group"
+        )
+    if cell.content.group_owner_ids != tuple(sorted(group.owner_ids)):
+        raise CidNlEvidenceSpineError(
+            "reference projection cell group membership was substituted"
         )
 
 

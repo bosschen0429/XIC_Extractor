@@ -36,7 +36,7 @@ from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cell_observation_v1"
+SCHEMA_VERSION = "cell_observation_v2"
 ARTIFACT_SEMANTIC_ROLE = "diagnostic_cell_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -68,6 +68,7 @@ class CellObservationContent:
 
     canonical_sample_identity_id: str
     group_hypothesis_id: str
+    group_owner_ids: tuple[str, ...]
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
     peak_observation_content_id: str | None
@@ -84,6 +85,13 @@ class CellObservationContent:
             field="canonical_sample_identity_id",
         )
         _required_text(self.group_hypothesis_id, field="group_hypothesis_id")
+        if not self.group_owner_ids:
+            raise CellObservationContractError("group_owner_ids must be non-empty")
+        _canonical_typed_ids(
+            self.group_owner_ids,
+            prefix=_PEAK_HYPOTHESIS_ID_PREFIX,
+            field="group_owner_ids",
+        )
         if self.peak_observation_content_id is not None:
             _validate_typed_digest_id(
                 self.peak_observation_content_id,
@@ -374,6 +382,12 @@ def mint_cell_observation_ref(
             raise CellObservationContractError(
                 "human disposition references a different target definition"
             )
+        if method_assessment.artifact.evidence_artifact_id not in (
+            review_reference.evidence_artifact_ids
+        ):
+            raise CellObservationContractError(
+                "human disposition does not reference the current method assessment"
+            )
     evidence_artifact_ids = tuple(
         sorted(
             evidence.artifact.evidence_artifact_id
@@ -383,6 +397,7 @@ def mint_cell_observation_ref(
     content = CellObservationContent(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
         group_hypothesis_id=group.group_hypothesis_id,
+        group_owner_ids=tuple(sorted(group.owner_ids)),
         technical_state=method_assessment.content.technical_state,
         method_result=method_result,
         peak_observation_content_id=(

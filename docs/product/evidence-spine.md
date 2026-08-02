@@ -157,10 +157,13 @@ bounded rules:
 
 The CID-NL owner now also closes the complete method attempt before grouping.
 `CidNlMethodAssessmentRef` binds one detector invocation, target, candidate
-universe, completed-search receipt, measured evidence, and individual or
-set-level relations to the existing processing request/attempt. Its technical
-state (`evaluated`, `unsupported`, `failed`, or `not_evaluated`) is independent
-from its CID-NL result (`SUPPORT`, `HOLD`, `REJECT`, or `None`). Absence of a
+universe, completed-search receipt with the exact DDA support policy, measured
+evidence, and individual or set-level relations to the existing processing
+request/attempt. Every qualifying scan that matches that candidate universe
+must have exactly one of those relation kinds; different scans may retain
+individual and set-level relations in the same assessment. Its technical state
+(`evaluated`, `unsupported`, `failed`, or `not_evaluated`) is independent from
+its CID-NL result (`SUPPORT`, `HOLD`, `REJECT`, or `None`). Absence of a
 positive evidence ref is therefore not treated as proof that a search
 completed, and technical failure cannot become REJECT or a human
 `unassessable` disposition.
@@ -168,15 +171,22 @@ completed, and technical failure cannot become REJECT or a human
 Only a scan strictly inside one non-overlapping candidate interval may retain
 the existing individual support relation. Boundary, touching, and overlapping
 cases use `DdaCidNlCandidateSetRelationRef`; that relation grants no individual
-vote or hypothesis. A unique SUPPORT may compose the existing owner-backed
-`PeakHypothesis` and enter existing provisional group construction. HOLD,
-REJECT, and technical assessments remain valid without a fake hypothesis or an
-invented group.
+vote or hypothesis. At least one strict unique relation makes the method result
+SUPPORT even when other scans retain set-level relations. Set-only evidence is
+HOLD, and REJECT requires qualifying CID-NL evidence with no usable physical
+MS1 peak; non-qualifying scans cannot manufacture a negative result. A unique
+SUPPORT may compose the existing owner-backed `PeakHypothesis` and enter
+existing provisional group construction. HOLD, REJECT, and technical
+assessments remain valid without a fake hypothesis or an invented group.
 
 The M1 reference spine creates one minimal `CellObservationRef` only after a
 SUPPORT assessment has established a provisional group. Targeted and
 Untargeted diagnostic adapters receive the same exact group and cell objects;
-they do not remint equal-looking DTOs. Both adapters are internal, no-write,
+they do not remint equal-looking DTOs. Cell artifact identity binds both the
+group label and its complete canonical hypothesis membership, so a reused
+display label cannot substitute a different group. An optional owner-resolved
+human disposition must cite the exact current method-assessment artifact, not
+merely the same sample/target subject. Both adapters are internal, no-write,
 and carry `product_authority="none"`. Existing production callers, Backfill,
 Matrix, selected value/counting, CLI/config, and writers remain unchanged and
 belong to later activation work.
@@ -195,11 +205,11 @@ unlabeled tuple must not be guessed into method semantics.
 | `DdaCidNlPeakSupportRef` | CID-NL-owner DDA/ddMS2 scan-to-physical-peak relation over an exact supplied candidate universe; diagnostic only, no DIA or selection authority |
 | `DdaCidNlCandidateSetRelationRef` | One scan related conservatively to one or more boundary/touching/overlapping candidates; set-level only, zero individual votes and zero hypotheses |
 | `CidNlChromatographicSupportRef` | One-or-more exact strict DDA scan relations aggregated as one physical-peak support event; diagnostic only, no hypothesis or counting authority |
-| `CidNlMethodAssessmentRef` | Complete target-bound CID-NL attempt with a completed-search receipt plus orthogonal technical and method-result axes; child of the existing processing attempt |
+| `CidNlMethodAssessmentRef` | Complete target-bound CID-NL attempt with a policy-bound completed-search receipt, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |
 | `PeakHypothesis` | One existing model: legacy Targeted working identity plus a bounded diagnostic owner-backed CID-NL composition; neither is canonical physical-observation identity |
 | `peak_hypothesis_identity` | Same-owner content ID, exact attempt artifact, and binding validation for the bounded CID-NL composition; no selection or product authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
-| `CellObservationRef` | Minimal sample × existing-group closure over technical state, method result, optional observation/hypothesis, evidence/reasons, and optional owner-resolved human disposition; no value or writer fields |
+| `CellObservationRef` | Minimal sample × existing-group closure over exact canonical group membership, technical state, method result, optional observation/hypothesis, evidence/reasons, and an optional exact-assessment-bound owner-resolved human disposition; no value or writer fields |
 | CID-NL Targeted/Untargeted reference projections | Two internal views that retain the same exact group/cell refs and explicitly carry no product authority |
 | `IntegrationResult` | Integrated signal and boundary result |
 | `AuditTrail` / reason strings | Human-readable explanation and review evidence |

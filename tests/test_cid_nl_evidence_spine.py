@@ -21,6 +21,7 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     CidNlEvidenceSpineError,
     build_cid_nl_reference_spine,
 )
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
     resolve_dda_cid_nl_candidate_set_relation_ref,
@@ -467,6 +468,158 @@ def test_assessment_rejects_target_precursor_and_query_window_substitution(
         )
 
 
+def test_assessment_requires_qualifying_evidence_before_reject(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("nonqual",))
+    sample = fixture.sample("nonqual")
+    target = fixture.target.definition.target
+    assert target.neutral_loss_da is not None
+    observed_loss = target.neutral_loss_da + 1.0
+    evidence = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        scan_number=74,
+        precursor_mz=target.mz,
+        product_mz=target.mz - observed_loss,
+        configured_neutral_loss_da=target.neutral_loss_da,
+        observed_neutral_loss_da=observed_loss,
+        observed_loss_error_ppm=(
+            abs(observed_loss - target.neutral_loss_da)
+            / target.neutral_loss_da
+            * 1_000_000.0
+        ),
+        scan_rt_min=8.0,
+        product_intensity=400.0,
+    )
+
+    assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        target=fixture.target,
+        detector_invocation_id="gaussian15:nonqual:v1",
+        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        evidence_refs=(evidence,),
+    )
+
+    assert assessment.content.method_result == "HOLD"
+    assert assessment.content.reason_codes == ("insufficient_method_evidence",)
+
+
+def test_assessment_preserves_mixed_individual_and_set_scan_relations(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("mixed",))
+    sample = fixture.sample("mixed")
+    peak = issue161_peak(fixture, "mixed")
+    interior = issue161_evidence(
+        fixture,
+        "mixed",
+        scan_number=75,
+        scan_rt_min=8.0,
+    )
+    boundary = issue161_evidence(
+        fixture,
+        "mixed",
+        scan_number=76,
+        scan_rt_min=peak.content.integration.rt_left_min,
+    )
+    individual = issue161_unique_support(
+        fixture,
+        "mixed",
+        peak=peak,
+        evidence=interior,
+    )
+    set_relation = resolve_dda_cid_nl_candidate_set_relation_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        canonical_evidence=boundary,
+        candidate_peaks=(peak,),
+        policy=issue161_support_policy(),
+    )
+
+    assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        target=fixture.target,
+        detector_invocation_id="gaussian15:mixed:v1",
+        evaluation_receipt=_completed_receipt(scanned_event_count=2),
+        candidate_peaks=(peak,),
+        evidence_refs=(interior, boundary),
+        individual_support_refs=(individual,),
+        set_relation_refs=(set_relation,),
+    )
+
+    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.individual_support_refs == (individual,)
+    assert assessment.set_relation_refs == (set_relation,)
+
+
+def test_cell_identity_binds_full_provisional_group_membership(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("a", "b"))
+    sample_assessments = []
+    for scan_number, stem in ((77, "a"), (78, "b")):
+        sample = fixture.sample(stem)
+        peak = issue161_peak(fixture, stem)
+        evidence = issue161_evidence(
+            fixture,
+            stem,
+            scan_number=scan_number,
+            scan_rt_min=8.0,
+        )
+        support = issue161_unique_support(
+            fixture,
+            stem,
+            peak=peak,
+            evidence=evidence,
+        )
+        assessment = mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            detector_invocation_id=f"gaussian15:{stem}:group-membership",
+            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            candidate_peaks=(peak,),
+            evidence_refs=(evidence,),
+            individual_support_refs=(support,),
+        )
+        sample_assessments.append((sample, assessment))
+
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    single = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=(sample_assessments[0],),
+        config=config,
+    )
+    combined = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=tuple(sample_assessments),
+        config=config,
+    )
+    assert single.group is not None
+    assert combined.group is not None
+    combined_a = next(
+        cell
+        for cell in combined.cells
+        if cell.content.canonical_sample_identity_id
+        == sample_assessments[0][0].identity.sample_identity_id
+    )
+
+    assert single.group.group_hypothesis_id == combined.group.group_hypothesis_id
+    assert single.group.owner_ids != combined.group.owner_ids
+    assert single.cells[0].artifact.evidence_artifact_id != (
+        combined_a.artifact.evidence_artifact_id
+    )
+    assert single.cells[0].content.group_owner_ids == tuple(
+        sorted(single.group.owner_ids)
+    )
+    assert combined_a.content.group_owner_ids == tuple(sorted(combined.group.owner_ids))
+
+
 def test_cell_rejects_human_disposition_from_a_different_sample(
     tmp_path: Path,
 ) -> None:
@@ -505,6 +658,23 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
+            support_policy=issue161_support_policy(),
+            acquisition_supported=False,
+            search_completed=False,
+            scanned_event_count=0,
+            reason_code="dda_not_available",
+        ),
+        technical_state="unsupported",
+    )
+    replacement_reviewed_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("reviewed"),
+        target=fixture.target,
+        detector_invocation_id="gaussian15:reviewed:replacement-assessment",
+        evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=7.5,
+            query_rt_max=8.6,
+            support_policy=issue161_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -520,6 +690,7 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
+            support_policy=issue161_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -535,6 +706,7 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
+            support_policy=issue161_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -584,7 +756,10 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         sample_snapshot=fixture.samples[0].snapshot,
         sample_resolutions=fixture.samples,
         target_snapshot=fixture.target.snapshot,
-        evidence_artifacts=(reviewed_assessment.artifact,),
+        evidence_artifacts=(
+            reviewed_assessment.artifact,
+            replacement_reviewed_assessment.artifact,
+        ),
         review_target=fixture.target,
         review_snapshot=review_snapshot,
         review_record=review_record,
@@ -606,6 +781,15 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
             target=fixture.other_target,
             group=spine.group,
             method_assessment=crossed_target_assessment,
+            human_disposition=review_record,
+        )
+    with pytest.raises(CellObservationContractError, match="current method assessment"):
+        mint_cell_observation_ref(
+            processing_owners=review_owners,
+            sample=fixture.sample("reviewed"),
+            target=fixture.target,
+            group=spine.group,
+            method_assessment=replacement_reviewed_assessment,
             human_disposition=review_record,
         )
 
@@ -752,6 +936,7 @@ def test_failed_attempt_cannot_become_reject_or_human_unassessable(
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
+            support_policy=issue161_support_policy(),
             acquisition_supported=True,
             search_completed=False,
             scanned_event_count=0,
@@ -906,6 +1091,7 @@ def _truth_table_fixture(tmp_path: Path):
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
             query_rt_max=8.6,
+            support_policy=issue161_support_policy(),
             acquisition_supported=False,
             search_completed=False,
             scanned_event_count=0,
@@ -920,6 +1106,7 @@ def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
     return CidNlEvaluationReceipt(
         query_rt_min=7.5,
         query_rt_max=8.6,
+        support_policy=issue161_support_policy(),
         acquisition_supported=True,
         search_completed=True,
         scanned_event_count=scanned_event_count,

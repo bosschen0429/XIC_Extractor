@@ -102,11 +102,13 @@ and Matrix projection. The successor seam must not copy that full interface.
   it cannot create positive membership without a selected hypothesis or a
   provenance-valid Backfill observation.
 - A `CellObservationRef` represents one required sample × already-existing
-  group cell. Technical availability and CID-NL method result are separate
-  axes. SUPPORT requires one owner-backed physical observation and hypothesis;
-  HOLD may retain one observation without fabricating support; REJECT and
-  technical states need no hypothesis. None of these axes grants a deliverable
-  numeric value.
+  group cell and binds both the group label and its complete canonical
+  hypothesis membership. Technical availability and CID-NL method result are
+  separate axes. SUPPORT requires one owner-backed physical observation and
+  hypothesis; HOLD may retain one observation without fabricating support;
+  REJECT and technical states need no hypothesis. A human disposition must
+  cite the exact current method-assessment artifact. None of these axes grants
+  a deliverable numeric value.
 - A `BackfillRequest` requires an established group/target context and an
   eligible non-observed sample cell. A `BackfillResult` returns one
   `CellObservation` plus audit provenance and never writes a product surface.
@@ -120,16 +122,19 @@ user-visible intermediate labels.
 | --- | --- | --- |
 | technical/evidence availability | `evaluated`, `unsupported`, `failed`, `not_evaluated` | Whether a supported acquisition/search completed |
 | CID-NL method result | `SUPPORT`, `HOLD`, `REJECT`, or `None` | What this completed method attempt claims; non-evaluated technical states require `None` |
-| identity/model result | existing/provisional `group_hypothesis_id` | Which already-established group is being evaluated; no M3 or cross-run stability claim |
-| human review | no disposition or an owner-resolved human review ref | Human decision provenance; machine logic cannot author final `unassessable` |
+| identity/model result | existing/provisional `group_hypothesis_id` plus canonical `group_owner_ids` | Which exact already-established group membership is being evaluated; no M3 or cross-run stability claim |
+| human review | no disposition or an owner-resolved human review ref citing the current assessment artifact | Human decision provenance over this exact assessment; machine logic cannot author final `unassessable` |
 | product authority | always `none` in M1 | Matrix, count, fill, write, export, and activation remain outside this contract |
 
-Internal ambiguity and a set-level scan relation produce HOLD, not a public
-fifth method result. A completed search with qualifying CID-NL evidence but no
-usable physical MS1 peak produces method-specific REJECT; it does not assert
-chemical absence. Missing positive evidence alone proves neither a completed
-search nor a negative result. Technical failure, HOLD, and internal ambiguity
-must never serialize as REJECT, zero, absence, or human `unassessable`.
+Internal ambiguity and set-level-only scan relations produce HOLD, not a public
+fifth method result. Different scans may retain individual and set-level
+relations in one assessment; at least one strict unique relation still makes
+the method result SUPPORT. A completed search with qualifying CID-NL evidence
+but no usable physical MS1 peak produces method-specific REJECT; it does not
+assert chemical absence. Non-qualifying or missing positive evidence alone
+proves neither a completed search nor a negative result. Technical failure,
+HOLD, and internal ambiguity must never serialize as REJECT, zero, absence, or
+human `unassessable`.
 
 The cell is created only after another sample's SUPPORT has established an
 existing/provisional group. HOLD and REJECT assessments may persist without a

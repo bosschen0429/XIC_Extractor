@@ -32,6 +32,7 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
+    DdaCidNlPeakSupportPolicy,
     DdaCidNlPeakSupportRef,
     validate_dda_cid_nl_peak_support_binding,
 )
@@ -47,7 +48,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_method_assessment_v1"
+SCHEMA_VERSION = "cid_nl_method_assessment_v2"
 ARTIFACT_SEMANTIC_ROLE = "cid_nl_method_assessment"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -94,6 +95,7 @@ class CidNlEvaluationReceipt:
 
     query_rt_min: float
     query_rt_max: float
+    support_policy: DdaCidNlPeakSupportPolicy
     acquisition_supported: bool
     search_completed: bool
     scanned_event_count: int
@@ -105,6 +107,10 @@ class CidNlEvaluationReceipt:
         if query_min < 0.0 or query_min >= query_max:
             raise CidNlMethodAssessmentContractError(
                 "evaluation query must have a non-negative increasing RT window"
+            )
+        if not isinstance(self.support_policy, DdaCidNlPeakSupportPolicy):
+            raise CidNlMethodAssessmentContractError(
+                "support_policy must be owner-normalized DDA CID-NL policy"
             )
         if not isinstance(self.acquisition_supported, bool):
             raise CidNlMethodAssessmentContractError(
@@ -664,6 +670,8 @@ def _validate_upstream_bindings(
     candidate_ids = tuple(
         peak.content.peak_observation_content_id for peak in candidate_peaks
     )
+    support_policy = evaluation_receipt.support_policy
+    individual_evidence_ids: set[str] = set()
     selected_peak_ids: set[str] = set()
     for support in individual_support_refs:
         canonical_evidence = evidence_by_content_id.get(
@@ -676,6 +684,10 @@ def _validate_upstream_bindings(
         if support.content.candidate_peak_content_ids != candidate_ids:
             raise CidNlMethodAssessmentContractError(
                 "individual support references a different candidate universe"
+            )
+        if support.content.policy != support_policy:
+            raise CidNlMethodAssessmentContractError(
+                "individual support references a different method support policy"
             )
         try:
             validate_dda_cid_nl_peak_support_binding(
@@ -696,10 +708,12 @@ def _validate_upstream_bindings(
                 "relation"
             )
         selected_peak_ids.add(support.content.peak_observation_content_id)
+        individual_evidence_ids.add(support.content.cid_nl_evidence_content_id)
     if len(selected_peak_ids) > 1:
         raise CidNlMethodAssessmentContractError(
             "M1 cannot select multiple independently supported physical peaks"
         )
+    set_relation_evidence_ids: set[str] = set()
     for relation in set_relation_refs:
         if relation.content.candidate_peak_content_ids != candidate_ids:
             raise CidNlMethodAssessmentContractError(
@@ -709,6 +723,10 @@ def _validate_upstream_bindings(
             raise CidNlMethodAssessmentContractError(
                 "set relation evidence is missing from the assessment"
             )
+        if relation.content.policy != support_policy:
+            raise CidNlMethodAssessmentContractError(
+                "set relation references a different method support policy"
+            )
         try:
             validate_dda_cid_nl_candidate_set_relation_binding(
                 relation,
@@ -717,10 +735,26 @@ def _validate_upstream_bindings(
             )
         except DdaCidNlCandidateSetRelationContractError as exc:
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
-    if individual_support_refs and set_relation_refs:
+        set_relation_evidence_ids.add(relation.content.cid_nl_evidence_content_id)
+    if individual_evidence_ids & set_relation_evidence_ids:
         raise CidNlMethodAssessmentContractError(
-            "M1 does not collapse individual and set-level relations into one result"
+            "one CID-NL evidence ref cannot carry both individual and set relations"
         )
+    settled_evidence_ids = individual_evidence_ids | set_relation_evidence_ids
+    for evidence_content_id, evidence in evidence_by_content_id.items():
+        if evidence.observation.observed_loss_error_ppm > (
+            support_policy.neutral_loss_tolerance_ppm
+        ):
+            continue
+        if _evidence_matches_candidate_universe(
+            evidence=evidence,
+            candidate_peaks=candidate_peaks,
+            support_policy=support_policy,
+        ) and evidence_content_id not in settled_evidence_ids:
+            raise CidNlMethodAssessmentContractError(
+                "qualifying CID-NL evidence matching the candidate universe "
+                "requires an individual or set-level relation"
+            )
 
 
 def _validate_target_precursor(
@@ -751,6 +785,23 @@ def _validate_query_rt(
         raise CidNlMethodAssessmentContractError(
             f"{subject} is outside the evaluation query RT window"
         )
+
+
+def _evidence_matches_candidate_universe(
+    *,
+    evidence: CidNlEvidenceRef,
+    candidate_peaks: tuple[PeakObservationRef, ...],
+    support_policy: DdaCidNlPeakSupportPolicy,
+) -> bool:
+    observation = evidence.observation
+    return any(
+        peak.content.integration.rt_left_min
+        <= observation.scan_rt_min
+        <= peak.content.integration.rt_right_min
+        and abs(observation.precursor_mz - peak.content.mz)
+        <= support_policy.precursor_tolerance_da
+        for peak in candidate_peaks
+    )
 
 
 def _is_strict_unique_support(
@@ -803,7 +854,11 @@ def _method_result(
         return "SUPPORT", ("unique_support_within_declared_candidate_universe",)
     if set_relation_refs:
         return "HOLD", ("set_level_relation",)
-    if not candidate_peaks and evidence_refs:
+    if not candidate_peaks and any(
+        evidence.observation.observed_loss_error_ppm
+        <= evaluation_receipt.support_policy.neutral_loss_tolerance_ppm
+        for evidence in evidence_refs
+    ):
         return "REJECT", ("qualifying_cid_nl_without_usable_ms1_peak",)
     if candidate_peaks:
         return "HOLD", ("no_unique_qualifying_relation",)
