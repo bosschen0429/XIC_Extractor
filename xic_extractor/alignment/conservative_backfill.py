@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
-from typing import Literal, cast
+from dataclasses import InitVar, dataclass, field
+from typing import Literal, cast, final
 
 from xic_extractor.alignment.cell_observations import (
     CellObservationRef,
@@ -59,6 +59,7 @@ _RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = (
         serialization_format="canonical-json-utf8-lf-v1",
     )
 )
+_CELL_DECISION_MINT_TOKEN = object()
 ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset(
     {"study_sample", "qc", "pooled_qc"}
 )
@@ -348,6 +349,7 @@ class ConservativeBackfillRecoveryEvidence:
         return self.candidate_universe.target_key
 
 
+@final
 @dataclass(frozen=True, slots=True)
 class ConservativeBackfillCellDecision:
     """A no-write mapping verdict for one sample × existing group cell."""
@@ -359,11 +361,19 @@ class ConservativeBackfillCellDecision:
     matched_candidate: ConservativeBackfillRecoveryEvidence | None
     disposition: ConservativeBackfillDisposition
     reason_codes: tuple[str, ...]
+    _mint_token: InitVar[object] = field(kw_only=True)
     policy_version: str = POLICY_VERSION
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
 
-    def __post_init__(self) -> None:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("ConservativeBackfillCellDecision is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _CELL_DECISION_MINT_TOKEN:
+            raise ConservativeBackfillContractError(
+                "cell decisions must be minted by the conservative Backfill mapper"
+            )
         if not isinstance(self.group_facts, ConservativeBackfillGroupFacts):
             raise ConservativeBackfillContractError(
                 "cell decision requires owner-derived group facts"
@@ -1349,6 +1359,7 @@ def _decision(
         matched_candidate=matched_candidate,
         disposition=disposition,
         reason_codes=tuple(sorted(set(reasons))),
+        _mint_token=_CELL_DECISION_MINT_TOKEN,
     )
 
 

@@ -164,6 +164,32 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     assert decision.reason_codes == ("direct_support_threshold_not_met",)
     assert _forbidden_product_fields(ConservativeBackfillCellDecision) == set()
 
+    forged_candidate = ConservativeBackfillRecoveryEvidence(
+        candidate_universe=universe,
+        peak_observation=universe.candidate_peaks[0],
+    )
+    with pytest.raises(
+        ConservativeBackfillContractError,
+        match="minted by the conservative Backfill mapper",
+    ):
+        ConservativeBackfillCellDecision(
+            group_facts=facts,
+            target_cell=decision.target_cell,
+            candidate_universe=universe,
+            candidate_evidence=(forged_candidate,),
+            matched_candidate=forged_candidate,
+            disposition="candidate_mapped",
+            reason_codes=("forged_mapping",),
+            _mint_token=object(),
+        )
+    with pytest.raises(ValueError, match="InitVar '_mint_token'"):
+        replace(
+            decision,
+            matched_candidate=forged_candidate,
+            disposition="candidate_mapped",
+            reason_codes=("forged_mapping",),
+        )
+
 
 def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
     tmp_path: Path,
