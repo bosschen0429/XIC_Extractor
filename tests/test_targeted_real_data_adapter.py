@@ -88,6 +88,109 @@ def test_adapter_reacquires_one_current_candidate_into_targeted_lifecycle(
     assert result.alignment_input.candidate_set.lineage_artifacts
 
 
+def test_adapter_preserves_repeated_strict_scans_as_one_support_event(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    discovery_raw = _FakeRaw((7.98, 8.02))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        discovery_raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(candidates) == 1
+    assert len(set(candidates[0].seed_scan_ids)) == 2
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        discovery_raw,
+        tmp_path=tmp_path,
+    )
+
+    result = adapt_current_discovery_sample_target(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        target=fixture.target,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    hypothesis = result.alignment_input.candidate_set.candidate_hypotheses[0]
+    support = hypothesis.evidence.cid_nl_chromatographic_support_ref
+    assert support is not None
+    assert support.content.strict_nl_scan_count == 2
+    assert support.content.chromatographic_support_event_count == 1
+    assert tuple(
+        member.dda_scan_number for member in support.content.scan_supports
+    ) == candidates[0].seed_scan_ids
+    assert vendor_raw.chromatogram_request_counts == [1]
+
+
+def test_adapter_does_not_collapse_strict_scans_from_separated_peaks(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    discovery_raw = _FakeRaw((7.7, 8.3))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    separated_candidates = _current_candidates(
+        discovery_raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(separated_candidates) == 2
+    ordered = tuple(
+        sorted(separated_candidates, key=lambda candidate: candidate.best_seed_rt)
+    )
+    candidates = (
+        replace(
+            ordered[0],
+            seed_event_count=2,
+            seed_scan_ids=tuple(
+                candidate.best_ms2_scan_id for candidate in ordered
+            ),
+            rt_seed_min=ordered[0].best_seed_rt,
+            rt_seed_max=ordered[-1].best_seed_rt,
+        ),
+    )
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        discovery_raw,
+        tmp_path=tmp_path,
+    )
+
+    with pytest.raises(
+        TargetedRealDataAdapterError,
+        match="does not link to exactly one candidate physical MS1 peak",
+    ):
+        adapt_current_discovery_sample_target(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            target=fixture.target,
+            candidates=candidates,
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+        )
+
+    assert vendor_raw.chromatogram_request_counts == [1]
+
+
 def test_adapter_uses_targeted_gaussian15_boundary_owner(tmp_path: Path) -> None:
     fixture = build_package2_targeted_raw_fixture(
         tmp_path,
@@ -238,7 +341,7 @@ def test_adapter_acquires_every_disjoint_candidate_receipt_window(
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
-def test_adapter_keeps_canonical_detection_inside_targeted_window(
+def test_adapter_builds_each_observation_from_its_candidate_window(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -249,7 +352,7 @@ def test_adapter_keeps_canonical_detection_inside_targeted_window(
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
     )
-    discovery_raw = _FakeRaw((8.0,))
+    discovery_raw = _FakeRaw((7.7, 8.3))
     settings = _settings()
     peak_config = replace(
         _peak_config(tmp_path),
@@ -261,8 +364,7 @@ def test_adapter_keeps_canonical_detection_inside_targeted_window(
         settings=settings,
         peak_config=peak_config,
     )
-    assert len(candidates) == 1
-    candidate = candidates[0]
+    assert len(candidates) == 2
     raw, vendor_raw = _open_bound_raw(
         fixture,
         "S1",
@@ -294,22 +396,59 @@ def test_adapter_keeps_canonical_detection_inside_targeted_window(
 
     assert result.acquisition is not None
     acquisition_request = result.acquisition.traces[0].coordinate.request
-    assert acquisition_request.rt_min <= candidate.ms1_search_rt_min < 7.95
-    assert acquisition_request.rt_max >= candidate.ms1_search_rt_max > 8.05
-    assert detection_windows == [
+    assert all(
+        acquisition_request.rt_min <= candidate.ms1_search_rt_min
+        and acquisition_request.rt_max >= candidate.ms1_search_rt_max
+        for candidate in candidates
+    )
+    assert len(detection_windows) == 4
+    for candidate, first, second in zip(
+        candidates,
+        detection_windows[::2],
+        detection_windows[1::2],
+        strict=True,
+    ):
+        assert first == second
+        assert candidate.ms1_search_rt_min <= first[0]
+        assert first[1] <= candidate.ms1_search_rt_max
+        assert first[0] <= candidate.ms1_apex_rt <= first[1]
+    hypotheses = tuple(
+        sorted(
+            result.alignment_input.candidate_set.candidate_hypotheses,
+            key=lambda hypothesis: hypothesis.integration.rt_apex_min,
+        )
+    )
+    candidates = tuple(sorted(candidates, key=lambda candidate: candidate.ms1_apex_rt))
+    assert len(hypotheses) == 2
+    assert tuple(
+        hypothesis.integration.rt_apex_min for hypothesis in hypotheses
+    ) == pytest.approx(tuple(candidate.ms1_apex_rt for candidate in candidates))
+    observation_windows = tuple(
+        (
+            hypothesis.peak_observation_refs[0].generation_provenance.query_rt_min,
+            hypothesis.peak_observation_refs[0].generation_provenance.query_rt_max,
+        )
+        for hypothesis in hypotheses
+    )
+    assert observation_windows == tuple(
         (
             pytest.approx(candidate.ms1_search_rt_min),
             pytest.approx(candidate.ms1_search_rt_max),
-        ),
-        (pytest.approx(7.95), pytest.approx(8.05)),
-    ]
-    observation = (
-        result.alignment_input.candidate_set.candidate_hypotheses[
-            0
-        ].peak_observation_refs[0]
+        )
+        for candidate in candidates
     )
-    assert observation.generation_provenance.query_rt_min == pytest.approx(7.95)
-    assert observation.generation_provenance.query_rt_max == pytest.approx(8.05)
+    support_scan_sets = tuple(
+        tuple(
+            member.dda_scan_number
+            for member in (
+                hypothesis.evidence.cid_nl_chromatographic_support_ref.content.scan_supports
+            )
+        )
+        for hypothesis in hypotheses
+    )
+    assert support_scan_sets == tuple(
+        (candidate.best_ms2_scan_id,) for candidate in candidates
+    )
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
