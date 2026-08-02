@@ -44,7 +44,7 @@ POLICY_VERSION = "conservative-backfill-v1"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 RECOVERY_UNIVERSE_SCHEMA_VERSION = (
-    "conservative_backfill_recovery_candidate_universe_v1"
+    "conservative_backfill_recovery_candidate_universe_v2"
 )
 RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = (
     "conservative_backfill_recovery_candidate_universe"
@@ -185,6 +185,7 @@ class ConservativeBackfillGroupFacts:
 class ConservativeBackfillRecoveryCandidateUniverse:
     """Owner receipt binding one sample×target revisit to its full peak set."""
 
+    processing_owners: ProcessingOwnerReferences
     processing_attempt: ProcessingAttemptIdentity
     sample: ResolvedCanonicalSampleIdentity
     group_facts: tuple[ConservativeBackfillGroupFacts, ...]
@@ -194,19 +195,38 @@ class ConservativeBackfillRecoveryCandidateUniverse:
     product_authority: str = PRODUCT_AUTHORITY
 
     def __post_init__(self) -> None:
+        if not isinstance(self.processing_owners, ProcessingOwnerReferences):
+            raise ConservativeBackfillContractError(
+                "recovery universe requires validated processing owners"
+            )
         if not isinstance(self.processing_attempt, ProcessingAttemptIdentity):
             raise ConservativeBackfillContractError(
                 "recovery universe requires an owner-issued processing attempt"
             )
+        if self.processing_attempt is not self.processing_owners.attempt:
+            raise ConservativeBackfillContractError(
+                "recovery universe attempt is not the exact processing owner attempt"
+            )
         if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
             raise ConservativeBackfillContractError(
                 "recovery universe requires an owner-resolved sample"
+            )
+        if not any(
+            self.sample is owned
+            for owned in self.processing_owners.sample_resolutions
+        ):
+            raise ConservativeBackfillContractError(
+                "recovery universe sample is outside the processing owner closure"
             )
         facts = _canonical_recovery_group_facts(self.group_facts)
         if facts != self.group_facts:
             raise ConservativeBackfillContractError(
                 "recovery universe group facts must be canonical-sorted"
             )
+        _validate_recovery_group_populations(
+            facts,
+            processing_owners=self.processing_owners,
+        )
         _validate_recovery_sample_and_target(facts, sample=self.sample)
         _validate_recovery_candidate_assessment(
             self.candidate_assessment,
@@ -253,7 +273,7 @@ class ConservativeBackfillRecoveryCandidateUniverse:
             verify_evidence_artifact_payload(
                 self.artifact,
                 canonical_conservative_backfill_recovery_universe_bytes(
-                    processing_attempt=self.processing_attempt,
+                    processing_owners=self.processing_owners,
                     sample=self.sample,
                     group_facts=facts,
                     candidate_assessment=self.candidate_assessment,
@@ -461,6 +481,10 @@ def mint_conservative_backfill_recovery_candidate_universe(
             "recovery universe sample is outside the processing owner closure"
         )
     facts = _canonical_recovery_group_facts(group_facts)
+    _validate_recovery_group_populations(
+        facts,
+        processing_owners=processing_owners,
+    )
     _validate_recovery_sample_and_target(facts, sample=sample)
     target_definition_id = facts[0].group_context.target_definition_id
     target_snapshot = processing_owners.target_snapshot
@@ -482,7 +506,7 @@ def mint_conservative_backfill_recovery_candidate_universe(
         processing_attempt=processing_owners.attempt,
     )
     payload = canonical_conservative_backfill_recovery_universe_bytes(
-        processing_attempt=processing_owners.attempt,
+        processing_owners=processing_owners,
         sample=sample,
         group_facts=facts,
         candidate_assessment=candidate_assessment,
@@ -502,6 +526,7 @@ def mint_conservative_backfill_recovery_candidate_universe(
         ),
     )
     return ConservativeBackfillRecoveryCandidateUniverse(
+        processing_owners=processing_owners,
         processing_attempt=processing_owners.attempt,
         sample=sample,
         group_facts=facts,
@@ -512,20 +537,32 @@ def mint_conservative_backfill_recovery_candidate_universe(
 
 def canonical_conservative_backfill_recovery_universe_bytes(
     *,
-    processing_attempt: ProcessingAttemptIdentity,
+    processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
 ) -> bytes:
     """Serialize the exact no-write recovery universe for artifact replay."""
 
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise ConservativeBackfillContractError(
+            "recovery universe requires validated processing owners"
+        )
     facts = _canonical_recovery_group_facts(group_facts)
+    _validate_recovery_group_populations(
+        facts,
+        processing_owners=processing_owners,
+    )
     _validate_recovery_sample_and_target(facts, sample=sample)
     if not isinstance(candidate_assessment, CidNlMethodAssessmentRef):
         raise ConservativeBackfillContractError(
             "recovery universe requires an owner-minted method assessment"
         )
     peaks = candidate_assessment.candidate_peaks
+    processing_attempt = processing_owners.attempt
+    request_sample_population = _processing_owner_sample_population(
+        processing_owners
+    )
     payload = {
         "schema_version": RECOVERY_UNIVERSE_SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
@@ -533,6 +570,10 @@ def canonical_conservative_backfill_recovery_universe_bytes(
         "processing_request_id": processing_attempt.processing_request_id,
         "processing_attempt_id": processing_attempt.processing_attempt_id,
         "canonical_sample_identity_id": sample.identity.sample_identity_id,
+        "request_sample_population_ids": [
+            member.identity.sample_identity_id
+            for member in request_sample_population
+        ],
         "target_key_id": facts[0].group_context.target_key_id,
         "target_definition_id": facts[0].group_context.target_definition_id,
         "candidate_assessment_artifact_id": (
@@ -979,6 +1020,46 @@ def _validate_recovery_sample_and_target(
     ):
         raise ConservativeBackfillContractError(
             "recovery universe sample is outside its declared group populations"
+        )
+
+
+def _processing_owner_sample_population(
+    processing_owners: ProcessingOwnerReferences,
+) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise ConservativeBackfillContractError(
+            "recovery universe requires validated processing owners"
+        )
+    return _canonical_samples(
+        tuple(
+            sorted(
+                processing_owners.sample_resolutions,
+                key=lambda member: member.identity.sample_identity_id,
+            )
+        )
+    )
+
+
+def _validate_recovery_group_populations(
+    facts: tuple[ConservativeBackfillGroupFacts, ...],
+    *,
+    processing_owners: ProcessingOwnerReferences,
+) -> None:
+    owner_population = _processing_owner_sample_population(processing_owners)
+    if any(
+        len(fact.sample_population) != len(owner_population)
+        or any(
+            declared is not owned
+            for declared, owned in zip(
+                fact.sample_population,
+                owner_population,
+                strict=True,
+            )
+        )
+        for fact in facts
+    ):
+        raise ConservativeBackfillContractError(
+            "recovery group population must close the full processing request"
         )
 
 

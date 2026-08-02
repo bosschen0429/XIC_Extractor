@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import fields, replace
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from xic_extractor.alignment.conservative_backfill import (
     assess_conservative_backfill_group,
     assess_targeted_conservative_backfill_group,
     assess_untargeted_conservative_backfill_group,
+    canonical_conservative_backfill_recovery_universe_bytes,
     map_conservative_backfill_candidates,
     minimum_direct_support_count,
     mint_conservative_backfill_recovery_candidate_universe,
@@ -447,6 +449,74 @@ def test_recovery_receipt_prevents_independent_near_isobaric_target_pairing(
             group_facts=(other_facts,),
             candidate_assessment=universe.candidate_assessment,
         )
+
+
+def test_recovery_receipt_rejects_truncated_processing_request_population(
+    tmp_path: Path,
+) -> None:
+    sample_stems = tuple(f"s{index:02d}" for index in range(1, 61))
+    fixture = _study_fixture(tmp_path, sample_stems)
+    spine = _spine(
+        fixture,
+        support_apex_by_sample={"s01": 8.0, "s02": 8.0},
+        invocation="truncated-request-population",
+    )
+    truncated_population = fixture.samples[:3]
+    truncated_sample_ids = {
+        sample.identity.sample_identity_id for sample in truncated_population
+    }
+    truncated_cells = tuple(
+        cell
+        for cell in spine.cells
+        if cell.content.canonical_sample_identity_id in truncated_sample_ids
+    )
+    facts = assess_conservative_backfill_group(
+        truncated_cells,
+        sample_population=truncated_population,
+    )
+
+    assert facts.group_frozen is True
+    assert facts.sample_count_n == 3
+    assert facts.minimum_support_k == 2
+    assert facts.may_attempt_recovery is True
+    with pytest.raises(
+        ConservativeBackfillContractError,
+        match="full processing request",
+    ):
+        _recovery_universe(
+            fixture,
+            (facts,),
+            "s03",
+            (_peak(fixture, "s03", apex_rt=8.0),),
+        )
+
+    full_facts = assess_conservative_backfill_group(
+        spine.cells,
+        sample_population=fixture.samples,
+    )
+    valid_universe = _recovery_universe(
+        fixture,
+        (full_facts,),
+        "s03",
+        (_peak(fixture, "s03", apex_rt=8.0),),
+    )
+    with pytest.raises(
+        ConservativeBackfillContractError,
+        match="full processing request",
+    ):
+        replace(valid_universe, group_facts=(facts,))
+
+    payload = json.loads(
+        canonical_conservative_backfill_recovery_universe_bytes(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("s03"),
+            group_facts=(full_facts,),
+            candidate_assessment=valid_universe.candidate_assessment,
+        )
+    )
+    assert payload["request_sample_population_ids"] == sorted(
+        sample.identity.sample_identity_id for sample in fixture.samples
+    )
 
 
 def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
