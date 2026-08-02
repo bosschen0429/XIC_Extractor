@@ -28,6 +28,7 @@ def issue161_peak(
     fixture: Package2NoRawFixture,
     sample_stem: str,
     *,
+    mz: float = PRECURSOR_MZ,
     apex_rt: float = 8.0,
     rt_left_min: float = 7.9,
     rt_right_min: float = 8.1,
@@ -40,7 +41,7 @@ def issue161_peak(
     )
     trace = Trace.from_arrays(
         sample_name=sample_stem,
-        mz=PRECURSOR_MZ,
+        mz=mz,
         rt=(
             rt_left_min - 0.1,
             rt_left_min,

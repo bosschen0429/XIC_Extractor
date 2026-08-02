@@ -371,6 +371,7 @@ def mint_cid_nl_method_assessment_ref(
         processing_owners=processing_owners,
         sample=sample,
         target=target,
+        evaluation_receipt=evaluation_receipt,
         candidate_peaks=candidates,
         evidence_refs=evidence,
         individual_support_refs=individual,
@@ -595,11 +596,13 @@ def _validate_upstream_bindings(
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
     target: ResolvedTargetDefinition,
+    evaluation_receipt: CidNlEvaluationReceipt,
     candidate_peaks: tuple[PeakObservationRef, ...],
     evidence_refs: tuple[CidNlEvidenceRef, ...],
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
 ) -> None:
+    target_value = target.definition.target
     for peak in candidate_peaks:
         try:
             validate_peak_observation_binding(
@@ -609,7 +612,18 @@ def _validate_upstream_bindings(
             )
         except PeakObservationContractError as exc:
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
-    configured_loss = target.definition.target.neutral_loss_da
+        _validate_target_precursor(
+            observed_mz=peak.content.mz,
+            target_mz=target_value.mz,
+            target_tolerance_ppm=target_value.ppm_tol,
+            subject="candidate peak",
+        )
+        _validate_query_rt(
+            observed_rt_min=peak.content.integration.rt_apex_min,
+            evaluation_receipt=evaluation_receipt,
+            subject="candidate peak apex",
+        )
+    configured_loss = target_value.neutral_loss_da
     if configured_loss is None or configured_loss <= 0.0:
         raise CidNlMethodAssessmentContractError(
             "CID-NL assessment target requires configured neutral loss"
@@ -624,6 +638,17 @@ def _validate_upstream_bindings(
             )
         except CidNlEvidenceContractError as exc:
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
+        _validate_target_precursor(
+            observed_mz=evidence.observation.precursor_mz,
+            target_mz=target_value.mz,
+            target_tolerance_ppm=target_value.ppm_tol,
+            subject="CID-NL evidence",
+        )
+        _validate_query_rt(
+            observed_rt_min=evidence.observation.scan_rt_min,
+            evaluation_receipt=evaluation_receipt,
+            subject="CID-NL evidence scan",
+        )
         if not math.isclose(
             evidence.observation.configured_neutral_loss_da,
             configured_loss,
@@ -695,6 +720,36 @@ def _validate_upstream_bindings(
     if individual_support_refs and set_relation_refs:
         raise CidNlMethodAssessmentContractError(
             "M1 does not collapse individual and set-level relations into one result"
+        )
+
+
+def _validate_target_precursor(
+    *,
+    observed_mz: float,
+    target_mz: float,
+    target_tolerance_ppm: float,
+    subject: str,
+) -> None:
+    precursor_error_ppm = abs(observed_mz - target_mz) / target_mz * 1_000_000.0
+    if precursor_error_ppm > target_tolerance_ppm:
+        raise CidNlMethodAssessmentContractError(
+            f"{subject} is outside the exact target precursor tolerance"
+        )
+
+
+def _validate_query_rt(
+    *,
+    observed_rt_min: float,
+    evaluation_receipt: CidNlEvaluationReceipt,
+    subject: str,
+) -> None:
+    if not (
+        evaluation_receipt.query_rt_min
+        <= observed_rt_min
+        <= evaluation_receipt.query_rt_max
+    ):
+        raise CidNlMethodAssessmentContractError(
+            f"{subject} is outside the evaluation query RT window"
         )
 
 

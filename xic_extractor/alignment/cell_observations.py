@@ -350,6 +350,30 @@ def mint_cell_observation_ref(
             raise CellObservationContractError(
                 "human disposition is outside the processing owner closure"
             )
+        review_reference = human_disposition.reference
+        if (
+            review_reference.processing_request_id
+            != processing_owners.request.processing_request_id
+        ):
+            raise CellObservationContractError(
+                "human disposition references a different processing request"
+            )
+        if (
+            review_reference.canonical_sample_identity_id
+            != sample.identity.sample_identity_id
+        ):
+            raise CellObservationContractError(
+                "human disposition references a different sample"
+            )
+        if (
+            review_reference.target_key_id
+            != target.definition.target_key.target_key_id
+            or review_reference.target_definition_id
+            != target.definition.target_definition_id
+        ):
+            raise CellObservationContractError(
+                "human disposition references a different target definition"
+            )
     evidence_artifact_ids = tuple(
         sorted(
             evidence.artifact.evidence_artifact_id

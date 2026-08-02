@@ -11,7 +11,7 @@ from tests.issue161_no_raw_fixture import (
     issue161_support_policy,
     issue161_unique_support,
 )
-from tests.package2_no_raw_fixture import build_package2_no_raw_fixture
+from tests.package2_no_raw_fixture import NEUTRAL_LOSS_DA, build_package2_no_raw_fixture
 from xic_extractor.alignment import cid_nl_evidence_spine as spine_module
 from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
@@ -25,6 +25,7 @@ from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
     resolve_dda_cid_nl_candidate_set_relation_ref,
 )
+from xic_extractor.peak_detection.cid_nl_evidence import mint_cid_nl_evidence_ref
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     CidNlMethodAssessmentContractError,
@@ -33,6 +34,13 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
+)
+from xic_extractor.processing_identity import compose_processing_owner_references
+from xic_extractor.review_actions_models import ReviewAction
+from xic_extractor.review_records import (
+    mint_review_record_reference,
+    mint_review_record_registry_snapshot,
+    resolve_current_review_record,
 )
 
 
@@ -400,6 +408,205 @@ def test_assessment_tamper_and_crossed_sample_fail_closed(tmp_path: Path) -> Non
             processing_owners=fixture.owners,
             sample=fixture.sample("s2"),
             target=fixture.target,
+        )
+
+
+def test_assessment_rejects_target_precursor_and_query_window_substitution(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("bound",))
+    sample = fixture.sample("bound")
+    wrong_precursor_mz = fixture.target.definition.target.mz + 100.0
+    wrong_peak = issue161_peak(fixture, "bound", mz=wrong_precursor_mz)
+    wrong_evidence = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        scan_number=71,
+        precursor_mz=wrong_precursor_mz,
+        product_mz=wrong_precursor_mz - NEUTRAL_LOSS_DA,
+        configured_neutral_loss_da=NEUTRAL_LOSS_DA,
+        observed_neutral_loss_da=NEUTRAL_LOSS_DA,
+        observed_loss_error_ppm=0.0,
+        scan_rt_min=8.0,
+        product_intensity=400.0,
+    )
+
+    with pytest.raises(CidNlMethodAssessmentContractError, match="target precursor"):
+        mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            detector_invocation_id="gaussian15:bound:wrong-peak",
+            evaluation_receipt=_completed_receipt(scanned_event_count=0),
+            candidate_peaks=(wrong_peak,),
+        )
+    with pytest.raises(CidNlMethodAssessmentContractError, match="target precursor"):
+        mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            detector_invocation_id="gaussian15:bound:wrong-evidence",
+            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evidence_refs=(wrong_evidence,),
+        )
+
+    late_evidence = issue161_evidence(
+        fixture,
+        "bound",
+        scan_number=72,
+        scan_rt_min=20.0,
+    )
+    with pytest.raises(CidNlMethodAssessmentContractError, match="query RT window"):
+        mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            detector_invocation_id="gaussian15:bound:late-evidence",
+            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            evidence_refs=(late_evidence,),
+        )
+
+
+def test_cell_rejects_human_disposition_from_a_different_sample(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_no_raw_fixture(
+        tmp_path,
+        sample_stems=("support", "reviewed", "crossed"),
+    )
+    support_peak = issue161_peak(fixture, "support")
+    support_evidence = issue161_evidence(
+        fixture,
+        "support",
+        scan_number=73,
+        scan_rt_min=8.0,
+    )
+    support_relation = issue161_unique_support(
+        fixture,
+        "support",
+        peak=support_peak,
+        evidence=support_evidence,
+    )
+    support_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("support"),
+        target=fixture.target,
+        detector_invocation_id="gaussian15:support:review-subject",
+        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        candidate_peaks=(support_peak,),
+        evidence_refs=(support_evidence,),
+        individual_support_refs=(support_relation,),
+    )
+    reviewed_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("reviewed"),
+        target=fixture.target,
+        detector_invocation_id="gaussian15:reviewed:review-subject",
+        evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=7.5,
+            query_rt_max=8.6,
+            acquisition_supported=False,
+            search_completed=False,
+            scanned_event_count=0,
+            reason_code="dda_not_available",
+        ),
+        technical_state="unsupported",
+    )
+    crossed_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("crossed"),
+        target=fixture.target,
+        detector_invocation_id="gaussian15:crossed:review-subject",
+        evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=7.5,
+            query_rt_max=8.6,
+            acquisition_supported=False,
+            search_completed=False,
+            scanned_event_count=0,
+            reason_code="dda_not_available",
+        ),
+        technical_state="unsupported",
+    )
+    crossed_target_assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("reviewed"),
+        target=fixture.other_target,
+        detector_invocation_id="gaussian15:reviewed:crossed-target",
+        evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=7.5,
+            query_rt_max=8.6,
+            acquisition_supported=False,
+            search_completed=False,
+            scanned_event_count=0,
+            reason_code="dda_not_available",
+        ),
+        technical_state="unsupported",
+    )
+    spine = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=(
+            (fixture.sample("support"), support_assessment),
+            (fixture.sample("reviewed"), reviewed_assessment),
+            (fixture.sample("crossed"), crossed_assessment),
+        ),
+    )
+    assert spine.group is not None
+
+    action = ReviewAction(
+        sample_name=fixture.sample("reviewed").metadata.sample_name,
+        target_label=fixture.target.definition.target.label,
+        action_type="mark_unresolved",
+        comment="reviewed sample remains unresolved",
+        reviewer="analyst",
+        reviewed_at="2026-08-02T12:00:00Z",
+    )
+    review_reference = mint_review_record_reference(
+        record=action,
+        sample=fixture.sample("reviewed"),
+        target=fixture.target,
+        processing_request_id=fixture.request.processing_request_id,
+        evidence_artifacts=(reviewed_assessment.artifact,),
+    )
+    review_snapshot = mint_review_record_registry_snapshot((review_reference,))
+    review_record = resolve_current_review_record(
+        review_snapshot,
+        review_record_id=review_reference.review_record_id,
+        expected_record=action,
+        expected_sample=fixture.sample("reviewed"),
+        expected_target=fixture.target,
+        expected_processing_request_id=fixture.request.processing_request_id,
+        expected_evidence_artifacts=(reviewed_assessment.artifact,),
+    )
+    review_owners = compose_processing_owner_references(
+        request=fixture.request,
+        attempt=fixture.attempt,
+        sample_snapshot=fixture.samples[0].snapshot,
+        sample_resolutions=fixture.samples,
+        target_snapshot=fixture.target.snapshot,
+        evidence_artifacts=(reviewed_assessment.artifact,),
+        review_target=fixture.target,
+        review_snapshot=review_snapshot,
+        review_record=review_record,
+    )
+
+    with pytest.raises(CellObservationContractError, match="different sample"):
+        mint_cell_observation_ref(
+            processing_owners=review_owners,
+            sample=fixture.sample("crossed"),
+            target=fixture.target,
+            group=spine.group,
+            method_assessment=crossed_assessment,
+            human_disposition=review_record,
+        )
+    with pytest.raises(CellObservationContractError, match="different target"):
+        mint_cell_observation_ref(
+            processing_owners=review_owners,
+            sample=fixture.sample("reviewed"),
+            target=fixture.other_target,
+            group=spine.group,
+            method_assessment=crossed_target_assessment,
+            human_disposition=review_record,
         )
 
 
