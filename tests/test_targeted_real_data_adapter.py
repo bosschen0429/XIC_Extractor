@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -38,6 +39,7 @@ from xic_extractor.raw_reader import (
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
+SECONDARY_NEUTRAL_LOSS_DA = 132.0423
 PRECURSOR_MZ = 500.0
 PRODUCT_MZ = PRECURSOR_MZ - NEUTRAL_LOSS_DA
 
@@ -135,6 +137,56 @@ def test_adapter_preserves_repeated_strict_scans_as_one_support_event(
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
+def test_adapter_reconstructs_each_union_tag_scan_from_its_own_provenance(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    discovery_raw = _FakeRaw(
+        (7.98, 8.02),
+        neutral_loss_das=(NEUTRAL_LOSS_DA, SECONDARY_NEUTRAL_LOSS_DA),
+    )
+    settings = _multi_tag_settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        discovery_raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(candidates) == 1
+    assert candidates[0].matched_tag_names == ("DNA_dR", "RNA_R")
+    assert len(candidates[0].seed_scan_ids) == 2
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        discovery_raw,
+        tmp_path=tmp_path,
+    )
+
+    result = adapt_current_discovery_sample_target(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        target=fixture.target,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    hypothesis = result.alignment_input.candidate_set.candidate_hypotheses[0]
+    support = hypothesis.evidence.cid_nl_chromatographic_support_ref
+    assert support is not None
+    assert support.content.strict_nl_scan_count == 2
+    assert tuple(
+        member.dda_scan_number for member in support.content.scan_supports
+    ) == candidates[0].seed_scan_ids
+    assert vendor_raw.chromatogram_request_counts == [1]
+
+
 def test_adapter_does_not_collapse_strict_scans_from_separated_peaks(
     tmp_path: Path,
 ) -> None:
@@ -156,15 +208,21 @@ def test_adapter_does_not_collapse_strict_scans_from_separated_peaks(
     ordered = tuple(
         sorted(separated_candidates, key=lambda candidate: candidate.best_seed_rt)
     )
+    seed_scan_ids = tuple(candidate.best_ms2_scan_id for candidate in ordered)
+    tag_evidence = json.loads(ordered[0].tag_evidence_json)
+    tag_receipt = tag_evidence[ordered[0].neutral_loss_tag]
+    tag_receipt["scan_count"] = len(seed_scan_ids)
+    tag_receipt["scan_ids"] = list(seed_scan_ids)
+    tag_receipt["rt_min"] = ordered[0].best_seed_rt
+    tag_receipt["rt_max"] = ordered[-1].best_seed_rt
     candidates = (
         replace(
             ordered[0],
             seed_event_count=2,
-            seed_scan_ids=tuple(
-                candidate.best_ms2_scan_id for candidate in ordered
-            ),
+            seed_scan_ids=seed_scan_ids,
             rt_seed_min=ordered[0].best_seed_rt,
             rt_seed_max=ordered[-1].best_seed_rt,
+            tag_evidence_json=json.dumps(tag_evidence),
         ),
     )
     raw, vendor_raw = _open_bound_raw(
@@ -744,6 +802,22 @@ def _settings() -> DiscoverySettings:
     )
 
 
+def _multi_tag_settings() -> DiscoverySettings:
+    return DiscoverySettings(
+        neutral_loss_profiles=(
+            NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
+            NeutralLossProfile("RNA_R", SECONDARY_NEUTRAL_LOSS_DA),
+        ),
+        selected_tag_names=("DNA_dR", "RNA_R"),
+        tag_combine_mode="union",
+        rt_min=7.5,
+        rt_max=8.6,
+        seed_rt_gap_min=0.20,
+        ms1_search_padding_min=0.20,
+        resolver_mode="local_minimum",
+    )
+
+
 def _peak_config(tmp_path: Path) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=tmp_path,
@@ -864,8 +938,18 @@ class _FakeRaw:
         scan_rts: tuple[float, ...],
         *,
         scan_precursor_mz: float = PRECURSOR_MZ,
+        neutral_loss_das: tuple[float, ...] | None = None,
         acquisition_source: AcquisitionSourceIdentity | None = None,
     ) -> None:
+        if neutral_loss_das is None:
+            product_mzs = (PRODUCT_MZ,) * len(scan_rts)
+        else:
+            if len(neutral_loss_das) != len(scan_rts):
+                raise ValueError("neutral_loss_das must match scan_rts")
+            product_mzs = tuple(
+                scan_precursor_mz - neutral_loss_da
+                for neutral_loss_da in neutral_loss_das
+            )
         self.acquisition_source = acquisition_source
         self.rt = np.linspace(7.4, 8.7, 521)
         self.intensity = sum(
@@ -880,11 +964,16 @@ class _FakeRaw:
                 scan_number=int(np.argmin(np.abs(self.rt - rt))) + 1,
                 rt=rt,
                 precursor_mz=scan_precursor_mz,
-                masses=np.asarray((PRODUCT_MZ, PRODUCT_MZ + 10.0)),
+                masses=np.asarray(
+                    (
+                        product_mz,
+                        product_mz + 10.0,
+                    )
+                ),
                 intensities=np.asarray((800.0, 200.0)),
                 base_peak=1000.0,
             )
-            for rt in scan_rts
+            for rt, product_mz in zip(scan_rts, product_mzs, strict=True)
         )
         self.batch_calls = 0
 
