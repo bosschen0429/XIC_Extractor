@@ -334,10 +334,9 @@ def mint_split_component_evidence(
 ) -> SplitComponentEvidence:
     """Bind explicit component membership to one exact parent candidate scope."""
 
-    universes = _validate_candidate_universes(parent_group, candidate_universes)
+    universes = _validate_candidate_universes(candidate_universes)
     mapping_decisions = _validate_candidate_mapping_decisions(
-        universes,
-        candidate_mapping_decisions,
+        candidate_mapping_decisions
     )
     parent_cells = {id(cell) for cell in parent_group.source_cells}
     if any(id(cell) not in parent_cells for cell in direct_support_cells):
@@ -360,12 +359,6 @@ def mint_split_component_evidence(
             raise ValueError(
                 "component observation requires one exact parent candidate universe"
             )
-        _require_candidate_allocation(
-            parent_group,
-            matching_universes[0],
-            observation,
-            mapping_decisions,
-        )
         used_universe_ids.add(matching_universes[0].artifact.evidence_artifact_id)
     return SplitComponentEvidence(
         parent_group=parent_group,
@@ -420,10 +413,9 @@ def mint_split_component_partition_evidence(
 ) -> SplitComponentPartitionEvidence:
     """Seal one exact partition before model settlement or split lifecycle use."""
 
-    universes = _validate_candidate_universes(parent_group, candidate_universes)
+    universes = _validate_candidate_universes(candidate_universes)
     mapping_decisions = _validate_candidate_mapping_decisions(
-        universes,
-        candidate_mapping_decisions,
+        candidate_mapping_decisions
     )
     _validate_components(
         parent_group,
@@ -728,10 +720,9 @@ def _validate_components(
 ) -> None:
     _validate_component_collection(components)
     parent_cells = {id(cell) for cell in parent_group.source_cells}
-    universes = _validate_candidate_universes(parent_group, candidate_universes)
+    universes = _validate_candidate_universes(candidate_universes)
     mapping_decisions = _validate_candidate_mapping_decisions(
-        universes,
-        candidate_mapping_decisions,
+        candidate_mapping_decisions
     )
     universes_by_id = {
         universe.artifact.evidence_artifact_id: universe for universe in universes
@@ -788,16 +779,9 @@ def _validate_components(
                 raise ValueError(
                     "component observation is outside its exact membership scope"
                 )
-            _require_candidate_allocation(
-                parent_group,
-                universes_by_id[matches[0]],
-                observation,
-                mapping_decisions,
-            )
 
 
 def _validate_candidate_universes(
-    parent_group: ConservativeBackfillGroupFacts,
     candidate_universes: tuple[
         ConservativeBackfillRecoveryCandidateUniverse,
         ...,
@@ -808,33 +792,15 @@ def _validate_candidate_universes(
         for universe in candidate_universes
     ):
         raise ValueError("candidate universes must be owner-bound M2 receipts")
-    universe_keys = tuple(
-        universe.sample.identity.sample_identity_id for universe in candidate_universes
-    )
-    if universe_keys != tuple(sorted(set(universe_keys))):
+    if candidate_universes:
         raise ValueError(
-            "candidate universes must be unique by sample and canonical-sorted"
+            "M3 recovery candidate membership requires an owner-backed complete "
+            "same-target group universe"
         )
-    parent_target = (
-        parent_group.group_context.target_key_id,
-        parent_group.group_context.target_definition_id,
-    )
-    parent_attempt = parent_group.group_context.processing_attempt
-    for universe in candidate_universes:
-        if not any(facts is parent_group for facts in universe.group_facts):
-            raise ValueError("candidate universe references a different parent group")
-        if universe.target_key != parent_target:
-            raise ValueError("candidate universe references a different target")
-        if universe.processing_attempt is not parent_attempt:
-            raise ValueError("candidate universe references a different attempt")
     return candidate_universes
 
 
 def _validate_candidate_mapping_decisions(
-    candidate_universes: tuple[
-        ConservativeBackfillRecoveryCandidateUniverse,
-        ...,
-    ],
     candidate_mapping_decisions: tuple[ConservativeBackfillCellDecision, ...],
 ) -> tuple[ConservativeBackfillCellDecision, ...]:
     if not isinstance(candidate_mapping_decisions, tuple) or any(
@@ -842,89 +808,12 @@ def _validate_candidate_mapping_decisions(
         for decision in candidate_mapping_decisions
     ):
         raise ValueError("candidate mapping closure requires owner-minted M2 decisions")
-    if not candidate_universes:
-        if candidate_mapping_decisions:
-            raise ValueError("candidate mapping decisions require declared universes")
-        return ()
-    for decision in candidate_mapping_decisions:
-        if decision.candidate_universe is None or not any(
-            decision.candidate_universe is universe for universe in candidate_universes
-        ):
-            raise ValueError(
-                "candidate mapping decision references an undeclared universe"
-            )
-    decision_keys = tuple(
-        (
-            id(decision.candidate_universe),
-            id(decision.group_facts),
-        )
-        for decision in candidate_mapping_decisions
-    )
-    if len(decision_keys) != len(set(decision_keys)):
+    if candidate_mapping_decisions:
         raise ValueError(
-            "candidate mapping closure contains duplicate parent decisions"
+            "M3 mapping decisions require an owner-backed complete same-target "
+            "group universe"
         )
-    for universe in candidate_universes:
-        bound = tuple(
-            decision
-            for decision in candidate_mapping_decisions
-            if decision.candidate_universe is universe
-        )
-        requires_m2_allocation = len(universe.group_facts) > 1
-        if (requires_m2_allocation or bound) and (
-            len(bound) != len(universe.group_facts)
-            or any(
-                not any(decision.group_facts is facts for decision in bound)
-                for facts in universe.group_facts
-            )
-        ):
-            raise ValueError(
-                "candidate mapping closure must cover the universe's exact parent set"
-            )
-    return tuple(
-        sorted(
-            candidate_mapping_decisions,
-            key=lambda decision: (
-                (
-                    decision.candidate_universe.artifact.evidence_artifact_id
-                    if decision.candidate_universe is not None
-                    else ""
-                ),
-                decision.group_facts.group_context.group.group_hypothesis_id,
-            ),
-        )
-    )
-
-
-def _require_candidate_allocation(
-    parent_group: ConservativeBackfillGroupFacts,
-    candidate_universe: ConservativeBackfillRecoveryCandidateUniverse,
-    observation: PeakObservationRef,
-    candidate_mapping_decisions: tuple[ConservativeBackfillCellDecision, ...],
-) -> None:
-    if len(candidate_universe.group_facts) == 1:
-        return
-    parent_decisions = tuple(
-        decision
-        for decision in candidate_mapping_decisions
-        if (
-            decision.candidate_universe is candidate_universe
-            and decision.group_facts is parent_group
-        )
-    )
-    if len(parent_decisions) != 1:
-        raise ValueError(
-            "multi-parent component membership requires one exact M2 parent decision"
-        )
-    decision = parent_decisions[0]
-    if (
-        decision.disposition != "candidate_mapped"
-        or decision.matched_candidate is None
-        or decision.matched_candidate.peak_observation is not observation
-    ):
-        raise ValueError(
-            "multi-parent component membership requires the exact M2 mapped peak"
-        )
+    return ()
 
 
 def _validate_component_collection(

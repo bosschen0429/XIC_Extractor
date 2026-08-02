@@ -184,61 +184,35 @@ def test_component_observations_reject_crossed_target_and_attempt(
             )
 
 
-def test_candidate_universe_alone_does_not_mint_component_membership(
+def test_recovery_candidate_membership_requires_complete_group_owner(
     tmp_path: Path,
 ) -> None:
-    parent, components, universes, _fixture = _parent_and_components(
-        tmp_path,
-        add_second_s1_peak=True,
-    )
-
-    with pytest.raises(ValueError, match="membership_evidence_refs"):
-        mint_split_component_evidence(
-            parent_group=parent,
-            candidate_universes=universes,
-            candidate_mapping_decisions=(components[0].candidate_mapping_decisions),
-            component_id="component-c",
-            peak_observations=(components[1].peak_observations[-1],),
-            direct_support_cells=(),
-            membership_evidence_refs=(),
-        )
-
-
-def test_duplicate_candidate_universes_for_one_sample_are_rejected(
-    tmp_path: Path,
-) -> None:
-    parent, components, universes, fixture = _parent_and_components(
-        tmp_path,
-        add_second_s1_peak=True,
-    )
-    alternate_peak = issue161_peak(
+    parent, components, _universes, fixture = _parent_and_components(tmp_path)
+    candidate = issue161_peak(
         fixture,
         "s1",
-        apex_rt=8.40,
-        rt_left_min=8.30,
-        rt_right_min=8.50,
-        height=125.0,
+        apex_rt=8.20,
+        rt_left_min=8.10,
+        rt_right_min=8.30,
+        height=250.0,
     )
-    conflicting = _recovery_universe(
+    universe = _recovery_universe(
         fixture,
         (parent,),
         "s1",
-        (alternate_peak,),
+        (components[0].peak_observations[0], candidate),
     )
 
-    for duplicate_universes in (
-        (universes[0], universes[0]),
-        (universes[0], conflicting),
-    ):
-        with pytest.raises(ValueError, match="unique by sample"):
-            mint_split_component_partition_evidence(
-                parent_group=parent,
-                components=components,
-                candidate_universes=duplicate_universes,
-                candidate_mapping_decisions=(components[0].candidate_mapping_decisions),
-                component_pattern="repeated_multiple_components",
-                evidence_refs=("partition:duplicate-universe",),
-            )
+    with pytest.raises(ValueError, match="complete same-target group universe"):
+        mint_split_component_evidence(
+            parent_group=parent,
+            candidate_universes=(universe,),
+            candidate_mapping_decisions=(),
+            component_id="component-c",
+            peak_observations=(candidate,),
+            direct_support_cells=(),
+            membership_evidence_refs=("membership:explicit-but-unowned-scope",),
+        )
 
 
 def test_split_lineage_decision_cannot_be_caller_forged(tmp_path: Path) -> None:
@@ -269,10 +243,7 @@ def test_split_lineage_decision_cannot_be_caller_forged(tmp_path: Path) -> None:
 def test_same_identity_or_and_area_aggregation_require_resolved_h1b(
     tmp_path: Path,
 ) -> None:
-    parent, components, universes, _fixture = _parent_and_components(
-        tmp_path,
-        add_second_s1_peak=True,
-    )
+    parent, components, universes, _fixture = _parent_and_components(tmp_path)
     partition = _partition(parent, components, universes)
     same_identity = _settlement(parent, partition, relation="same_identity")
     unresolved = _settlement(parent, partition, relation="unresolved")
@@ -330,37 +301,29 @@ def test_same_identity_or_and_area_aggregation_require_resolved_h1b(
 def test_h1b_settlement_cannot_be_reused_with_a_different_partition(
     tmp_path: Path,
 ) -> None:
-    parent, components, universes, _fixture = _parent_and_components(
-        tmp_path,
-        add_second_s1_peak=True,
-    )
+    parent, components, universes, _fixture = _parent_and_components(tmp_path)
     full_partition = _partition(parent, components, universes)
     settlement = _settlement(parent, full_partition, relation="same_identity")
-    reduced_components = (
-        components[0],
-        mint_split_component_evidence(
-            parent_group=parent,
-            candidate_universes=universes,
-            candidate_mapping_decisions=(components[1].candidate_mapping_decisions),
-            component_id="component-b",
-            peak_observations=(components[1].peak_observations[0],),
-            direct_support_cells=components[1].direct_support_cells,
-            membership_evidence_refs=components[1].membership_evidence_refs,
-        ),
+    replayed_partition = mint_split_component_partition_evidence(
+        parent_group=parent,
+        components=components,
+        candidate_universes=universes,
+        candidate_mapping_decisions=(),
+        component_pattern="repeated_multiple_components",
+        evidence_refs=("partition:replayed-components",),
     )
-    reduced_partition = _partition(parent, reduced_components, universes)
 
     with pytest.raises(ValueError, match="same exact partition"):
         assess_split_lineage(
             parent_group=parent,
-            component_partition=reduced_partition,
+            component_partition=replayed_partition,
             lifecycle_state="split_supported",
             identity_settlement=settlement,
             evidence_refs=("split:crossed-partition",),
         )
 
 
-def test_multi_parent_component_membership_requires_exact_m2_allocation(
+def test_recovery_candidates_fail_closed_for_declared_partial_or_full_parent_sets(
     tmp_path: Path,
 ) -> None:
     fixture = _study_fixture(
@@ -385,16 +348,27 @@ def test_multi_parent_component_membership_requires_exact_m2_allocation(
     )
     early_peak = _peak(fixture, "missing", apex_rt=7.8)
     late_peak = _peak(fixture, "missing", apex_rt=8.2)
-    universe = _recovery_universe(
+    partial_universe = _recovery_universe(
+        fixture,
+        (late,),
+        "missing",
+        (early_peak, late_peak),
+    )
+    partial_decisions = map_conservative_backfill_candidates(
+        (late,),
+        sample=fixture.sample("missing"),
+        candidate_universes=(partial_universe,),
+    )
+    declared_full_universe = _recovery_universe(
         fixture,
         (late, early),
         "missing",
         (early_peak, late_peak),
     )
-    mapping_decisions = map_conservative_backfill_candidates(
+    declared_full_decisions = map_conservative_backfill_candidates(
         (late, early),
         sample=fixture.sample("missing"),
-        candidate_universes=(universe,),
+        candidate_universes=(declared_full_universe,),
     )
     early_support = next(
         cell for cell in early.source_cells if cell.content.method_result == "SUPPORT"
@@ -405,50 +379,30 @@ def test_multi_parent_component_membership_requires_exact_m2_allocation(
     assert early_support.peak_observation is not None
     assert late_support.peak_observation is not None
 
-    early_component = mint_split_component_evidence(
-        parent_group=early,
-        candidate_universes=(universe,),
-        candidate_mapping_decisions=mapping_decisions,
-        component_id="component-early",
-        peak_observations=(early_support.peak_observation, early_peak),
-        direct_support_cells=(early_support,),
-        membership_evidence_refs=("membership:m2-early",),
-    )
-
-    assert early_component.peak_observations[-1] is early_peak
-    with pytest.raises(ValueError, match="exact M2 mapped peak"):
-        mint_split_component_evidence(
-            parent_group=late,
-            candidate_universes=(universe,),
-            candidate_mapping_decisions=mapping_decisions,
-            component_id="component-late",
-            peak_observations=(late_support.peak_observation, early_peak),
-            direct_support_cells=(late_support,),
-            membership_evidence_refs=("membership:cross-parent-reuse",),
-        )
-
-    held_universe = _recovery_universe(
-        fixture,
-        (early, late),
-        "missing",
-        (early_peak,),
-    )
-    held_decisions = map_conservative_backfill_candidates(
-        (early, late),
-        sample=fixture.sample("missing"),
-        candidate_universes=(held_universe,),
-    )
-    assert {decision.disposition for decision in held_decisions} == {"hold"}
-    with pytest.raises(ValueError, match="exact M2 mapped peak"):
-        mint_split_component_evidence(
-            parent_group=early,
-            candidate_universes=(held_universe,),
-            candidate_mapping_decisions=held_decisions,
-            component_id="component-held",
-            peak_observations=(early_support.peak_observation, early_peak),
-            direct_support_cells=(early_support,),
-            membership_evidence_refs=("membership:held-multi-parent",),
-        )
+    assert {decision.disposition for decision in partial_decisions} == {"hold"}
+    assert {decision.disposition for decision in declared_full_decisions} == {
+        "candidate_mapped"
+    }
+    for universe, decisions, parent, support, peak in (
+        (partial_universe, partial_decisions, late, late_support, early_peak),
+        (
+            declared_full_universe,
+            declared_full_decisions,
+            early,
+            early_support,
+            early_peak,
+        ),
+    ):
+        with pytest.raises(ValueError, match="complete same-target group universe"):
+            mint_split_component_evidence(
+                parent_group=parent,
+                candidate_universes=(universe,),
+                candidate_mapping_decisions=decisions,
+                component_id="component-recovery",
+                peak_observations=(support.peak_observation, peak),
+                direct_support_cells=(support,),
+                membership_evidence_refs=("membership:unowned-parent-scope",),
+            )
 
 
 def test_split_child_census_cannot_be_replaced_or_caller_forged(
@@ -533,11 +487,7 @@ def test_identity_settlement_module_has_no_writer_or_public_projection_import() 
     )
 
 
-def _parent_and_components(
-    tmp_path: Path,
-    *,
-    add_second_s1_peak: bool = False,
-):
+def _parent_and_components(tmp_path: Path):
     fixture = _study_fixture(tmp_path, ("s1", "s2", "s3"))
     spine = _spine(
         fixture,
@@ -561,24 +511,6 @@ def _parent_and_components(
     assert cell_s2.peak_observation is not None
     component_b_peaks = [cell_s2.peak_observation]
     candidate_universes = ()
-    if add_second_s1_peak:
-        second_s1_peak = issue161_peak(
-            fixture,
-            "s1",
-            apex_rt=8.20,
-            rt_left_min=8.10,
-            rt_right_min=8.30,
-            height=250.0,
-        )
-        component_b_peaks.append(second_s1_peak)
-        candidate_universes = (
-            _recovery_universe(
-                fixture,
-                (parent,),
-                "s1",
-                (cell_s1.peak_observation, second_s1_peak),
-            ),
-        )
     candidate_mapping_decisions = ()
     components = (
         mint_split_component_evidence(

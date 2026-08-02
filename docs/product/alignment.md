@@ -72,28 +72,25 @@ threshold is introduced.
 
 Direct identity relations are owner-bound to one exact group, and the local
 trajectory sample set must equal that group's owner population. A derived
-identity or split decision cannot be caller-constructed. Additional component
-peaks must come from the parent's exact M2 target/attempt-bound candidate
-universe; one sample cannot contribute multiple competing full-universe
-receipts. Candidate-universe membership alone is not component membership:
-each component must carry explicit owner-bound membership evidence for its
-component ID and exact observations. The M3 owner seals those components,
-candidate universes, and M2 mapping decisions into one immutable partition
+identity or split decision cannot be caller-constructed. Each component must
+carry explicit owner-bound membership evidence for its component ID and exact
+observations. The M3 owner seals those components into one immutable partition
 receipt. H1b settlement, split lineage, and same-identity aggregation must all
 reuse that exact receipt; a settlement cannot be replayed against a stale,
-partial, expanded, or repartitioned component set. Same-sample peaks from
-another target or attempt are outside scope.
+partial, expanded, or repartitioned component set.
 
-A single-parent candidate universe may be partitioned by explicit M3 membership
-evidence because no competing parent allocation exists. A multi-parent universe
-retains M2's full mapping closure: only the exact `candidate_mapped` peak may
-enter that parent's component. Held one-to-many or many-to-one evidence remains
-unallocated/scientifically uncertain; broad universe membership cannot assign
-or reuse one physical peak across competing parents.
+The current M2 recovery receipt does not prove that caller-supplied group facts
+are the complete same-target parent universe (tracked as #156 gap 10). M3
+therefore accepts only exact direct SUPPORT observations from its parent group;
+any non-empty recovery candidate universe fails closed before component
+membership. A receipt's declared parent count, explicit M3 membership label, or
+M2 mapping result cannot substitute for the missing complete-group owner. This
+is a deliberate shadow-capability narrowing: recovery candidate membership
+remains scientifically uncertain until that upstream contract exists.
 
 Repeated components disfavor the one-component model but do not prove `H2`.
-Components retain their physical observations, candidate-universe receipts,
-and direct SUPPORT cells without cross-component transfer. CID-NL OR and area
+Components retain their physical observations and direct SUPPORT cells without
+cross-component transfer. CID-NL OR and area
 summation are available only after an `H1b` same-identity resolution; the result
 remains shadow-only and preserves the component observations used in the sum.
 
