@@ -168,6 +168,15 @@ positive evidence ref is therefore not treated as proof that a search
 completed, and technical failure cannot become REJECT or a human
 `unassessable` disposition.
 
+One assessment may contain at most one measured evidence ref for each exact
+`(acquisition_source_id, scan_number)` key. Multiple matched product centroids
+from one DDA scan cannot multiply its method evidence; they must be resolved by
+the evidence provider before assessment minting. When multiple distinct strict
+scans support one physical peak, the Alignment adapter projects their arithmetic
+mean measured product m/z and observed neutral loss as one order-neutral
+chromatographic identity event. The exact per-scan evidence remains preserved
+upstream, and the aggregate does not create additional support votes.
+
 Only a scan strictly inside one non-overlapping candidate interval may retain
 the existing individual support relation. Boundary, touching, and overlapping
 cases use `DdaCidNlCandidateSetRelationRef`; that relation grants no individual
@@ -183,13 +192,17 @@ The M1 reference spine creates one minimal `CellObservationRef` only after a
 SUPPORT assessment has established a provisional group. Targeted and
 Untargeted diagnostic adapters receive the same exact group and cell objects;
 they do not remint equal-looking DTOs. Cell artifact identity binds both the
-group label and its complete canonical hypothesis membership, so a reused
-display label cannot substitute a different group. An optional owner-resolved
-human disposition must cite the exact current method-assessment artifact, not
-merely the same sample/target subject. Both adapters are internal, no-write,
-and carry `product_authority="none"`. Existing production callers, Backfill,
-Matrix, selected value/counting, CLI/config, and writers remain unchanged and
-belong to later activation work.
+group label and its complete canonical hypothesis membership, target identity,
+and the exact SUPPORT assessment closure that formed the group. Every SUPPORT,
+HOLD, REJECT, or technical cell must consume that owner-validated group context;
+a reused display label, equal-looking group, or group from another target cannot
+be substituted. The v3 cell artifact keeps those SUPPORT assessment artifacts
+in its upstream closure. An optional owner-resolved human disposition must cite
+the exact current method-assessment artifact, not merely the same sample/target
+subject. Both adapters are internal, no-write, and carry
+`product_authority="none"`. Existing production callers, Backfill, Matrix,
+selected value/counting, CLI/config, and writers remain unchanged and belong to
+later activation work.
 
 Pt/Delta Mass multi-observation composition remains deferred until its
 Discovery method and owner-backed position roles are stable; array order or an
@@ -205,11 +218,11 @@ unlabeled tuple must not be guessed into method semantics.
 | `DdaCidNlPeakSupportRef` | CID-NL-owner DDA/ddMS2 scan-to-physical-peak relation over an exact supplied candidate universe; diagnostic only, no DIA or selection authority |
 | `DdaCidNlCandidateSetRelationRef` | One scan related conservatively to one or more boundary/touching/overlapping candidates; set-level only, zero individual votes and zero hypotheses |
 | `CidNlChromatographicSupportRef` | One-or-more exact strict DDA scan relations aggregated as one physical-peak support event; diagnostic only, no hypothesis or counting authority |
-| `CidNlMethodAssessmentRef` | Complete target-bound CID-NL attempt with a policy-bound completed-search receipt, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |
+| `CidNlMethodAssessmentRef` | Complete target-bound CID-NL attempt with a policy-bound completed-search receipt, unique acquisition-source/scan keys, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |
 | `PeakHypothesis` | One existing model: legacy Targeted working identity plus a bounded diagnostic owner-backed CID-NL composition; neither is canonical physical-observation identity |
 | `peak_hypothesis_identity` | Same-owner content ID, exact attempt artifact, and binding validation for the bounded CID-NL composition; no selection or product authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
-| `CellObservationRef` | Minimal sample × existing-group closure over exact canonical group membership, technical state, method result, optional observation/hypothesis, evidence/reasons, and an optional exact-assessment-bound owner-resolved human disposition; no value or writer fields |
+| `CellObservationRef` | Minimal sample × existing-group closure over exact target-bound group/SUPPORT membership, technical state, method result, optional observation/hypothesis, evidence/reasons, and an optional exact-assessment-bound owner-resolved human disposition; no value or writer fields |
 | CID-NL Targeted/Untargeted reference projections | Two internal views that retain the same exact group/cell refs and explicitly carry no product authority |
 | `IntegrationResult` | Integrated signal and boundary result |
 | `AuditTrail` / reason strings | Human-readable explanation and review evidence |

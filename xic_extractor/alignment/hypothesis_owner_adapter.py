@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportRef,
@@ -27,15 +29,22 @@ def owner_from_cid_nl_assessment_support(
 ) -> SampleLocalMS1Owner:
     """Project measured values without granting selection or write authority."""
 
-    observation, support, evidence = _assessment_hypothesis_components(
+    observation, support, evidence_refs = _assessment_hypothesis_components(
         sample=sample,
         assessment=assessment,
         hypothesis=hypothesis,
     )
-    measured = evidence.observation
+    measured = tuple(evidence.observation for evidence in evidence_refs)
+    aggregate_product_mz = math.fsum(
+        observation.product_mz for observation in measured
+    ) / len(measured)
+    aggregate_observed_loss = math.fsum(
+        observation.observed_neutral_loss_da for observation in measured
+    ) / len(measured)
     integration = observation.content.integration
     neutral_loss_tag = (
-        f"{assessment.content.method_id}:{measured.configured_neutral_loss_da:.12g}"
+        f"{assessment.content.method_id}:"
+        f"{measured[0].configured_neutral_loss_da:.12g}"
     )
     event = IdentityEvent(
         candidate_id=hypothesis.hypothesis_id,
@@ -43,8 +52,8 @@ def owner_from_cid_nl_assessment_support(
         raw_file=observation.generation_provenance.acquisition_source_id,
         neutral_loss_tag=neutral_loss_tag,
         precursor_mz=observation.content.mz,
-        product_mz=measured.product_mz,
-        observed_neutral_loss_da=measured.observed_neutral_loss_da,
+        product_mz=aggregate_product_mz,
+        observed_neutral_loss_da=aggregate_observed_loss,
         seed_rt=integration.rt_apex_min,
         evidence_score=100,
         seed_event_count=support.content.strict_nl_scan_count,
@@ -87,7 +96,11 @@ def _assessment_hypothesis_components(
     sample: ResolvedCanonicalSampleIdentity,
     assessment: CidNlMethodAssessmentRef,
     hypothesis: PeakHypothesis,
-) -> tuple[PeakObservationRef, CidNlChromatographicSupportRef, CidNlEvidenceRef]:
+) -> tuple[
+    PeakObservationRef,
+    CidNlChromatographicSupportRef,
+    tuple[CidNlEvidenceRef, ...],
+]:
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise HypothesisOwnerAdapterError(
             "sample must be an owner-resolved canonical identity"
@@ -149,13 +162,19 @@ def _assessment_hypothesis_components(
         evidence.artifact.content_identity.artifact_content_id: evidence
         for evidence in assessment.evidence_refs
     }
-    first_member = support.content.scan_supports[0]
-    evidence = evidence_by_content_id.get(first_member.cid_nl_evidence_content_id)
-    if evidence is None:
+    support_evidence: list[CidNlEvidenceRef] = []
+    for member in support.content.scan_supports:
+        evidence = evidence_by_content_id.get(member.cid_nl_evidence_content_id)
+        if evidence is None:
+            raise HypothesisOwnerAdapterError(
+                "hypothesis support evidence is missing from the assessment"
+            )
+        support_evidence.append(evidence)
+    if len(support_evidence) != support.content.strict_nl_scan_count:
         raise HypothesisOwnerAdapterError(
-            "hypothesis support evidence is missing from the assessment"
+            "hypothesis support scan count does not close its measured evidence"
         )
-    return observation, support, evidence
+    return observation, support, tuple(support_evidence)
 
 
 __all__ = [

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
     CellObservationRef,
+    CidNlCellGroupContext,
+    CidNlCellGroupSupport,
     mint_cell_observation_ref,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -177,6 +179,10 @@ class CidNlReferenceSpine:
                 raise CidNlEvidenceSpineError(
                     "reference spine cell group membership was substituted"
                 )
+            if cell.group_context.group is not self.group:
+                raise CidNlEvidenceSpineError(
+                    "reference spine cell does not reuse the exact group context"
+                )
         cell_hypotheses = tuple(
             cell.peak_hypothesis
             for cell in self.cells
@@ -312,9 +318,10 @@ def build_cid_nl_reference_spine(
         )
     except HypothesisOwnerAdapterError as exc:
         raise CidNlEvidenceSpineError(str(exc)) from exc
+    effective_config = config or AlignmentConfig()
     groups = construct_cross_sample_peak_group_hypotheses(
         owners,
-        config=config or AlignmentConfig(),
+        config=effective_config,
     )
     if len(groups) != 1:
         raise CidNlEvidenceSpineError(
@@ -322,6 +329,21 @@ def build_cid_nl_reference_spine(
             "belongs to M3"
         )
     group = groups[0]
+    try:
+        group_context = CidNlCellGroupContext(
+            group=group,
+            supports=tuple(
+                CidNlCellGroupSupport(
+                    sample=sample,
+                    assessment=assessment,
+                    hypothesis=hypothesis,
+                )
+                for sample, assessment, _, hypothesis in support_inputs
+            ),
+            config=effective_config,
+        )
+    except CellObservationContractError as exc:
+        raise CidNlEvidenceSpineError(str(exc)) from exc
     hypothesis_by_sample_id = {
         sample.identity.sample_identity_id: (peak, hypothesis)
         for sample, _, peak, hypothesis in support_inputs
@@ -343,7 +365,7 @@ def build_cid_nl_reference_spine(
                 processing_owners=processing_owners,
                 sample=sample,
                 target=target,
-                group=group,
+                group_context=group_context,
                 method_assessment=assessment,
                 peak_observation=peak_observation,
                 peak_hypothesis=peak_hypothesis,
@@ -421,6 +443,10 @@ def _validate_projection(
     if not isinstance(group, CrossSamplePeakGroupHypothesis):
         raise CidNlEvidenceSpineError(
             "reference projection requires an existing provisional group"
+        )
+    if cell.group_context.group is not group:
+        raise CidNlEvidenceSpineError(
+            "reference projection must reuse the cell's exact group context"
         )
     if cell.content.group_hypothesis_id != group.group_hypothesis_id:
         raise CidNlEvidenceSpineError(

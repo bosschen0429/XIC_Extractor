@@ -667,6 +667,17 @@ def _validate_upstream_bindings(
         evidence_by_content_id[
             evidence.artifact.content_identity.artifact_content_id
         ] = evidence
+    acquisition_scan_keys = tuple(
+        (
+            evidence.observation.acquisition_source_id,
+            evidence.observation.scan_number,
+        )
+        for evidence in evidence_refs
+    )
+    if len(set(acquisition_scan_keys)) != len(acquisition_scan_keys):
+        raise CidNlMethodAssessmentContractError(
+            "duplicate acquisition scan evidence cannot multiply one method event"
+        )
     candidate_ids = tuple(
         peak.content.peak_observation_content_id for peak in candidate_peaks
     )

@@ -122,7 +122,7 @@ user-visible intermediate labels.
 | --- | --- | --- |
 | technical/evidence availability | `evaluated`, `unsupported`, `failed`, `not_evaluated` | Whether a supported acquisition/search completed |
 | CID-NL method result | `SUPPORT`, `HOLD`, `REJECT`, or `None` | What this completed method attempt claims; non-evaluated technical states require `None` |
-| identity/model result | existing/provisional `group_hypothesis_id` plus canonical `group_owner_ids` | Which exact already-established group membership is being evaluated; no M3 or cross-run stability claim |
+| identity/model result | existing/provisional `group_hypothesis_id`, canonical `group_owner_ids`, exact target IDs, and the SUPPORT assessment closure that formed the group | Which exact target-bound, already-established group membership is being evaluated; no M3 or cross-run stability claim |
 | human review | no disposition or an owner-resolved human review ref citing the current assessment artifact | Human decision provenance over this exact assessment; machine logic cannot author final `unassessable` |
 | product authority | always `none` in M1 | Matrix, count, fill, write, export, and activation remain outside this contract |
 
@@ -137,7 +137,10 @@ HOLD, and internal ambiguity must never serialize as REJECT, zero, absence, or
 human `unassessable`.
 
 The cell is created only after another sample's SUPPORT has established an
-existing/provisional group. HOLD and REJECT assessments may persist without a
+existing/provisional group. The cell consumes the exact owner-validated group
+context, including target identity and every SUPPORT assessment/hypothesis that
+formed the group; equal-looking or cross-target groups fail closed. HOLD and
+REJECT assessments may persist without a
 cell when no group exists. Backfill eligibility and post-Backfill product
 projection remain #162 responsibilities.
 
