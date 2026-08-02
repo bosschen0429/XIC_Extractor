@@ -132,9 +132,13 @@ numbers), with a type/version prefix. Its current content boundary is:
   Targeted extraction settings, the exact owner-minted target-list snapshot,
   effective RT
   priors, approval records, optional MS1-shape support content and activation
-  policy, and the owning input-schema, algorithm, and contract versions. The
-  adapter key is part of current execution semantics but is not a canonical
-  sample identity and cannot be reused as a delivery-cell key;
+  policy, the complete order-insensitive Discovery candidate universe for every
+  acquisition sample, and the owning input-schema, algorithm, and contract
+  versions. The candidate universe digest covers the full scientific candidate
+  payload; missing, additional, or changed candidates cannot run under the same
+  Targeted request. The adapter key is part of current execution semantics but
+  is not a canonical sample identity and cannot be reused as a delivery-cell
+  key;
 - a processing attempt binds one request, a fresh opaque 128-bit token, and an
   optional predecessor attempt. Retry always issues a new attempt. Terminal
   outcome and cancellation/failure events remain append-only facts owned by the
@@ -205,6 +209,17 @@ minted by the current attempt.
 Cross-attempt runtime dependency resolution beyond this validated predecessor
 closure remains a later consumer contract. A timestamp can describe when
 something happened; it cannot establish what happened.
+
+The M1 cell owner applies the same rule to provisional group membership. A
+group context retains the attempt that owns every direct SUPPORT assessment and
+hypothesis. Cell minting accepts those group supports only from the current
+attempt or its derived retry-predecessor chain; a sibling attempt is never an
+implicit dependency. Conservative Backfill then mints a separate immutable
+recovery-universe receipt over the exact sample, group-derived target,
+request/attempt, source cells, and one owner-minted CID-NL method assessment.
+The assessment owns the complete target-bound peak set; mapping consumes the
+receipt even when that set is empty. A naked target plus an independently valid
+`PeakObservationRef` is not recovery evidence.
 
 An acquisition source and a sample remain different typed identities, but the
 current lab contract is one independent canonical analysis sample per source

@@ -35,7 +35,11 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     PeakHypothesisContractError,
     validate_cid_nl_peak_hypothesis_binding,
 )
-from xic_extractor.processing_identity import ProcessingOwnerReferences
+from xic_extractor.processing_identity import (
+    ProcessingAttemptIdentity,
+    ProcessingOwnerReferences,
+    retry_predecessor_attempt_ids,
+)
 from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -93,6 +97,7 @@ class CidNlCellGroupContext:
     group: CrossSamplePeakGroupHypothesis
     supports: tuple[CidNlCellGroupSupport, ...]
     config: AlignmentConfig
+    processing_attempt: ProcessingAttemptIdentity
 
     def __post_init__(self) -> None:
         if not isinstance(self.group, CrossSamplePeakGroupHypothesis) or not (
@@ -114,6 +119,10 @@ class CidNlCellGroupContext:
         if not isinstance(self.config, AlignmentConfig):
             raise CellObservationContractError(
                 "group context requires the exact AlignmentConfig"
+            )
+        if not isinstance(self.processing_attempt, ProcessingAttemptIdentity):
+            raise CellObservationContractError(
+                "group context requires an owner-issued processing attempt"
             )
         sample_ids = tuple(
             support.sample.identity.sample_identity_id for support in self.supports
@@ -146,6 +155,10 @@ class CidNlCellGroupContext:
             raise CellObservationContractError(
                 "group SUPPORT closures contain duplicate hypotheses"
             )
+        _validate_group_support_attempts(
+            self.supports,
+            producer_attempt=self.processing_attempt,
+        )
         expected_groups = construct_cross_sample_peak_group_hypotheses(
             expected_owners,
             config=self.config,
@@ -468,6 +481,23 @@ def mint_cell_observation_ref(
         raise CellObservationContractError(
             "CellObservation requires an owner-validated group context"
         )
+    allowed_group_attempt_ids = {
+        processing_owners.attempt.processing_attempt_id,
+        *retry_predecessor_attempt_ids(processing_owners.attempt),
+    }
+    if (
+        group_context.processing_attempt.processing_request_id
+        != processing_owners.request.processing_request_id
+        or group_context.processing_attempt.processing_attempt_id
+        not in allowed_group_attempt_ids
+    ):
+        raise CellObservationContractError(
+            "group SUPPORT closure is outside the current attempt or retry lineage"
+        )
+    _validate_group_support_attempts(
+        group_context.supports,
+        producer_attempt=processing_owners.attempt,
+    )
     group = group_context.group
     if (
         target.definition.target_key.target_key_id != group_context.target_key_id
@@ -687,6 +717,44 @@ def _cell_upstream_artifacts(
     return tuple(
         artifacts_by_id[artifact_id] for artifact_id in sorted(artifacts_by_id)
     )
+
+
+def _group_support_artifacts(
+    supports: tuple[CidNlCellGroupSupport, ...],
+) -> tuple[EvidenceArtifactRef, ...]:
+    artifacts: list[EvidenceArtifactRef] = []
+    for support in supports:
+        artifacts.append(support.assessment.artifact)
+        if support.hypothesis.artifact is None:
+            raise CellObservationContractError(
+                "group SUPPORT hypothesis is missing its immutable artifact"
+            )
+        artifacts.append(support.hypothesis.artifact)
+    artifacts_by_id = {item.evidence_artifact_id: item for item in artifacts}
+    return tuple(
+        artifacts_by_id[artifact_id] for artifact_id in sorted(artifacts_by_id)
+    )
+
+
+def _validate_group_support_attempts(
+    supports: tuple[CidNlCellGroupSupport, ...],
+    *,
+    producer_attempt: ProcessingAttemptIdentity,
+) -> None:
+    allowed_attempt_ids = {
+        producer_attempt.processing_attempt_id,
+        *retry_predecessor_attempt_ids(producer_attempt),
+    }
+    for artifact in _group_support_artifacts(supports):
+        if (
+            artifact.producer_processing_request_id
+            != producer_attempt.processing_request_id
+            or artifact.producer_processing_attempt_id not in allowed_attempt_ids
+        ):
+            raise CellObservationContractError(
+                "group SUPPORT artifacts are outside the current attempt or retry "
+                "lineage"
+            )
 
 
 def _canonical_typed_ids(value: object, *, prefix: str, field: str) -> tuple[str, ...]:

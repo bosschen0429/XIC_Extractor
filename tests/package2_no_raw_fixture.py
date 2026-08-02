@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
     target_list_snapshot_payload,
 )
-from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.targeted_candidate_set import (
     TargetedCandidateSetMember,
     TargetedCandidateSetRef,
@@ -59,6 +60,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
     SampleMetadata,
+    SampleRole,
     mint_sample_metadata_snapshot,
     resolve_canonical_sample_identity,
 )
@@ -136,7 +138,15 @@ def build_package2_no_raw_fixture(
     tmp_path: Path,
     *,
     sample_stems: tuple[str, ...],
+    sample_roles: Mapping[str, SampleRole] | None = None,
 ) -> Package2NoRawFixture:
+    declared_roles = dict(sample_roles or {})
+    unknown_role_samples = set(declared_roles).difference(sample_stems)
+    if unknown_role_samples:
+        raise ValueError(
+            "sample_roles contains samples outside sample_stems: "
+            + ", ".join(sorted(unknown_role_samples))
+        )
     sources = []
     bindings = []
     metadata = []
@@ -156,7 +166,13 @@ def build_package2_no_raw_fixture(
                 injection_order=injection_order,
             )
         )
-        metadata.append(SampleMetadata(sample_name=sample_stem, raw_stem=sample_stem))
+        metadata.append(
+            SampleMetadata(
+                sample_name=sample_stem,
+                raw_stem=sample_stem,
+                sample_role=declared_roles.get(sample_stem, "unknown"),
+            )
+        )
 
     target_value = Target(
         label="Analyte",
@@ -231,6 +247,9 @@ def build_package2_targeted_raw_fixture(
     sample_stems: tuple[str, ...],
     peak_config: ExtractionConfig,
     current_discovery_settings: DiscoverySettings | None = None,
+    current_discovery_candidates_by_sample: (
+        Mapping[str, tuple[DiscoveryCandidate, ...]] | None
+    ) = None,
 ) -> Package2NoRawFixture:
     """Rebind the Package 2 fixture to the real Targeted RAW request owner."""
 
@@ -250,6 +269,9 @@ def build_package2_targeted_raw_fixture(
             model_selection_expected_diff_approvals=None,
         ),
         current_discovery_settings=current_discovery_settings,
+        current_discovery_candidates_by_sample=(
+            current_discovery_candidates_by_sample
+        ),
     )
     attempt = issue_processing_attempt(request)
     owners = compose_processing_owner_references(
