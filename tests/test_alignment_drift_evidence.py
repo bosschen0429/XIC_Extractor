@@ -5,7 +5,10 @@ from openpyxl import Workbook
 
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
+    LocalFeatureLandmarkEvidence,
+    LocalTrajectoryEvidenceLookup,
     SampleDriftEvidence,
+    assess_local_trajectory,
     read_targeted_istd_drift_evidence,
 )
 
@@ -77,6 +80,163 @@ def test_lookup_rejects_conflicting_injection_orders_for_sample() -> None:
 
     with pytest.raises(ValueError, match="conflicting injection order"):
         lookup.injection_order("sample-a")
+
+
+def test_local_landmarks_retain_full_trace_and_explicit_quality() -> None:
+    lookup = LocalTrajectoryEvidenceLookup(
+        points=(
+            LocalFeatureLandmarkEvidence(
+                sample_stem="sample-a",
+                injection_order=1,
+                landmark_id="landmark-001",
+                observed_rt_min=4.10,
+                local_trajectory_rt_min=4.00,
+                rt_drift_delta_min=0.10,
+                quality="accepted",
+                evidence_ref="peak-observation:a1",
+            ),
+            LocalFeatureLandmarkEvidence(
+                sample_stem="sample-a",
+                injection_order=1,
+                landmark_id="landmark-002",
+                observed_rt_min=8.30,
+                local_trajectory_rt_min=8.10,
+                rt_drift_delta_min=0.20,
+                quality="accepted",
+                evidence_ref="peak-observation:a2",
+            ),
+            LocalFeatureLandmarkEvidence(
+                sample_stem="sample-b",
+                injection_order=2,
+                landmark_id="landmark-001",
+                observed_rt_min=4.00,
+                local_trajectory_rt_min=4.00,
+                rt_drift_delta_min=0.00,
+                quality="poor",
+                evidence_ref="peak-observation:b1",
+                exclusion_reason="shape_unstable",
+            ),
+        )
+    )
+
+    assert not hasattr(lookup, "local_delta_min")
+    assert not hasattr(lookup, "source")
+    assert not hasattr(lookup, "sample_delta_min")
+    assert not hasattr(lookup, "injection_order")
+    assert lookup.points[0].landmark_id == "landmark-001"
+    assert lookup.points[1].landmark_id == "landmark-002"
+    sample_a = assess_local_trajectory(lookup, ("sample-a",))
+    assert sample_a.status == "assessable"
+    assert sample_a.landmark_points == lookup.points[:2]
+    assert assess_local_trajectory(lookup, ("sample-b",)).status == "poor_landmarks"
+    assert assess_local_trajectory(lookup, ("sample-c",)).status == (
+        "missing_landmarks"
+    )
+
+
+def test_local_trajectory_conflict_requires_explicit_evidence_refs() -> None:
+    point = LocalFeatureLandmarkEvidence(
+        sample_stem="sample-a",
+        injection_order=1,
+        landmark_id="landmark-001",
+        observed_rt_min=4.10,
+        local_trajectory_rt_min=4.00,
+        rt_drift_delta_min=0.10,
+        quality="accepted",
+        evidence_ref="peak-observation:a1",
+    )
+    lookup = LocalTrajectoryEvidenceLookup(points=(point,))
+
+    assessment = assess_local_trajectory(
+        lookup,
+        ("sample-a",),
+        conflict_evidence_refs=(point.evidence_ref,),
+    )
+    assert assessment.status == "conflict"
+    assert assessment.landmark_evidence_refs == (point.evidence_ref,)
+    assert assessment.conflict_evidence_refs == (point.evidence_ref,)
+
+
+def test_missing_landmarks_cannot_be_relabelled_as_conflict() -> None:
+    assessment = assess_local_trajectory(
+        LocalTrajectoryEvidenceLookup(points=()),
+        ("sample-a",),
+        conflict_evidence_refs=("manual:trajectory-conflict",),
+    )
+
+    assert assessment.status == "missing_landmarks"
+    assert assessment.conflict_evidence_refs == ()
+
+
+def test_istd_lookup_cannot_be_used_as_m3_local_trajectory_truth() -> None:
+    with pytest.raises(TypeError, match="local feature landmarks"):
+        assess_local_trajectory(DriftEvidenceLookup(points=()), ("sample-a",))
+
+
+def test_leave_one_landmark_out_retains_points_without_a_median_template() -> None:
+    points = (
+        LocalFeatureLandmarkEvidence(
+            sample_stem="sample-a",
+            injection_order=1,
+            landmark_id="landmark-001",
+            observed_rt_min=4.10,
+            local_trajectory_rt_min=4.00,
+            rt_drift_delta_min=0.10,
+            quality="accepted",
+            evidence_ref="peak-observation:a1",
+        ),
+        LocalFeatureLandmarkEvidence(
+            sample_stem="sample-a",
+            injection_order=1,
+            landmark_id="landmark-002",
+            observed_rt_min=8.30,
+            local_trajectory_rt_min=8.10,
+            rt_drift_delta_min=0.20,
+            quality="accepted",
+            evidence_ref="peak-observation:a2",
+        ),
+    )
+    full = LocalTrajectoryEvidenceLookup(points=points)
+    leave_one_out = LocalTrajectoryEvidenceLookup(points=points[1:])
+
+    full_assessment = assess_local_trajectory(full, ("sample-a",))
+    leave_one_out_assessment = assess_local_trajectory(
+        leave_one_out,
+        ("sample-a",),
+    )
+
+    assert full_assessment.status == "assessable"
+    assert full_assessment.landmark_points == points
+    assert leave_one_out_assessment.status == "assessable"
+    assert leave_one_out_assessment.landmark_points == points[1:]
+
+
+def test_local_landmarks_reject_conflicting_sample_injection_order() -> None:
+    with pytest.raises(ValueError, match="one injection order"):
+        LocalTrajectoryEvidenceLookup(
+            points=(
+                LocalFeatureLandmarkEvidence(
+                    sample_stem="sample-a",
+                    injection_order=1,
+                    landmark_id="landmark-001",
+                    observed_rt_min=4.10,
+                    local_trajectory_rt_min=4.00,
+                    rt_drift_delta_min=0.10,
+                    quality="accepted",
+                    evidence_ref="peak-observation:a1",
+                ),
+                LocalFeatureLandmarkEvidence(
+                    sample_stem="sample-a",
+                    injection_order=2,
+                    landmark_id="landmark-002",
+                    observed_rt_min=8.30,
+                    local_trajectory_rt_min=8.10,
+                    rt_drift_delta_min=0.20,
+                    quality="accepted",
+                    evidence_ref="peak-observation:a2",
+                ),
+            )
+        )
 
 
 def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
