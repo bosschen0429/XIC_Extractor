@@ -62,22 +62,38 @@ The frozen rules are:
 - The declared run population and the canonical cell set must close exactly
   before the group is treated as frozen. Backfill cannot create a first hit,
   group, target universe, identity, landmark, or recursive support vote.
+- Every group context binds the processing attempt that formed its direct
+  SUPPORT closure. A later cell may reuse that closure only in the same attempt
+  or through the current attempt's owner-validated retry-predecessor chain;
+  same-request sibling attempts fail closed.
 - The complete direct SUPPORT `PeakObservationRef` trace set is retained as
   exact references. It is not collapsed into a median template.
-- Supplied recovery evidence is mapped jointly within the same exact target by
-  equal cardinality, finite group RT, unique elution order, and the existing
-  candidate query RT/ppm envelope. `1↔N`, `N↔1`, tied order, or out-of-envelope
-  evidence stays HOLD and nonnumeric. Drift, split, deconvolution, and
-  multi-component resolution remain later work.
+- Recovery candidates enter only through an immutable owner receipt that binds
+  the exact request/attempt, sample, target derived from the frozen group
+  facts, source-cell artifacts, and one owner-minted CID-NL method assessment.
+  That assessment—not a naked `PeakObservationRef` argument—owns the complete
+  target-bound candidate universe and its peak artifacts. Mapping consumes the
+  receipt itself, so an empty completed universe remains distinguishable from
+  a missing receipt, and callers cannot independently pair a target with a
+  physical peak, combine receipts for one sample × target, or omit individual
+  members.
+- Receipt-backed recovery evidence is mapped jointly within the same exact
+  target by equal cardinality, finite group RT, unique elution order, and the
+  existing candidate query RT/ppm envelope. `1↔N`, `N↔1`, tied order, or
+  out-of-envelope evidence stays HOLD and nonnumeric. Drift, split,
+  deconvolution, and multi-component resolution remain later work.
 - Targeted and Untargeted adapters unwrap their M1 reference projections and
   call the same policy owner over the same exact `CellObservationRef` objects;
   neither adapter owns a second workflow-neutral cell model.
 
-This slice leaves every current productization maturity tier and active lane
-unchanged. All pre-existing registered Backfill writer authorities remain
-owned by the status index and authority manifest; those machine owners and the
-historical productization control plane therefore require no update for Issue
-#162.
+This slice, including the request/candidate, attempt-lineage, and recovery
+receipt closure added while resolving #156 gaps 5/8/9, leaves every current
+productization maturity tier and active lane unchanged. It changes admission
+and replay identity only: no selected area, counted detection, output schema,
+Matrix value, or writer authority changes. All pre-existing registered
+Backfill writer authorities remain owned by the status index and authority
+manifest; those machine owners and the historical productization control plane
+therefore require no update for Issue #162.
 
 ## Current Evidence Compression
 

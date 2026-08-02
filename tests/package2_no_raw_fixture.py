@@ -11,7 +11,7 @@ from xic_extractor.configuration.target_identity import (
     resolve_target_definition,
     target_list_snapshot_payload,
 )
-from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.targeted_candidate_set import (
     TargetedCandidateSetMember,
     TargetedCandidateSetRef,
@@ -247,6 +247,9 @@ def build_package2_targeted_raw_fixture(
     sample_stems: tuple[str, ...],
     peak_config: ExtractionConfig,
     current_discovery_settings: DiscoverySettings | None = None,
+    current_discovery_candidates_by_sample: (
+        Mapping[str, tuple[DiscoveryCandidate, ...]] | None
+    ) = None,
 ) -> Package2NoRawFixture:
     """Rebind the Package 2 fixture to the real Targeted RAW request owner."""
 
@@ -266,6 +269,9 @@ def build_package2_targeted_raw_fixture(
             model_selection_expected_diff_approvals=None,
         ),
         current_discovery_settings=current_discovery_settings,
+        current_discovery_candidates_by_sample=(
+            current_discovery_candidates_by_sample
+        ),
     )
     attempt = issue_processing_attempt(request)
     owners = compose_processing_owner_references(

@@ -51,9 +51,12 @@ from xic_extractor.extraction.targeted_inputs import (
     TARGETED_PROCESSING_ALGORITHM_VERSION,
     TARGETED_PROCESSING_CONTRACT_VERSION,
     TARGETED_PROCESSING_INPUT_SCHEMA_VERSION,
+    TARGETED_REAL_DATA_CANDIDATE_UNIVERSE_INPUT_KEY,
     TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY,
     TARGETED_SCIENTIFIC_SETTING_FIELDS,
+    targeted_real_data_candidate_universe_entry_payload,
     targeted_real_data_discovery_settings_payload,
+    validate_targeted_real_data_candidate_universe_payload,
 )
 from xic_extractor.extraction.targeted_real_data_adapter import (
     TargetedRealDataAdapterResult,
@@ -69,6 +72,7 @@ from xic_extractor.peak_detection.selection_decision import (
     canonical_diagnostic_peak_hypothesis_selection_bytes,
 )
 from xic_extractor.processing_identity import (
+    IdentityContractError,
     ProcessingOwnerReferences,
     canonical_current_attempt_artifact_closure,
     resolve_request_acquisition_source,
@@ -156,6 +160,37 @@ def _validate_request_bound_scientific_settings(
     ):
         raise TargetedRealDataRuntimeError(
             "Discovery scientific settings do not match processing request"
+        )
+    universe = request_inputs.get(TARGETED_REAL_DATA_CANDIDATE_UNIVERSE_INPUT_KEY)
+    try:
+        expected_universe_entry = (
+            targeted_real_data_candidate_universe_entry_payload(
+                job.sample.metadata.raw_stem,
+                job.candidates,
+            )
+        )
+    except IdentityContractError as exc:
+        raise TargetedRealDataRuntimeError(str(exc)) from exc
+    try:
+        universe_entries = validate_targeted_real_data_candidate_universe_payload(
+            universe,
+            expected_sample_stems=tuple(
+                binding.adapter_input_key
+                for binding in request.acquisition_bindings
+            ),
+        )
+    except IdentityContractError as exc:
+        raise TargetedRealDataRuntimeError(
+            "processing request does not bind a complete Discovery candidate universe"
+        ) from exc
+    matches = [
+        item
+        for item in universe_entries
+        if item.get("sample_stem") == job.sample.metadata.raw_stem
+    ]
+    if len(matches) != 1 or matches[0] != expected_universe_entry:
+        raise TargetedRealDataRuntimeError(
+            "Discovery candidate universe does not match processing request"
         )
 
 

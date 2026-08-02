@@ -15,6 +15,10 @@ from tests.package2_no_raw_fixture import (
     Package2NoRawFixture,
     build_package2_no_raw_fixture,
 )
+from xic_extractor.alignment.cell_observations import (
+    CellObservationContractError,
+    mint_cell_observation_ref,
+)
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     CidNlReferenceSpine,
     build_cid_nl_reference_spine,
@@ -28,6 +32,7 @@ from xic_extractor.alignment.conservative_backfill import (
     assess_untargeted_conservative_backfill_group,
     map_conservative_backfill_candidates,
     minimum_direct_support_count,
+    mint_conservative_backfill_recovery_candidate_universe,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
@@ -136,14 +141,16 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
         sample_population=fixture.samples,
     )
 
-    candidate = ConservativeBackfillRecoveryEvidence(
-        target=fixture.target,
-        peak_observation=_peak(fixture, "s2", apex_rt=8.0),
+    universe = _recovery_universe(
+        fixture,
+        (facts,),
+        "s2",
+        (_peak(fixture, "s2", apex_rt=8.0),),
     )
     decision = map_conservative_backfill_candidates(
         (facts,),
         sample=fixture.sample("s2"),
-        candidates=(candidate,),
+        candidate_universes=(universe,),
     )[0]
 
     assert facts.group_frozen is True
@@ -175,15 +182,17 @@ def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
         retained_cells,
         sample_population=fixture.samples,
     )
-    candidate = ConservativeBackfillRecoveryEvidence(
-        target=fixture.target,
-        peak_observation=_peak(fixture, "s3", apex_rt=8.0),
+    universe = _recovery_universe(
+        fixture,
+        (facts,),
+        "s3",
+        (_peak(fixture, "s3", apex_rt=8.0),),
     )
 
     decision = map_conservative_backfill_candidates(
         (facts,),
         sample=fixture.sample("s3"),
-        candidates=(candidate,),
+        candidate_universes=(universe,),
     )[0]
 
     assert facts.direct_support_count_s == 2
@@ -215,27 +224,29 @@ def test_ordered_one_to_one_mapping_retains_evidence_without_backfill_votes(
         late.cells,
         sample_population=fixture.samples,
     )
-    early_candidate = ConservativeBackfillRecoveryEvidence(
-        target=fixture.target,
-        peak_observation=_peak(fixture, "missing", apex_rt=7.8),
-    )
-    late_candidate = ConservativeBackfillRecoveryEvidence(
-        target=fixture.target,
-        peak_observation=_peak(fixture, "missing", apex_rt=8.2),
+    early_peak = _peak(fixture, "missing", apex_rt=7.8)
+    late_peak = _peak(fixture, "missing", apex_rt=8.2)
+    candidate_universe = _recovery_universe(
+        fixture,
+        (late_facts, early_facts),
+        "missing",
+        (early_peak, late_peak),
     )
 
     decisions = map_conservative_backfill_candidates(
         (late_facts, early_facts),
         sample=fixture.sample("missing"),
-        candidates=(late_candidate, early_candidate),
+        candidate_universes=(candidate_universe,),
     )
     by_center = {
         decision.group_facts.group_context.group.group_center_rt: decision
         for decision in decisions
     }
 
-    assert by_center[7.8].matched_candidate is early_candidate
-    assert by_center[8.2].matched_candidate is late_candidate
+    assert by_center[7.8].matched_candidate is not None
+    assert by_center[8.2].matched_candidate is not None
+    assert by_center[7.8].matched_candidate.peak_observation is early_peak
+    assert by_center[8.2].matched_candidate.peak_observation is late_peak
     assert {decision.disposition for decision in decisions} == {"candidate_mapped"}
     assert all(
         decision.reason_codes == ("ordered_one_to_one_recovery_evidence",)
@@ -271,33 +282,90 @@ def test_one_to_many_and_many_to_one_cardinality_remain_held(
         ).cells,
         sample_population=fixture.samples,
     )
-    first = ConservativeBackfillRecoveryEvidence(
-        target=fixture.target,
-        peak_observation=_peak(fixture, "missing", apex_rt=7.8),
+    first_peak = _peak(fixture, "missing", apex_rt=7.8)
+    second_peak = _peak(fixture, "missing", apex_rt=8.2)
+    one_to_many_universe = _recovery_universe(
+        fixture,
+        (early,),
+        "missing",
+        (first_peak, second_peak),
     )
-    second = ConservativeBackfillRecoveryEvidence(
-        target=fixture.target,
-        peak_observation=_peak(fixture, "missing", apex_rt=8.2),
+    many_to_one_universe = _recovery_universe(
+        fixture,
+        (early, late),
+        "missing",
+        (first_peak,),
     )
 
     one_to_many = map_conservative_backfill_candidates(
         (early,),
         sample=fixture.sample("missing"),
-        candidates=(first, second),
+        candidate_universes=(one_to_many_universe,),
     )
     many_to_one = map_conservative_backfill_candidates(
         (early, late),
         sample=fixture.sample("missing"),
-        candidates=(first,),
+        candidate_universes=(many_to_one_universe,),
     )
 
     assert [item.disposition for item in one_to_many] == ["hold"]
     assert all(item.disposition == "hold" for item in many_to_one)
     assert all(item.matched_candidate is None for item in one_to_many + many_to_one)
+    assert one_to_many[0].candidate_universe is one_to_many_universe
+    assert tuple(
+        item.peak_observation for item in one_to_many[0].candidate_evidence
+    ) == one_to_many_universe.candidate_peaks
     assert all(
         item.reason_codes == ("uncertain_candidate_cardinality",)
         for item in one_to_many + many_to_one
     )
+
+
+def test_mapping_retains_empty_receipt_and_rejects_duplicate_target_receipts(
+    tmp_path: Path,
+) -> None:
+    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
+    facts = assess_conservative_backfill_group(
+        _spine(
+            fixture,
+            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+            invocation="empty-recovery-universe",
+        ).cells,
+        sample_population=fixture.samples,
+    )
+    empty_universe = _recovery_universe(
+        fixture,
+        (facts,),
+        "missing",
+        (),
+    )
+
+    decision = map_conservative_backfill_candidates(
+        (facts,),
+        sample=fixture.sample("missing"),
+        candidate_universes=(empty_universe,),
+    )[0]
+    missing_receipt = map_conservative_backfill_candidates(
+        (facts,),
+        sample=fixture.sample("missing"),
+        candidate_universes=(),
+    )[0]
+
+    assert decision.candidate_universe is empty_universe
+    assert decision.candidate_evidence == ()
+    assert decision.disposition == "hold"
+    assert decision.reason_codes == ("recovery_candidate_universe_empty",)
+    assert missing_receipt.candidate_universe is None
+    assert missing_receipt.reason_codes == ("recovery_evidence_missing",)
+    with pytest.raises(
+        ConservativeBackfillContractError,
+        match="at most one recovery universe receipt",
+    ):
+        map_conservative_backfill_candidates(
+            (facts,),
+            sample=fixture.sample("missing"),
+            candidate_universes=(empty_universe, empty_universe),
+        )
 
 
 def test_recovery_evidence_cannot_create_first_group_or_become_support(
@@ -312,24 +380,17 @@ def test_recovery_evidence_cannot_create_first_group_or_become_support(
         ).cells,
         sample_population=fixture.samples,
     )
-    candidate = ConservativeBackfillRecoveryEvidence(
-        target=fixture.target,
-        peak_observation=_peak(fixture, "missing", apex_rt=8.0),
+    universe = _recovery_universe(
+        fixture,
+        (facts,),
+        "missing",
+        (_peak(fixture, "missing", apex_rt=8.0),),
     )
-    foreign_target_candidate = ConservativeBackfillRecoveryEvidence(
-        target=fixture.other_target,
-        peak_observation=_peak(fixture, "missing", apex_rt=8.0),
+    candidate = ConservativeBackfillRecoveryEvidence(
+        candidate_universe=universe,
+        peak_observation=universe.candidate_peaks[0],
     )
 
-    with pytest.raises(
-        ConservativeBackfillContractError,
-        match="cannot create a first group",
-    ):
-        map_conservative_backfill_candidates(
-            (facts,),
-            sample=fixture.sample("missing"),
-            candidates=(foreign_target_candidate,),
-        )
     with pytest.raises(
         ConservativeBackfillContractError,
         match="cannot claim a direct-support source",
@@ -338,6 +399,54 @@ def test_recovery_evidence_cannot_create_first_group_or_become_support(
 
     assert facts.direct_support_count_s == 2
     assert candidate.peak_observation not in facts.support_trace_refs
+
+
+def test_recovery_receipt_prevents_independent_near_isobaric_target_pairing(
+    tmp_path: Path,
+) -> None:
+    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
+    facts = assess_conservative_backfill_group(
+        _spine(
+            fixture,
+            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+            invocation="target-owner",
+        ).cells,
+        sample_population=fixture.samples,
+    )
+    other_facts = assess_conservative_backfill_group(
+        _spine(
+            fixture,
+            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+            invocation="near-isobaric-owner",
+            target=fixture.other_target,
+        ).cells,
+        sample_population=fixture.samples,
+    )
+    universe = _recovery_universe(
+        fixture,
+        (facts,),
+        "missing",
+        (_peak(fixture, "missing", apex_rt=8.0),),
+    )
+
+    assert (
+        fixture.target.definition.target.mz
+        == fixture.other_target.definition.target.mz
+    )
+    assert universe.target_key == (
+        facts.group_context.target_key_id,
+        facts.group_context.target_definition_id,
+    )
+    with pytest.raises(
+        ConservativeBackfillContractError,
+        match="exact sample and target",
+    ):
+        mint_conservative_backfill_recovery_candidate_universe(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("missing"),
+            group_facts=(other_facts,),
+            candidate_assessment=universe.candidate_assessment,
+        )
 
 
 def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
@@ -352,15 +461,17 @@ def test_rt_mismatch_remains_nonnumeric_without_drift_or_split_logic(
         ).cells,
         sample_population=fixture.samples,
     )
-    shifted = ConservativeBackfillRecoveryEvidence(
-        target=fixture.target,
-        peak_observation=_peak(fixture, "missing", apex_rt=8.5),
+    shifted_universe = _recovery_universe(
+        fixture,
+        (facts,),
+        "missing",
+        (_peak(fixture, "missing", apex_rt=8.5),),
     )
 
     decision = map_conservative_backfill_candidates(
         (facts,),
         sample=fixture.sample("missing"),
-        candidates=(shifted,),
+        candidate_universes=(shifted_universe,),
     )[0]
 
     assert decision.disposition == "hold"
@@ -381,20 +492,104 @@ def test_cross_attempt_recovery_evidence_fails_closed_without_retry_inference(
         sample_population=fixture.samples,
     )
     retry = fixture.retry()
-    retry_candidate = ConservativeBackfillRecoveryEvidence(
-        target=retry.target,
-        peak_observation=_peak(retry, "missing", apex_rt=8.0),
+    retry_universe = _recovery_universe(
+        retry,
+        (facts,),
+        "missing",
+        (_peak(retry, "missing", apex_rt=8.0),),
     )
 
     decision = map_conservative_backfill_candidates(
         (facts,),
         sample=fixture.sample("missing"),
-        candidates=(retry_candidate,),
+        candidate_universes=(retry_universe,),
     )[0]
 
     assert decision.disposition == "hold"
     assert decision.matched_candidate is None
     assert decision.reason_codes == ("processing_attempt_mismatch",)
+
+
+def test_group_support_closure_accepts_predecessor_but_rejects_sibling_attempt(
+    tmp_path: Path,
+) -> None:
+    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
+    predecessor_spine = _spine(
+        fixture,
+        support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+        invocation="predecessor-group",
+    )
+    retry = fixture.retry()
+    retry_assessment = _assessment(
+        retry,
+        "missing",
+        support_apex=None,
+        scan_number=900,
+        invocation="retry-cell",
+    )
+
+    inherited = mint_cell_observation_ref(
+        processing_owners=retry.owners,
+        sample=retry.sample("missing"),
+        target=retry.target,
+        group_context=predecessor_spine.cells[0].group_context,
+        method_assessment=retry_assessment,
+    )
+    assert (
+        inherited.artifact.producer_processing_attempt_id
+        == retry.attempt.processing_attempt_id
+    )
+
+    sibling = fixture.retry()
+    sibling_spine = _spine(
+        sibling,
+        support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+        invocation="sibling-group",
+    )
+    with pytest.raises(
+        CellObservationContractError,
+        match="current attempt or retry lineage",
+    ):
+        mint_cell_observation_ref(
+            processing_owners=retry.owners,
+            sample=retry.sample("missing"),
+            target=retry.target,
+            group_context=sibling_spine.cells[0].group_context,
+            method_assessment=retry_assessment,
+        )
+
+
+def test_recovery_receipt_rejects_same_request_sibling_assessment(
+    tmp_path: Path,
+) -> None:
+    fixture = _study_fixture(tmp_path, ("s1", "s2", "missing"))
+    facts = assess_conservative_backfill_group(
+        _spine(
+            fixture,
+            support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+            invocation="recovery-attempt-owner",
+        ).cells,
+        sample_population=fixture.samples,
+    )
+    retry = fixture.retry()
+    sibling = fixture.retry()
+    sibling_universe = _recovery_universe(
+        sibling,
+        (facts,),
+        "missing",
+        (_peak(sibling, "missing", apex_rt=8.0),),
+    )
+
+    with pytest.raises(
+        ConservativeBackfillContractError,
+        match="outside the exact processing attempt",
+    ):
+        mint_conservative_backfill_recovery_candidate_universe(
+            processing_owners=retry.owners,
+            sample=retry.sample("missing"),
+            group_facts=(facts,),
+            candidate_assessment=sibling_universe.candidate_assessment,
+        )
 
 
 def _study_fixture(
@@ -413,7 +608,9 @@ def _spine(
     *,
     support_apex_by_sample: dict[str, float],
     invocation: str,
+    target=None,
 ) -> CidNlReferenceSpine:
+    effective_target = fixture.target if target is None else target
     assessments = tuple(
         (
             fixture.sample(sample.metadata.raw_stem),
@@ -423,13 +620,14 @@ def _spine(
                 support_apex=support_apex_by_sample.get(sample.metadata.raw_stem),
                 scan_number=100 + index,
                 invocation=f"{invocation}:{index}",
+                target=effective_target,
             ),
         )
         for index, sample in enumerate(fixture.samples, start=1)
     )
     spine = build_cid_nl_reference_spine(
         processing_owners=fixture.owners,
-        target=fixture.target,
+        target=effective_target,
         sample_assessments=assessments,
     )
     assert spine.group is not None
@@ -443,13 +641,15 @@ def _assessment(
     support_apex: float | None,
     scan_number: int,
     invocation: str,
+    target=None,
 ) -> CidNlMethodAssessmentRef:
     sample = fixture.sample(sample_stem)
+    effective_target = fixture.target if target is None else target
     if support_apex is None:
         return mint_cid_nl_method_assessment_ref(
             processing_owners=fixture.owners,
             sample=sample,
-            target=fixture.target,
+            target=effective_target,
             detector_invocation_id=invocation,
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=7.5,
@@ -484,7 +684,7 @@ def _assessment(
     return mint_cid_nl_method_assessment_ref(
         processing_owners=fixture.owners,
         sample=sample,
-        target=fixture.target,
+        target=effective_target,
         detector_invocation_id=invocation,
         evaluation_receipt=CidNlEvaluationReceipt(
             query_rt_min=7.5,
@@ -513,6 +713,36 @@ def _peak(
         apex_rt=apex_rt,
         rt_left_min=apex_rt - 0.1,
         rt_right_min=apex_rt + 0.1,
+    )
+
+
+def _recovery_universe(
+    fixture: Package2NoRawFixture,
+    group_facts,
+    sample_stem: str,
+    peaks,
+):
+    assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        target=fixture.target,
+        detector_invocation_id=f"backfill-recovery:{sample_stem}",
+        evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=7.0,
+            query_rt_max=9.0,
+            support_policy=issue161_support_policy(),
+            acquisition_supported=True,
+            search_completed=True,
+            scanned_event_count=0,
+            reason_code=None,
+        ),
+        candidate_peaks=tuple(peaks),
+    )
+    return mint_conservative_backfill_recovery_candidate_universe(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        group_facts=tuple(group_facts),
+        candidate_assessment=assessment,
     )
 
 

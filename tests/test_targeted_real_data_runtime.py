@@ -35,11 +35,16 @@ from xic_extractor.execution_runtime_owner import (
 )
 from xic_extractor.extraction import targeted_real_data_adapter as adapter_module
 from xic_extractor.extraction import targeted_real_data_runtime as runtime_module
+from xic_extractor.extraction.targeted_inputs import (
+    targeted_real_data_candidate_universe_payload,
+    validate_targeted_real_data_candidate_universe_payload,
+)
 from xic_extractor.extraction.targeted_real_data_runtime import (
     TargetedRealDataRuntimeError,
     TargetedRealDataRuntimeJob,
     execute_current_discovery_sample_target_runtime,
 )
+from xic_extractor.processing_identity import IdentityContractError
 from xic_extractor.raw_reader import (
     EXPECTED_THERMO_DLLS,
     open_raw,
@@ -51,18 +56,18 @@ def test_real_data_runtime_accounts_successful_raw_and_xic_work(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
-        tmp_path,
-        sample_stems=("S1",),
-        peak_config=_peak_config(tmp_path),
-        current_discovery_settings=_settings(),
-    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    fixture = _bound_fixture(
+        tmp_path,
+        candidates=candidates,
         settings=settings,
         peak_config=peak_config,
     )
@@ -141,12 +146,6 @@ def test_real_data_runtime_terminalizes_adapter_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
-        tmp_path,
-        sample_stems=("S1",),
-        peak_config=_peak_config(tmp_path),
-        current_discovery_settings=_settings(),
-    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -157,6 +156,13 @@ def test_real_data_runtime_terminalizes_adapter_failure(
         peak_config=peak_config,
     )[0]
     assert candidate.ms1_area is not None
+    changed_candidates = (replace(candidate, ms1_area=candidate.ms1_area * 1.1),)
+    fixture = _bound_fixture(
+        tmp_path,
+        candidates=changed_candidates,
+        settings=settings,
+        peak_config=peak_config,
+    )
     vendor_raw = _install_runtime_raw(
         monkeypatch,
         fixture=fixture,
@@ -166,7 +172,7 @@ def test_real_data_runtime_terminalizes_adapter_failure(
     )
     job = _job(
         fixture,
-        candidates=(replace(candidate, ms1_area=candidate.ms1_area * 1.1),),
+        candidates=changed_candidates,
         settings=settings,
         peak_config=peak_config,
         tmp_path=tmp_path,
@@ -202,18 +208,18 @@ def test_real_data_runtime_quarantines_artifacts_after_projection_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
-        tmp_path,
-        sample_stems=("S1",),
-        peak_config=_peak_config(tmp_path),
-        current_discovery_settings=_settings(),
-    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    fixture = _bound_fixture(
+        tmp_path,
+        candidates=candidates,
         settings=settings,
         peak_config=peak_config,
     )
@@ -268,18 +274,18 @@ def test_real_data_runtime_quarantines_complete_result_after_cleanup_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
-        tmp_path,
-        sample_stems=("S1",),
-        peak_config=_peak_config(tmp_path),
-        current_discovery_settings=_settings(),
-    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    fixture = _bound_fixture(
+        tmp_path,
+        candidates=candidates,
         settings=settings,
         peak_config=peak_config,
     )
@@ -367,18 +373,18 @@ def test_real_data_runtime_cancellation_skips_raw_dispatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
-        tmp_path,
-        sample_stems=("S1",),
-        peak_config=_peak_config(tmp_path),
-        current_discovery_settings=_settings(),
-    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    fixture = _bound_fixture(
+        tmp_path,
+        candidates=candidates,
         settings=settings,
         peak_config=peak_config,
     )
@@ -424,18 +430,18 @@ def test_real_data_runtime_result_rejects_unbound_acquisition_projection(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = build_package2_targeted_raw_fixture(
-        tmp_path,
-        sample_stems=("S1",),
-        peak_config=_peak_config(tmp_path),
-        current_discovery_settings=_settings(),
-    )
     source_raw = _FakeRaw((8.0,))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     candidates = _current_candidates(
         source_raw,
         raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    fixture = _bound_fixture(
+        tmp_path,
+        candidates=candidates,
         settings=settings,
         peak_config=peak_config,
     )
@@ -577,6 +583,110 @@ def test_real_data_runtime_job_rejects_unbound_discovery_settings(
         )
 
 
+def test_real_data_runtime_job_binds_complete_candidate_universe(
+    tmp_path: Path,
+) -> None:
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidate = _current_candidates(
+        _FakeRaw((8.0,)),
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )[0]
+    second = replace(candidate, candidate_id=f"{candidate.candidate_id}:second")
+    fixture = _bound_fixture(
+        tmp_path,
+        candidates=(candidate, second),
+        settings=settings,
+        peak_config=peak_config,
+    )
+
+    reordered = _job(
+        fixture,
+        candidates=(second, candidate),
+        settings=settings,
+        peak_config=peak_config,
+        tmp_path=tmp_path,
+    )
+    assert reordered.candidates == (second, candidate)
+
+    with pytest.raises(
+        TargetedRealDataRuntimeError,
+        match="candidate universe does not match processing request",
+    ):
+        _job(
+            fixture,
+            candidates=(candidate,),
+            settings=settings,
+            peak_config=peak_config,
+            tmp_path=tmp_path,
+        )
+
+    extra = replace(second, candidate_id=f"{second.candidate_id}:extra")
+    with pytest.raises(
+        TargetedRealDataRuntimeError,
+        match="candidate universe does not match processing request",
+    ):
+        _job(
+            fixture,
+            candidates=(candidate, second, extra),
+            settings=settings,
+            peak_config=peak_config,
+            tmp_path=tmp_path,
+        )
+
+    assert candidate.ms1_area is not None
+    changed = replace(candidate, ms1_area=candidate.ms1_area * 1.01)
+    with pytest.raises(
+        TargetedRealDataRuntimeError,
+        match="candidate universe does not match processing request",
+    ):
+        _job(
+            fixture,
+            candidates=(changed, second),
+            settings=settings,
+            peak_config=peak_config,
+            tmp_path=tmp_path,
+        )
+
+
+def test_candidate_universe_replay_rejects_wrong_schema_partial_and_duplicate_rows(
+    tmp_path: Path,
+) -> None:
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidate = _current_candidates(
+        _FakeRaw((8.0,)),
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )[0]
+    payload = targeted_real_data_candidate_universe_payload(
+        {"S1": (candidate,)},
+        expected_sample_stems=("S1",),
+    )
+    samples = payload["samples"]
+    assert isinstance(samples, list)
+    entry = samples[0]
+    assert isinstance(entry, dict)
+    malformed_payloads = (
+        {**payload, "schema_version": "stale"},
+        {**payload, "samples": []},
+        {**payload, "samples": [entry, entry]},
+        {
+            **payload,
+            "samples": [{**entry, "candidate_count": 2}],
+        },
+    )
+
+    for malformed in malformed_payloads:
+        with pytest.raises(IdentityContractError, match="candidate universe"):
+            validate_targeted_real_data_candidate_universe_payload(
+                malformed,
+                expected_sample_stems=("S1",),
+            )
+
 def _job(
     fixture,
     *,
@@ -595,6 +705,22 @@ def _job(
         raw_path=tmp_path / "S1.synthetic",
         dll_dir=tmp_path,
         work_unit_key="targeted-real-data:S1:Analyte",
+    )
+
+
+def _bound_fixture(
+    tmp_path: Path,
+    *,
+    candidates,
+    settings,
+    peak_config,
+):
+    return build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=peak_config,
+        current_discovery_settings=settings,
+        current_discovery_candidates_by_sample={"S1": tuple(candidates)},
     )
 
 

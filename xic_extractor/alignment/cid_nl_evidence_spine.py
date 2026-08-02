@@ -341,6 +341,7 @@ def build_cid_nl_reference_spine(
                 for sample, assessment, _, hypothesis in support_inputs
             ),
             config=effective_config,
+            processing_attempt=processing_owners.attempt,
         )
     except CellObservationContractError as exc:
         raise CidNlEvidenceSpineError(str(exc)) from exc
