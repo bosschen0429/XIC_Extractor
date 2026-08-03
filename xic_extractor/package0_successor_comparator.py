@@ -1571,8 +1571,12 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
     for row in rows:
         relative = PurePosixPath(row["path"])
         payload_path = packet_root / relative
-        digest = _bytes_sha256(
+        payload = _m5_canonical_text_bytes(
             payload_path.read_bytes(),
+            field=f"M5 artifact {relative}",
+        )
+        digest = _bytes_sha256(
+            payload,
             field=f"M5 artifact {relative}",
         )
         expected_digest = _sha256(row["sha256"], f"M5 artifact {relative} sha256")
@@ -1582,7 +1586,7 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
             raise Package0ComparatorError(
                 f"M5 artifact {relative} size_bytes must be an integer"
             ) from exc
-        if digest != expected_digest or size_bytes != payload_path.stat().st_size:
+        if digest != expected_digest or size_bytes != len(payload):
             raise Package0ComparatorError(
                 f"M5 artifact digest or size differs: {relative}"
             )
@@ -1690,11 +1694,17 @@ def _validate_m5_candidate_manifest(
             f"candidate source {relative} sha256",
         )
         actual_digest = _bytes_sha256(
-            source_path.read_bytes(),
+            _m5_canonical_text_bytes(
+                source_path.read_bytes(),
+                field=f"candidate source {relative}",
+            ),
             field=f"candidate source {relative}",
         )
         candidate_digest = _bytes_sha256(
-            _m5_git_bytes(repo_root, "show", f"{candidate_sha}:{relative}"),
+            _m5_canonical_text_bytes(
+                _m5_git_bytes(repo_root, "show", f"{candidate_sha}:{relative}"),
+                field=f"candidate Git source {relative}",
+            ),
             field=f"candidate Git source {relative}",
         )
         if actual_digest != expected_digest or candidate_digest != expected_digest:
@@ -1734,7 +1744,13 @@ def _validate_m5_legacy_receipt(
             raise Package0ComparatorError(
                 f"M5 legacy tracked file is missing: {relative}"
             )
-        if _bytes_sha256(path.read_bytes(), field=f"legacy file {relative}") != _sha256(
+        if _bytes_sha256(
+            _m5_canonical_text_bytes(
+                path.read_bytes(),
+                field=f"legacy file {relative}",
+            ),
+            field=f"legacy file {relative}",
+        ) != _sha256(
             item.get("sha256"),
             f"legacy file {relative} sha256",
         ):
@@ -1777,7 +1793,10 @@ def _validate_m5_evidence_manifest(
             f"M5 evidence file {relative} sha256",
         )
         if _bytes_sha256(
-            evidence_path.read_bytes(),
+            _m5_canonical_text_bytes(
+                evidence_path.read_bytes(),
+                field=f"M5 evidence file {relative}",
+            ),
             field=f"M5 evidence file {relative}",
         ) != expected_digest:
             raise Package0ComparatorError(f"M5 evidence file drift: {relative}")
@@ -2663,6 +2682,16 @@ def _bytes_sha256(value: object, *, field: str) -> str:
     if not isinstance(value, bytes):
         raise Package0ComparatorError(f"{field} must be exact bytes")
     return hashlib.sha256(value).hexdigest().upper()
+
+
+def _m5_canonical_text_bytes(value: object, *, field: str) -> bytes:
+    if not isinstance(value, bytes):
+        raise Package0ComparatorError(f"{field} must be UTF-8 text bytes")
+    try:
+        text = value.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise Package0ComparatorError(f"{field} must be valid UTF-8 text") from exc
+    return text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
 
 
 def _file_sha256(path: object, *, field: str) -> str:

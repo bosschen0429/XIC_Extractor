@@ -64,6 +64,34 @@ def test_m5_sealed_text_files_have_checkout_stable_line_endings() -> None:
     assert unstable == {}
 
 
+def test_m5_packet_accepts_platform_line_endings_without_weakening_tamper_gate(
+    tmp_path: Path,
+) -> None:
+    packet = _copy_packet(tmp_path / "crlf-checkout")
+    manifest_path = packet / "candidate_manifest.json"
+    manifest_path.write_bytes(manifest_path.read_bytes().replace(b"\n", b"\r\n"))
+
+    receipt = validate_m5_successor_verdict_packet(
+        packet,
+        repo_root=Path("."),
+        expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+    )
+
+    assert receipt.verdict == "NARROW"
+
+
+def test_m5_packet_rejects_non_utf8_sealed_text(tmp_path: Path) -> None:
+    packet = _copy_packet(tmp_path / "non-utf8-packet")
+    (packet / "candidate_manifest.json").write_bytes(b"\xff")
+
+    with pytest.raises(Package0ComparatorError, match="must be valid UTF-8 text"):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
 def test_m5_packet_binds_frozen_candidate_legacy_rollback_and_narrow_verdict() -> None:
     receipt = validate_m5_successor_verdict_packet(
         PACKET,

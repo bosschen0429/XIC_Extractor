@@ -18,18 +18,24 @@ fresh externalized-artifact or RAW replay. Runtime, RAW-open, vendor-call,
 point-count, elapsed, and memory improvements remain unknown where comparable
 baseline instrumentation is missing.
 
-`artifact_index.tsv` seals every packet payload. The package-owned validator in
+`artifact_index.tsv` seals every packet payload as UTF-8 text canonicalized to
+LF before digest and size validation. CRLF/LF checkout representation is not
+artifact identity; invalid UTF-8 and substantive content changes still fail
+closed. The package-owned validator in
 `xic_extractor.package0_successor_comparator` derives the verdict, verifies the
 candidate commit/tree/source seal and legacy pointer, and binds all 40 evidence
 locators to the 20 exact tracked files in `evidence_manifest.tsv`.
 `architecture_authority_audit.tsv` records two zero-crossing checks and five
-single-owner responsibilities for the frozen scope; the validator recomputes a
-construction-aware module census over direct authority constructors and typed
-`dataclasses.replace` transitions regardless of public/private naming. A second
-producer module therefore fails while a private accessor to an existing ref does
-not. Selective cases seal their pre-registered question, expectation, evidence,
-and failure effect so observed failure can honestly derive NARROW or KILL instead
-of invalidating the packet.
+single-owner responsibilities for the frozen scope. Its bounded static census
+recognizes canonical and direct module-attribute constructors, `from`-import and
+name aliases, and typed `dataclasses.replace` transitions regardless of
+public/private function naming. This is current-tree regression evidence, not a
+complete Python semantic or security proof; module-attribute re-export chains and
+dynamic indirection are outside its claim. A second producer expressed through
+the supported forms fails while a private accessor to an existing ref does not.
+Selective cases seal their pre-registered question, expectation, evidence, and
+failure effect so observed failure can honestly derive NARROW or KILL instead of
+invalidating the packet.
 The recorded rollback receipt binds attempt, lineage/revision summaries,
 stage/seal identity, and owner receipt digest. The executable rollback test uses
 the existing Targeted delivery owner and proves that candidate evidence is
