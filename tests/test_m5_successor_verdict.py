@@ -69,7 +69,9 @@ def test_m5_packet_accepts_platform_line_endings_without_weakening_tamper_gate(
 ) -> None:
     packet = _copy_packet(tmp_path / "crlf-checkout")
     manifest_path = packet / "candidate_manifest.json"
-    manifest_path.write_bytes(manifest_path.read_bytes().replace(b"\n", b"\r\n"))
+    manifest_path.write_bytes(
+        _canonical_text_bytes(manifest_path.read_bytes()).replace(b"\n", b"\r\n")
+    )
 
     receipt = validate_m5_successor_verdict_packet(
         packet,
@@ -220,6 +222,79 @@ def test_m5_packet_rejects_narrow_verdict_without_exact_excluded_scope(
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "replacement", "error"),
+    (
+        ("candidate_defects", ["invented defect"], "candidate defect set differs"),
+        ("missing_evidence", [], "missing-evidence set differs"),
+        ("retained_scope", ["rewritten scope"], "retained scope differs"),
+        (
+            "known_preexisting_followups",
+            ["Issue #999 invented follow-up"],
+            "known follow-up set differs",
+        ),
+        ("gate_status", {"bounded_substrate_pass": True}, "gate status differs"),
+    ),
+)
+def test_m5_packet_rejects_rewritten_verdict_semantic_boundary(
+    tmp_path: Path,
+    field: str,
+    replacement: object,
+    error: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"rewritten-{field}")
+    verdict_path = packet / "verdict.json"
+    verdict = json.loads(verdict_path.read_text(encoding="utf-8"))
+    verdict[field] = replacement
+    verdict_path.write_text(
+        json.dumps(verdict, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_index(packet, "verdict.json")
+
+    with pytest.raises(Package0ComparatorError, match=error):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "error"),
+    (
+        ("excluded_milestones", [], "excluded milestone set differs"),
+        (
+            "known_preexisting_followups",
+            [{"issue": 999, "scope": "invented follow-up"}],
+            "known follow-up set differs",
+        ),
+    ),
+)
+def test_m5_packet_rejects_rewritten_candidate_scope_boundary(
+    tmp_path: Path,
+    field: str,
+    replacement: object,
+    error: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"rewritten-candidate-{field}")
+    manifest_path = packet / "candidate_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest[field] = replacement
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_index(packet, "candidate_manifest.json")
+
+    with pytest.raises(Package0ComparatorError, match=error):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
 def test_m5_packet_rejects_changed_preregistered_selective_case(
     tmp_path: Path,
 ) -> None:
@@ -328,7 +403,7 @@ def test_m5_packet_rejects_coordinated_go_rewrite(
     _refresh_index(packet, "verdict.json")
     _refresh_index(packet, "comparison_dimensions.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="GO is unreachable"):
+    with pytest.raises(Package0ComparatorError, match="missing-evidence set differs"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -535,6 +610,66 @@ def test_m5_authority_census_rejects_private_typed_replace_owner(
         _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
 
 
+@pytest.mark.parametrize(
+    ("owner_module", "return_type"),
+    (
+        (
+            "xic_extractor.alignment.cell_observations",
+            "CellObservationRef",
+        ),
+        (
+            "xic_extractor.peak_detection.cid_nl_candidate_set_relation",
+            "DdaCidNlCandidateSetRelationRef",
+        ),
+        (
+            "xic_extractor.peak_detection.cid_nl_method_assessment",
+            "CidNlMethodAssessmentRef",
+        ),
+        (
+            "xic_extractor.alignment.identity_settlement",
+            "IdentitySettlementDecision",
+        ),
+        (
+            "xic_extractor.extraction.targeted_diagnostic_delivery",
+            "TargetedDiagnosticDeliveryCandidate",
+        ),
+    ),
+)
+def test_m5_authority_census_rejects_module_attribute_alias_owner(
+    tmp_path: Path,
+    owner_module: str,
+    return_type: str,
+) -> None:
+    audit_rows = _copy_m5_authority_sources(tmp_path)
+    duplicate = tmp_path / "xic_extractor" / "duplicate_delivery_owner.py"
+    duplicate.write_text(
+        f"import {owner_module} as authority_owner\n\n"
+        f"Candidate = authority_owner.{return_type}\n\n"
+        "def _settle_shadow() -> Candidate:\n"
+        "    return Candidate()\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Package0ComparatorError, match="executable census differs"):
+        _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
+
+
+def test_m5_authority_census_recomputes_after_source_change(tmp_path: Path) -> None:
+    audit_rows = _copy_m5_authority_sources(tmp_path)
+    _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
+
+    duplicate = tmp_path / "xic_extractor" / "duplicate_delivery_owner.py"
+    duplicate.write_text(
+        "from xic_extractor.alignment.cell_observations import CellObservationRef\n\n"
+        "def _settle_shadow() -> CellObservationRef:\n"
+        "    return CellObservationRef()\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Package0ComparatorError, match="executable census differs"):
+        _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
+
+
 def test_m5_authority_census_ignores_private_typed_accessor(tmp_path: Path) -> None:
     audit_rows = _copy_m5_authority_sources(tmp_path)
     accessor = tmp_path / "xic_extractor" / "cell_observation_accessor.py"
@@ -679,7 +814,7 @@ def _write_tsv(path: Path, rows: list[dict[str, str]]) -> None:
 def _refresh_index(packet: Path, changed_path: str) -> None:
     index_path = packet / "artifact_index.tsv"
     rows = _read_tsv(index_path)
-    payload = (packet / changed_path).read_bytes()
+    payload = _canonical_text_bytes((packet / changed_path).read_bytes())
     for row in rows:
         if row["path"] == changed_path:
             row["sha256"] = hashlib.sha256(payload).hexdigest().upper()
@@ -688,3 +823,8 @@ def _refresh_index(packet: Path, changed_path: str) -> None:
     else:
         raise AssertionError(f"index row not found: {changed_path}")
     _write_tsv(index_path, rows)
+
+
+def _canonical_text_bytes(payload: bytes) -> bytes:
+    text = payload.decode("utf-8")
+    return text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")

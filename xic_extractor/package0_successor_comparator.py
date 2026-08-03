@@ -18,7 +18,6 @@ from collections.abc import Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import InitVar, dataclass, replace
 from dataclasses import field as dataclass_field
-from functools import lru_cache
 from multiprocessing import get_context
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NoReturn, final
@@ -195,14 +194,49 @@ _M5_REQUIRED_PUBLIC_SURFACES = frozenset(
         "writer",
     }
 )
+_M5_REQUIRED_NARROW_EXCLUSION_ORDER = (
+    "canonical Package 4 GO",
+    "general Untargeted identity readiness",
+    "M4 comparable scan-set MS2 profile evidence",
+    "Matrix or writer activation",
+    "legacy retirement",
+)
 _M5_REQUIRED_NARROW_EXCLUSIONS = frozenset(
-    {
-        "canonical Package 4 GO",
-        "general Untargeted identity readiness",
-        "M4 comparable scan-set MS2 profile evidence",
-        "Matrix or writer activation",
-        "legacy retirement",
-    }
+    _M5_REQUIRED_NARROW_EXCLUSION_ORDER
+)
+_M5_REQUIRED_RETAINED_SCOPE = (
+    "owner-backed evidence and observation spine",
+    "conservative workflow-neutral Backfill eligibility",
+    "shadow identity and split lineage",
+    "Targeted CID-NL diagnostic adapter and rollback substrate",
+)
+_M5_REQUIRED_KNOWN_FOLLOWUPS = (
+    "Issue #105 RT/time-window precision",
+    "Issue #156 Gap 10 complete-group ownership",
+)
+_M5_REQUIRED_MISSING_EVIDENCE = (
+    "complete #126/#127 Package 4 scientific gate revalidation",
+    "comparable legacy and candidate RAW/vendor/point instrumentation",
+    "representative candidate elapsed and peak-memory sample",
+    "method-specific real-sample and manual EIC/MS2 acceptance",
+)
+_M5_REQUIRED_GATE_STATUS = {
+    "bounded_substrate_pass": True,
+    "canonical_package4_complete": False,
+    "public_hard_zero_pass": True,
+    "rollback_pass": True,
+}
+_M5_REQUIRED_EXCLUDED_MILESTONES = (
+    (
+        "M4",
+        164,
+        "M3 did not produce a named full-profile cohort and controls",
+        "conditional_inactive",
+    ),
+)
+_M5_REQUIRED_CANDIDATE_FOLLOWUPS = (
+    (105, "RT/time-window serialization and lookup precision"),
+    (156, "Gap 10 complete same-target group ownership"),
 )
 _M5_REQUIRED_AUTHORITY_AUDIT_IDS = frozenset(
     {
@@ -1664,14 +1698,28 @@ def _validate_m5_candidate_manifest(
     ):
         raise Package0ComparatorError("M5 candidate milestone set differs")
     excluded = candidate.get("excluded_milestones")
-    if not isinstance(excluded, list) or not any(
-        isinstance(item, Mapping)
-        and item.get("milestone") == "M4"
-        and item.get("issue") == 164
-        and item.get("status") == "conditional_inactive"
+    if not isinstance(excluded, list) or tuple(
+        (
+            item.get("milestone"),
+            item.get("issue"),
+            item.get("reason"),
+            item.get("status"),
+        )
         for item in excluded
+        if isinstance(item, Mapping)
+    ) != _M5_REQUIRED_EXCLUDED_MILESTONES or len(excluded) != len(
+        _M5_REQUIRED_EXCLUDED_MILESTONES
     ):
-        raise Package0ComparatorError("M5 candidate must record inactive M4")
+        raise Package0ComparatorError("M5 candidate excluded milestone set differs")
+    followups = candidate.get("known_preexisting_followups")
+    if not isinstance(followups, list) or tuple(
+        (item.get("issue"), item.get("scope"))
+        for item in followups
+        if isinstance(item, Mapping)
+    ) != _M5_REQUIRED_CANDIDATE_FOLLOWUPS or len(followups) != len(
+        _M5_REQUIRED_CANDIDATE_FOLLOWUPS
+    ):
+        raise Package0ComparatorError("M5 candidate known follow-up set differs")
     sources = candidate.get("source_files")
     if not isinstance(sources, list) or not sources:
         raise Package0ComparatorError("M5 candidate source file seal is missing")
@@ -1880,7 +1928,6 @@ def _validate_m5_authority_audit(
         _validate_m5_locator(repo_root, row["evidence_locator"])
 
 
-@lru_cache(maxsize=4)
 def _m5_authority_owner_census(
     repo_root: Path,
 ) -> tuple[tuple[str, tuple[str, ...]], ...]:
@@ -2060,7 +2107,11 @@ def _m5_return_type_aliases(tree: ast.AST) -> dict[str, str]:
     for _pass in range(len(assignments) + 1):
         changed = False
         for alias_name, value in assignments:
-            source_name = value.id if isinstance(value, ast.Name) else None
+            source_name: str | None = None
+            if isinstance(value, ast.Name):
+                source_name = value.id
+            elif isinstance(value, ast.Attribute):
+                source_name = value.attr
             if (
                 source_name in aliases
                 and aliases.get(alias_name) != aliases[source_name]
@@ -2304,6 +2355,18 @@ def _validate_m5_verdict(
         )
     ):
         raise Package0ComparatorError("M5 verdict evidence state is malformed")
+    if defects != []:
+        raise Package0ComparatorError("M5 candidate defect set differs")
+    if tuple(missing) != _M5_REQUIRED_MISSING_EVIDENCE:
+        raise Package0ComparatorError("M5 missing-evidence set differs")
+    if tuple(retained) != _M5_REQUIRED_RETAINED_SCOPE:
+        raise Package0ComparatorError("M5 retained scope differs")
+    if tuple(followups) != _M5_REQUIRED_KNOWN_FOLLOWUPS:
+        raise Package0ComparatorError("M5 known follow-up set differs")
+    if tuple(excluded) != _M5_REQUIRED_NARROW_EXCLUSION_ORDER:
+        raise Package0ComparatorError("M5 excluded scope differs")
+    if dict(gates) != _M5_REQUIRED_GATE_STATUS:
+        raise Package0ComparatorError("M5 gate status differs")
     has_dimension_failure = any(row["outcome"] == "fail" for row in dimensions)
     has_case_kill = any(
         row["status"] == "fail" and row["verdict_effect"] == "failure_kills"
@@ -2338,11 +2401,6 @@ def _validate_m5_verdict(
     else:
         derived = "INCONCLUSIVE"
     declared = verdict.get("verdict")
-    if declared == "NARROW" and (
-        not retained
-        or set(excluded) != _M5_REQUIRED_NARROW_EXCLUSIONS
-    ):
-        raise Package0ComparatorError("M5 NARROW excluded scope differs")
     if declared == "GO" and not canonical_complete:
         raise Package0ComparatorError(
             "M5 GO is unreachable while canonical Package 4 gates are incomplete"
