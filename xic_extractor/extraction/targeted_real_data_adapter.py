@@ -6,6 +6,7 @@ handle.  Discovery CSV values are validation receipts, never evidence payloads.
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
@@ -49,11 +50,17 @@ from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.neutral_loss import MS2ProductEvidence
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
+    CidNlChromatographicSupportRef,
     compose_cid_nl_chromatographic_support_ref,
 )
-from xic_extractor.peak_detection.cid_nl_evidence import mint_cid_nl_evidence_ref
+from xic_extractor.peak_detection.cid_nl_evidence import (
+    CidNlEvidenceRef,
+    mint_cid_nl_evidence_ref,
+)
 from xic_extractor.peak_detection.cid_nl_peak_support import (
+    DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
+    DdaCidNlPeakSupportRef,
     resolve_dda_cid_nl_peak_support_ref,
 )
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
@@ -238,29 +245,16 @@ def _adapt_current_discovery_sample_target(
         adapter_namespace=_ADAPTER_NAMESPACE,
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
-    scans_and_seeds = tuple(
-        (
-            scan := _read_exact_scan(bound_raw, candidate),
-            _read_exact_seed(
-                scan,
-                raw_file=candidate.raw_file,
-                candidate=candidate,
-                settings=settings,
-            ),
-        )
-        for candidate in bounded
+    strict_scan_seeds = _read_complete_strict_scan_seeds(
+        bound_raw,
+        candidates=bounded,
+        settings=settings,
     )
     targeted_rt_min, targeted_rt_max, _anchor_used, _anchor_rt = get_rt_window(
         bound_raw,
         target_value,
         peak_config,
         reference_rt=None,
-    )
-    targeted_request = XICRequest(
-        mz=target_value.mz,
-        rt_min=targeted_rt_min,
-        rt_max=targeted_rt_max,
-        ppm_tol=target_value.ppm_tol,
     )
     acquisition_rt_min = min(
         targeted_rt_min,
@@ -286,22 +280,23 @@ def _adapt_current_discovery_sample_target(
             "shared candidate-universe acquisition must produce one trace"
         )
     acquired = acquisition.traces[0]
-    targeted_trace = crop_xic_trace_by_rt(
-        acquired.trace,
-        targeted_request.rt_min,
-        targeted_request.rt_max,
-    )
-
     observations: list[PeakObservationRef] = []
     artifacts: list[EvidenceArtifactRef] = []
     for candidate in bounded:
-        receipt_mask = (
-            (acquired.trace.rt >= candidate.ms1_search_rt_min)
-            & (acquired.trace.rt <= candidate.ms1_search_rt_max)
+        candidate_request = XICRequest(
+            mz=target_value.mz,
+            rt_min=candidate.ms1_search_rt_min,
+            rt_max=candidate.ms1_search_rt_max,
+            ppm_tol=target_value.ppm_tol,
+        )
+        candidate_trace = crop_xic_trace_by_rt(
+            acquired.trace,
+            candidate_request.rt_min,
+            candidate_request.rt_max,
         )
         receipt_detection = detect_ms1_trace_peak(
-            acquired.trace.rt[receipt_mask],
-            acquired.trace.intensity[receipt_mask],
+            candidate_trace.rt,
+            candidate_trace.intensity,
             peak_config=peak_config,
             preferred_rt=candidate.best_seed_rt,
             peak_finder=find_peak_and_area,
@@ -334,8 +329,8 @@ def _adapt_current_discovery_sample_target(
         _validate_candidate_integration(candidate, receipt_selected[0].integration)
 
         detection = detect_ms1_trace_peak(
-            targeted_trace.rt,
-            targeted_trace.intensity,
+            candidate_trace.rt,
+            candidate_trace.intensity,
             peak_config=peak_config,
             preferred_rt=candidate.best_seed_rt,
             peak_finder=find_peak_and_area,
@@ -378,8 +373,8 @@ def _adapt_current_discovery_sample_target(
         integration = promoted.integration
         trace = trace_from_xic_request(
             sample_name=sample.metadata.sample_name,
-            request=targeted_request,
-            xic_trace=targeted_trace,
+            request=candidate_request,
+            xic_trace=candidate_trace,
             source=f"{_ADAPTER_NAMESPACE}:{TraceCoordinateKind.NATIVE_SCAN.value}",
             acquisition_source_id=source.acquisition_source_id,
         )
@@ -394,14 +389,19 @@ def _adapt_current_discovery_sample_target(
         observations.append(observation)
         _record_artifact(artifacts, _observer, observation.artifact)
 
-    hypotheses = []
-    projections = []
-    for candidate, observation, (scan, seed) in zip(
-        bounded,
-        observations,
-        scans_and_seeds,
-        strict=True,
-    ):
+    evidence_by_scan: dict[int, tuple[Ms2Scan, DiscoverySeed, CidNlEvidenceRef]] = {}
+    support_by_scan: dict[int, DdaCidNlPeakSupportRef] = {}
+    supports_by_peak: dict[str, list[DdaCidNlPeakSupportRef]] = {}
+    support_policy = DdaCidNlPeakSupportPolicy(
+        precursor_tolerance_da=max(
+            target.definition.target.mz
+            * target.definition.target.ppm_tol
+            / 1_000_000.0,
+            _WRITER_ROUNDING_ABS_TOL,
+        ),
+        neutral_loss_tolerance_ppm=settings.nl_tolerance_ppm,
+    )
+    for scan, seed in strict_scan_seeds:
         seed = replace(seed, acquisition_source_id=source.acquisition_source_id)
         evidence = mint_cid_nl_evidence_ref(
             processing_owners=processing_owners,
@@ -416,28 +416,60 @@ def _adapt_current_discovery_sample_target(
             product_intensity=seed.product_intensity,
         )
         _record_artifact(artifacts, _observer, evidence.artifact)
-        support = resolve_dda_cid_nl_peak_support_ref(
-            processing_owners=processing_owners,
-            sample=sample,
-            canonical_evidence=evidence,
-            candidate_peaks=tuple(observations),
-            policy=DdaCidNlPeakSupportPolicy(
-                precursor_tolerance_da=max(
-                    target.definition.target.mz
-                    * target.definition.target.ppm_tol
-                    / 1_000_000.0,
-                    _WRITER_ROUNDING_ABS_TOL,
-                ),
-                neutral_loss_tolerance_ppm=settings.nl_tolerance_ppm,
-            ),
-        )
+        try:
+            support = resolve_dda_cid_nl_peak_support_ref(
+                processing_owners=processing_owners,
+                sample=sample,
+                canonical_evidence=evidence,
+                candidate_peaks=tuple(observations),
+                policy=support_policy,
+            )
+        except DdaCidNlPeakSupportContractError as exc:
+            raise TargetedRealDataAdapterError(
+                f"strict scan {scan.scan_number} does not link to exactly one "
+                "candidate physical MS1 peak"
+            ) from exc
         _record_artifact(artifacts, _observer, support.artifact)
+        evidence_by_scan[scan.scan_number] = (scan, seed, evidence)
+        support_by_scan[scan.scan_number] = support
+        supports_by_peak.setdefault(
+            support.content.peak_observation_content_id,
+            [],
+        ).append(support)
+
+    events_by_peak: dict[str, CidNlChromatographicSupportRef] = {}
+    for observation in observations:
+        peak_id = observation.content.peak_observation_content_id
+        scan_supports = tuple(supports_by_peak.get(peak_id, ()))
+        if not scan_supports:
+            raise TargetedRealDataAdapterError(
+                "candidate physical MS1 peak lacks strict CID-NL scan support"
+            )
         event = compose_cid_nl_chromatographic_support_ref(
             processing_owners=processing_owners,
             sample=sample,
-            scan_support_refs=(support,),
+            scan_support_refs=scan_supports,
         )
         _record_artifact(artifacts, _observer, event.artifact)
+        events_by_peak[peak_id] = event
+
+    hypotheses = []
+    projections = []
+    for candidate, observation in zip(bounded, observations, strict=True):
+        representative = evidence_by_scan.get(candidate.best_ms2_scan_id)
+        representative_support = support_by_scan.get(candidate.best_ms2_scan_id)
+        if representative is None or representative_support is None:
+            raise TargetedRealDataAdapterError(
+                f"{candidate.candidate_id}: representative strict scan was not retained"
+            )
+        scan, seed, evidence = representative
+        peak_id = observation.content.peak_observation_content_id
+        if representative_support.content.peak_observation_content_id != peak_id:
+            raise TargetedRealDataAdapterError(
+                f"{candidate.candidate_id}: representative strict scan links to "
+                "a different physical MS1 peak"
+            )
+        event = events_by_peak[peak_id]
         hypothesis = compose_cid_nl_peak_hypothesis(
             processing_owners=processing_owners,
             sample=sample,
@@ -632,25 +664,54 @@ def _validate_candidate_integration(
             )
 
 
-def _read_exact_scan(
+def _read_exact_scans(
     raw: TargetedRealDataRaw,
     candidate: DiscoveryCandidate,
-) -> Ms2Scan:
-    matches = tuple(
-        event.scan
-        for event in raw.iter_ms2_scans(
-            candidate.rt_seed_min - _WRITER_ROUNDING_ABS_TOL,
-            candidate.rt_seed_max + _WRITER_ROUNDING_ABS_TOL,
-        )
-        if event.parse_error is None
-        and event.scan is not None
-        and event.scan.scan_number == candidate.best_ms2_scan_id
-    )
-    if len(matches) != 1:
+) -> tuple[Ms2Scan, ...]:
+    declared = tuple(sorted(set(candidate.seed_scan_ids)))
+    matches_by_scan: dict[int, list[Ms2Scan]] = {
+        scan_number: [] for scan_number in declared
+    }
+    for event in raw.iter_ms2_scans(
+        candidate.rt_seed_min - _WRITER_ROUNDING_ABS_TOL,
+        candidate.rt_seed_max + _WRITER_ROUNDING_ABS_TOL,
+    ):
+        if (
+            event.parse_error is None
+            and event.scan is not None
+            and event.scan.scan_number in matches_by_scan
+        ):
+            matches_by_scan[event.scan.scan_number].append(event.scan)
+    if any(len(matches_by_scan[scan_number]) != 1 for scan_number in declared):
         raise TargetedRealDataAdapterError(
-            f"{candidate.candidate_id}: exact representative MS2 scan is not unique"
+            f"{candidate.candidate_id}: declared strict MS2 scans are not exact"
         )
-    return matches[0]
+    return tuple(matches_by_scan[scan_number][0] for scan_number in declared)
+
+
+def _read_complete_strict_scan_seeds(
+    raw: TargetedRealDataRaw,
+    *,
+    candidates: tuple[DiscoveryCandidate, ...],
+    settings: DiscoverySettings,
+) -> tuple[tuple[Ms2Scan, DiscoverySeed], ...]:
+    by_scan: dict[int, tuple[Ms2Scan, DiscoverySeed]] = {}
+    for candidate in candidates:
+        for scan in _read_exact_scans(raw, candidate):
+            seed = _read_exact_seed(
+                scan,
+                raw_file=candidate.raw_file,
+                candidate=candidate,
+                settings=settings,
+            )
+            existing = by_scan.get(scan.scan_number)
+            if existing is not None and existing[1] != seed:
+                raise TargetedRealDataAdapterError(
+                    f"scan {scan.scan_number}: candidate receipts disagree on "
+                    "canonical strict evidence"
+                )
+            by_scan[scan.scan_number] = (scan, seed)
+    return tuple(by_scan[scan_number] for scan_number in sorted(by_scan))
 
 
 def _read_exact_seed(
@@ -660,6 +721,11 @@ def _read_exact_seed(
     candidate: DiscoveryCandidate,
     settings: DiscoverySettings,
 ) -> DiscoverySeed:
+    representative = scan.scan_number == candidate.best_ms2_scan_id
+    tag_product_receipts = _scan_tag_product_receipts(
+        candidate,
+        scan_number=scan.scan_number,
+    )
     matches = tuple(
         seed
         for seed in discovery_seeds_from_scan(
@@ -667,17 +733,100 @@ def _read_exact_seed(
             raw_file=raw_file,
             settings=settings,
         )
-        if seed.scan_number == candidate.best_ms2_scan_id
-        and seed.neutral_loss_tag == candidate.neutral_loss_tag
+        if seed.scan_number in candidate.seed_scan_ids
         and seed.precursor_mz_basis == "scan_precursor"
-        and _receipt_close(seed.precursor_mz, candidate.precursor_mz)
-        and _receipt_close(seed.product_mz, candidate.product_mz)
-    )
-    if len(matches) != 1:
-        raise TargetedRealDataAdapterError(
-            f"{candidate.candidate_id}: exact canonical Discovery seed is not unique"
+        and any(
+            seed.neutral_loss_tag == tag_name
+            and _within_ppm(
+                seed.product_mz,
+                product_mz,
+                settings.product_mz_tolerance_ppm,
+            )
+            for tag_name, product_mz in tag_product_receipts.items()
         )
-    return matches[0]
+        and _within_ppm(
+            seed.precursor_mz,
+            candidate.precursor_mz,
+            settings.precursor_mz_tolerance_ppm,
+        )
+        and (
+            not representative
+            or (
+                _receipt_close(seed.precursor_mz, candidate.precursor_mz)
+                and _receipt_close(seed.product_mz, candidate.product_mz)
+            )
+        )
+    )
+    if not matches:
+        if representative:
+            raise TargetedRealDataAdapterError(
+                f"{candidate.candidate_id}: exact canonical Discovery seed "
+                "is not unique"
+            )
+        raise TargetedRealDataAdapterError(
+            f"{candidate.candidate_id}: strict scan {scan.scan_number} does not "
+            "reconstruct one canonical Discovery seed"
+        )
+    tag_precedence = {
+        tag_name: index
+        for index, tag_name in enumerate(settings.selected_tag_names)
+    }
+    return min(
+        matches,
+        key=lambda seed: tag_precedence.get(
+            seed.neutral_loss_tag,
+            len(tag_precedence),
+        ),
+    )
+
+
+def _scan_tag_product_receipts(
+    candidate: DiscoveryCandidate,
+    *,
+    scan_number: int,
+) -> dict[str, float]:
+    try:
+        payload = json.loads(candidate.tag_evidence_json)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise TargetedRealDataAdapterError(
+            f"{candidate.candidate_id}: tag evidence is not valid JSON"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise TargetedRealDataAdapterError(
+            f"{candidate.candidate_id}: tag evidence must be an object"
+        )
+
+    receipts: dict[str, float] = {}
+    matched_tags = set(candidate.matched_tag_names)
+    for raw_tag_name, raw_evidence in payload.items():
+        tag_name = str(raw_tag_name)
+        if tag_name not in matched_tags or not isinstance(raw_evidence, dict):
+            continue
+        raw_scan_ids = raw_evidence.get("scan_ids")
+        if not isinstance(raw_scan_ids, list) or scan_number not in {
+            value
+            for value in raw_scan_ids
+            if isinstance(value, int) and not isinstance(value, bool)
+        }:
+            continue
+        raw_product_mz = raw_evidence.get("product_mz")
+        if (
+            not isinstance(raw_product_mz, (int, float))
+            or isinstance(raw_product_mz, bool)
+            or not math.isfinite(float(raw_product_mz))
+            or float(raw_product_mz) <= 0.0
+        ):
+            raise TargetedRealDataAdapterError(
+                f"{candidate.candidate_id}: tag {tag_name!r} lacks a valid "
+                f"product receipt for strict scan {scan_number}"
+            )
+        receipts[tag_name] = float(raw_product_mz)
+    if not receipts:
+        raise TargetedRealDataAdapterError(
+            f"{candidate.candidate_id}: strict scan {scan_number} lacks owning "
+            "per-tag provenance"
+        )
+    return receipts
 
 
 def _validate_inputs(**values: object) -> None:

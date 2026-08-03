@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -38,6 +39,7 @@ from xic_extractor.raw_reader import (
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
+SECONDARY_NEUTRAL_LOSS_DA = 132.0423
 PRECURSOR_MZ = 500.0
 PRODUCT_MZ = PRECURSOR_MZ - NEUTRAL_LOSS_DA
 
@@ -86,6 +88,229 @@ def test_adapter_reacquires_one_current_candidate_into_targeted_lifecycle(
     assert result.alignment_input.selection.status == "selected"
     assert len(result.alignment_input.candidate_set.candidates) == 1
     assert result.alignment_input.candidate_set.lineage_artifacts
+
+
+def test_adapter_preserves_repeated_strict_scans_as_one_support_event(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    discovery_raw = _FakeRaw((7.98, 8.02))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        discovery_raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(candidates) == 1
+    assert len(set(candidates[0].seed_scan_ids)) == 2
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        discovery_raw,
+        tmp_path=tmp_path,
+    )
+
+    result = adapt_current_discovery_sample_target(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        target=fixture.target,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    hypothesis = result.alignment_input.candidate_set.candidate_hypotheses[0]
+    support = hypothesis.evidence.cid_nl_chromatographic_support_ref
+    assert support is not None
+    assert support.content.strict_nl_scan_count == 2
+    assert support.content.chromatographic_support_event_count == 1
+    assert tuple(
+        member.dda_scan_number for member in support.content.scan_supports
+    ) == candidates[0].seed_scan_ids
+    assert vendor_raw.chromatogram_request_counts == [1]
+
+
+def test_adapter_reconstructs_each_union_tag_scan_from_its_own_provenance(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    discovery_raw = _FakeRaw(
+        (7.98, 8.02),
+        neutral_loss_das=(NEUTRAL_LOSS_DA, SECONDARY_NEUTRAL_LOSS_DA),
+    )
+    settings = _multi_tag_settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        discovery_raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(candidates) == 1
+    assert candidates[0].matched_tag_names == ("DNA_dR", "RNA_R")
+    assert len(candidates[0].seed_scan_ids) == 2
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        discovery_raw,
+        tmp_path=tmp_path,
+    )
+
+    result = adapt_current_discovery_sample_target(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        target=fixture.target,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    hypothesis = result.alignment_input.candidate_set.candidate_hypotheses[0]
+    support = hypothesis.evidence.cid_nl_chromatographic_support_ref
+    assert support is not None
+    assert support.content.strict_nl_scan_count == 2
+    assert tuple(
+        member.dda_scan_number for member in support.content.scan_supports
+    ) == candidates[0].seed_scan_ids
+    assert vendor_raw.chromatogram_request_counts == [1]
+
+
+def test_adapter_selects_one_seed_when_one_scan_matches_multiple_union_tags(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    discovery_raw = _FakeRaw((7.98, 8.02))
+    first_scan, shared_scan = discovery_raw.scans
+    discovery_raw.scans = (
+        first_scan,
+        replace(
+            shared_scan,
+            masses=np.asarray(
+                (
+                    PRODUCT_MZ,
+                    PRECURSOR_MZ - SECONDARY_NEUTRAL_LOSS_DA,
+                )
+            ),
+            intensities=np.asarray((700.0, 600.0)),
+        ),
+    )
+    settings = _multi_tag_settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        discovery_raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.best_ms2_scan_id == first_scan.scan_number
+    evidence = json.loads(candidate.tag_evidence_json)
+    assert shared_scan.scan_number in evidence["DNA_dR"]["scan_ids"]
+    assert shared_scan.scan_number in evidence["RNA_R"]["scan_ids"]
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        discovery_raw,
+        tmp_path=tmp_path,
+    )
+
+    result = adapt_current_discovery_sample_target(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        target=fixture.target,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    hypothesis = result.alignment_input.candidate_set.candidate_hypotheses[0]
+    support = hypothesis.evidence.cid_nl_chromatographic_support_ref
+    assert support is not None
+    assert support.content.strict_nl_scan_count == 2
+    assert tuple(
+        member.dda_scan_number for member in support.content.scan_supports
+    ) == candidate.seed_scan_ids
+    assert vendor_raw.chromatogram_request_counts == [1]
+
+
+def test_adapter_does_not_collapse_strict_scans_from_separated_peaks(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    discovery_raw = _FakeRaw((7.7, 8.3))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    separated_candidates = _current_candidates(
+        discovery_raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(separated_candidates) == 2
+    ordered = tuple(
+        sorted(separated_candidates, key=lambda candidate: candidate.best_seed_rt)
+    )
+    seed_scan_ids = tuple(candidate.best_ms2_scan_id for candidate in ordered)
+    tag_evidence = json.loads(ordered[0].tag_evidence_json)
+    tag_receipt = tag_evidence[ordered[0].neutral_loss_tag]
+    tag_receipt["scan_count"] = len(seed_scan_ids)
+    tag_receipt["scan_ids"] = list(seed_scan_ids)
+    tag_receipt["rt_min"] = ordered[0].best_seed_rt
+    tag_receipt["rt_max"] = ordered[-1].best_seed_rt
+    candidates = (
+        replace(
+            ordered[0],
+            seed_event_count=2,
+            seed_scan_ids=seed_scan_ids,
+            rt_seed_min=ordered[0].best_seed_rt,
+            rt_seed_max=ordered[-1].best_seed_rt,
+            tag_evidence_json=json.dumps(tag_evidence),
+        ),
+    )
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        discovery_raw,
+        tmp_path=tmp_path,
+    )
+
+    with pytest.raises(
+        TargetedRealDataAdapterError,
+        match="does not link to exactly one candidate physical MS1 peak",
+    ):
+        adapt_current_discovery_sample_target(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            target=fixture.target,
+            candidates=candidates,
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+        )
+
+    assert vendor_raw.chromatogram_request_counts == [1]
 
 
 def test_adapter_uses_targeted_gaussian15_boundary_owner(tmp_path: Path) -> None:
@@ -238,7 +463,7 @@ def test_adapter_acquires_every_disjoint_candidate_receipt_window(
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
-def test_adapter_keeps_canonical_detection_inside_targeted_window(
+def test_adapter_builds_each_observation_from_its_candidate_window(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -249,7 +474,7 @@ def test_adapter_keeps_canonical_detection_inside_targeted_window(
         sample_stems=("S1",),
         peak_config=_peak_config(tmp_path),
     )
-    discovery_raw = _FakeRaw((8.0,))
+    discovery_raw = _FakeRaw((7.7, 8.3))
     settings = _settings()
     peak_config = replace(
         _peak_config(tmp_path),
@@ -261,8 +486,7 @@ def test_adapter_keeps_canonical_detection_inside_targeted_window(
         settings=settings,
         peak_config=peak_config,
     )
-    assert len(candidates) == 1
-    candidate = candidates[0]
+    assert len(candidates) == 2
     raw, vendor_raw = _open_bound_raw(
         fixture,
         "S1",
@@ -294,22 +518,59 @@ def test_adapter_keeps_canonical_detection_inside_targeted_window(
 
     assert result.acquisition is not None
     acquisition_request = result.acquisition.traces[0].coordinate.request
-    assert acquisition_request.rt_min <= candidate.ms1_search_rt_min < 7.95
-    assert acquisition_request.rt_max >= candidate.ms1_search_rt_max > 8.05
-    assert detection_windows == [
+    assert all(
+        acquisition_request.rt_min <= candidate.ms1_search_rt_min
+        and acquisition_request.rt_max >= candidate.ms1_search_rt_max
+        for candidate in candidates
+    )
+    assert len(detection_windows) == 4
+    for candidate, first, second in zip(
+        candidates,
+        detection_windows[::2],
+        detection_windows[1::2],
+        strict=True,
+    ):
+        assert first == second
+        assert candidate.ms1_search_rt_min <= first[0]
+        assert first[1] <= candidate.ms1_search_rt_max
+        assert first[0] <= candidate.ms1_apex_rt <= first[1]
+    hypotheses = tuple(
+        sorted(
+            result.alignment_input.candidate_set.candidate_hypotheses,
+            key=lambda hypothesis: hypothesis.integration.rt_apex_min,
+        )
+    )
+    candidates = tuple(sorted(candidates, key=lambda candidate: candidate.ms1_apex_rt))
+    assert len(hypotheses) == 2
+    assert tuple(
+        hypothesis.integration.rt_apex_min for hypothesis in hypotheses
+    ) == pytest.approx(tuple(candidate.ms1_apex_rt for candidate in candidates))
+    observation_windows = tuple(
+        (
+            hypothesis.peak_observation_refs[0].generation_provenance.query_rt_min,
+            hypothesis.peak_observation_refs[0].generation_provenance.query_rt_max,
+        )
+        for hypothesis in hypotheses
+    )
+    assert observation_windows == tuple(
         (
             pytest.approx(candidate.ms1_search_rt_min),
             pytest.approx(candidate.ms1_search_rt_max),
-        ),
-        (pytest.approx(7.95), pytest.approx(8.05)),
-    ]
-    observation = (
-        result.alignment_input.candidate_set.candidate_hypotheses[
-            0
-        ].peak_observation_refs[0]
+        )
+        for candidate in candidates
     )
-    assert observation.generation_provenance.query_rt_min == pytest.approx(7.95)
-    assert observation.generation_provenance.query_rt_max == pytest.approx(8.05)
+    support_scan_sets = tuple(
+        tuple(
+            member.dda_scan_number
+            for member in (
+                hypothesis.evidence.cid_nl_chromatographic_support_ref.content.scan_supports
+            )
+        )
+        for hypothesis in hypotheses
+    )
+    assert support_scan_sets == tuple(
+        (candidate.best_ms2_scan_id,) for candidate in candidates
+    )
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
@@ -605,6 +866,22 @@ def _settings() -> DiscoverySettings:
     )
 
 
+def _multi_tag_settings() -> DiscoverySettings:
+    return DiscoverySettings(
+        neutral_loss_profiles=(
+            NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
+            NeutralLossProfile("RNA_R", SECONDARY_NEUTRAL_LOSS_DA),
+        ),
+        selected_tag_names=("DNA_dR", "RNA_R"),
+        tag_combine_mode="union",
+        rt_min=7.5,
+        rt_max=8.6,
+        seed_rt_gap_min=0.20,
+        ms1_search_padding_min=0.20,
+        resolver_mode="local_minimum",
+    )
+
+
 def _peak_config(tmp_path: Path) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=tmp_path,
@@ -725,8 +1002,18 @@ class _FakeRaw:
         scan_rts: tuple[float, ...],
         *,
         scan_precursor_mz: float = PRECURSOR_MZ,
+        neutral_loss_das: tuple[float, ...] | None = None,
         acquisition_source: AcquisitionSourceIdentity | None = None,
     ) -> None:
+        if neutral_loss_das is None:
+            product_mzs = (PRODUCT_MZ,) * len(scan_rts)
+        else:
+            if len(neutral_loss_das) != len(scan_rts):
+                raise ValueError("neutral_loss_das must match scan_rts")
+            product_mzs = tuple(
+                scan_precursor_mz - neutral_loss_da
+                for neutral_loss_da in neutral_loss_das
+            )
         self.acquisition_source = acquisition_source
         self.rt = np.linspace(7.4, 8.7, 521)
         self.intensity = sum(
@@ -741,11 +1028,16 @@ class _FakeRaw:
                 scan_number=int(np.argmin(np.abs(self.rt - rt))) + 1,
                 rt=rt,
                 precursor_mz=scan_precursor_mz,
-                masses=np.asarray((PRODUCT_MZ, PRODUCT_MZ + 10.0)),
+                masses=np.asarray(
+                    (
+                        product_mz,
+                        product_mz + 10.0,
+                    )
+                ),
                 intensities=np.asarray((800.0, 200.0)),
                 base_peak=1000.0,
             )
-            for rt in scan_rts
+            for rt, product_mz in zip(scan_rts, product_mzs, strict=True)
         )
         self.batch_calls = 0
 
