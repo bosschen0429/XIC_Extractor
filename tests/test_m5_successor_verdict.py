@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import uuid
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,7 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.package0_successor_comparator import (
+    M5RollbackRehearsalReceipt,
     M5SuccessorVerdictReceipt,
     Package0ComparatorError,
     validate_m5_rollback_rehearsal,
@@ -122,6 +124,23 @@ def test_m5_verdict_receipt_requires_comparator_minting() -> None:
             product_authority_granted=True,
             external_legacy_replay_performed=False,
             packet_sha256="0" * 64,
+            _mint_token=object(),
+        )
+
+
+def test_m5_rollback_receipt_requires_comparator_minting() -> None:
+    with pytest.raises(Package0ComparatorError, match="must be minted by"):
+        M5RollbackRehearsalReceipt(
+            status_transition="staged_candidate->rolled_back",
+            processing_attempt_id="forged-attempt",
+            prior_current_delivery_id="forged-delivery",
+            active_authority="authoritative_legacy_current",
+            successor_product_authority=False,
+            lineage_artifact_ids=(),
+            delivery_revision_ids=(),
+            delivery_stage_id="forged-stage",
+            delivery_seal_candidate_id="forged-seal",
+            receipt_sha256="0" * 64,
             _mint_token=object(),
         )
 
@@ -249,7 +268,7 @@ def test_m5_packet_rejects_unsealed_evidence_locator(tmp_path: Path) -> None:
     _write_tsv(diff_path, rows)
     _refresh_index(packet, "public_expected_diff.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="locator set differs"):
+    with pytest.raises(Package0ComparatorError, match="hard-zero semantics differ"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -459,7 +478,38 @@ def test_m5_packet_rejects_coordinated_go_rewrite(
     _refresh_index(packet, "verdict.json")
     _refresh_index(packet, "comparison_dimensions.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="missing-evidence set differs"):
+    with pytest.raises(Package0ComparatorError, match="dimension semantics differ"):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("baseline_status", "rewritten_baseline"),
+        ("candidate_status", "rewritten_candidate"),
+        ("outcome", "not_applicable"),
+        ("evidence_maturity", "asserted_only"),
+        ("evidence_locator", "tests/test_m5_successor_verdict.py"),
+        ("claim_limit", "unbounded"),
+    ),
+)
+def test_m5_packet_rejects_comparison_dimension_semantic_drift(
+    tmp_path: Path,
+    field: str,
+    replacement: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"dimension-{field}")
+    dimension_path = packet / "comparison_dimensions.tsv"
+    rows = _read_tsv(dimension_path)
+    rows[0][field] = replacement
+    _write_tsv(dimension_path, rows)
+    _refresh_index(packet, "comparison_dimensions.tsv")
+
+    with pytest.raises(Package0ComparatorError, match="dimension semantics differ"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -556,6 +606,22 @@ def test_m5_packet_rejects_unapproved_public_diff(tmp_path: Path) -> None:
     _refresh_index(packet, "public_expected_diff.tsv")
 
     with pytest.raises(Package0ComparatorError, match="public hard-zero"):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
+def test_m5_packet_rejects_public_hard_zero_locator_drift(tmp_path: Path) -> None:
+    packet = _copy_packet(tmp_path / "public-locator-drift")
+    diff_path = packet / "public_expected_diff.tsv"
+    rows = _read_tsv(diff_path)
+    rows[0]["evidence_locator"] = "tests/test_m5_successor_verdict.py"
+    _write_tsv(diff_path, rows)
+    _refresh_index(packet, "public_expected_diff.tsv")
+
+    with pytest.raises(Package0ComparatorError, match="hard-zero semantics differ"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
@@ -681,6 +747,12 @@ def test_m5_rehearses_whole_attempt_rollback_without_mixed_authority(
         "delivery_seal_candidate_id"
     ]
     assert receipt.receipt_sha256 == recorded["owner_receipt_sha256"]
+    with pytest.raises(Package0ComparatorError, match="must be minted by"):
+        replace(
+            receipt,
+            active_authority="forged_successor_authority",
+            _mint_token=object(),
+        )
 
 
 def _sequence_sha256(values: tuple[str, ...]) -> str:

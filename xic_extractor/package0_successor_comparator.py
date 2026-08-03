@@ -89,6 +89,7 @@ _FROZEN_PACKAGE1_SURFACE_SHA256 = (
 _PACKAGE1_OBSERVATION_MINT_TOKEN = object()
 _PACKAGE1_PROBE_MINT_TOKEN = object()
 _M5_VERDICT_RECEIPT_MINT_TOKEN = object()
+_M5_ROLLBACK_RECEIPT_MINT_TOKEN = object()
 _PACKAGE1_EXPERIMENT_DIR = "package1-runtime-observation-experiment"
 _PACKAGE1_PRODUCT_OUTPUT_DIR = "product-output"
 _PACKAGE1_ROOT_IDENTITY_MARKER = ".package1-root-identity"
@@ -346,6 +347,12 @@ _M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
 )
 _M5_SELECTIVE_CASE_CONTRACT_SHA256 = (
     "A87650AE84E941F9B882B4178B5212E42F6443272F6528F136BAE4745C10560A"
+)
+_M5_DIMENSION_CONTRACT_SHA256 = (
+    "A807C100B9912C65880DC268E4DF50A111E08170506AC4C73BA86B4890FD88C1"
+)
+_M5_PUBLIC_DIFF_CONTRACT_SHA256 = (
+    "50CD83049117B3231FFCE0645B8212834E910ACE0753587CF52C8000D007DE99"
 )
 _M5_ROLLBACK_RECEIPT_SUMMARY_SHA256 = (
     "4729692AC09F285B51D68A9332CDC0554E9A2E764E13CEF7D3E94089BD2DB3D9"
@@ -709,9 +716,16 @@ class M5RollbackRehearsalReceipt:
     delivery_stage_id: str
     delivery_seal_candidate_id: str
     receipt_sha256: str
+    _mint_token: InitVar[object] = dataclass_field(kw_only=True)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("M5RollbackRehearsalReceipt is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _M5_ROLLBACK_RECEIPT_MINT_TOKEN:
+            raise Package0ComparatorError(
+                "M5RollbackRehearsalReceipt must be minted by the comparator"
+            )
 
 
 @final
@@ -1658,6 +1672,7 @@ def validate_m5_rollback_rehearsal(
         delivery_stage_id=staged.stage_candidate.delivery_stage_id,
         delivery_seal_candidate_id=(staged.seal_candidate.delivery_seal_candidate_id),
         receipt_sha256=_canonical_value_sha256(basis),
+        _mint_token=_M5_ROLLBACK_RECEIPT_MINT_TOKEN,
     )
 
 
@@ -2008,6 +2023,8 @@ def _validate_m5_dimensions(
     *,
     repo_root: Path,
 ) -> None:
+    if _canonical_value_sha256(rows) != _M5_DIMENSION_CONTRACT_SHA256:
+        raise Package0ComparatorError("M5 comparison dimension semantics differ")
     dimensions = {row["dimension"] for row in rows}
     if dimensions != _M5_REQUIRED_DIMENSIONS or len(dimensions) != len(rows):
         raise Package0ComparatorError("M5 comparison dimension set differs")
@@ -2083,6 +2100,8 @@ def _validate_m5_public_diffs(
     *,
     repo_root: Path,
 ) -> None:
+    if _canonical_value_sha256(rows) != _M5_PUBLIC_DIFF_CONTRACT_SHA256:
+        raise Package0ComparatorError("M5 public hard-zero semantics differ")
     surfaces = {row["surface"] for row in rows}
     if surfaces != _M5_REQUIRED_PUBLIC_SURFACES or len(surfaces) != len(rows):
         raise Package0ComparatorError("M5 public surface set differs")
