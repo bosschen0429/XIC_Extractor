@@ -123,6 +123,33 @@ _M5_PACKET_FILES = (
     "verdict.json",
     "verdict_contract.json",
 )
+_M5_DYNAMIC_RESULT_FILES = frozenset(
+    {
+        "selective_scientific_cases.tsv",
+        "verdict.json",
+    }
+)
+_M5_REQUIRED_PACKET_ROLES = (
+    ("README.md", "packet_summary"),
+    ("architecture_authority_audit.tsv", "architecture_authority_audit"),
+    ("candidate_manifest.json", "frozen_candidate"),
+    ("comparison_dimensions.tsv", "comparison_matrix"),
+    ("evidence_manifest.tsv", "external_evidence_seal"),
+    ("legacy_baseline_receipt.json", "legacy_pointer"),
+    ("public_expected_diff.tsv", "public_surface_gate"),
+    ("rollback_rehearsal.json", "rollback_receipt"),
+    ("selective_scientific_cases.tsv", "selective_gate"),
+    ("verdict.json", "derived_verdict"),
+    ("verdict_contract.json", "verdict_rules"),
+)
+# Independent package-code trust root for every frozen packet payload. The two
+# result-bearing files above remain variable so the comparator can derive
+# NARROW/KILL outcomes from preregistered observations; their roles and schemas
+# are still exact. This digest is over normalized artifact-index rows excluding
+# those two result files, not over the mutable index file itself.
+_M5_STATIC_INVENTORY_CONTRACT_SHA256 = (
+    "EDDD6E13990E00A5F010860709F7117C7662BAECA8277D84D7E72A08B26A8F66"
+)
 _M5_INDEX_FIELDS = ("path", "sha256", "size_bytes", "role")
 _M5_EVIDENCE_FIELDS = ("path", "sha256", "role")
 _M5_AUTHORITY_AUDIT_FIELDS = (
@@ -1684,6 +1711,7 @@ def validate_m5_successor_verdict_packet(
         cases=cases,
         rollback=rollback,
     )
+    _validate_m5_static_inventory_contract(inventory)
 
     return M5SuccessorVerdictReceipt(
         candidate_merge_sha=str(candidate["candidate_merge_sha"]),
@@ -1830,7 +1858,29 @@ def _validate_m5_packet_inventory(packet_root: Path) -> tuple[dict[str, object],
                 "role": row["role"],
             }
         )
-    return tuple(normalized)
+    normalized_inventory = tuple(normalized)
+    if tuple(
+        (str(row["path"]), str(row["role"])) for row in normalized_inventory
+    ) != _M5_REQUIRED_PACKET_ROLES:
+        raise Package0ComparatorError(
+            "M5 artifact roles differ from the packet contract"
+        )
+    return normalized_inventory
+
+
+def _validate_m5_static_inventory_contract(
+    inventory: tuple[dict[str, object], ...],
+) -> None:
+    static_inventory = tuple(
+        row for row in inventory if row["path"] not in _M5_DYNAMIC_RESULT_FILES
+    )
+    if (
+        _canonical_value_sha256(static_inventory)
+        != _M5_STATIC_INVENTORY_CONTRACT_SHA256
+    ):
+        raise Package0ComparatorError(
+            "M5 frozen packet payload differs from its package-code trust root"
+        )
 
 
 def _validate_m5_candidate_manifest(
@@ -2436,12 +2486,26 @@ def _validate_m5_verdict(
 
 def _m5_json_mapping(path: Path) -> Mapping[str, object]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_m5_unique_json_mapping,
+        )
     except (OSError, json.JSONDecodeError) as exc:
         raise Package0ComparatorError(f"M5 JSON is unreadable: {path}") from exc
     if not isinstance(value, Mapping):
         raise Package0ComparatorError(f"M5 JSON must contain an object: {path}")
     return value
+
+
+def _m5_unique_json_mapping(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    mapping: dict[str, object] = {}
+    for key, value in pairs:
+        if key in mapping:
+            raise Package0ComparatorError(f"M5 JSON contains duplicate key: {key}")
+        mapping[key] = value
+    return mapping
 
 
 def _m5_tsv_rows(

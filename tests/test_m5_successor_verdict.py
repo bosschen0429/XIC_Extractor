@@ -96,6 +96,95 @@ def test_m5_packet_rejects_non_utf8_sealed_text(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "filename",
+    (
+        "candidate_manifest.json",
+        "legacy_baseline_receipt.json",
+        "rollback_rehearsal.json",
+        "verdict.json",
+        "verdict_contract.json",
+    ),
+)
+def test_m5_packet_rejects_duplicate_top_level_json_keys(
+    tmp_path: Path,
+    filename: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"duplicate-key-{filename}")
+    payload_path = packet / filename
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    key = next(iter(payload))
+    duplicate = f"  {json.dumps(key)}: {json.dumps(payload[key])},\n"
+    payload_path.write_text(
+        payload_path.read_text(encoding="utf-8").replace("{\n", "{\n" + duplicate, 1),
+        encoding="utf-8",
+    )
+    _refresh_index(packet, filename)
+
+    with pytest.raises(Package0ComparatorError, match="duplicate key"):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
+def test_m5_packet_rejects_duplicate_nested_json_keys(tmp_path: Path) -> None:
+    packet = _copy_packet(tmp_path / "duplicate-nested-key")
+    payload_path = packet / "candidate_manifest.json"
+    payload = payload_path.read_text(encoding="utf-8")
+    assert payload.count('"issue": 161') == 1
+    payload_path.write_text(
+        payload.replace(
+            '"issue": 161',
+            '"issue": 161,\n      "issue": 161',
+            1,
+        ),
+        encoding="utf-8",
+    )
+    _refresh_index(packet, "candidate_manifest.json")
+
+    with pytest.raises(Package0ComparatorError, match="duplicate key"):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
+def test_m5_packet_rejects_reindexed_human_summary(tmp_path: Path) -> None:
+    packet = _copy_packet(tmp_path / "rewritten-summary")
+    summary_path = packet / "README.md"
+    summary_path.write_text(
+        summary_path.read_text(encoding="utf-8")
+        + "\nContradictory claim: verdict GO with Matrix authority.\n",
+        encoding="utf-8",
+    )
+    _refresh_index(packet, "README.md")
+
+    with pytest.raises(Package0ComparatorError, match="package-code trust root"):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
+def test_m5_packet_rejects_rewritten_artifact_role(tmp_path: Path) -> None:
+    packet = _copy_packet(tmp_path / "rewritten-artifact-role")
+    index_path = packet / "artifact_index.tsv"
+    rows = _read_tsv(index_path)
+    rows[0]["role"] = "product_authority"
+    _write_tsv(index_path, rows)
+
+    with pytest.raises(Package0ComparatorError, match="artifact roles differ"):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
 def test_m5_packet_binds_frozen_candidate_legacy_rollback_and_narrow_verdict() -> None:
     receipt = validate_m5_successor_verdict_packet(
         PACKET,

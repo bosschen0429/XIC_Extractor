@@ -21,7 +21,12 @@ baseline instrumentation is missing.
 `artifact_index.tsv` seals every packet payload as UTF-8 text canonicalized to
 LF before digest and size validation. CRLF/LF checkout representation is not
 artifact identity; invalid UTF-8 and substantive content changes still fail
-closed. The package-owned validator in
+closed. Package code independently seals every non-result packet payload and
+every artifact role, so the mutable index cannot legitimize a rewritten human
+summary or authority label. Only the preregistered case observations and their
+derived verdict remain result-bearing; their schemas and roles stay exact.
+All JSON objects reject duplicate keys at every nesting level before any
+authority or verdict is interpreted. The package-owned validator in
 `xic_extractor.package0_successor_comparator` derives the verdict, verifies the
 candidate commit/tree/source seal and legacy pointer, and binds all 40 evidence
 locators to the 20 exact tracked files in `evidence_manifest.tsv`.
