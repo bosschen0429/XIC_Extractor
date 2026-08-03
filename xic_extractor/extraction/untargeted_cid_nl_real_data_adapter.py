@@ -53,6 +53,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     CidNlMethodAssessmentContractError,
     CidNlMethodAssessmentRef,
+    CidNlTechnicalState,
     mint_cid_nl_method_assessment_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -90,6 +91,9 @@ VALIDATION_STATUS = "diagnostic_only"
 _ADAPTER_NAMESPACE = "xic_extractor.untargeted_cid_nl_real_data_adapter"
 _WRITER_ROUNDING_REL_TOL = 5e-6
 _WRITER_ROUNDING_ABS_TOL = 5e-6
+_NON_DIRECT_PRECURSOR_BASIS_REASON = (
+    "non_direct_precursor_basis_not_supported"
+)
 
 
 class UntargetedCidNlRealDataAdapterError(ValueError):
@@ -230,6 +234,32 @@ def adapt_current_discovery_sample_subject(
             ),
             acquisition=None,
             source_candidate_ids=(),
+            strict_scan_count=0,
+            lineage_artifacts=lineage,
+        )
+    if not _supports_direct_precursor_assessment(bounded):
+        assessment = _mint_assessment(
+            processing_owners=processing_owners,
+            sample=sample,
+            method_subject=method_subject,
+            settings=settings,
+            support_policy=support_policy,
+            technical_state="unsupported",
+            technical_reason_code=_NON_DIRECT_PRECURSOR_BASIS_REASON,
+        )
+        if _observer is not None:
+            _observer.record_artifact(assessment.artifact)
+        lineage = canonical_current_attempt_artifact_closure(
+            producer_attempt=processing_owners.attempt,
+            artifacts=(assessment.artifact,),
+        )
+        return UntargetedCidNlRealDataAdapterResult(
+            assessment_input=UntargetedCidNlAssessmentInput(
+                sample=sample,
+                assessment=assessment,
+            ),
+            acquisition=None,
+            source_candidate_ids=tuple(item.candidate_id for item in bounded),
             strict_scan_count=0,
             lineage_artifacts=lineage,
         )
@@ -703,7 +733,10 @@ def _mint_assessment(
     evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...] = (),
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...] = (),
+    technical_state: CidNlTechnicalState = "evaluated",
+    technical_reason_code: str | None = None,
 ):
+    search_completed = technical_state == "evaluated"
     try:
         return mint_cid_nl_method_assessment_ref(
             processing_owners=processing_owners,
@@ -716,18 +749,30 @@ def _mint_assessment(
                 query_rt_min=settings.rt_min,
                 query_rt_max=settings.rt_max,
                 support_policy=support_policy,
-                acquisition_supported=True,
-                search_completed=True,
-                scanned_event_count=len(evidence_refs),
-                reason_code=None,
+                acquisition_supported=technical_state != "unsupported",
+                search_completed=search_completed,
+                scanned_event_count=(len(evidence_refs) if search_completed else 0),
+                reason_code=technical_reason_code,
             ),
             candidate_peaks=candidate_peaks,
             evidence_refs=evidence_refs,
             individual_support_refs=individual_support_refs,
             set_relation_refs=set_relation_refs,
+            technical_state=technical_state,
         )
     except CidNlMethodAssessmentContractError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
+
+
+def _supports_direct_precursor_assessment(
+    candidates: tuple[DiscoveryCandidate, ...],
+) -> bool:
+    """Return whether M1 may evaluate the complete bounded receipt universe."""
+
+    return bool(candidates) and all(
+        candidate.precursor_mz_basis == "scan_precursor"
+        for candidate in candidates
+    )
 
 
 def _bounded_subject_candidates(

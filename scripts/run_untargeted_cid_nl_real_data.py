@@ -271,6 +271,7 @@ def _run(
             {
                 "sample_stem": item.job.sample.metadata.raw_stem,
                 "sample_role": item.job.sample.metadata.sample_role,
+                "technical_state": assessment.content.technical_state,
                 "method_result": assessment.content.method_result,
                 "reason_codes": list(assessment.content.reason_codes),
                 "source_candidate_count": len(adapter.source_candidate_ids),

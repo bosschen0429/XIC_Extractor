@@ -154,6 +154,59 @@ def test_adapter_closes_empty_subject_universe_as_hold_without_xic(
     assert vendor_raw.chromatogram_request_counts == []
 
 
+@pytest.mark.parametrize("include_direct_candidate", [False, True])
+def test_adapter_marks_complete_inferred_precursor_universe_unsupported_without_raw(
+    tmp_path: Path,
+    include_direct_candidate: bool,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    direct = _current_candidates(
+        _FakeRaw((8.0,)),
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )[0]
+    inferred = replace(
+        direct,
+        candidate_id=f"{direct.candidate_id}:inferred",
+        precursor_mz_basis="product_plus_neutral_loss",
+    )
+    candidates = (direct, inferred) if include_direct_candidate else (inferred,)
+
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=None,
+    )
+
+    assessment = result.assessment_input.assessment
+    assert assessment.content.technical_state == "unsupported"
+    assert assessment.content.method_result is None
+    assert assessment.content.reason_codes == (
+        "non_direct_precursor_basis_not_supported",
+    )
+    assert assessment.content.evaluation_receipt.acquisition_supported is False
+    assert assessment.content.evaluation_receipt.search_completed is False
+    assert assessment.candidate_peaks == ()
+    assert assessment.evidence_refs == ()
+    assert result.assessment_input.discovery_projections == ()
+    assert result.acquisition is None
+    assert result.source_candidate_ids == tuple(
+        candidate.candidate_id for candidate in candidates
+    )
+    assert result.strict_scan_count == 0
+
+
 def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> None:
     fixture = build_issue175_no_raw_fixture(
         tmp_path,

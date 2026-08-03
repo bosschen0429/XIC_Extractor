@@ -134,6 +134,7 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     assert summary["terminal_state"] == "quant_matrix_version_built"
     assert summary["sample_count"] == 1
     assert summary["pending_acceptance_count"] == 0
+    assert summary["samples"][0]["technical_state"] == "evaluated"
     assert summary["samples"][0]["method_result"] == "SUPPORT"
     assert summary["samples"][0]["strict_scan_count"] == 2
     assert (output_dir / "untargeted_cid_nl_source.json").is_file()

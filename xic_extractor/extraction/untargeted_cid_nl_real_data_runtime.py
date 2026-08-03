@@ -62,6 +62,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterResult,
     UntargetedCidNlRecoveryAttemptResult,
     _bounded_subject_candidates,
+    _supports_direct_precursor_assessment,
     _UntargetedRealDataWorkObserver,
     adapt_current_discovery_sample_subject,
     recover_untargeted_cid_nl_sample_subject,
@@ -254,20 +255,21 @@ def execute_untargeted_cid_nl_real_data_runtime(
             "runtime manifest must exactly match the declared M7 work units"
         )
 
-    bounded_by_key: dict[str, bool] = {}
+    direct_assessment_by_key: dict[str, bool] = {}
     planning_errors: dict[str, Exception] = {}
     for job in jobs:
         try:
-            bounded_by_key[job.work_unit_key] = bool(
-                _bounded_subject_candidates(
-                    job.candidates,
-                    sample=job.sample,
-                    method_subject=job.method_subject,
-                    settings=job.settings,
-                )
+            bounded = _bounded_subject_candidates(
+                job.candidates,
+                sample=job.sample,
+                method_subject=job.method_subject,
+                settings=job.settings,
+            )
+            direct_assessment_by_key[job.work_unit_key] = (
+                _supports_direct_precursor_assessment(bounded)
             )
         except Exception as exc:
-            bounded_by_key[job.work_unit_key] = False
+            direct_assessment_by_key[job.work_unit_key] = False
             planning_errors[job.work_unit_key] = exc
     eligible_jobs = tuple(
         job
@@ -276,7 +278,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
         and job.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
     )
     recovery_upper_bound_met = sum(
-        bounded_by_key[job.work_unit_key] for job in eligible_jobs
+        direct_assessment_by_key[job.work_unit_key] for job in eligible_jobs
     ) >= minimum_direct_support_count(len(eligible_jobs))
 
     states: list[_RuntimeJobState] = []
@@ -284,7 +286,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
     for job in jobs:
         resource_key: str | None = None
         error: Exception | None = planning_errors.get(job.work_unit_key)
-        initial_requires_raw = bounded_by_key[job.work_unit_key]
+        initial_requires_raw = direct_assessment_by_key[job.work_unit_key]
         try:
             recovery_may_need_raw = (
                 error is None

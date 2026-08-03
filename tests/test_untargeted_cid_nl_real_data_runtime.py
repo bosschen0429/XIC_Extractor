@@ -158,6 +158,83 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
     assert projection.input_quant_matrix_rows[0]["S2"] == ""
 
 
+def test_runtime_does_not_open_raw_for_unsupported_inferred_precursor_universe(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    raw_path = tmp_path / "S1.synthetic"
+    raw_path.write_bytes(b"m7-runtime-unsupported:S1")
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    direct = _current_candidates(
+        _FakeRaw((8.0,)),
+        raw_file=raw_path,
+        settings=settings,
+        peak_config=peak_config,
+    )[0]
+    inferred = replace(direct, precursor_mz_basis="product_plus_neutral_loss")
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        neutral_loss_da=116.0474,
+    )
+    context = build_untargeted_cid_nl_real_data_context(
+        raw_paths=(raw_path,),
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+        ),
+        method_subject=subject,
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample={"S1": (inferred,)},
+        sample_identity_namespace="study:m7-runtime-unsupported-test",
+    )
+    job = UntargetedCidNlRealDataRuntimeJob(
+        processing_owners=context.processing_owners,
+        sample=context.samples[0],
+        method_subject=context.method_subject,
+        candidates=context.candidates_by_sample["S1"],
+        settings=context.settings,
+        peak_config=context.peak_config,
+        raw_path=raw_path,
+        dll_dir=tmp_path,
+        work_unit_key="untargeted-cid-nl:S1",
+    )
+    runtime = start_runtime_attempt(
+        attempt=context.processing_owners.attempt,
+        work_unit_keys=(job.work_unit_key,),
+        owner_completeness_attestation="untargeted-cid-nl-m7-test:v1",
+    )
+
+    def _unexpected_open(*_args, **_kwargs):
+        raise AssertionError("unsupported inferred precursor must not open RAW")
+
+    monkeypatch.setattr(runtime_module, "open_raw", _unexpected_open)
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        (job,),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "m7.unsupported.runtime.json",
+            "untargeted-cid-nl-m7:test",
+        ),
+    )
+
+    assert result.succeeded is True
+    assert len(result.sample_results) == 1
+    adapter = result.sample_results[0].adapter_result
+    assert adapter.assessment_input.assessment.content.technical_state == "unsupported"
+    assert adapter.assessment_input.assessment.content.method_result is None
+    assert adapter.source_candidate_ids == (inferred.candidate_id,)
+    assert adapter.acquisition is None
+    assert result.sample_results[0].recovery_attempt is None
+
+
 def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
     tmp_path: Path,
     monkeypatch,
