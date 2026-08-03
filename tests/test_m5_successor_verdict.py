@@ -186,6 +186,69 @@ def test_m5_packet_rejects_verdict_contract_semantic_drift(
         )
 
 
+@pytest.mark.parametrize(
+    ("filename", "message"),
+    (
+        ("candidate_manifest.json", "candidate manifest field set differs"),
+        ("legacy_baseline_receipt.json", "legacy receipt field set differs"),
+        ("rollback_rehearsal.json", "rollback packet field set differs"),
+        ("verdict.json", "verdict field set differs"),
+    ),
+)
+def test_m5_packet_rejects_undeclared_json_contract_fields(
+    tmp_path: Path,
+    filename: str,
+    message: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"undeclared-{filename}")
+    payload_path = packet / filename
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    payload["matrix_authority_granted"] = True
+    payload_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_index(packet, filename)
+
+    with pytest.raises(Package0ComparatorError, match=message):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    (
+        ("baseline_id", "rewritten-baseline"),
+        ("source_commit_sha", "0" * 40),
+        ("canonical_output_inventory_sha256", "0" * 64),
+    ),
+)
+def test_m5_packet_rejects_legacy_baseline_identity_drift(
+    tmp_path: Path,
+    field: str,
+    replacement: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"legacy-identity-{field}")
+    receipt_path = packet / "legacy_baseline_receipt.json"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt[field] = replacement
+    receipt_path.write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_index(packet, "legacy_baseline_receipt.json")
+
+    with pytest.raises(Package0ComparatorError, match="baseline identity differs"):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
 def test_m5_packet_rejects_stale_candidate_sha() -> None:
     with pytest.raises(Package0ComparatorError, match="stale frozen candidate"):
         validate_m5_successor_verdict_packet(

@@ -44,7 +44,10 @@ evidence can never become GO. The verdict contract pins its complete ordered GO
 requirements, states, and rule set. Comparison-dimension and public hard-zero
 rows are exact sealed claims. Verdict and rollback receipts can be minted only
 by their comparator validators; direct construction or replacement cannot
-impersonate validated evidence.
+impersonate validated evidence. Candidate, legacy, rollback, and verdict JSON
+objects reject undeclared fields. The legacy baseline ID, source commit, and
+output inventory digest are pinned independently, and the source commit must
+resolve to a Git commit object.
 
 This packet grants no Matrix, selected-area, counted-detection, writer,
 workbook, config, activation, cutover, branch-deletion, or legacy-retirement

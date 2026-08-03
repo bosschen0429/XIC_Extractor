@@ -167,6 +167,71 @@ _M5_PUBLIC_DIFF_FIELDS = (
     "evidence_locator",
     "authority",
 )
+_M5_CANDIDATE_FIELDS = frozenset(
+    {
+        "activation_base_sha",
+        "candidate_merge_sha",
+        "candidate_scope",
+        "candidate_tree_sha",
+        "canonical_package4_go_reachable",
+        "design_base_sha",
+        "excluded_milestones",
+        "included_milestones",
+        "known_preexisting_followups",
+        "product_authority_granted",
+        "schema_version",
+        "source_files",
+        "validation_status",
+    }
+)
+_M5_LEGACY_FIELDS = frozenset(
+    {
+        "baseline_id",
+        "baseline_replay_status",
+        "canonical_output_inventory_sha256",
+        "external_legacy_replay_performed",
+        "legacy_is_scientific_truth",
+        "schema_version",
+        "source_commit_sha",
+        "tracked_files",
+        "tracked_pointer_verified",
+        "validation_status",
+    }
+)
+_M5_ROLLBACK_FIELDS = frozenset(
+    {
+        "active_authority_after",
+        "active_authority_before",
+        "candidate_evidence_retained",
+        "evidence_locator",
+        "mixed_authority_observed",
+        "product_output_changed",
+        "recorded_owner_receipt",
+        "schema_version",
+        "status",
+        "status_transition",
+        "successor_product_authority",
+    }
+)
+_M5_VERDICT_FIELDS = frozenset(
+    {
+        "automatic_cutover_authorized",
+        "candidate_defects",
+        "candidate_merge_sha",
+        "evaluated_scope",
+        "excluded_scope",
+        "gate_status",
+        "known_preexisting_followups",
+        "legacy_retirement_authorized",
+        "missing_evidence",
+        "product_authority_granted",
+        "retained_scope",
+        "schema_version",
+        "validation_status",
+        "verdict",
+        "writer_expansion_authorized",
+    }
+)
 _M5_REQUIRED_DIMENSIONS = frozenset(
     {
         "dependency_crossings",
@@ -214,6 +279,13 @@ _M5_REQUIRED_RETAINED_SCOPE = (
 _M5_REQUIRED_KNOWN_FOLLOWUPS = (
     "Issue #105 RT/time-window precision",
     "Issue #156 Gap 10 complete-group ownership",
+)
+_M5_REQUIRED_LEGACY_BASELINE_ID = "cid_nl_legacy_baseline_6d3b18ef_8raw_v2"
+_M5_REQUIRED_LEGACY_SOURCE_COMMIT_SHA = (
+    "6d3b18efd88971ffb6d96412a8d8ee47e8ed4742"
+)
+_M5_REQUIRED_LEGACY_OUTPUT_INVENTORY_SHA256 = (
+    "CC25A6A731C822F9147FECAB5949EAABB79D0415FCA67436365CEC035B4293B1"
 )
 _M5_REQUIRED_MISSING_EVIDENCE = (
     "complete #126/#127 Package 4 scientific gate revalidation",
@@ -1739,6 +1811,8 @@ def _validate_m5_candidate_manifest(
     repo_root: Path,
     expected_candidate_sha: str,
 ) -> None:
+    if set(candidate) != _M5_CANDIDATE_FIELDS:
+        raise Package0ComparatorError("M5 candidate manifest field set differs")
     if candidate.get("schema_version") != _M5_CANDIDATE_SCHEMA:
         raise Package0ComparatorError("M5 candidate manifest schema differs")
     candidate_sha = _m5_commit_sha(
@@ -1862,6 +1936,8 @@ def _validate_m5_legacy_receipt(
     *,
     repo_root: Path,
 ) -> None:
+    if set(legacy) != _M5_LEGACY_FIELDS:
+        raise Package0ComparatorError("M5 legacy receipt field set differs")
     if legacy.get("schema_version") != _M5_LEGACY_SCHEMA:
         raise Package0ComparatorError("M5 legacy receipt schema differs")
     if (
@@ -1872,6 +1948,24 @@ def _validate_m5_legacy_receipt(
         or legacy.get("baseline_replay_status") != "sealed_receipt_reused_no_raw_rerun"
     ):
         raise Package0ComparatorError("M5 legacy receipt overclaims replay authority")
+    source_commit_sha = _m5_commit_sha(
+        legacy.get("source_commit_sha"),
+        field="M5 legacy source_commit_sha",
+    )
+    if (
+        legacy.get("baseline_id") != _M5_REQUIRED_LEGACY_BASELINE_ID
+        or source_commit_sha != _M5_REQUIRED_LEGACY_SOURCE_COMMIT_SHA
+        or legacy.get("canonical_output_inventory_sha256")
+        != _M5_REQUIRED_LEGACY_OUTPUT_INVENTORY_SHA256
+    ):
+        raise Package0ComparatorError("M5 legacy baseline identity differs")
+    if (
+        _m5_git_bytes(repo_root, "cat-file", "-t", source_commit_sha)
+        .decode("ascii")
+        .strip()
+        != "commit"
+    ):
+        raise Package0ComparatorError("M5 legacy source Git object is not a commit")
     tracked_files = legacy.get("tracked_files")
     if not isinstance(tracked_files, list) or not tracked_files:
         raise Package0ComparatorError("M5 legacy tracked file seal is missing")
@@ -2124,6 +2218,8 @@ def _validate_m5_rollback_packet(
     *,
     repo_root: Path,
 ) -> None:
+    if set(rollback) != _M5_ROLLBACK_FIELDS:
+        raise Package0ComparatorError("M5 rollback packet field set differs")
     if rollback.get("schema_version") != _M5_ROLLBACK_SCHEMA or (
         rollback.get("status") != "pass"
         or rollback.get("status_transition") != "staged_candidate->rolled_back"
@@ -2178,6 +2274,8 @@ def _validate_m5_verdict(
     cases: tuple[dict[str, str], ...],
     rollback: Mapping[str, object],
 ) -> str:
+    if set(verdict) != _M5_VERDICT_FIELDS:
+        raise Package0ComparatorError("M5 verdict field set differs")
     if verdict.get("schema_version") != _M5_PACKET_SCHEMA or (
         verdict.get("validation_status") != "diagnostic_only"
         or verdict.get("evaluated_scope") != "cid_nl_successor_shadow_substrate"
