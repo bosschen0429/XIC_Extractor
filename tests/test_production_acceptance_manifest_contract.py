@@ -3,6 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.check_production_acceptance_manifest import (
     ACCEPTANCE_DECISIONS,
     PRODUCTION_ACCEPTANCE_MANIFEST_SCHEMA,
@@ -223,6 +225,45 @@ def test_checker_rejects_source_path_traversal(tmp_path: Path) -> None:
         problems = _check_manifest(manifest)
 
         assert any(f"{field} must stay within repo_root" in p for p in problems)
+
+
+@pytest.mark.parametrize("alias_kind", ("leaf", "parent"))
+def test_checker_classifies_resolved_authority_source_path(
+    tmp_path: Path,
+    alias_kind: str,
+) -> None:
+    manifest = tmp_path / "production_acceptance.tsv"
+    row = _valid_accept_row()
+    row["source_artifact_relpath"] = "validation/approved/source.tsv"
+    _write_manifest(manifest, [row])
+
+    approved_dir = tmp_path / "validation/approved"
+    forbidden_dir = tmp_path / "validation/lockbox_shadow_automation"
+    forbidden_dir.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if alias_kind == "leaf":
+            forbidden_dir.mkdir()
+            (approved_dir / "source.tsv").rename(forbidden_dir / "source.tsv")
+            (approved_dir / "source.tsv").symlink_to(
+                Path("../lockbox_shadow_automation/source.tsv")
+            )
+        else:
+            approved_dir.rename(forbidden_dir)
+            approved_dir.symlink_to(
+                Path("lockbox_shadow_automation"),
+                target_is_directory=True,
+            )
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Windows runner lacks symbolic-link privilege")
+        raise
+
+    problems = _check_manifest(manifest)
+
+    assert any(
+        "direct shadow/report/gallery/candidate source" in problem
+        for problem in problems
+    )
 
 
 def test_checker_rejects_missing_source_path_without_crashing(

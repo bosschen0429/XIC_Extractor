@@ -13,6 +13,10 @@ The quant matrix is the product-facing numeric matrix. It separates detected val
   checked rows instead of reopening the path. The lower-level
   `QuantMatrixVersion` row builder is a pure renderer and does not grant
   authority to caller-authored mappings.
+- Forbidden authority-source classification applies to both the normalized
+  manifest spelling and its resolved in-repo target. A symlink alias cannot
+  relabel a shadow, report, gallery, or candidate artifact as an accepted
+  Matrix source.
 - Quant matrix, identity, manifest, and expected-diff source-summary digests bind
   the same byte snapshots that were parsed and consumed. They are not hashes of
   a later reread of the input paths.

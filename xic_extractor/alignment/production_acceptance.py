@@ -378,14 +378,23 @@ def _check_manifest_row(
     _check_primary_key(row, row_number, accepted, write_authority, problems)
     _check_basis(row_number, decision, basis, problems)
     _check_counts(row, row_number, problems)
-    _check_hashes_and_paths(
+    resolved_source_paths = _check_hashes_and_paths(
         row,
         row_number,
         expected_manifest_sha,
         repo_root,
         problems,
     )
-    _check_write_blockers(row, row_number, accepted, write_authority, problems)
+    _check_write_blockers(
+        row,
+        row_number,
+        accepted,
+        write_authority,
+        resolved_source_artifact_relpath=resolved_source_paths.get(
+            "source_artifact_relpath"
+        ),
+        problems=problems,
+    )
 
 
 def _bool_fields(
@@ -486,7 +495,8 @@ def _check_hashes_and_paths(
     expected_manifest_sha: str,
     repo_root: Path,
     problems: list[str],
-) -> None:
+) -> dict[str, str]:
+    resolved_source_paths: dict[str, str] = {}
     for field in (
         "doublet_source_sha256",
         "source_artifact_sha256",
@@ -513,6 +523,9 @@ def _check_hashes_and_paths(
         )
         if path is None:
             continue
+        resolved_source_paths[field] = path.relative_to(
+            repo_root.resolve()
+        ).as_posix()
         _check_source_artifact_hash(
             path=path,
             relative_path=value,
@@ -521,6 +534,7 @@ def _check_hashes_and_paths(
             row_number=row_number,
             problems=problems,
         )
+    return resolved_source_paths
 
 
 def _resolve_source_path(
@@ -572,6 +586,7 @@ def _check_write_blockers(
     row_number: int,
     accepted: bool,
     write_authority: bool,
+    resolved_source_artifact_relpath: str | None,
     problems: list[str],
 ) -> None:
     if not (accepted or write_authority):
@@ -606,11 +621,12 @@ def _check_write_blockers(
         problems.append(
             f"row {row_number}: naked alignment_cells area cannot grant authority",
         )
-    source_path = row.get("source_artifact_relpath", "").replace("\\", "/")
-    normalized_source_path = source_path.casefold()
     if any(
-        token.casefold() in normalized_source_path
-        for token in FORBIDDEN_WRITE_SOURCE_TOKENS
+        _is_forbidden_write_source_path(source_path)
+        for source_path in (
+            row.get("source_artifact_relpath", ""),
+            resolved_source_artifact_relpath or "",
+        )
     ):
         problems.append(
             f"row {row_number}: direct shadow/report/gallery/candidate source "
@@ -621,6 +637,11 @@ def _check_write_blockers(
     )
     if strict_risks and not _tokens(row.get("closure_rule_ids", "")):
         problems.append(f"row {row_number}: strict risk requires closure_rule_ids")
+
+
+def _is_forbidden_write_source_path(value: str) -> bool:
+    normalized_path = value.replace("\\", "/").casefold()
+    return any(token in normalized_path for token in FORBIDDEN_WRITE_SOURCE_TOKENS)
 
 
 def _read_json(path: Path, problems: list[str], label: str) -> dict[str, Any]:

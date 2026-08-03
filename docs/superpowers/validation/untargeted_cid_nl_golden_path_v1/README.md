@@ -61,10 +61,11 @@ is `not_needed_existing_owners`.
   JSON booleans cannot alias numeric precursor, tolerance, or neutral-loss
   fields.
 - `production_acceptance` is the single manifest authority owner. It reads and
-  validates one exact byte snapshot, case-folds the registered forbidden-source
-  policy for Windows-compatible classification, and mints deeply immutable
-  checked rows. The terminal and file-backed QuantMatrix adapter consume that
-  receipt rather than reopening the manifest.
+  validates one exact byte snapshot, case-folds both the manifest spelling and
+  resolved in-repo target for Windows-compatible forbidden-source
+  classification, and mints deeply immutable checked rows. The terminal and
+  file-backed QuantMatrix adapter consume that receipt rather than reopening the
+  manifest.
 - `QuantMatrixVersionRows` are deeply immutable after projection. Source-summary
   hashes bind the exact matrix, identity, manifest, and expected-diff snapshots
   that were consumed, not a later path reread.
@@ -83,14 +84,14 @@ tests. The resulting authority ceiling remains `production_candidate`.
 
 Observed on this checkout:
 
-- focused manifest/golden-path authority suites: 41 passed;
+- focused manifest/golden-path authority suites: 43 passed;
 - downstream activation, consumer, and M5 regression suites: 125 passed;
 - `docs-config`: 728 passed, 1 skipped;
 - `gui`: 110 passed;
 - `targeted-core`: 1,257 passed, 1 skipped;
 - `alignment-core`: 2,553 passed;
 - `product-gates-activation`: 894 passed, 1 skipped;
-- `product-gates-evidence`: 700 passed;
+- `product-gates-evidence`: 702 passed;
 - `diagnostics-tools`: 356 passed, 1 skipped;
 - Ruff, mypy (493 source files), import-linter (4 contracts), architecture
   census, bootstrap offline check, diagnostics index, and docs audit passed.
