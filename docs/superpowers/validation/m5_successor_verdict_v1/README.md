@@ -26,15 +26,13 @@ closed. The package-owned validator in
 candidate commit/tree/source seal and legacy pointer, and binds all 40 evidence
 locators to the 20 exact tracked files in `evidence_manifest.tsv`.
 `architecture_authority_audit.tsv` records two zero-crossing checks and five
-single-owner responsibilities for the frozen scope. Its bounded static census
-recognizes canonical and direct module-attribute constructors, `from`-import,
-name and single module-attribute aliases, and typed `dataclasses.replace`
-transitions regardless of public/private function naming. This is current-tree
-regression evidence, not a complete Python semantic or security proof; multi-hop
-module-attribute re-export chains and dynamic indirection are outside its claim.
-A second producer expressed through the supported forms fails while a private
-accessor to an existing ref does not. The census is recomputed for every packet
-validation so a long-lived process cannot reuse a stale source inventory.
+single-owner responsibilities observed on the frozen scope. The validator pins
+every audit row exactly, including boundary, count, evidence maturity, locator,
+and claim limit. It intentionally does not reinterpret a later source tree or
+act as a Python semantic analyser. Dependency and ownership regressions on the
+PR head are owned by the repository's `lint-imports`, architecture census, and
+focused tests; a later tree requires its own current CI evidence rather than
+retroactively changing this point-in-time verdict.
 Selective cases seal their pre-registered question, expectation, evidence, and
 failure effect so observed failure can honestly derive NARROW or KILL instead of
 invalidating the packet.

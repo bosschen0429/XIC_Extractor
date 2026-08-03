@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import csv
 import hashlib
 import io
@@ -238,39 +237,97 @@ _M5_REQUIRED_CANDIDATE_FOLLOWUPS = (
     (105, "RT/time-window serialization and lookup precision"),
     (156, "Gap 10 complete same-target group ownership"),
 )
-_M5_REQUIRED_AUTHORITY_AUDIT_IDS = frozenset(
-    {
+_M5_REQUIRED_AUTHORITY_AUDIT_ROWS = (
+    (
+        _M5_PACKET_SCHEMA,
         "forbidden_dependency_crossings",
+        "dependency_crossing",
+        "frozen candidate dependency direction",
+        "0",
+        "0",
+        "pass",
+        "ci_static_census",
+        "tests/test_docs_architecture_census.py::"
+        "test_current_architecture_census_is_valid_and_static_only",
+        "Current frozen tree only; no historical improvement claim",
+    ),
+    (
+        _M5_PACKET_SCHEMA,
         "runtime_authority_bypasses",
+        "dependency_crossing",
+        "runtime partial-lifecycle authority bypass",
+        "0",
+        "0",
+        "pass",
+        "ci_static_census",
+        "tests/test_docs_architecture_census.py::"
+        "test_runtime_boundary_authority_rejects_projection_and_reducer_bypasses",
+        "Named runtime boundary only",
+    ),
+    (
+        _M5_PACKET_SCHEMA,
         "cell_observation_owner",
+        "duplicate_authority",
+        "cell observation minting",
+        "1",
+        "1",
+        "pass",
+        "static_owner_inventory",
+        "xic_extractor/alignment/cell_observations.py::mint_cell_observation_ref",
+        "One named owner in frozen CID-NL scope; no behavior-equivalence proof",
+    ),
+    (
+        _M5_PACKET_SCHEMA,
         "candidate_set_relation_owner",
+        "duplicate_authority",
+        "CID-NL candidate set relation",
+        "1",
+        "1",
+        "pass",
+        "static_owner_inventory",
+        "xic_extractor/peak_detection/cid_nl_candidate_set_relation.py::"
+        "resolve_dda_cid_nl_candidate_set_relation_ref",
+        "One named owner in frozen CID-NL scope; no behavior-equivalence proof",
+    ),
+    (
+        _M5_PACKET_SCHEMA,
         "method_assessment_owner",
+        "duplicate_authority",
+        "CID-NL method assessment",
+        "1",
+        "1",
+        "pass",
+        "static_owner_inventory",
+        "xic_extractor/peak_detection/cid_nl_method_assessment.py::"
+        "mint_cid_nl_method_assessment_ref",
+        "One named owner in frozen CID-NL scope; no behavior-equivalence proof",
+    ),
+    (
+        _M5_PACKET_SCHEMA,
         "identity_settlement_owner",
+        "duplicate_authority",
+        "identity model settlement",
+        "1",
+        "1",
+        "pass",
+        "static_owner_inventory",
+        "xic_extractor/alignment/identity_settlement.py::settle_identity_model",
+        "One named owner in frozen CID-NL scope; no repo-wide identity authority claim",
+    ),
+    (
+        _M5_PACKET_SCHEMA,
         "targeted_delivery_owner",
-    }
+        "duplicate_authority",
+        "Targeted delivery and whole-attempt rollback",
+        "1",
+        "1",
+        "pass",
+        "static_owner_inventory",
+        "xic_extractor/extraction/targeted_diagnostic_delivery.py::"
+        "rollback_targeted_diagnostic_delivery_candidate",
+        "One named owner in frozen Targeted diagnostic scope; no product cutover",
+    ),
 )
-_M5_AUTHORITY_OWNER_RETURN_TYPES = {
-    "cell_observation_owner": (
-        "CellObservationRef",
-        "xic_extractor/alignment/cell_observations.py",
-    ),
-    "candidate_set_relation_owner": (
-        "DdaCidNlCandidateSetRelationRef",
-        "xic_extractor/peak_detection/cid_nl_candidate_set_relation.py",
-    ),
-    "method_assessment_owner": (
-        "CidNlMethodAssessmentRef",
-        "xic_extractor/peak_detection/cid_nl_method_assessment.py",
-    ),
-    "identity_settlement_owner": (
-        "IdentitySettlementDecision",
-        "xic_extractor/alignment/identity_settlement.py",
-    ),
-    "targeted_delivery_owner": (
-        "TargetedDiagnosticDeliveryCandidate",
-        "xic_extractor/extraction/targeted_diagnostic_delivery.py",
-    ),
-}
 _M5_SELECTIVE_CASE_CONTRACT_SHA256 = (
     "A87650AE84E941F9B882B4178B5212E42F6443272F6528F136BAE4745C10560A"
 )
@@ -1890,262 +1947,13 @@ def _validate_m5_authority_audit(
     *,
     repo_root: Path,
 ) -> None:
-    audit_ids = {row["audit_id"] for row in rows}
-    if audit_ids != _M5_REQUIRED_AUTHORITY_AUDIT_IDS or len(audit_ids) != len(rows):
+    observed_rows = tuple(
+        tuple(row[field] for field in _M5_AUTHORITY_AUDIT_FIELDS) for row in rows
+    )
+    if observed_rows != _M5_REQUIRED_AUTHORITY_AUDIT_ROWS:
         raise Package0ComparatorError("M5 architecture/authority audit set differs")
-    owner_census = dict(_m5_authority_owner_census(repo_root.resolve()))
     for row in rows:
-        try:
-            expected_count = int(row["expected_count"])
-            observed_count = int(row["observed_count"])
-        except ValueError as exc:
-            raise Package0ComparatorError(
-                "M5 architecture/authority audit count is malformed"
-            ) from exc
-        expected_for_kind = 0 if row["audit_kind"] == "dependency_crossing" else 1
-        if (
-            row["schema_version"] != _M5_PACKET_SCHEMA
-            or row["audit_kind"]
-            not in {"dependency_crossing", "duplicate_authority"}
-            or expected_count != expected_for_kind
-            or observed_count != expected_count
-            or row["status"] != "pass"
-            or not row["responsibility_or_boundary"]
-            or not row["evidence_maturity"]
-            or not row["claim_limit"]
-        ):
-            raise Package0ComparatorError("M5 architecture/authority audit failed")
-        if row["audit_kind"] == "duplicate_authority":
-            return_type, expected_owner = _M5_AUTHORITY_OWNER_RETURN_TYPES[
-                row["audit_id"]
-            ]
-            observed_owners = set(owner_census[return_type])
-            locator_path = row["evidence_locator"].partition("::")[0]
-            if observed_owners != {expected_owner} or locator_path != expected_owner:
-                raise Package0ComparatorError(
-                    "M5 duplicate-authority executable census differs"
-                )
         _validate_m5_locator(repo_root, row["evidence_locator"])
-
-
-def _m5_authority_owner_census(
-    repo_root: Path,
-) -> tuple[tuple[str, tuple[str, ...]], ...]:
-    source_root = repo_root / "xic_extractor"
-    if not source_root.is_dir() or source_root.is_symlink():
-        raise Package0ComparatorError("M5 authority census source root is missing")
-    modules_by_return_type: dict[str, set[str]] = {
-        return_type: set()
-        for return_type, _owner in _M5_AUTHORITY_OWNER_RETURN_TYPES.values()
-    }
-    for path in source_root.rglob("*.py"):
-        if path.is_symlink():
-            raise Package0ComparatorError(
-                "M5 authority census rejects symlinked sources"
-            )
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, SyntaxError) as exc:
-            raise Package0ComparatorError(
-                f"M5 authority census cannot parse {path}"
-            ) from exc
-        relative = path.relative_to(repo_root).as_posix()
-        return_type_aliases = _m5_return_type_aliases(tree)
-        replace_names, dataclasses_module_names = _m5_dataclass_replace_aliases(tree)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Call):
-                constructed_type = _m5_resolved_authority_constructor_type(
-                    node.func,
-                    aliases=return_type_aliases,
-                )
-                if constructed_type is not None:
-                    modules_by_return_type[constructed_type].add(relative)
-                continue
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or (
-                node.returns is None
-            ):
-                continue
-            returned_types = _m5_resolved_return_types(
-                node.returns,
-                aliases=return_type_aliases,
-            )
-            if not returned_types or not any(
-                _m5_is_dataclass_replace_call(
-                    returned,
-                    replace_names=replace_names,
-                    dataclasses_module_names=dataclasses_module_names,
-                )
-                for returned in _m5_direct_function_return_values(node)
-            ):
-                continue
-            for return_type in returned_types:
-                modules_by_return_type[return_type].add(relative)
-    return tuple(
-        (return_type, tuple(sorted(modules)))
-        for return_type, modules in sorted(modules_by_return_type.items())
-    )
-
-
-def _m5_resolved_authority_constructor_type(
-    callee: ast.expr,
-    *,
-    aliases: Mapping[str, str],
-) -> str | None:
-    name: str | None = None
-    if isinstance(callee, ast.Name):
-        name = callee.id
-    elif isinstance(callee, ast.Attribute):
-        name = callee.attr
-    return aliases.get(name) if name is not None else None
-
-
-def _m5_dataclass_replace_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
-    replace_names: set[str] = set()
-    module_names: set[str] = set()
-    assignments: list[tuple[str, ast.expr]] = []
-    for node in tree.body if isinstance(tree, ast.Module) else ():
-        if isinstance(node, ast.ImportFrom) and node.module == "dataclasses":
-            replace_names.update(
-                imported.asname or imported.name
-                for imported in node.names
-                if imported.name == "replace"
-            )
-        elif isinstance(node, ast.Import):
-            module_names.update(
-                imported.asname or imported.name
-                for imported in node.names
-                if imported.name == "dataclasses"
-            )
-        elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(
-            node.targets[0], ast.Name
-        ):
-            assignments.append((node.targets[0].id, node.value))
-        elif (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.value is not None
-        ):
-            assignments.append((node.target.id, node.value))
-    for _pass in range(len(assignments) + 1):
-        changed = False
-        for alias_name, value in assignments:
-            if isinstance(value, ast.Name):
-                if value.id in replace_names and alias_name not in replace_names:
-                    replace_names.add(alias_name)
-                    changed = True
-                if value.id in module_names and alias_name not in module_names:
-                    module_names.add(alias_name)
-                    changed = True
-            elif (
-                isinstance(value, ast.Attribute)
-                and value.attr == "replace"
-                and isinstance(value.value, ast.Name)
-                and value.value.id in module_names
-                and alias_name not in replace_names
-            ):
-                replace_names.add(alias_name)
-                changed = True
-        if not changed:
-            break
-    return replace_names, module_names
-
-
-def _m5_direct_function_return_values(
-    function: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> tuple[ast.expr, ...]:
-    values: list[ast.expr] = []
-    pending: list[ast.AST] = list(function.body)
-    while pending:
-        node = pending.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        if isinstance(node, ast.Return) and node.value is not None:
-            values.append(node.value)
-            continue
-        pending.extend(ast.iter_child_nodes(node))
-    return tuple(values)
-
-
-def _m5_is_dataclass_replace_call(
-    value: ast.expr,
-    *,
-    replace_names: set[str],
-    dataclasses_module_names: set[str],
-) -> bool:
-    if not isinstance(value, ast.Call):
-        return False
-    if isinstance(value.func, ast.Name):
-        return value.func.id in replace_names
-    return (
-        isinstance(value.func, ast.Attribute)
-        and value.func.attr == "replace"
-        and isinstance(value.func.value, ast.Name)
-        and value.func.value.id in dataclasses_module_names
-    )
-
-
-def _m5_return_type_aliases(tree: ast.AST) -> dict[str, str]:
-    canonical = set(_M5_AUTHORITY_OWNER_RETURN_TYPES.values())
-    canonical_names = {return_type for return_type, _owner in canonical}
-    aliases = {name: name for name in canonical_names}
-    assignments: list[tuple[str, ast.expr]] = []
-    for node in tree.body if isinstance(tree, ast.Module) else ():
-        if isinstance(node, ast.ImportFrom):
-            for imported in node.names:
-                if imported.name in canonical_names:
-                    aliases[imported.asname or imported.name] = imported.name
-        elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(
-            node.targets[0], ast.Name
-        ):
-            assignments.append((node.targets[0].id, node.value))
-        elif (
-            isinstance(node, ast.AnnAssign)
-            and isinstance(node.target, ast.Name)
-            and node.value is not None
-        ):
-            assignments.append((node.target.id, node.value))
-    for _pass in range(len(assignments) + 1):
-        changed = False
-        for alias_name, value in assignments:
-            source_name: str | None = None
-            if isinstance(value, ast.Name):
-                source_name = value.id
-            elif isinstance(value, ast.Attribute):
-                source_name = value.attr
-            if (
-                source_name in aliases
-                and aliases.get(alias_name) != aliases[source_name]
-            ):
-                aliases[alias_name] = aliases[source_name]
-                changed = True
-        if not changed:
-            break
-    return aliases
-
-
-def _m5_resolved_return_types(
-    annotation: ast.expr,
-    *,
-    aliases: Mapping[str, str],
-) -> frozenset[str]:
-    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
-        try:
-            annotation = ast.parse(annotation.value, mode="eval").body
-        except SyntaxError as exc:
-            raise Package0ComparatorError(
-                "M5 authority census return annotation is malformed"
-            ) from exc
-    names = {
-        node.id
-        for node in ast.walk(annotation)
-        if isinstance(node, ast.Name)
-    }
-    names.update(
-        node.attr
-        for node in ast.walk(annotation)
-        if isinstance(node, ast.Attribute)
-    )
-    return frozenset(aliases[name] for name in names if name in aliases)
 
 
 def _validate_m5_verdict_contract(contract: Mapping[str, object]) -> None:

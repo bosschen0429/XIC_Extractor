@@ -27,7 +27,6 @@ from xic_extractor.extraction.targeted_service import (
 )
 from xic_extractor.package0_successor_comparator import (
     Package0ComparatorError,
-    _validate_m5_authority_audit,
     validate_m5_rollback_rehearsal,
     validate_m5_successor_verdict_packet,
 )
@@ -507,182 +506,44 @@ def test_m5_packet_rejects_unapproved_public_diff(tmp_path: Path) -> None:
         )
 
 
-def test_m5_packet_rejects_authority_audit_count_drift(tmp_path: Path) -> None:
-    packet = _copy_packet(tmp_path / "authority-audit-drift")
+@pytest.mark.parametrize(
+    ("row_index", "field", "replacement"),
+    (
+        (0, "schema_version", "m5_successor_verdict_packet_v2"),
+        (0, "audit_id", "renamed_dependency_gate"),
+        (0, "audit_kind", "duplicate_authority"),
+        (0, "responsibility_or_boundary", "rewritten boundary"),
+        (0, "expected_count", "1"),
+        (0, "observed_count", "1"),
+        (0, "status", "unknown"),
+        (0, "evidence_maturity", "asserted_only"),
+        (0, "evidence_locator", "tests/test_m5_successor_verdict.py"),
+        (0, "claim_limit", "unbounded"),
+        (2, "responsibility_or_boundary", "rewritten owner"),
+        (2, "observed_count", "2"),
+        (2, "evidence_locator", "xic_extractor/output/csv_writers.py"),
+        (2, "claim_limit", "repo-wide authority proof"),
+    ),
+)
+def test_m5_packet_rejects_authority_audit_semantic_drift(
+    tmp_path: Path,
+    row_index: int,
+    field: str,
+    replacement: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"authority-audit-{row_index}-{field}")
     audit_path = packet / "architecture_authority_audit.tsv"
     rows = _read_tsv(audit_path)
-    rows[-1]["observed_count"] = "2"
+    rows[row_index][field] = replacement
     _write_tsv(audit_path, rows)
     _refresh_index(packet, "architecture_authority_audit.tsv")
 
-    with pytest.raises(Package0ComparatorError, match="authority audit failed"):
+    with pytest.raises(Package0ComparatorError, match="authority audit set differs"):
         validate_m5_successor_verdict_packet(
             packet,
             repo_root=Path("."),
             expected_candidate_sha=FROZEN_CANDIDATE_SHA,
         )
-
-
-@pytest.mark.parametrize(
-    ("owner_module", "return_type"),
-    (
-        (
-            "xic_extractor.alignment.cell_observations",
-            "CellObservationRef",
-        ),
-        (
-            "xic_extractor.peak_detection.cid_nl_candidate_set_relation",
-            "DdaCidNlCandidateSetRelationRef",
-        ),
-        (
-            "xic_extractor.peak_detection.cid_nl_method_assessment",
-            "CidNlMethodAssessmentRef",
-        ),
-        (
-            "xic_extractor.alignment.identity_settlement",
-            "IdentitySettlementDecision",
-        ),
-        (
-            "xic_extractor.extraction.targeted_diagnostic_delivery",
-            "TargetedDiagnosticDeliveryCandidate",
-        ),
-    ),
-)
-def test_m5_authority_census_rejects_private_aliased_constructor_owner(
-    tmp_path: Path,
-    owner_module: str,
-    return_type: str,
-) -> None:
-    audit_rows = _copy_m5_authority_sources(tmp_path)
-    duplicate = tmp_path / "xic_extractor" / "duplicate_delivery_owner.py"
-    duplicate.write_text(
-        f"from {owner_module} import (\n"
-        f"    {return_type} as Candidate,\n"
-        ")\n\n"
-        "def _settle_shadow() -> Candidate:\n"
-        "    return Candidate()\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(Package0ComparatorError, match="executable census differs"):
-        _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
-
-
-@pytest.mark.parametrize(
-    ("replace_import", "replace_call"),
-    (
-        (
-            "from dataclasses import replace as transition\n",
-            'transition(candidate, status="rolled_back")',
-        ),
-        (
-            "import dataclasses as dc\n",
-            'dc.replace(candidate, status="rolled_back")',
-        ),
-        (
-            "from dataclasses import replace\ntransition = replace\n",
-            'transition(candidate, status="rolled_back")',
-        ),
-        (
-            "import dataclasses as dc\ntransition = dc.replace\n",
-            'transition(candidate, status="rolled_back")',
-        ),
-    ),
-)
-def test_m5_authority_census_rejects_private_typed_replace_owner(
-    tmp_path: Path,
-    replace_import: str,
-    replace_call: str,
-) -> None:
-    audit_rows = _copy_m5_authority_sources(tmp_path)
-    duplicate = tmp_path / "xic_extractor" / "duplicate_delivery_owner.py"
-    duplicate.write_text(
-        f"{replace_import}"
-        "from xic_extractor.extraction.targeted_diagnostic_delivery import (\n"
-        "    TargetedDiagnosticDeliveryCandidate as Candidate,\n"
-        ")\n\n"
-        "def _rollback_shadow(candidate: Candidate) -> Candidate:\n"
-        f"    return {replace_call}\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(Package0ComparatorError, match="executable census differs"):
-        _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
-
-
-@pytest.mark.parametrize(
-    ("owner_module", "return_type"),
-    (
-        (
-            "xic_extractor.alignment.cell_observations",
-            "CellObservationRef",
-        ),
-        (
-            "xic_extractor.peak_detection.cid_nl_candidate_set_relation",
-            "DdaCidNlCandidateSetRelationRef",
-        ),
-        (
-            "xic_extractor.peak_detection.cid_nl_method_assessment",
-            "CidNlMethodAssessmentRef",
-        ),
-        (
-            "xic_extractor.alignment.identity_settlement",
-            "IdentitySettlementDecision",
-        ),
-        (
-            "xic_extractor.extraction.targeted_diagnostic_delivery",
-            "TargetedDiagnosticDeliveryCandidate",
-        ),
-    ),
-)
-def test_m5_authority_census_rejects_module_attribute_alias_owner(
-    tmp_path: Path,
-    owner_module: str,
-    return_type: str,
-) -> None:
-    audit_rows = _copy_m5_authority_sources(tmp_path)
-    duplicate = tmp_path / "xic_extractor" / "duplicate_delivery_owner.py"
-    duplicate.write_text(
-        f"import {owner_module} as authority_owner\n\n"
-        f"Candidate = authority_owner.{return_type}\n\n"
-        "def _settle_shadow() -> Candidate:\n"
-        "    return Candidate()\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(Package0ComparatorError, match="executable census differs"):
-        _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
-
-
-def test_m5_authority_census_recomputes_after_source_change(tmp_path: Path) -> None:
-    audit_rows = _copy_m5_authority_sources(tmp_path)
-    _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
-
-    duplicate = tmp_path / "xic_extractor" / "duplicate_delivery_owner.py"
-    duplicate.write_text(
-        "from xic_extractor.alignment.cell_observations import CellObservationRef\n\n"
-        "def _settle_shadow() -> CellObservationRef:\n"
-        "    return CellObservationRef()\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(Package0ComparatorError, match="executable census differs"):
-        _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
-
-
-def test_m5_authority_census_ignores_private_typed_accessor(tmp_path: Path) -> None:
-    audit_rows = _copy_m5_authority_sources(tmp_path)
-    accessor = tmp_path / "xic_extractor" / "cell_observation_accessor.py"
-    accessor.write_text(
-        "from xic_extractor.alignment.cell_observations import (\n"
-        "    CellObservationRef as CellRef,\n"
-        ")\n\n"
-        "def _target_cell(existing: CellRef) -> CellRef:\n"
-        "    return existing\n",
-        encoding="utf-8",
-    )
-
-    _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
 
 
 def test_m5_packet_rejects_recorded_rollback_receipt_drift(tmp_path: Path) -> None:
@@ -777,20 +638,6 @@ def _sequence_sha256(values: tuple[str, ...]) -> str:
 def _copy_packet(destination: Path) -> Path:
     shutil.copytree(PACKET, destination)
     return destination
-
-
-def _copy_m5_authority_sources(
-    destination_root: Path,
-) -> tuple[dict[str, str], ...]:
-    audit_rows = tuple(
-        _read_tsv(PACKET / "architecture_authority_audit.tsv")
-    )
-    for row in audit_rows:
-        source = Path(row["evidence_locator"].partition("::")[0])
-        destination = destination_root / source
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
-    return audit_rows
 
 
 def _read_tsv(path: Path) -> list[dict[str, str]]:
