@@ -234,6 +234,68 @@ def test_terminal_rechecks_manifest_digest_and_source_artifact(
         )
 
 
+def test_projection_deep_freezes_every_matrix_authority_row(tmp_path: Path) -> None:
+    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    sample_inputs, recovery = _golden_inputs(fixture)
+    projection = build_untargeted_cid_nl_golden_path(
+        processing_owners=fixture.owners,
+        method_subject=fixture.method_subject,
+        sample_inputs=sample_inputs,
+        recovery_inputs=(recovery,),
+        source_artifact_relpath=SOURCE_RELPATH,
+    )
+
+    mutation_attempts = (
+        (projection.input_quant_matrix_rows[0], "Mz"),
+        (projection.input_matrix_identity_rows[0], "peak_hypothesis_id"),
+        (projection.pending_acceptance_rows[0], "quant_value"),
+        (projection.expected_diff_rows[0], "activated_value"),
+    )
+    for row, field_name in mutation_attempts:
+        with pytest.raises(TypeError):
+            row[field_name] = "999"  # type: ignore[index]
+
+
+def test_terminal_applies_complete_canonical_manifest_authority_rules(
+    tmp_path: Path,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    sample_inputs, recovery = _golden_inputs(fixture)
+    forbidden_source = "validation/lockbox_shadow_automation/source.json"
+    projection = build_untargeted_cid_nl_golden_path(
+        processing_owners=fixture.owners,
+        method_subject=fixture.method_subject,
+        sample_inputs=sample_inputs,
+        recovery_inputs=(recovery,),
+        source_artifact_relpath=forbidden_source,
+    )
+    source_path = tmp_path / forbidden_source
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(projection.source_artifact_bytes)
+    rows = tuple(dict(row) for row in projection.pending_acceptance_rows)
+    manifest_sha = production_acceptance_manifest_sha256(rows)
+    checked_rows = tuple({**row, "manifest_sha256": manifest_sha} for row in rows)
+    manifest_path = tmp_path / "production_acceptance_manifest.tsv"
+    _write_acceptance_manifest(manifest_path, checked_rows)
+
+    assert any(
+        "direct shadow/report/gallery/candidate source" in problem
+        for problem in check_production_acceptance_manifest(
+            manifest_path=manifest_path,
+            repo_root=tmp_path,
+        )
+    )
+    with pytest.raises(
+        UntargetedCidNlGoldenPathError,
+        match="canonical authority validation",
+    ):
+        build_untargeted_cid_nl_quant_matrix_version(
+            projection,
+            production_acceptance_manifest_path=manifest_path,
+            manifest_root=tmp_path,
+        )
+
+
 def test_untargeted_method_subject_must_be_pinned_by_the_processing_request(
     tmp_path: Path,
 ) -> None:

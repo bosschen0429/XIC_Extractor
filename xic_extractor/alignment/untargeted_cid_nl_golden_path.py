@@ -11,8 +11,10 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from types import MappingProxyType
 from typing import final
 
 from xic_extractor.alignment.cid_nl_evidence_spine import (
@@ -27,6 +29,9 @@ from xic_extractor.alignment.conservative_backfill import (
     assess_untargeted_conservative_backfill_group,
     map_conservative_backfill_candidates,
     mint_conservative_backfill_recovery_candidate_universe,
+)
+from xic_extractor.alignment.production_acceptance import (
+    check_production_acceptance_manifest_authority,
 )
 from xic_extractor.alignment.quant_matrix_version import (
     PRODUCTION_ACCEPTANCE_COLUMNS,
@@ -167,10 +172,10 @@ class UntargetedCidNlGoldenPathProjection:
         ...,
     ]
     matrix_header: tuple[str, ...]
-    input_quant_matrix_rows: tuple[dict[str, str], ...]
-    input_matrix_identity_rows: tuple[dict[str, str], ...]
-    pending_acceptance_rows: tuple[dict[str, str], ...]
-    expected_diff_rows: tuple[dict[str, str], ...]
+    input_quant_matrix_rows: tuple[Mapping[str, str], ...]
+    input_matrix_identity_rows: tuple[Mapping[str, str], ...]
+    pending_acceptance_rows: tuple[Mapping[str, str], ...]
+    expected_diff_rows: tuple[Mapping[str, str], ...]
     source_artifact_relpath: str
     source_artifact_bytes: bytes
     source_artifact_sha256: str
@@ -438,10 +443,10 @@ def build_untargeted_cid_nl_golden_path(
         backfill_decisions=decisions,
         recovery_universes=tuple(universes),
         matrix_header=matrix_header,
-        input_quant_matrix_rows=(matrix_row,),
-        input_matrix_identity_rows=(identity_row,),
-        pending_acceptance_rows=acceptance_rows,
-        expected_diff_rows=expected_diff_rows,
+        input_quant_matrix_rows=_freeze_rows((matrix_row,)),
+        input_matrix_identity_rows=_freeze_rows((identity_row,)),
+        pending_acceptance_rows=_freeze_rows(acceptance_rows),
+        expected_diff_rows=_freeze_rows(expected_diff_rows),
         source_artifact_relpath=source_artifact_relpath,
         source_artifact_bytes=source_bytes,
         source_artifact_sha256=source_sha,
@@ -522,7 +527,6 @@ def _read_terminal_acceptance_manifest(
         raise UntargetedCidNlGoldenPathError(
             "checked manifest SHA-256 does not match its canonical file rows"
         )
-
     root = manifest_root.resolve()
     _check_terminal_source_artifact(
         root=root,
@@ -530,6 +534,16 @@ def _read_terminal_acceptance_manifest(
         expected_sha=projection.source_artifact_sha256,
         label="source artifact",
     )
+    authority_problems = check_production_acceptance_manifest_authority(
+        manifest_path=manifest_path,
+        repo_root=manifest_root,
+    )
+    if authority_problems:
+        raise UntargetedCidNlGoldenPathError(
+            "ProductionAcceptanceManifest failed canonical authority validation: "
+            + "; ".join(authority_problems)
+        )
+
     for row in checked:
         for prefix in ("doublet_source", "source_artifact"):
             _check_terminal_source_artifact(
@@ -838,6 +852,14 @@ def _format_number(value: object) -> str:
             "numeric projection requires a finite non-negative value"
         )
     return f"{parsed:.12g}"
+
+
+def _freeze_rows(
+    rows: Sequence[Mapping[str, str]],
+) -> tuple[Mapping[str, str], ...]:
+    """Detach and deep-freeze string-only rows at the owner mint boundary."""
+
+    return tuple(MappingProxyType(dict(row)) for row in rows)
 
 
 def _validate_terminal_rows(
