@@ -230,6 +230,81 @@ def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
     assert decision.reason_codes == ("group_not_frozen",)
 
 
+def test_terminal_method_results_precede_group_recovery_eligibility(
+    tmp_path: Path,
+) -> None:
+    below_threshold_dir = tmp_path / "below_threshold"
+    below_threshold_dir.mkdir()
+    below_threshold_fixture = _study_fixture(
+        below_threshold_dir,
+        ("support", "reject", "missing"),
+    )
+    below_threshold_spine = _spine(
+        below_threshold_fixture,
+        support_apex_by_sample={"support": 8.0},
+        reject_sample_stems=frozenset({"reject"}),
+        invocation="terminal-below-threshold",
+    )
+    below_threshold = assess_conservative_backfill_group(
+        below_threshold_spine.cells,
+        sample_population=below_threshold_fixture.samples,
+    )
+
+    support_decision = map_conservative_backfill_candidates(
+        (below_threshold,),
+        sample=below_threshold_fixture.sample("support"),
+        candidate_universes=(),
+    )[0]
+    reject_decision = map_conservative_backfill_candidates(
+        (below_threshold,),
+        sample=below_threshold_fixture.sample("reject"),
+        candidate_universes=(),
+    )[0]
+
+    assert below_threshold.group_frozen is True
+    assert below_threshold.may_attempt_recovery is False
+    assert support_decision.disposition == "not_applicable"
+    assert support_decision.reason_codes == ("cell_already_has_direct_support",)
+    assert reject_decision.disposition == "not_applicable"
+    assert reject_decision.reason_codes == (
+        "method_reject_is_not_backfill_eligible",
+    )
+
+    incomplete_dir = tmp_path / "incomplete"
+    incomplete_dir.mkdir()
+    incomplete_fixture = _study_fixture(
+        incomplete_dir,
+        ("s1", "s2", "reject", "omitted"),
+    )
+    incomplete_spine = _spine(
+        incomplete_fixture,
+        support_apex_by_sample={"s1": 8.0, "s2": 8.0},
+        reject_sample_stems=frozenset({"reject"}),
+        invocation="terminal-not-frozen",
+    )
+    retained_cells = tuple(
+        cell
+        for cell in incomplete_spine.cells
+        if cell.content.canonical_sample_identity_id
+        != incomplete_fixture.sample("omitted").identity.sample_identity_id
+    )
+    incomplete = assess_conservative_backfill_group(
+        retained_cells,
+        sample_population=incomplete_fixture.samples,
+    )
+    incomplete_reject = map_conservative_backfill_candidates(
+        (incomplete,),
+        sample=incomplete_fixture.sample("reject"),
+        candidate_universes=(),
+    )[0]
+
+    assert incomplete.group_frozen is False
+    assert incomplete_reject.disposition == "not_applicable"
+    assert incomplete_reject.reason_codes == (
+        "method_reject_is_not_backfill_eligible",
+    )
+
+
 def test_ordered_one_to_one_mapping_retains_evidence_without_backfill_votes(
     tmp_path: Path,
 ) -> None:
@@ -703,6 +778,7 @@ def _spine(
     fixture: Package2NoRawFixture,
     *,
     support_apex_by_sample: dict[str, float],
+    reject_sample_stems: frozenset[str] = frozenset(),
     invocation: str,
     target=None,
 ) -> CidNlReferenceSpine:
@@ -710,13 +786,25 @@ def _spine(
     assessments = tuple(
         (
             fixture.sample(sample.metadata.raw_stem),
-            _assessment(
-                fixture,
-                sample.metadata.raw_stem,
-                support_apex=support_apex_by_sample.get(sample.metadata.raw_stem),
-                scan_number=100 + index,
-                invocation=f"{invocation}:{index}",
-                target=effective_target,
+            (
+                _reject_assessment(
+                    fixture,
+                    sample.metadata.raw_stem,
+                    scan_number=100 + index,
+                    invocation=f"{invocation}:{index}",
+                    target=effective_target,
+                )
+                if sample.metadata.raw_stem in reject_sample_stems
+                else _assessment(
+                    fixture,
+                    sample.metadata.raw_stem,
+                    support_apex=support_apex_by_sample.get(
+                        sample.metadata.raw_stem
+                    ),
+                    scan_number=100 + index,
+                    invocation=f"{invocation}:{index}",
+                    target=effective_target,
+                )
             ),
         )
         for index, sample in enumerate(fixture.samples, start=1)
@@ -728,6 +816,39 @@ def _spine(
     )
     assert spine.group is not None
     return spine
+
+
+def _reject_assessment(
+    fixture: Package2NoRawFixture,
+    sample_stem: str,
+    *,
+    scan_number: int,
+    invocation: str,
+    target=None,
+) -> CidNlMethodAssessmentRef:
+    effective_target = fixture.target if target is None else target
+    evidence = issue161_evidence(
+        fixture,
+        sample_stem,
+        scan_number=scan_number,
+        scan_rt_min=8.0,
+    )
+    return mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        target=effective_target,
+        detector_invocation_id=invocation,
+        evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=7.5,
+            query_rt_max=8.6,
+            support_policy=issue161_support_policy(),
+            acquisition_supported=True,
+            search_completed=True,
+            scanned_event_count=1,
+            reason_code=None,
+        ),
+        evidence_refs=(evidence,),
+    )
 
 
 def _assessment(

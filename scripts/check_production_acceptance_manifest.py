@@ -18,10 +18,13 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+from xic_extractor.alignment.quant_matrix_version import (
+    PRODUCTION_ACCEPTANCE_COLUMNS,
+    production_acceptance_manifest_sha256,
+)
 from xic_extractor.tabular_io import (
     file_sha256,
     read_tsv_with_header,
-    render_delimited_rows,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,42 +36,7 @@ SCHEMA_VERSION = "production_acceptance_manifest_schema_v1"
 MANIFEST_SCHEMA_VERSION = "production_acceptance_manifest_v1"
 ACCEPTANCE_CONTRACT_VERSION = "production_acceptance_manifest_contract_v1"
 
-REQUIRED_COLUMNS = (
-    "schema_version",
-    "peak_hypothesis_id",
-    "sample_stem",
-    "feature_family_id",
-    "acceptance_decision",
-    "acceptance_basis",
-    "truth_status",
-    "shadow_only",
-    "write_authority",
-    "matrix_write_allowed",
-    "quant_value",
-    "quant_value_source",
-    "matrix_area_source",
-    "detected_count",
-    "backfilled_count",
-    "quant_available_count",
-    "missing_count",
-    "backfill_fraction",
-    "prevalence_flags",
-    "hard_blocker_rule_ids",
-    "triggered_risk_rule_ids",
-    "closure_rule_ids",
-    "decision_reason",
-    "next_evidence_needed",
-    "doublet_status",
-    "reference_side",
-    "doublet_allowed",
-    "doublet_source_relpath",
-    "doublet_source_sha256",
-    "source_artifact_relpath",
-    "source_artifact_sha256",
-    "source_row_sha256",
-    "manifest_sha256",
-    "acceptance_contract_version",
-)
+REQUIRED_COLUMNS = PRODUCTION_ACCEPTANCE_COLUMNS
 
 ACCEPT_BASIC = "accept_basic_backfill"
 ACCEPT_STRICT = "accept_strict_backfill"
@@ -169,26 +137,6 @@ def check_production_acceptance_manifest(
     expected_manifest_sha = production_acceptance_manifest_sha256(rows)
     _check_manifest_rows(rows, expected_manifest_sha, repo_root, problems)
     return problems
-
-
-def production_acceptance_manifest_sha256(
-    rows: Sequence[Mapping[str, str]],
-) -> str:
-    canonical_rows = []
-    for row in rows:
-        canonical = {column: row.get(column, "") for column in REQUIRED_COLUMNS}
-        canonical["manifest_sha256"] = ""
-        canonical_rows.append(canonical)
-    rendered = render_delimited_rows(
-        canonical_rows,
-        REQUIRED_COLUMNS,
-        delimiter="\t",
-        extrasaction="raise",
-        lineterminator="\n",
-    )
-    import hashlib
-
-    return hashlib.sha256(rendered.encode("utf-8")).hexdigest().upper()
 
 
 def _check_schema_authority_rules(

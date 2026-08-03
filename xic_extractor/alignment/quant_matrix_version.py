@@ -1,15 +1,57 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from xic_extractor.tabular_io import numeric_equal, optional_float
+from xic_extractor.tabular_io import (
+    numeric_equal,
+    optional_float,
+    render_delimited_rows,
+)
 
 QUANT_MATRIX_VERSION_SCHEMA = "quant_matrix_version_v1"
 CELL_PROVENANCE_SCHEMA = "quant_matrix_cell_provenance_v1"
 ROW_SUMMARY_SCHEMA = "quant_matrix_row_summary_v1"
 EXPECTED_DIFF_SCHEMA = "quant_matrix_version_expected_diff_v1"
 EXPECTED_DIFF_SUMMARY_SCHEMA = "quant_matrix_version_expected_diff_summary_v1"
+
+PRODUCTION_ACCEPTANCE_COLUMNS = (
+    "schema_version",
+    "peak_hypothesis_id",
+    "sample_stem",
+    "feature_family_id",
+    "acceptance_decision",
+    "acceptance_basis",
+    "truth_status",
+    "shadow_only",
+    "write_authority",
+    "matrix_write_allowed",
+    "quant_value",
+    "quant_value_source",
+    "matrix_area_source",
+    "detected_count",
+    "backfilled_count",
+    "quant_available_count",
+    "missing_count",
+    "backfill_fraction",
+    "prevalence_flags",
+    "hard_blocker_rule_ids",
+    "triggered_risk_rule_ids",
+    "closure_rule_ids",
+    "decision_reason",
+    "next_evidence_needed",
+    "doublet_status",
+    "reference_side",
+    "doublet_allowed",
+    "doublet_source_relpath",
+    "doublet_source_sha256",
+    "source_artifact_relpath",
+    "source_artifact_sha256",
+    "source_row_sha256",
+    "manifest_sha256",
+    "acceptance_contract_version",
+)
 
 EXPECTED_DIFF_COLUMNS = (
     "schema_version",
@@ -81,6 +123,26 @@ class QuantMatrixVersionRows:
     cell_provenance_rows: list[dict[str, str]]
     row_summary_rows: list[dict[str, str]]
     expected_diff_summary_rows: list[dict[str, str]]
+
+
+def production_acceptance_manifest_sha256(
+    rows: Sequence[Mapping[str, str]],
+) -> str:
+    canonical_rows = []
+    for row in rows:
+        canonical = {
+            column: row.get(column, "") for column in PRODUCTION_ACCEPTANCE_COLUMNS
+        }
+        canonical["manifest_sha256"] = ""
+        canonical_rows.append(canonical)
+    rendered = render_delimited_rows(
+        canonical_rows,
+        PRODUCTION_ACCEPTANCE_COLUMNS,
+        delimiter="\t",
+        extrasaction="raise",
+        lineterminator="\n",
+    )
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest().upper()
 
 
 def build_quant_matrix_version_rows(

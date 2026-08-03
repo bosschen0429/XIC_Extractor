@@ -829,25 +829,7 @@ def map_conservative_backfill_candidates(
         target_candidates = _recovery_evidence_from_universe(
             candidate_universe
         )
-        if not facts.group_frozen:
-            decisions[index] = _decision(
-                facts,
-                cell,
-                disposition="hold",
-                reasons=("group_not_frozen",),
-                candidate_universe=candidate_universe,
-                candidates=target_candidates,
-            )
-        elif not facts.may_attempt_recovery:
-            decisions[index] = _decision(
-                facts,
-                cell,
-                disposition="hold",
-                reasons=("direct_support_threshold_not_met",),
-                candidate_universe=candidate_universe,
-                candidates=target_candidates,
-            )
-        elif cell.content.method_result == "SUPPORT":
+        if cell.content.method_result == "SUPPORT":
             decisions[index] = _decision(
                 facts,
                 cell,
@@ -862,6 +844,24 @@ def map_conservative_backfill_candidates(
                 cell,
                 disposition="not_applicable",
                 reasons=("method_reject_is_not_backfill_eligible",),
+                candidate_universe=candidate_universe,
+                candidates=target_candidates,
+            )
+        elif not facts.group_frozen:
+            decisions[index] = _decision(
+                facts,
+                cell,
+                disposition="hold",
+                reasons=("group_not_frozen",),
+                candidate_universe=candidate_universe,
+                candidates=target_candidates,
+            )
+        elif not facts.may_attempt_recovery:
+            decisions[index] = _decision(
+                facts,
+                cell,
+                disposition="hold",
+                reasons=("direct_support_threshold_not_met",),
                 candidate_universe=candidate_universe,
                 candidates=target_candidates,
             )

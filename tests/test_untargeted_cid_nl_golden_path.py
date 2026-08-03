@@ -136,10 +136,11 @@ def test_no_raw_golden_path_preserves_evidence_and_terminal_matrix_contract(
     assert source_by_stem["Split"]["numeric_value_kind"] == "blank"
     assert source_by_stem["Reject"]["numeric_value_kind"] == "blank"
 
-    checked_rows = _check_acceptance_manifest(tmp_path, projection)
+    manifest_path, _ = _check_acceptance_manifest(tmp_path, projection)
     terminal = build_untargeted_cid_nl_quant_matrix_version(
         projection,
-        checked_production_acceptance_rows=checked_rows,
+        production_acceptance_manifest_path=manifest_path,
+        manifest_root=tmp_path,
     )
     assert len(terminal.quant_matrix_rows) == 1
     matrix_row = terminal.quant_matrix_rows[0]
@@ -186,12 +187,50 @@ def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
             input_quant_matrix_rows=({"Mz": "999", "RT": "999"},),
             _mint_token=object(),
         )
-    checked_rows = _check_acceptance_manifest(tmp_path, projection)
+    manifest_path, checked_rows = _check_acceptance_manifest(tmp_path, projection)
     rewritten = ({**checked_rows[0], "quant_value": "999"},)
+    _write_acceptance_manifest(manifest_path, rewritten)
     with pytest.raises(UntargetedCidNlGoldenPathError, match="rewrites"):
         build_untargeted_cid_nl_quant_matrix_version(
             projection,
-            checked_production_acceptance_rows=rewritten,
+            production_acceptance_manifest_path=manifest_path,
+            manifest_root=tmp_path,
+        )
+
+
+def test_terminal_rechecks_manifest_digest_and_source_artifact(
+    tmp_path: Path,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    sample_inputs, recovery = _golden_inputs(fixture)
+    projection = build_untargeted_cid_nl_golden_path(
+        processing_owners=fixture.owners,
+        method_subject=fixture.method_subject,
+        sample_inputs=sample_inputs,
+        recovery_inputs=(recovery,),
+        source_artifact_relpath=SOURCE_RELPATH,
+    )
+    manifest_path, checked_rows = _check_acceptance_manifest(tmp_path, projection)
+
+    forged_digest_rows = (
+        {**checked_rows[0], "manifest_sha256": "F" * 64},
+    )
+    _write_acceptance_manifest(manifest_path, forged_digest_rows)
+    with pytest.raises(UntargetedCidNlGoldenPathError, match="manifest SHA-256"):
+        build_untargeted_cid_nl_quant_matrix_version(
+            projection,
+            production_acceptance_manifest_path=manifest_path,
+            manifest_root=tmp_path,
+        )
+
+    manifest_path, _ = _check_acceptance_manifest(tmp_path, projection)
+    source_path = tmp_path / projection.source_artifact_relpath
+    source_path.write_bytes(b"tampered after manifest validation")
+    with pytest.raises(UntargetedCidNlGoldenPathError, match="source artifact"):
+        build_untargeted_cid_nl_quant_matrix_version(
+            projection,
+            production_acceptance_manifest_path=manifest_path,
+            manifest_root=tmp_path,
         )
 
 
@@ -441,24 +480,15 @@ def _projection(
 def _check_acceptance_manifest(
     tmp_path: Path,
     projection,
-) -> tuple[dict[str, str], ...]:
+) -> tuple[Path, tuple[dict[str, str], ...]]:
     source_path = tmp_path / projection.source_artifact_relpath
-    source_path.parent.mkdir(parents=True)
+    source_path.parent.mkdir(parents=True, exist_ok=True)
     source_path.write_bytes(projection.source_artifact_bytes)
     rows = tuple(dict(row) for row in projection.pending_acceptance_rows)
     manifest_sha = production_acceptance_manifest_sha256(rows)
     checked_rows = tuple({**row, "manifest_sha256": manifest_sha} for row in rows)
     manifest_path = tmp_path / "production_acceptance_manifest.tsv"
-    manifest_path.write_text(
-        render_delimited_rows(
-            checked_rows,
-            REQUIRED_COLUMNS,
-            delimiter="\t",
-            extrasaction="raise",
-            lineterminator="\n",
-        ),
-        encoding="utf-8",
-    )
+    _write_acceptance_manifest(manifest_path, checked_rows)
     assert (
         check_production_acceptance_manifest(
             manifest_path=manifest_path,
@@ -466,7 +496,23 @@ def _check_acceptance_manifest(
         )
         == []
     )
-    return checked_rows
+    return manifest_path, checked_rows
+
+
+def _write_acceptance_manifest(
+    manifest_path: Path,
+    rows: tuple[dict[str, str], ...],
+) -> None:
+    manifest_path.write_text(
+        render_delimited_rows(
+            rows,
+            REQUIRED_COLUMNS,
+            delimiter="\t",
+            extrasaction="raise",
+            lineterminator="\n",
+        ),
+        encoding="utf-8",
+    )
 
 
 def _sample_stem(decision) -> str:

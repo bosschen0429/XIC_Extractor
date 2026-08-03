@@ -1,10 +1,9 @@
 """Opt-in no-RAW CID-NL path from shared evidence to QuantMatrixVersion.
 
 This orchestration translates only owner-backed facts.  It does not read RAW,
-recompute evidence, write files, validate the file-level
-ProductionAcceptanceManifest, or activate the default Matrix.  The existing
-manifest checker remains the authority gate between the prepared rows and the
-terminal QuantMatrixVersion builder.
+recompute evidence, write files, or activate the default Matrix.  Its terminal
+adapter revalidates the exact file-level ProductionAcceptanceManifest, canonical
+digest, and referenced source artifact before entering QuantMatrixVersion.
 """
 
 from __future__ import annotations
@@ -13,8 +12,8 @@ import hashlib
 import json
 import math
 from dataclasses import InitVar, asdict, dataclass, field
-from pathlib import PurePosixPath, PureWindowsPath
-from typing import Mapping, Sequence, final
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import final
 
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     CidNlReferenceSpine,
@@ -30,8 +29,10 @@ from xic_extractor.alignment.conservative_backfill import (
     mint_conservative_backfill_recovery_candidate_universe,
 )
 from xic_extractor.alignment.quant_matrix_version import (
+    PRODUCTION_ACCEPTANCE_COLUMNS,
     QuantMatrixVersionRows,
     build_quant_matrix_version_rows,
+    production_acceptance_manifest_sha256,
 )
 from xic_extractor.discovery.cid_nl_evidence_projection import (
     UntargetedCidNlProjectionRef,
@@ -42,6 +43,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.tabular_io import (
+    file_sha256,
+    read_tsv_with_header,
+)
 
 VALIDATION_STATUS = "production_candidate"
 PRODUCT_AUTHORITY = "none_until_checked_manifest"
@@ -447,39 +452,20 @@ def build_untargeted_cid_nl_golden_path(
 def build_untargeted_cid_nl_quant_matrix_version(
     projection: UntargetedCidNlGoldenPathProjection,
     *,
-    checked_production_acceptance_rows: Sequence[Mapping[str, str]],
+    production_acceptance_manifest_path: Path,
+    manifest_root: Path,
 ) -> QuantMatrixVersionRows:
-    """Enter the existing QuantMatrix owner after the manifest checker passes."""
+    """Revalidate the manifest file before entering the QuantMatrix owner."""
 
     if not isinstance(projection, UntargetedCidNlGoldenPathProjection):
         raise UntargetedCidNlGoldenPathError(
             "QuantMatrix activation requires a prepared golden-path projection"
         )
-    checked = tuple(dict(row) for row in checked_production_acceptance_rows)
-    if len(checked) != len(projection.pending_acceptance_rows):
-        raise UntargetedCidNlGoldenPathError(
-            "checked manifest row count differs from owner-prepared acceptance"
-        )
-    for pending, accepted in zip(
-        projection.pending_acceptance_rows,
-        checked,
-        strict=True,
-    ):
-        for field_name, expected in pending.items():
-            if field_name == "manifest_sha256":
-                continue
-            if accepted.get(field_name, "") != expected:
-                raise UntargetedCidNlGoldenPathError(
-                    "checked manifest rewrites owner-prepared field "
-                    f"{field_name!r}"
-                )
-        manifest_sha = accepted.get("manifest_sha256", "")
-        if len(manifest_sha) != 64 or any(
-            char not in _SHA256_HEX for char in manifest_sha
-        ):
-            raise UntargetedCidNlGoldenPathError(
-                "checked manifest must carry its exact manifest SHA-256"
-            )
+    checked = _read_terminal_acceptance_manifest(
+        projection=projection,
+        manifest_path=production_acceptance_manifest_path,
+        manifest_root=manifest_root,
+    )
     rows = build_quant_matrix_version_rows(
         matrix_header=projection.matrix_header,
         input_quant_matrix_rows=projection.input_quant_matrix_rows,
@@ -489,6 +475,106 @@ def build_untargeted_cid_nl_quant_matrix_version(
     )
     _validate_terminal_rows(projection, rows)
     return rows
+
+
+def _read_terminal_acceptance_manifest(
+    *,
+    projection: UntargetedCidNlGoldenPathProjection,
+    manifest_path: Path,
+    manifest_root: Path,
+) -> tuple[dict[str, str], ...]:
+    try:
+        header, raw_rows = read_tsv_with_header(manifest_path)
+    except (OSError, ValueError) as exc:
+        raise UntargetedCidNlGoldenPathError(
+            f"could not read production acceptance manifest: {exc}"
+        ) from exc
+    if header != PRODUCTION_ACCEPTANCE_COLUMNS:
+        raise UntargetedCidNlGoldenPathError(
+            "production acceptance manifest header differs from its exact schema"
+        )
+    checked = tuple(dict(row) for row in raw_rows)
+    if len(checked) != len(projection.pending_acceptance_rows):
+        raise UntargetedCidNlGoldenPathError(
+            "checked manifest row count differs from owner-prepared acceptance"
+        )
+    for pending, accepted in zip(
+        projection.pending_acceptance_rows,
+        checked,
+        strict=True,
+    ):
+        if tuple(accepted) != PRODUCTION_ACCEPTANCE_COLUMNS:
+            raise UntargetedCidNlGoldenPathError(
+                "checked manifest row differs from its exact schema"
+            )
+        for field_name, expected in pending.items():
+            if field_name == "manifest_sha256":
+                continue
+            if accepted.get(field_name, "") != expected:
+                raise UntargetedCidNlGoldenPathError(
+                    "checked manifest rewrites owner-prepared field "
+                    f"{field_name!r}"
+                )
+    expected_manifest_sha = production_acceptance_manifest_sha256(checked)
+    if any(
+        row.get("manifest_sha256", "") != expected_manifest_sha for row in checked
+    ):
+        raise UntargetedCidNlGoldenPathError(
+            "checked manifest SHA-256 does not match its canonical file rows"
+        )
+
+    root = manifest_root.resolve()
+    _check_terminal_source_artifact(
+        root=root,
+        relative_path=projection.source_artifact_relpath,
+        expected_sha=projection.source_artifact_sha256,
+        label="source artifact",
+    )
+    for row in checked:
+        for prefix in ("doublet_source", "source_artifact"):
+            _check_terminal_source_artifact(
+                root=root,
+                relative_path=row[f"{prefix}_relpath"],
+                expected_sha=row[f"{prefix}_sha256"],
+                label=prefix.replace("_", " "),
+            )
+    return checked
+
+
+def _check_terminal_source_artifact(
+    *,
+    root: Path,
+    relative_path: str,
+    expected_sha: str,
+    label: str,
+) -> None:
+    normalized = relative_path.replace("\\", "/")
+    relative = PurePosixPath(normalized)
+    if relative.is_absolute() or PureWindowsPath(relative_path).drive or (
+        ".." in relative.parts
+    ):
+        raise UntargetedCidNlGoldenPathError(
+            f"checked manifest {label} must stay under manifest_root"
+        )
+    path = (root / Path(normalized)).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise UntargetedCidNlGoldenPathError(
+            f"checked manifest {label} must stay under manifest_root"
+        ) from exc
+    if not path.is_file():
+        raise UntargetedCidNlGoldenPathError(
+            f"checked manifest {label} is missing"
+        )
+    if len(expected_sha) != 64 or any(char not in _SHA256_HEX for char in expected_sha):
+        raise UntargetedCidNlGoldenPathError(
+            f"checked manifest {label} must carry a SHA-256"
+        )
+    if file_sha256(path) != expected_sha:
+        raise UntargetedCidNlGoldenPathError(
+            f"checked manifest {label} SHA-256 mismatch"
+        )
 
 
 def _canonical_sample_inputs(
