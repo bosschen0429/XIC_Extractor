@@ -12,7 +12,7 @@ from pathlib import Path
 
 from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
-    read_discovery_candidates_csv,
+    read_owner_bound_discovery_candidates_csv,
 )
 from xic_extractor.alignment.production_acceptance import REQUIRED_COLUMNS
 from xic_extractor.alignment.quant_matrix_version import (
@@ -44,6 +44,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeJob,
     execute_untargeted_cid_nl_real_data_runtime,
+    untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -90,12 +91,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         else output_dir / "timing.json"
     )
     timing_payload = {
-        "schema_version": "untargeted_cid_nl_m7_timing_v1",
+        "schema_version": "untargeted_cid_nl_m7_timing_v2",
         "validation_status": VALIDATION_STATUS,
         "elapsed_seconds": elapsed,
         "sample_count": summary["sample_count"],
         "runtime_succeeded": summary["runtime_succeeded"],
         "terminal_state": summary["terminal_state"],
+        "call_cost": summary["call_cost"],
     }
     _write_json(timing_path, timing_payload)
     heartbeat.write(event="completed", terminal_state=summary["terminal_state"])
@@ -110,7 +112,10 @@ def _run(
     output_dir: Path,
     heartbeat: "_Heartbeat",
 ) -> dict[str, object]:
-    batch_index = read_discovery_batch_index(args.discovery_batch_index.resolve())
+    batch_index = read_discovery_batch_index(
+        args.discovery_batch_index.resolve(),
+        require_owner_closure=True,
+    )
     selected_stems = _selected_stems(batch_index.sample_order, args.sample_stem)
     if args.expected_sample_count is not None and len(selected_stems) != (
         args.expected_sample_count
@@ -129,13 +134,18 @@ def _run(
     )
     if missing_raw:
         raise ValueError(f"missing RAW files for samples: {', '.join(missing_raw)}")
-    candidates_by_sample = {
-        stem: read_discovery_candidates_csv(
+    discovery_receipts_by_sample = {}
+    candidates_by_sample = {}
+    for stem in selected_stems:
+        receipt = batch_index.candidate_receipts[stem]
+        if receipt is None:
+            raise ValueError(f"missing Discovery owner receipt for {stem}")
+        discovery_receipts_by_sample[stem] = receipt
+        candidates_by_sample[stem] = read_owner_bound_discovery_candidates_csv(
             batch_index.candidate_csvs[stem],
+            receipt=receipt,
             require_successor_columns=True,
         )
-        for stem in selected_stems
-    }
     metadata_rows = load_sample_metadata(args.sample_metadata.resolve())
     metadata_by_stem = {row.raw_stem: row for row in metadata_rows}
     missing_metadata = tuple(
@@ -170,6 +180,7 @@ def _run(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=discovery_receipts_by_sample,
         sample_identity_namespace=args.sample_identity_namespace,
     )
     jobs = tuple(
@@ -178,6 +189,9 @@ def _run(
             sample=sample,
             method_subject=context.method_subject,
             candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[
+                sample.metadata.raw_stem
+            ],
             settings=context.settings,
             peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
@@ -203,6 +217,7 @@ def _run(
     )
     if not runtime_result.succeeded:
         raise RuntimeError("M7 atomic runtime did not succeed")
+    call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
 
     has_direct_support = any(
         item.adapter_result.assessment_input.assessment.content.method_result
@@ -305,6 +320,18 @@ def _run(
                     if acquisition is not None
                     else 0
                 ),
+                "trace_point_count": (
+                    acquisition.trace_point_count if acquisition is not None else 0
+                ),
+                "discovery_receipt_id": (
+                    item.job.discovery_receipt.discovery_receipt_id
+                ),
+                "discovery_candidate_artifact_sha256": (
+                    item.job.discovery_receipt.candidate_artifact_sha256
+                ),
+                "discovery_acquisition_source_id": (
+                    item.job.discovery_receipt.acquisition_source.acquisition_source_id
+                ),
                 "result_artifact_id": item.result_ref.artifact.evidence_artifact_id,
             }
         )
@@ -315,7 +342,7 @@ def _run(
     else:
         terminal_state = "prepared_requires_production_acceptance_manifest"
     return {
-        "schema_version": "untargeted_cid_nl_m7_summary_v1",
+        "schema_version": "untargeted_cid_nl_m7_summary_v2",
         "validation_status": VALIDATION_STATUS,
         "terminal_state": terminal_state,
         "runtime_succeeded": runtime_result.succeeded,
@@ -327,6 +354,7 @@ def _run(
         ),
         "method_subject": context.method_subject.request_payload(),
         "sample_count": len(runtime_result.sample_results),
+        "call_cost": call_cost,
         "samples": sample_rows,
         "source_artifact_relpath": source_relpath,
         "source_artifact_sha256": (
@@ -483,7 +511,13 @@ class _Heartbeat:
         sample_stem = event.get("sample_stem")
         if isinstance(sample_stem, str):
             self._completed_samples.append(sample_stem)
-        self.write(**event)
+        event_name = event.get("event")
+        if not isinstance(event_name, str):
+            raise ValueError("heartbeat progress event requires an event name")
+        self.write(
+            event=event_name,
+            **{key: value for key, value in event.items() if key != "event"},
+        )
 
     def write(self, *, event: str, **values: object) -> None:
         _write_json(

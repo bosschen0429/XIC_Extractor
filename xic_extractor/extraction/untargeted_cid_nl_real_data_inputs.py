@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.batch_contract import (
+    DiscoveryCandidateUniverseReceipt,
+    validate_discovery_candidate_universe,
+)
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_SCIENTIFIC_SETTING_FIELDS,
@@ -19,6 +22,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
+    AcquisitionSourceIdentity,
     IdentityContractError,
     ProcessingOwnerReferences,
     build_acquisition_source_identity,
@@ -38,18 +42,18 @@ from xic_extractor.sample_metadata import (
 )
 
 UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION = (
-    "untargeted_cid_nl_real_data_inputs_v1"
+    "untargeted_cid_nl_real_data_inputs_v2"
 )
 UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION = (
     "untargeted_cid_nl_real_data_algorithm_v1"
 )
 UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION = (
-    "untargeted_cid_nl_real_data_contract_v1"
+    "untargeted_cid_nl_real_data_contract_v2"
 )
 DISCOVERY_SETTINGS_INPUT_KEY = "current_discovery_settings"
 DISCOVERY_SETTINGS_SCHEMA_VERSION = "current_discovery_settings_v1"
 CANDIDATE_UNIVERSE_INPUT_KEY = "current_discovery_candidate_universe"
-CANDIDATE_UNIVERSE_SCHEMA_VERSION = "current_discovery_candidate_universe_v1"
+CANDIDATE_UNIVERSE_SCHEMA_VERSION = "current_discovery_candidate_universe_v2"
 PEAK_SETTINGS_INPUT_KEY = "peak_detection_settings"
 
 
@@ -64,6 +68,10 @@ class UntargetedCidNlRealDataContext:
     peak_config: ExtractionConfig
     raw_paths_by_sample: Mapping[str, Path]
     candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]]
+    discovery_receipts_by_sample: Mapping[
+        str,
+        DiscoveryCandidateUniverseReceipt,
+    ]
 
     def sample(self, raw_stem: str) -> ResolvedCanonicalSampleIdentity:
         matches = tuple(
@@ -84,6 +92,10 @@ def build_untargeted_cid_nl_real_data_context(
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    discovery_receipts_by_sample: Mapping[
+        str,
+        DiscoveryCandidateUniverseReceipt,
+    ],
     sample_identity_namespace: str,
 ) -> UntargetedCidNlRealDataContext:
     """Mint one replayable request before any M7 RAW handle is opened."""
@@ -114,6 +126,12 @@ def build_untargeted_cid_nl_real_data_context(
         )
         for stem, path in paths_by_stem.items()
     }
+    receipt_map = _discovery_receipt_map(
+        discovery_receipts_by_sample,
+        expected_sample_stems=tuple(paths_by_stem),
+        sources_by_stem=sources_by_stem,
+        candidates_by_stem=candidate_map,
+    )
     ordered_stems = tuple(
         stem
         for stem, _metadata in sorted(
@@ -148,6 +166,7 @@ def build_untargeted_cid_nl_real_data_context(
             DISCOVERY_SETTINGS_INPUT_KEY: discovery_settings_payload(settings),
             CANDIDATE_UNIVERSE_INPUT_KEY: candidate_universe_payload(
                 candidate_map,
+                discovery_receipts_by_sample=receipt_map,
                 expected_sample_stems=ordered_stems,
             ),
             PEAK_SETTINGS_INPUT_KEY: {
@@ -177,6 +196,7 @@ def build_untargeted_cid_nl_real_data_context(
         peak_config=peak_config,
         raw_paths_by_sample=dict(paths_by_stem),
         candidates_by_sample=dict(candidate_map),
+        discovery_receipts_by_sample=dict(receipt_map),
     )
 
 
@@ -195,16 +215,28 @@ def discovery_settings_payload(settings: DiscoverySettings) -> dict[str, object]
 def candidate_universe_payload(
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
     *,
+    discovery_receipts_by_sample: Mapping[
+        str,
+        DiscoveryCandidateUniverseReceipt,
+    ],
     expected_sample_stems: Sequence[str],
 ) -> dict[str, object]:
     declared = _candidate_map(
         candidates_by_sample,
         expected_sample_stems=expected_sample_stems,
     )
+    if set(discovery_receipts_by_sample) != set(declared):
+        raise IdentityContractError(
+            "Discovery receipts must bind every candidate sample exactly once"
+        )
     payload: dict[str, object] = {
         "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
         "samples": [
-            _candidate_universe_entry(stem, declared[stem])
+            _candidate_universe_entry(
+                stem,
+                declared[stem],
+                discovery_receipts_by_sample[stem],
+            )
             for stem in sorted(declared)
         ],
     }
@@ -232,7 +264,7 @@ def validate_candidate_universe_payload(
         "samples",
     }:
         raise IdentityContractError(
-            "candidate universe must use the exact v1 envelope"
+            "candidate universe must use the exact v2 envelope"
         )
     if payload.get("schema_version") != CANDIDATE_UNIVERSE_SCHEMA_VERSION:
         raise IdentityContractError("candidate universe schema is unsupported")
@@ -245,15 +277,20 @@ def validate_candidate_universe_payload(
             "sample_stem",
             "candidate_count",
             "candidate_ids",
-            "candidate_universe_sha256",
+            "candidate_payload_sha256",
+            "discovery_receipt_id",
+            "candidate_artifact_schema_version",
+            "candidate_artifact_sha256",
+            "candidate_artifact_byte_size",
+            "acquisition_source_id",
         }:
             raise IdentityContractError(
-                "candidate universe entry must use the exact v1 shape"
+                "candidate universe entry must use the exact v2 shape"
             )
         stem = entry.get("sample_stem")
         count = entry.get("candidate_count")
         ids = entry.get("candidate_ids")
-        digest = entry.get("candidate_universe_sha256")
+        digest = entry.get("candidate_payload_sha256")
         if not isinstance(stem, str) or not stem.strip() or stem != stem.strip():
             raise IdentityContractError("candidate universe sample stem is invalid")
         if (
@@ -272,6 +309,25 @@ def validate_candidate_universe_payload(
             or any(character not in "0123456789abcdef" for character in digest)
         ):
             raise IdentityContractError("candidate universe digest is invalid")
+        if (
+            not isinstance(entry.get("discovery_receipt_id"), str)
+            or not entry["discovery_receipt_id"].startswith(
+                "xic.discovery-candidate-universe.v1:"
+            )
+            or entry.get("candidate_artifact_schema_version")
+            != "discovery_candidates_csv_v1"
+            or not _is_digest(entry.get("candidate_artifact_sha256"))
+            or isinstance(entry.get("candidate_artifact_byte_size"), bool)
+            or not isinstance(entry.get("candidate_artifact_byte_size"), int)
+            or entry["candidate_artifact_byte_size"] < 0
+            or not isinstance(entry.get("acquisition_source_id"), str)
+            or not entry["acquisition_source_id"].startswith(
+                "xic.acquisition-source.v1:"
+            )
+        ):
+            raise IdentityContractError(
+                "candidate universe owner receipt facts are invalid"
+            )
         typed.append(entry)
     if tuple(entry["sample_stem"] for entry in typed) != expected:
         raise IdentityContractError(
@@ -283,27 +339,73 @@ def validate_candidate_universe_payload(
 def _candidate_universe_entry(
     sample_stem: str,
     candidates: tuple[DiscoveryCandidate, ...],
+    receipt: DiscoveryCandidateUniverseReceipt,
 ) -> dict[str, object]:
     ordered = tuple(sorted(candidates, key=lambda item: item.candidate_id))
     candidate_ids = tuple(item.candidate_id for item in ordered)
-    canonical_candidates = []
-    for candidate in ordered:
-        payload = asdict(candidate)
-        payload.pop("raw_file")
-        canonical_candidates.append(payload)
-    candidate_bytes = json.dumps(
-        canonical_candidates,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
+    if receipt.sample_stem != sample_stem:
+        raise IdentityContractError(
+            "Discovery receipt sample does not match the candidate universe"
+        )
+    validate_discovery_candidate_universe(
+        receipt,
+        acquisition_source=receipt.acquisition_source,
+        candidates=ordered,
+    )
     return {
         "sample_stem": sample_stem,
         "candidate_count": len(ordered),
         "candidate_ids": list(candidate_ids),
-        "candidate_universe_sha256": hashlib.sha256(candidate_bytes).hexdigest(),
+        "candidate_payload_sha256": receipt.candidate_payload_sha256,
+        "discovery_receipt_id": receipt.discovery_receipt_id,
+        "candidate_artifact_schema_version": (
+            receipt.candidate_artifact_schema_version
+        ),
+        "candidate_artifact_sha256": receipt.candidate_artifact_sha256,
+        "candidate_artifact_byte_size": receipt.candidate_artifact_byte_size,
+        "acquisition_source_id": receipt.acquisition_source.acquisition_source_id,
     }
+
+
+def _discovery_receipt_map(
+    receipts: Mapping[str, DiscoveryCandidateUniverseReceipt],
+    *,
+    expected_sample_stems: Sequence[str],
+    sources_by_stem: Mapping[str, object],
+    candidates_by_stem: Mapping[str, tuple[DiscoveryCandidate, ...]],
+) -> dict[str, DiscoveryCandidateUniverseReceipt]:
+    expected = set(_canonical_sample_stems(expected_sample_stems))
+    if not isinstance(receipts, Mapping) or set(receipts) != expected:
+        raise IdentityContractError(
+            "Discovery receipts must bind every acquisition sample exactly once"
+        )
+    result: dict[str, DiscoveryCandidateUniverseReceipt] = {}
+    for stem in sorted(expected):
+        receipt = receipts[stem]
+        if not isinstance(receipt, DiscoveryCandidateUniverseReceipt):
+            raise IdentityContractError(
+                "Discovery receipts must contain owner receipt values"
+            )
+        source = sources_by_stem[stem]
+        if not isinstance(source, AcquisitionSourceIdentity):
+            raise IdentityContractError(
+                "acquisition source owner returned invalid data"
+            )
+        validate_discovery_candidate_universe(
+            receipt,
+            acquisition_source=source,
+            candidates=candidates_by_stem[stem],
+        )
+        result[stem] = receipt
+    return result
+
+
+def _is_digest(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _raw_paths_by_stem(raw_paths: Sequence[Path]) -> dict[str, Path]:
@@ -415,7 +517,7 @@ def _canonical_json_mapping(
     return normalized
 
 
-__all__ = [
+__all__ = (
     "CANDIDATE_UNIVERSE_INPUT_KEY",
     "DISCOVERY_SETTINGS_INPUT_KEY",
     "PEAK_SETTINGS_INPUT_KEY",
@@ -427,4 +529,4 @@ __all__ = [
     "candidate_universe_payload",
     "discovery_settings_payload",
     "validate_candidate_universe_payload",
-]
+)

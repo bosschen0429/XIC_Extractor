@@ -221,7 +221,13 @@ class OwnerPathRuntimeMarker:
                 "runtime marker is not valid canonical JSON"
             ) from exc
         snapshot = _snapshot_from_payload(payload)
-        if _canonical_snapshot_bytes(snapshot) != payload_bytes:
+        if (
+            _canonical_snapshot_bytes(
+                snapshot,
+                schema_version=payload["schema_version"],
+            )
+            != payload_bytes
+        ):
             raise RuntimeFinalizationContractError(
                 "runtime marker bytes are not canonical"
             )
@@ -302,8 +308,12 @@ def _same_attempt_scope(
     )
 
 
-def _canonical_snapshot_bytes(snapshot: RuntimeMarkerSnapshot) -> bytes:
-    payload = _snapshot_payload(snapshot)
+def _canonical_snapshot_bytes(
+    snapshot: RuntimeMarkerSnapshot,
+    *,
+    schema_version: str = "execution_runtime_recovery_marker_v4",
+) -> bytes:
+    payload = _snapshot_payload(snapshot, schema_version=schema_version)
     payload["marker_sha256"] = hashlib.sha256(
         json.dumps(
             payload,
@@ -322,7 +332,11 @@ def _canonical_snapshot_bytes(snapshot: RuntimeMarkerSnapshot) -> bytes:
     ).encode("utf-8")
 
 
-def _snapshot_payload(snapshot: RuntimeMarkerSnapshot) -> dict[str, Any]:
+def _snapshot_payload(
+    snapshot: RuntimeMarkerSnapshot,
+    *,
+    schema_version: str = "execution_runtime_recovery_marker_v4",
+) -> dict[str, Any]:
     return {
         "artifact_dispositions": [
             [artifact_id, disposition.value]
@@ -344,7 +358,7 @@ def _snapshot_payload(snapshot: RuntimeMarkerSnapshot) -> dict[str, Any]:
         "manifest_work_unit_keys": list(snapshot.manifest_work_unit_keys),
         "processing_attempt_id": snapshot.processing_attempt_id,
         "processing_request_id": snapshot.processing_request_id,
-        "schema_version": "execution_runtime_recovery_marker_v3",
+        "schema_version": schema_version,
         "state": snapshot.state.value,
         "terminal_outcome": (
             None
@@ -376,7 +390,10 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         raise RuntimeFinalizationContractError(
             "runtime marker fields do not match the recovery schema"
         )
-    if payload["schema_version"] != "execution_runtime_recovery_marker_v3":
+    if payload["schema_version"] not in {
+        "execution_runtime_recovery_marker_v3",
+        "execution_runtime_recovery_marker_v4",
+    }:
         raise RuntimeFinalizationContractError(
             "runtime marker schema_version is unsupported"
         )
@@ -475,14 +492,18 @@ def _snapshot_from_payload(payload: Any) -> RuntimeMarkerSnapshot:
         artifact_dispositions=dispositions,
     )
     marker_sha256 = payload["marker_sha256"]
+    digest_payload = _snapshot_payload(
+        snapshot,
+        schema_version=payload["schema_version"],
+    )
     if (
         not isinstance(marker_sha256, str)
         or len(marker_sha256) != 64
         or any(character not in "0123456789abcdef" for character in marker_sha256)
         or marker_sha256
-        != hashlib.sha256(
-            json.dumps(
-                _snapshot_payload(snapshot),
+            != hashlib.sha256(
+                json.dumps(
+                    digest_payload,
                 ensure_ascii=False,
                 sort_keys=True,
                 separators=(",", ":"),

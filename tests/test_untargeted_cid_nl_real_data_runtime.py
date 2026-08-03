@@ -17,9 +17,17 @@ from tests.test_targeted_real_data_adapter import (
     _settings,
     _working_imports,
 )
+from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     build_untargeted_cid_nl_golden_path,
 )
+from xic_extractor.discovery.batch_contract import (
+    DiscoveryCandidateUniverseReceipt,
+    mint_discovery_candidate_universe_receipt,
+)
+from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.execution_runtime_finalization import RuntimeResourceOpenOutcome
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_owner import start_runtime_attempt
 from xic_extractor.extraction import (
@@ -32,12 +40,19 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
     UntargetedCidNlRealDataRuntimeError,
     UntargetedCidNlRealDataRuntimeJob,
     execute_untargeted_cid_nl_real_data_runtime,
+    untargeted_cid_nl_runtime_call_cost,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
+from xic_extractor.processing_identity import (
+    IdentityContractError,
+    build_acquisition_source_identity,
+)
 from xic_extractor.raw_reader import (
     EXPECTED_THERMO_DLLS,
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
     open_raw,
     reset_reader_state,
 )
@@ -85,6 +100,11 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": candidates, "S2": ()},
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            raw_paths,
+            {"S1": candidates, "S2": ()},
+        ),
         sample_identity_namespace="study:m7-runtime-test",
     )
     vendor_raw = _install_runtime_raw(
@@ -99,6 +119,9 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
             sample=sample,
             method_subject=context.method_subject,
             candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[
+                sample.metadata.raw_stem
+            ],
             settings=context.settings,
             peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
@@ -192,6 +215,11 @@ def test_runtime_does_not_open_raw_for_unsupported_inferred_precursor_universe(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": (inferred,)},
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            (raw_path,),
+            {"S1": (inferred,)},
+        ),
         sample_identity_namespace="study:m7-runtime-unsupported-test",
     )
     job = UntargetedCidNlRealDataRuntimeJob(
@@ -199,6 +227,7 @@ def test_runtime_does_not_open_raw_for_unsupported_inferred_precursor_universe(
         sample=context.samples[0],
         method_subject=context.method_subject,
         candidates=context.candidates_by_sample["S1"],
+        discovery_receipt=context.discovery_receipts_by_sample["S1"],
         settings=context.settings,
         peak_config=context.peak_config,
         raw_path=raw_path,
@@ -312,6 +341,11 @@ def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            raw_paths,
+            candidates_by_sample,
+        ),
         sample_identity_namespace="study:m7-runtime-recovery-test",
     )
     opened = _install_runtime_raws(
@@ -325,6 +359,9 @@ def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
             sample=sample,
             method_subject=context.method_subject,
             candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[
+                sample.metadata.raw_stem
+            ],
             settings=context.settings,
             peak_config=context.peak_config,
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
@@ -432,6 +469,11 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
         settings=settings,
         peak_config=peak_config,
         candidates_by_sample={"S1": candidates},
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            (raw_path,),
+            {"S1": candidates},
+        ),
         sample_identity_namespace="study:m7-runtime-request-pin-test",
     )
 
@@ -444,12 +486,214 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
             sample=context.samples[0],
             method_subject=context.method_subject,
             candidates=(replace(candidates[0], reason="tampered-after-request"),),
+            discovery_receipt=context.discovery_receipts_by_sample["S1"],
             settings=context.settings,
             peak_config=context.peak_config,
             raw_path=raw_path,
             dll_dir=tmp_path,
             work_unit_key="untargeted-cid-nl:S1",
         )
+
+
+def test_context_rejects_same_stem_receipt_from_different_acquisition(
+    tmp_path: Path,
+) -> None:
+    source_dir = tmp_path / "source"
+    replay_dir = tmp_path / "replay"
+    source_dir.mkdir()
+    replay_dir.mkdir()
+    source_path = source_dir / "S1.synthetic"
+    replay_path = replay_dir / "S1.synthetic"
+    source_path.write_bytes(b"discovery-acquisition")
+    replay_path.write_bytes(b"different-replay-acquisition")
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        _FakeRaw((8.0,)),
+        raw_file=source_path,
+        settings=settings,
+        peak_config=peak_config,
+    )
+    receipt = _discovery_receipts(
+        tmp_path,
+        (source_path,),
+        {"S1": candidates},
+    )["S1"]
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        neutral_loss_da=116.0474,
+    )
+
+    with pytest.raises(
+        IdentityContractError,
+        match="current acquisition source does not match the Discovery receipt",
+    ):
+        build_untargeted_cid_nl_real_data_context(
+            raw_paths=(replay_path,),
+            sample_metadata=(
+                SampleMetadata(
+                    sample_name="S1",
+                    raw_stem="S1",
+                    injection_order=1,
+                    sample_role="study_sample",
+                ),
+            ),
+            method_subject=subject,
+            settings=settings,
+            peak_config=peak_config,
+            candidates_by_sample={"S1": candidates},
+            discovery_receipts_by_sample={"S1": receipt},
+            sample_identity_namespace="study:m7-crossed-acquisition-test",
+        )
+
+
+def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stems = ("Support", "Reject", "Empty")
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    for raw_path in raw_paths:
+        raw_path.write_bytes(raw_path.stem.encode())
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raws = {path: _FakeRaw((8.0,)) for path in raw_paths}
+    support = _current_candidates(
+        source_raws[raw_paths[0]],
+        raw_file=raw_paths[0],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    reject = tuple(
+        _without_ms1_peak(candidate)
+        for candidate in _current_candidates(
+            source_raws[raw_paths[1]],
+            raw_file=raw_paths[1],
+            settings=settings,
+            peak_config=peak_config,
+        )
+    )
+    candidates_by_sample = {
+        "Support": support,
+        "Reject": reject,
+        "Empty": (),
+    }
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        neutral_loss_da=116.0474,
+    )
+    context = build_untargeted_cid_nl_real_data_context(
+        raw_paths=raw_paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=stem,
+                raw_stem=stem,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+            for index, stem in enumerate(stems, start=1)
+        ),
+        method_subject=subject,
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            raw_paths,
+            candidates_by_sample,
+        ),
+        sample_identity_namespace="study:m7-conditional-resource-test",
+    )
+    opened = _install_runtime_raws(
+        monkeypatch,
+        sources_by_path=source_raws,
+        tmp_path=tmp_path,
+    )
+    installed_open_raw = runtime_module.open_raw
+
+    def _reject_unused_open(path: Path, *args: object, **kwargs: object):
+        if path == raw_paths[2]:
+            raise AssertionError("owner-false recovery resource must not open RAW")
+        return installed_open_raw(path, *args, **kwargs)
+
+    monkeypatch.setattr(runtime_module, "open_raw", _reject_unused_open)
+    jobs = tuple(
+        UntargetedCidNlRealDataRuntimeJob(
+            processing_owners=context.processing_owners,
+            sample=sample,
+            method_subject=context.method_subject,
+            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            discovery_receipt=context.discovery_receipts_by_sample[
+                sample.metadata.raw_stem
+            ],
+            settings=context.settings,
+            peak_config=context.peak_config,
+            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            dll_dir=tmp_path,
+            work_unit_key=f"untargeted-cid-nl:{sample.metadata.raw_stem}",
+        )
+        for sample in context.samples
+    )
+    runtime = start_runtime_attempt(
+        attempt=context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in jobs),
+        owner_completeness_attestation="m7-conditional-resource-test:v1",
+    )
+
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "m7.conditional.runtime.json",
+            "m7-conditional-resource:test",
+        ),
+    )
+
+    assert result.succeeded is True
+    assert [
+        item.adapter_result.assessment_input.assessment.content.method_result
+        for item in result.sample_results
+    ] == ["SUPPORT", "REJECT", "HOLD"]
+    assert raw_paths[2] not in opened
+    empty_resource = next(
+        resource
+        for resource in result.finalization.coordinator.state.resources
+        if resource.reservation.resource_key.endswith(":Empty")
+    )
+    assert empty_resource.open_outcome is (
+        RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
+    )
+    assert empty_resource.reservation.owner_conditional is True
+    assert (
+        untargeted_cid_nl_runtime_call_cost(result.finalization)["raw_open_count"] == 2
+    )
+
+
+def _discovery_receipts(
+    root: Path,
+    raw_paths: tuple[Path, ...],
+    candidates_by_sample: dict[str, tuple[DiscoveryCandidate, ...]],
+) -> dict[str, DiscoveryCandidateUniverseReceipt]:
+    receipts: dict[str, DiscoveryCandidateUniverseReceipt] = {}
+    for raw_path in raw_paths:
+        candidates = candidates_by_sample[raw_path.stem]
+        candidate_csv = root / f"{raw_path.stem}.owner-candidates.csv"
+        write_discovery_candidates_csv(candidate_csv, candidates)
+        source = build_acquisition_source_identity(
+            raw_path,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        )
+        receipts[raw_path.stem] = mint_discovery_candidate_universe_receipt(
+            sample_stem=raw_path.stem,
+            acquisition_source=source,
+            candidate_csv=candidate_csv,
+            candidates=candidates,
+        )
+    return receipts
 
 
 def _install_runtime_raw(

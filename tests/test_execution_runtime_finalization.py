@@ -224,6 +224,78 @@ def test_not_opened_resource_without_accepted_cancellation_fails_attempt(
     )
 
 
+def test_condition_not_activated_keeps_success_without_opening_resource(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, artifact = _successful_runtime(attempt)
+    state = reserve_runtime_resource(
+        begin_attempt_finalization(runtime),
+        _reservation(
+            attempt,
+            owner_conditional=True,
+        ),
+    )
+    state = register_runtime_artifact(
+        state,
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+    state = settle_runtime_resource(
+        state,
+        resource_key="session:a",
+        open_outcome=RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+
+    coordinator = propose_attempt_terminal(state)
+    payload = json.loads(canonical_coordinator_terminal_record_bytes(coordinator))
+
+    assert coordinator.proposed_outcome is AttemptTerminalOutcome.SUCCEEDED
+    assert coordinator.state.artifacts[0].proposed_disposition is (
+        RuntimeArtifactDisposition.OFFERED_TO_OWNER
+    )
+    assert payload["schema_version"] == "execution_runtime_coordinator_terminal_v4"
+    assert payload["resources"][0]["owner_conditional"] is True
+    assert payload["resources"][0]["open_outcome"] == "condition_not_activated"
+
+
+def test_required_resource_cannot_claim_condition_not_activated(
+    tmp_path: Path,
+) -> None:
+    attempt = _attempt(tmp_path)
+    runtime, artifact = _successful_runtime(attempt)
+    state = reserve_runtime_resource(
+        begin_attempt_finalization(runtime),
+        _reservation(attempt),
+    )
+    state = register_runtime_artifact(
+        state,
+        work_unit_key="raw:a",
+        artifact=artifact,
+    )
+    state = settle_runtime_resource(
+        state,
+        resource_key="session:a",
+        open_outcome=RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED,
+        cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
+    )
+
+    coordinator = propose_attempt_terminal(state)
+
+    assert coordinator.proposed_outcome is AttemptTerminalOutcome.FAILED
+    assert len(coordinator.state.failures) == 1
+    failure = coordinator.state.failures[0]
+    assert failure.kind is RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_REPORT
+    assert failure.subject_key == "session:a"
+    assert failure.message == (
+        "required resource cannot close as condition_not_activated"
+    )
+    assert coordinator.state.artifacts[0].proposed_disposition is (
+        RuntimeArtifactDisposition.QUARANTINED_DIAGNOSTIC
+    )
+
+
 def test_cancelled_attempt_quarantines_artifacts_without_becoming_failed(
     tmp_path: Path,
 ) -> None:
@@ -460,7 +532,7 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
         "work_unit_key": "raw:a",
     }
     assert json.loads(failed_bytes)["schema_version"] == (
-        "execution_runtime_coordinator_terminal_v3"
+        "execution_runtime_coordinator_terminal_v4"
     )
     assert (
         mint_supervisor_finalization(
@@ -469,7 +541,7 @@ def test_coordinator_receipt_binds_settlement_integrity_failure(
         ).coordinator_record_sha256
         != mint_supervisor_finalization(
             alternate_coordinator,
-                observability_ledger=_ledger(attempt, alternate_coordinator),
+            observability_ledger=_ledger(attempt, alternate_coordinator),
         ).coordinator_record_sha256
     )
 
@@ -614,9 +686,12 @@ def test_process_worker_open_does_not_increment_raw_open_count(
         observability_ledger=ledger,
     )
 
-    assert next(
-        metric.value for metric in ledger.metrics if metric.name == "raw_open_count"
-    ) == 0
+    assert (
+        next(
+            metric.value for metric in ledger.metrics if metric.name == "raw_open_count"
+        )
+        == 0
+    )
 
 
 def test_undeclared_artifact_is_rejected_by_registration_and_state_invariant(
@@ -755,7 +830,11 @@ def _runtime(
     )
 
 
-def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservation:
+def _reservation(
+    attempt: ProcessingAttemptIdentity,
+    *,
+    owner_conditional: bool = False,
+) -> RuntimeResourceReservation:
     return RuntimeResourceReservation(
         attempt=attempt,
         kind=RuntimeResourceKind.ACQUISITION_SESSION,
@@ -763,6 +842,7 @@ def _reservation(attempt: ProcessingAttemptIdentity) -> RuntimeResourceReservati
         worker_key="worker:1",
         source_reference="source:a",
         compatibility_token="targeted:test:v1",
+        owner_conditional=owner_conditional,
     )
 
 

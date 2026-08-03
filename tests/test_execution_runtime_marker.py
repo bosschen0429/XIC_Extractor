@@ -147,6 +147,8 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
     recovered = marker.recover_after_coordinator_loss(attempt)
 
     assert accepted == receipt
+    payload = json.loads(marker.path.read_bytes())
+    assert payload["schema_version"] == "execution_runtime_recovery_marker_v4"
     assert marker.read().state is RuntimeMarkerState.FINALIZED
     assert marker(receipt) == accepted
     with pytest.raises(RuntimeFinalizationContractError, match="already durably"):
@@ -166,6 +168,27 @@ def test_finalization_atomically_replaces_launch_and_survives_loss(
             RuntimeArtifactDisposition.OFFERED_TO_OWNER,
         ),
     )
+
+
+def test_marker_reader_retains_v3_outer_schema_compatibility(tmp_path: Path) -> None:
+    attempt = _attempt(tmp_path)
+    marker = OwnerPathRuntimeMarker(
+        tmp_path / "attempt.runtime.json",
+        "runtime-attempt-artifacts:v3-compat",
+    )
+    marker.record_launch(_runtime(attempt))
+    payload = json.loads(marker.path.read_bytes())
+    payload["schema_version"] = "execution_runtime_recovery_marker_v3"
+    unsigned = {key: value for key, value in payload.items() if key != "marker_sha256"}
+    payload["marker_sha256"] = hashlib.sha256(
+        _canonical_json_bytes(unsigned)
+    ).hexdigest()
+    marker.path.write_bytes(_canonical_json_bytes(payload))
+
+    restored = marker.read()
+
+    assert restored.state is RuntimeMarkerState.LAUNCHED
+    assert restored.processing_attempt_id == attempt.processing_attempt_id
 
 
 def test_finalized_marker_bytes_bind_the_exact_observability_ledger(

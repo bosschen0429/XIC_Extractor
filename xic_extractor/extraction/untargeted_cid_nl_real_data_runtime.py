@@ -19,6 +19,9 @@ from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     build_untargeted_cid_nl_golden_path,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.batch_contract import (
+    DiscoveryCandidateUniverseReceipt,
+)
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
@@ -42,6 +45,8 @@ from xic_extractor.execution_runtime_finalization import (
 )
 from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
 from xic_extractor.execution_runtime_observability import (
+    RuntimeMetricAvailability,
+    RuntimeMetricScope,
     RuntimeObservabilityContractError,
     validate_runtime_acquisition_metrics,
 )
@@ -83,6 +88,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
 )
 from xic_extractor.processing_identity import (
+    IdentityContractError,
     ProcessingOwnerReferences,
     canonical_current_attempt_artifact_closure,
     resolve_request_acquisition_source,
@@ -90,8 +96,15 @@ from xic_extractor.processing_identity import (
 from xic_extractor.raw_reader import RawReaderOpenError, open_raw
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v1"
+SCHEMA_VERSION = "untargeted_cid_nl_real_data_runtime_result_v2"
 VALIDATION_STATUS = "diagnostic_only"
+M7_CALL_COST_METRIC_NAMES = (
+    "raw_open_count",
+    "logical_xic_request_count",
+    "xic_batch_count",
+    "adapter_chromatogram_call_count",
+    "trace_point_count",
+)
 _RUNTIME_COMPATIBILITY_TOKEN = "untargeted-cid-nl-real-data-runtime:v1"
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
@@ -113,6 +126,7 @@ class UntargetedCidNlRealDataRuntimeJob:
     sample: ResolvedCanonicalSampleIdentity
     method_subject: CidNlMethodSubject
     candidates: tuple[DiscoveryCandidate, ...]
+    discovery_receipt: DiscoveryCandidateUniverseReceipt
     settings: DiscoverySettings
     peak_config: ExtractionConfig
     raw_path: Path
@@ -124,6 +138,7 @@ class UntargetedCidNlRealDataRuntimeJob:
             ("processing_owners", ProcessingOwnerReferences),
             ("sample", ResolvedCanonicalSampleIdentity),
             ("method_subject", CidNlMethodSubject),
+            ("discovery_receipt", DiscoveryCandidateUniverseReceipt),
             ("settings", DiscoverySettings),
             ("peak_config", ExtractionConfig),
             ("raw_path", Path),
@@ -149,6 +164,7 @@ class UntargetedCidNlSampleResultRef:
     work_unit_key: str
     canonical_sample_identity_id: str
     method_subject_id: str
+    discovery_receipt_id: str
     assessment_artifact_id: str
     discovery_projection_artifact_ids: tuple[str, ...]
     source_candidate_ids: tuple[str, ...]
@@ -213,6 +229,42 @@ class UntargetedCidNlRealDataRuntimeApplicationResult:
         )
 
 
+def untargeted_cid_nl_runtime_call_cost(
+    finalization: RuntimeFinalizationReceipt,
+) -> dict[str, int]:
+    """Project the five M7 call-cost facts from the runtime-owned ledger."""
+
+    if not isinstance(finalization, RuntimeFinalizationReceipt):
+        raise UntargetedCidNlRealDataRuntimeError(
+            "call cost requires an accepted RuntimeFinalizationReceipt"
+        )
+    attempt_id = (
+        finalization.coordinator.state.runtime.manifest.attempt.processing_attempt_id
+    )
+    projected: dict[str, int] = {}
+    for name in M7_CALL_COST_METRIC_NAMES:
+        matches = tuple(
+            metric
+            for metric in finalization.observability_ledger.metrics
+            if metric.name == name
+            and metric.scope is RuntimeMetricScope.ATTEMPT
+            and metric.scope_key == attempt_id
+        )
+        if (
+            len(matches) != 1
+            or matches[0].availability is not RuntimeMetricAvailability.MEASURED
+            or isinstance(matches[0].value, bool)
+            or not isinstance(matches[0].value, (int, float))
+            or not float(matches[0].value).is_integer()
+            or matches[0].value < 0
+        ):
+            raise UntargetedCidNlRealDataRuntimeError(
+                f"runtime owner did not provide measured integral {name}"
+            )
+        projected[name] = int(matches[0].value)
+    return projected
+
+
 def execute_untargeted_cid_nl_real_data_runtime(
     runtime: AttemptRuntime,
     jobs: tuple[UntargetedCidNlRealDataRuntimeJob, ...],
@@ -224,9 +276,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
     """Execute every request sample through one attempt and one finalization."""
 
     if not isinstance(runtime, AttemptRuntime):
-        raise UntargetedCidNlRealDataRuntimeError(
-            "runtime must be an AttemptRuntime"
-        )
+        raise UntargetedCidNlRealDataRuntimeError("runtime must be an AttemptRuntime")
     if not jobs or any(
         not isinstance(job, UntargetedCidNlRealDataRuntimeJob) for job in jobs
     ):
@@ -293,8 +343,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
                 and recovery_upper_bound_met
                 and not initial_requires_raw
                 and not job.sample.metadata.excluded
-                and job.sample.metadata.sample_role
-                in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
+                and job.sample.metadata.sample_role in ACTIVATION_ELIGIBLE_SAMPLE_ROLES
             )
             if initial_requires_raw or recovery_may_need_raw:
                 resource_key = f"acquisition-session:{job.work_unit_key}"
@@ -310,6 +359,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
                         worker_key=f"inline-acquisition:{job.work_unit_key}",
                         source_reference=source.acquisition_source_id,
                         compatibility_token=_RUNTIME_COMPATIBILITY_TOKEN,
+                        owner_conditional=not initial_requires_raw,
                     )
                 )
         except Exception as exc:
@@ -337,7 +387,6 @@ def execute_untargeted_cid_nl_real_data_runtime(
             _execute_initial_assessment(state)
 
         _prepare_owner_authorized_recoveries(states)
-        _close_unused_conditional_sessions(states)
 
         for state in states:
             batch, sample_result, acquisition = _finalize_job_state(state)
@@ -454,9 +503,7 @@ def _prepare_owner_authorized_recoveries(
         preliminary = build_untargeted_cid_nl_golden_path(
             processing_owners=first.processing_owners,
             method_subject=first.method_subject,
-            sample_inputs=tuple(
-                result.assessment_input for result in adapter_results
-            ),
+            sample_inputs=tuple(result.assessment_input for result in adapter_results),
             source_artifact_relpath=(
                 "output/m7/preliminary_untargeted_cid_nl_source.json"
             ),
@@ -483,10 +530,7 @@ def _prepare_owner_authorized_recoveries(
             continue
         assessment = result.assessment_input.assessment
         sample_id = state.job.sample.identity.sample_identity_id
-        if (
-            sample_id not in eligible_ids
-            or assessment.content.method_result != "HOLD"
-        ):
+        if sample_id not in eligible_ids or assessment.content.method_result != "HOLD":
             continue
         if assessment.candidate_peaks:
             state.recovery_input = UntargetedCidNlRecoveryInput(
@@ -562,46 +606,6 @@ def _execute_recovery(
                     state.error = exc
 
 
-def _close_unused_conditional_sessions(states: list[_RuntimeJobState]) -> None:
-    """Close upper-bound reservations that owner facts did not activate."""
-
-    if any(state.error is not None for state in states):
-        return
-    for state in states:
-        if state.resource_key is None or state.opened:
-            continue
-        raw = None
-        try:
-            source = resolve_request_acquisition_source(
-                processing_owners=state.job.processing_owners,
-                sample=state.job.sample,
-            )
-            state.open_attempted = True
-            raw = open_raw(
-                state.job.raw_path,
-                state.job.dll_dir,
-                expected_acquisition_source=source,
-            )
-            state.opened = True
-        except RawReaderOpenError as exc:
-            state.cleanup_outcome = (
-                RuntimeResourceCleanupOutcome.FAILED
-                if exc.cleanup_failed
-                else RuntimeResourceCleanupOutcome.SUCCEEDED
-            )
-            state.error = exc
-        except Exception as exc:
-            state.error = exc
-        finally:
-            if raw is not None:
-                try:
-                    raw.__exit__(None, None, None)
-                except Exception as exc:
-                    state.cleanup_outcome = RuntimeResourceCleanupOutcome.FAILED
-                    if state.error is None:
-                        state.error = exc
-
-
 def _finalize_job_state(
     state: _RuntimeJobState,
 ) -> tuple[
@@ -655,9 +659,7 @@ def _finalize_job_state(
                 state.error = exc
 
     success = (
-        state.error is None
-        and adapter_result is not None
-        and result_ref is not None
+        state.error is None and adapter_result is not None and result_ref is not None
     )
     if not success and state.error is None:
         state.error = UntargetedCidNlRealDataRuntimeError(
@@ -672,9 +674,7 @@ def _finalize_job_state(
             else WorkUnitTerminalOutcome.FAILED
         ),
         owner_result_ref=(
-            result_ref.artifact
-            if success and result_ref is not None
-            else None
+            result_ref.artifact if success and result_ref is not None else None
         ),
         failure_detail=None if success else _failure_detail(job, state.error),
     )
@@ -689,7 +689,7 @@ def _finalize_job_state(
                     else (
                         RuntimeResourceOpenOutcome.OPEN_FAILED
                         if state.open_attempted
-                        else RuntimeResourceOpenOutcome.NOT_OPENED
+                        else RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
                     )
                 ),
                 cleanup_outcome=state.cleanup_outcome,
@@ -759,15 +759,14 @@ def mint_untargeted_cid_nl_sample_result_ref(
         recovery_attempt.assessment
         if recovery_attempt is not None
         else (
-            recovery_input.candidate_assessment
-            if recovery_input is not None
-            else None
+            recovery_input.candidate_assessment if recovery_input is not None else None
         )
     )
     values = {
         "work_unit_key": job.work_unit_key,
         "canonical_sample_identity_id": job.sample.identity.sample_identity_id,
         "method_subject_id": job.method_subject.method_subject_id,
+        "discovery_receipt_id": job.discovery_receipt.discovery_receipt_id,
         "assessment_artifact_id": assessment.artifact.evidence_artifact_id,
         "discovery_projection_artifact_ids": tuple(
             projection.artifact.evidence_artifact_id for projection in projections
@@ -811,6 +810,7 @@ def mint_untargeted_cid_nl_sample_result_ref(
         work_unit_key=job.work_unit_key,
         canonical_sample_identity_id=job.sample.identity.sample_identity_id,
         method_subject_id=job.method_subject.method_subject_id,
+        discovery_receipt_id=job.discovery_receipt.discovery_receipt_id,
         assessment_artifact_id=assessment.artifact.evidence_artifact_id,
         discovery_projection_artifact_ids=tuple(
             projection.artifact.evidence_artifact_id for projection in projections
@@ -839,15 +839,12 @@ def canonical_untargeted_cid_nl_sample_result_bytes(
         work_unit_key=reference.work_unit_key,
         canonical_sample_identity_id=reference.canonical_sample_identity_id,
         method_subject_id=reference.method_subject_id,
+        discovery_receipt_id=reference.discovery_receipt_id,
         assessment_artifact_id=reference.assessment_artifact_id,
-        discovery_projection_artifact_ids=(
-            reference.discovery_projection_artifact_ids
-        ),
+        discovery_projection_artifact_ids=(reference.discovery_projection_artifact_ids),
         source_candidate_ids=reference.source_candidate_ids,
         strict_scan_count=reference.strict_scan_count,
-        recovery_assessment_artifact_id=(
-            reference.recovery_assessment_artifact_id
-        ),
+        recovery_assessment_artifact_id=(reference.recovery_assessment_artifact_id),
         recovery_candidate_count=reference.recovery_candidate_count,
         acquisition_sha256=reference.acquisition_sha256,
     )
@@ -940,10 +937,18 @@ def _validate_request_bound_inputs(job: UntargetedCidNlRealDataRuntimeJob) -> No
         universe,
         expected_sample_stems=expected_stems,
     )
-    expected_payload = candidate_universe_payload(
-        {job.sample.metadata.raw_stem: job.candidates},
-        expected_sample_stems=(job.sample.metadata.raw_stem,),
-    )
+    try:
+        expected_payload = candidate_universe_payload(
+            {job.sample.metadata.raw_stem: job.candidates},
+            discovery_receipts_by_sample={
+                job.sample.metadata.raw_stem: job.discovery_receipt
+            },
+            expected_sample_stems=(job.sample.metadata.raw_stem,),
+        )
+    except IdentityContractError as exc:
+        raise UntargetedCidNlRealDataRuntimeError(
+            "candidate universe does not match the processing request"
+        ) from exc
     assert isinstance(universe, dict)
     entries = universe["samples"]
     assert isinstance(entries, list)
@@ -998,10 +1003,12 @@ def _required_text(value: object, *, field: str) -> str:
     return value
 
 
-__all__ = [
+__all__ = (
+    "M7_CALL_COST_METRIC_NAMES",
     "UntargetedCidNlRealDataRuntimeApplicationResult",
     "UntargetedCidNlRealDataRuntimeError",
     "UntargetedCidNlRealDataRuntimeJob",
     "UntargetedCidNlRuntimeSampleResult",
     "execute_untargeted_cid_nl_real_data_runtime",
-]
+    "untargeted_cid_nl_runtime_call_cost",
+)

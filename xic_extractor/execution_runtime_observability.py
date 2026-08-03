@@ -124,6 +124,7 @@ _RESOURCE_OPEN_EVENT_KINDS = {
     "resource_opened",
     "resource_open_failed",
     "resource_not_opened",
+    "resource_condition_not_activated",
     "resource_open_state_unknown_after_worker_loss",
 }
 _RESOURCE_CLEANUP_EVENT_KINDS = {
