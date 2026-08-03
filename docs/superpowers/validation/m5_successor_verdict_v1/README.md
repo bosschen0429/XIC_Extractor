@@ -23,10 +23,13 @@ baseline instrumentation is missing.
 candidate commit/tree/source seal and legacy pointer, and binds all 40 evidence
 locators to the 20 exact tracked files in `evidence_manifest.tsv`.
 `architecture_authority_audit.tsv` records two zero-crossing checks and five
-single-owner responsibilities for the frozen scope; the validator recomputes
-the typed-owner module census so a second owner fails the gate. Selective cases seal their
-pre-registered question, expectation, evidence, and failure effect so observed
-failure can honestly derive NARROW or KILL instead of invalidating the packet.
+single-owner responsibilities for the frozen scope; the validator recomputes a
+construction-aware module census over direct authority constructors and typed
+`dataclasses.replace` transitions regardless of public/private naming. A second
+producer module therefore fails while a private accessor to an existing ref does
+not. Selective cases seal their pre-registered question, expectation, evidence,
+and failure effect so observed failure can honestly derive NARROW or KILL instead
+of invalidating the packet.
 The recorded rollback receipt binds attempt, lineage/revision summaries,
 stage/seal identity, and owner receipt digest. The executable rollback test uses
 the existing Targeted delivery owner and proves that candidate evidence is

@@ -391,27 +391,106 @@ def test_m5_packet_rejects_authority_audit_count_drift(tmp_path: Path) -> None:
         )
 
 
-def test_m5_authority_census_rejects_second_typed_owner(tmp_path: Path) -> None:
-    audit_rows = tuple(
-        _read_tsv(PACKET / "architecture_authority_audit.tsv")
-    )
-    for row in audit_rows:
-        source = Path(row["evidence_locator"].partition("::")[0])
-        destination = tmp_path / source
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+@pytest.mark.parametrize(
+    ("owner_module", "return_type"),
+    (
+        (
+            "xic_extractor.alignment.cell_observations",
+            "CellObservationRef",
+        ),
+        (
+            "xic_extractor.peak_detection.cid_nl_candidate_set_relation",
+            "DdaCidNlCandidateSetRelationRef",
+        ),
+        (
+            "xic_extractor.peak_detection.cid_nl_method_assessment",
+            "CidNlMethodAssessmentRef",
+        ),
+        (
+            "xic_extractor.alignment.identity_settlement",
+            "IdentitySettlementDecision",
+        ),
+        (
+            "xic_extractor.extraction.targeted_diagnostic_delivery",
+            "TargetedDiagnosticDeliveryCandidate",
+        ),
+    ),
+)
+def test_m5_authority_census_rejects_private_aliased_constructor_owner(
+    tmp_path: Path,
+    owner_module: str,
+    return_type: str,
+) -> None:
+    audit_rows = _copy_m5_authority_sources(tmp_path)
     duplicate = tmp_path / "xic_extractor" / "duplicate_delivery_owner.py"
     duplicate.write_text(
-        "from xic_extractor.extraction.targeted_diagnostic_delivery import (\n"
-        "    TargetedDiagnosticDeliveryCandidate as Candidate,\n"
+        f"from {owner_module} import (\n"
+        f"    {return_type} as Candidate,\n"
         ")\n\n"
-        "def settle_shadow() -> Candidate:\n"
-        "    raise NotImplementedError\n",
+        "def _settle_shadow() -> Candidate:\n"
+        "    return Candidate()\n",
         encoding="utf-8",
     )
 
     with pytest.raises(Package0ComparatorError, match="executable census differs"):
         _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("replace_import", "replace_call"),
+    (
+        (
+            "from dataclasses import replace as transition\n",
+            'transition(candidate, status="rolled_back")',
+        ),
+        (
+            "import dataclasses as dc\n",
+            'dc.replace(candidate, status="rolled_back")',
+        ),
+        (
+            "from dataclasses import replace\ntransition = replace\n",
+            'transition(candidate, status="rolled_back")',
+        ),
+        (
+            "import dataclasses as dc\ntransition = dc.replace\n",
+            'transition(candidate, status="rolled_back")',
+        ),
+    ),
+)
+def test_m5_authority_census_rejects_private_typed_replace_owner(
+    tmp_path: Path,
+    replace_import: str,
+    replace_call: str,
+) -> None:
+    audit_rows = _copy_m5_authority_sources(tmp_path)
+    duplicate = tmp_path / "xic_extractor" / "duplicate_delivery_owner.py"
+    duplicate.write_text(
+        f"{replace_import}"
+        "from xic_extractor.extraction.targeted_diagnostic_delivery import (\n"
+        "    TargetedDiagnosticDeliveryCandidate as Candidate,\n"
+        ")\n\n"
+        "def _rollback_shadow(candidate: Candidate) -> Candidate:\n"
+        f"    return {replace_call}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(Package0ComparatorError, match="executable census differs"):
+        _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
+
+
+def test_m5_authority_census_ignores_private_typed_accessor(tmp_path: Path) -> None:
+    audit_rows = _copy_m5_authority_sources(tmp_path)
+    accessor = tmp_path / "xic_extractor" / "cell_observation_accessor.py"
+    accessor.write_text(
+        "from xic_extractor.alignment.cell_observations import (\n"
+        "    CellObservationRef as CellRef,\n"
+        ")\n\n"
+        "def _target_cell(existing: CellRef) -> CellRef:\n"
+        "    return existing\n",
+        encoding="utf-8",
+    )
+
+    _validate_m5_authority_audit(audit_rows, repo_root=tmp_path)
 
 
 def test_m5_packet_rejects_recorded_rollback_receipt_drift(tmp_path: Path) -> None:
@@ -506,6 +585,20 @@ def _sequence_sha256(values: tuple[str, ...]) -> str:
 def _copy_packet(destination: Path) -> Path:
     shutil.copytree(PACKET, destination)
     return destination
+
+
+def _copy_m5_authority_sources(
+    destination_root: Path,
+) -> tuple[dict[str, str], ...]:
+    audit_rows = tuple(
+        _read_tsv(PACKET / "architecture_authority_audit.tsv")
+    )
+    for row in audit_rows:
+        source = Path(row["evidence_locator"].partition("::")[0])
+        destination = destination_root / source
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+    return audit_rows
 
 
 def _read_tsv(path: Path) -> list[dict[str, str]]:

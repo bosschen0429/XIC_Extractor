@@ -1885,19 +1885,136 @@ def _m5_authority_owner_census(
             ) from exc
         relative = path.relative_to(repo_root).as_posix()
         return_type_aliases = _m5_return_type_aliases(tree)
+        replace_names, dataclasses_module_names = _m5_dataclass_replace_aliases(tree)
         for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                constructed_type = _m5_resolved_authority_constructor_type(
+                    node.func,
+                    aliases=return_type_aliases,
+                )
+                if constructed_type is not None:
+                    modules_by_return_type[constructed_type].add(relative)
+                continue
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or (
-                node.name.startswith("_") or node.returns is None
+                node.returns is None
             ):
                 continue
-            for return_type in _m5_resolved_return_types(
+            returned_types = _m5_resolved_return_types(
                 node.returns,
                 aliases=return_type_aliases,
+            )
+            if not returned_types or not any(
+                _m5_is_dataclass_replace_call(
+                    returned,
+                    replace_names=replace_names,
+                    dataclasses_module_names=dataclasses_module_names,
+                )
+                for returned in _m5_direct_function_return_values(node)
             ):
+                continue
+            for return_type in returned_types:
                 modules_by_return_type[return_type].add(relative)
     return tuple(
         (return_type, tuple(sorted(modules)))
         for return_type, modules in sorted(modules_by_return_type.items())
+    )
+
+
+def _m5_resolved_authority_constructor_type(
+    callee: ast.expr,
+    *,
+    aliases: Mapping[str, str],
+) -> str | None:
+    name: str | None = None
+    if isinstance(callee, ast.Name):
+        name = callee.id
+    elif isinstance(callee, ast.Attribute):
+        name = callee.attr
+    return aliases.get(name) if name is not None else None
+
+
+def _m5_dataclass_replace_aliases(tree: ast.AST) -> tuple[set[str], set[str]]:
+    replace_names: set[str] = set()
+    module_names: set[str] = set()
+    assignments: list[tuple[str, ast.expr]] = []
+    for node in tree.body if isinstance(tree, ast.Module) else ():
+        if isinstance(node, ast.ImportFrom) and node.module == "dataclasses":
+            replace_names.update(
+                imported.asname or imported.name
+                for imported in node.names
+                if imported.name == "replace"
+            )
+        elif isinstance(node, ast.Import):
+            module_names.update(
+                imported.asname or imported.name
+                for imported in node.names
+                if imported.name == "dataclasses"
+            )
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(
+            node.targets[0], ast.Name
+        ):
+            assignments.append((node.targets[0].id, node.value))
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.value is not None
+        ):
+            assignments.append((node.target.id, node.value))
+    for _pass in range(len(assignments) + 1):
+        changed = False
+        for alias_name, value in assignments:
+            if isinstance(value, ast.Name):
+                if value.id in replace_names and alias_name not in replace_names:
+                    replace_names.add(alias_name)
+                    changed = True
+                if value.id in module_names and alias_name not in module_names:
+                    module_names.add(alias_name)
+                    changed = True
+            elif (
+                isinstance(value, ast.Attribute)
+                and value.attr == "replace"
+                and isinstance(value.value, ast.Name)
+                and value.value.id in module_names
+                and alias_name not in replace_names
+            ):
+                replace_names.add(alias_name)
+                changed = True
+        if not changed:
+            break
+    return replace_names, module_names
+
+
+def _m5_direct_function_return_values(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.expr, ...]:
+    values: list[ast.expr] = []
+    pending: list[ast.AST] = list(function.body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            continue
+        if isinstance(node, ast.Return) and node.value is not None:
+            values.append(node.value)
+            continue
+        pending.extend(ast.iter_child_nodes(node))
+    return tuple(values)
+
+
+def _m5_is_dataclass_replace_call(
+    value: ast.expr,
+    *,
+    replace_names: set[str],
+    dataclasses_module_names: set[str],
+) -> bool:
+    if not isinstance(value, ast.Call):
+        return False
+    if isinstance(value.func, ast.Name):
+        return value.func.id in replace_names
+    return (
+        isinstance(value.func, ast.Attribute)
+        and value.func.attr == "replace"
+        and isinstance(value.func.value, ast.Name)
+        and value.func.value.id in dataclasses_module_names
     )
 
 
