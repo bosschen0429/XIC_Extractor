@@ -69,6 +69,7 @@ def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
         block = _job_block(workflow, job_name)
         assert "matrix:" not in block
         assert f"name: {job_name} (Python {version})" in block
+        assert "fetch-depth: 0" in block
         assert f"path: {checkout_path}" in block
         assert f"working-directory: {checkout_path}" in block
         assert "enable-cache: true" not in block

@@ -1,0 +1,41 @@
+{
+  "automatic_cutover_authorized": false,
+  "candidate_defects": [],
+  "candidate_merge_sha": "fbe502bd9d38f39c65a450a9f760ad76664ec3cd",
+  "evaluated_scope": "cid_nl_successor_shadow_substrate",
+  "excluded_scope": [
+    "canonical Package 4 GO",
+    "general Untargeted identity readiness",
+    "M4 comparable scan-set MS2 profile evidence",
+    "Matrix or writer activation",
+    "legacy retirement"
+  ],
+  "gate_status": {
+    "bounded_substrate_pass": true,
+    "canonical_package4_complete": false,
+    "public_hard_zero_pass": true,
+    "rollback_pass": true
+  },
+  "known_preexisting_followups": [
+    "Issue #105 RT/time-window precision",
+    "Issue #156 Gap 10 complete-group ownership"
+  ],
+  "legacy_retirement_authorized": false,
+  "missing_evidence": [
+    "complete #126/#127 Package 4 scientific gate revalidation",
+    "comparable legacy and candidate RAW/vendor/point instrumentation",
+    "representative candidate elapsed and peak-memory sample",
+    "method-specific real-sample and manual EIC/MS2 acceptance"
+  ],
+  "product_authority_granted": false,
+  "retained_scope": [
+    "owner-backed evidence and observation spine",
+    "conservative workflow-neutral Backfill eligibility",
+    "shadow identity and split lineage",
+    "Targeted CID-NL diagnostic adapter and rollback substrate"
+  ],
+  "schema_version": "m5_successor_verdict_packet_v1",
+  "validation_status": "diagnostic_only",
+  "verdict": "NARROW",
+  "writer_expansion_authorized": false
+}

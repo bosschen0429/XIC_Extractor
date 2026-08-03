@@ -1,0 +1,25 @@
+{
+  "go_requirements": [
+    "complete #126/#127 candidate gates revalidated",
+    "Targeted lifecycle and broadened Discovery use the same downstream core",
+    "public expected diff explained and accepted",
+    "selective scientific and operational gates pass",
+    "whole-attempt rollback preserves one active authority"
+  ],
+  "product_authority_granted": false,
+  "rules": {
+    "candidate_defect_is_not_repaired_in_m5": true,
+    "m2_or_m3_only_cannot_go": true,
+    "missing_evidence_never_promotes": true,
+    "rollback_requires_legacy_only_active_authority": true,
+    "selective_failure_uses_preregistered_effect": true
+  },
+  "schema_version": "m5_scoped_verdict_contract_v1",
+  "validation_status": "diagnostic_only",
+  "verdict_states": [
+    "GO",
+    "NARROW",
+    "KILL",
+    "INCONCLUSIVE"
+  ]
+}
