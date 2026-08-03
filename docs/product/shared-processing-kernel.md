@@ -392,7 +392,8 @@ This contract constrains those tickets but does not resolve them by implication.
   architecture.
 - The CID-NL / NL116 tracer has a dual-projection, no-authority acceptance
   contract, an executable no-RAW M1 reference spine, and one opt-in M6
-  source-to-`QuantMatrixVersion` fixture gated by the existing
-  `ProductionAcceptanceManifest` checker.
+  source-to-`QuantMatrixVersion` fixture gated by the package-owned immutable
+  `CheckedProductionAcceptanceManifest` snapshot. File-backed activation cannot
+  validate one manifest read and consume another.
 - No output, selected-value, counting, Matrix, Backfill-write, activation, or
   export authority is granted.

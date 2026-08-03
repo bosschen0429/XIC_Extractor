@@ -7,6 +7,15 @@ The quant matrix is the product-facing numeric matrix. It separates detected val
 - The primary matrix exposes numeric product values and stable user-facing row/sample structure, not diagnostic evidence columns.
 - Detected values and accepted Backfill values are different product states. Backfill values may enter the matrix only through explicit authority and provenance.
 - `ProductionAcceptanceManifest` is the authority boundary for accepted Backfill values. Candidate sidecars, review packets, galleries, lockbox labels, and diagnostics do not grant authority by themselves.
+- File-backed activation reads each manifest byte snapshot once. The
+  `production_acceptance` owner validates that snapshot and mints an immutable
+  `CheckedProductionAcceptanceManifest`; activation writers consume those exact
+  checked rows instead of reopening the path. The lower-level
+  `QuantMatrixVersion` row builder is a pure renderer and does not grant
+  authority to caller-authored mappings.
+- Quant matrix, identity, manifest, and expected-diff source-summary digests bind
+  the same byte snapshots that were parsed and consumed. They are not hashes of
+  a later reread of the input paths.
 - `QuantMatrixVersion` and default activation artifacts are activation surfaces, not proof that broad Backfill is production-ready.
 - Approved activation packets may write a versioned matrix bundle without re-reading the full `alignment_cells.tsv` ledger, provided the productization status index and authority manifest define the exact accepted scope.
 - Matrix-only activation still requires explicit provenance and replay artifacts: acceptance manifest or expected-diff packet, `QuantMatrixVersion`, cell provenance, row/source summary, value-delta record, and application summary.
@@ -15,8 +24,9 @@ The quant matrix is the product-facing numeric matrix. It separates detected val
 - Row-completion confidence and downstream-impact benchmarks are readiness evidence; they do not change default matrix authority without a separate activation decision.
 - The M6 Untargeted CID-NL no-RAW golden path prepares one deterministic raw-area
   row and owner-mapped recovery diff, but it cannot self-authorize. Its prepared
-  Backfill row must pass the existing file-level `ProductionAcceptanceManifest`
-  checker before the existing `QuantMatrixVersion` owner may write that cell.
+  Backfill row must pass the file-level `ProductionAcceptanceManifest` owner and
+  enter `QuantMatrixVersion` through its immutable checked snapshot before that
+  cell may be rendered.
   This fixture is opt-in `production_candidate` evidence only; it does not
   register a current/default lane or change writer scope.
 

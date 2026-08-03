@@ -45,9 +45,16 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubjectContractError,
     mint_untargeted_cid_nl_method_subject,
+    validate_cid_nl_method_subject_binding,
 )
-from xic_extractor.processing_identity import resolve_request_acquisition_source
+from xic_extractor.processing_identity import (
+    build_processing_request_identity,
+    compose_processing_owner_references,
+    issue_processing_attempt,
+    resolve_request_acquisition_source,
+)
 from xic_extractor.tabular_io import render_delimited_rows
 
 SAMPLE_ROLES = {
@@ -159,6 +166,49 @@ def test_no_raw_golden_path_preserves_evidence_and_terminal_matrix_contract(
         "peak_observation.integration.area_raw_counts_seconds"
     )
     assert "smoothed" not in provenance["Missing"]["matrix_area_source"]
+    with pytest.raises(TypeError):
+        terminal.quant_matrix_rows[0]["Missing"] = "999"
+
+
+def test_golden_path_source_is_invariant_to_per_sample_projection_order(
+    tmp_path: Path,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    sample_inputs, recovery = _golden_inputs(fixture)
+    multi_projection = _multi_projection_support_input(fixture, "StudySupport")
+    reordered = replace(
+        multi_projection,
+        discovery_projections=tuple(reversed(multi_projection.discovery_projections)),
+    )
+    canonical_inputs = tuple(
+        multi_projection
+        if item.sample.metadata.raw_stem == "StudySupport"
+        else item
+        for item in sample_inputs
+    )
+    reordered_inputs = tuple(
+        reordered if item.sample.metadata.raw_stem == "StudySupport" else item
+        for item in sample_inputs
+    )
+
+    canonical = build_untargeted_cid_nl_golden_path(
+        processing_owners=fixture.owners,
+        method_subject=fixture.method_subject,
+        sample_inputs=canonical_inputs,
+        recovery_inputs=(recovery,),
+        source_artifact_relpath=SOURCE_RELPATH,
+    )
+    replay = build_untargeted_cid_nl_golden_path(
+        processing_owners=fixture.owners,
+        method_subject=fixture.method_subject,
+        sample_inputs=reordered_inputs,
+        recovery_inputs=(recovery,),
+        source_artifact_relpath=SOURCE_RELPATH,
+    )
+
+    assert canonical.source_artifact_bytes == replay.source_artifact_bytes
+    assert canonical.source_artifact_sha256 == replay.source_artifact_sha256
+    assert canonical.pending_acceptance_rows == replay.pending_acceptance_rows
 
 
 def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
@@ -188,7 +238,11 @@ def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
             _mint_token=object(),
         )
     manifest_path, checked_rows = _check_acceptance_manifest(tmp_path, projection)
-    rewritten = ({**checked_rows[0], "quant_value": "999"},)
+    rewritten_without_sha = ({**checked_rows[0], "quant_value": "999"},)
+    rewritten_sha = production_acceptance_manifest_sha256(rewritten_without_sha)
+    rewritten = (
+        {**rewritten_without_sha[0], "manifest_sha256": rewritten_sha},
+    )
     _write_acceptance_manifest(manifest_path, rewritten)
     with pytest.raises(UntargetedCidNlGoldenPathError, match="rewrites"):
         build_untargeted_cid_nl_quant_matrix_version(
@@ -216,7 +270,7 @@ def test_terminal_rechecks_manifest_digest_and_source_artifact(
         {**checked_rows[0], "manifest_sha256": "F" * 64},
     )
     _write_acceptance_manifest(manifest_path, forged_digest_rows)
-    with pytest.raises(UntargetedCidNlGoldenPathError, match="manifest SHA-256"):
+    with pytest.raises(UntargetedCidNlGoldenPathError, match="manifest_sha256"):
         build_untargeted_cid_nl_quant_matrix_version(
             projection,
             production_acceptance_manifest_path=manifest_path,
@@ -226,7 +280,7 @@ def test_terminal_rechecks_manifest_digest_and_source_artifact(
     manifest_path, _ = _check_acceptance_manifest(tmp_path, projection)
     source_path = tmp_path / projection.source_artifact_relpath
     source_path.write_bytes(b"tampered after manifest validation")
-    with pytest.raises(UntargetedCidNlGoldenPathError, match="source artifact"):
+    with pytest.raises(UntargetedCidNlGoldenPathError, match="source_artifact"):
         build_untargeted_cid_nl_quant_matrix_version(
             projection,
             production_acceptance_manifest_path=manifest_path,
@@ -261,7 +315,7 @@ def test_terminal_applies_complete_canonical_manifest_authority_rules(
 ) -> None:
     fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
     sample_inputs, recovery = _golden_inputs(fixture)
-    forbidden_source = "validation/lockbox_shadow_automation/source.json"
+    forbidden_source = "validation/LOCKBOX_SHADOW_AUTOMATION/source.json"
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
@@ -314,6 +368,47 @@ def test_untargeted_method_subject_must_be_pinned_by_the_processing_request(
             detector_invocation_id="gaussian15:crossed-subject:v1",
             evaluation_receipt=_completed_receipt(scanned_event_count=0),
         )
+
+
+@pytest.mark.parametrize(
+    "numeric_field",
+    ("precursor_mz", "precursor_tolerance_ppm", "neutral_loss_da"),
+)
+def test_untargeted_method_subject_binding_rejects_json_boolean_numeric_alias(
+    tmp_path: Path,
+    numeric_field: str,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=1.0,
+        precursor_tolerance_ppm=1.0,
+        neutral_loss_da=1.0,
+    )
+    request_payload = subject.request_payload()
+    request_payload[numeric_field] = True
+    original_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=original_request.acquisition_sources,
+        acquisition_bindings=original_request.acquisition_bindings,
+        scientific_input_schema_version=(
+            original_request.scientific_input_schema_version
+        ),
+        processing_algorithm_version=original_request.processing_algorithm_version,
+        processing_contract_version=original_request.processing_contract_version,
+        scientific_inputs={
+            "fixture": "issue175-no-raw",
+            "cid_nl_method_subject": request_payload,
+        },
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.owners.sample_resolutions,
+    )
+
+    with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
+        validate_cid_nl_method_subject_binding(subject, processing_owners=owners)
 
 
 def _golden_inputs(
@@ -445,6 +540,49 @@ def _support_input(
         sample=fixture.sample(sample_stem),
         assessment=assessment,
         discovery_projections=(_projection(fixture, sample_stem, evidence),),
+    )
+
+
+def _multi_projection_support_input(
+    fixture: Issue175NoRawFixture,
+    sample_stem: str,
+) -> UntargetedCidNlAssessmentInput:
+    peak = issue161_peak(fixture, sample_stem, height=100.0)
+    evidence_refs = tuple(
+        issue161_evidence(
+            fixture,
+            sample_stem,
+            scan_number=scan_number,
+            scan_rt_min=8.0,
+        )
+        for scan_number in (141, 142)
+    )
+    support_refs = tuple(
+        issue161_unique_support(
+            fixture,
+            sample_stem,
+            peak=peak,
+            evidence=evidence,
+        )
+        for evidence in evidence_refs
+    )
+    assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        method_subject=fixture.method_subject,
+        detector_invocation_id=f"gaussian15:{sample_stem}:multi-projection:v1",
+        evaluation_receipt=_completed_receipt(scanned_event_count=2),
+        candidate_peaks=(peak,),
+        evidence_refs=evidence_refs,
+        individual_support_refs=support_refs,
+    )
+    return UntargetedCidNlAssessmentInput(
+        sample=fixture.sample(sample_stem),
+        assessment=assessment,
+        discovery_projections=tuple(
+            _projection(fixture, sample_stem, evidence)
+            for evidence in evidence_refs
+        ),
     )
 
 

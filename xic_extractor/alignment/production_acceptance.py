@@ -13,16 +13,20 @@ import json
 import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import InitVar, dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any
+from types import MappingProxyType
+from typing import Any, final
 
 from xic_extractor.alignment.quant_matrix_version import (
     PRODUCTION_ACCEPTANCE_COLUMNS,
+    QuantMatrixVersionRows,
+    build_quant_matrix_version_rows,
     production_acceptance_manifest_sha256,
 )
 from xic_extractor.tabular_io import (
     file_sha256,
-    read_tsv_with_header,
+    read_tsv_with_header_snapshot,
 )
 
 SCHEMA_VERSION = "production_acceptance_manifest_schema_v1"
@@ -80,6 +84,51 @@ FORBIDDEN_WRITE_SOURCE_TOKENS = (
     "gallery",
     "candidate",
 )
+_CHECKED_MANIFEST_MINT_TOKEN = object()
+
+
+class ProductionAcceptanceManifestError(ValueError):
+    """Raised when a manifest snapshot cannot mint Matrix authority."""
+
+    def __init__(self, problems: Sequence[str]) -> None:
+        self.problems = tuple(problems)
+        super().__init__("; ".join(self.problems))
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class CheckedProductionAcceptanceManifest:
+    """One immutable manifest byte snapshot checked by the authority owner."""
+
+    manifest_path: Path
+    repo_root: Path
+    rows: tuple[Mapping[str, str], ...]
+    canonical_manifest_sha256: str
+    manifest_file_sha256: str
+    _mint_token: InitVar[object]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("CheckedProductionAcceptanceManifest is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _CHECKED_MANIFEST_MINT_TOKEN:
+            raise ProductionAcceptanceManifestError(
+                ("checked manifest must be minted by production_acceptance",)
+            )
+        if not isinstance(self.rows, tuple) or any(
+            not isinstance(row, MappingProxyType) for row in self.rows
+        ):
+            raise ProductionAcceptanceManifestError(
+                ("checked manifest rows must be deeply immutable",)
+            )
+        for field, value in (
+            ("canonical_manifest_sha256", self.canonical_manifest_sha256),
+            ("manifest_file_sha256", self.manifest_file_sha256),
+        ):
+            if not _is_sha256(value):
+                raise ProductionAcceptanceManifestError(
+                    (f"{field} must be a SHA-256 digest",)
+                )
 
 
 def check_production_acceptance_manifest_schema(
@@ -137,16 +186,80 @@ def check_production_acceptance_manifest_authority(
 ) -> list[str]:
     """Validate every rule that may grant per-cell Matrix write authority."""
 
+    _header, _rows, _file_sha, problems = _read_and_check_manifest_snapshot(
+        manifest_path=manifest_path,
+        repo_root=repo_root,
+    )
+    return problems
+
+
+def load_checked_production_acceptance_manifest(
+    *,
+    manifest_path: Path,
+    repo_root: Path,
+) -> CheckedProductionAcceptanceManifest:
+    """Read once, validate once, and mint the exact rows Matrix may consume."""
+
+    _header, rows, manifest_file_sha256, problems = (
+        _read_and_check_manifest_snapshot(
+            manifest_path=manifest_path,
+            repo_root=repo_root,
+        )
+    )
+    if problems:
+        raise ProductionAcceptanceManifestError(problems)
+    canonical_manifest_sha256 = production_acceptance_manifest_sha256(rows)
+    return CheckedProductionAcceptanceManifest(
+        manifest_path=manifest_path.resolve(),
+        repo_root=repo_root.resolve(),
+        rows=tuple(MappingProxyType(dict(row)) for row in rows),
+        canonical_manifest_sha256=canonical_manifest_sha256,
+        manifest_file_sha256=manifest_file_sha256,
+        _mint_token=_CHECKED_MANIFEST_MINT_TOKEN,
+    )
+
+
+def build_quant_matrix_version_from_checked_manifest(
+    *,
+    matrix_header: Sequence[str],
+    input_quant_matrix_rows: Sequence[Mapping[str, str]],
+    input_matrix_identity_rows: Sequence[Mapping[str, str]],
+    checked_manifest: CheckedProductionAcceptanceManifest,
+    expected_diff_rows: Sequence[Mapping[str, str]],
+) -> QuantMatrixVersionRows:
+    """Enter the pure Matrix renderer through an owner-minted authority receipt."""
+
+    if not isinstance(checked_manifest, CheckedProductionAcceptanceManifest):
+        raise ProductionAcceptanceManifestError(
+            ("Matrix activation requires a checked manifest snapshot",)
+        )
+    return build_quant_matrix_version_rows(
+        matrix_header=matrix_header,
+        input_quant_matrix_rows=input_quant_matrix_rows,
+        input_matrix_identity_rows=input_matrix_identity_rows,
+        production_acceptance_rows=checked_manifest.rows,
+        expected_diff_rows=expected_diff_rows,
+    )
+
+
+def _read_and_check_manifest_snapshot(
+    *,
+    manifest_path: Path,
+    repo_root: Path,
+) -> tuple[tuple[str, ...], list[dict[str, str]], str, list[str]]:
     problems: list[str] = []
     try:
-        header, rows = read_tsv_with_header(manifest_path)
+        header, rows, manifest_file_sha256 = read_tsv_with_header_snapshot(
+            manifest_path,
+            exact_columns=REQUIRED_COLUMNS,
+        )
     except (OSError, ValueError) as exc:
-        return [f"could not read production acceptance manifest: {exc}"]
-    if list(header) != list(REQUIRED_COLUMNS):
-        problems.append("production acceptance manifest header mismatch")
+        return (), [], "", [
+            f"could not read production acceptance manifest: {exc}"
+        ]
     expected_manifest_sha = production_acceptance_manifest_sha256(rows)
     _check_manifest_rows(rows, expected_manifest_sha, repo_root, problems)
-    return problems
+    return header, rows, manifest_file_sha256, problems
 
 
 def _check_schema_authority_rules(
@@ -493,8 +606,12 @@ def _check_write_blockers(
         problems.append(
             f"row {row_number}: naked alignment_cells area cannot grant authority",
         )
-    source_path = row.get("source_artifact_relpath", "")
-    if any(token in source_path for token in FORBIDDEN_WRITE_SOURCE_TOKENS):
+    source_path = row.get("source_artifact_relpath", "").replace("\\", "/")
+    normalized_source_path = source_path.casefold()
+    if any(
+        token.casefold() in normalized_source_path
+        for token in FORBIDDEN_WRITE_SOURCE_TOKENS
+    ):
         problems.append(
             f"row {row_number}: direct shadow/report/gallery/candidate source "
             "cannot grant write authority",
@@ -557,8 +674,12 @@ def _is_sha256(value: str) -> bool:
 
 __all__ = (
     "ACCEPTANCE_DECISIONS",
+    "CheckedProductionAcceptanceManifest",
+    "ProductionAcceptanceManifestError",
     "REQUIRED_COLUMNS",
+    "build_quant_matrix_version_from_checked_manifest",
     "check_production_acceptance_manifest",
     "check_production_acceptance_manifest_authority",
     "check_production_acceptance_manifest_schema",
+    "load_checked_production_acceptance_manifest",
 )

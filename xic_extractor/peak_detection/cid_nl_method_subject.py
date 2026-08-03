@@ -209,7 +209,21 @@ def validate_cid_nl_method_subject_binding(
     request_inputs = json.loads(
         processing_owners.request.normalized_scientific_inputs_json
     )
-    if request_inputs.get(REQUEST_INPUT_KEY) != subject.request_payload():
+    pinned_payload = json.dumps(
+        request_inputs.get(REQUEST_INPUT_KEY),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    expected_payload = json.dumps(
+        subject.request_payload(),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    if pinned_payload != expected_payload:
         raise CidNlMethodSubjectContractError(
             "Untargeted method subject is not pinned by the processing request"
         )

@@ -36,7 +36,8 @@ configuration, `N/K/S`, eligible/support sample identities, complete SUPPORT
 trace artifact identities, per-sample assessment/cell/evidence/Discovery
 projection identities, Backfill disposition and reasons, recovery
 universe/assessment identity, matched peak, value kind, and raw integrated
-area. Reordered fixture input produces the same source and terminal matrix.
+area. Reordering either the sample inputs or a sample's order-neutral Discovery
+projection refs produces the same source and terminal matrix.
 
 The implementation reuses the existing evidence spine, conservative Backfill,
 manifest checker, and Quant Matrix version owner. No Package 3B quarry hunk was
@@ -52,10 +53,21 @@ is `not_needed_existing_owners`.
 - Targeted compatibility cells retain their exact Targeted IDs; Untargeted
   cells retain none.
 - Discovery projection lineage remains complete through the terminal source
-  artifact.
+  artifact; each sample's projection set has one canonical owner ordering.
 - The prepared Matrix/acceptance/expected-diff projection is minted only by the
   golden-path orchestration owner; caller-side dataclass replacement cannot
   rewrite its writer inputs.
+- Untargeted method-subject request binding compares exact canonical JSON, so
+  JSON booleans cannot alias numeric precursor, tolerance, or neutral-loss
+  fields.
+- `production_acceptance` is the single manifest authority owner. It reads and
+  validates one exact byte snapshot, case-folds the registered forbidden-source
+  policy for Windows-compatible classification, and mints deeply immutable
+  checked rows. The terminal and file-backed QuantMatrix adapter consume that
+  receipt rather than reopening the manifest.
+- `QuantMatrixVersionRows` are deeply immutable after projection. Source-summary
+  hashes bind the exact matrix, identity, manifest, and expected-diff snapshots
+  that were consumed, not a later path reread.
 - Historical M5 replay now separates its evaluated candidate revision from its
   reviewed-evidence revision, so later source evolution cannot rewrite or
   invalidate the frozen packet while all tamper gates remain fail closed.
@@ -71,21 +83,22 @@ tests. The resulting authority ceiling remains `production_candidate`.
 
 Observed on this checkout:
 
-- focused M6 and consumer suites: 119 passed in the broadest selected run;
-- M5 frozen-verdict regression suite: 82 passed;
+- focused manifest/golden-path authority suites: 41 passed;
+- downstream activation, consumer, and M5 regression suites: 125 passed;
 - `docs-config`: 728 passed, 1 skipped;
 - `gui`: 110 passed;
 - `targeted-core`: 1,257 passed, 1 skipped;
-- `alignment-core`: 2,545 passed;
-- `product-gates-activation`: 893 passed, 1 skipped;
+- `alignment-core`: 2,553 passed;
+- `product-gates-activation`: 894 passed, 1 skipped;
 - `product-gates-evidence`: 700 passed;
 - `diagnostics-tools`: 356 passed, 1 skipped;
-- Ruff, mypy (492 source files), import-linter (4 contracts), architecture
+- Ruff, mypy (493 source files), import-linter (4 contracts), architecture
   census, bootstrap offline check, diagnostics index, and docs audit passed.
 
-No productization control-plane tier or active-lane update is required: this
-packet changes no maturity registration, writer scope, current accepted count,
-selected area/counting rule, Matrix authority, default, or public schema. No
-branch handoff is updated because this checkout has no active branch-handoff
-file under `docs/superpowers/handoffs/current/`; this retained packet is the
-durable M6 evidence owner, not a WIP snapshot.
+No productization control-plane tier or active-lane update is required. This
+packet hardens enforcement of the existing manifest-only Matrix authority, but
+grants or revokes no authority and changes no maturity registration, writer
+scope, current accepted count, selected area/counting rule, default, or public
+schema. No branch handoff is updated because this checkout has no active
+branch-handoff file under `docs/superpowers/handoffs/current/`; this retained
+packet is the durable M6 evidence owner, not a WIP snapshot.

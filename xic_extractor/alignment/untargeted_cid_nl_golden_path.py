@@ -31,12 +31,13 @@ from xic_extractor.alignment.conservative_backfill import (
     mint_conservative_backfill_recovery_candidate_universe,
 )
 from xic_extractor.alignment.production_acceptance import (
-    check_production_acceptance_manifest_authority,
+    CheckedProductionAcceptanceManifest,
+    ProductionAcceptanceManifestError,
+    build_quant_matrix_version_from_checked_manifest,
+    load_checked_production_acceptance_manifest,
 )
 from xic_extractor.alignment.quant_matrix_version import (
-    PRODUCTION_ACCEPTANCE_COLUMNS,
     QuantMatrixVersionRows,
-    build_quant_matrix_version_rows,
     production_acceptance_manifest_sha256,
 )
 from xic_extractor.discovery.cid_nl_evidence_projection import (
@@ -48,21 +49,11 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-from xic_extractor.tabular_io import (
-    file_sha256,
-    read_tsv_with_header,
-)
 
 VALIDATION_STATUS = "production_candidate"
 PRODUCT_AUTHORITY = "none_until_checked_manifest"
 SOURCE_SCHEMA_VERSION = "untargeted_cid_nl_golden_path_source_v1"
 CID_NL_ALIGNMENT_CONFIG = AlignmentConfig(anchor_min_seed_events=1)
-_SHA256_HEX = frozenset("0123456789abcdefABCDEF")
-_FORBIDDEN_SOURCE_PATH_TOKENS = (
-    "candidate",
-    "gallery",
-    "shadow_report",
-)
 _GOLDEN_PATH_PROJECTION_MINT_TOKEN = object()
 
 
@@ -123,6 +114,16 @@ class UntargetedCidNlAssessmentInput:
                 "Discovery projections must cover every assessment evidence ref "
                 "exactly once"
             )
+        object.__setattr__(
+            self,
+            "discovery_projections",
+            tuple(
+                sorted(
+                    self.discovery_projections,
+                    key=lambda projection: projection.artifact.evidence_artifact_id,
+                )
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,39 +467,39 @@ def build_untargeted_cid_nl_quant_matrix_version(
         raise UntargetedCidNlGoldenPathError(
             "QuantMatrix activation requires a prepared golden-path projection"
         )
-    checked = _read_terminal_acceptance_manifest(
+    checked = _load_terminal_acceptance_manifest(
         projection=projection,
         manifest_path=production_acceptance_manifest_path,
         manifest_root=manifest_root,
     )
-    rows = build_quant_matrix_version_rows(
+    rows = build_quant_matrix_version_from_checked_manifest(
         matrix_header=projection.matrix_header,
         input_quant_matrix_rows=projection.input_quant_matrix_rows,
         input_matrix_identity_rows=projection.input_matrix_identity_rows,
-        production_acceptance_rows=checked,
+        checked_manifest=checked,
         expected_diff_rows=projection.expected_diff_rows,
     )
     _validate_terminal_rows(projection, rows)
     return rows
 
 
-def _read_terminal_acceptance_manifest(
+def _load_terminal_acceptance_manifest(
     *,
     projection: UntargetedCidNlGoldenPathProjection,
     manifest_path: Path,
     manifest_root: Path,
-) -> tuple[dict[str, str], ...]:
+) -> CheckedProductionAcceptanceManifest:
     try:
-        header, raw_rows = read_tsv_with_header(manifest_path)
-    except (OSError, ValueError) as exc:
-        raise UntargetedCidNlGoldenPathError(
-            f"could not read production acceptance manifest: {exc}"
-        ) from exc
-    if header != PRODUCTION_ACCEPTANCE_COLUMNS:
-        raise UntargetedCidNlGoldenPathError(
-            "production acceptance manifest header differs from its exact schema"
+        checked_manifest = load_checked_production_acceptance_manifest(
+            manifest_path=manifest_path,
+            repo_root=manifest_root,
         )
-    checked = tuple(dict(row) for row in raw_rows)
+    except ProductionAcceptanceManifestError as exc:
+        raise UntargetedCidNlGoldenPathError(
+            "ProductionAcceptanceManifest failed canonical authority validation: "
+            + str(exc)
+        ) from exc
+    checked = checked_manifest.rows
     if len(checked) != len(projection.pending_acceptance_rows):
         raise UntargetedCidNlGoldenPathError(
             "checked manifest row count differs from owner-prepared acceptance"
@@ -508,10 +509,6 @@ def _read_terminal_acceptance_manifest(
         checked,
         strict=True,
     ):
-        if tuple(accepted) != PRODUCTION_ACCEPTANCE_COLUMNS:
-            raise UntargetedCidNlGoldenPathError(
-                "checked manifest row differs from its exact schema"
-            )
         for field_name, expected in pending.items():
             if field_name == "manifest_sha256":
                 continue
@@ -520,75 +517,13 @@ def _read_terminal_acceptance_manifest(
                     "checked manifest rewrites owner-prepared field "
                     f"{field_name!r}"
                 )
-    expected_manifest_sha = production_acceptance_manifest_sha256(checked)
-    if any(
-        row.get("manifest_sha256", "") != expected_manifest_sha for row in checked
+    if checked_manifest.canonical_manifest_sha256 != (
+        production_acceptance_manifest_sha256(checked)
     ):
         raise UntargetedCidNlGoldenPathError(
             "checked manifest SHA-256 does not match its canonical file rows"
         )
-    root = manifest_root.resolve()
-    _check_terminal_source_artifact(
-        root=root,
-        relative_path=projection.source_artifact_relpath,
-        expected_sha=projection.source_artifact_sha256,
-        label="source artifact",
-    )
-    authority_problems = check_production_acceptance_manifest_authority(
-        manifest_path=manifest_path,
-        repo_root=manifest_root,
-    )
-    if authority_problems:
-        raise UntargetedCidNlGoldenPathError(
-            "ProductionAcceptanceManifest failed canonical authority validation: "
-            + "; ".join(authority_problems)
-        )
-
-    for row in checked:
-        for prefix in ("doublet_source", "source_artifact"):
-            _check_terminal_source_artifact(
-                root=root,
-                relative_path=row[f"{prefix}_relpath"],
-                expected_sha=row[f"{prefix}_sha256"],
-                label=prefix.replace("_", " "),
-            )
-    return checked
-
-
-def _check_terminal_source_artifact(
-    *,
-    root: Path,
-    relative_path: str,
-    expected_sha: str,
-    label: str,
-) -> None:
-    normalized = relative_path.replace("\\", "/")
-    relative = PurePosixPath(normalized)
-    if relative.is_absolute() or PureWindowsPath(relative_path).drive or (
-        ".." in relative.parts
-    ):
-        raise UntargetedCidNlGoldenPathError(
-            f"checked manifest {label} must stay under manifest_root"
-        )
-    path = (root / Path(normalized)).resolve()
-    try:
-        path.relative_to(root)
-    except ValueError as exc:
-        raise UntargetedCidNlGoldenPathError(
-            f"checked manifest {label} must stay under manifest_root"
-        ) from exc
-    if not path.is_file():
-        raise UntargetedCidNlGoldenPathError(
-            f"checked manifest {label} is missing"
-        )
-    if len(expected_sha) != 64 or any(char not in _SHA256_HEX for char in expected_sha):
-        raise UntargetedCidNlGoldenPathError(
-            f"checked manifest {label} must carry a SHA-256"
-        )
-    if file_sha256(path) != expected_sha:
-        raise UntargetedCidNlGoldenPathError(
-            f"checked manifest {label} SHA-256 mismatch"
-        )
+    return checked_manifest
 
 
 def _canonical_sample_inputs(
@@ -835,10 +770,6 @@ def _validate_source_relpath(value: object) -> str:
     if path.is_absolute() or PureWindowsPath(value).drive or ".." in path.parts:
         raise UntargetedCidNlGoldenPathError(
             "source_artifact_relpath must stay under the manifest repo root"
-        )
-    if any(token in normalized for token in _FORBIDDEN_SOURCE_PATH_TOKENS):
-        raise UntargetedCidNlGoldenPathError(
-            "source artifact path cannot claim authority from a forbidden surface"
         )
     return normalized
 

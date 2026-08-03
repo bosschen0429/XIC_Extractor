@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from xic_extractor.tabular_io import (
     numeric_equal,
@@ -119,10 +120,10 @@ SOURCE_SUMMARY_COLUMNS = (
 
 @dataclass(frozen=True)
 class QuantMatrixVersionRows:
-    quant_matrix_rows: list[dict[str, str]]
-    cell_provenance_rows: list[dict[str, str]]
-    row_summary_rows: list[dict[str, str]]
-    expected_diff_summary_rows: list[dict[str, str]]
+    quant_matrix_rows: tuple[Mapping[str, str], ...]
+    cell_provenance_rows: tuple[Mapping[str, str], ...]
+    row_summary_rows: tuple[Mapping[str, str], ...]
+    expected_diff_summary_rows: tuple[Mapping[str, str], ...]
 
 
 def production_acceptance_manifest_sha256(
@@ -153,6 +154,8 @@ def build_quant_matrix_version_rows(
     production_acceptance_rows: Sequence[Mapping[str, str]],
     expected_diff_rows: Sequence[Mapping[str, str]],
 ) -> QuantMatrixVersionRows:
+    """Pure row projection; file-backed writers require a checked manifest receipt."""
+
     sample_columns = _sample_columns(matrix_header)
     matrix_rows = [
         {column: row.get(column, "") for column in matrix_header}
@@ -228,10 +231,10 @@ def build_quant_matrix_version_rows(
         }
     ]
     return QuantMatrixVersionRows(
-        quant_matrix_rows=matrix_rows,
-        cell_provenance_rows=provenance_rows,
-        row_summary_rows=row_summary_rows,
-        expected_diff_summary_rows=expected_diff_summary_rows,
+        quant_matrix_rows=_freeze_rows(matrix_rows),
+        cell_provenance_rows=_freeze_rows(provenance_rows),
+        row_summary_rows=_freeze_rows(row_summary_rows),
+        expected_diff_summary_rows=_freeze_rows(expected_diff_summary_rows),
     )
 
 
@@ -535,3 +538,9 @@ def _format_numeric(value: str) -> str:
     if parsed is None:
         raise ValueError(f"invalid numeric quant value: {value!r}")
     return f"{parsed:.6g}"
+
+
+def _freeze_rows(
+    rows: Sequence[Mapping[str, str]],
+) -> tuple[Mapping[str, str], ...]:
+    return tuple(MappingProxyType(dict(row)) for row in rows)

@@ -16,7 +16,12 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.check_production_acceptance_manifest import (
-    check_production_acceptance_manifest,
+    check_production_acceptance_manifest_schema,
+)
+from xic_extractor.alignment.production_acceptance import (
+    ProductionAcceptanceManifestError,
+    build_quant_matrix_version_from_checked_manifest,
+    load_checked_production_acceptance_manifest,
 )
 from xic_extractor.alignment.quant_matrix_version import (
     CELL_PROVENANCE_COLUMNS,
@@ -24,12 +29,9 @@ from xic_extractor.alignment.quant_matrix_version import (
     EXPECTED_DIFF_SUMMARY_COLUMNS,
     ROW_SUMMARY_COLUMNS,
     SOURCE_SUMMARY_COLUMNS,
-    build_quant_matrix_version_rows,
 )
 from xic_extractor.tabular_io import (
-    file_sha256,
-    read_tsv_required,
-    read_tsv_with_header,
+    read_tsv_with_header_snapshot,
     write_tsv,
 )
 
@@ -44,34 +46,48 @@ def run_activation(
     manifest_root: Path | None = None,
 ) -> Mapping[str, Path]:
     repo_root = manifest_root or production_acceptance_manifest_tsv.parent
-    problems = check_production_acceptance_manifest(
-        manifest_path=production_acceptance_manifest_tsv,
-        repo_root=repo_root,
-    )
+    problems = check_production_acceptance_manifest_schema()
     if problems:
         raise ValueError(
             "ProductionAcceptanceManifest failed validation: "
             + "; ".join(problems),
         )
-    matrix_header, matrix_rows = read_tsv_with_header(input_quant_matrix_tsv)
-    identity_rows = read_tsv_required(
-        input_matrix_identity_tsv,
-        (
-            "matrix_row_index",
-            "peak_hypothesis_id",
-            "source_feature_family_ids",
-        ),
+    try:
+        checked_manifest = load_checked_production_acceptance_manifest(
+            manifest_path=production_acceptance_manifest_tsv,
+            repo_root=repo_root,
+        )
+    except ProductionAcceptanceManifestError as exc:
+        raise ValueError(
+            "ProductionAcceptanceManifest failed validation: " + str(exc)
+        ) from exc
+    matrix_header, matrix_rows, matrix_sha256 = read_tsv_with_header_snapshot(
+        input_quant_matrix_tsv,
+        encoding="utf-8-sig",
     )
-    manifest_rows = read_tsv_required(
-        production_acceptance_manifest_tsv,
-        ("peak_hypothesis_id", "sample_stem", "acceptance_decision"),
+    _identity_header, identity_rows, identity_sha256 = (
+        read_tsv_with_header_snapshot(
+            input_matrix_identity_tsv,
+            required_columns=(
+                "matrix_row_index",
+                "peak_hypothesis_id",
+                "source_feature_family_ids",
+            ),
+            encoding="utf-8-sig",
+        )
     )
-    expected_diff_rows = read_tsv_required(expected_diff_tsv, EXPECTED_DIFF_COLUMNS)
-    outputs = build_quant_matrix_version_rows(
+    _expected_header, expected_diff_rows, expected_diff_sha256 = (
+        read_tsv_with_header_snapshot(
+            expected_diff_tsv,
+            exact_columns=EXPECTED_DIFF_COLUMNS,
+            encoding="utf-8-sig",
+        )
+    )
+    outputs = build_quant_matrix_version_from_checked_manifest(
         matrix_header=matrix_header,
         input_quant_matrix_rows=matrix_rows,
         input_matrix_identity_rows=identity_rows,
-        production_acceptance_rows=manifest_rows,
+        checked_manifest=checked_manifest,
         expected_diff_rows=expected_diff_rows,
     )
 
@@ -115,19 +131,17 @@ def run_activation(
             {
                 "schema_version": "quant_matrix_version_source_summary_v1",
                 "input_quant_matrix_tsv": str(input_quant_matrix_tsv),
-                "input_quant_matrix_sha256": file_sha256(input_quant_matrix_tsv),
+                "input_quant_matrix_sha256": matrix_sha256,
                 "input_matrix_identity_tsv": str(input_matrix_identity_tsv),
-                "input_matrix_identity_sha256": file_sha256(
-                    input_matrix_identity_tsv,
-                ),
+                "input_matrix_identity_sha256": identity_sha256,
                 "production_acceptance_manifest_tsv": str(
                     production_acceptance_manifest_tsv,
                 ),
-                "production_acceptance_manifest_sha256": file_sha256(
-                    production_acceptance_manifest_tsv,
+                "production_acceptance_manifest_sha256": (
+                    checked_manifest.manifest_file_sha256
                 ),
                 "expected_diff_tsv": str(expected_diff_tsv),
-                "expected_diff_sha256": file_sha256(expected_diff_tsv),
+                "expected_diff_sha256": expected_diff_sha256,
             }
         ],
         SOURCE_SUMMARY_COLUMNS,
