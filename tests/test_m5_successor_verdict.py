@@ -219,6 +219,73 @@ def test_m5_packet_rejects_undeclared_json_contract_fields(
 
 
 @pytest.mark.parametrize(
+    ("filename", "record_path", "message"),
+    (
+        (
+            "candidate_manifest.json",
+            ("included_milestones", 0),
+            "candidate milestone record field set differs",
+        ),
+        (
+            "candidate_manifest.json",
+            ("excluded_milestones", 0),
+            "candidate excluded milestone record field set differs",
+        ),
+        (
+            "candidate_manifest.json",
+            ("known_preexisting_followups", 0),
+            "candidate follow-up record field set differs",
+        ),
+        (
+            "candidate_manifest.json",
+            ("source_files", 0),
+            "candidate source record field set differs",
+        ),
+        (
+            "legacy_baseline_receipt.json",
+            ("tracked_files", 0),
+            "legacy tracked file record field set differs",
+        ),
+        (
+            "rollback_rehearsal.json",
+            ("recorded_owner_receipt",),
+            "rollback owner receipt field set differs",
+        ),
+        (
+            "verdict.json",
+            ("gate_status",),
+            "verdict gate status field set differs",
+        ),
+    ),
+)
+def test_m5_packet_rejects_undeclared_nested_json_contract_fields(
+    tmp_path: Path,
+    filename: str,
+    record_path: tuple[str | int, ...],
+    message: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"nested-undeclared-{filename}")
+    payload_path = packet / filename
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    record = payload
+    for component in record_path:
+        record = record[component]
+    record["undeclared_authority_claim"] = True
+    payload_path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_index(packet, filename)
+
+    with pytest.raises(Package0ComparatorError, match=message):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
+
+
+@pytest.mark.parametrize(
     ("field", "replacement"),
     (
         ("baseline_id", "rewritten-baseline"),
@@ -371,7 +438,11 @@ def test_m5_packet_rejects_narrow_verdict_without_exact_excluded_scope(
             ["Issue #999 invented follow-up"],
             "known follow-up set differs",
         ),
-        ("gate_status", {"bounded_substrate_pass": True}, "gate status differs"),
+        (
+            "gate_status",
+            {"bounded_substrate_pass": True},
+            "gate status field set differs",
+        ),
     ),
 )
 def test_m5_packet_rejects_rewritten_verdict_semantic_boundary(
@@ -779,15 +850,26 @@ def test_m5_rehearses_whole_attempt_rollback_without_mixed_authority(
     assert outcome is not None
     assert outcome.delivery_candidate is not None
     staged = outcome.delivery_candidate
-    rolled_back = rollback_targeted_diagnostic_delivery_candidate(staged)
+    owner_calls: list[object] = []
 
-    receipt = validate_m5_rollback_rehearsal(staged, rolled_back)
+    def recording_rollback_owner(candidate: object) -> object:
+        owner_calls.append(candidate)
+        return rollback_targeted_diagnostic_delivery_candidate(candidate)
+
+    monkeypatch.setattr(
+        "xic_extractor.extraction.targeted_diagnostic_delivery."
+        "rollback_targeted_diagnostic_delivery_candidate",
+        recording_rollback_owner,
+    )
+
+    receipt = validate_m5_rollback_rehearsal(staged)
     packet_rollback = json.loads(
         (PACKET / "rollback_rehearsal.json").read_text(encoding="utf-8")
     )
     recorded = packet_rollback["recorded_owner_receipt"]
 
     assert receipt.status_transition == "staged_candidate->rolled_back"
+    assert owner_calls == [staged]
     assert receipt.prior_current_delivery_id == request.prior_current_delivery_id
     assert receipt.active_authority == "authoritative_legacy_current"
     assert receipt.successor_product_authority is False

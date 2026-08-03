@@ -232,6 +232,33 @@ _M5_VERDICT_FIELDS = frozenset(
         "writer_expansion_authorized",
     }
 )
+_M5_CANDIDATE_MILESTONE_FIELDS = frozenset({"issue", "merge_sha", "milestone"})
+_M5_CANDIDATE_EXCLUDED_MILESTONE_FIELDS = frozenset(
+    {"issue", "milestone", "reason", "status"}
+)
+_M5_CANDIDATE_FOLLOWUP_FIELDS = frozenset({"issue", "scope"})
+_M5_FILE_SEAL_FIELDS = frozenset({"path", "sha256"})
+_M5_ROLLBACK_OWNER_RECEIPT_FIELDS = frozenset(
+    {
+        "delivery_revision_count",
+        "delivery_revision_ids_sha256",
+        "delivery_seal_candidate_id",
+        "delivery_stage_id",
+        "lineage_artifact_count",
+        "lineage_artifact_ids_sha256",
+        "owner_receipt_sha256",
+        "prior_current_delivery_id",
+        "processing_attempt_id",
+    }
+)
+_M5_VERDICT_GATE_STATUS_FIELDS = frozenset(
+    {
+        "bounded_substrate_pass",
+        "canonical_package4_complete",
+        "public_hard_zero_pass",
+        "rollback_pass",
+    }
+)
 _M5_REQUIRED_DIMENSIONS = frozenset(
     {
         "dependency_crossings",
@@ -1682,12 +1709,12 @@ def validate_m5_successor_verdict_packet(
 
 def validate_m5_rollback_rehearsal(
     staged: object,
-    rolled_back: object,
 ) -> M5RollbackRehearsalReceipt:
-    """Derive a receipt from the existing whole-attempt rollback owner."""
+    """Invoke the whole-attempt rollback owner and derive its receipt."""
 
     from xic_extractor.extraction.targeted_diagnostic_delivery import (
         TargetedDiagnosticDeliveryCandidate,
+        rollback_targeted_diagnostic_delivery_candidate,
     )
 
     if not isinstance(staged, TargetedDiagnosticDeliveryCandidate) or (
@@ -1696,6 +1723,7 @@ def validate_m5_rollback_rehearsal(
         raise Package0ComparatorError(
             "M5 rollback rehearsal requires one staged delivery candidate"
         )
+    rolled_back = rollback_targeted_diagnostic_delivery_candidate(staged)
     if not isinstance(rolled_back, TargetedDiagnosticDeliveryCandidate) or (
         rolled_back.status != "rolled_back"
     ):
@@ -1851,6 +1879,14 @@ def _validate_m5_candidate_manifest(
     milestones = candidate.get("included_milestones")
     if not isinstance(milestones, list):
         raise Package0ComparatorError("M5 included milestones are missing")
+    if any(
+        not isinstance(item, Mapping)
+        or set(item) != _M5_CANDIDATE_MILESTONE_FIELDS
+        for item in milestones
+    ):
+        raise Package0ComparatorError(
+            "M5 candidate milestone record field set differs"
+        )
     observed_milestones = {
         (item.get("milestone"), item.get("issue"), item.get("merge_sha"))
         for item in milestones
@@ -1868,7 +1904,15 @@ def _validate_m5_candidate_manifest(
     ):
         raise Package0ComparatorError("M5 candidate milestone set differs")
     excluded = candidate.get("excluded_milestones")
-    if not isinstance(excluded, list) or tuple(
+    if not isinstance(excluded, list) or any(
+        not isinstance(item, Mapping)
+        or set(item) != _M5_CANDIDATE_EXCLUDED_MILESTONE_FIELDS
+        for item in excluded
+    ):
+        raise Package0ComparatorError(
+            "M5 candidate excluded milestone record field set differs"
+        )
+    if tuple(
         (
             item.get("milestone"),
             item.get("issue"),
@@ -1882,7 +1926,15 @@ def _validate_m5_candidate_manifest(
     ):
         raise Package0ComparatorError("M5 candidate excluded milestone set differs")
     followups = candidate.get("known_preexisting_followups")
-    if not isinstance(followups, list) or tuple(
+    if not isinstance(followups, list) or any(
+        not isinstance(item, Mapping)
+        or set(item) != _M5_CANDIDATE_FOLLOWUP_FIELDS
+        for item in followups
+    ):
+        raise Package0ComparatorError(
+            "M5 candidate follow-up record field set differs"
+        )
+    if tuple(
         (item.get("issue"), item.get("scope"))
         for item in followups
         if isinstance(item, Mapping)
@@ -1897,6 +1949,10 @@ def _validate_m5_candidate_manifest(
     for item in sources:
         if not isinstance(item, Mapping):
             raise Package0ComparatorError("M5 candidate source row is malformed")
+        if set(item) != _M5_FILE_SEAL_FIELDS:
+            raise Package0ComparatorError(
+                "M5 candidate source record field set differs"
+            )
         relative = _m5_safe_relative_path(
             item.get("path"),
             field="candidate source path",
@@ -1973,6 +2029,10 @@ def _validate_m5_legacy_receipt(
     for item in tracked_files:
         if not isinstance(item, Mapping):
             raise Package0ComparatorError("M5 legacy tracked file row is malformed")
+        if set(item) != _M5_FILE_SEAL_FIELDS:
+            raise Package0ComparatorError(
+                "M5 legacy tracked file record field set differs"
+            )
         relative = _m5_safe_relative_path(item.get("path"), field="legacy file path")
         if str(relative) in tracked:
             raise Package0ComparatorError("M5 legacy tracked files must be unique")
@@ -2238,6 +2298,10 @@ def _validate_m5_rollback_packet(
     recorded = rollback.get("recorded_owner_receipt")
     if not isinstance(recorded, Mapping):
         raise Package0ComparatorError("M5 rollback owner receipt is missing")
+    if set(recorded) != _M5_ROLLBACK_OWNER_RECEIPT_FIELDS:
+        raise Package0ComparatorError(
+            "M5 rollback owner receipt field set differs"
+        )
     for field in (
         "lineage_artifact_ids_sha256",
         "delivery_revision_ids_sha256",
@@ -2306,6 +2370,8 @@ def _validate_m5_verdict(
         )
     ):
         raise Package0ComparatorError("M5 verdict evidence state is malformed")
+    if set(gates) != _M5_VERDICT_GATE_STATUS_FIELDS:
+        raise Package0ComparatorError("M5 verdict gate status field set differs")
     if defects != []:
         raise Package0ComparatorError("M5 candidate defect set differs")
     if tuple(missing) != _M5_REQUIRED_MISSING_EVIDENCE:
