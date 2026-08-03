@@ -4,6 +4,7 @@ import csv
 import hashlib
 import json
 import shutil
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -33,6 +34,34 @@ from xic_extractor.package0_successor_comparator import (
 
 PACKET = Path("docs/superpowers/validation/m5_successor_verdict_v1")
 FROZEN_CANDIDATE_SHA = "fbe502bd9d38f39c65a450a9f760ad76664ec3cd"
+
+
+def test_m5_sealed_text_files_have_checkout_stable_line_endings() -> None:
+    candidate = json.loads((PACKET / "candidate_manifest.json").read_text("utf-8"))
+    legacy = json.loads((PACKET / "legacy_baseline_receipt.json").read_text("utf-8"))
+    sealed_paths = {
+        *(path.as_posix() for path in PACKET.iterdir() if path.is_file()),
+        *(row["path"] for row in candidate["source_files"]),
+        *(row["path"] for row in legacy["tracked_files"]),
+        *(row["path"] for row in _read_tsv(PACKET / "evidence_manifest.tsv")),
+    }
+    completed = subprocess.run(
+        ["git", "check-attr", "-z", "text", "eol", "--", *sorted(sealed_paths)],
+        check=True,
+        capture_output=True,
+    )
+    fields = completed.stdout.decode("utf-8").split("\0")
+    attributes: dict[str, dict[str, str]] = {}
+    for offset in range(0, len(fields) - 1, 3):
+        path, attribute, value = fields[offset : offset + 3]
+        attributes.setdefault(path, {})[attribute] = value
+
+    unstable = {
+        path: attributes.get(path, {})
+        for path in sorted(sealed_paths)
+        if attributes.get(path) != {"text": "set", "eol": "lf"}
+    }
+    assert unstable == {}
 
 
 def test_m5_packet_binds_frozen_candidate_legacy_rollback_and_narrow_verdict() -> None:
