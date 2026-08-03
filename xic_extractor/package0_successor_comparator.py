@@ -110,6 +110,10 @@ _M5_CANDIDATE_SCHEMA = "m5_frozen_candidate_manifest_v1"
 _M5_LEGACY_SCHEMA = "m5_legacy_baseline_receipt_v1"
 _M5_VERDICT_CONTRACT_SCHEMA = "m5_scoped_verdict_contract_v1"
 _M5_ROLLBACK_SCHEMA = "m5_rollback_rehearsal_v1"
+# The evaluated candidate predates the M5 packet. Evidence and locators therefore
+# resolve against the merge that first made the complete reviewed packet durable,
+# never against whichever checkout happens to replay the verdict later.
+_M5_FROZEN_EVIDENCE_REVISION = "5f3ca8ace68b2205c7bf96dd62b08aef7809e79e"
 _M5_PACKET_FILES = (
     "README.md",
     "architecture_authority_audit.tsv",
@@ -1662,13 +1666,18 @@ def validate_m5_successor_verdict_packet(
         expected_candidate_sha=expected_candidate_sha,
     )
     legacy = _m5_json_mapping(packet_root / "legacy_baseline_receipt.json")
-    _validate_m5_legacy_receipt(legacy, repo_root=repo_root)
+    _validate_m5_legacy_receipt(
+        legacy,
+        repo_root=repo_root,
+        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+    )
     evidence_paths = _validate_m5_evidence_manifest(
         _m5_tsv_rows(
             packet_root / "evidence_manifest.tsv",
             fields=_M5_EVIDENCE_FIELDS,
         ),
         repo_root=repo_root,
+        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
     )
     contract = _m5_json_mapping(packet_root / "verdict_contract.json")
     _validate_m5_verdict_contract(contract)
@@ -1676,24 +1685,44 @@ def validate_m5_successor_verdict_packet(
         packet_root / "architecture_authority_audit.tsv",
         fields=_M5_AUTHORITY_AUDIT_FIELDS,
     )
-    _validate_m5_authority_audit(authority_audit, repo_root=repo_root)
+    _validate_m5_authority_audit(
+        authority_audit,
+        repo_root=repo_root,
+        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+    )
     dimensions = _m5_tsv_rows(
         packet_root / "comparison_dimensions.tsv",
         fields=_M5_DIMENSION_FIELDS,
     )
-    _validate_m5_dimensions(dimensions, repo_root=repo_root)
+    _validate_m5_dimensions(
+        dimensions,
+        repo_root=repo_root,
+        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+    )
     cases = _m5_tsv_rows(
         packet_root / "selective_scientific_cases.tsv",
         fields=_M5_CASE_FIELDS,
     )
-    _validate_m5_selective_cases(cases, repo_root=repo_root)
+    _validate_m5_selective_cases(
+        cases,
+        repo_root=repo_root,
+        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+    )
     public_diffs = _m5_tsv_rows(
         packet_root / "public_expected_diff.tsv",
         fields=_M5_PUBLIC_DIFF_FIELDS,
     )
-    _validate_m5_public_diffs(public_diffs, repo_root=repo_root)
+    _validate_m5_public_diffs(
+        public_diffs,
+        repo_root=repo_root,
+        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+    )
     rollback = _m5_json_mapping(packet_root / "rollback_rehearsal.json")
-    _validate_m5_rollback_packet(rollback, repo_root=repo_root)
+    _validate_m5_rollback_packet(
+        rollback,
+        repo_root=repo_root,
+        evidence_revision=_M5_FROZEN_EVIDENCE_REVISION,
+    )
     _validate_m5_evidence_locator_coverage(
         evidence_paths,
         authority_audit=authority_audit,
@@ -2010,19 +2039,9 @@ def _validate_m5_candidate_manifest(
         if str(relative) in seen:
             raise Package0ComparatorError("M5 candidate source paths must be unique")
         seen.add(str(relative))
-        source_path = repo_root / relative
-        if not source_path.is_file() or source_path.is_symlink():
-            raise Package0ComparatorError(f"M5 candidate source is missing: {relative}")
         expected_digest = _sha256(
             item.get("sha256"),
             f"candidate source {relative} sha256",
-        )
-        actual_digest = _bytes_sha256(
-            _m5_canonical_text_bytes(
-                source_path.read_bytes(),
-                field=f"candidate source {relative}",
-            ),
-            field=f"candidate source {relative}",
         )
         candidate_digest = _bytes_sha256(
             _m5_canonical_text_bytes(
@@ -2031,7 +2050,7 @@ def _validate_m5_candidate_manifest(
             ),
             field=f"candidate Git source {relative}",
         )
-        if actual_digest != expected_digest or candidate_digest != expected_digest:
+        if candidate_digest != expected_digest:
             raise Package0ComparatorError(f"M5 candidate source drift: {relative}")
     if seen != _M5_REQUIRED_CANDIDATE_SOURCE_PATHS:
         raise Package0ComparatorError("M5 candidate source set differs")
@@ -2041,6 +2060,7 @@ def _validate_m5_legacy_receipt(
     legacy: Mapping[str, object],
     *,
     repo_root: Path,
+    evidence_revision: str,
 ) -> None:
     if set(legacy) != _M5_LEGACY_FIELDS:
         raise Package0ComparatorError("M5 legacy receipt field set differs")
@@ -2087,14 +2107,13 @@ def _validate_m5_legacy_receipt(
         if str(relative) in tracked:
             raise Package0ComparatorError("M5 legacy tracked files must be unique")
         tracked[str(relative)] = item
-        path = repo_root / relative
-        if not path.is_file() or path.is_symlink():
-            raise Package0ComparatorError(
-                f"M5 legacy tracked file is missing: {relative}"
-            )
         if _bytes_sha256(
             _m5_canonical_text_bytes(
-                path.read_bytes(),
+                _m5_git_bytes(
+                    repo_root,
+                    "show",
+                    f"{evidence_revision}:{relative}",
+                ),
                 field=f"legacy file {relative}",
             ),
             field=f"legacy file {relative}",
@@ -2110,7 +2129,14 @@ def _validate_m5_legacy_receipt(
     )
     if baseline_path not in tracked:
         raise Package0ComparatorError("M5 legacy receipt lacks the baseline pointer")
-    baseline = _m5_json_mapping(repo_root / baseline_path)
+    baseline = _m5_json_bytes_mapping(
+        _m5_git_bytes(
+            repo_root,
+            "show",
+            f"{evidence_revision}:{baseline_path}",
+        ),
+        source=f"{evidence_revision}:{baseline_path}",
+    )
     canonical = baseline.get("canonical_artifact_set")
     if not isinstance(canonical, Mapping) or (
         legacy.get("baseline_id") != baseline.get("baseline_id")
@@ -2125,6 +2151,7 @@ def _validate_m5_evidence_manifest(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
+    evidence_revision: str,
 ) -> frozenset[str]:
     observed: set[str] = set()
     for row in rows:
@@ -2133,16 +2160,17 @@ def _validate_m5_evidence_manifest(
         if normalized in observed:
             raise Package0ComparatorError("M5 evidence file paths must be unique")
         observed.add(normalized)
-        evidence_path = repo_root / relative
-        if not evidence_path.is_file() or evidence_path.is_symlink():
-            raise Package0ComparatorError(f"M5 evidence file is missing: {relative}")
         expected_digest = _sha256(
             row["sha256"],
             f"M5 evidence file {relative} sha256",
         )
         if _bytes_sha256(
             _m5_canonical_text_bytes(
-                evidence_path.read_bytes(),
+                _m5_git_bytes(
+                    repo_root,
+                    "show",
+                    f"{evidence_revision}:{relative}",
+                ),
                 field=f"M5 evidence file {relative}",
             ),
             field=f"M5 evidence file {relative}",
@@ -2189,6 +2217,7 @@ def _validate_m5_authority_audit(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
+    evidence_revision: str,
 ) -> None:
     observed_rows = tuple(
         tuple(row[field] for field in _M5_AUTHORITY_AUDIT_FIELDS) for row in rows
@@ -2196,7 +2225,11 @@ def _validate_m5_authority_audit(
     if observed_rows != _M5_REQUIRED_AUTHORITY_AUDIT_ROWS:
         raise Package0ComparatorError("M5 architecture/authority audit set differs")
     for row in rows:
-        _validate_m5_locator(repo_root, row["evidence_locator"])
+        _validate_m5_locator(
+            repo_root,
+            row["evidence_locator"],
+            evidence_revision=evidence_revision,
+        )
 
 
 def _validate_m5_verdict_contract(contract: Mapping[str, object]) -> None:
@@ -2226,6 +2259,7 @@ def _validate_m5_dimensions(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
+    evidence_revision: str,
 ) -> None:
     if _canonical_value_sha256(rows) != _M5_DIMENSION_CONTRACT_SHA256:
         raise Package0ComparatorError("M5 comparison dimension semantics differ")
@@ -2251,13 +2285,18 @@ def _validate_m5_dimensions(
             )
         ):
             raise Package0ComparatorError("M5 comparison dimension lacks evidence")
-        _validate_m5_locator(repo_root, row["evidence_locator"])
+        _validate_m5_locator(
+            repo_root,
+            row["evidence_locator"],
+            evidence_revision=evidence_revision,
+        )
 
 
 def _validate_m5_selective_cases(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
+    evidence_revision: str,
 ) -> None:
     case_ids = {row["case_id"] for row in rows}
     if len(case_ids) != len(rows) or len(rows) != 12:
@@ -2296,13 +2335,18 @@ def _validate_m5_selective_cases(
             or not row["verdict_effect"]
         ):
             raise Package0ComparatorError("M5 selective case lacks evidence")
-        _validate_m5_locator(repo_root, row["evidence_locator"])
+        _validate_m5_locator(
+            repo_root,
+            row["evidence_locator"],
+            evidence_revision=evidence_revision,
+        )
 
 
 def _validate_m5_public_diffs(
     rows: tuple[dict[str, str], ...],
     *,
     repo_root: Path,
+    evidence_revision: str,
 ) -> None:
     if _canonical_value_sha256(rows) != _M5_PUBLIC_DIFF_CONTRACT_SHA256:
         raise Package0ComparatorError("M5 public hard-zero semantics differ")
@@ -2320,13 +2364,18 @@ def _validate_m5_public_diffs(
             raise Package0ComparatorError(
                 f"M5 public hard-zero gate failed: {row['surface']}"
             )
-        _validate_m5_locator(repo_root, row["evidence_locator"])
+        _validate_m5_locator(
+            repo_root,
+            row["evidence_locator"],
+            evidence_revision=evidence_revision,
+        )
 
 
 def _validate_m5_rollback_packet(
     rollback: Mapping[str, object],
     *,
     repo_root: Path,
+    evidence_revision: str,
 ) -> None:
     if set(rollback) != _M5_ROLLBACK_FIELDS:
         raise Package0ComparatorError("M5 rollback packet field set differs")
@@ -2344,7 +2393,11 @@ def _validate_m5_rollback_packet(
     locator = rollback.get("evidence_locator")
     if not isinstance(locator, str):
         raise Package0ComparatorError("M5 rollback evidence locator is missing")
-    _validate_m5_locator(repo_root, locator)
+    _validate_m5_locator(
+        repo_root,
+        locator,
+        evidence_revision=evidence_revision,
+    )
     recorded = rollback.get("recorded_owner_receipt")
     if not isinstance(recorded, Mapping):
         raise Package0ComparatorError("M5 rollback owner receipt is missing")
@@ -2486,14 +2539,26 @@ def _validate_m5_verdict(
 
 def _m5_json_mapping(path: Path) -> Mapping[str, object]:
     try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise Package0ComparatorError(f"M5 JSON is unreadable: {path}") from exc
+    return _m5_json_bytes_mapping(payload, source=str(path))
+
+
+def _m5_json_bytes_mapping(
+    payload: bytes,
+    *,
+    source: str,
+) -> Mapping[str, object]:
+    try:
         value = json.loads(
-            path.read_text(encoding="utf-8"),
+            payload.decode("utf-8"),
             object_pairs_hook=_m5_unique_json_mapping,
         )
-    except (OSError, json.JSONDecodeError) as exc:
-        raise Package0ComparatorError(f"M5 JSON is unreadable: {path}") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise Package0ComparatorError(f"M5 JSON is unreadable: {source}") from exc
     if not isinstance(value, Mapping):
-        raise Package0ComparatorError(f"M5 JSON must contain an object: {path}")
+        raise Package0ComparatorError(f"M5 JSON must contain an object: {source}")
     return value
 
 
@@ -2543,16 +2608,26 @@ def _m5_safe_relative_path(value: object, *, field: str) -> PurePosixPath:
     return path
 
 
-def _validate_m5_locator(repo_root: Path, locator: str) -> None:
+def _validate_m5_locator(
+    repo_root: Path,
+    locator: str,
+    *,
+    evidence_revision: str,
+) -> None:
     if not isinstance(locator, str) or not locator:
         raise Package0ComparatorError("M5 evidence locator is missing")
     path_text, separator, symbol = locator.partition("::")
     relative = _m5_safe_relative_path(path_text, field="evidence locator")
-    path = repo_root / relative
-    if not path.is_file() or path.is_symlink():
+    try:
+        source = _m5_git_bytes(
+            repo_root,
+            "show",
+            f"{evidence_revision}:{relative}",
+        ).decode("utf-8")
+    except (Package0ComparatorError, UnicodeDecodeError):
         raise Package0ComparatorError(f"M5 evidence locator is missing: {locator}")
     if separator:
-        if not symbol or f"def {symbol}(" not in path.read_text(encoding="utf-8"):
+        if not symbol or f"def {symbol}(" not in source:
             raise Package0ComparatorError(
                 f"M5 evidence locator symbol is missing: {locator}"
             )

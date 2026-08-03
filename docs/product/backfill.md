@@ -69,19 +69,23 @@ The frozen rules are:
 - The complete direct SUPPORT `PeakObservationRef` trace set is retained as
   exact references. It is not collapsed into a median template.
 - Recovery candidates enter only through an immutable owner receipt that binds
-  the exact request/attempt, sample, target derived from the frozen group
+  the exact request/attempt, sample, method subject and optional Targeted
+  compatibility identity derived from the frozen group
   facts, source-cell artifacts, and one owner-minted CID-NL method assessment.
   That assessment—not a naked `PeakObservationRef` argument—owns the complete
-  target-bound candidate universe and its peak artifacts. Mapping consumes the
+  method-subject-bound candidate universe and its peak artifacts. Mapping consumes the
   receipt itself, so an empty completed universe remains distinguishable from
-  a missing receipt, and callers cannot independently pair a target with a
-  physical peak, combine receipts for one sample × target, or omit individual
-  members.
+  a missing receipt, and callers cannot independently pair a method subject
+  with a physical peak, combine receipts for one sample × method subject, or
+  omit individual members.
 - Receipt-backed recovery evidence is mapped jointly within the same exact
-  target by equal cardinality, finite group RT, unique elution order, and the
+  method subject by equal cardinality, finite group RT, unique elution order, and the
   existing candidate query RT/ppm envelope. `1↔N`, `N↔1`, tied order, or
   out-of-envelope evidence stays HOLD and nonnumeric. Drift, split,
   deconvolution, and multi-component resolution remain later work.
+- A method-level `REJECT` is terminal for that attempt and is not Backfill
+  eligible. Technical/no-evidence and HOLD cells may remain nonnumeric pending
+  an owner-bound recovery universe; neither state creates a vote by itself.
 - Targeted and Untargeted adapters unwrap their M1 reference projections and
   call the same policy owner over the same exact `CellObservationRef` objects;
   neither adapter owns a second workflow-neutral cell model.

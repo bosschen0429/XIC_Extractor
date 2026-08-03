@@ -146,6 +146,43 @@ def read_tsv_with_header(
         return header, list(reader)
 
 
+def read_tsv_with_header_snapshot(
+    path: Path,
+    *,
+    required_columns: Sequence[str] = (),
+    exact_columns: Sequence[str] | None = None,
+    encoding: str = "utf-8",
+) -> tuple[tuple[str, ...], list[dict[str, str]], str]:
+    """Parse and hash one exact TSV byte snapshot without reopening its path."""
+
+    payload = path.read_bytes()
+    try:
+        text = payload.decode(encoding)
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"{path}: invalid {encoding} text") from exc
+    reader = csv.DictReader(io.StringIO(text, newline=""), delimiter="\t")
+    header = validate_delimited_header(
+        reader.fieldnames,
+        path=path,
+        required_columns=required_columns,
+        exact_columns=exact_columns,
+    )
+    rows: list[dict[str, str]] = []
+    for row_index, row in enumerate(reader, start=2):
+        if None in row:
+            raise ValueError(
+                f"{path}:{row_index}: row has more cells than declared header"
+            )
+        truncated = [column for column, value in row.items() if value is None]
+        if truncated:
+            raise ValueError(
+                f"{path}:{row_index}: row has fewer cells than declared header; "
+                f"missing cells={truncated!r}"
+            )
+        rows.append(dict(row))
+    return header, rows, hashlib.sha256(payload).hexdigest().upper()
+
+
 def file_sha256(path: Path, *, uppercase: bool = True) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:

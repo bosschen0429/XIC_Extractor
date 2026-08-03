@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import scripts.build_quant_matrix_version as activation_module
 from scripts.build_quant_matrix_version import run_activation
 from scripts.check_production_acceptance_manifest import (
     REQUIRED_COLUMNS as ACCEPTANCE_COLUMNS,
@@ -92,6 +93,48 @@ def test_quant_matrix_version_writes_accepted_backfill_with_provenance(
     expected_summary = _read_tsv(outputs["expected_diff_summary"])
     assert expected_summary[0]["acceptance_status"] == "pass"
     assert expected_summary[0]["written_backfill_count"] == "1"
+
+
+def test_quant_matrix_activation_consumes_the_checked_manifest_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = _write_activation_inputs(tmp_path)
+    original_manifest_sha = _sha256(inputs["manifest"])
+    checked_snapshots = []
+    original_loader = activation_module.load_checked_production_acceptance_manifest
+
+    def load_then_replace(**kwargs):
+        checked = original_loader(**kwargs)
+        checked_snapshots.append(checked)
+        rows = _read_tsv(inputs["manifest"])
+        rows[0]["source_row_sha256"] = "B" * 64
+        replacement_sha = production_acceptance_manifest_sha256(rows)
+        rows[0]["manifest_sha256"] = replacement_sha
+        _write_tsv(inputs["manifest"], ACCEPTANCE_COLUMNS, rows)
+        return checked
+
+    monkeypatch.setattr(
+        activation_module,
+        "load_checked_production_acceptance_manifest",
+        load_then_replace,
+    )
+    outputs = run_activation(
+        input_quant_matrix_tsv=inputs["matrix"],
+        input_matrix_identity_tsv=inputs["identity"],
+        production_acceptance_manifest_tsv=inputs["manifest"],
+        expected_diff_tsv=inputs["expected_diff"],
+        output_dir=tmp_path / "out",
+    )
+
+    provenance = _row_by_sample(_read_tsv(outputs["cell_provenance"]), "SampleB")
+    assert provenance["source_row_sha256"] == "A" * 64
+    source_summary = _read_tsv(outputs["source_summary"])[0]
+    assert source_summary["production_acceptance_manifest_sha256"] == (
+        original_manifest_sha
+    )
+    with pytest.raises(TypeError):
+        checked_snapshots[0].rows[0]["source_row_sha256"] = "C" * 64
 
 
 def test_quant_matrix_version_requires_expected_diff_for_backfill_write(

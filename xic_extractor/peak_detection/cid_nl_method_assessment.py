@@ -30,6 +30,15 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceRef,
     validate_cid_nl_evidence_binding,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CID_NL_METHOD_ID,
+    CID_NL_METHOD_VERSION,
+    CID_NL_PROVIDER_ID,
+    CidNlMethodSubject,
+    CidNlMethodSubjectContractError,
+    cid_nl_method_subject_from_target,
+    validate_cid_nl_method_subject_binding,
+)
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
@@ -48,14 +57,11 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_method_assessment_v2"
+SCHEMA_VERSION = "cid_nl_method_assessment_v3"
 ARTIFACT_SEMANTIC_ROLE = "cid_nl_method_assessment"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf-v1"
-CID_NL_PROVIDER_ID = "dda_ddms2_cid_nl"
-CID_NL_METHOD_ID = "target_bound_cid_nl"
-CID_NL_METHOD_VERSION = "1"
 
 CidNlTechnicalState: TypeAlias = Literal[
     "evaluated",
@@ -69,9 +75,6 @@ _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content.v1:"
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source.v1:"
 _PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
 _SAMPLE_ID_PREFIX = "xic.sample.v1:"
-_TARGET_KEY_ID_PREFIX = "xic.target-key.v1:"
-_TARGET_DEFINITION_ID_PREFIX = "xic.target-definition.v1:"
-_TARGET_SNAPSHOT_ID_PREFIX = "xic.target-list-snapshot.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
@@ -143,9 +146,7 @@ class CidNlMethodAssessmentContent:
     provider_id: str
     method_id: str
     method_version: str
-    target_snapshot_id: str
-    target_key_id: str
-    target_definition_id: str
+    method_subject: CidNlMethodSubject
     detector_invocation_id: str
     candidate_peak_content_ids: tuple[str, ...]
     evaluation_receipt: CidNlEvaluationReceipt
@@ -168,15 +169,12 @@ class CidNlMethodAssessmentContent:
                 _ACQUISITION_SOURCE_ID_PREFIX,
                 "acquisition_source_id",
             ),
-            (self.target_snapshot_id, _TARGET_SNAPSHOT_ID_PREFIX, "target_snapshot_id"),
-            (self.target_key_id, _TARGET_KEY_ID_PREFIX, "target_key_id"),
-            (
-                self.target_definition_id,
-                _TARGET_DEFINITION_ID_PREFIX,
-                "target_definition_id",
-            ),
         ):
             _validate_typed_digest_id(value, prefix=prefix, field=field)
+        if not isinstance(self.method_subject, CidNlMethodSubject):
+            raise CidNlMethodAssessmentContractError(
+                "method_subject must be owner-normalized"
+            )
         if self.provider_id != CID_NL_PROVIDER_ID:
             raise CidNlMethodAssessmentContractError(
                 f"provider_id must be {CID_NL_PROVIDER_ID!r}"
@@ -246,6 +244,24 @@ class CidNlMethodAssessmentContent:
             raise CidNlMethodAssessmentContractError(
                 "reason_codes must be non-empty, unique, and canonical-sorted"
             )
+
+    @property
+    def target_snapshot_id(self) -> str | None:
+        """Targeted compatibility projection; not workflow-neutral identity."""
+
+        return self.method_subject.target_snapshot_id
+
+    @property
+    def target_key_id(self) -> str | None:
+        """Targeted compatibility projection; not workflow-neutral identity."""
+
+        return self.method_subject.target_key_id
+
+    @property
+    def target_definition_id(self) -> str | None:
+        """Targeted compatibility projection; not workflow-neutral identity."""
+
+        return self.method_subject.target_definition_id
 
 
 @dataclass(frozen=True, slots=True)
@@ -344,7 +360,8 @@ def mint_cid_nl_method_assessment_ref(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    target: ResolvedTargetDefinition,
+    target: ResolvedTargetDefinition | None = None,
+    method_subject: CidNlMethodSubject | None = None,
     detector_invocation_id: str,
     evaluation_receipt: CidNlEvaluationReceipt,
     candidate_peaks: tuple[PeakObservationRef, ...] = (),
@@ -355,7 +372,11 @@ def mint_cid_nl_method_assessment_ref(
 ) -> CidNlMethodAssessmentRef:
     """Close one complete CID-NL attempt without granting product authority."""
 
-    _validate_owner_sample_target(processing_owners, sample, target)
+    subject = _resolve_method_subject(
+        target=target,
+        method_subject=method_subject,
+    )
+    _validate_owner_sample_subject(processing_owners, sample, subject, target=target)
     if not isinstance(evaluation_receipt, CidNlEvaluationReceipt):
         raise CidNlMethodAssessmentContractError(
             "evaluation_receipt must be owner-normalized"
@@ -376,7 +397,7 @@ def mint_cid_nl_method_assessment_ref(
     _validate_upstream_bindings(
         processing_owners=processing_owners,
         sample=sample,
-        target=target,
+        method_subject=subject,
         evaluation_receipt=evaluation_receipt,
         candidate_peaks=candidates,
         evidence_refs=evidence,
@@ -401,9 +422,7 @@ def mint_cid_nl_method_assessment_ref(
         provider_id=CID_NL_PROVIDER_ID,
         method_id=CID_NL_METHOD_ID,
         method_version=CID_NL_METHOD_VERSION,
-        target_snapshot_id=target.snapshot.snapshot_id,
-        target_key_id=target.definition.target_key.target_key_id,
-        target_definition_id=target.definition.target_definition_id,
+        method_subject=subject,
         detector_invocation_id=detector_invocation_id,
         candidate_peak_content_ids=tuple(
             peak.content.peak_observation_content_id for peak in candidates
@@ -450,7 +469,8 @@ def validate_cid_nl_method_assessment_binding(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    target: ResolvedTargetDefinition,
+    target: ResolvedTargetDefinition | None = None,
+    method_subject: CidNlMethodSubject | None = None,
 ) -> None:
     """Reject request, attempt, sample, target, or upstream substitution."""
 
@@ -462,6 +482,7 @@ def validate_cid_nl_method_assessment_binding(
         processing_owners=processing_owners,
         sample=sample,
         target=target,
+        method_subject=method_subject,
         detector_invocation_id=reference.content.detector_invocation_id,
         evaluation_receipt=reference.content.evaluation_receipt,
         candidate_peaks=reference.candidate_peaks,
@@ -503,10 +524,30 @@ def canonical_cid_nl_method_assessment_bytes(
     return (serialized + "\n").encode("utf-8")
 
 
-def _validate_owner_sample_target(
+def _resolve_method_subject(
+    *,
+    target: ResolvedTargetDefinition | None,
+    method_subject: CidNlMethodSubject | None,
+) -> CidNlMethodSubject:
+    if (target is None) == (method_subject is None):
+        raise CidNlMethodAssessmentContractError(
+            "assessment requires exactly one Targeted adapter or method_subject"
+        )
+    if target is not None:
+        try:
+            return cid_nl_method_subject_from_target(target)
+        except CidNlMethodSubjectContractError as exc:
+            raise CidNlMethodAssessmentContractError(str(exc)) from exc
+    assert method_subject is not None
+    return method_subject
+
+
+def _validate_owner_sample_subject(
     processing_owners: object,
     sample: object,
-    target: object,
+    method_subject: object,
+    *,
+    target: ResolvedTargetDefinition | None,
 ) -> None:
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise CidNlMethodAssessmentContractError(
@@ -516,20 +557,22 @@ def _validate_owner_sample_target(
         raise CidNlMethodAssessmentContractError(
             "sample must be an owner-resolved canonical sample"
         )
+    if not isinstance(method_subject, CidNlMethodSubject):
+        raise CidNlMethodAssessmentContractError(
+            "method_subject must be owner-normalized"
+        )
     if sample not in processing_owners.sample_resolutions:
         raise CidNlMethodAssessmentContractError(
             "assessment sample is outside the processing request"
         )
-    if not isinstance(target, ResolvedTargetDefinition):
-        raise CidNlMethodAssessmentContractError(
-            "target must be an owner-resolved target definition"
+    try:
+        validate_cid_nl_method_subject_binding(
+            method_subject,
+            processing_owners=processing_owners,
+            target=target,
         )
-    if processing_owners.target_snapshot is None or (
-        processing_owners.target_snapshot.snapshot_id != target.snapshot.snapshot_id
-    ):
-        raise CidNlMethodAssessmentContractError(
-            "assessment target is outside the processing request"
-        )
+    except CidNlMethodSubjectContractError as exc:
+        raise CidNlMethodAssessmentContractError(str(exc)) from exc
     try:
         source = resolve_request_acquisition_source(
             processing_owners=processing_owners,
@@ -601,14 +644,13 @@ def _validate_upstream_bindings(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    target: ResolvedTargetDefinition,
+    method_subject: CidNlMethodSubject,
     evaluation_receipt: CidNlEvaluationReceipt,
     candidate_peaks: tuple[PeakObservationRef, ...],
     evidence_refs: tuple[CidNlEvidenceRef, ...],
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...],
 ) -> None:
-    target_value = target.definition.target
     for peak in candidate_peaks:
         try:
             validate_peak_observation_binding(
@@ -620,8 +662,8 @@ def _validate_upstream_bindings(
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
         _validate_target_precursor(
             observed_mz=peak.content.mz,
-            target_mz=target_value.mz,
-            target_tolerance_ppm=target_value.ppm_tol,
+            target_mz=method_subject.precursor_mz,
+            target_tolerance_ppm=method_subject.precursor_tolerance_ppm,
             subject="candidate peak",
         )
         _validate_query_rt(
@@ -629,11 +671,7 @@ def _validate_upstream_bindings(
             evaluation_receipt=evaluation_receipt,
             subject="candidate peak apex",
         )
-    configured_loss = target_value.neutral_loss_da
-    if configured_loss is None or configured_loss <= 0.0:
-        raise CidNlMethodAssessmentContractError(
-            "CID-NL assessment target requires configured neutral loss"
-        )
+    configured_loss = method_subject.neutral_loss_da
     evidence_by_content_id = {}
     for evidence in evidence_refs:
         try:
@@ -646,8 +684,8 @@ def _validate_upstream_bindings(
             raise CidNlMethodAssessmentContractError(str(exc)) from exc
         _validate_target_precursor(
             observed_mz=evidence.observation.precursor_mz,
-            target_mz=target_value.mz,
-            target_tolerance_ppm=target_value.ppm_tol,
+            target_mz=method_subject.precursor_mz,
+            target_tolerance_ppm=method_subject.precursor_tolerance_ppm,
             subject="CID-NL evidence",
         )
         _validate_query_rt(
@@ -662,7 +700,7 @@ def _validate_upstream_bindings(
             abs_tol=1e-12,
         ):
             raise CidNlMethodAssessmentContractError(
-                "CID-NL evidence references a different target neutral loss"
+                "CID-NL evidence references a different method-subject neutral loss"
             )
         evidence_by_content_id[
             evidence.artifact.content_identity.artifact_content_id

@@ -29,6 +29,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlTechnicalState,
     validate_cid_nl_method_assessment_binding,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
@@ -43,7 +44,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cell_observation_v3"
+SCHEMA_VERSION = "cell_observation_v4"
 ARTIFACT_SEMANTIC_ROLE = "diagnostic_cell_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -54,6 +55,7 @@ _EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact.v1:"
 _PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
 _PEAK_HYPOTHESIS_ID_PREFIX = "xic.peak-hypothesis.v1:"
 _SAMPLE_ID_PREFIX = "xic.sample.v1:"
+_METHOD_SUBJECT_ID_PREFIX = "xic.cid-nl-method-subject.v1:"
 _TARGET_KEY_ID_PREFIX = "xic.target-key.v1:"
 _TARGET_DEFINITION_ID_PREFIX = "xic.target-definition.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -92,7 +94,7 @@ class CidNlCellGroupSupport:
 
 @dataclass(frozen=True, slots=True)
 class CidNlCellGroupContext:
-    """Target-bound proof for one group and every SUPPORT owner that formed it."""
+    """Method-subject proof for one group and every SUPPORT owner that formed it."""
 
     group: CrossSamplePeakGroupHypothesis
     supports: tuple[CidNlCellGroupSupport, ...]
@@ -131,16 +133,12 @@ class CidNlCellGroupContext:
             raise CellObservationContractError(
                 "group SUPPORT closures must be unique and canonical-sorted by sample"
             )
-        target_pairs = {
-            (
-                support.assessment.content.target_key_id,
-                support.assessment.content.target_definition_id,
-            )
-            for support in self.supports
+        method_subjects = {
+            support.assessment.content.method_subject for support in self.supports
         }
-        if len(target_pairs) != 1:
+        if len(method_subjects) != 1:
             raise CellObservationContractError(
-                "group SUPPORT closures reference different targets"
+                "group SUPPORT closures reference different method subjects"
             )
         expected_owners = tuple(
             owner_from_cid_nl_assessment_support(
@@ -169,12 +167,24 @@ class CidNlCellGroupContext:
             )
 
     @property
-    def target_key_id(self) -> str:
-        return self.supports[0].assessment.content.target_key_id
+    def method_subject(self) -> CidNlMethodSubject:
+        return self.supports[0].assessment.content.method_subject
 
     @property
-    def target_definition_id(self) -> str:
-        return self.supports[0].assessment.content.target_definition_id
+    def method_subject_id(self) -> str:
+        return self.method_subject.method_subject_id
+
+    @property
+    def target_key_id(self) -> str | None:
+        """Targeted compatibility projection; not group identity."""
+
+        return self.method_subject.target_key_id
+
+    @property
+    def target_definition_id(self) -> str | None:
+        """Targeted compatibility projection; not group identity."""
+
+        return self.method_subject.target_definition_id
 
     @property
     def support_assessment_artifact_content_ids(self) -> tuple[str, ...]:
@@ -193,8 +203,9 @@ class CellObservationContent:
     canonical_sample_identity_id: str
     group_hypothesis_id: str
     group_owner_ids: tuple[str, ...]
-    group_target_key_id: str
-    group_target_definition_id: str
+    group_method_subject_id: str
+    group_target_key_id: str | None
+    group_target_definition_id: str | None
     group_support_assessment_artifact_content_ids: tuple[str, ...]
     technical_state: CidNlTechnicalState
     method_result: CidNlMethodResult | None
@@ -220,15 +231,32 @@ class CellObservationContent:
             field="group_owner_ids",
         )
         _validate_typed_digest_id(
+            self.group_method_subject_id,
+            prefix=_METHOD_SUBJECT_ID_PREFIX,
+            field="group_method_subject_id",
+        )
+        target_ids = (
             self.group_target_key_id,
-            prefix=_TARGET_KEY_ID_PREFIX,
-            field="group_target_key_id",
-        )
-        _validate_typed_digest_id(
             self.group_target_definition_id,
-            prefix=_TARGET_DEFINITION_ID_PREFIX,
-            field="group_target_definition_id",
         )
+        if any(value is None for value in target_ids) and any(
+            value is not None for value in target_ids
+        ):
+            raise CellObservationContractError(
+                "group Targeted compatibility identity must be complete or absent"
+            )
+        if self.group_target_key_id is not None:
+            _validate_typed_digest_id(
+                self.group_target_key_id,
+                prefix=_TARGET_KEY_ID_PREFIX,
+                field="group_target_key_id",
+            )
+            assert self.group_target_definition_id is not None
+            _validate_typed_digest_id(
+                self.group_target_definition_id,
+                prefix=_TARGET_DEFINITION_ID_PREFIX,
+                field="group_target_definition_id",
+            )
         _canonical_typed_ids(
             self.group_support_assessment_artifact_content_ids,
             prefix=_ARTIFACT_CONTENT_ID_PREFIX,
@@ -312,7 +340,6 @@ class CellObservationContent:
                 "only SUPPORT may carry an individual PeakHypothesis"
             )
 
-
 @dataclass(frozen=True, slots=True)
 class CellObservationRef:
     """One exact cell closure under an already-existing provisional group."""
@@ -347,23 +374,23 @@ class CellObservationRef:
                 "cell group identity does not match its exact group context"
             )
         if (
-            self.content.group_target_key_id != self.group_context.target_key_id
+            self.content.group_method_subject_id
+            != self.group_context.method_subject_id
+            or self.content.group_target_key_id
+            != self.group_context.target_key_id
             or self.content.group_target_definition_id
             != self.group_context.target_definition_id
             or self.content.group_support_assessment_artifact_content_ids
             != self.group_context.support_assessment_artifact_content_ids
         ):
             raise CellObservationContractError(
-                "cell group target or SUPPORT closure was substituted"
+                "cell group method subject or SUPPORT closure was substituted"
             )
-        if (
-            self.method_assessment.content.target_key_id
-            != self.group_context.target_key_id
-            or self.method_assessment.content.target_definition_id
-            != self.group_context.target_definition_id
+        if self.method_assessment.content.method_subject != (
+            self.group_context.method_subject
         ):
             raise CellObservationContractError(
-                "cell assessment references a different target than its group context"
+                "cell assessment references a different method subject than its group"
             )
         if self.content.canonical_sample_identity_id != (
             self.method_assessment.content.canonical_sample_identity_id
@@ -468,7 +495,7 @@ def mint_cell_observation_ref(
     *,
     processing_owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
-    target: ResolvedTargetDefinition,
+    target: ResolvedTargetDefinition | None = None,
     group_context: CidNlCellGroupContext,
     method_assessment: CidNlMethodAssessmentRef,
     peak_observation: PeakObservationRef | None = None,
@@ -499,21 +526,27 @@ def mint_cell_observation_ref(
         producer_attempt=processing_owners.attempt,
     )
     group = group_context.group
-    if (
-        target.definition.target_key.target_key_id != group_context.target_key_id
-        or target.definition.target_definition_id
-        != group_context.target_definition_id
-    ):
+    subject = method_assessment.content.method_subject
+    if subject != group_context.method_subject:
         raise CellObservationContractError(
-            "target references a different target than the group context"
+            "assessment references a different target or method subject than the "
+            "group context"
         )
     try:
-        validate_cid_nl_method_assessment_binding(
-            method_assessment,
-            processing_owners=processing_owners,
-            sample=sample,
-            target=target,
-        )
+        if target is None:
+            validate_cid_nl_method_assessment_binding(
+                method_assessment,
+                processing_owners=processing_owners,
+                sample=sample,
+                method_subject=subject,
+            )
+        else:
+            validate_cid_nl_method_assessment_binding(
+                method_assessment,
+                processing_owners=processing_owners,
+                sample=sample,
+                target=target,
+            )
     except ValueError as exc:
         raise CellObservationContractError(str(exc)) from exc
     method_result = method_assessment.content.method_result
@@ -567,6 +600,10 @@ def mint_cell_observation_ref(
                 "cell observation is outside the method candidate universe"
             )
     if human_disposition is not None:
+        if target is None:
+            raise CellObservationContractError(
+                "Untargeted method subjects have no Targeted review-record adapter"
+            )
         if not isinstance(human_disposition, ResolvedReviewRecordRef):
             raise CellObservationContractError(
                 "human_disposition must be an owner-resolved review record"
@@ -615,6 +652,7 @@ def mint_cell_observation_ref(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
         group_hypothesis_id=group.group_hypothesis_id,
         group_owner_ids=tuple(sorted(group.owner_ids)),
+        group_method_subject_id=group_context.method_subject_id,
         group_target_key_id=group_context.target_key_id,
         group_target_definition_id=group_context.target_definition_id,
         group_support_assessment_artifact_content_ids=(

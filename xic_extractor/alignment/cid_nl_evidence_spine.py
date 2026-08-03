@@ -30,6 +30,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     validate_cid_nl_method_assessment_binding,
 )
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    CidNlMethodSubject,
+    cid_nl_method_subject_from_target,
+)
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
@@ -224,7 +228,8 @@ class CidNlReferenceSpine:
 def build_cid_nl_reference_spine(
     *,
     processing_owners: ProcessingOwnerReferences,
-    target: ResolvedTargetDefinition,
+    target: ResolvedTargetDefinition | None = None,
+    method_subject: CidNlMethodSubject | None = None,
     sample_assessments: tuple[
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
         ...,
@@ -237,10 +242,16 @@ def build_cid_nl_reference_spine(
         raise CidNlEvidenceSpineError(
             "processing_owners must be validated ProcessingOwnerReferences"
         )
-    if not isinstance(target, ResolvedTargetDefinition):
+    if (target is None) == (method_subject is None):
         raise CidNlEvidenceSpineError(
-            "target must be an owner-resolved target definition"
+            "reference spine requires exactly one Targeted adapter or method_subject"
         )
+    subject = (
+        cid_nl_method_subject_from_target(target)
+        if target is not None
+        else method_subject
+    )
+    assert subject is not None
     if not isinstance(sample_assessments, tuple) or not sample_assessments:
         raise CidNlEvidenceSpineError(
             "sample_assessments must be a non-empty immutable tuple"
@@ -250,6 +261,7 @@ def build_cid_nl_reference_spine(
     ordered = _validate_sample_assessments(
         processing_owners=processing_owners,
         target=target,
+        method_subject=subject,
         sample_assessments=sample_assessments,
     )
     support_inputs: list[
@@ -396,7 +408,8 @@ def build_cid_nl_reference_spine(
 def _validate_sample_assessments(
     *,
     processing_owners: ProcessingOwnerReferences,
-    target: ResolvedTargetDefinition,
+    target: ResolvedTargetDefinition | None,
+    method_subject: CidNlMethodSubject,
     sample_assessments: object,
 ) -> tuple[tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...]:
     if not isinstance(sample_assessments, tuple):
@@ -421,12 +434,20 @@ def _validate_sample_assessments(
             )
         sample_ids.add(sample_id)
         try:
-            validate_cid_nl_method_assessment_binding(
-                assessment,
-                processing_owners=processing_owners,
-                sample=sample,
-                target=target,
-            )
+            if target is None:
+                validate_cid_nl_method_assessment_binding(
+                    assessment,
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    method_subject=method_subject,
+                )
+            else:
+                validate_cid_nl_method_assessment_binding(
+                    assessment,
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    target=target,
+                )
         except CidNlMethodAssessmentContractError as exc:
             raise CidNlEvidenceSpineError(str(exc)) from exc
         typed.append((sample, assessment))

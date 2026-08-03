@@ -87,6 +87,19 @@ def test_s1_to_s5_truth_table_preserves_orthogonal_axes(tmp_path: Path) -> None:
             target=fixture.target,
         )
 
+    spine = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
+    )
+    assert all(
+        cell.content.group_target_key_id
+        == fixture.target.definition.target_key.target_key_id
+        and cell.content.group_target_definition_id
+        == fixture.target.definition.target_definition_id
+        for cell in spine.cells
+    )
+
 
 def test_set_relation_is_order_neutral_and_never_votes_twice(tmp_path: Path) -> None:
     fixture = build_package2_no_raw_fixture(tmp_path, sample_stems=("split",))
