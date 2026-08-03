@@ -156,7 +156,12 @@ bounded rules:
    identity tamper fail closed.
 
 The CID-NL owner now also closes the complete method attempt before grouping.
-`CidNlMethodAssessmentRef` binds one detector invocation, target, candidate
+`CidNlMethodSubject` is the smallest shared Targeted/Untargeted subject: exact
+precursor m/z, precursor tolerance, configured neutral loss, and an immutable
+subject ID. A Targeted adapter retains its exact target snapshot/key/definition
+inside the subject; an Untargeted request pins the same subject schema directly
+and never fabricates a `ResolvedTargetDefinition`.
+`CidNlMethodAssessmentRef` binds one detector invocation, method subject, candidate
 universe, completed-search receipt with the exact DDA support policy, measured
 evidence, and individual or set-level relations to the existing processing
 request/attempt. Every qualifying scan that matches that candidate universe
@@ -192,11 +197,12 @@ The M1 reference spine creates one minimal `CellObservationRef` only after a
 SUPPORT assessment has established a provisional group. Targeted and
 Untargeted diagnostic adapters receive the same exact group and cell objects;
 they do not remint equal-looking DTOs. Cell artifact identity binds both the
-group label and its complete canonical hypothesis membership, target identity,
-and the exact SUPPORT assessment closure that formed the group. Every SUPPORT,
+group label and its complete canonical hypothesis membership, method subject,
+optional Targeted compatibility identity, and the exact SUPPORT assessment
+closure that formed the group. Every SUPPORT,
 HOLD, REJECT, or technical cell must consume that owner-validated group context;
-a reused display label, equal-looking group, or group from another target cannot
-be substituted. The v3 cell artifact keeps those SUPPORT assessment artifacts
+a reused display label, equal-looking group, or group from another method
+subject/Target cannot be substituted. The v4 cell artifact keeps those SUPPORT assessment artifacts
 in its upstream closure. An optional owner-resolved human disposition must cite
 the exact current method-assessment artifact, not merely the same sample/target
 subject. Both adapters are internal, no-write, and carry
@@ -218,11 +224,12 @@ unlabeled tuple must not be guessed into method semantics.
 | `DdaCidNlPeakSupportRef` | CID-NL-owner DDA/ddMS2 scan-to-physical-peak relation over an exact supplied candidate universe; diagnostic only, no DIA or selection authority |
 | `DdaCidNlCandidateSetRelationRef` | One scan related conservatively to one or more boundary/touching/overlapping candidates; set-level only, zero individual votes and zero hypotheses |
 | `CidNlChromatographicSupportRef` | One-or-more exact strict DDA scan relations aggregated as one physical-peak support event; diagnostic only, no hypothesis or counting authority |
-| `CidNlMethodAssessmentRef` | Complete target-bound CID-NL attempt with a policy-bound completed-search receipt, unique acquisition-source/scan keys, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |
+| `CidNlMethodSubject` | Workflow-neutral CID-NL precursor/loss subject; Targeted retains exact configured-target identity while Untargeted is request-pinned without a fake Target |
+| `CidNlMethodAssessmentRef` | Complete method-subject-bound CID-NL attempt with a policy-bound completed-search receipt, unique acquisition-source/scan keys, per-qualifying-scan relation closure, and orthogonal technical and method-result axes; child of the existing processing attempt |
 | `PeakHypothesis` | One existing model: legacy Targeted working identity plus a bounded diagnostic owner-backed CID-NL composition; neither is canonical physical-observation identity |
 | `peak_hypothesis_identity` | Same-owner content ID, exact attempt artifact, and binding validation for the bounded CID-NL composition; no selection or product authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample group identity unit |
-| `CellObservationRef` | Minimal sample × existing-group closure over exact target-bound group/SUPPORT membership, technical state, method result, optional observation/hypothesis, evidence/reasons, and an optional exact-assessment-bound owner-resolved human disposition; no value or writer fields |
+| `CellObservationRef` | Minimal sample × existing-group closure over exact method-subject group/SUPPORT membership plus optional Targeted compatibility identity, technical state, method result, optional observation/hypothesis, evidence/reasons, and an optional exact-assessment-bound owner-resolved human disposition; no value or writer fields |
 | CID-NL Targeted/Untargeted reference projections | Two internal views that retain the same exact group/cell refs and explicitly carry no product authority |
 | `IntegrationResult` | Integrated signal and boundary result |
 | `AuditTrail` / reason strings | Human-readable explanation and review evidence |

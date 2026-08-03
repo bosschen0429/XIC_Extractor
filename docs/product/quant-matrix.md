@@ -13,6 +13,12 @@ The quant matrix is the product-facing numeric matrix. It separates detected val
 - Identity, row-basis, source, evidence, and review details belong in sidecars unless an explicit public schema says otherwise.
 - Historical AsLS primary-matrix policy is superseded by LC-MS/MS evidence rules and morphology-aware area policy.
 - Row-completion confidence and downstream-impact benchmarks are readiness evidence; they do not change default matrix authority without a separate activation decision.
+- The M6 Untargeted CID-NL no-RAW golden path prepares one deterministic raw-area
+  row and owner-mapped recovery diff, but it cannot self-authorize. Its prepared
+  Backfill row must pass the existing file-level `ProductionAcceptanceManifest`
+  checker before the existing `QuantMatrixVersion` owner may write that cell.
+  This fixture is opt-in `production_candidate` evidence only; it does not
+  register a current/default lane or change writer scope.
 
 ## Retained Validation Anchors
 

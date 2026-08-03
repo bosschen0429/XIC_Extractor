@@ -19,6 +19,11 @@ seal.
   pointers, and schema versions.
 - A generated timestamp, config hash, output path, or successful process exit
   is not a canonical processing-attempt or delivery identity.
+- A point-in-time validation packet must distinguish the revision being
+  evaluated from the revision that sealed its reviewed evidence. Replaying the
+  packet resolves each seal against its declared frozen Git object; it must not
+  reinterpret the caller's current checkout as historical evidence. Current
+  source evolution is judged by current CI and a new validation decision.
 - Provenance writers render run context only. They must not recompute domain
   evidence or change selected peaks, areas, confidence, counted detections,
   workbook values, or matrix values.

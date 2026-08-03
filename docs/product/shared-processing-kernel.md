@@ -122,7 +122,7 @@ user-visible intermediate labels.
 | --- | --- | --- |
 | technical/evidence availability | `evaluated`, `unsupported`, `failed`, `not_evaluated` | Whether a supported acquisition/search completed |
 | CID-NL method result | `SUPPORT`, `HOLD`, `REJECT`, or `None` | What this completed method attempt claims; non-evaluated technical states require `None` |
-| identity/model result | existing/provisional `group_hypothesis_id`, canonical `group_owner_ids`, exact target IDs, and the SUPPORT assessment closure that formed the group | Which exact target-bound, already-established group membership is being evaluated; no M3 or cross-run stability claim |
+| identity/model result | existing/provisional `group_hypothesis_id`, canonical `group_owner_ids`, exact CID-NL method subject, optional Targeted compatibility IDs, and the SUPPORT assessment closure that formed the group | Which exact method-subject-bound, already-established group membership is being evaluated; no cross-run stability claim |
 | human review | no disposition or an owner-resolved human review ref citing the current assessment artifact | Human decision provenance over this exact assessment; machine logic cannot author final `unassessable` |
 | product authority | always `none` in M1 | Matrix, count, fill, write, export, and activation remain outside this contract |
 
@@ -273,12 +273,15 @@ This is not the complete kernel tracer. The remaining gaps are:
 2. `EvidenceVector` contains many Targeted/MS2-specific fields. Shared facts
    exist, but the whole current dataclass is not yet a minimal kernel
    interface.
-3. Untargeted Alignment uses `TraceGroup` and `IntegrationResult`, but it does
-   not construct the same sample-local `PeakHypothesis` path as Targeted.
+3. The bounded M6 Untargeted CID-NL orchestration now constructs the shared
+   sample-local `PeakHypothesis` path, but it is an opt-in no-RAW
+   `production_candidate`; broad Untargeted runtime adoption remains open.
 4. A bounded CID-NL M1 adapter now produces an existing provisional
    `CrossSamplePeakGroupHypothesis` and minimal `CellObservationRef`, then fans
    the same refs to two no-write diagnostic views. Targeted and Untargeted
-   production callers have not adopted that interface; #162 owns adoption.
+   Targeted production callers have not adopted that interface. M6 consumes it
+   only for the bounded Untargeted golden path through the existing Backfill and
+   Matrix-version owners.
 5. `AlignedCell` mixes observation facts, debug/evidence sidecars, gap-fill
    provenance, identity decisions, and Matrix/product projection.
 6. Targeted CLI baseline/support/final orchestration is not shared by GUI or
@@ -388,6 +391,8 @@ This contract constrains those tickets but does not resolve them by implication.
 - Current implementation gaps are explicit and are not presented as target
   architecture.
 - The CID-NL / NL116 tracer has a dual-projection, no-authority acceptance
-  contract and an executable no-RAW M1 reference spine.
+  contract, an executable no-RAW M1 reference spine, and one opt-in M6
+  source-to-`QuantMatrixVersion` fixture gated by the existing
+  `ProductionAcceptanceManifest` checker.
 - No output, selected-value, counting, Matrix, Backfill-write, activation, or
   export authority is granted.
