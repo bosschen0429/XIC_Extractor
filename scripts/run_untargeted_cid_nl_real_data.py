@@ -142,9 +142,7 @@ def _run(
         stem for stem in selected_stems if stem not in metadata_by_stem
     )
     if missing_metadata:
-        raise ValueError(
-            f"missing sample metadata for: {', '.join(missing_metadata)}"
-        )
+        raise ValueError(f"missing sample metadata for: {', '.join(missing_metadata)}")
     selected_metadata = tuple(metadata_by_stem[stem] for stem in selected_stems)
     if any(row.excluded for row in selected_metadata):
         excluded = tuple(row.raw_stem for row in selected_metadata if row.excluded)
@@ -206,55 +204,65 @@ def _run(
     if not runtime_result.succeeded:
         raise RuntimeError("M7 atomic runtime did not succeed")
 
-    manifest_root = args.manifest_root.resolve()
-    source_path = output_dir / "untargeted_cid_nl_source.json"
-    try:
-        source_relpath = source_path.resolve().relative_to(manifest_root).as_posix()
-    except ValueError as exc:
-        raise ValueError(
-            "output-dir must be inside manifest-root for source-artifact validation"
-        ) from exc
-    projection = build_untargeted_cid_nl_golden_path(
-        processing_owners=context.processing_owners,
-        method_subject=context.method_subject,
-        sample_inputs=tuple(
-            item.adapter_result.assessment_input
-            for item in runtime_result.sample_results
-        ),
-        recovery_inputs=tuple(
-            item.recovery_input
-            for item in runtime_result.sample_results
-            if item.recovery_input is not None
-        ),
-        source_artifact_relpath=source_relpath,
+    has_direct_support = any(
+        item.adapter_result.assessment_input.assessment.content.method_result
+        == "SUPPORT"
+        for item in runtime_result.sample_results
     )
-    source_path.write_bytes(projection.source_artifact_bytes)
-    pending_manifest_path = output_dir / "pending_production_acceptance_manifest.tsv"
-    write_delimited_rows(
-        pending_manifest_path,
-        projection.pending_acceptance_rows,
-        REQUIRED_COLUMNS,
-        delimiter="\t",
-        encoding="utf-8",
-        extrasaction="raise",
-    )
-
+    projection = None
     qmv = None
-    checked_manifest_path = args.production_acceptance_manifest
-    if checked_manifest_path is None and not projection.pending_acceptance_rows:
-        checked_manifest_path = pending_manifest_path
-    if checked_manifest_path is not None:
-        qmv = build_untargeted_cid_nl_quant_matrix_version(
-            projection,
-            production_acceptance_manifest_path=checked_manifest_path.resolve(),
-            manifest_root=manifest_root,
+    source_relpath = None
+    pending_manifest_path = None
+    backfill_decision_by_sample_id = {}
+    if has_direct_support:
+        manifest_root = args.manifest_root.resolve()
+        source_path = output_dir / "untargeted_cid_nl_source.json"
+        try:
+            source_relpath = source_path.resolve().relative_to(manifest_root).as_posix()
+        except ValueError as exc:
+            raise ValueError(
+                "output-dir must be inside manifest-root for source-artifact validation"
+            ) from exc
+        projection = build_untargeted_cid_nl_golden_path(
+            processing_owners=context.processing_owners,
+            method_subject=context.method_subject,
+            sample_inputs=tuple(
+                item.adapter_result.assessment_input
+                for item in runtime_result.sample_results
+            ),
+            recovery_inputs=tuple(
+                item.recovery_input
+                for item in runtime_result.sample_results
+                if item.recovery_input is not None
+            ),
+            source_artifact_relpath=source_relpath,
         )
-        _write_qmv(output_dir, projection.matrix_header, qmv)
-
-    backfill_decision_by_sample_id = {
-        decision.target_cell.content.canonical_sample_identity_id: decision
-        for decision in projection.backfill_decisions
-    }
+        source_path.write_bytes(projection.source_artifact_bytes)
+        pending_manifest_path = (
+            output_dir / "pending_production_acceptance_manifest.tsv"
+        )
+        write_delimited_rows(
+            pending_manifest_path,
+            projection.pending_acceptance_rows,
+            REQUIRED_COLUMNS,
+            delimiter="\t",
+            encoding="utf-8",
+            extrasaction="raise",
+        )
+        checked_manifest_path = args.production_acceptance_manifest
+        if checked_manifest_path is None and not projection.pending_acceptance_rows:
+            checked_manifest_path = pending_manifest_path
+        if checked_manifest_path is not None:
+            qmv = build_untargeted_cid_nl_quant_matrix_version(
+                projection,
+                production_acceptance_manifest_path=checked_manifest_path.resolve(),
+                manifest_root=manifest_root,
+            )
+            _write_qmv(output_dir, projection.matrix_header, qmv)
+        backfill_decision_by_sample_id = {
+            decision.target_cell.content.canonical_sample_identity_id: decision
+            for decision in projection.backfill_decisions
+        }
     sample_rows = []
     for item in runtime_result.sample_results:
         adapter = item.adapter_result
@@ -264,9 +272,9 @@ def _run(
             if item.recovery_attempt is not None
             else adapter.acquisition
         )
-        backfill_decision = backfill_decision_by_sample_id[
+        backfill_decision = backfill_decision_by_sample_id.get(
             item.job.sample.identity.sample_identity_id
-        ]
+        )
         sample_rows.append(
             {
                 "sample_stem": item.job.sample.metadata.raw_stem,
@@ -279,7 +287,11 @@ def _run(
                 "candidate_peak_count": len(assessment.candidate_peaks),
                 "recovery_attempted": item.recovery_attempt is not None,
                 "recovery_candidate_count": item.result_ref.recovery_candidate_count,
-                "backfill_disposition": backfill_decision.disposition,
+                "backfill_disposition": (
+                    backfill_decision.disposition
+                    if backfill_decision is not None
+                    else None
+                ),
                 "logical_xic_request_count": (
                     acquisition.logical_xic_request_count
                     if acquisition is not None
@@ -296,11 +308,12 @@ def _run(
                 "result_artifact_id": item.result_ref.artifact.evidence_artifact_id,
             }
         )
-    terminal_state = (
-        "quant_matrix_version_built"
-        if qmv is not None
-        else "prepared_requires_production_acceptance_manifest"
-    )
+    if projection is None:
+        terminal_state = "assessments_complete_no_direct_support"
+    elif qmv is not None:
+        terminal_state = "quant_matrix_version_built"
+    else:
+        terminal_state = "prepared_requires_production_acceptance_manifest"
     return {
         "schema_version": "untargeted_cid_nl_m7_summary_v1",
         "validation_status": VALIDATION_STATUS,
@@ -316,9 +329,15 @@ def _run(
         "sample_count": len(runtime_result.sample_results),
         "samples": sample_rows,
         "source_artifact_relpath": source_relpath,
-        "source_artifact_sha256": projection.source_artifact_sha256,
-        "pending_acceptance_count": len(projection.pending_acceptance_rows),
-        "pending_acceptance_manifest": str(pending_manifest_path),
+        "source_artifact_sha256": (
+            projection.source_artifact_sha256 if projection is not None else None
+        ),
+        "pending_acceptance_count": (
+            len(projection.pending_acceptance_rows) if projection is not None else 0
+        ),
+        "pending_acceptance_manifest": (
+            str(pending_manifest_path) if pending_manifest_path is not None else None
+        ),
         "quant_matrix_version_built": qmv is not None,
         "telemetry_precision": "coarse_event_order_only",
     }
@@ -417,15 +436,9 @@ def _peak_config(
         nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
         resolver_mode=settings.resolver_mode,
         resolver_chrom_threshold=float(defaults["resolver_chrom_threshold"]),
-        resolver_min_search_range_min=float(
-            defaults["resolver_min_search_range_min"]
-        ),
-        resolver_min_relative_height=float(
-            defaults["resolver_min_relative_height"]
-        ),
-        resolver_min_absolute_height=float(
-            defaults["resolver_min_absolute_height"]
-        ),
+        resolver_min_search_range_min=float(defaults["resolver_min_search_range_min"]),
+        resolver_min_relative_height=float(defaults["resolver_min_relative_height"]),
+        resolver_min_absolute_height=float(defaults["resolver_min_absolute_height"]),
         resolver_min_ratio_top_edge=float(defaults["resolver_min_ratio_top_edge"]),
         resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
         resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),
