@@ -26,6 +26,7 @@ from xic_extractor.extraction.targeted_service import (
     build_targeted_application_request,
 )
 from xic_extractor.package0_successor_comparator import (
+    M5SuccessorVerdictReceipt,
     Package0ComparatorError,
     validate_m5_rollback_rehearsal,
     validate_m5_successor_verdict_packet,
@@ -108,6 +109,62 @@ def test_m5_packet_binds_frozen_candidate_legacy_rollback_and_narrow_verdict() -
     assert receipt.product_authority_granted is False
     assert receipt.external_legacy_replay_performed is False
     assert len(receipt.packet_sha256) == 64
+
+
+def test_m5_verdict_receipt_requires_comparator_minting() -> None:
+    with pytest.raises(Package0ComparatorError, match="must be minted by"):
+        M5SuccessorVerdictReceipt(
+            candidate_merge_sha=FROZEN_CANDIDATE_SHA,
+            verdict="GO",
+            evaluated_scope="forged",
+            validation_status="production_ready",
+            rollback_rehearsal_status="pass",
+            product_authority_granted=True,
+            external_legacy_replay_performed=False,
+            packet_sha256="0" * 64,
+            _mint_token=object(),
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    (
+        ("go_requirements", [], "contract semantics differ"),
+        (
+            "go_requirements",
+            ["rewritten promotion contract"],
+            "contract semantics differ",
+        ),
+        ("verdict_states", ["NARROW", "GO", "KILL"], "contract semantics differ"),
+        (
+            "rules",
+            {"missing_evidence_never_promotes": True},
+            "contract rules differ",
+        ),
+    ),
+)
+def test_m5_packet_rejects_verdict_contract_semantic_drift(
+    tmp_path: Path,
+    field: str,
+    replacement: object,
+    message: str,
+) -> None:
+    packet = _copy_packet(tmp_path / f"verdict-contract-{field}")
+    contract_path = packet / "verdict_contract.json"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+    contract[field] = replacement
+    contract_path.write_text(
+        json.dumps(contract, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_index(packet, "verdict_contract.json")
+
+    with pytest.raises(Package0ComparatorError, match=message):
+        validate_m5_successor_verdict_packet(
+            packet,
+            repo_root=Path("."),
+            expected_candidate_sha=FROZEN_CANDIDATE_SHA,
+        )
 
 
 def test_m5_packet_rejects_stale_candidate_sha() -> None:

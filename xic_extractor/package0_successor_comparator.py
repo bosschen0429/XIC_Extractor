@@ -88,6 +88,7 @@ _FROZEN_PACKAGE1_SURFACE_SHA256 = (
 )
 _PACKAGE1_OBSERVATION_MINT_TOKEN = object()
 _PACKAGE1_PROBE_MINT_TOKEN = object()
+_M5_VERDICT_RECEIPT_MINT_TOKEN = object()
 _PACKAGE1_EXPERIMENT_DIR = "package1-runtime-observation-experiment"
 _PACKAGE1_PRODUCT_OUTPUT_DIR = "product-output"
 _PACKAGE1_ROOT_IDENTITY_MARKER = ".package1-root-identity"
@@ -224,6 +225,21 @@ _M5_REQUIRED_GATE_STATUS = {
     "canonical_package4_complete": False,
     "public_hard_zero_pass": True,
     "rollback_pass": True,
+}
+_M5_REQUIRED_GO_REQUIREMENTS = (
+    "complete #126/#127 candidate gates revalidated",
+    "Targeted lifecycle and broadened Discovery use the same downstream core",
+    "public expected diff explained and accepted",
+    "selective scientific and operational gates pass",
+    "whole-attempt rollback preserves one active authority",
+)
+_M5_REQUIRED_VERDICT_STATES = ("GO", "NARROW", "KILL", "INCONCLUSIVE")
+_M5_REQUIRED_VERDICT_RULES = {
+    "candidate_defect_is_not_repaired_in_m5": True,
+    "m2_or_m3_only_cannot_go": True,
+    "missing_evidence_never_promotes": True,
+    "rollback_requires_legacy_only_active_authority": True,
+    "selective_failure_uses_preregistered_effect": True,
 }
 _M5_REQUIRED_EXCLUDED_MILESTONES = (
     (
@@ -666,9 +682,16 @@ class M5SuccessorVerdictReceipt:
     product_authority_granted: bool
     external_legacy_replay_performed: bool
     packet_sha256: str
+    _mint_token: InitVar[object] = dataclass_field(kw_only=True)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("M5SuccessorVerdictReceipt is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _M5_VERDICT_RECEIPT_MINT_TOKEN:
+            raise Package0ComparatorError(
+                "M5SuccessorVerdictReceipt must be minted by the comparator"
+            )
 
 
 @final
@@ -1567,6 +1590,7 @@ def validate_m5_successor_verdict_packet(
                 "verdict": derived_verdict,
             }
         ),
+        _mint_token=_M5_VERDICT_RECEIPT_MINT_TOKEN,
     )
 
 
@@ -1957,24 +1981,26 @@ def _validate_m5_authority_audit(
 
 
 def _validate_m5_verdict_contract(contract: Mapping[str, object]) -> None:
-    if contract.get("schema_version") != _M5_VERDICT_CONTRACT_SCHEMA:
-        raise Package0ComparatorError("M5 verdict contract schema differs")
-    if contract.get("validation_status") != "diagnostic_only" or (
-        contract.get("product_authority_granted") is not False
+    if set(contract) != {
+        "go_requirements",
+        "product_authority_granted",
+        "rules",
+        "schema_version",
+        "validation_status",
+        "verdict_states",
+    }:
+        raise Package0ComparatorError("M5 verdict contract field set differs")
+    if (
+        contract.get("schema_version") != _M5_VERDICT_CONTRACT_SCHEMA
+        or contract.get("validation_status") != "diagnostic_only"
+        or contract.get("product_authority_granted") is not False
+        or contract.get("go_requirements") != list(_M5_REQUIRED_GO_REQUIREMENTS)
+        or contract.get("verdict_states") != list(_M5_REQUIRED_VERDICT_STATES)
     ):
-        raise Package0ComparatorError("M5 verdict contract grants product authority")
-    states = contract.get("verdict_states")
-    if states != ["GO", "NARROW", "KILL", "INCONCLUSIVE"]:
-        raise Package0ComparatorError("M5 verdict state set differs")
+        raise Package0ComparatorError("M5 verdict contract semantics differ")
     rules = contract.get("rules")
-    if not isinstance(rules, Mapping) or (
-        rules.get("missing_evidence_never_promotes") is not True
-        or rules.get("m2_or_m3_only_cannot_go") is not True
-        or rules.get("candidate_defect_is_not_repaired_in_m5") is not True
-        or rules.get("rollback_requires_legacy_only_active_authority") is not True
-        or rules.get("selective_failure_uses_preregistered_effect") is not True
-    ):
-        raise Package0ComparatorError("M5 verdict rules are incomplete")
+    if not isinstance(rules, Mapping) or dict(rules) != _M5_REQUIRED_VERDICT_RULES:
+        raise Package0ComparatorError("M5 verdict contract rules differ")
 
 
 def _validate_m5_dimensions(

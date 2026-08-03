@@ -40,7 +40,9 @@ The recorded rollback receipt binds attempt, lineage/revision summaries,
 stage/seal identity, and owner receipt digest. The executable rollback test uses
 the existing Targeted delivery owner and proves that candidate evidence is
 retained while only the authoritative legacy current remains active. Missing
-evidence can never become GO.
+evidence can never become GO. The verdict contract pins its complete ordered GO
+requirements, states, and rule set. A verdict receipt can be minted only by the
+packet validator; direct construction cannot impersonate validated evidence.
 
 This packet grants no Matrix, selected-area, counted-detection, writer,
 workbook, config, activation, cutover, branch-deletion, or legacy-retirement
