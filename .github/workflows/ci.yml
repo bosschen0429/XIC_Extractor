@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           enable-cache: true
           cache-dependency-glob: |
@@ -64,7 +64,7 @@ jobs:
           fetch-depth: 0
           path: repo-3.12-tests
           submodules: false
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: "3.12"
           working-directory: repo-3.12-tests
@@ -118,7 +118,7 @@ jobs:
           fetch-depth: 0
           path: repo-3.11-compatibility
           submodules: false
-      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: "3.11"
           working-directory: repo-3.11-compatibility
