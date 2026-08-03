@@ -228,6 +228,37 @@ No-RAW tests:
 python -m pytest <narrow-test-shard> -q
 ```
 
+Untargeted CID-NL M7 real-data bridge, one known-SUPPORT RAW canary:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.run_untargeted_cid_nl_real_data `
+  --discovery-batch-index <current-discovery-batch-index.csv> `
+  --raw-dir $env:XIC_RAW_VALIDATION_DIR `
+  --sample-metadata <sample-metadata.tsv> `
+  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
+  --output-dir <new-task-specific-output-dir> `
+  --manifest-root . `
+  --sample-stem <known-support-sample-stem> `
+  --expected-sample-count 1 `
+  --precursor-mz <untargeted-subject-precursor-mz> `
+  --timing-output <new-task-specific-output-dir>\timing.json `
+  --timing-live-output <new-task-specific-output-dir>\timing.live.json
+```
+
+The source Discovery batch index does not currently own a settings sidecar.
+Therefore the M7 subject and any non-default Discovery/peak settings must be
+passed exactly as used by the source run; do not tune them from M7 output.
+Historical accepted P8b CSVs may support no-RAW compatibility checks, but they
+predate the current candidate/provenance contract and must not be used as the
+real-RAW M7 authority. After the 1RAW canary succeeds, remove `--sample-stem`,
+change the guard to
+`--expected-sample-count 8`, and use a new output directory for the 8RAW smoke.
+The runner writes `m7_summary.json`, `runtime.json`, the immutable source
+artifact, and a pending production-acceptance manifest. It writes a QMV
+automatically only when no Backfill acceptance row is pending; otherwise the
+run remains `diagnostic_only` until a supplied acceptance manifest passes the
+existing M6 gate.
+
 Validation / downstream handoff alignment should use the minimal machine gate
 surface by default. For 85RAW validation, the current canonical shape is
 `validation-minimal + production-equivalent + validation-fast + super-window +

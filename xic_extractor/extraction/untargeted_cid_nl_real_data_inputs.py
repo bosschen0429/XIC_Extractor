@@ -1,0 +1,430 @@
+"""Request owner for replayable Untargeted CID-NL real-data work."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
+from xic_extractor.extraction.targeted_inputs import (
+    TARGETED_SCIENTIFIC_SETTING_FIELDS,
+)
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    REQUEST_INPUT_KEY,
+    CidNlMethodSubject,
+)
+from xic_extractor.processing_identity import (
+    AcquisitionInputBinding,
+    IdentityContractError,
+    ProcessingOwnerReferences,
+    build_acquisition_source_identity,
+    build_processing_request_identity,
+    compose_processing_owner_references,
+    issue_processing_attempt,
+)
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
+from xic_extractor.sample_metadata import (
+    ResolvedCanonicalSampleIdentity,
+    SampleMetadata,
+    mint_sample_metadata_snapshot,
+    resolve_canonical_sample_identity,
+)
+
+UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION = (
+    "untargeted_cid_nl_real_data_inputs_v1"
+)
+UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION = (
+    "untargeted_cid_nl_real_data_algorithm_v1"
+)
+UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION = (
+    "untargeted_cid_nl_real_data_contract_v1"
+)
+DISCOVERY_SETTINGS_INPUT_KEY = "current_discovery_settings"
+DISCOVERY_SETTINGS_SCHEMA_VERSION = "current_discovery_settings_v1"
+CANDIDATE_UNIVERSE_INPUT_KEY = "current_discovery_candidate_universe"
+CANDIDATE_UNIVERSE_SCHEMA_VERSION = "current_discovery_candidate_universe_v1"
+PEAK_SETTINGS_INPUT_KEY = "peak_detection_settings"
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedCidNlRealDataContext:
+    """One attempt's exact cohort, subject, candidate receipts, and RAW paths."""
+
+    processing_owners: ProcessingOwnerReferences
+    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    method_subject: CidNlMethodSubject
+    settings: DiscoverySettings
+    peak_config: ExtractionConfig
+    raw_paths_by_sample: Mapping[str, Path]
+    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]]
+
+    def sample(self, raw_stem: str) -> ResolvedCanonicalSampleIdentity:
+        matches = tuple(
+            sample for sample in self.samples if sample.metadata.raw_stem == raw_stem
+        )
+        if len(matches) != 1:
+            raise IdentityContractError(
+                f"sample {raw_stem!r} is not unique in the real-data context"
+            )
+        return matches[0]
+
+
+def build_untargeted_cid_nl_real_data_context(
+    *,
+    raw_paths: Sequence[Path],
+    sample_metadata: Sequence[SampleMetadata],
+    method_subject: CidNlMethodSubject,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    sample_identity_namespace: str,
+) -> UntargetedCidNlRealDataContext:
+    """Mint one replayable request before any M7 RAW handle is opened."""
+
+    if not isinstance(method_subject, CidNlMethodSubject):
+        raise IdentityContractError("method_subject must be owner-normalized")
+    if method_subject.subject_kind != "untargeted_precursor":
+        raise IdentityContractError("M7 requires an Untargeted CID-NL subject")
+    if not isinstance(settings, DiscoverySettings):
+        raise IdentityContractError("settings must be DiscoverySettings")
+    if not isinstance(peak_config, ExtractionConfig):
+        raise IdentityContractError("peak_config must be ExtractionConfig")
+    paths_by_stem = _raw_paths_by_stem(raw_paths)
+    metadata_by_stem = _metadata_by_stem(sample_metadata)
+    if set(metadata_by_stem) != set(paths_by_stem):
+        raise IdentityContractError(
+            "sample metadata must bind every RAW source exactly once"
+        )
+    candidate_map = _candidate_map(
+        candidates_by_sample,
+        expected_sample_stems=tuple(paths_by_stem),
+    )
+    sources_by_stem = {
+        stem: build_acquisition_source_identity(
+            path,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        )
+        for stem, path in paths_by_stem.items()
+    }
+    ordered_stems = tuple(
+        stem
+        for stem, _metadata in sorted(
+            metadata_by_stem.items(),
+            key=lambda item: (item[1].injection_order, item[0]),
+        )
+    )
+    bindings = tuple(
+        AcquisitionInputBinding(
+            acquisition_source_id=sources_by_stem[stem].acquisition_source_id,
+            adapter_input_key=stem,
+            injection_order=_required_injection_order(metadata_by_stem[stem]),
+        )
+        for stem in ordered_stems
+    )
+    request = build_processing_request_identity(
+        acquisition_sources=tuple(
+            sources_by_stem[stem] for stem in ordered_stems
+        ),
+        acquisition_bindings=bindings,
+        scientific_input_schema_version=(
+            UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION
+        ),
+        processing_algorithm_version=(
+            UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION
+        ),
+        processing_contract_version=(
+            UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION
+        ),
+        scientific_inputs={
+            REQUEST_INPUT_KEY: method_subject.request_payload(),
+            DISCOVERY_SETTINGS_INPUT_KEY: discovery_settings_payload(settings),
+            CANDIDATE_UNIVERSE_INPUT_KEY: candidate_universe_payload(
+                candidate_map,
+                expected_sample_stems=ordered_stems,
+            ),
+            PEAK_SETTINGS_INPUT_KEY: {
+                field: getattr(peak_config, field)
+                for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
+            },
+        },
+    )
+    snapshot = mint_sample_metadata_snapshot(
+        tuple(metadata_by_stem[stem] for stem in ordered_stems),
+        identity_namespace=sample_identity_namespace,
+    )
+    samples = tuple(
+        resolve_canonical_sample_identity(snapshot, stem) for stem in ordered_stems
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=snapshot,
+        sample_resolutions=samples,
+    )
+    return UntargetedCidNlRealDataContext(
+        processing_owners=owners,
+        samples=samples,
+        method_subject=method_subject,
+        settings=settings,
+        peak_config=peak_config,
+        raw_paths_by_sample=dict(paths_by_stem),
+        candidates_by_sample=dict(candidate_map),
+    )
+
+
+def discovery_settings_payload(settings: DiscoverySettings) -> dict[str, object]:
+    if not isinstance(settings, DiscoverySettings):
+        raise IdentityContractError("settings must be DiscoverySettings")
+    return _canonical_json_mapping(
+        {
+            "schema_version": DISCOVERY_SETTINGS_SCHEMA_VERSION,
+            "settings": asdict(settings),
+        },
+        subject="Discovery settings",
+    )
+
+
+def candidate_universe_payload(
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    *,
+    expected_sample_stems: Sequence[str],
+) -> dict[str, object]:
+    declared = _candidate_map(
+        candidates_by_sample,
+        expected_sample_stems=expected_sample_stems,
+    )
+    payload: dict[str, object] = {
+        "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+        "samples": [
+            _candidate_universe_entry(stem, declared[stem])
+            for stem in sorted(declared)
+        ],
+    }
+    validate_candidate_universe_payload(
+        payload,
+        expected_sample_stems=expected_sample_stems,
+    )
+    return payload
+
+
+def _required_injection_order(row: SampleMetadata) -> int:
+    if row.injection_order is None:
+        raise IdentityContractError("sample metadata requires injection_order")
+    return row.injection_order
+
+
+def validate_candidate_universe_payload(
+    payload: object,
+    *,
+    expected_sample_stems: Sequence[str],
+) -> tuple[dict[str, object], ...]:
+    expected = tuple(sorted(_canonical_sample_stems(expected_sample_stems)))
+    if not isinstance(payload, dict) or set(payload) != {
+        "schema_version",
+        "samples",
+    }:
+        raise IdentityContractError(
+            "candidate universe must use the exact v1 envelope"
+        )
+    if payload.get("schema_version") != CANDIDATE_UNIVERSE_SCHEMA_VERSION:
+        raise IdentityContractError("candidate universe schema is unsupported")
+    samples = payload.get("samples")
+    if not isinstance(samples, list):
+        raise IdentityContractError("candidate universe samples must be a list")
+    typed: list[dict[str, object]] = []
+    for entry in samples:
+        if not isinstance(entry, dict) or set(entry) != {
+            "sample_stem",
+            "candidate_count",
+            "candidate_ids",
+            "candidate_universe_sha256",
+        }:
+            raise IdentityContractError(
+                "candidate universe entry must use the exact v1 shape"
+            )
+        stem = entry.get("sample_stem")
+        count = entry.get("candidate_count")
+        ids = entry.get("candidate_ids")
+        digest = entry.get("candidate_universe_sha256")
+        if not isinstance(stem, str) or not stem.strip() or stem != stem.strip():
+            raise IdentityContractError("candidate universe sample stem is invalid")
+        if (
+            isinstance(count, bool)
+            or not isinstance(count, int)
+            or count < 0
+            or not isinstance(ids, list)
+            or ids != sorted(set(ids))
+            or count != len(ids)
+            or any(not isinstance(item, str) or not item.strip() for item in ids)
+        ):
+            raise IdentityContractError("candidate universe IDs are invalid")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise IdentityContractError("candidate universe digest is invalid")
+        typed.append(entry)
+    if tuple(entry["sample_stem"] for entry in typed) != expected:
+        raise IdentityContractError(
+            "candidate universe must bind every acquisition sample exactly once"
+        )
+    return tuple(typed)
+
+
+def _candidate_universe_entry(
+    sample_stem: str,
+    candidates: tuple[DiscoveryCandidate, ...],
+) -> dict[str, object]:
+    ordered = tuple(sorted(candidates, key=lambda item: item.candidate_id))
+    candidate_ids = tuple(item.candidate_id for item in ordered)
+    canonical_candidates = []
+    for candidate in ordered:
+        payload = asdict(candidate)
+        payload.pop("raw_file")
+        canonical_candidates.append(payload)
+    candidate_bytes = json.dumps(
+        canonical_candidates,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return {
+        "sample_stem": sample_stem,
+        "candidate_count": len(ordered),
+        "candidate_ids": list(candidate_ids),
+        "candidate_universe_sha256": hashlib.sha256(candidate_bytes).hexdigest(),
+    }
+
+
+def _raw_paths_by_stem(raw_paths: Sequence[Path]) -> dict[str, Path]:
+    if isinstance(raw_paths, (str, bytes)):
+        raise IdentityContractError("raw_paths must contain Path values")
+    paths: dict[str, Path] = {}
+    for raw_path in raw_paths:
+        if not isinstance(raw_path, Path) or not raw_path.is_file():
+            raise IdentityContractError("every RAW path must be an existing file")
+        if raw_path.stem in paths:
+            raise IdentityContractError(
+                f"ambiguous acquisition source stem: {raw_path.stem!r}"
+            )
+        paths[raw_path.stem] = raw_path
+    if not paths:
+        raise IdentityContractError("at least one RAW path is required")
+    return dict(sorted(paths.items()))
+
+
+def _metadata_by_stem(
+    rows: Sequence[SampleMetadata],
+) -> dict[str, SampleMetadata]:
+    if isinstance(rows, (str, bytes)):
+        raise IdentityContractError("sample_metadata must contain owner rows")
+    result: dict[str, SampleMetadata] = {}
+    injection_orders: set[int] = set()
+    for row in rows:
+        if not isinstance(row, SampleMetadata):
+            raise IdentityContractError("sample_metadata contains a non-owner row")
+        if not row.raw_stem or row.raw_stem in result:
+            raise IdentityContractError("sample metadata RAW stems must be unique")
+        if row.injection_order is None or row.injection_order in injection_orders:
+            raise IdentityContractError(
+                "sample metadata injection orders must be complete and unique"
+            )
+        result[row.raw_stem] = row
+        injection_orders.add(row.injection_order)
+    return result
+
+
+def _candidate_map(
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    *,
+    expected_sample_stems: Sequence[str],
+) -> dict[str, tuple[DiscoveryCandidate, ...]]:
+    if not isinstance(candidates_by_sample, Mapping):
+        raise IdentityContractError("candidate universe must be sample-keyed")
+    expected = set(_canonical_sample_stems(expected_sample_stems))
+    if set(candidates_by_sample) != expected:
+        raise IdentityContractError(
+            "candidate universe must bind every acquisition sample exactly once"
+        )
+    result: dict[str, tuple[DiscoveryCandidate, ...]] = {}
+    for stem in sorted(expected):
+        candidates = tuple(candidates_by_sample[stem])
+        if any(not isinstance(item, DiscoveryCandidate) for item in candidates):
+            raise IdentityContractError(
+                "candidate universe must contain DiscoveryCandidate values"
+            )
+        ordered = tuple(sorted(candidates, key=lambda item: item.candidate_id))
+        ids = tuple(item.candidate_id for item in ordered)
+        if len(ids) != len(set(ids)):
+            raise IdentityContractError("candidate universe IDs must be unique")
+        if any(
+            item.sample_stem != stem or item.raw_file.stem != stem
+            for item in ordered
+        ):
+            raise IdentityContractError(
+                f"candidate universe for {stem!r} contains a different sample"
+            )
+        result[stem] = ordered
+    return result
+
+
+def _canonical_sample_stems(values: Sequence[str]) -> tuple[str, ...]:
+    if isinstance(values, (str, bytes)):
+        raise IdentityContractError("sample stems must be a sequence")
+    stems = tuple(values)
+    if (
+        not stems
+        or len(stems) != len(set(stems))
+        or any(not isinstance(item, str) or not item.strip() for item in stems)
+    ):
+        raise IdentityContractError("sample stems must be unique non-empty text")
+    return stems
+
+
+def _canonical_json_mapping(
+    value: Mapping[str, object],
+    *,
+    subject: str,
+) -> dict[str, object]:
+    try:
+        normalized = json.loads(
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        )
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise IdentityContractError(
+            f"{subject} must have canonical JSON content"
+        ) from exc
+    if not isinstance(normalized, dict):
+        raise IdentityContractError(f"{subject} must be a mapping")
+    return normalized
+
+
+__all__ = [
+    "CANDIDATE_UNIVERSE_INPUT_KEY",
+    "DISCOVERY_SETTINGS_INPUT_KEY",
+    "PEAK_SETTINGS_INPUT_KEY",
+    "UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION",
+    "UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION",
+    "UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION",
+    "UntargetedCidNlRealDataContext",
+    "build_untargeted_cid_nl_real_data_context",
+    "candidate_universe_payload",
+    "discovery_settings_payload",
+    "validate_candidate_universe_payload",
+]

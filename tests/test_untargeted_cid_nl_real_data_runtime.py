@@ -1,0 +1,451 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
+)
+from tests.test_targeted_real_data_adapter import (
+    _current_candidates,
+    _FakeRaw,
+    _FakeThermoRaw,
+    _peak_config,
+    _settings,
+    _working_imports,
+)
+from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+    build_untargeted_cid_nl_golden_path,
+)
+from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import start_runtime_attempt
+from xic_extractor.extraction import (
+    untargeted_cid_nl_real_data_runtime as runtime_module,
+)
+from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    build_untargeted_cid_nl_real_data_context,
+)
+from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+    UntargetedCidNlRealDataRuntimeError,
+    UntargetedCidNlRealDataRuntimeJob,
+    execute_untargeted_cid_nl_real_data_runtime,
+)
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    mint_untargeted_cid_nl_method_subject,
+)
+from xic_extractor.raw_reader import (
+    EXPECTED_THERMO_DLLS,
+    open_raw,
+    reset_reader_state,
+)
+from xic_extractor.sample_metadata import SampleMetadata
+
+
+def test_runtime_delivers_one_real_subject_cohort_into_m6(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
+    for path in raw_paths:
+        path.write_bytes(f"m7-runtime:{path.stem}".encode())
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raw = _FakeRaw((7.98, 8.02))
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=raw_paths[0],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        neutral_loss_da=116.0474,
+    )
+    context = build_untargeted_cid_nl_real_data_context(
+        raw_paths=raw_paths,
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+            SampleMetadata(
+                sample_name="S2",
+                raw_stem="S2",
+                injection_order=2,
+                sample_role="qc",
+            ),
+        ),
+        method_subject=subject,
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample={"S1": candidates, "S2": ()},
+        sample_identity_namespace="study:m7-runtime-test",
+    )
+    vendor_raw = _install_runtime_raw(
+        monkeypatch,
+        source_raw=source_raw,
+        raw_path=raw_paths[0],
+        tmp_path=tmp_path,
+    )
+    jobs = tuple(
+        UntargetedCidNlRealDataRuntimeJob(
+            processing_owners=context.processing_owners,
+            sample=sample,
+            method_subject=context.method_subject,
+            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            settings=context.settings,
+            peak_config=context.peak_config,
+            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            dll_dir=tmp_path,
+            work_unit_key=f"untargeted-cid-nl:{sample.metadata.raw_stem}",
+        )
+        for sample in context.samples
+    )
+    runtime = start_runtime_attempt(
+        attempt=context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in jobs),
+        owner_completeness_attestation="untargeted-cid-nl-m7-test:v1",
+    )
+
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "m7.runtime.json",
+            "untargeted-cid-nl-m7:test",
+        ),
+    )
+
+    assert result.succeeded is True, (
+        result.finalization.coordinator.proposed_outcome,
+        result.finalization.supervisor.terminal_outcome,
+        result.finalization.coordinator.state.runtime.settlements,
+        result.finalization.coordinator.state.resources,
+        result.finalization.coordinator.state.artifacts,
+        result.finalization.coordinator.state.failures,
+    )
+    assert len(result.sample_results) == 2
+    by_stem = {
+        item.job.sample.metadata.raw_stem: item for item in result.sample_results
+    }
+    s1_assessment = by_stem["S1"].adapter_result.assessment_input.assessment
+    s2_assessment = by_stem["S2"].adapter_result.assessment_input.assessment
+    assert s1_assessment.content.method_result == "SUPPORT"
+    assert s2_assessment.content.method_result == "HOLD"
+    assert by_stem["S1"].adapter_result.strict_scan_count == 2
+    assert by_stem["S2"].adapter_result.acquisition is None
+    assert vendor_raw.chromatogram_request_counts == [1]
+    assert vendor_raw.disposed is True
+
+    projection = build_untargeted_cid_nl_golden_path(
+        processing_owners=context.processing_owners,
+        method_subject=context.method_subject,
+        sample_inputs=tuple(
+            item.adapter_result.assessment_input for item in result.sample_results
+        ),
+        source_artifact_relpath="output/m7/untargeted_cid_nl_source.json",
+    )
+    assert len(projection.spine.cells) == 2
+    assert projection.matrix_header == ("Mz", "RT", "S1", "S2")
+    assert projection.input_quant_matrix_rows[0]["S1"]
+    assert projection.input_quant_matrix_rows[0]["S2"] == ""
+
+
+def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    stems = ("S1", "S2", "Missing", "NoPeak", "Blank")
+    raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
+    for path in raw_paths:
+        path.write_bytes(f"m7-runtime-recovery:{path.stem}".encode())
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raws = {
+        raw_paths[0]: _FakeRaw((7.98, 8.02)),
+        raw_paths[1]: _FakeRaw((7.98, 8.02)),
+        raw_paths[2]: _FakeRaw((8.0,)),
+        raw_paths[3]: _FakeRaw(()),
+        raw_paths[4]: _FakeRaw((8.0,)),
+    }
+    candidates_by_sample = {
+        "S1": _current_candidates(
+            source_raws[raw_paths[0]],
+            raw_file=raw_paths[0],
+            settings=settings,
+            peak_config=peak_config,
+        ),
+        "S2": _current_candidates(
+            source_raws[raw_paths[1]],
+            raw_file=raw_paths[1],
+            settings=settings,
+            peak_config=peak_config,
+        ),
+        "Missing": (),
+        "NoPeak": (),
+        "Blank": (),
+    }
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        neutral_loss_da=116.0474,
+    )
+    context = build_untargeted_cid_nl_real_data_context(
+        raw_paths=raw_paths,
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+            SampleMetadata(
+                sample_name="S2",
+                raw_stem="S2",
+                injection_order=2,
+                sample_role="qc",
+            ),
+            SampleMetadata(
+                sample_name="Missing",
+                raw_stem="Missing",
+                injection_order=3,
+                sample_role="study_sample",
+            ),
+            SampleMetadata(
+                sample_name="NoPeak",
+                raw_stem="NoPeak",
+                injection_order=4,
+                sample_role="study_sample",
+            ),
+            SampleMetadata(
+                sample_name="Blank",
+                raw_stem="Blank",
+                injection_order=5,
+                sample_role="blank",
+            ),
+        ),
+        method_subject=subject,
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates_by_sample,
+        sample_identity_namespace="study:m7-runtime-recovery-test",
+    )
+    opened = _install_runtime_raws(
+        monkeypatch,
+        sources_by_path=source_raws,
+        tmp_path=tmp_path,
+    )
+    jobs = tuple(
+        UntargetedCidNlRealDataRuntimeJob(
+            processing_owners=context.processing_owners,
+            sample=sample,
+            method_subject=context.method_subject,
+            candidates=context.candidates_by_sample[sample.metadata.raw_stem],
+            settings=context.settings,
+            peak_config=context.peak_config,
+            raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
+            dll_dir=tmp_path,
+            work_unit_key=f"untargeted-cid-nl:{sample.metadata.raw_stem}",
+        )
+        for sample in context.samples
+    )
+    runtime = start_runtime_attempt(
+        attempt=context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in jobs),
+        owner_completeness_attestation="untargeted-cid-nl-m7-recovery-test:v1",
+    )
+
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        jobs,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "m7.recovery.runtime.json",
+            "untargeted-cid-nl-m7-recovery:test",
+        ),
+    )
+
+    assert result.succeeded is True
+    by_stem = {
+        item.job.sample.metadata.raw_stem: item for item in result.sample_results
+    }
+    assert by_stem["Missing"].recovery_attempt is not None
+    assert by_stem["Missing"].recovery_input is not None
+    assert by_stem["Missing"].result_ref.recovery_candidate_count == 1
+    assert by_stem["NoPeak"].recovery_attempt is not None
+    assert by_stem["NoPeak"].recovery_input is None
+    assert by_stem["NoPeak"].result_ref.recovery_assessment_artifact_id is not None
+    assert by_stem["NoPeak"].result_ref.recovery_candidate_count == 0
+    assert by_stem["Blank"].recovery_attempt is None
+    assert raw_paths[4] not in opened
+    assert {
+        path: [vendor.chromatogram_request_counts for vendor in vendors]
+        for path, vendors in opened.items()
+    } == {
+        raw_paths[0]: [[1]],
+        raw_paths[1]: [[1]],
+        raw_paths[2]: [[1]],
+        raw_paths[3]: [[1]],
+    }
+    assert all(vendor.disposed for vendors in opened.values() for vendor in vendors)
+
+    projection = build_untargeted_cid_nl_golden_path(
+        processing_owners=context.processing_owners,
+        method_subject=context.method_subject,
+        sample_inputs=tuple(
+            item.adapter_result.assessment_input for item in result.sample_results
+        ),
+        recovery_inputs=tuple(
+            item.recovery_input
+            for item in result.sample_results
+            if item.recovery_input is not None
+        ),
+        source_artifact_relpath="output/m7/recovered_source.json",
+    )
+    decisions = {
+        decision.target_cell.content.canonical_sample_identity_id: decision
+        for decision in projection.backfill_decisions
+    }
+    missing_id = by_stem["Missing"].job.sample.identity.sample_identity_id
+    blank_id = by_stem["Blank"].job.sample.identity.sample_identity_id
+    no_peak_id = by_stem["NoPeak"].job.sample.identity.sample_identity_id
+    assert decisions[missing_id].disposition == "candidate_mapped"
+    assert decisions[no_peak_id].disposition == "hold"
+    assert decisions[blank_id].disposition == "hold"
+    assert len(projection.pending_acceptance_rows) == 1
+
+
+def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "S1.synthetic"
+    raw_path.write_bytes(b"m7-runtime-request-pin:S1")
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source_raw = _FakeRaw((8.0,))
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=raw_path,
+        settings=settings,
+        peak_config=peak_config,
+    )
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        neutral_loss_da=116.0474,
+    )
+    context = build_untargeted_cid_nl_real_data_context(
+        raw_paths=(raw_path,),
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+        ),
+        method_subject=subject,
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample={"S1": candidates},
+        sample_identity_namespace="study:m7-runtime-request-pin-test",
+    )
+
+    with pytest.raises(
+        UntargetedCidNlRealDataRuntimeError,
+        match="candidate universe does not match the processing request",
+    ):
+        UntargetedCidNlRealDataRuntimeJob(
+            processing_owners=context.processing_owners,
+            sample=context.samples[0],
+            method_subject=context.method_subject,
+            candidates=(replace(candidates[0], reason="tampered-after-request"),),
+            settings=context.settings,
+            peak_config=context.peak_config,
+            raw_path=raw_path,
+            dll_dir=tmp_path,
+            work_unit_key="untargeted-cid-nl:S1",
+        )
+
+
+def _install_runtime_raw(
+    monkeypatch,
+    *,
+    source_raw: _FakeRaw,
+    raw_path: Path,
+    tmp_path: Path,
+) -> _FakeThermoRaw:
+    reset_reader_state()
+    for filename in EXPECTED_THERMO_DLLS:
+        (tmp_path / filename).write_bytes(b"dll")
+    vendor_raw = _FakeThermoRaw(source_raw)
+
+    def _open_runtime_raw(path, dll_dir, *, expected_acquisition_source):
+        assert path == raw_path
+        return open_raw(
+            path,
+            dll_dir,
+            expected_acquisition_source=expected_acquisition_source,
+            _import_module=_working_imports,
+            _thermo=SimpleNamespace(
+                raw_file_reader_adapter=SimpleNamespace(
+                    FileFactory=lambda _path: vendor_raw
+                ),
+                device_ms="MS",
+                mass_range_factory=lambda low, high: (low, high),
+                trace_settings_factory=lambda *_args: SimpleNamespace(
+                    MassRanges=None,
+                    Filter=None,
+                ),
+                mass_range_trace_type="MassRange",
+                ms2_order="Ms2",
+            ),
+        )
+
+    monkeypatch.setattr(runtime_module, "open_raw", _open_runtime_raw)
+    return vendor_raw
+
+
+def _install_runtime_raws(
+    monkeypatch,
+    *,
+    sources_by_path: dict[Path, _FakeRaw],
+    tmp_path: Path,
+) -> dict[Path, list[_FakeThermoRaw]]:
+    reset_reader_state()
+    for filename in EXPECTED_THERMO_DLLS:
+        (tmp_path / filename).write_bytes(b"dll")
+    opened: dict[Path, list[_FakeThermoRaw]] = {}
+
+    def _open_runtime_raw(path, dll_dir, *, expected_acquisition_source):
+        vendor_raw = _FakeThermoRaw(sources_by_path[path])
+        opened.setdefault(path, []).append(vendor_raw)
+        return open_raw(
+            path,
+            dll_dir,
+            expected_acquisition_source=expected_acquisition_source,
+            _import_module=_working_imports,
+            _thermo=SimpleNamespace(
+                raw_file_reader_adapter=SimpleNamespace(
+                    FileFactory=lambda _path: vendor_raw
+                ),
+                device_ms="MS",
+                mass_range_factory=lambda low, high: (low, high),
+                trace_settings_factory=lambda *_args: SimpleNamespace(
+                    MassRanges=None,
+                    Filter=None,
+                ),
+                mass_range_trace_type="MassRange",
+                ms2_order="Ms2",
+            ),
+        )
+
+    monkeypatch.setattr(runtime_module, "open_raw", _open_runtime_raw)
+    return opened
