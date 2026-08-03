@@ -187,6 +187,70 @@ def test_adapter_reconstructs_each_union_tag_scan_from_its_own_provenance(
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
+def test_adapter_selects_one_seed_when_one_scan_matches_multiple_union_tags(
+    tmp_path: Path,
+) -> None:
+    fixture = build_package2_targeted_raw_fixture(
+        tmp_path,
+        sample_stems=("S1",),
+        peak_config=_peak_config(tmp_path),
+    )
+    discovery_raw = _FakeRaw((7.98, 8.02))
+    first_scan, shared_scan = discovery_raw.scans
+    discovery_raw.scans = (
+        first_scan,
+        replace(
+            shared_scan,
+            masses=np.asarray(
+                (
+                    PRODUCT_MZ,
+                    PRECURSOR_MZ - SECONDARY_NEUTRAL_LOSS_DA,
+                )
+            ),
+            intensities=np.asarray((700.0, 600.0)),
+        ),
+    )
+    settings = _multi_tag_settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        discovery_raw,
+        raw_file=tmp_path / "S1.synthetic",
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.best_ms2_scan_id == first_scan.scan_number
+    evidence = json.loads(candidate.tag_evidence_json)
+    assert shared_scan.scan_number in evidence["DNA_dR"]["scan_ids"]
+    assert shared_scan.scan_number in evidence["RNA_R"]["scan_ids"]
+    raw, vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        discovery_raw,
+        tmp_path=tmp_path,
+    )
+
+    result = adapt_current_discovery_sample_target(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        target=fixture.target,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    hypothesis = result.alignment_input.candidate_set.candidate_hypotheses[0]
+    support = hypothesis.evidence.cid_nl_chromatographic_support_ref
+    assert support is not None
+    assert support.content.strict_nl_scan_count == 2
+    assert tuple(
+        member.dda_scan_number for member in support.content.scan_supports
+    ) == candidate.seed_scan_ids
+    assert vendor_raw.chromatogram_request_counts == [1]
+
+
 def test_adapter_does_not_collapse_strict_scans_from_separated_peaks(
     tmp_path: Path,
 ) -> None:

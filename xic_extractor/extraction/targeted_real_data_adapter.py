@@ -757,7 +757,7 @@ def _read_exact_seed(
             )
         )
     )
-    if len(matches) != 1:
+    if not matches:
         if representative:
             raise TargetedRealDataAdapterError(
                 f"{candidate.candidate_id}: exact canonical Discovery seed "
@@ -767,7 +767,17 @@ def _read_exact_seed(
             f"{candidate.candidate_id}: strict scan {scan.scan_number} does not "
             "reconstruct one canonical Discovery seed"
         )
-    return matches[0]
+    tag_precedence = {
+        tag_name: index
+        for index, tag_name in enumerate(settings.selected_tag_names)
+    }
+    return min(
+        matches,
+        key=lambda seed: tag_precedence.get(
+            seed.neutral_loss_tag,
+            len(tag_precedence),
+        ),
+    )
 
 
 def _scan_tag_product_receipts(
