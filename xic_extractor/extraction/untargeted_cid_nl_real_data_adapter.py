@@ -737,6 +737,12 @@ def _mint_assessment(
     technical_reason_code: str | None = None,
 ):
     search_completed = technical_state == "evaluated"
+    candidate_query_rt_mins = tuple(
+        peak.generation_provenance.query_rt_min for peak in candidate_peaks
+    )
+    candidate_query_rt_maxes = tuple(
+        peak.generation_provenance.query_rt_max for peak in candidate_peaks
+    )
     try:
         return mint_cid_nl_method_assessment_ref(
             processing_owners=processing_owners,
@@ -746,8 +752,16 @@ def _mint_assessment(
                 f"untargeted-cid-nl-real-data:{settings.resolver_mode}:v1"
             ),
             evaluation_receipt=CidNlEvaluationReceipt(
-                query_rt_min=settings.rt_min,
-                query_rt_max=settings.rt_max,
+                query_rt_min=(
+                    min(settings.rt_min, *candidate_query_rt_mins)
+                    if candidate_query_rt_mins
+                    else settings.rt_min
+                ),
+                query_rt_max=(
+                    max(settings.rt_max, *candidate_query_rt_maxes)
+                    if candidate_query_rt_maxes
+                    else settings.rt_max
+                ),
                 support_policy=support_policy,
                 acquisition_supported=technical_state != "unsupported",
                 search_completed=search_completed,
