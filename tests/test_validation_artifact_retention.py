@@ -1,8 +1,16 @@
+import os
+import subprocess
 from pathlib import Path
 
 from scripts.check_validation_artifact_retention import (
     REQUIRED_INVENTORY_COLUMNS,
     check_validation_artifact_retention,
+)
+
+ROOT = Path(__file__).resolve().parents[1]
+MAINTAINED_VALIDATION_HTML = (
+    "docs/superpowers/validation/evidence_chain_status_guide.html",
+    "docs/superpowers/validation/evidence_overlay_interpretation_guide.html",
 )
 
 
@@ -17,6 +25,23 @@ def test_current_validation_retention_inventory_accepts_worktree() -> None:
     assert result.summary["shrink_later_tracked_count"] == 0
     assert result.summary["shrink_later_tracked_bytes"] == 0
     assert result.summary["shrink_later_files"] == []
+
+
+def test_maintained_validation_html_uses_lf_checkout_policy() -> None:
+    env = os.environ.copy()
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    completed = subprocess.run(
+        ["git", "check-attr", "eol", "--", *MAINTAINED_VALIDATION_HTML],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert completed.stdout.splitlines() == [
+        f"{path}: eol: lf" for path in MAINTAINED_VALIDATION_HTML
+    ]
 
 
 def test_checker_rejects_missing_inventory_row(tmp_path: Path) -> None:
@@ -149,8 +174,7 @@ def test_checker_warns_for_large_shrink_later_and_strict_fails(tmp_path: Path) -
     ]
     assert any("shrink_later remains tracked" in warning for warning in result.warnings)
     assert any(
-        "shrink_later remains tracked" in problem
-        for problem in strict_result.problems
+        "shrink_later remains tracked" in problem for problem in strict_result.problems
     )
 
 

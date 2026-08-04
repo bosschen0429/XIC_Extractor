@@ -186,7 +186,7 @@ def classify_command(
         re.search(pattern, lower) for pattern in _NETWORK_COMMAND_PATTERNS
     ) or any(
         invocation.subcommand in _GIT_NETWORK_SUBCOMMANDS
-        for invocation in git_invocations(normalized)
+        for invocation in git_invocations(command)
     )
     if needs_network:
         findings.append(

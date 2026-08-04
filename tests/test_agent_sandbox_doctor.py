@@ -98,6 +98,7 @@ def test_network_command_routes_to_bounded_approval(tmp_path: Path) -> None:
         "git -c http.version=HTTP/1.1 pull --ff-only",
         "env -u CI git -C C:\\repo push origin HEAD",
         "FOO=1 command git --git-dir C:\\repo\\metadata push origin HEAD",
+        "Write-Host ready\ngit -C C:\\repo push origin HEAD",
     ],
 )
 def test_git_network_commands_with_global_options_require_approval(
@@ -122,6 +123,7 @@ def test_git_network_commands_with_global_options_require_approval(
         "env -u CI git -C C:\\repo status --short",
         "Write-Host C:\\repo\\.git push",
         'rg -n "git -C C:\\repo push" docs',
+        'rg -n "prefix\ngit -C C:\\repo push origin HEAD" docs',
     ],
 )
 def test_non_network_git_text_does_not_require_approval(

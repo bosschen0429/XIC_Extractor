@@ -25,6 +25,8 @@ POWERSHELL_EXECUTABLES = {
 CMD_SHELL_EXECUTABLES = {"cmd", "cmd.exe"}
 ENV_OPTIONS_WITH_VALUE = {"-C", "-S", "-u", "--chdir", "--split-string", "--unset"}
 POSIX_ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+SHELL_PUNCTUATION_CHARS = "();<>|&\n"
+SHELL_WHITESPACE = " \t\r"
 
 
 @dataclass(frozen=True)
@@ -36,7 +38,14 @@ class GitInvocation:
 
 def split_shell_words(command: str) -> list[str]:
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer = shlex.shlex(
+            command,
+            posix=True,
+            punctuation_chars=SHELL_PUNCTUATION_CHARS,
+        )
+        # An unquoted newline is a command boundary, not interchangeable
+        # whitespace. Quoted newlines remain embedded in their argument token.
+        lexer.whitespace = SHELL_WHITESPACE
         lexer.whitespace_split = True
         lexer.commenters = ""
         return list(lexer)
@@ -61,6 +70,8 @@ def token_basename(token: str) -> str:
 
 
 def is_shell_separator(token: str) -> bool:
+    if token and all(char in ";&|()\n" for char in token):
+        return True
     cleaned = clean_shell_token(token)
     return bool(cleaned) and all(char in ";&|()" for char in cleaned)
 
@@ -181,12 +192,12 @@ def git_invocations(command: str, *, depth: int = 0) -> list[GitInvocation]:
     index = 0
     at_command_start = True
     while index < len(tokens):
-        token = command_word(tokens[index])
-        if not token:
-            index += 1
-            continue
         if is_shell_separator(tokens[index]):
             at_command_start = True
+            index += 1
+            continue
+        token = command_word(tokens[index])
+        if not token:
             index += 1
             continue
         executable_index = command_executable_index(tokens, index)

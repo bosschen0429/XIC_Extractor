@@ -465,6 +465,8 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
         "env -u CI git -C C:\\repo push origin HEAD",
         "bash -lc "
         + json.dumps("FOO=1 command git --git-dir C:\\repo\\.git push origin HEAD"),
+        "Write-Host ready\ngit -C C:\\repo push origin HEAD",
+        "pwsh -Command 'Write-Host ready\ngit -C C:\\repo push origin HEAD'",
     ],
 )
 def test_pre_hook_rewrites_optioned_git_push_to_policy_visible_form(
@@ -652,6 +654,13 @@ def test_pre_hook_preserves_quoted_newline_in_wrapped_search() -> None:
     needle = "prefix\n" + DESTRUCTIVE_TEXTS[0]
     payload = f"rg -n {json.dumps(needle)} docs"
     completed = _run_pre_hook(f"bash -lc '{payload}'")
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_pre_hook_preserves_quoted_newline_in_git_search() -> None:
+    needle = "prefix\ngit -C C:\\repo push origin HEAD"
+    completed = _run_pre_hook(f"rg -n {json.dumps(needle)} docs")
     assert completed.returncode == 0
     assert completed.stdout == ""
 
