@@ -212,6 +212,145 @@ def test_crossing_and_per_track_occupancy_are_explicit_no_write(
     )
 
 
+@pytest.mark.parametrize(
+    ("occupancy", "candidate_rts", "expected_tracks"),
+    (
+        ("m1_only", (7.87,), ("track_a",)),
+        ("m2_only", (8.37,), ("track_b",)),
+        ("both", (7.87, 8.37), ("track_a", "track_b")),
+        ("neither", (), ()),
+    ),
+)
+def test_optional_occupancy_preserves_two_resolved_direct_support_peaks(
+    tmp_path: Path,
+    occupancy: str,
+    candidate_rts: tuple[float, ...],
+    expected_tracks: tuple[str, ...],
+) -> None:
+    scenario = _scenario(tmp_path / occupancy)
+    candidates = tuple(
+        scenario.candidate(apex_rt, direct_support=True)
+        for apex_rt in candidate_rts
+    )
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=candidates,
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    expected_ids = {
+        getattr(scenario, name).group_hypothesis_id for name in expected_tracks
+    }
+    if expected_ids:
+        assert {item.state for item in result.assignments} == {
+            "uniquely_assigned"
+        }
+        assert {item.group_hypothesis_id for item in result.assignments} == expected_ids
+        assert all(
+            item.candidate_observation_class == "direct_support"
+            for item in result.assignments
+        )
+        assert len(
+            {
+                item.peak_hypothesis_id
+                for item in result.assignments
+                if item.peak_hypothesis_id is not None
+            }
+        ) == len(candidates)
+    else:
+        assert tuple(item.state for item in result.assignments) == ("not_observed",)
+        assert result.assignments[0].group_hypothesis_id is None
+
+
+def test_tracks_follow_independent_local_drift_without_fixed_gap(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(
+        tmp_path,
+        track_a_anchor_rts=(7.78, 7.90),
+        track_b_anchor_rts=(8.35, 8.29),
+    )
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(
+            scenario.candidate(7.89, direct_support=False),
+            scenario.candidate(8.37, direct_support=False),
+        ),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    assert {item.state for item in result.assignments} == {"uniquely_assigned"}
+    predictions = {
+        assessment.group_hypothesis_id: assessment.predicted_rt_min
+        for item in result.assignments
+        for assessment in item.prediction_assessments
+    }
+    assert predictions[scenario.track_a.group_hypothesis_id] == pytest.approx(7.89)
+    assert predictions[scenario.track_b.group_hypothesis_id] == pytest.approx(8.37)
+    assert (
+        scenario.track_a_spine.anchors[1].apex_rt_min
+        - scenario.track_a_spine.anchors[0].apex_rt_min
+    ) != (
+        scenario.track_b_spine.anchors[1].apex_rt_min
+        - scenario.track_b_spine.anchors[0].apex_rt_min
+    )
+
+
+def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
+    tmp_path: Path,
+) -> None:
+    unsupported_interpolation = _scenario(
+        tmp_path / "unsupported-interpolation",
+        max_interpolation_gap=1,
+    )
+    interpolation_result = assign_mode_tracks(
+        processing_owners=unsupported_interpolation.fixture.owners,
+        sample=unsupported_interpolation.fixture.sample("target"),
+        model_set=unsupported_interpolation.models,
+        candidates=(
+            unsupported_interpolation.candidate(7.87, direct_support=False),
+        ),
+        trajectory_assessment=unsupported_interpolation.assessable_trajectory,
+    )
+    assert interpolation_result.assignments[0].state == "out_of_model"
+    assert "unsupported_interpolation" in (
+        interpolation_result.assignments[0].reason_codes
+    )
+
+    supported_extrapolation = _scenario(
+        tmp_path / "supported-extrapolation",
+        sample_stems=("anchor-1", "anchor-2", "unused", "target"),
+        target_injection_order=4,
+        max_extrapolation_gap=2,
+    )
+    extrapolation_result = assign_mode_tracks(
+        processing_owners=supported_extrapolation.fixture.owners,
+        sample=supported_extrapolation.fixture.sample("target"),
+        model_set=supported_extrapolation.models,
+        candidates=(
+            supported_extrapolation.candidate(7.97, direct_support=False),
+        ),
+        trajectory_assessment=supported_extrapolation.assessable_trajectory,
+    )
+    assert extrapolation_result.assignments[0].state == "uniquely_assigned"
+
+    poor_landmarks = _scenario(tmp_path / "poor-landmarks")
+    poor_result = assign_mode_tracks(
+        processing_owners=poor_landmarks.fixture.owners,
+        sample=poor_landmarks.fixture.sample("target"),
+        model_set=poor_landmarks.models,
+        candidates=(poor_landmarks.candidate(7.87, direct_support=False),),
+        trajectory_assessment=_poor_trajectory("target", 2),
+    )
+    assert poor_result.assignments[0].state == "technical_unassessable"
+    assert "trajectory_poor_landmarks" in poor_result.assignments[0].reason_codes
+
+
 def test_only_unique_direct_support_reinforces_one_track(tmp_path: Path) -> None:
     scenario = _scenario(tmp_path)
     direct = scenario.candidate(7.87, direct_support=True)
@@ -382,6 +521,7 @@ def _scenario(
     track_a_anchor_rts: tuple[float, float] = (7.80, 7.84),
     track_b_anchor_rts: tuple[float, float] = (8.30, 8.34),
     prediction_half_width_min: float = 0.1,
+    max_interpolation_gap: int = 4,
     max_extrapolation_gap: int = 2,
 ) -> _Scenario:
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -404,7 +544,7 @@ def _scenario(
         trajectory_policy_version="piecewise-linear-injection-local-v1",
         band_policy_version="explicit-half-width-v1",
         prediction_half_width_min=prediction_half_width_min,
-        max_interpolation_gap=4,
+        max_interpolation_gap=max_interpolation_gap,
         max_extrapolation_gap=max_extrapolation_gap,
     )
     models = fit_mode_track_model_set(
@@ -529,6 +669,24 @@ def _trajectory(sample_stem: str, injection_order: int):
         rt_drift_delta_min=0.05,
         quality="accepted",
         evidence_ref=f"peak-observation:{sample_stem}-landmark",
+    )
+    return assess_local_trajectory(
+        LocalTrajectoryEvidenceLookup(points=(point,)),
+        (sample_stem,),
+    )
+
+
+def _poor_trajectory(sample_stem: str, injection_order: int):
+    point = LocalFeatureLandmarkEvidence(
+        sample_stem=sample_stem,
+        injection_order=injection_order,
+        landmark_id=f"landmark:{sample_stem}:poor",
+        observed_rt_min=4.05,
+        local_trajectory_rt_min=4.00,
+        rt_drift_delta_min=0.05,
+        quality="poor",
+        evidence_ref=f"peak-observation:{sample_stem}-poor-landmark",
+        exclusion_reason="synthetic poor landmark",
     )
     return assess_local_trajectory(
         LocalTrajectoryEvidenceLookup(points=(point,)),

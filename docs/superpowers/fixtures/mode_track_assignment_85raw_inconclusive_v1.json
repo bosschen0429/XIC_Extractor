@@ -1,0 +1,109 @@
+{
+  "schema_version": "mode_track_retained_replay_fixture_v1",
+  "fixture_id": "issue-179-m8-fam011810-inconclusive-v1",
+  "family_context": {
+    "diagnostic_family_label": "FAM011810",
+    "label_is_identity": false,
+    "mz": 345.0,
+    "mode_windows_min": {
+      "mode_5min": [4.55, 5.5],
+      "mode_6min": [5.55, 6.95],
+      "mode_7_5min": [7.1, 8.45]
+    }
+  },
+  "authority": {
+    "validation_status": "inconclusive",
+    "verdict": "inconclusive_no_write",
+    "product_authority": "none",
+    "assignment_facts_emitted": false
+  },
+  "source_qualification": {
+    "producing_code_state": "8ef6b4394e57e066f76b72a221e19953b6f055fb",
+    "implementation_base": "9519f546012ddcc189c2ba8f1d7ef34ea02e3199",
+    "required_seed_bytes_retained": false,
+    "required_seed_oracle": {
+      "discovery_index_sha256": "a5272eaf34f02d734f88c28ad055b244549fa98b14c9a0ea2d6d0e4380bc9e90",
+      "sample_metadata_sha256": "bc8b656877ebe827b804ba9b62bf349866f5d62e1482ad958d4ce832eb83fb05",
+      "trace_packet_sha256": "4b83dbcd0251e08589047b8c89b284c734094c128853e484fa2478f0f49d8b70",
+      "sample_count": 85,
+      "raw_open_count": 85,
+      "chromatogram_call_count": 85,
+      "elapsed_seconds": 81.67721,
+      "independent_verdict": "multiple_tracks_supported_diagnostic_only"
+    },
+    "retained_historical_packet": {
+      "discovery_index_schema": "legacy_v1_unowned",
+      "discovery_index_sha256": "93c37cd016bff16f8243523777738f951955f13b86eb1a6dd7e30cb072a07474",
+      "trace_packet_sha256": "f73e2c2d4f9bb53ec4568955442e9a40b1faa7b431079d6241e7e39ea283fff3",
+      "trace_count": 85,
+      "raw_open_count_evidence": null,
+      "chromatogram_call_count_evidence": null,
+      "source_packet_bytes_retained_in_repo": false
+    }
+  },
+  "reconstruction": {
+    "status": "not_launched_missing_source",
+    "reason_code": "required_owner_bound_discovery_index_unavailable",
+    "raw_open_count": 0,
+    "chromatogram_call_count": 0,
+    "authorized_attempt_consumed": false
+  },
+  "sample_census": {
+    "total": 85,
+    "study": 78,
+    "pooled_qc": 7,
+    "historical_type_counts": {
+      "Benign": 20,
+      "Normal": 28,
+      "QC": 7,
+      "Tumor": 30
+    }
+  },
+  "historical_diagnostic_counts": {
+    "trace_packet_assigned_mode": {
+      "mode_5min": 1,
+      "mode_6min": 36,
+      "mode_7_5min": 48
+    },
+    "irt_refined_label": {
+      "blue": 48,
+      "green": 21,
+      "unknown": 1,
+      "yellow": 15
+    },
+    "same_raw_low_high_cooccurrence_expected_injection_orders": [48, 50, 52, 54, 55, 56]
+  },
+  "owner_evidence": {
+    "direct_support_peak_hypothesis_count": 0,
+    "owner_refs_complete": false,
+    "canonical_track_seed_count": 0,
+    "historical_labels_are_training_evidence": false
+  },
+  "sensitivity": {
+    "normalized_morphology_and_absolute_intensity_present_in_historical_packet": true,
+    "canonical_segment_owner_refs_present": false,
+    "shoulder_exclusion_status": "technical_unassessable",
+    "low_absolute_intensity_exclusion_status": "technical_unassessable"
+  },
+  "expected_replay_counts": {
+    "families": 1,
+    "peak_hypotheses": 0,
+    "tracks": 0,
+    "anchors": 0,
+    "landmarks": 0,
+    "assignment_states": {
+      "ambiguous_multiple_tracks": 0,
+      "not_observed": 0,
+      "out_of_model": 0,
+      "technical_unassessable": 0,
+      "uniquely_assigned": 0
+    },
+    "ambiguous_assignments": 0
+  },
+  "reason_codes": [
+    "direct_support_owner_refs_unavailable",
+    "required_owner_bound_discovery_index_unavailable",
+    "required_seed_packet_not_retained",
+    "sensitivity_classification_unfrozen"
+  ]
+}

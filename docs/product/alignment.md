@@ -112,6 +112,54 @@ not change a productization maturity tier, active lane, public output schema,
 selected area/counting behavior, or Matrix authority, and the productization
 control plane remains unchanged.
 
+## Shadow ModeTrack Assignment
+
+Issue #179 adds a second internal, no-write fact at the existing M3
+identity/trajectory boundary. `FamilyContextRef` describes one wide m/z/RT
+observation universe and references zero or more existing
+`group_hypothesis_id` values. Each existing group is one ModeTrack; neither the
+Family nor the ModeTrack is a chemical-identity claim. Public or legacy family
+labels, `method_subject_id`, display labels, and ordinals do not mint or replace
+the internal Family context.
+
+Track models are fit once per Family from canonical direct-SUPPORT
+`PeakHypothesis` anchors. Each track follows its own injection-order-local,
+piecewise-linear trajectory and may use an accepted local feature-landmark
+shift. The versioned lane policy supplies the prediction half-width and bounded
+interpolation/extrapolation limits; the owner introduces no universal drift,
+valley, width, shoulder, or intensity threshold. Missing or poor landmarks,
+sparse anchors, unsupported interpolation/extrapolation, and predicted interval
+crossing fail closed.
+
+For one sample, resolved hypotheses may occupy the first track, the second
+track, both through different hypotheses, or neither. A candidate is
+`uniquely_assigned` only when exactly one prediction interval contains it and
+all competitors are excluded. The other terminal states are
+`ambiguous_multiple_tracks`, `out_of_model`, `not_observed`, and
+`technical_unassessable`. A track accepts at most one hypothesis per sample,
+and a hypothesis accepts at most one track. Only a uniquely assigned direct
+SUPPORT observation may reinforce that one track; MS1-only, Backfill, shadow,
+inferred, deconvolved, manual, and shared-set observations remain non-training.
+
+The retained fixture
+`docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`
+records the source-qualified M8 stop condition. The required owner-bound v2
+Discovery index and original seed packet bytes were unavailable, while the
+available historical packet had different hashes and no 85-open/85-call
+completion evidence. The authorized Windows-native reconstruction therefore
+did not launch and remains available for a future source-restored attempt.
+No-RAW replay reports one Family, 85 samples, zero RAW opens, zero chromatogram
+calls, and zero typed hypotheses, tracks, anchors, landmarks, assignments, or
+ambiguous assignments. Its evidence verdict is `inconclusive / no-write`; the
+historical morphology, intensity, and mode labels cannot seed tracks or grant a
+current-checkout compatibility claim.
+
+`FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
+`shadow_ready / product_authority=none` structure. The inconclusive retained
+evidence does not alter Targeted behavior, Backfill, acceptance manifests,
+QuantMatrixVersion, Matrix values, public schema, workbook output, GUI, CLI,
+configuration, or defaults.
+
 ## Retained Validation Anchors
 
 - The 2026-05-28 targeted GT alignment audit fixtures for `5-medC` are
@@ -156,6 +204,11 @@ Before changing alignment behavior, require the relevant subset of:
 - For shadow identity settlement, H1a/H1b/H2/H3 truth tables, missing/poor
   landmark cases, leave-one-landmark-out behavior, adversarial component
   transfer, split lifecycle/lineage, and child-local `S` recomputation.
+- For shadow ModeTrack assignment, optional occupancy, per-track local drift,
+  unique/both/neither interval cases, sparse anchors, missing/poor landmarks,
+  bounded interpolation/extrapolation, crossing intervals, non-training
+  rejection, deterministic identity/serialization, and a zero-RAW retained
+  replay verdict.
 - Public hard zero: the shadow owner must not import or call Matrix identity,
   production decisions, TSV/XLSX/CSV writers, output packages, or activation.
 - Downstream consumer check when output filenames or columns change.

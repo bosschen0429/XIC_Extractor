@@ -1,9 +1,10 @@
 # Peak Anchor, Cross-Sample Group, and Hypothesis Boundary
 
-This page defines the durable boundary between per-sample peak anchors,
-cross-sample group hypotheses, peak hypotheses, and product projections. Use it
-when a change touches discovery peak-anchor grouping, alignment owner
-construction, Backfill activation, or any matrix identity sidecar.
+This page defines the durable boundary between per-sample peak anchors, wide
+Family contexts, cross-sample group hypotheses, peak hypotheses, shadow
+ModeTrack assignments, and product projections. Use it when a change touches
+discovery peak-anchor grouping, alignment owner construction, Backfill
+activation, or any matrix identity sidecar.
 
 ## Contract
 
@@ -13,9 +14,19 @@ construction, Backfill activation, or any matrix identity sidecar.
 - `CrossSamplePeakGroupHypothesis` owns cross-sample group identity:
   membership, owner edge evidence, hard split gates, review-only records, and
   group delivery metadata. Use `group_hypothesis_id` for identity.
+- Internal `FamilyContextRef` owns one wide m/z/RT observation universe and
+  references zero or more existing `group_hypothesis_id` ModeTracks. It is
+  owner-minted from canonical context, policy, lineage, and group IDs. Public or
+  legacy family labels, `method_subject_id`, display labels, and ordinals are
+  not substitutes for this identity.
 - `PeakHypothesis` owns candidate chromatographic identity: the physical peak
   candidate, selected integration, typed evidence, and selected-hypothesis
   decision semantics.
+- `ModeTrackAssignment` records whether one sample-local `PeakHypothesis` is
+  uniquely assigned to one existing ModeTrack, ambiguous across tracks,
+  outside the model, absent, or technically unassessable. The M3
+  identity/trajectory boundary mints this internal, immutable shadow fact; it
+  does not mint a second group owner.
 - Workflow projection owns product decisions. Targeted projection, alignment
   projection, Backfill authority, and ProductWriter gates decide counted
   detection, matrix presence, and product output values.
@@ -29,8 +40,10 @@ construction, Backfill activation, or any matrix identity sidecar.
 | --- | --- | --- |
 | Discovery `peak_anchor_id` / output `feature_family_id` | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
 | Alignment `public_family_id` (display label) | Stable public row label for output compatibility | Canonical identity proof - use `group_hypothesis_id` instead |
+| Internal `FamilyContextRef` | Wide chromatographic observation context and its zero-or-more existing ModeTracks | Chemical identity, public row identity, same-peak truth, or writer authority |
 | `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity via `group_hypothesis_id` | Per-peak integration truth or ProductWriter authority |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
+| Internal `ModeTrackAssignment` | Typed sample/acquisition × existing ModeTrack shadow correspondence, exact prediction exclusions, and lineage | Refitting tracks in consumers, evidence/area transfer, Backfill/Matrix values, or chemical identity |
 | Product projection / ProductWriter | Counted detection, product state, matrix value authority | Low-level evidence extraction or review-only grouping |
 
 ## Migration Rule
@@ -62,6 +75,16 @@ display labels. Treat this as an adapter state:
   `group_hypothesis_id`.
 - Do not use cross-sample group membership as same-peak proof. Same-peak support
   needs a typed anchor, selected mode, or PeakHypothesis-level reason.
+- Do not treat a Family as a same-peak or chemical-identity claim. Two resolved
+  peaks in one sample may occupy different ModeTracks in the same Family, and
+  either track may be absent in another sample.
+- Do not train a ModeTrack from MS1-only, Backfill, inferred, deconvolved,
+  manual, shared-set, or other non-training observations. Only an existing
+  owner-proven direct-SUPPORT `PeakHypothesis` may seed or reinforce one track,
+  and reinforcement follows unique assignment only.
+- Do not let a consumer refit ModeTracks or reinterpret an ambiguous,
+  out-of-model, absent, or technically unassessable state as unique. Shadow
+  assignments carry no value or writer authority.
 - Do not let `alignment_review.tsv` display tokens promote rows. Positive
   product support needs provenance-valid sidecars or explicit authority records.
 - Do not treat `family_projection` rows as canonical identity proof. They are
