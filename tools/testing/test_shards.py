@@ -114,6 +114,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_family_ms1_backfill_review_report.py",
             "tests/test_family_ms1_overlay*.py",
             "tests/test_matrix_identity_*.py",
+            "tests/test_mode_track_*.py",
             "tests/test_ms1_index_backfill_audit.py",
             "tests/test_ms1_scan_index.py",
             "tests/test_overlay_trace_data.py",

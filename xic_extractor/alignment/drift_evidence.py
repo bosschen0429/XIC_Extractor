@@ -42,6 +42,9 @@ class LocalFeatureLandmarkEvidence:
 
     sample_stem: str
     injection_order: int
+    acquisition_source_id: str
+    processing_request_id: str
+    processing_attempt_id: str
     landmark_id: str
     observed_rt_min: float
     local_trajectory_rt_min: float
@@ -53,7 +56,14 @@ class LocalFeatureLandmarkEvidence:
     product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
 
     def __post_init__(self) -> None:
-        for field_name in ("sample_stem", "landmark_id", "evidence_ref"):
+        for field_name in (
+            "sample_stem",
+            "acquisition_source_id",
+            "processing_request_id",
+            "processing_attempt_id",
+            "landmark_id",
+            "evidence_ref",
+        ):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{field_name} must be non-empty text")
@@ -189,14 +199,49 @@ class LocalTrajectoryEvidenceLookup:
         keys = tuple((point.sample_stem, point.landmark_id) for point in self.points)
         if len(keys) != len(set(keys)):
             raise ValueError("local landmark evidence must be unique")
+        evidence_refs = tuple(point.evidence_ref for point in self.points)
+        if len(evidence_refs) != len(set(evidence_refs)):
+            raise ValueError(
+                "local landmark physical evidence refs must be unique"
+            )
         injection_orders_by_sample: dict[str, set[int]] = {}
+        acquisition_sources_by_sample: dict[str, set[str]] = {}
+        processing_requests_by_sample: dict[str, set[str]] = {}
+        processing_attempts_by_sample: dict[str, set[str]] = {}
         for point in self.points:
             injection_orders_by_sample.setdefault(point.sample_stem, set()).add(
                 point.injection_order
             )
+            acquisition_sources_by_sample.setdefault(point.sample_stem, set()).add(
+                point.acquisition_source_id
+            )
+            processing_requests_by_sample.setdefault(point.sample_stem, set()).add(
+                point.processing_request_id
+            )
+            processing_attempts_by_sample.setdefault(point.sample_stem, set()).add(
+                point.processing_attempt_id
+            )
         if any(len(orders) != 1 for orders in injection_orders_by_sample.values()):
             raise ValueError(
                 "local landmarks for one sample require one injection order"
+            )
+        if any(len(sources) != 1 for sources in acquisition_sources_by_sample.values()):
+            raise ValueError(
+                "local landmarks for one sample require one acquisition source"
+            )
+        if any(
+            len(requests) != 1
+            for requests in processing_requests_by_sample.values()
+        ):
+            raise ValueError(
+                "local landmarks for one sample require one processing request"
+            )
+        if any(
+            len(attempts) != 1
+            for attempts in processing_attempts_by_sample.values()
+        ):
+            raise ValueError(
+                "local landmarks for one sample require one processing attempt"
             )
         _validate_local_trajectory_authority(
             validation_status=self.validation_status,
@@ -256,8 +301,10 @@ def assess_local_trajectory(
 
     if not isinstance(lookup, LocalTrajectoryEvidenceLookup):
         raise TypeError("local trajectory assessment requires local feature landmarks")
-    ordered_samples = tuple(sorted(set(sample_stems)))
-    _require_canonical_text(ordered_samples, field="sample_stems")
+    ordered_samples = _canonicalize_input_texts(
+        sample_stems,
+        field="sample_stems",
+    )
     statuses = tuple(lookup.landmark_status(sample) for sample in ordered_samples)
     if "missing_landmarks" in statuses:
         status: LocalTrajectoryStatus = "missing_landmarks"
@@ -277,7 +324,11 @@ def assess_local_trajectory(
     landmark_points = tuple(
         point for point in lookup.points if point.sample_stem in ordered_samples
     )
-    ordered_conflicts = tuple(sorted(set(conflict_evidence_refs)))
+    ordered_conflicts = _canonicalize_input_texts(
+        conflict_evidence_refs,
+        field="conflict_evidence_refs",
+        allow_empty=True,
+    )
     if status == "assessable" and ordered_conflicts:
         accepted_refs = {
             point.evidence_ref
@@ -475,3 +526,20 @@ def _require_canonical_text(values: tuple[str, ...], *, field: str) -> None:
         or values != tuple(sorted(set(values)))
     ):
         raise ValueError(f"{field} must be non-empty, unique, and canonical-sorted")
+
+
+def _canonicalize_input_texts(
+    values: tuple[str, ...],
+    *,
+    field: str,
+    allow_empty: bool = False,
+) -> tuple[str, ...]:
+    if (
+        not isinstance(values, tuple)
+        or (not allow_empty and not values)
+        or any(not isinstance(value, str) or not value.strip() for value in values)
+    ):
+        raise ValueError(f"{field} must contain canonical non-empty text")
+    if len(values) != len(set(values)):
+        raise ValueError(f"{field} must not contain duplicates")
+    return tuple(sorted(values))

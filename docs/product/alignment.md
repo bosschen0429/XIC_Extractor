@@ -58,8 +58,12 @@ The minimum model set is:
 - `scientific_uncertainty`: a valid run-terminal result when the evidence does
   not resolve one of the four models.
 
-Local feature landmarks retain sample, injection order, observed RT, local
-trajectory RT, quality, and evidence reference. Missing or poor landmarks are
+Local feature landmarks retain sample, resolved acquisition source, injection
+order, observed RT, local trajectory RT, quality, and evidence reference.
+Each physical evidence reference may identify exactly one retained landmark in
+the lookup; duplicate references fail closed before trajectory assessment so
+one observation cannot become multiple interpolation points.
+Missing or poor landmarks are
 unassessable, not conflict. Conflict requires an explicit reference to a
 retained accepted landmark; an absent landmark cannot be relabelled as
 conflict. Landmarks for one sample must agree on its injection order. The
@@ -112,6 +116,87 @@ not change a productization maturity tier, active lane, public output schema,
 selected area/counting behavior, or Matrix authority, and the productization
 control plane remains unchanged.
 
+## Shadow ModeTrack Assignment
+
+Issue #179 adds a second internal, no-write fact at the existing M3
+identity/trajectory boundary. `FamilyContextRef` describes one wide m/z/RT
+observation universe and references zero or more existing
+`group_hypothesis_id` values. Each existing group is one ModeTrack; neither the
+Family nor the ModeTrack is a chemical-identity claim. Public or legacy family
+labels, `method_subject_id`, display labels, and ordinals do not mint or replace
+the internal Family context.
+
+The initial model set is fit once per Family from canonical direct-SUPPORT
+assessment × `PeakHypothesis` anchors. Family ModeTracks must have disjoint
+owner IDs, and one `PeakHypothesis` or physical peak observation may seed at
+most one track. Fit accepts initial anchors only. A later uniquely assigned
+direct-SUPPORT observation may mint an immutable successor model set; consumers
+still do not refit. Each track follows its own injection-order-local, piecewise-linear
+trajectory. At fit time, the M8 fit owner projects each existing group's canonical
+center RT into the model as `ordering_reference_rt_min`. This immutable behavior
+snapshot is bound into `model_set_id`, and crossing checks read the snapshot
+rather than a retained rich group object. Equal model identities therefore
+cannot hide different elution-order behavior, while `group_hypothesis_id`
+remains the existing ModeTrack identity.
+
+Accepted feature landmarks remain a complete local point set: a
+track uses its exact local landmark or interpolation between bracketing local
+landmarks, never one Family-wide median, and landmark extrapolation outside the
+retained local RT range is technically unassessable. The versioned lane policy
+supplies the prediction half-width and bounded
+interpolation/extrapolation limits; the owner introduces no universal drift,
+valley, width, shoulder, or intensity threshold. An exact injection anchor is a
+complete local prediction even when no landmark is available. Other sparse or
+landmark-unassessable prediction branches fail closed.
+
+When every track is outside the policy's bounded interpolation/extrapolation
+coverage, the sample is `out_of_model`. When at least one track is predictable
+but another competitor is unavailable, that competitor cannot be excluded and
+the sample is instead `technical_unassessable`.
+
+For one sample, resolved hypotheses may occupy the first track, the second
+track, both through different hypotheses, or neither. A candidate is
+`uniquely_assigned` only when exactly one prediction interval contains it and
+all competitors are excluded. The other terminal states are
+`ambiguous_multiple_tracks`, `out_of_model`, `not_observed`, and
+`technical_unassessable`. Prediction-interval overlap is candidate-local: it
+does not block a candidate that lies in a single-track-only region. A track
+crossing is also candidate-local: only candidates whose sole match is one of
+the crossed tracks become `technical_unassessable`; an unaffected third track
+remains assignable. A candidate matching multiple intervals remains
+`ambiguous_multiple_tracks` before crossing adjudication. A track
+accepts at most one hypothesis per sample, and occupancy includes both its
+incumbent anchor for that injection and provisional candidates in the current
+batch. Replaying the incumbent hypothesis is the same occupant; a different
+hypothesis cannot become a second occupant. Only a uniquely assigned direct
+SUPPORT observation may reinforce that one track; MS1-only, Backfill, shadow,
+inferred, deconvolved, manual, and shared-set observations remain non-training.
+Model sets, anchors, candidates, assignments, and retained landmarks are bound
+to their exact processing request and attempt, resolved acquisition source, and
+injection order. Anchors and candidates also retain the exact physical peak
+observation identity. Every ingress revalidates the live PeakHypothesis and,
+when present, direct-SUPPORT assessment against those current owners. M8 does
+not retain or depend on `CellObservationRef`.
+
+The retained fixture
+`docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`
+records the source-qualified M8 stop condition; it is not a replay fixture or a
+classification oracle. It preserves the producing code/base SHAs, required
+Discovery/sample/trace hashes, 85-sample census, and historical 85-open/85-call
+timing claim. The required owner-bound Discovery index and original seed bytes
+were unavailable, while the retained historical packet had different hashes
+and no observed completion counters. Reconstruction therefore did not launch,
+made zero RAW opens and zero chromatogram calls, and did not consume the
+authorized attempt. Its evidence verdict remains `inconclusive / no-write`;
+historical morphology, intensity, or mode labels cannot seed tracks or grant a
+current-checkout compatibility claim.
+
+`FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
+`shadow_ready / product_authority=none` structure. The inconclusive retained
+evidence does not alter Targeted behavior, Backfill, acceptance manifests,
+QuantMatrixVersion, Matrix values, public schema, workbook output, GUI, CLI,
+configuration, or defaults.
+
 ## Retained Validation Anchors
 
 - The 2026-05-28 targeted GT alignment audit fixtures for `5-medC` are
@@ -156,6 +241,11 @@ Before changing alignment behavior, require the relevant subset of:
 - For shadow identity settlement, H1a/H1b/H2/H3 truth tables, missing/poor
   landmark cases, leave-one-landmark-out behavior, adversarial component
   transfer, split lifecycle/lineage, and child-local `S` recomputation.
+- For shadow ModeTrack assignment, optional occupancy, per-track local drift,
+  unique/both/neither interval cases, sparse anchors, missing/poor landmarks,
+  bounded interpolation/extrapolation, crossing intervals, non-training
+  rejection, request/attempt/physical-observation substitution, deterministic
+  identity/serialization, and the retained zero-RAW stop receipt.
 - Public hard zero: the shadow owner must not import or call Matrix identity,
   production decisions, TSV/XLSX/CSV writers, output packages, or activation.
 - Downstream consumer check when output filenames or columns change.
