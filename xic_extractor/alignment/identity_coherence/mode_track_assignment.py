@@ -23,6 +23,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    PeakHypothesisContractError,
+    validate_cid_nl_peak_hypothesis_binding,
+)
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     ProcessingOwnerReferences,
@@ -720,6 +724,11 @@ def mint_mode_track_candidate_observation(
         raise ModeTrackContractError("candidate must be a PeakHypothesis")
     if not peak_hypothesis.is_owner_backed:
         raise ModeTrackContractError("candidate PeakHypothesis must be owner-backed")
+    _validate_peak_hypothesis_binding(
+        processing_owners=processing_owners,
+        sample=sample,
+        peak_hypothesis=peak_hypothesis,
+    )
     support_content_id: str | None = None
     observation_class: CandidateObservationClass = "non_training"
     if direct_support_cell is not None:
@@ -1047,6 +1056,11 @@ def _mint_support_anchor(
                 "SUPPORT cell and anchor must reuse the exact assessment"
             )
     if processing_owners is not None:
+        _validate_peak_hypothesis_binding(
+            processing_owners=processing_owners,
+            sample=sample,
+            peak_hypothesis=peak_hypothesis,
+        )
         source, order = _resolve_sample_acquisition(processing_owners, sample)
     else:
         if acquisition_source is None or injection_order is None:
@@ -1193,21 +1207,21 @@ def _predict_track(
             )
         left, right = anchors[:2] if injection_order < orders[0] else anchors[-2:]
         center = _linear_prediction(left, right, injection_order)
-    drift_delta, drift_reasons = _trajectory_delta(
-        trajectory_assessment,
-        predicted_rt_min=center,
-    )
-    if drift_delta is None:
-        return ModeTrackPredictionAssessment(
-            group_hypothesis_id=track.group_hypothesis_id,
-            status="trajectory_unassessable",
-            predicted_rt_min=None,
-            prediction_interval_min=None,
-            anchor_refs=anchor_refs,
-            support_artifact_content_ids=support_refs,
-            reason_codes=drift_reasons,
-        )
     if not exact_anchor:
+        drift_delta, drift_reasons = _trajectory_delta(
+            trajectory_assessment,
+            predicted_rt_min=center,
+        )
+        if drift_delta is None:
+            return ModeTrackPredictionAssessment(
+                group_hypothesis_id=track.group_hypothesis_id,
+                status="trajectory_unassessable",
+                predicted_rt_min=None,
+                prediction_interval_min=None,
+                anchor_refs=anchor_refs,
+                support_artifact_content_ids=support_refs,
+                reason_codes=drift_reasons,
+            )
         center = _canonical_float(center + drift_delta)
     half_width = policy.prediction_half_width_min
     interval = (
@@ -1523,6 +1537,33 @@ def _resolve_sample_acquisition(
             "sample must resolve to one request injection binding"
         )
     return source, matching[0].injection_order
+
+
+def _validate_peak_hypothesis_binding(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    peak_hypothesis: PeakHypothesis,
+) -> None:
+    if len(peak_hypothesis.peak_observation_refs) != 1:
+        raise ModeTrackContractError(
+            "candidate PeakHypothesis must reference one physical observation"
+        )
+    support = peak_hypothesis.evidence.cid_nl_chromatographic_support_ref
+    if support is None:
+        raise ModeTrackContractError(
+            "candidate PeakHypothesis must reference chromatographic support"
+        )
+    try:
+        validate_cid_nl_peak_hypothesis_binding(
+            peak_hypothesis,
+            processing_owners=processing_owners,
+            sample=sample,
+            peak_observation=peak_hypothesis.peak_observation_refs[0],
+            chromatographic_support=support,
+        )
+    except PeakHypothesisContractError as exc:
+        raise ModeTrackContractError(str(exc)) from exc
 
 
 def _validate_support_cell(

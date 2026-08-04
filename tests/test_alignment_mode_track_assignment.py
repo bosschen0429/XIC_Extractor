@@ -381,6 +381,50 @@ def test_exact_anchor_prediction_does_not_reapply_same_injection_drift(
     assert assignment.group_hypothesis_id == anchor.group_hypothesis_id
 
 
+def test_exact_anchor_prediction_does_not_require_local_drift_lookup(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    anchor = scenario.track_a_spine.anchors[0]
+    candidate = mint_mode_track_candidate_observation(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        peak_hypothesis=anchor.peak_hypothesis,
+        direct_support_cell=anchor.direct_support_cell,
+    )
+    unrelated_trajectory = _multi_point_trajectory(
+        "anchor-1",
+        anchor.injection_order,
+        anchor.acquisition_source_id,
+        ((1.0, 0.20), (2.0, 0.20)),
+    )
+    assert unrelated_trajectory.status == "assessable"
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        model_set=scenario.models,
+        candidates=(candidate,),
+        trajectory_assessment=unrelated_trajectory,
+    )
+
+    assignment = result.assignments[0]
+    assert assignment.state == "uniquely_assigned"
+    assert assignment.group_hypothesis_id == anchor.group_hypothesis_id
+
+    missing_result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        model_set=scenario.models,
+        candidates=(candidate,),
+        trajectory_assessment=assess_local_trajectory(
+            LocalTrajectoryEvidenceLookup(points=()),
+            ("anchor-1",),
+        ),
+    )
+    assert missing_result.assignments[0].state == "technical_unassessable"
+
+
 def test_each_track_uses_its_local_landmark_region_without_global_median(
     tmp_path: Path,
 ) -> None:
@@ -563,6 +607,51 @@ def test_request_acquisition_and_injection_bindings_cannot_be_crossed(
                 2,
                 stale_source.acquisition_source_id,
             ),
+        )
+
+
+def test_candidate_and_anchor_hypotheses_must_match_processing_owners(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path / "original")
+    target_sample = scenario.fixture.sample("target")
+    anchor = scenario.track_a_spine.anchors[0]
+
+    with pytest.raises(ModeTrackContractError, match="different sample"):
+        mint_mode_track_candidate_observation(
+            processing_owners=scenario.fixture.owners,
+            sample=target_sample,
+            peak_hypothesis=anchor.peak_hypothesis,
+        )
+
+    candidate = scenario.candidate(7.87, direct_support=False)
+    foreign = _scenario(
+        tmp_path / "foreign",
+        sample_stems=("target", "anchor-1", "anchor-2"),
+        target_injection_order=1,
+    )
+    with pytest.raises(ModeTrackContractError, match="different processing request"):
+        mint_mode_track_candidate_observation(
+            processing_owners=foreign.fixture.owners,
+            sample=foreign.fixture.sample("target"),
+            peak_hypothesis=candidate.peak_hypothesis,
+        )
+
+    retry = scenario.fixture.retry()
+    with pytest.raises(ModeTrackContractError, match="different processing attempt"):
+        mint_mode_track_candidate_observation(
+            processing_owners=retry.owners,
+            sample=target_sample,
+            peak_hypothesis=candidate.peak_hypothesis,
+        )
+
+    with pytest.raises(ModeTrackContractError, match="different processing attempt"):
+        mint_mode_track_support_anchor(
+            processing_owners=retry.owners,
+            track=scenario.track_a,
+            sample=anchor.sample,
+            direct_support_assessment=anchor.direct_support_assessment,
+            peak_hypothesis=anchor.peak_hypothesis,
         )
 
 
