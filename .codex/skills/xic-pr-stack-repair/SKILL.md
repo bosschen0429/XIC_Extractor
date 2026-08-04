@@ -45,9 +45,9 @@ Read `references/repair-checklist.md`, then produce a stack map covering:
 For artifact-boundary or productization-adjacent stack repairs, run the focused
 checks in `references/repair-checklist.md` before the full PR gate.
 
-Then use global `pr-closeout` for PR description and manually apply
-`$xic-pr-closeout` only when XIC readiness labels, validation tier, RAW
-artifacts, or merge/history expectations need extra structure.
+Then use global `pr-closeout` for the PR description. Pull XIC readiness labels,
+validation tier, RAW artifacts, and merge/history expectations from their
+canonical repo owners only when they are relevant.
 
 Trigger coverage lives in `evals/trigger-cases.json` with
 `evals/semantic_config.json`. Update those cases before broadening the trigger

@@ -13,8 +13,8 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 - `.codex/skills/`: XIC-specific reusable workflows that need a checklist at
   execution time.
 - `docs/solutions/`: searchable reusable lessons from solved XIC problems.
-  Use `$xic-compound` manually after a non-obvious fix, productization decision,
-  or validation lesson so future agents do not rediscover the same pattern.
+  Follow `docs/solutions/README.md` directly after a non-obvious fix,
+  productization decision, or validation lesson; no wrapper skill is required.
 - `.codex/rules/*.rules`: command-prefix policy for destructive or high-impact
   operations.
 - `.codex/hooks.json` and `.codex/hooks/*.py`: low-noise lifecycle checks.
@@ -52,7 +52,7 @@ The hook set is intentionally small:
 
 - `UserPromptSubmit`: scans the prompt for XIC high-risk keywords and injects
   workflow context for architecture preflight, performance diagnosis, RAW
-  validation, large-PR review, or stacked/superseded-PR repair. Mixed behavior
+  validation, productization, or stacked/superseded-PR repair. Mixed behavior
   edits plus RAW validation retain both architecture and RAW preflights;
   synthetic/no-RAW validation and generic heartbeat/schema work stay out of the
   RAW-launch gate unless the prompt explicitly names RAW execution or acceptance.
@@ -61,10 +61,9 @@ The hook set is intentionally small:
   `docs/superpowers/plans/2026-06-15-productization-control-plane.md` as a
   compatibility lookup, then route mutable lane state, writer authority, and
   readiness/promotion decisions to their separate canonical owners.
-  Handoff/closeout/compaction prompts remind the agent to first resolve the
-  active branch handoff, then rewrite and prune that snapshot instead of
-  appending chronological notes. They must not direct every branch to the same
-  productization compatibility lane registry.
+  Ordinary review, goal, handoff, closeout, and compaction prompts remain with
+  their global workflows and load XIC owners only when the task actually crosses
+  an XIC contract boundary.
 - `PreToolUse`: blocks wrapped destructive Git commands, commit forms that can
   sweep unrelated paths, and background RAW launches through `Start-Process`.
   It adds one reminder when execution-affecting config changes require the
@@ -130,6 +129,14 @@ least one condition:
 Do not add one just because a feature exists. Prefer improving an existing hook,
 skill, or routing rule over adding a parallel one. Do use already-available
 tools generously when they answer a named question.
+
+A repo-local skill must own a distinct recurring XIC decision or workflow that
+canonical docs and global skills do not already cover. It needs explicit
+trigger/exclusion cases and observable outcome evidence; trigger accuracy alone
+does not prove that the skill improves delivery. Retire the skill when it only
+restates another owner, has no repeated-use evidence, or adds ceremony without
+reducing failures or review loops. Retirement removes routes and stale refs;
+move any still-valid invariant to its canonical rule or contract owner.
 
 ## Self-Improvement Rule
 

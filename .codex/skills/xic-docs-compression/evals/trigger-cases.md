@@ -15,8 +15,8 @@
 
 ## Should Not Trigger
 
-- "幫我開 PR" -> use global `pr-closeout`; manually add `$xic-pr-closeout` only
-  when XIC readiness/artifact closeout needs extra structure.
+- "幫我開 PR" -> use global `pr-closeout`; read XIC readiness/artifact owners
+  only when they are relevant.
 - "跑 8RAW 驗證" -> use `xic-raw-validation`.
 - "調查 performance bottleneck" -> use `xic-performance-diagnosis`.
 - "新增 product doc 的使用者說明" -> ordinary docs edit unless retention/compression is the issue.
@@ -25,7 +25,7 @@
 
 ## Near Neighbors
 
-- `$xic-pr-closeout`: manual XIC PR/branch readiness overlay.
-- `xic-large-pr-review`: broad PR diff review.
+- global `pr-closeout`: durable PR/branch narrative.
+- global `code-review`: explicit fixed-point PR diff review.
 - `wiki-ingest`: Obsidian source-copy or wiki writes after this skill decides a source belongs there.
 - `writing-great-skills`: refine this skill's predictability, hierarchy, and trigger wording.

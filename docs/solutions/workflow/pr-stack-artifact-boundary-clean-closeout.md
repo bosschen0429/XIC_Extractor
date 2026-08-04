@@ -39,8 +39,8 @@ approval, and branch-state causes.
 ## Working Pattern
 
 Use `xic-pr-stack-repair` before PR closeout when the failure smells like a
-stacked-PR boundary problem; add `$xic-pr-closeout` only when XIC readiness or
-artifact rules need extra structure:
+stacked-PR boundary problem. Pull XIC readiness or artifact rules from their
+canonical owners only when relevant:
 
 1. Map every related PR with `xic-pr-stack-repair`; do not repair from memory.
 2. Decide which PR owns product behavior, artifact hygiene, fixture retention,
@@ -68,9 +68,9 @@ artifact rules need extra structure:
 
 ## Limits
 
-This note does not replace normal code review, `xic-large-pr-review`, or the
-global PR closeout workflow. It only handles the precondition that each PR in a
-split stack has a coherent owner surface and clean-checkout CI contract.
+This note does not replace the global code-review or PR-closeout workflows. It
+only handles the precondition that each PR in a split stack has a coherent owner
+surface and clean-checkout CI contract.
 
 ## Next Time
 

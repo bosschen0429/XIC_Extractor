@@ -82,10 +82,7 @@ def main() -> int:
             "因 context compaction 丟資訊。"
         ),
     }
-    assert_contains(
-        run_hook("xic_prompt_router.py", handoff_prompt_payload),
-        "branch-scoped file",
-    )
+    assert_hook_silent("xic_prompt_router.py", handoff_prompt_payload)
 
     def router_output(prompt: str) -> str:
         payload = {
@@ -96,6 +93,16 @@ def main() -> int:
             "prompt": prompt,
         }
         return json.dumps(run_hook("xic_prompt_router.py", payload), ensure_ascii=False)
+
+    def assert_router_silent(prompt: str) -> None:
+        payload = {
+            "hook_event_name": "UserPromptSubmit",
+            "turn_id": "fixture",
+            "cwd": ".",
+            "permission_mode": "default",
+            "prompt": prompt,
+        }
+        assert_hook_silent("xic_prompt_router.py", payload)
 
     def assert_absent(text: str, unexpected: str) -> None:
         if unexpected in text:
@@ -129,6 +136,12 @@ def main() -> int:
     assert_contains(mixed_perf_raw_edit_out, "xic-raw-validation")
     assert_contains(mixed_perf_raw_edit_out, "xic-architecture-preflight")
 
+    reversed_perf_edit_out = router_output(
+        "下一步針對 overlay RAW access 的 locality/reuse/batched extraction 繼續優化"
+    )
+    assert_contains(reversed_perf_edit_out, "xic-performance-diagnosis")
+    assert_contains(reversed_perf_edit_out, "xic-architecture-preflight")
+
     # Existing RAW-backed artifact acceptance is explicit RAW validation intent.
     raw_accept_out = router_output(
         "Accept the existing RAW-backed validation artifacts for this gate."
@@ -151,46 +164,25 @@ def main() -> int:
 
     # Synthetic/no-RAW validation and generic heartbeat/schema work must not be
     # turned into RAW/DLL launch preflight.
-    no_raw_alignment_out = router_output(
+    assert_router_silent(
         "Run alignment validation using synthetic fixtures; do not read RAW."
     )
-    assert_absent(no_raw_alignment_out, "xic-raw-validation")
-    assert_absent(
-        router_output("Validate alignment with fixtures without reading RAW."),
-        "xic-raw-validation",
-    )
+    assert_router_silent("Validate alignment with fixtures without reading RAW.")
 
-    def router_stdout(prompt: str) -> str:
-        result = subprocess.run(
-            [sys.executable, str(HOOKS / "xic_prompt_router.py")],
-            input=json.dumps({"prompt": prompt}),
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        return result.stdout
+    for ordinary_prompt in (
+        "幫我 review 這個大 PR",
+        "設定一個 goal 整理 focused tests",
+    ):
+        assert_router_silent(ordinary_prompt)
 
-    assert_absent(
-        router_stdout("Validate the benchmark schema using tracked TSV fixtures."),
-        "xic-raw-validation",
-    )
-    assert_absent(
-        router_stdout("Fix the heartbeat renderer unit test."),
-        "xic-raw-validation",
-    )
+    assert_router_silent("Validate the benchmark schema using tracked TSV fixtures.")
+    assert_router_silent("Fix the heartbeat renderer unit test.")
 
-    # Stacked/superseded PR trouble routes to xic-pr-stack-repair, not large-pr-review.
+    # Stacked/superseded PR trouble keeps its narrow repo-specific route.
     stack_out = router_output(
         "這個 stacked PR series 一直 red CI，先 map stale base 再修"
     )
     assert_contains(stack_out, "xic-pr-stack-repair")
-    assert_absent(stack_out, "xic-large-pr-review")
-
-    # Ordinary large PR review still routes to xic-large-pr-review.
-    review_out = router_output("幫我 review 這個大 PR 的 diagnostics 改動")
-    assert_contains(review_out, "xic-large-pr-review")
 
     # An ordinary "optimize skills" prompt must not trigger any routing context.
     skills_result = subprocess.run(
