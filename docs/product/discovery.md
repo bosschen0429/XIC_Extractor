@@ -46,8 +46,15 @@ workflow projection and Backfill/ProductWriter authority path.
   `discovery_review.csv`. There is no compatibility adapter for those columns;
   downstream consumers must read the current column constants or tolerate the
   missing legacy fields.
-- Batch discovery handoff uses explicit index files. Do not depend on old
-  worktree-local output directories as durable inputs.
+- Batch discovery handoff uses `discovery_batch_index_v2`. For every sample,
+  the Discovery owner binds the exact candidate CSV SHA-256/byte size, complete
+  path-independent candidate payload/count, and content-bound acquisition
+  source into one `DiscoveryCandidateUniverseReceipt`. A downstream M7 replay
+  must reject truncated/substituted candidate bytes and a same-stem RAW whose
+  content identity differs. Candidate and RAW paths remain locators rather than
+  identity. Legacy batch indexes remain readable by legacy Alignment consumers
+  but cannot enter the owner-closed M7 path. Do not depend on old worktree-local
+  output directories as durable inputs.
 - Minimal output modes are for fast inspection; standard outputs are the public
   machine handoff surfaces.
 - Discovery UX and review surfaces are public handoffs when they define

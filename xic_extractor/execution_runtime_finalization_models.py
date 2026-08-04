@@ -23,6 +23,7 @@ class RuntimeResourceOpenOutcome(str, Enum):
     OPENED = "opened"
     OPEN_FAILED = "open_failed"
     NOT_OPENED = "not_opened"
+    CONDITION_NOT_ACTIVATED = "condition_not_activated"
     OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS = "open_state_unknown_after_worker_loss"
 
 
@@ -65,6 +66,7 @@ class RuntimeLifecycleEventKind(str, Enum):
     RESOURCE_OPENED = "resource_opened"
     RESOURCE_OPEN_FAILED = "resource_open_failed"
     RESOURCE_NOT_OPENED = "resource_not_opened"
+    RESOURCE_CONDITION_NOT_ACTIVATED = "resource_condition_not_activated"
     RESOURCE_OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS = (
         "resource_open_state_unknown_after_worker_loss"
     )
@@ -96,6 +98,7 @@ class RuntimeResourceReservation:
     worker_key: str
     source_reference: str
     compatibility_token: str
+    owner_conditional: bool = False
 
     def __post_init__(self) -> None:
         _require_attempt(self.attempt)
@@ -105,6 +108,8 @@ class RuntimeResourceReservation:
         _required_text(self.worker_key, field="worker_key")
         _required_text(self.source_reference, field="source_reference")
         _required_text(self.compatibility_token, field="compatibility_token")
+        if not isinstance(self.owner_conditional, bool):
+            raise RuntimeFinalizationContractError("owner_conditional must be boolean")
 
 
 @dataclass(frozen=True, slots=True)

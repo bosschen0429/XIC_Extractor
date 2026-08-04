@@ -986,6 +986,7 @@ def _runtime_observation_shapes(
                 RuntimeLifecycleEventKind.RESOURCE_OPENED,
                 RuntimeLifecycleEventKind.RESOURCE_OPEN_FAILED,
                 RuntimeLifecycleEventKind.RESOURCE_NOT_OPENED,
+                RuntimeLifecycleEventKind.RESOURCE_CONDITION_NOT_ACTIVATED,
                 RuntimeLifecycleEventKind.RESOURCE_OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS,
             }
         ),

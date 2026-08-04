@@ -569,6 +569,17 @@ collapse into one chromatographic support event without losing their exact
 lineage. That intermediate composition must retain zero source reopens and
 hard-zero public-output diff with both legacy writers authoritative.
 
+The M7 Untargeted CID-NL real-data bridge closes that previously external
+caller-completeness premise only for its explicit input contract. Discovery
+batch index v2 carries one self-validating candidate-universe receipt per
+sample: exact candidate artifact bytes/size, parsed candidate payload/count,
+and the content-bound acquisition source. M7 validates the artifact before and
+after parsing, binds the receipt into its processing request, and rejects a
+truncated candidate file or same-stem/different-content RAW before vendor
+allocation. This closure does not upgrade the scan-level relation, authorize
+legacy batch indexes, interpret DIA, or grant selected-value, Matrix, writer,
+or product authority.
+
 A fifth bounded implementation closes repeated-scan composition without
 inventing a second hypothesis owner. `CidNlChromatographicSupportRef` consumes
 one or more owner-backed `DdaCidNlPeakSupportRef` values for the same request,

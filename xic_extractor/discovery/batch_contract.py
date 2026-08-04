@@ -1,0 +1,395 @@
+"""Owner-backed Discovery candidate-universe receipts.
+
+The receipt binds one sample's exact candidate CSV bytes and complete scientific
+candidate payload to the acquisition content that Discovery inspected.  Paths
+remain locators only and may change when the same content is replayed.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+from xic_extractor.discovery.csv_writer import format_discovery_csv_value
+from xic_extractor.discovery.models import (
+    DISCOVERY_CANDIDATE_COLUMNS,
+    DiscoveryCandidate,
+)
+from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
+    IdentityContractError,
+    fingerprint_file_content,
+)
+
+DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_v2"
+DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v1"
+DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION = "discovery_candidate_payload_v1"
+
+DISCOVERY_BATCH_RECEIPT_COLUMNS = (
+    "discovery_receipt_id",
+    "candidate_artifact_schema_version",
+    "candidate_artifact_sha256",
+    "candidate_artifact_byte_size",
+    "candidate_payload_sha256",
+    "acquisition_source_id",
+    "acquisition_content_sha256",
+    "acquisition_byte_size",
+    "acquisition_format",
+    "observation_namespace",
+)
+
+_RECEIPT_PREFIX = "xic.discovery-candidate-universe.v1:"
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryCandidateUniverseReceipt:
+    """One Discovery-owned, content-bound candidate-universe receipt."""
+
+    discovery_receipt_id: str
+    sample_stem: str
+    acquisition_source: AcquisitionSourceIdentity
+    candidate_count: int
+    candidate_artifact_schema_version: str
+    candidate_artifact_sha256: str
+    candidate_artifact_byte_size: int
+    candidate_payload_sha256: str
+
+    def __post_init__(self) -> None:
+        _required_text(self.sample_stem, field="sample_stem")
+        if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
+            raise IdentityContractError(
+                "acquisition_source must be an AcquisitionSourceIdentity"
+            )
+        if (
+            isinstance(self.candidate_count, bool)
+            or not isinstance(self.candidate_count, int)
+            or self.candidate_count < 0
+        ):
+            raise IdentityContractError(
+                "candidate_count must be a non-negative integer"
+            )
+        if (
+            self.candidate_artifact_schema_version
+            != DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+        ):
+            raise IdentityContractError(
+                "candidate artifact schema version is unsupported"
+            )
+        _validate_digest(
+            self.candidate_artifact_sha256,
+            field="candidate_artifact_sha256",
+        )
+        if (
+            isinstance(self.candidate_artifact_byte_size, bool)
+            or not isinstance(self.candidate_artifact_byte_size, int)
+            or self.candidate_artifact_byte_size < 0
+        ):
+            raise IdentityContractError(
+                "candidate_artifact_byte_size must be a non-negative integer"
+            )
+        _validate_digest(
+            self.candidate_payload_sha256,
+            field="candidate_payload_sha256",
+        )
+        expected = _receipt_id(
+            sample_stem=self.sample_stem,
+            acquisition_source=self.acquisition_source,
+            candidate_count=self.candidate_count,
+            candidate_artifact_sha256=self.candidate_artifact_sha256,
+            candidate_artifact_byte_size=self.candidate_artifact_byte_size,
+            candidate_payload_sha256=self.candidate_payload_sha256,
+        )
+        if self.discovery_receipt_id != expected:
+            raise IdentityContractError(
+                "discovery_receipt_id does not match its immutable owner facts"
+            )
+
+
+def mint_discovery_candidate_universe_receipt(
+    *,
+    sample_stem: str,
+    acquisition_source: AcquisitionSourceIdentity,
+    candidate_csv: Path,
+    candidates: Sequence[DiscoveryCandidate],
+) -> DiscoveryCandidateUniverseReceipt:
+    """Mint a receipt after the Discovery candidate writer has committed bytes."""
+
+    stem = _required_text(sample_stem, field="sample_stem")
+    if not isinstance(acquisition_source, AcquisitionSourceIdentity):
+        raise IdentityContractError(
+            "acquisition_source must be an AcquisitionSourceIdentity"
+        )
+    ordered = _canonical_candidates(candidates, sample_stem=stem)
+    artifact = fingerprint_file_content(candidate_csv)
+    payload_sha256 = discovery_candidate_payload_sha256(ordered)
+    receipt_id = _receipt_id(
+        sample_stem=stem,
+        acquisition_source=acquisition_source,
+        candidate_count=len(ordered),
+        candidate_artifact_sha256=artifact.content_sha256,
+        candidate_artifact_byte_size=artifact.byte_size,
+        candidate_payload_sha256=payload_sha256,
+    )
+    return DiscoveryCandidateUniverseReceipt(
+        discovery_receipt_id=receipt_id,
+        sample_stem=stem,
+        acquisition_source=acquisition_source,
+        candidate_count=len(ordered),
+        candidate_artifact_schema_version=(
+            DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+        ),
+        candidate_artifact_sha256=artifact.content_sha256,
+        candidate_artifact_byte_size=artifact.byte_size,
+        candidate_payload_sha256=payload_sha256,
+    )
+
+
+def validate_discovery_candidate_artifact(
+    receipt: DiscoveryCandidateUniverseReceipt,
+    candidate_csv: Path,
+) -> None:
+    """Reject candidate bytes that do not match the Discovery-owned artifact."""
+
+    _require_receipt(receipt)
+    fingerprint = fingerprint_file_content(candidate_csv)
+    if (
+        fingerprint.content_sha256 != receipt.candidate_artifact_sha256
+        or fingerprint.byte_size != receipt.candidate_artifact_byte_size
+    ):
+        raise IdentityContractError(
+            "candidate CSV bytes do not match the Discovery receipt"
+        )
+
+
+def validate_discovery_candidate_universe(
+    receipt: DiscoveryCandidateUniverseReceipt,
+    *,
+    acquisition_source: AcquisitionSourceIdentity,
+    candidates: Sequence[DiscoveryCandidate],
+) -> tuple[DiscoveryCandidate, ...]:
+    """Close parsed candidates and replay RAW content against one receipt."""
+
+    _require_receipt(receipt)
+    if acquisition_source != receipt.acquisition_source:
+        raise IdentityContractError(
+            "current acquisition source does not match the Discovery receipt"
+        )
+    ordered = _canonical_candidates(candidates, sample_stem=receipt.sample_stem)
+    if len(ordered) != receipt.candidate_count:
+        raise IdentityContractError(
+            "candidate count does not match the Discovery receipt"
+        )
+    if discovery_candidate_payload_sha256(ordered) != (
+        receipt.candidate_payload_sha256
+    ):
+        raise IdentityContractError(
+            "candidate payload does not match the Discovery receipt"
+        )
+    return ordered
+
+
+def discovery_candidate_payload_sha256(
+    candidates: Sequence[DiscoveryCandidate],
+) -> str:
+    """Return the path-independent digest of complete candidate facts."""
+
+    canonical: list[dict[str, str]] = []
+    for candidate in sorted(candidates, key=lambda item: item.candidate_id):
+        canonical.append(
+            {
+                column: format_discovery_csv_value(
+                    column,
+                    getattr(candidate, column),
+                )
+                for column in DISCOVERY_CANDIDATE_COLUMNS
+                if column != "raw_file"
+            }
+        )
+    encoded = json.dumps(
+        {
+            "schema_version": DISCOVERY_CANDIDATE_PAYLOAD_SCHEMA_VERSION,
+            "candidates": canonical,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def discovery_receipt_index_fields(
+    receipt: DiscoveryCandidateUniverseReceipt,
+) -> dict[str, str]:
+    """Project one typed receipt into the batch-index CSV vocabulary."""
+
+    _require_receipt(receipt)
+    source = receipt.acquisition_source
+    return {
+        "discovery_receipt_id": receipt.discovery_receipt_id,
+        "candidate_artifact_schema_version": (
+            receipt.candidate_artifact_schema_version
+        ),
+        "candidate_artifact_sha256": receipt.candidate_artifact_sha256,
+        "candidate_artifact_byte_size": str(receipt.candidate_artifact_byte_size),
+        "candidate_payload_sha256": receipt.candidate_payload_sha256,
+        "acquisition_source_id": source.acquisition_source_id,
+        "acquisition_content_sha256": source.content_sha256,
+        "acquisition_byte_size": str(source.byte_size),
+        "acquisition_format": source.acquisition_format,
+        "observation_namespace": source.observation_namespace,
+    }
+
+
+def discovery_receipt_from_index_fields(
+    row: Mapping[str, str],
+    *,
+    sample_stem: str,
+    candidate_count: int,
+) -> DiscoveryCandidateUniverseReceipt:
+    """Reconstruct and self-validate one batch-index receipt."""
+
+    try:
+        source = AcquisitionSourceIdentity(
+            acquisition_source_id=row["acquisition_source_id"],
+            content_sha256=row["acquisition_content_sha256"],
+            byte_size=_nonnegative_int(
+                row["acquisition_byte_size"],
+                field="acquisition_byte_size",
+            ),
+            acquisition_format=row["acquisition_format"],
+            observation_namespace=row["observation_namespace"],
+        )
+        return DiscoveryCandidateUniverseReceipt(
+            discovery_receipt_id=row["discovery_receipt_id"],
+            sample_stem=sample_stem,
+            acquisition_source=source,
+            candidate_count=candidate_count,
+            candidate_artifact_schema_version=(
+                row["candidate_artifact_schema_version"]
+            ),
+            candidate_artifact_sha256=row["candidate_artifact_sha256"],
+            candidate_artifact_byte_size=_nonnegative_int(
+                row["candidate_artifact_byte_size"],
+                field="candidate_artifact_byte_size",
+            ),
+            candidate_payload_sha256=row["candidate_payload_sha256"],
+        )
+    except KeyError as exc:
+        raise IdentityContractError(
+            f"Discovery receipt is missing {exc.args[0]}"
+        ) from exc
+
+
+def _canonical_candidates(
+    candidates: Sequence[DiscoveryCandidate],
+    *,
+    sample_stem: str,
+) -> tuple[DiscoveryCandidate, ...]:
+    if isinstance(candidates, (str, bytes)):
+        raise IdentityContractError(
+            "candidate universe must contain DiscoveryCandidate values"
+        )
+    supplied = tuple(candidates)
+    if any(not isinstance(item, DiscoveryCandidate) for item in supplied):
+        raise IdentityContractError(
+            "candidate universe must contain DiscoveryCandidate values"
+        )
+    ordered = tuple(sorted(supplied, key=lambda item: item.candidate_id))
+    candidate_ids = tuple(item.candidate_id for item in ordered)
+    if len(candidate_ids) != len(set(candidate_ids)):
+        raise IdentityContractError("candidate universe IDs must be unique")
+    if any(
+        item.sample_stem != sample_stem or item.raw_file.stem != sample_stem
+        for item in ordered
+    ):
+        raise IdentityContractError(
+            "candidate universe contains a different sample"
+        )
+    return ordered
+
+
+def _receipt_id(
+    *,
+    sample_stem: str,
+    acquisition_source: AcquisitionSourceIdentity,
+    candidate_count: int,
+    candidate_artifact_sha256: str,
+    candidate_artifact_byte_size: int,
+    candidate_payload_sha256: str,
+) -> str:
+    basis = {
+        "schema_version": "discovery_candidate_universe_receipt_v1",
+        "sample_stem": sample_stem,
+        "acquisition_source_id": acquisition_source.acquisition_source_id,
+        "candidate_count": candidate_count,
+        "candidate_artifact_schema_version": (
+            DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
+        ),
+        "candidate_artifact_sha256": candidate_artifact_sha256,
+        "candidate_artifact_byte_size": candidate_artifact_byte_size,
+        "candidate_payload_sha256": candidate_payload_sha256,
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            basis,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"{_RECEIPT_PREFIX}{digest}"
+
+
+def _require_receipt(value: object) -> DiscoveryCandidateUniverseReceipt:
+    if not isinstance(value, DiscoveryCandidateUniverseReceipt):
+        raise IdentityContractError(
+            "receipt must be a DiscoveryCandidateUniverseReceipt"
+        )
+    return value
+
+
+def _required_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise IdentityContractError(f"{field} must be non-empty normalized text")
+    return value
+
+
+def _validate_digest(value: object, *, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise IdentityContractError(f"{field} must be a lowercase SHA-256 digest")
+    return value
+
+
+def _nonnegative_int(value: object, *, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise IdentityContractError(f"{field} must be a non-negative integer")
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise IdentityContractError(f"{field} must be a non-negative integer") from exc
+    if parsed < 0:
+        raise IdentityContractError(f"{field} must be a non-negative integer")
+    return parsed
+
+
+__all__ = (
+    "DISCOVERY_BATCH_INDEX_SCHEMA_VERSION",
+    "DISCOVERY_BATCH_RECEIPT_COLUMNS",
+    "DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION",
+    "DiscoveryCandidateUniverseReceipt",
+    "discovery_candidate_payload_sha256",
+    "discovery_receipt_from_index_fields",
+    "discovery_receipt_index_fields",
+    "mint_discovery_candidate_universe_receipt",
+    "validate_discovery_candidate_artifact",
+    "validate_discovery_candidate_universe",
+)

@@ -269,7 +269,7 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         canonical_runtime_observability_ledger_bytes(receipt.observability_ledger)
     )
     assert coordinator_payload["schema_version"] == (
-        "execution_runtime_coordinator_terminal_v3"
+        "execution_runtime_coordinator_terminal_v4"
     )
     assert observability_payload["schema_version"] == (
         "execution_runtime_observability_ledger_v1"
@@ -469,6 +469,7 @@ def test_owner_preflight_failure_uses_finalization_and_recovery_path(
     (
         RuntimeResourceOpenOutcome.NOT_OPENED,
         RuntimeResourceOpenOutcome.OPEN_FAILED,
+        RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED,
     ),
 )
 def test_unopened_process_resource_does_not_invent_worker_topology(
@@ -529,6 +530,9 @@ def test_unopened_process_resource_does_not_invent_worker_topology(
     open_event_kind = {
         RuntimeResourceOpenOutcome.NOT_OPENED: "resource_not_opened",
         RuntimeResourceOpenOutcome.OPEN_FAILED: "resource_open_failed",
+        RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED: (
+            "resource_condition_not_activated"
+        ),
     }[open_outcome]
     assert (
         event_kinds.index("resource_reserved")

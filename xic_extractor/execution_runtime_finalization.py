@@ -150,6 +150,18 @@ def record_runtime_resource_open(
             key,
             "late open report conflicts with the accepted resource record",
         )
+    if (
+        outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
+        and not existing.reservation.owner_conditional
+    ):
+        state = _record_failure(
+            state,
+            RuntimeLifecycleFailureKind.CONFLICTING_RESOURCE_REPORT,
+            key,
+            "required resource cannot close as condition_not_activated",
+        )
+        existing = _resource(state, key)
+        assert existing is not None
     updated = replace(existing, open_outcome=outcome)
     return replace(
         state,
@@ -576,7 +588,7 @@ def canonical_coordinator_terminal_record_bytes(
     state = coordinator.state
     integrity_failure = state.runtime.integrity_failure
     payload = {
-        "schema_version": "execution_runtime_coordinator_terminal_v3",
+        "schema_version": "execution_runtime_coordinator_terminal_v4",
         "processing_request_id": state.runtime.manifest.attempt.processing_request_id,
         "processing_attempt_id": state.runtime.manifest.attempt.processing_attempt_id,
         "manifest_work_unit_keys": state.runtime.manifest.work_unit_keys,
@@ -608,6 +620,7 @@ def canonical_coordinator_terminal_record_bytes(
                 "worker_key": item.reservation.worker_key,
                 "source_reference": item.reservation.source_reference,
                 "compatibility_token": item.reservation.compatibility_token,
+                "owner_conditional": item.reservation.owner_conditional,
                 "open_outcome": item.open_outcome.value if item.open_outcome else None,
                 "cleanup_outcome": (
                     item.cleanup_outcome.value if item.cleanup_outcome else None
@@ -757,6 +770,9 @@ def _open_event_kind(
         ),
         RuntimeResourceOpenOutcome.NOT_OPENED: (
             RuntimeLifecycleEventKind.RESOURCE_NOT_OPENED
+        ),
+        RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED: (
+            RuntimeLifecycleEventKind.RESOURCE_CONDITION_NOT_ACTIVATED
         ),
         RuntimeResourceOpenOutcome.OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS: (
             RuntimeLifecycleEventKind.RESOURCE_OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS

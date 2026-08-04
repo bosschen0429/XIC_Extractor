@@ -17,6 +17,10 @@ from xic_extractor.processing_identity import (
     compose_processing_owner_references,
     issue_processing_attempt,
 )
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
     SampleMetadata,
@@ -51,6 +55,7 @@ def build_issue175_no_raw_fixture(
     tmp_path: Path,
     *,
     sample_roles: Mapping[str, SampleRole],
+    thermo_raw_sources: bool = False,
 ) -> Issue175NoRawFixture:
     method_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=PRECURSOR_MZ,
@@ -69,8 +74,16 @@ def build_issue175_no_raw_fixture(
         source_path.write_bytes(f"issue175-no-raw:{sample_stem}".encode())
         source = build_acquisition_source_identity(
             source_path,
-            acquisition_format="synthetic_no_raw",
-            observation_namespace=f"issue175:{sample_stem}",
+            acquisition_format=(
+                THERMO_RAW_ACQUISITION_FORMAT
+                if thermo_raw_sources
+                else "synthetic_no_raw"
+            ),
+            observation_namespace=(
+                THERMO_RAW_OBSERVATION_NAMESPACE
+                if thermo_raw_sources
+                else f"issue175:{sample_stem}"
+            ),
         )
         sources.append(source)
         bindings.append(

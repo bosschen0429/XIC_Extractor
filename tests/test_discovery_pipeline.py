@@ -8,6 +8,10 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from xic_extractor.alignment.csv_io import (
+    read_discovery_batch_index,
+    read_owner_bound_discovery_candidates_csv,
+)
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.evidence_config import (
@@ -26,7 +30,13 @@ from xic_extractor.discovery.pipeline import (
     run_discovery,
     run_discovery_batch,
 )
-from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
+from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+    Ms2Scan,
+    Ms2ScanEvent,
+)
 from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
 
 NEUTRAL_LOSS_DA = 116.0474
@@ -175,6 +185,8 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         tmp_path / "TumorBC2312_DNA.raw",
         tmp_path / "NormalBC2257_DNA.raw",
     )
+    for raw_path in raw_paths:
+        raw_path.write_bytes(f"discovery:{raw_path.stem}".encode())
     raw_by_path = {
         raw_paths[0]: _FakeRawHandle(
             [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
@@ -215,6 +227,15 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         "NormalBC2257_DNA",
     ]
     assert [row["candidate_count"] for row in index_rows] == ["1", "1"]
+    assert {row["schema_version"] for row in index_rows} == {
+        "discovery_batch_index_v2"
+    }
+    assert all(
+        row["discovery_receipt_id"].startswith(
+            "xic.discovery-candidate-universe.v1:"
+        )
+        for row in index_rows
+    )
     assert [row["medium_count"] for row in index_rows] == ["1", "1"]
     assert [
         Path(row["candidate_csv"]).name for row in index_rows
@@ -243,12 +264,27 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     ]
     assert not (tmp_path / "out" / "discovery_candidates.csv").exists()
     assert all(raw.entered and raw.closed for raw in raw_by_path.values())
+    batch = read_discovery_batch_index(
+        outputs.batch_index_csv,
+        require_owner_closure=True,
+    )
+    receipt = batch.candidate_receipts["TumorBC2312_DNA"]
+    assert receipt is not None
+    rebound = read_owner_bound_discovery_candidates_csv(
+        batch.candidate_csvs["TumorBC2312_DNA"],
+        receipt=receipt,
+        require_successor_columns=True,
+    )
+    assert tuple(candidate.candidate_id for candidate in rebound) == (
+        "TumorBC2312_DNA#101@mz258.1085_p142.0611",
+    )
 
 
 def test_batch_pipeline_escapes_excel_formula_strings_in_index(
     tmp_path: Path,
 ) -> None:
-    raw_path = Path("=cmd.raw")
+    raw_path = tmp_path / "=cmd.raw"
+    raw_path.write_bytes(b"formula-path")
     raw = _FakeRawHandle(events=[])
 
     outputs = run_discovery_batch(
@@ -261,7 +297,7 @@ def test_batch_pipeline_escapes_excel_formula_strings_in_index(
 
     row = _read_csv(outputs.batch_index_csv)[0]
     assert row["sample_stem"] == "'=cmd"
-    assert row["raw_file"].startswith("'=")
+    assert Path(row["raw_file"]).name == "=cmd.raw"
     assert row["candidate_csv"].endswith("discovery_candidates.csv")
     assert row["review_csv"].endswith("discovery_review.csv")
 
@@ -507,6 +543,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
 
 def test_batch_pipeline_records_batch_index_timing(tmp_path: Path) -> None:
     raw_path = tmp_path / "Blank.raw"
+    raw_path.write_bytes(b"blank")
     raw = _FakeRawHandle(events=[])
     recorder = TimingRecorder("discovery", run_id="test-batch")
 
@@ -548,6 +585,48 @@ def test_pipeline_uses_injected_raw_opener_with_dll_dir_and_closes_context(
 
     assert calls == [(raw_path, peak_config.dll_dir)]
     assert raw.entered is True
+    assert raw.closed is True
+
+
+def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "Sample.raw"
+    raw_path.write_bytes(b"owner-bound-raw")
+    peak_config = _peak_config(tmp_path)
+    raw = _FakeRawHandle(events=[])
+    calls: list[tuple[Path, Path, object]] = []
+
+    def _open(
+        path: Path,
+        dll_dir: Path,
+        *,
+        expected_acquisition_source: object = None,
+    ) -> _FakeRawHandle:
+        calls.append((path, dll_dir, expected_acquisition_source))
+        return raw
+
+    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open)
+
+    run_discovery_batch(
+        (raw_path,),
+        output_dir=tmp_path / "out",
+        settings=_settings(),
+        peak_config=peak_config,
+    )
+
+    assert calls == [
+        (
+            raw_path,
+            peak_config.dll_dir,
+            build_acquisition_source_identity(
+                raw_path,
+                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            ),
+        )
+    ]
     assert raw.closed is True
 
 

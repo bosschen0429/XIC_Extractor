@@ -109,12 +109,24 @@ infer completion from only the units that happened to be submitted.
 An acquisition session may be reused only within the same attempt, worker,
 `AcquisitionSource`, and owner-supplied compatibility token. Correctness must
 not depend on reuse. Before adapter construction or allocation, the runtime
-creates a unique `resource_reserved` record. Unregistered handles must never be
-used. Each record transitions from `reserved` to `opened`, `open_failed`,
-`not_opened`, or `open_state_unknown_after_worker_loss`, then to one terminal
-cleanup outcome. `not_opened` covers pre-allocation cancellation and performs
-an idempotent no-op cleanup. If a worker disappears while the parent still sees
-`reserved`, the runtime records `open_state_unknown_after_worker_loss`; it must
+creates a unique `resource_reserved` record with pre-bound
+`owner_conditional=false` (required) or `owner_conditional=true`. Required is
+the default; only the semantic owner that binds the consumer condition before
+allocation may reserve a conditional upper bound. Unregistered handles must
+never be used. Each
+record transitions from `reserved` to `opened`, `open_failed`,
+`not_opened`, `condition_not_activated`, or
+`open_state_unknown_after_worker_loss`, then to one terminal cleanup outcome.
+`not_opened` covers pre-allocation cancellation and performs an idempotent
+no-op cleanup. `condition_not_activated` records that an owner-declared
+conditional resource was reserved as an upper bound but its already-bound
+consumer condition did not activate it. Allocation must not occur, cleanup is
+an idempotent no-op, and the outcome does not fail an otherwise successful
+attempt. A `required` reservation reporting `condition_not_activated` is an
+integrity failure. The outcome cannot stand in for an acquisition or satisfy
+work whose accepted owner result depends on that resource. If a worker
+disappears while the parent still sees `reserved`, the runtime records
+`open_state_unknown_after_worker_loss`; it must
 not infer whether allocation occurred. Worker loss closes every non-terminal
 resource record as `unknown_after_worker_loss`. Every transition is observable,
 a late child report cannot rewrite a terminal resource record, and a reopened
@@ -174,14 +186,14 @@ claiming a durable queue:
    namespace, and coordinator launch;
 2. after work, cleanup, and artifact-disposition proposal closure, the
    coordinator produces one immutable canonical `CoordinatorTerminalRecord`
-   `execution_runtime_coordinator_terminal_v3` byte sequence containing the
+   `execution_runtime_coordinator_terminal_v4` byte sequence containing the
    proposed outcome, manifest and per-unit outcomes, typed per-unit failure
    details, typed resource kinds plus open/cleanup outcomes, artifact registry and proposed
    dispositions, failures, coordinator metrics ending at terminal proposal,
    and the coordinator event-ledger digest through that proposal;
 3. the owner-path supervisor fsyncs those exact coordinator bytes and the exact
    runtime-owner-derived observability-ledger bytes inside the
-   self-contained `execution_runtime_recovery_marker_v3` payload, then
+   self-contained `execution_runtime_recovery_marker_v4` payload, then
    atomically replaces the launch marker with one immutable
    `SupervisorFinalizationRecord` containing the coordinator-record digest and
    an atomic event batch continuing the coordinator sequence:
@@ -382,8 +394,9 @@ closed even when every individual resource or work-unit lifecycle is complete.
   current-attempt artifact, and `terminal_outcome`;
 - required-work manifest closed and work unit submitted, started, and settled;
 - dependency reuse accepted/rejected/not used and unit satisfaction source;
-- acquisition/resource reserved, `opened`, `open_failed`, `not_opened`, or
-  `open_state_unknown_after_worker_loss`, and terminal cleanup outcome;
+- acquisition/resource reserved, `opened`, `open_failed`, `not_opened`,
+  `condition_not_activated`, or `open_state_unknown_after_worker_loss`, and
+  terminal cleanup outcome;
 - cache hit, miss, stale rejection, write, rebuild outcome, and eviction
   outcome;
 - coordinator-side runtime artifact creation;
@@ -476,7 +489,7 @@ closed unique opaque work-unit keys. Missing completeness attestation, duplicate
 or blank keys, and attempt substitution drive that existing queued-to-failed
 proposal instead of relying on a caller to declare failure manually. That
 preflight-terminal state now continues through the same owner finalization
-receipt and v3 recovery marker with empty work/resource/artifact registries,
+receipt and v4 recovery marker with empty work/resource/artifact registries,
 measured-zero mechanical counts, and `unsupported:not_started_preflight_failure`
 for work- and worker-derived metrics. Targeted and Alignment enter through the
 same atomic owner operation; it does not invoke their worker provider when
@@ -490,7 +503,7 @@ and conflicting or undeclared settlement records one immutable integrity
 failure that prevents attempt success. Failed work also prevents success.
 Failed and cancelled settlements require a typed `WorkUnitFailureDetail`
 containing category, stage, source reference, and readable message, while a
-successful settlement rejects failure detail. The canonical coordinator v3
+successful settlement rejects failure detail. The canonical coordinator v4
 bytes retain that exact detail. A successful settlement accepts only an
 owner-minted `EvidenceArtifactRef` bound to the same processing request and
 attempt; an opaque string is no longer sufficient.
@@ -532,12 +545,15 @@ are rejected before request resolution, launch recording, or work dispatch.
 
 This remains `diagnostic_only`. `OwnerPathRuntimeMarker` is the bounded physical
 persistence seam: the owner supplies its path, namespace, retention, and later
-publication policy; the v3 marker embeds the exact coordinator and validated
+publication policy; the v4 marker embeds the exact coordinator and validated
 observability-ledger bytes, with separate content digests, and uses a
 cross-platform exclusive sibling lock around read/validate/replace. A concurrent
 writer waits for the current transaction and then revalidates; an unresolved
 stale lock fails closed for owner recovery instead of being auto-deleted. The
-repo has not selected a storage engine, durable queue, current pointer, product
+reader retains exact canonical v3 outer-marker compatibility; new writes use
+v4 because the coordinator resource outcome vocabulary now includes
+`condition_not_activated`.
+The repo has not selected a storage engine, durable queue, current pointer, product
 seal, publication mechanism, telemetry producer, or telemetry backend.
 Alignment is now the second no-RAW consumer. Callers supply only typed
 `RuntimeTelemetrySamples` for monotonic offsets, serial-or-process RSS, and
@@ -562,8 +578,9 @@ before acknowledgement. RSS, monotonic offsets, and runtime-mediated artifact-I/
 external telemetry samples because the coordinator has no independent source
 for them; callers cannot assemble or submit the ledger itself. Only an opened
 `PROCESS_WORKER` reservation creates `worker_started` and requires a correlated
-worker RSS sample; `not_opened` and failed-open reservations cannot invent a
-worker. The owner fixes metric provenance to `execution_runtime_owner:v1`, so a
+worker RSS sample; `not_opened`, `condition_not_activated`, and failed-open
+reservations cannot invent a worker. The owner fixes metric provenance to
+`execution_runtime_owner:v1`, so a
 caller cannot alter canonical bytes by relabeling owner-derived facts.
 Metric names remain readable public schema vocabulary. A caller may copy those
 names, but a caller-built mapping or named record is untrusted and is not an
@@ -714,8 +731,9 @@ meaning in the runtime core.
   before acknowledgement fails/quarantines the old attempt, while loss after
   acknowledgement preserves the acknowledged result.
 - Every resource is reserved before allocation, has one `opened`,
-  `open_failed`, `not_opened`, or `open_state_unknown_after_worker_loss` event
-  and exactly one logical terminal cleanup record, and cleanup is idempotent.
+  `open_failed`, `not_opened`, `condition_not_activated`, or
+  `open_state_unknown_after_worker_loss` event and exactly one logical terminal
+  cleanup record, and cleanup is idempotent.
 - Bounded hard cancel is claimed only for a validated killable process boundary.
 - Retry/resume receives new identity and non-overlapping work-key-bound
   dependency tokens from the lineage owner; zero tokens means full recompute.

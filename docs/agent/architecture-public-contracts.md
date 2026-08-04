@@ -189,9 +189,15 @@ obfuscated `eval`/dynamic-module reflection is outside the static proof and is
 forbidden by this contract; the immutable runtime export check remains the
 executable backstop for the actual low-level public export set.
 
-The schema labels and field sets remain coordinator v3, observability v1, and
-recovery-marker v3, and the exact-equality/fail-closed replay and CAS rules are
-unchanged. Causal chronology normalization intentionally changes canonical
+The active write schemas are coordinator v4, observability v1, and
+recovery-marker v4. Recovery-marker reads retain canonical v3 outer-schema
+compatibility. V4 adds a pre-bound conditional-reservation fact and the typed
+`condition_not_activated` resource outcome so an owner-declared conditional
+reservation can close without allocating a fake resource. Required reservations
+cannot use that outcome; `not_opened` without accepted cancellation remains
+fail-closed. The
+exact-equality/fail-closed replay and CAS rules are unchanged. Causal chronology
+normalization intentionally changes canonical
 event order, bytes, and digests for affected running attempts; pre-correction
 diagnostic markers therefore do not claim byte parity with corrected output.
 

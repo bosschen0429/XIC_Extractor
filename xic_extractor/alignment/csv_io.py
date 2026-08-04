@@ -6,6 +6,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+    DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    DiscoveryCandidateUniverseReceipt,
+    discovery_receipt_from_index_fields,
+    validate_discovery_candidate_artifact,
+    validate_discovery_candidate_universe,
+)
 from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_COLUMNS,
     DISCOVERY_CANDIDATE_STATE_VALUES,
@@ -18,8 +26,15 @@ from xic_extractor.discovery.models import (
     assign_discovery_candidate_state,
     build_ms1_feature_row_id,
 )
+from xic_extractor.processing_identity import IdentityContractError
 
 _BATCH_REQUIRED_COLUMNS = ("sample_stem", "raw_file", "candidate_csv")
+_BATCH_OWNER_REQUIRED_COLUMNS = (
+    "schema_version",
+    *_BATCH_REQUIRED_COLUMNS,
+    "candidate_count",
+    *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+)
 _BATCH_UNESCAPE_FIELDS = {"sample_stem", "raw_file", "candidate_csv", "review_csv"}
 _CANDIDATE_UNESCAPE_FIELDS = {
     "sample_stem",
@@ -97,6 +112,10 @@ class DiscoveryBatchInput:
     candidate_csvs: dict[str, Path]
     raw_files: dict[str, Path | None]
     review_csvs: dict[str, Path | None]
+    candidate_receipts: dict[
+        str,
+        DiscoveryCandidateUniverseReceipt | None,
+    ]
 
 
 @dataclass(frozen=True)
@@ -115,14 +134,30 @@ class _Ms1FeatureRowIdentity:
     rt: float
 
 
-def read_discovery_batch_index(path: Path) -> DiscoveryBatchInput:
+def read_discovery_batch_index(
+    path: Path,
+    *,
+    require_owner_closure: bool = False,
+) -> DiscoveryBatchInput:
     rows, fieldnames = _read_csv_rows(path)
     _require_columns(path, fieldnames, _BATCH_REQUIRED_COLUMNS)
+    has_schema_version = "schema_version" in fieldnames
+    has_receipt_columns = bool(set(DISCOVERY_BATCH_RECEIPT_COLUMNS) & set(fieldnames))
+    if has_schema_version or has_receipt_columns:
+        _require_columns(path, fieldnames, _BATCH_OWNER_REQUIRED_COLUMNS)
+    elif require_owner_closure:
+        raise ValueError(
+            f"{path}: {DISCOVERY_BATCH_INDEX_SCHEMA_VERSION} owner closure is required"
+        )
 
     sample_order: list[str] = []
     candidate_csvs: dict[str, Path] = {}
     raw_files: dict[str, Path | None] = {}
     review_csvs: dict[str, Path | None] = {}
+    candidate_receipts: dict[
+        str,
+        DiscoveryCandidateUniverseReceipt | None,
+    ] = {}
     for row_number, row in rows:
         sample_stem = _machine_text(row.get("sample_stem", ""))
         candidate_csv = _machine_text(row.get("candidate_csv", ""))
@@ -132,17 +167,48 @@ def read_discovery_batch_index(path: Path) -> DiscoveryBatchInput:
             raise ValueError(f"{path}: row {row_number}: sample_stem is required")
         if not candidate_csv:
             raise ValueError(f"{path}: row {row_number}: candidate_csv is required")
+        if sample_stem in candidate_csvs:
+            raise ValueError(
+                f"{path}: row {row_number}: duplicate sample_stem values are not "
+                f"supported ({sample_stem!r})"
+            )
+        receipt: DiscoveryCandidateUniverseReceipt | None = None
+        if has_schema_version or has_receipt_columns:
+            schema_version = _machine_text(row.get("schema_version", ""))
+            if schema_version != DISCOVERY_BATCH_INDEX_SCHEMA_VERSION:
+                raise ValueError(
+                    f"{path}: row {row_number}: unsupported schema_version "
+                    f"{schema_version!r}"
+                )
+            candidate_count = _batch_nonnegative_int(
+                path,
+                row_number,
+                row.get("candidate_count", ""),
+                field="candidate_count",
+            )
+            try:
+                receipt = discovery_receipt_from_index_fields(
+                    row,
+                    sample_stem=sample_stem,
+                    candidate_count=candidate_count,
+                )
+            except (IdentityContractError, ValueError) as exc:
+                raise ValueError(
+                    f"{path}: row {row_number}: invalid Discovery receipt: {exc}"
+                ) from exc
         sample_order.append(sample_stem)
         candidate_csvs[sample_stem] = _resolve_artifact_path(path.parent, candidate_csv)
         raw_files[sample_stem] = Path(raw_file) if raw_file else None
         review_csvs[sample_stem] = (
             _resolve_artifact_path(path.parent, review_csv) if review_csv else None
         )
+        candidate_receipts[sample_stem] = receipt
     return DiscoveryBatchInput(
         sample_order=tuple(sample_order),
         candidate_csvs=candidate_csvs,
         raw_files=raw_files,
         review_csvs=review_csvs,
+        candidate_receipts=candidate_receipts,
     )
 
 
@@ -189,6 +255,32 @@ def read_discovery_candidates_csv(
             )
         candidates.append(candidate)
     return tuple(candidates)
+
+
+def read_owner_bound_discovery_candidates_csv(
+    path: Path,
+    *,
+    receipt: DiscoveryCandidateUniverseReceipt,
+    require_successor_columns: bool = False,
+) -> tuple[DiscoveryCandidate, ...]:
+    """Read one exact Discovery artifact and close it against its receipt."""
+
+    try:
+        validate_discovery_candidate_artifact(receipt, path)
+        candidates = read_discovery_candidates_csv(
+            path,
+            require_successor_columns=require_successor_columns,
+        )
+        validate_discovery_candidate_artifact(receipt, path)
+        return validate_discovery_candidate_universe(
+            receipt,
+            acquisition_source=receipt.acquisition_source,
+            candidates=candidates,
+        )
+    except IdentityContractError as exc:
+        raise ValueError(
+            f"{path}: invalid owner-bound candidate artifact: {exc}"
+        ) from exc
 
 
 def _read_csv_rows(
@@ -697,6 +789,30 @@ def _parse_int(path: Path, row_number: int, row: dict[str, str], column: str) ->
         raise ValueError(
             f"{path}: row {row_number}: {column} must be an integer: {value!r}"
         ) from exc
+
+
+def _batch_nonnegative_int(
+    path: Path,
+    row_number: int,
+    value: object,
+    *,
+    field: str,
+) -> int:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        raise ValueError(
+            f"{path}: row {row_number}: {field} must be a non-negative integer"
+        )
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{path}: row {row_number}: {field} must be a non-negative integer"
+        ) from exc
+    if parsed < 0:
+        raise ValueError(
+            f"{path}: row {row_number}: {field} must be a non-negative integer"
+        )
+    return parsed
 
 
 def _parse_float(
