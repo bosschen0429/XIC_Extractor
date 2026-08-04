@@ -222,10 +222,14 @@ ownership`，原因通常是 `.git` 由 sandbox identity 建立，而 project
 ```powershell
 $xicRepoRoot = (Resolve-Path .).Path.Replace('\', '/')
 git -c "safe.directory=$xicRepoRoot" add -- <task-files...>
+git -c "safe.directory=$xicRepoRoot" push
 ```
 
 後續 commit／push 同樣把 `-c "safe.directory=$xicRepoRoot"` 放在 subcommand
-前；不要寫入 global `safe.directory`，也不要把其他 repo 加進例外。
+前。`git -c` 由 repo execpolicy 的獨立 `prompt` rule 擁有；pre-tool guard 只放行
+直接、非 wrapper 的 `git -c ... push` 進入該 prompt，其他 optioned／wrapped push
+仍會拒絕並要求改寫。不要寫入 global `safe.directory`，也不要把其他 repo 加進
+例外。
 
 只有在「失敗模式重複、doctor 或現有 preflight 無法降低風險、且人工 approval
 本身變成主要摩擦」時，才考慮新增 project-local execpolicy 或 hook。新增前

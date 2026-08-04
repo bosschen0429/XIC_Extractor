@@ -18,6 +18,7 @@ from xic_hook_policy import (  # noqa: E402
 )
 
 from tools.git_command_policy import (  # noqa: E402
+    GitInvocation,
     git_invocations,
     is_git_executable,
     is_shell_command_flag,
@@ -247,14 +248,40 @@ def wrapped_git_clean_is_forced(segment: str) -> bool:
     if tokens[1].lower() != "clean":
         return False
 
-    for token in tokens[2:]:
+    return git_clean_tail_is_forced(tokens[2:])
+
+
+def git_clean_tail_is_forced(tokens: list[str] | tuple[str, ...]) -> bool:
+    force = False
+    dry_run = False
+    for token in tokens:
         if token == "--":
-            return False
+            break
         if token.lower() == "--force":
-            return True
-        if token.startswith("-") and not token.startswith("--") and "f" in token[1:]:
-            return True
-    return False
+            force = True
+        elif token.lower() == "--dry-run":
+            dry_run = True
+        elif token.startswith("-") and not token.startswith("--"):
+            flags = token[1:]
+            force = force or "f" in flags
+            dry_run = dry_run or "n" in flags
+    return force and not dry_run
+
+
+def git_invocation_reaches_execpolicy(invocation: GitInvocation) -> bool:
+    if invocation.uses_wrapper or invocation.executable != "git":
+        return False
+    if not invocation.global_options:
+        return True
+    return invocation.global_options[0] == "-c"
+
+
+def git_invocation_reaches_subcommand_policy(invocation: GitInvocation) -> bool:
+    return (
+        not invocation.uses_wrapper
+        and invocation.executable == "git"
+        and not invocation.global_options
+    )
 
 
 def contains_background_process(segment: str) -> bool:
@@ -341,14 +368,35 @@ def main() -> int:
         )
         return 0
 
-    if any(
-        invocation.subcommand == "push" and invocation.uses_global_options
-        for invocation in git_invocations(command)
-    ):
-        deny(
-            "Git push with global options is blocked because execpolicy matches exact prefixes. Run the command from the intended workdir using direct `git push`, so the repository prompt rule remains visible."
-        )
-        return 0
+    for invocation in git_invocations(command):
+        if invocation.subcommand == "reset" and "--hard" in invocation.tail:
+            if not git_invocation_reaches_subcommand_policy(invocation):
+                deny(
+                    "git reset --hard is blocked. Do not discard user work; inspect the diff and ask for explicit rollback approval."
+                )
+                return 0
+            continue
+        if invocation.subcommand == "checkout" and "--" in invocation.tail:
+            if not git_invocation_reaches_subcommand_policy(invocation):
+                deny(
+                    "git checkout -- is blocked because it reverts files. Use targeted review and explicit user approval."
+                )
+                return 0
+            continue
+        if invocation.subcommand == "clean" and git_clean_tail_is_forced(
+            invocation.tail
+        ):
+            if not git_invocation_reaches_execpolicy(invocation):
+                deny(WRAPPED_CLEAN_REASON)
+                return 0
+            continue
+        if invocation.subcommand == "push" and not git_invocation_reaches_execpolicy(
+            invocation
+        ):
+            deny(
+                "Wrapped Git push or Git push with unsupported global options is blocked because execpolicy matches exact prefixes. Run direct `git push`; for invocation-scoped ownership recovery, run direct `git -c safe.directory=<repo> push`. Both prefixes retain an explicit prompt rule."
+            )
+            return 0
 
     if is_shell_command_event(str(event.get("tool_name", "")), command) and (
         is_git_commit_command(command)

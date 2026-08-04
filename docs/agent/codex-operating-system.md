@@ -170,14 +170,16 @@ codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add --all
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add .
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add README.md
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git -c safe.directory=C:/repo push origin HEAD
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git push
 ```
 
-All `git add` checks must remain unmatched by an `allow` rule; `git push` must
-remain `prompt`. Both optioned Git commands must report `APPROVAL_REQUIRED`.
-Execpolicy rules match exact argument prefixes, so the pre-tool hook rejects an
-optioned push and asks for the direct `git push` form instead of prompting every
-read-only `git -C ...` command.
+All `git add` checks must remain unmatched by an `allow` rule; direct `git push`
+and the invocation-scoped `git -c ... push` recovery must remain `prompt`. The
+two doctor checks with `-C` and `--git-dir` must report `APPROVAL_REQUIRED`.
+Execpolicy rules match exact argument prefixes, so the pre-tool hook lets direct
+`git -c ... push` reach its dedicated prompt rule, but rejects wrapped pushes and
+other optioned pushes instead of prompting every read-only `git -C ...` command.
 
 Also scan the diff for secrets, private local paths, absolute machine-specific
 paths, and accidentally tracked local Codex config.

@@ -24,6 +24,7 @@ POWERSHELL_EXECUTABLES = {
 }
 CMD_SHELL_EXECUTABLES = {"cmd", "cmd.exe"}
 ENV_OPTIONS_WITH_VALUE = {"-C", "-S", "-u", "--chdir", "--split-string", "--unset"}
+ENV_SPLIT_OPTIONS = {"-S", "--split-string"}
 POSIX_ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SHELL_PUNCTUATION_CHARS = "();<>|&\n"
 SHELL_WHITESPACE = " \t\r"
@@ -31,9 +32,12 @@ SHELL_WHITESPACE = " \t\r"
 
 @dataclass(frozen=True)
 class GitInvocation:
+    executable: str
     subcommand: str
     tail: tuple[str, ...]
     uses_global_options: bool
+    global_options: tuple[str, ...]
+    uses_wrapper: bool
 
 
 def split_shell_words(command: str) -> list[str]:
@@ -132,18 +136,85 @@ def next_command_start(tokens: list[str], index: int) -> int:
 
 def nested_shell_commands(tokens: list[str]) -> list[str]:
     commands: list[str] = []
-    for index, token in enumerate(tokens):
-        if not is_shell_executable(token):
+    for command_start in command_start_indices(tokens):
+        shell_index = command_executable_index(
+            tokens,
+            command_start,
+            stop_at_shell=True,
+        )
+        if shell_index >= len(tokens) or not is_shell_executable(tokens[shell_index]):
             continue
-        for option_index in range(index + 1, len(tokens)):
+        for option_index in range(shell_index + 1, len(tokens)):
             option = command_word(tokens[option_index]).lower()
-            if is_shell_command_flag(token, option) and option_index + 1 < len(tokens):
+            if is_shell_command_flag(
+                tokens[shell_index], option
+            ) and option_index + 1 < len(tokens):
                 commands.append(" ".join(tokens[option_index + 1 :]))
                 break
     return commands
 
 
-def command_executable_index(tokens: list[str], index: int) -> int:
+def command_start_indices(tokens: list[str]) -> list[int]:
+    starts: list[int] = []
+    at_command_start = True
+    for index, token in enumerate(tokens):
+        if is_shell_separator(token):
+            at_command_start = True
+            continue
+        if at_command_start:
+            starts.append(index)
+            at_command_start = False
+    return starts
+
+
+def nested_env_split_commands(tokens: list[str]) -> list[str]:
+    commands: list[str] = []
+    for command_start in command_start_indices(tokens):
+        env_index = command_executable_index(
+            tokens,
+            command_start,
+            stop_at_env=True,
+        )
+        if env_index >= len(tokens) or token_basename(tokens[env_index]) != "env":
+            continue
+        option_index = env_index + 1
+        while option_index < len(tokens):
+            env_token = command_word(tokens[option_index])
+            if not env_token or is_shell_separator(tokens[option_index]):
+                break
+            if POSIX_ENV_ASSIGNMENT.match(env_token):
+                option_index += 1
+                continue
+            option, separator, inline_value = env_token.partition("=")
+            if option in ENV_SPLIT_OPTIONS:
+                if separator:
+                    payload = inline_value
+                    trailing_index = option_index + 1
+                elif option_index + 1 < len(tokens):
+                    payload = command_word(tokens[option_index + 1])
+                    trailing_index = option_index + 2
+                else:
+                    break
+                trailing = command_tail_until_separator(tokens, trailing_index)
+                commands.append(" ".join(("env", payload, *trailing)))
+                break
+            if option in ENV_OPTIONS_WITH_VALUE:
+                option_index += 1 if separator else 2
+                continue
+            if env_token.startswith("-"):
+                option_index += 1
+                continue
+            break
+    return commands
+
+
+def command_executable_index(
+    tokens: list[str],
+    index: int,
+    *,
+    stop_at_env: bool = False,
+    stop_at_shell: bool = False,
+) -> int:
     while index < len(tokens):
         token = command_word(tokens[index])
         if POSIX_ENV_ASSIGNMENT.match(token):
@@ -151,7 +222,11 @@ def command_executable_index(tokens: list[str], index: int) -> int:
             continue
 
         executable = token_basename(token)
+        if stop_at_shell and is_shell_executable(token):
+            return index
         if executable == "env":
+            if stop_at_env:
+                return index
             index += 1
             while index < len(tokens):
                 env_token = command_word(tokens[index])
@@ -211,17 +286,22 @@ def git_invocations(command: str, *, depth: int = 0) -> list[GitInvocation]:
             if subcommand_index < len(tokens):
                 subcommand = command_word(tokens[subcommand_index]).lower()
                 if subcommand and not subcommand.startswith("-"):
+                    global_options = tuple(
+                        command_word(token)
+                        for token in tokens[first_argument_index:subcommand_index]
+                    )
                     invocations.append(
                         GitInvocation(
+                            executable=command_word(tokens[executable_index]).lower(),
                             subcommand=subcommand,
                             tail=tuple(
                                 command_tail_until_separator(
                                     tokens, subcommand_index + 1
                                 )
                             ),
-                            uses_global_options=(
-                                subcommand_index > first_argument_index
-                            ),
+                            uses_global_options=bool(global_options),
+                            global_options=global_options,
+                            uses_wrapper=(depth > 0 or executable_index != index),
                         )
                     )
             index = next_command_start(tokens, first_argument_index)
@@ -229,7 +309,8 @@ def git_invocations(command: str, *, depth: int = 0) -> list[GitInvocation]:
         at_command_start = False
         index += 1
 
-    for nested in nested_shell_commands(tokens):
+    nested_commands = nested_shell_commands(tokens) + nested_env_split_commands(tokens)
+    for nested in nested_commands:
         if nested and nested != command:
             invocations.extend(git_invocations(nested, depth=depth + 1))
     return invocations

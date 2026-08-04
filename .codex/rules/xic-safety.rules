@@ -39,6 +39,19 @@ prefix_rule(
 )
 
 prefix_rule(
+    pattern = ["git", "-c"],
+    decision = "prompt",
+    justification = "Per-invocation Git configuration can change trust, identity, or network behavior. Prompt while preserving the documented safe.directory recovery path.",
+    match = [
+        "git -c safe.directory=C:/repo push origin HEAD",
+        "git -c user.name=bot commit -m docs",
+    ],
+    not_match = [
+        "git -C C:/repo status --short",
+    ],
+)
+
+prefix_rule(
     pattern = ["git", "push"],
     decision = "prompt",
     justification = "Push only after explicit user request and current branch verification.",

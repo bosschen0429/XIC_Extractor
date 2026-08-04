@@ -303,6 +303,7 @@ def test_elevated_git_ownership_recovery_stays_invocation_scoped() -> None:
 
     assert "$xicRepoRoot = (Resolve-Path .).Path.Replace('\\', '/')" in settings
     assert 'git -c "safe.directory=$xicRepoRoot" add -- <task-files...>' in settings
+    assert 'git -c "safe.directory=$xicRepoRoot" push' in settings
     assert "不要寫入 global `safe.directory`" in settings
 
 
@@ -405,6 +406,7 @@ def test_git_add_has_no_blanket_allow_rule() -> None:
     rules = RULES_PATH.read_text(encoding="utf-8")
 
     assert 'pattern = ["git", "add"]' not in rules
+    assert 'decision = "prompt"' in _rule_block(("git", "-c"))
     assert 'decision = "prompt"' in _rule_block(("git", "push"))
 
 
@@ -467,6 +469,11 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
         + json.dumps("FOO=1 command git --git-dir C:\\repo\\.git push origin HEAD"),
         "Write-Host ready\ngit -C C:\\repo push origin HEAD",
         "pwsh -Command 'Write-Host ready\ngit -C C:\\repo push origin HEAD'",
+        'env -S "git -C C:\\repo push origin HEAD"',
+        'env --split-string="git -C C:\\repo push origin HEAD"',
+        'env -S "git push origin HEAD"',
+        'env -u CI -S "git -C C:\\repo push origin HEAD"',
+        'env -S "git -c safe.directory=C:/repo push origin HEAD"',
     ],
 )
 def test_pre_hook_rewrites_optioned_git_push_to_policy_visible_form(
@@ -486,6 +493,8 @@ def test_pre_hook_rewrites_optioned_git_push_to_policy_visible_form(
     [
         "git -C C:\\repo status --short",
         "env -u CI git -C C:\\repo status --short",
+        'env -S "git -C C:\\repo status --short"',
+        'env --split-string="git -C C:\\repo status --short"',
     ],
 )
 def test_pre_hook_preserves_read_only_git_global_option_commands(
@@ -503,6 +512,52 @@ def test_pre_hook_leaves_direct_git_push_to_execpolicy_prompt() -> None:
     assert completed.returncode == 0
     assert completed.stdout == ""
     assert 'decision = "prompt"' in _rule_block(("git", "push"))
+
+
+def test_pre_hook_routes_invocation_scoped_git_config_to_prompt_rule() -> None:
+    completed = _run_pre_hook("git -c safe.directory=C:/repo push origin HEAD")
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert 'decision = "prompt"' in _rule_block(("git", "-c"))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git -c safe.directory=C:/repo reset --hard",
+        "git -c safe.directory=C:/repo checkout -- example.txt",
+        'env --split-string="git -C C:\\repo reset --hard"',
+        'env -S "git -C C:\\repo checkout -- example.txt"',
+        'env -S "git -C C:\\repo clean -fd"',
+        'env -S "git commit -am docs"',
+    ],
+)
+def test_pre_hook_enforces_git_policy_inside_env_split_string(command: str) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'env -S "git -C C:\\repo clean -nfd"',
+        'env -S "git commit -m docs"',
+        'rg -n "env -S git -C C:\\repo push origin HEAD" docs',
+        'Write-Host env -S "git -C C:\\repo push origin HEAD"',
+        'rg -n env -S "git -C C:\\repo push origin HEAD" docs',
+        'Write-Host bash -lc "git -C C:\\repo push origin HEAD"',
+        "env -S",
+    ],
+)
+def test_pre_hook_preserves_safe_env_split_string_forms(command: str) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
 
 
 WRAPPERS = [
