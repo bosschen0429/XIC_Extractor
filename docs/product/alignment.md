@@ -137,6 +137,11 @@ valley, width, shoulder, or intensity threshold. Missing or poor landmarks,
 sparse anchors, unsupported interpolation/extrapolation, and predicted interval
 crossing fail closed.
 
+When every track is outside the policy's bounded interpolation/extrapolation
+coverage, the sample is `out_of_model`. When at least one track is predictable
+but another competitor is unavailable, that competitor cannot be excluded and
+the sample is instead `technical_unassessable`.
+
 For one sample, resolved hypotheses may occupy the first track, the second
 track, both through different hypotheses, or neither. A candidate is
 `uniquely_assigned` only when exactly one prediction interval contains it and

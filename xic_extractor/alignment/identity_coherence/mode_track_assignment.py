@@ -966,6 +966,7 @@ def reinforce_mode_track_model_set(
     if not additions:
         return model_set
     updated_tracks: list[ModeTrackModel] = []
+    anchor_added = False
     for track in model_set.tracks:
         new_anchors = additions.get(track.group_hypothesis_id, [])
         anchors = list(track.anchors)
@@ -982,6 +983,7 @@ def reinforce_mode_track_model_set(
                     "reinforcement would assign two anchors to one track injection"
                 )
             anchors.append(anchor)
+            anchor_added = True
         updated_tracks.append(
             ModeTrackModel(
                 group_hypothesis_id=track.group_hypothesis_id,
@@ -989,6 +991,8 @@ def reinforce_mode_track_model_set(
                 track=track.track,
             )
         )
+    if not anchor_added:
+        return model_set
     lineage_refs = tuple(
         sorted(
             {
@@ -1258,7 +1262,8 @@ def _global_no_write_state(
         )
         state: AssignmentState = (
             "technical_unassessable"
-            if statuses.intersection({"sparse_anchors", "trajectory_unassessable"})
+            if len(unavailable) < len(predictions)
+            or statuses.intersection({"sparse_anchors", "trajectory_unassessable"})
             else "out_of_model"
         )
         return state, reasons

@@ -716,6 +716,54 @@ def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
     assert "trajectory_poor_landmarks" in poor_result.assignments[0].reason_codes
 
 
+def test_mixed_prediction_availability_is_technical_unassessable(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    direct = scenario.candidate(7.87, direct_support=True)
+    direct_batch = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(direct,),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+    reinforced = reinforce_mode_track_model_set(
+        model_set=scenario.models,
+        assignment_batch=direct_batch,
+    )
+    restrictive_models = fit_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
+        family_context=scenario.family_context,
+        direct_support_anchors=tuple(
+            anchor for track in reinforced.tracks for anchor in track.anchors
+        ),
+        policy=ModeTrackTrajectoryPolicy(
+            trajectory_policy_version="piecewise-linear-injection-local-v1",
+            band_policy_version="explicit-half-width-v1",
+            prediction_half_width_min=0.1,
+            max_interpolation_gap=1,
+            max_extrapolation_gap=2,
+        ),
+    )
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=restrictive_models,
+        candidates=(direct,),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    assignment = result.assignments[0]
+    assert {item.status for item in assignment.prediction_assessments} == {
+        "predicted",
+        "unsupported_interpolation",
+    }
+    assert assignment.state == "technical_unassessable"
+    assert "unsupported_interpolation" in assignment.reason_codes
+
+
 def test_only_unique_direct_support_reinforces_one_track(tmp_path: Path) -> None:
     scenario = _scenario(tmp_path)
     direct = scenario.candidate(7.87, direct_support=True)
@@ -761,6 +809,38 @@ def test_only_unique_direct_support_reinforces_one_track(tmp_path: Path) -> None
         )
         == scenario.models
     )
+
+
+def test_duplicate_direct_support_reinforcement_is_idempotent(tmp_path: Path) -> None:
+    scenario = _scenario(tmp_path)
+    direct = scenario.candidate(7.87, direct_support=True)
+    first_batch = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(direct,),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+    first = reinforce_mode_track_model_set(
+        model_set=scenario.models,
+        assignment_batch=first_batch,
+    )
+    replay_batch = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=first,
+        candidates=(direct,),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    replayed = reinforce_mode_track_model_set(
+        model_set=first,
+        assignment_batch=replay_batch,
+    )
+
+    assert replayed is first
+    assert replayed.model_set_id == first.model_set_id
+    assert replayed.lineage_refs == first.lineage_refs
 
 
 def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
