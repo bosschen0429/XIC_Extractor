@@ -34,14 +34,14 @@ EXPECTED_HOOKS = {
 EXPECTED_MATCHERS = {
     "UserPromptSubmit": None,
     "PreToolUse": "Bash|apply_patch|Edit|Write",
-    "PostToolUse": "Bash|apply_patch|Edit|Write",
+    "PostToolUse": "Bash",
 }
 EXPECTED_GOVERNANCE_ROWS = {
     "docs_lifecycle_retirement",
     "destructive_git_filesystem",
     "raw_background_launch",
     "execution_affecting_config",
-    "product_public_surface",
+
     "pr_validation_gate",
 }
 ALLOWED_MECHANISMS = {
@@ -622,7 +622,7 @@ def test_pre_hook_does_not_cross_correlate_unrelated_raw_text() -> None:
     assert completed.stdout == ""
 
 
-def test_pre_hook_emits_one_json_object_for_overlapping_advisories() -> None:
+def test_pre_hook_emits_config_advisory_for_agent_contract() -> None:
     completed = subprocess.run(
         [sys.executable, str(HOOKS_DIR / "xic_pre_tool_guard.py")],
         input=json.dumps(
@@ -650,7 +650,7 @@ def test_pre_hook_emits_one_json_object_for_overlapping_advisories() -> None:
     output = json.loads(completed.stdout)
     message = output["hookSpecificOutput"]["additionalContext"]
     assert "Execution-affecting XIC agent config" in message
-    assert "Product/public surface may be edited" in message
+
 
 
 def test_governance_index_closes_repository_side_residuals() -> None:

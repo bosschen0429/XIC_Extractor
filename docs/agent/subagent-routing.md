@@ -481,14 +481,11 @@ shared helpers and public contracts before mechanical writer churn, and report
 the strongest evidence actually checked: CI, focused tests, 8RAW parity, 85RAW
 parity, targeted benchmark, manual EIC/MS2 review, or `diagnostic_only`.
 
-Before opening, updating, or marking a PR ready, the main agent must run the
-PR Verification Gate in `docs/agent/execution-gates.md` from the active
-worktree. Do not replace the shard gate with a monolithic full-suite pytest run.
-
-Any real lint, typecheck, or test failure is a blocker and must be fixed before
-PR. If the sandbox blocks dependency resolution, executable spawn, or DLL
-loading, rerun the same command with appropriate approval rather than replacing
-it with a narrower check. Record the exact commands and results in the closeout
+The main agent follows `docs/agent/execution-gates.md#pr-verification-gate`.
+Verification is commit-SHA scoped: rerun checks affected by a changed HEAD, but
+do not repeat an unchanged head's evidence for each push, PR update, or review
+transition. Required hosted checks on the final remote SHA are authoritative;
+record focused local checks and any unavailable runtime layer in the closeout
 surface.
 
 ## Acceptance Labels

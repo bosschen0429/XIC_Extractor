@@ -10,7 +10,6 @@ ROOT = Path(__file__).resolve().parents[3]
 HOOKS = ROOT / ".codex" / "hooks"
 sys.path.insert(0, str(HOOKS))
 
-from xic_hook_policy import PRODUCT_SURFACE_PATHS, mentions_any_path  # noqa: E402
 
 
 def run_hook(
@@ -486,119 +485,6 @@ def main() -> int:
         "Background RAW launch",
     )
 
-    pre_payload = {
-        "hook_event_name": "PreToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "Set-Content xic_extractor\\output\\schema.py '# edit'",
-        },
-    }
-    assert_contains(
-        run_hook("xic_pre_tool_guard.py", pre_payload),
-        "Product/public surface may be edited",
-    )
-
-    apply_patch_payload = {
-        "hook_event_name": "PreToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": "*** Update File: xic_extractor/signal_processing.py\n",
-        },
-    }
-    assert_contains(
-        run_hook("xic_pre_tool_guard.py", apply_patch_payload),
-        "Product/public surface may be edited",
-    )
-
-    status_index_payload = {
-        "hook_event_name": "PreToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": (
-                "*** Update File: docs/superpowers/validation/"
-                "productization_status_index_v1.tsv\n"
-            ),
-        },
-    }
-    assert_contains(
-        run_hook("xic_pre_tool_guard.py", status_index_payload),
-        "Product/public surface may be edited",
-    )
-
-    post_subdir_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": "docs",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "Set-Content ..\\xic_extractor\\output\\schema.py '# edit'",
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    assert_contains(
-        run_hook("xic_post_tool_guard.py", post_subdir_payload),
-        "productization control plane",
-    )
-
-    post_apply_patch_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": "*** Update File: scripts/run_any_public_cli.py\n",
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    assert_contains(
-        run_hook("xic_post_tool_guard.py", post_apply_patch_payload),
-        "productization control plane",
-    )
-
-    post_status_index_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": (
-                "*** Update File: docs/superpowers/validation/"
-                "productization_status_index_v1.tsv\n"
-            ),
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    assert_contains(
-        run_hook(
-            "xic_post_tool_guard.py",
-            post_status_index_payload,
-            env_extra={
-                "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                    ["docs/superpowers/validation/productization_status_index_v1.tsv"]
-                ),
-            },
-        ),
-        "productization control plane",
-    )
-
     non_product_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",
@@ -739,29 +625,6 @@ def main() -> int:
             "successful git diff string response emitted git lock warning"
         )
 
-    real_git_lock_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "git status --short",
-        },
-        "tool_response": {
-            "stdout": "",
-            "stderr": (
-                "fatal: Unable to create '.git/index.lock': File exists.\n"
-                "Another git process seems to be running in this repository."
-            ),
-        },
-    }
-    assert_contains(
-        run_hook("xic_post_tool_guard.py", real_git_lock_payload),
-        "Git lock/ref-lock friction detected",
-    )
-
     git_commit_autostage_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",
@@ -891,32 +754,6 @@ def main() -> int:
         "git commit with -a/--all or pathspec is blocked",
     )
 
-    git_commit_docs_guard_payload = {
-        "hook_event_name": "PreToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "git commit -m docs",
-        },
-    }
-    assert_contains(
-        run_hook(
-            "xic_pre_tool_guard.py",
-            git_commit_docs_guard_payload,
-            env_extra={
-                "XIC_DOCS_PLACEMENT_GUARD_EXIT_CODE": "1",
-                "XIC_DOCS_PLACEMENT_GUARD_STDOUT": (
-                    "docs placement guard failed:\n"
-                    "- docs/superpowers/plans/example.md: missing marker"
-                ),
-            },
-        ),
-        "Docs placement guard failed before git commit",
-    )
-
     git_add_docs_guard_payload = {
         "hook_event_name": "PostToolUse",
         "turn_id": "fixture",
@@ -929,20 +766,7 @@ def main() -> int:
         },
         "tool_response": {"stdout": "", "stderr": ""},
     }
-    assert_contains(
-        run_hook(
-            "xic_post_tool_guard.py",
-            git_add_docs_guard_payload,
-            env_extra={
-                "XIC_DOCS_PLACEMENT_GUARD_EXIT_CODE": "1",
-                "XIC_DOCS_PLACEMENT_GUARD_STDOUT": (
-                    "docs placement guard failed:\n"
-                    "- docs/superpowers/plans/example.md: missing marker"
-                ),
-            },
-        ),
-        "Docs placement guard failed after git add",
-    )
+    assert_hook_silent("xic_post_tool_guard.py", git_add_docs_guard_payload)
 
     git_add_code_payload = {
         "hook_event_name": "PostToolUse",
@@ -1065,193 +889,6 @@ def main() -> int:
     )
     if result.stdout.strip():
         raise AssertionError("unrelated write emitted ambient product dirty warning")
-
-    product_with_control_plane_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": (
-                "*** Update File: xic_extractor/output/schema.py\n"
-                "*** Update File: docs/superpowers/plans/"
-                "2026-06-15-productization-control-plane.md\n"
-            ),
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    assert_contains(
-        run_hook(
-            "xic_post_tool_guard.py",
-            product_with_control_plane_payload,
-            env_extra={
-                "XIC_POST_TOOL_GUARD_BRANCH": "codex/docs-cleanup",
-                "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                    [
-                        "xic_extractor/output/schema.py",
-                        "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-                    ]
-                ),
-            },
-        ),
-        "active branch handoff",
-    )
-
-    product_with_control_plane_and_handoff_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": (
-                "*** Update File: xic_extractor/output/schema.py\n"
-                "*** Update File: docs/superpowers/plans/"
-                "2026-06-15-productization-control-plane.md\n"
-                "*** Update File: docs/superpowers/handoffs/current/"
-                "codex-example-branch-productization.md\n"
-            ),
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(product_with_control_plane_and_handoff_payload),
-        cwd=ROOT,
-        env={
-            **os.environ,
-            "XIC_POST_TOOL_GUARD_HANDOFF_LINE_COUNT": "40",
-            "XIC_POST_TOOL_GUARD_BRANCH": "codex/example-branch",
-            "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                [
-                    "xic_extractor/output/schema.py",
-                    "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-                    "docs/superpowers/handoffs/current/codex-example-branch-productization.md",
-                ]
-            ),
-        },
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError(
-            "product/control-plane edit with handoff edit emitted warning"
-        )
-
-    product_with_control_plane_and_default_local_handoff_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": (
-                "*** Update File: xic_extractor/output/schema.py\n"
-                "*** Update File: docs/superpowers/plans/"
-                "2026-06-15-productization-control-plane.md\n"
-                "*** Update File: docs/superpowers/handoffs/current/"
-                "ACTIVE.local.md\n"
-            ),
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(product_with_control_plane_and_default_local_handoff_payload),
-        cwd=ROOT,
-        env={
-            **os.environ,
-            "XIC_POST_TOOL_GUARD_HANDOFF_LINE_COUNT": "40",
-            "XIC_POST_TOOL_GUARD_BRANCH": "codex/example-branch",
-            "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                [
-                    "xic_extractor/output/schema.py",
-                    "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-                    "docs/superpowers/handoffs/current/ACTIVE.local.md",
-                ]
-            ),
-        },
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError(
-            "product/control-plane edit with ACTIVE.local handoff emitted warning"
-        )
-
-    assert_contains(
-        run_hook(
-            "xic_post_tool_guard.py",
-            product_with_control_plane_and_handoff_payload,
-            env_extra={
-                "XIC_POST_TOOL_GUARD_HANDOFF_LINE_COUNT": "250",
-                "XIC_POST_TOOL_GUARD_BRANCH": "codex/example-branch",
-                "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                    [
-                        "xic_extractor/output/schema.py",
-                        "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-                        "docs/superpowers/handoffs/current/codex-example-branch-productization.md",
-                    ]
-                ),
-            },
-        ),
-        "codex-example-branch-productization.md is 250 lines",
-    )
-
-    product_with_control_plane_and_anchor_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": (
-                "*** Update File: xic_extractor/output/schema.py\n"
-                "*** Update File: docs/superpowers/plans/"
-                "2026-06-15-productization-control-plane.md\n"
-                "*** Update File: docs/superpowers/productization/status/"
-                "cc-framework-improvements-productization.md\n"
-            ),
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    assert_contains(
-        run_hook(
-            "xic_post_tool_guard.py",
-            product_with_control_plane_and_anchor_payload,
-            env_extra={
-                "XIC_POST_TOOL_GUARD_BRANCH": "codex/docs-cleanup",
-                "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                    [
-                        "xic_extractor/output/schema.py",
-                        "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-                        "docs/superpowers/productization/status/cc-framework-improvements-productization.md",
-                    ]
-                ),
-            },
-        ),
-        "Productization status anchors do not satisfy",
-    )
-
-    for path in (
-        "docs/user/targeted-extraction.md",
-        "docs/superpowers/validation/productization_status_index_v1.tsv",
-        "scripts/run_new_cli.py",
-        "xic_extractor/extractor.py",
-        "xic_extractor/signal_processing.py",
-        "..\\xic_extractor\\output\\schema.py",
-    ):
-        if not mentions_any_path(path, PRODUCT_SURFACE_PATHS):
-            raise AssertionError(f"public surface path did not match: {path}")
 
     return 0
 

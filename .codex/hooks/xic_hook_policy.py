@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import os
-import re
 import shlex
-import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,104 +10,13 @@ if str(ROOT) not in sys.path:
 
 from tools.diagnostics import docs_policy as _doc_policy  # noqa: E402
 
-CLOSEOUT_DIR = _doc_policy.CLOSEOUT_DIR
 CONTROL_PLANE_PATH = _doc_policy.CONTROL_PLANE_PATH
-DEFAULT_LOCAL_ACTIVE_HANDOFF_PATH = _doc_policy.DEFAULT_LOCAL_ACTIVE_HANDOFF_PATH
-DOC_CANONICAL_OWNER_DIRS = _doc_policy.DOC_CANONICAL_OWNER_DIRS
-DOC_CANONICAL_OWNER_FILES = _doc_policy.DOC_CANONICAL_OWNER_FILES
-DOC_EXIT_RULE_MARKER = _doc_policy.DOC_EXIT_RULE_MARKER
-DOC_KIND_MARKER = _doc_policy.DOC_KIND_MARKER
-DOC_KIND_VALUES = _doc_policy.DOC_KIND_VALUES
-DOC_LIFECYCLES_REQUIRING_EXIT_RULE = _doc_policy.DOC_LIFECYCLES_REQUIRING_EXIT_RULE
-DOC_LIFECYCLE_MARKER = _doc_policy.DOC_LIFECYCLE_MARKER
-DOC_LIFECYCLE_VALUES = _doc_policy.DOC_LIFECYCLE_VALUES
-DOC_PLACEMENTS_REQUIRING_REPO_OWNER = (
-    _doc_policy.DOC_PLACEMENTS_REQUIRING_REPO_OWNER
-)
-DOC_PLACEMENT_MARKER = _doc_policy.DOC_PLACEMENT_MARKER
-DOC_PLACEMENT_VALUES = _doc_policy.DOC_PLACEMENT_VALUES
-DOC_REPO_OWNER_MARKER = _doc_policy.DOC_REPO_OWNER_MARKER
-DOC_ROUTING_GOVERNANCE_PREFIXES = _doc_policy.DOC_ROUTING_GOVERNANCE_PREFIXES
-DOC_ROUTING_HANDOFF_PREFIX = _doc_policy.DOC_ROUTING_HANDOFF_PREFIX
-DOC_ROUTING_LEGACY_HISTORY_PREFIXES = _doc_policy.DOC_ROUTING_LEGACY_HISTORY_PREFIXES
-DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES = (
-    _doc_policy.DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES
-)
-DOC_ROUTING_SCAN_PREFIXES = _doc_policy.DOC_ROUTING_SCAN_PREFIXES
-DOC_ROUTING_AUTHORITY_REFERRER_PATHS = (
-    _doc_policy.DOC_ROUTING_AUTHORITY_REFERRER_PATHS
-)
-DOC_ROUTING_SPECS_INDEX_PATH = _doc_policy.DOC_ROUTING_SPECS_INDEX_PATH
-DOC_ROUTING_TOPIC_PREFIX = _doc_policy.DOC_ROUTING_TOPIC_PREFIX
-DOC_ROUTING_VALIDATION_PREFIXES = _doc_policy.DOC_ROUTING_VALIDATION_PREFIXES
-HANDOFF_ARCHIVE_DIR = _doc_policy.HANDOFF_ARCHIVE_DIR
 HANDOFF_CURRENT_DIR = _doc_policy.HANDOFF_CURRENT_DIR
-HIGH_RISK_DOC_DIRS = _doc_policy.HIGH_RISK_DOC_DIRS
-MECHANICAL_ADJUDICATION_INDEX_REL = _doc_policy.MECHANICAL_ADJUDICATION_INDEX_REL
-MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS = (
-    _doc_policy.MISPLACED_HANDOFF_PUBLIC_RECORD_PATTERNS
-)
-NON_REPO_DOC_PLACEMENTS = _doc_policy.NON_REPO_DOC_PLACEMENTS
-PRIVATE_HISTORY_SIGNALS = _doc_policy.PRIVATE_HISTORY_SIGNALS
 PRODUCTIZATION_AUTHORITY_MANIFEST_REL = (
     _doc_policy.PRODUCTIZATION_AUTHORITY_MANIFEST_REL
 )
-PRODUCTIZATION_SCHEMA_REL = _doc_policy.PRODUCTIZATION_SCHEMA_REL
-PRODUCTIZATION_STATUS_ANCHOR_PATH = _doc_policy.PRODUCTIZATION_STATUS_ANCHOR_PATH
-PRODUCTIZATION_STATUS_HANDOFF_PATH = _doc_policy.PRODUCTIZATION_STATUS_HANDOFF_PATH
 PRODUCTIZATION_STATUS_INDEX_REL = _doc_policy.PRODUCTIZATION_STATUS_INDEX_REL
-classify_doc = _doc_policy.classify_doc
-classify_doc_path = _doc_policy.classify_doc_path
-doc_exit_rule_value = _doc_policy.doc_exit_rule_value
-doc_kind_value = _doc_policy.doc_kind_value
-doc_lifecycle_requires_exit_rule = _doc_policy.doc_lifecycle_requires_exit_rule
-doc_lifecycle_value = _doc_policy.doc_lifecycle_value
-doc_placement_is_non_repo = _doc_policy.doc_placement_is_non_repo
-doc_placement_requires_repo_owner = _doc_policy.doc_placement_requires_repo_owner
-doc_placement_value = _doc_policy.doc_placement_value
-has_private_history_signal = _doc_policy.has_private_history_signal
-infer_doc_kind_from_path = _doc_policy.infer_doc_kind_from_path
-is_branch_closeout_summary_path = _doc_policy.is_branch_closeout_summary_path
-is_canonical_doc_owner_path = _doc_policy.is_canonical_doc_owner_path
-is_high_risk_repo_doc_path = _doc_policy.is_high_risk_repo_doc_path
-is_lifecycle_managed_doc_path = _doc_policy.is_lifecycle_managed_doc_path
-is_markdown_path = _doc_policy.is_markdown_path
-is_misplaced_handoff_public_record_path = (
-    _doc_policy.is_misplaced_handoff_public_record_path
-)
-is_public_handoff_archive_evidence_path = (
-    _doc_policy.is_public_handoff_archive_evidence_path
-)
-is_repo_doc_path = _doc_policy.is_repo_doc_path
-marker_value = _doc_policy.marker_value
 normalize_path_text = _doc_policy.normalize_path_text
-path_is_under = _doc_policy.path_is_under
-repo_owner_value = _doc_policy.repo_owner_value
-
-HANDOFF_MAX_LINES = 200
-
-PRODUCT_SURFACE_PATHS = [
-    "README.md",
-    "AGENTS.md",
-    "docs/architecture-contract.md",
-    "docs/product/",
-    "docs/user/",
-    "docs/agent/product-validation-contract.md",
-    "docs/agent/architecture-public-contracts.md",
-    "docs/superpowers/schemas/",
-    "docs/superpowers/plans/",
-    "docs/superpowers/validation/productization_status_index_v1.tsv",
-    "xic_extractor/extractor.py",
-    "xic_extractor/signal_processing.py",
-    "xic_extractor/output/",
-    "xic_extractor/alignment/",
-    "xic_extractor/extraction/",
-    "xic_extractor/peak_detection/",
-    "xic_extractor/configuration/",
-    "xic_extractor/settings_schema.py",
-    "scripts/",
-    "gui/",
-]
 GIT_GLOBAL_OPTIONS_WITH_VALUE = {
     "-C",
     "-c",
@@ -148,63 +53,6 @@ POWERSHELL_EXECUTABLES = {
     "pwsh.exe",
 }
 CMD_EXECUTABLES = {"cmd", "cmd.exe"}
-
-
-@dataclass(frozen=True)
-class CommandResult:
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-def path_match_text(text: str) -> str:
-    normalized = normalize_path_text(text)
-    return normalized.replace("../", "").replace("./", "")
-
-
-def mentions_path(text: str, path: str) -> bool:
-    normalized_path = normalize_path_text(path).lstrip("./")
-    return normalized_path in path_match_text(text)
-
-
-def mentions_any_path(text: str, paths: list[str]) -> bool:
-    return any(mentions_path(text, path) for path in paths)
-
-
-def touches_product_surface(paths: list[str]) -> bool:
-    return any(
-        path_is_under(path, root)
-        for path in paths
-        for root in PRODUCT_SURFACE_PATHS
-    )
-
-
-def touches_control_plane(paths: list[str]) -> bool:
-    return any(path_is_under(path, CONTROL_PLANE_PATH) for path in paths)
-
-
-def touches_handoff(paths: list[str]) -> bool:
-    return any(path_is_under(path, HANDOFF_CURRENT_DIR) for path in paths)
-
-
-def is_productization_status_handoff(path: str) -> bool:
-    return path_is_under(path, PRODUCTIZATION_STATUS_HANDOFF_PATH)
-
-
-def branch_slug(branch: str) -> str:
-    return re.sub(r"[^A-Za-z0-9]+", "-", branch.strip().lower()).strip("-")
-
-
-def touched_handoff_paths(paths: list[str]) -> list[str]:
-    return [
-        normalize_path_text(path).lstrip("./")
-        for path in paths
-        if path_is_under(path, HANDOFF_CURRENT_DIR)
-    ]
-
-
-def is_git_add_command(command: str) -> bool:
-    return bool(git_subcommand_tails(command, "add"))
 
 
 def is_git_commit_command(command: str) -> bool:
@@ -419,57 +267,3 @@ def is_shell_command_event(tool_name: str, command: str) -> bool:
     if any(name in lowered for name in ("apply_patch", "edit", "write")):
         return False
     return True
-
-
-def repo_root_from_cwd(cwd: str) -> str:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd or ".",
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return cwd or "."
-    if result.returncode != 0:
-        return cwd or "."
-    return result.stdout.strip() or cwd or "."
-
-
-def run_docs_placement_guard(cwd: str) -> CommandResult:
-    override = os.environ.get("XIC_DOCS_PLACEMENT_GUARD_EXIT_CODE")
-    if override is not None:
-        try:
-            returncode = int(override)
-        except ValueError:
-            returncode = 1
-        return CommandResult(
-            returncode=returncode,
-            stdout=os.environ.get("XIC_DOCS_PLACEMENT_GUARD_STDOUT", ""),
-            stderr=os.environ.get("XIC_DOCS_PLACEMENT_GUARD_STDERR", ""),
-        )
-
-    root = repo_root_from_cwd(cwd)
-    script = os.path.join(root, "tools", "diagnostics", "docs_placement_guard.py")
-    try:
-        result = subprocess.run(
-            [sys.executable, script, "--staged"],
-            cwd=root,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return CommandResult(
-            returncode=1,
-            stdout="",
-            stderr=f"docs placement guard could not run: {exc}",
-        )
-    return CommandResult(
-        returncode=result.returncode,
-        stdout=result.stdout,
-        stderr=result.stderr,
-    )

@@ -7,16 +7,11 @@ import shlex
 import sys
 
 from xic_hook_policy import (
-    PRODUCT_SURFACE_PATHS,
-    PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
-    PRODUCTIZATION_STATUS_INDEX_REL,
     git_commit_uses_autostage_or_pathspec,
     is_git_commit_command,
     is_git_executable,
     is_shell_command_event,
     is_shell_command_flag,
-    mentions_any_path,
-    run_docs_placement_guard,
     skip_git_global_options,
 )
 
@@ -73,16 +68,8 @@ EXEC_CONFIG_PATHS = [
     "docs/agent/",
 ]
 
-WRITE_COMMAND = re.compile(
-    r"\b(apply_patch|Set-Content|Add-Content|Out-File|New-Item|Move-Item|Remove-Item|Copy-Item|"
-    r"python\s+-c|python\s+-m|uv\s+run\s+python|ruff\s+check\s+--fix)\b",
-    re.IGNORECASE,
-)
-
-
 def emit(payload: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False))
-
 
 def deny(reason: str) -> None:
     emit(
@@ -95,7 +82,6 @@ def deny(reason: str) -> None:
         }
     )
 
-
 def context(message: str) -> None:
     emit(
         {
@@ -106,13 +92,6 @@ def context(message: str) -> None:
         }
     )
 
-
-def guard_output_text(result: object) -> str:
-    stdout = getattr(result, "stdout", "").strip()
-    stderr = getattr(result, "stderr", "").strip()
-    return "\n".join(part for part in (stdout, stderr) if part)
-
-
 def get_command(event: dict[str, object]) -> str:
     tool_input = event.get("tool_input")
     if isinstance(tool_input, dict):
@@ -120,7 +99,6 @@ def get_command(event: dict[str, object]) -> str:
         if isinstance(command, str):
             return command
     return ""
-
 
 def text_from_value(value: object) -> str:
     if isinstance(value, str):
@@ -131,14 +109,11 @@ def text_from_value(value: object) -> str:
         return "\n".join(text_from_value(item) for item in value)
     return ""
 
-
 def tool_payload_text(event: dict[str, object]) -> str:
     return text_from_value(event.get("tool_input"))
 
-
 def executable_name(token: str) -> str:
     return token.replace("\\", "/").rsplit("/", 1)[-1].lower()
-
 
 def wrapped_shell_payload(command: str) -> str | None:
     try:
@@ -171,7 +146,6 @@ def wrapped_shell_payload(command: str) -> str | None:
             return " ".join(tokens[index + 1 :])
     return None
 
-
 def shell_command_segments(payload: str) -> list[str]:
     try:
         lexer = shlex.shlex(
@@ -199,7 +173,6 @@ def shell_command_segments(payload: str) -> list[str]:
         segments.append(" ".join(current))
     return segments
 
-
 def strip_shell_control_prefixes(segment: str) -> str:
     try:
         tokens = shlex.split(segment, posix=True)
@@ -208,7 +181,6 @@ def strip_shell_control_prefixes(segment: str) -> str:
     while tokens and tokens[0].lower() in SHELL_CONTROL_PREFIXES:
         tokens = tokens[1:]
     return " ".join(tokens)
-
 
 def normalize_wrapped_git_invocation(segment: str) -> str:
     try:
@@ -242,7 +214,6 @@ def normalize_wrapped_git_invocation(segment: str) -> str:
     subcommand_index = skip_git_global_options(tokens, 1)
     return " ".join(("git", *tokens[subcommand_index:]))
 
-
 def wrapped_git_clean_is_forced(segment: str) -> bool:
     try:
         tokens = shlex.split(normalize_wrapped_git_invocation(segment), posix=True)
@@ -264,7 +235,6 @@ def wrapped_git_clean_is_forced(segment: str) -> bool:
             return True
     return False
 
-
 def contains_background_process(segment: str) -> bool:
     try:
         tokens = shlex.split(segment, posix=True)
@@ -276,7 +246,6 @@ def contains_background_process(segment: str) -> bool:
         if index == 0 or tokens[index - 1].lower() in SHELL_CONTROL_PREFIXES:
             return True
     return False
-
 
 def has_raw_background_launch(segments: list[str]) -> bool:
     raw_variables: set[str] = set()
@@ -299,7 +268,6 @@ def has_raw_background_launch(segments: list[str]) -> bool:
             return True
     return False
 
-
 def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
     payload = wrapped_shell_payload(command)
     if payload is None:
@@ -313,15 +281,6 @@ def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
     for segment in segments:
         expanded.extend(wrapped_command_segments(segment, depth=depth + 1))
     return expanded
-
-
-def is_write_like(event: dict[str, object], command: str, payload: str) -> bool:
-    tool_name = str(event.get("tool_name", "")).lower()
-    if any(name in tool_name for name in ("apply_patch", "edit", "write")):
-        return True
-    combined = f"{command}\n{payload}"
-    return bool(WRITE_COMMAND.search(combined))
-
 
 def main() -> int:
     try:
@@ -362,17 +321,8 @@ def main() -> int:
     ):
         if git_commit_uses_autostage_or_pathspec(command):
             deny(
-                "git commit with -a/--all or pathspec is blocked because it can bypass the staged docs placement guard. Run explicit git add first, review the staged diff, then commit."
+                "git commit with -a/--all or pathspec is blocked because it can sweep unrelated changes into the commit. Stage explicit paths, review the staged diff, then commit."
             )
-            return 0
-        cwd = str(event.get("cwd", "."))
-        guard_result = run_docs_placement_guard(cwd)
-        if guard_result.returncode != 0:
-            details = guard_output_text(guard_result)
-            reason = "Docs placement guard failed before git commit."
-            if details:
-                reason = f"{reason}\n{details}"
-            deny(reason)
             return 0
 
     advisory_messages: list[str] = []
@@ -380,21 +330,6 @@ def main() -> int:
     if any(path.replace("\\", "/") in normalized for path in EXEC_CONFIG_PATHS):
         advisory_messages.append(
             "Execution-affecting XIC agent config may be edited. After the change, run hook/script smoke checks, git diff --check, and a secret/local-path scan before closeout."
-        )
-
-    combined_text = f"{command}\n{payload}"
-    if is_write_like(event, command, payload) and mentions_any_path(
-        combined_text, PRODUCT_SURFACE_PATHS
-    ):
-        advisory_messages.append(
-            "Product/public surface may be edited. If this changes a maturity tier, output schema, "
-            "review/replay behavior, selected area/counting, or matrix authority, consult the "
-            "productization control plane compatibility index at "
-            "docs/superpowers/plans/2026-06-15-productization-control-plane.md; update mutable lane "
-            f"state in {PRODUCTIZATION_STATUS_INDEX_REL}, writer authority in "
-            f"{PRODUCTIZATION_AUTHORITY_MANIFEST_REL}, and readiness/promotion rules in "
-            "docs/agent/product-validation-contract.md as applicable. Change the compatibility index only "
-            "when a stable lane key or owner route changes. If none changes, say so explicitly."
         )
 
     if advisory_messages:

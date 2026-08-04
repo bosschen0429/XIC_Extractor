@@ -25,19 +25,9 @@ bugs until the stack boundary and artifact ownership have been mapped.
 
 Include these when relevant:
 
-- PR CI-equivalent gate before opening, updating, or marking a PR ready:
-
-  ```powershell
-  $env:UV_CACHE_DIR='.uv-cache'; uv run ruff check xic_extractor tests
-  $env:UV_CACHE_DIR='.uv-cache'; uv run mypy xic_extractor
-  $env:UV_CACHE_DIR='.uv-cache'; uv run pytest -v --tb=short -x
-  ```
-
-  Treat real lint, typecheck, or test failures as blockers. Fix them and rerun
-  the failed CI-equivalent gate before PR. If the sandbox blocks dependency
-  resolution, executable spawn, or DLL loading, rerun the same command with
-  approval instead of substituting a narrower check.
-- readiness label: `diagnostic_only`, `shadow_ready`, `production_candidate`,
+- verification evidence is scoped to the checked commit SHA. Follow
+  `docs/agent/execution-gates.md#pr-verification-gate`; do not repeat hosted CI
+  locally only because the unchanged HEAD is pushed, opened, or marked ready;- readiness label: `diagnostic_only`, `shadow_ready`, `production_candidate`,
   `production_ready`, or `inconclusive`;
 - validation tier: synthetic, focused tests, 8RAW, 85RAW, targeted benchmark,
   manual EIC/MS2 review, or CI shard;

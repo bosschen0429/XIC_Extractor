@@ -65,27 +65,14 @@ The hook set is intentionally small:
   active branch handoff, then rewrite and prune that snapshot instead of
   appending chronological notes. They must not direct every branch to the same
   productization compatibility lane registry.
-- `PreToolUse`: blocks wrapped forms of destructive Git commands whose direct
-  prefix rule is `forbidden`. Wrapped forced cleanup, including short, combined,
-  or long-form force flags, is conservatively denied because PreToolUse cannot
-  express the direct rule's interactive `prompt`; silent execution would bypass
-  review. Wrapper inspection locates supported shells after `env` options and
-  treats unquoted separators, newlines, and command-list control prefixes as
-  command boundaries while preserving quoted content. It also blocks background
-  RAW launches through `Start-Process`, including launches whose RAW arguments
-  are prepared in another statement of the same shell payload, and adds context
-  when edits touch
-  execution-affecting config, root agent contracts, or product/public surfaces
-  that may need a routed productization-owner update.
-- `PostToolUse`: catches pytest runs that collected zero tests, and points the
-  agent to fix the node id instead of treating the run as validation. It also
-  reminds write-like product/public surface changes to consult the
-  productization compatibility index, update the applicable structured owner, or
-  explicitly state that no maturity tier or authority changed.
-  If product/control-plane state may have changed without a branch handoff being
-  part of the update, it reminds closeout to resolve the active branch handoff
-  or state why no branch handoff update is needed. It also reminds when a
-  touched active handoff exceeds the 200-line target.
+- `PreToolUse`: blocks wrapped destructive Git commands, commit forms that can
+  sweep unrelated paths, and background RAW launches through `Start-Process`.
+  It adds one reminder when execution-affecting config changes require the
+  smoke-and-scan contract below.
+- `PostToolUse`: catches pytest runs that collected zero tests or used an invalid
+  node id. Other failures and governance decisions remain visible in their
+  command output or canonical owner instead of being reclassified after every
+  tool call.
 
 Hooks are guardrails, not full enforcement. Keep them deterministic, fast, and
 rarely chatty. If a hook fires too often without changing behavior, remove or
@@ -121,7 +108,7 @@ mismatch, or behavior change fails the #160 governance read-back.
 | `destructive_git_filesystem` | `docs/agent/codex-operating-system.md#current-repo-local-rules` | `hard_guard` | `.codex/rules/xic-safety.rules` | `tests/test_config_codex_hooks.py` | `none` |
 | `raw_background_launch` | `docs/agent/execution-gates.md#raw-and-long-runs` | `hard_guard` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
 | `execution_affecting_config` | `docs/agent/codex-operating-system.md#change-protocol` | `advisory_context` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
-| `product_public_surface` | `docs/agent/architecture-public-contracts.md#public-contracts` | `advisory_context` | `.codex/hooks/xic_post_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
+
 | `pr_validation_gate` | `docs/agent/execution-gates.md#pr-verification-gate` | `ci_checker` | `tools/testing/test_shards.py` | `.github/workflows/ci.yml` | `none` |
 
 The repository-side hook/config gaps are closed by the ordinary `docs-config`
@@ -173,9 +160,9 @@ Before closeout:
 git diff --check
 Get-Content .codex\hooks\fixtures\prompt_architecture.json -Raw | python .codex\hooks\xic_prompt_router.py
 Get-Content .codex\hooks\fixtures\prompt_productization.json -Raw | python .codex\hooks\xic_prompt_router.py
-Get-Content .codex\hooks\fixtures\pretool_product_surface_edit.json -Raw | python .codex\hooks\xic_pre_tool_guard.py
+
 Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | python .codex\hooks\xic_post_tool_guard.py
-Get-Content .codex\hooks\fixtures\posttool_product_surface_edit.json -Raw | python .codex\hooks\xic_post_tool_guard.py
+
 python .codex\hooks\fixtures\assert_hook_outputs.py
 ```
 
