@@ -89,6 +89,8 @@ def test_local_landmarks_retain_full_trace_and_explicit_quality() -> None:
                 sample_stem="sample-a",
                 injection_order=1,
                 acquisition_source_id="acquisition-source:sample-a",
+                processing_request_id="processing-request:current",
+                processing_attempt_id="processing-attempt:current",
                 landmark_id="landmark-001",
                 observed_rt_min=4.10,
                 local_trajectory_rt_min=4.00,
@@ -100,6 +102,8 @@ def test_local_landmarks_retain_full_trace_and_explicit_quality() -> None:
                 sample_stem="sample-a",
                 injection_order=1,
                 acquisition_source_id="acquisition-source:sample-a",
+                processing_request_id="processing-request:current",
+                processing_attempt_id="processing-attempt:current",
                 landmark_id="landmark-002",
                 observed_rt_min=8.30,
                 local_trajectory_rt_min=8.10,
@@ -111,6 +115,8 @@ def test_local_landmarks_retain_full_trace_and_explicit_quality() -> None:
                 sample_stem="sample-b",
                 injection_order=2,
                 acquisition_source_id="acquisition-source:sample-b",
+                processing_request_id="processing-request:current",
+                processing_attempt_id="processing-attempt:current",
                 landmark_id="landmark-001",
                 observed_rt_min=4.00,
                 local_trajectory_rt_min=4.00,
@@ -142,6 +148,8 @@ def test_local_trajectory_conflict_requires_explicit_evidence_refs() -> None:
         sample_stem="sample-a",
         injection_order=1,
         acquisition_source_id="acquisition-source:sample-a",
+        processing_request_id="processing-request:current",
+        processing_attempt_id="processing-attempt:current",
         landmark_id="landmark-001",
         observed_rt_min=4.10,
         local_trajectory_rt_min=4.00,
@@ -159,6 +167,21 @@ def test_local_trajectory_conflict_requires_explicit_evidence_refs() -> None:
     assert assessment.status == "conflict"
     assert assessment.landmark_evidence_refs == (point.evidence_ref,)
     assert assessment.conflict_evidence_refs == (point.evidence_ref,)
+
+    with pytest.raises(ValueError, match="conflict_evidence_refs.*duplicates"):
+        assess_local_trajectory(
+            lookup,
+            ("sample-a",),
+            conflict_evidence_refs=(point.evidence_ref, point.evidence_ref),
+        )
+
+
+def test_local_trajectory_rejects_duplicate_sample_inputs() -> None:
+    with pytest.raises(ValueError, match="sample_stems.*duplicates"):
+        assess_local_trajectory(
+            LocalTrajectoryEvidenceLookup(points=()),
+            ("sample-a", "sample-a"),
+        )
 
 
 def test_missing_landmarks_cannot_be_relabelled_as_conflict() -> None:
@@ -183,6 +206,8 @@ def test_leave_one_landmark_out_retains_points_without_a_median_template() -> No
             sample_stem="sample-a",
             injection_order=1,
             acquisition_source_id="acquisition-source:sample-a",
+            processing_request_id="processing-request:current",
+            processing_attempt_id="processing-attempt:current",
             landmark_id="landmark-001",
             observed_rt_min=4.10,
             local_trajectory_rt_min=4.00,
@@ -194,6 +219,8 @@ def test_leave_one_landmark_out_retains_points_without_a_median_template() -> No
             sample_stem="sample-a",
             injection_order=1,
             acquisition_source_id="acquisition-source:sample-a",
+            processing_request_id="processing-request:current",
+            processing_attempt_id="processing-attempt:current",
             landmark_id="landmark-002",
             observed_rt_min=8.30,
             local_trajectory_rt_min=8.10,
@@ -225,6 +252,8 @@ def test_local_landmarks_reject_duplicate_physical_refs_across_lookup() -> None:
                     sample_stem="sample-a",
                     injection_order=1,
                     acquisition_source_id="acquisition-source:sample-a",
+                    processing_request_id="processing-request:current",
+                    processing_attempt_id="processing-attempt:current",
                     landmark_id="landmark-001",
                     observed_rt_min=4.10,
                     local_trajectory_rt_min=4.00,
@@ -236,6 +265,8 @@ def test_local_landmarks_reject_duplicate_physical_refs_across_lookup() -> None:
                     sample_stem="sample-b",
                     injection_order=2,
                     acquisition_source_id="acquisition-source:sample-b",
+                    processing_request_id="processing-request:current",
+                    processing_attempt_id="processing-attempt:current",
                     landmark_id="landmark-001",
                     observed_rt_min=8.30,
                     local_trajectory_rt_min=8.00,
@@ -255,6 +286,8 @@ def test_local_landmarks_reject_conflicting_sample_injection_order() -> None:
                     sample_stem="sample-a",
                     injection_order=1,
                     acquisition_source_id="acquisition-source:sample-a",
+                    processing_request_id="processing-request:current",
+                    processing_attempt_id="processing-attempt:current",
                     landmark_id="landmark-001",
                     observed_rt_min=4.10,
                     local_trajectory_rt_min=4.00,
@@ -266,6 +299,8 @@ def test_local_landmarks_reject_conflicting_sample_injection_order() -> None:
                     sample_stem="sample-a",
                     injection_order=2,
                     acquisition_source_id="acquisition-source:sample-a",
+                    processing_request_id="processing-request:current",
+                    processing_attempt_id="processing-attempt:current",
                     landmark_id="landmark-002",
                     observed_rt_min=8.30,
                     local_trajectory_rt_min=8.10,
@@ -285,6 +320,8 @@ def test_local_landmarks_reject_conflicting_sample_acquisition_source() -> None:
                     sample_stem="sample-a",
                     injection_order=1,
                     acquisition_source_id="acquisition-source:first",
+                    processing_request_id="processing-request:current",
+                    processing_attempt_id="processing-attempt:current",
                     landmark_id="landmark-001",
                     observed_rt_min=4.10,
                     local_trajectory_rt_min=4.00,
@@ -296,11 +333,54 @@ def test_local_landmarks_reject_conflicting_sample_acquisition_source() -> None:
                     sample_stem="sample-a",
                     injection_order=1,
                     acquisition_source_id="acquisition-source:second",
+                    processing_request_id="processing-request:current",
+                    processing_attempt_id="processing-attempt:current",
                     landmark_id="landmark-002",
                     observed_rt_min=8.30,
                     local_trajectory_rt_min=8.10,
                     rt_drift_delta_min=0.20,
                     quality="accepted",
+                    evidence_ref="peak-observation:a2",
+                ),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "expected_message"),
+    (
+        ("processing_request_id", "one processing request"),
+        ("processing_attempt_id", "one processing attempt"),
+    ),
+)
+def test_local_landmarks_reject_crossed_processing_owner(
+    field_name: str,
+    expected_message: str,
+) -> None:
+    common = {
+        "sample_stem": "sample-a",
+        "injection_order": 1,
+        "acquisition_source_id": "acquisition-source:sample-a",
+        "processing_request_id": "processing-request:current",
+        "processing_attempt_id": "processing-attempt:current",
+        "observed_rt_min": 4.1,
+        "local_trajectory_rt_min": 4.0,
+        "rt_drift_delta_min": 0.1,
+        "quality": "accepted",
+    }
+    crossed = {**common, field_name: f"{field_name}:foreign"}
+
+    with pytest.raises(ValueError, match=expected_message):
+        LocalTrajectoryEvidenceLookup(
+            points=(
+                LocalFeatureLandmarkEvidence(
+                    **common,
+                    landmark_id="landmark-001",
+                    evidence_ref="peak-observation:a1",
+                ),
+                LocalFeatureLandmarkEvidence(
+                    **crossed,
+                    landmark_id="landmark-002",
                     evidence_ref="peak-observation:a2",
                 ),
             )

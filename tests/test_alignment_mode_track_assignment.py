@@ -10,12 +10,11 @@ import pytest
 
 from tests.test_alignment_conservative_backfill import (
     _assessment,
-    _spine,
     _study_fixture,
 )
-from xic_extractor.alignment.cell_observations import CellObservationRef
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSamplePeakGroupHypothesis,
     construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.drift_evidence import (
@@ -31,9 +30,13 @@ from xic_extractor.alignment.identity_coherence.family_context import (
 )
 from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     ModeTrackAssignment,
+    ModeTrackCandidateObservation,
     ModeTrackContractError,
     ModeTrackModel,
+    ModeTrackPredictionAssessment,
+    ModeTrackSupportAnchor,
     ModeTrackTrajectoryPolicy,
+    _global_no_write_state,
     _peak_hypothesis_family_exclusions,
     assign_mode_tracks,
     canonical_mode_track_assignment_batch_bytes,
@@ -48,7 +51,13 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_cid_nl_peak_hypothesis,
 )
-from xic_extractor.processing_identity import resolve_request_acquisition_source
+from xic_extractor.processing_identity import (
+    ProcessingOwnerReferences,
+    build_processing_request_identity,
+    compose_processing_owner_references,
+    issue_processing_attempt,
+    resolve_request_acquisition_source,
+)
 
 
 def test_unique_assignment_is_owner_minted_typed_and_deterministic(
@@ -92,15 +101,47 @@ def test_unique_assignment_is_owner_minted_typed_and_deterministic(
     )
 
     payload = json.loads(canonical_mode_track_assignment_batch_bytes(forward))
-    assert payload["schema_version"] == "mode_track_assignment_batch_v1"
+    assert payload["schema_version"] == "mode_track_assignment_batch_v2"
     assert payload["assignments"][0]["state"] == "uniquely_assigned"
     assert (
         payload["assignments"][0]["candidate_observation_id"]
         == candidate.candidate_observation_id
     )
     assert (
-        payload["assignments"][0]["direct_support_cell_artifact_content_id"]
-        == candidate.direct_support_cell_artifact_content_id
+        payload["assignments"][0][
+            "direct_support_assessment_artifact_content_id"
+        ]
+        == candidate.direct_support_assessment_artifact_content_id
+    )
+
+
+def test_assignment_serialization_canonicalizes_equivalent_candidate_order(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    candidates = (
+        scenario.candidate(7.87, direct_support=True),
+        scenario.candidate(8.37, direct_support=True),
+    )
+
+    forward = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=candidates,
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+    reversed_input = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=tuple(reversed(candidates)),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    assert reversed_input == forward
+    assert canonical_mode_track_assignment_batch_bytes(reversed_input) == (
+        canonical_mode_track_assignment_batch_bytes(forward)
     )
 
 
@@ -258,7 +299,7 @@ def test_crossing_and_per_track_occupancy_are_explicit_no_write(
         processing_owners=crossing.fixture.owners,
         sample=crossing.fixture.sample("target"),
         model_set=crossing.models,
-        candidates=(crossing.candidate(8.10, direct_support=False),),
+        candidates=(crossing.candidate(8.25, direct_support=False),),
         trajectory_assessment=crossing.assessable_trajectory,
     )
     assert crossing_result.assignments[0].state == "technical_unassessable"
@@ -292,24 +333,25 @@ def test_incumbent_anchor_occupies_track_for_other_hypotheses(
         processing_owners=scenario.fixture.owners,
         sample=anchor.sample,
         peak_hypothesis=anchor.peak_hypothesis,
-        direct_support_cell=anchor.direct_support_cell,
+        direct_support_assessment=anchor.direct_support_assessment,
     )
-    challenger_spine = _spine(
+    challenger_assessment, challenger_hypothesis = _candidate_assessment_hypothesis(
         scenario.fixture,
-        support_apex_by_sample={"anchor-1": 7.82},
+        sample_stem="anchor-1",
+        apex_rt=7.82,
         invocation="candidate:incumbent-occupancy-challenger",
     )
-    challenger_cell = _support_cells(challenger_spine)[0]
     challenger = mint_mode_track_candidate_observation(
         processing_owners=scenario.fixture.owners,
         sample=anchor.sample,
-        peak_hypothesis=challenger_cell.peak_hypothesis,
-        direct_support_cell=None,
+        peak_hypothesis=challenger_hypothesis,
+        direct_support_assessment=challenger_assessment,
     )
     trajectory = _trajectory(
         "anchor-1",
         anchor.injection_order,
         anchor.acquisition_source_id,
+        scenario.fixture.owners,
     )
 
     replay_result = assign_mode_tracks(
@@ -349,6 +391,14 @@ def test_incumbent_anchor_occupies_track_for_other_hypotheses(
     )
     assert combined_by_hypothesis[challenger.peak_hypothesis_id].state == (
         "ambiguous_multiple_tracks"
+    )
+    assert (
+        reinforce_mode_track_model_set(
+            processing_owners=scenario.fixture.owners,
+            model_set=scenario.models,
+            assignment_batch=combined_result,
+        )
+        is scenario.models
     )
 
 
@@ -451,13 +501,14 @@ def test_exact_anchor_prediction_does_not_reapply_same_injection_drift(
         processing_owners=scenario.fixture.owners,
         sample=anchor.sample,
         peak_hypothesis=anchor.peak_hypothesis,
-        direct_support_cell=anchor.direct_support_cell,
+        direct_support_assessment=anchor.direct_support_assessment,
     )
     trajectory = _multi_point_trajectory(
         "anchor-1",
         anchor.injection_order,
         anchor.acquisition_source_id,
         ((7.0, 0.20), (9.0, 0.20)),
+        scenario.fixture.owners,
     )
 
     result = assign_mode_tracks(
@@ -489,13 +540,14 @@ def test_exact_anchor_prediction_does_not_require_local_drift_lookup(
         processing_owners=scenario.fixture.owners,
         sample=anchor.sample,
         peak_hypothesis=anchor.peak_hypothesis,
-        direct_support_cell=anchor.direct_support_cell,
+        direct_support_assessment=anchor.direct_support_assessment,
     )
     unrelated_trajectory = _multi_point_trajectory(
         "anchor-1",
         anchor.injection_order,
         anchor.acquisition_source_id,
         ((1.0, 0.20), (2.0, 0.20)),
+        scenario.fixture.owners,
     )
     assert unrelated_trajectory.status == "assessable"
 
@@ -521,7 +573,11 @@ def test_exact_anchor_prediction_does_not_require_local_drift_lookup(
             ("anchor-1",),
         ),
     )
-    assert missing_result.assignments[0].state == "technical_unassessable"
+    assert missing_result.assignments[0].state == "uniquely_assigned"
+    assert (
+        missing_result.assignments[0].group_hypothesis_id
+        == anchor.group_hypothesis_id
+    )
 
 
 def test_each_track_uses_its_local_landmark_region_without_global_median(
@@ -533,6 +589,7 @@ def test_each_track_uses_its_local_landmark_region_without_global_median(
         2,
         scenario.target_acquisition_source_id,
         ((7.82, -0.20), (8.32, 0.20)),
+        scenario.fixture.owners,
     )
 
     result = assign_mode_tracks(
@@ -565,6 +622,7 @@ def test_local_landmarks_do_not_authorize_unbounded_rt_extrapolation(
         2,
         scenario.target_acquisition_source_id,
         ((7.90, -0.10), (8.00, 0.10)),
+        scenario.fixture.owners,
     )
 
     result = assign_mode_tracks(
@@ -587,6 +645,7 @@ def test_single_landmark_does_not_authorize_nonlocal_tracks(tmp_path: Path) -> N
         2,
         scenario.target_acquisition_source_id,
         ((7.82, 0.05),),
+        scenario.fixture.owners,
     )
 
     result = assign_mode_tracks(
@@ -658,7 +717,7 @@ def test_request_acquisition_and_injection_bindings_cannot_be_crossed(
         != foreign.fixture.owners.request.processing_request_id
     )
 
-    with pytest.raises(ModeTrackContractError, match="stale request binding"):
+    with pytest.raises(ModeTrackContractError, match="different processing request"):
         fit_mode_track_model_set(
             processing_owners=foreign.fixture.owners,
             family_context=original.family_context,
@@ -687,6 +746,7 @@ def test_request_acquisition_and_injection_bindings_cannot_be_crossed(
                 "target",
                 99,
                 original.target_acquisition_source_id,
+                original.fixture.owners,
             ),
         )
 
@@ -705,8 +765,385 @@ def test_request_acquisition_and_injection_bindings_cannot_be_crossed(
                 "target",
                 2,
                 stale_source.acquisition_source_id,
+                original.fixture.owners,
             ),
         )
+
+
+def test_fit_rejects_foreign_request_even_when_sources_and_order_match(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    foreign_owners = _different_request_same_sources(scenario.fixture)
+    assert (
+        foreign_owners.request.processing_request_id
+        != scenario.fixture.owners.request.processing_request_id
+    )
+    assert (
+        foreign_owners.request.acquisition_bindings
+        == scenario.fixture.owners.request.acquisition_bindings
+    )
+
+    with pytest.raises(ModeTrackContractError, match="different processing request"):
+        fit_mode_track_model_set(
+            processing_owners=foreign_owners,
+            family_context=scenario.family_context,
+            direct_support_anchors=(
+                scenario.track_a_spine.anchors + scenario.track_b_spine.anchors
+            ),
+            policy=scenario.policy,
+        )
+
+
+def test_assignment_rejects_candidate_from_foreign_request_before_prediction(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    candidate = scenario.candidate(7.87, direct_support=True)
+    foreign_owners = _different_request_same_sources(scenario.fixture)
+    foreign_fixture = replace(
+        scenario.fixture,
+        request=foreign_owners.request,
+        attempt=foreign_owners.attempt,
+        owners=foreign_owners,
+        artifact_registry={},
+        projections_by_hypothesis_id={},
+    )
+    foreign_track_a, foreign_track_b = _mode_track_spines(
+        foreign_fixture,
+        track_a_anchor_rts=(7.80, 7.84),
+        track_b_anchor_rts=(8.30, 8.34),
+    )
+    foreign_context = mint_family_context_ref(
+        mz_interval=(499.0, 501.0),
+        rt_interval=(7.0, 10.0),
+        context_policy_version="mode-track-family-context-v1",
+        source_lineage_refs=("synthetic:foreign-request-candidate-ingress",),
+        mode_tracks=(foreign_track_a.group, foreign_track_b.group),
+    )
+    foreign_models = fit_mode_track_model_set(
+        processing_owners=foreign_owners,
+        family_context=foreign_context,
+        direct_support_anchors=(
+            foreign_track_a.anchors + foreign_track_b.anchors
+        ),
+        policy=scenario.policy,
+    )
+
+    with pytest.raises(ModeTrackContractError, match="different processing request"):
+        assign_mode_tracks(
+            processing_owners=foreign_owners,
+            sample=foreign_fixture.sample("target"),
+            model_set=foreign_models,
+            candidates=(candidate,),
+            trajectory_assessment=_trajectory(
+                "target",
+                2,
+                candidate.acquisition_source_id,
+                foreign_owners,
+            ),
+        )
+
+
+def test_fit_rejects_two_tracks_seeded_by_one_physical_observation(
+    tmp_path: Path,
+) -> None:
+    fixture = _study_fixture(tmp_path, ("anchor-1",))
+    sample = fixture.sample("anchor-1")
+    first_assessment = _assessment(
+        fixture,
+        "anchor-1",
+        support_apex=8.0,
+        scan_number=8101,
+        invocation="physical-cardinality:first",
+    )
+    second_assessment = _assessment(
+        fixture,
+        "anchor-1",
+        support_apex=8.0,
+        scan_number=8102,
+        invocation="physical-cardinality:second",
+    )
+    first_hypothesis = _hypothesis_from_assessment(
+        fixture,
+        sample=sample,
+        assessment=first_assessment,
+    )
+    second_hypothesis = _hypothesis_from_assessment(
+        fixture,
+        sample=sample,
+        assessment=second_assessment,
+    )
+    assert first_hypothesis.hypothesis_id != second_hypothesis.hypothesis_id
+    assert (
+        first_hypothesis.peak_observation_refs[0].content.peak_observation_content_id
+        == second_hypothesis.peak_observation_refs[
+            0
+        ].content.peak_observation_content_id
+    )
+    tracks = (
+        CrossSamplePeakGroupHypothesis(
+            group_hypothesis_id="track:a",
+            public_family_id="display-family",
+            owner_ids=(first_hypothesis.hypothesis_id,),
+            event_ids=("event:first",),
+            event_member_count=1,
+            group_center_mz=500.0,
+            group_center_rt=8.0,
+        ),
+        CrossSamplePeakGroupHypothesis(
+            group_hypothesis_id="track:b",
+            public_family_id="display-family",
+            owner_ids=(second_hypothesis.hypothesis_id,),
+            event_ids=("event:second",),
+            event_member_count=1,
+            group_center_mz=500.0,
+            group_center_rt=8.0,
+        ),
+    )
+    context = mint_family_context_ref(
+        mz_interval=(499.0, 501.0),
+        rt_interval=(7.0, 9.0),
+        context_policy_version="mode-track-family-context-v1",
+        source_lineage_refs=("synthetic:physical-cardinality",),
+        mode_tracks=tracks,
+    )
+    anchors = (
+        mint_mode_track_support_anchor(
+            processing_owners=fixture.owners,
+            track=tracks[0],
+            sample=sample,
+            direct_support_assessment=first_assessment,
+            peak_hypothesis=first_hypothesis,
+        ),
+        mint_mode_track_support_anchor(
+            processing_owners=fixture.owners,
+            track=tracks[1],
+            sample=sample,
+            direct_support_assessment=second_assessment,
+            peak_hypothesis=second_hypothesis,
+        ),
+    )
+
+    with pytest.raises(ModeTrackContractError, match="physical peak observation"):
+        fit_mode_track_model_set(
+            processing_owners=fixture.owners,
+            family_context=context,
+            direct_support_anchors=anchors,
+            policy=ModeTrackTrajectoryPolicy(
+                trajectory_policy_version="piecewise-linear-injection-local-v1",
+                band_policy_version="explicit-half-width-v1",
+                prediction_half_width_min=0.1,
+                max_interpolation_gap=4,
+                max_extrapolation_gap=2,
+            ),
+        )
+
+
+def test_assignment_rejects_two_candidates_for_one_physical_observation(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    sample = scenario.fixture.sample("target")
+    assessments = tuple(
+        _assessment(
+            scenario.fixture,
+            "target",
+            support_apex=7.87,
+            scan_number=8200 + index,
+            invocation=f"candidate-physical-cardinality:{index}",
+        )
+        for index in (1, 2)
+    )
+    hypotheses = tuple(
+        _hypothesis_from_assessment(
+            scenario.fixture,
+            sample=sample,
+            assessment=assessment,
+        )
+        for assessment in assessments
+    )
+    candidates = tuple(
+        mint_mode_track_candidate_observation(
+            processing_owners=scenario.fixture.owners,
+            sample=sample,
+            peak_hypothesis=hypothesis,
+            direct_support_assessment=assessment,
+        )
+        for hypothesis, assessment in zip(hypotheses, assessments, strict=True)
+    )
+    assert candidates[0].peak_hypothesis_id != candidates[1].peak_hypothesis_id
+    assert (
+        candidates[0].peak_observation_content_id
+        == candidates[1].peak_observation_content_id
+    )
+
+    with pytest.raises(ModeTrackContractError, match="physical peak observations"):
+        assign_mode_tracks(
+            processing_owners=scenario.fixture.owners,
+            sample=sample,
+            model_set=scenario.models,
+            candidates=candidates,
+            trajectory_assessment=scenario.assessable_trajectory,
+        )
+
+    support_candidate = scenario.candidate(7.87, direct_support=True)
+    non_training_wrapper = mint_mode_track_candidate_observation(
+        processing_owners=scenario.fixture.owners,
+        sample=sample,
+        peak_hypothesis=support_candidate.peak_hypothesis,
+    )
+    assert (
+        support_candidate.candidate_observation_id
+        != non_training_wrapper.candidate_observation_id
+    )
+    with pytest.raises(ModeTrackContractError, match="PeakHypotheses"):
+        assign_mode_tracks(
+            processing_owners=scenario.fixture.owners,
+            sample=sample,
+            model_set=scenario.models,
+            candidates=(support_candidate, non_training_wrapper),
+            trajectory_assessment=scenario.assessable_trajectory,
+        )
+
+
+def test_assignment_rejects_model_from_same_request_sibling_attempt(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    retry = scenario.fixture.retry()
+
+    with pytest.raises(ModeTrackContractError, match="different processing attempt"):
+        assign_mode_tracks(
+            processing_owners=retry.owners,
+            sample=retry.sample("target"),
+            model_set=scenario.models,
+            candidates=(),
+            trajectory_assessment=scenario.missing_trajectory,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "message"),
+    (
+        ("processing_request_id", "different processing request"),
+        ("processing_attempt_id", "different processing attempt"),
+    ),
+)
+def test_assignment_rejects_crossed_trajectory_owner(
+    tmp_path: Path,
+    field_name: str,
+    message: str,
+) -> None:
+    scenario = _scenario(tmp_path)
+    crossed_points = tuple(
+        replace(point, **{field_name: f"{field_name}:foreign"})
+        for point in scenario.assessable_trajectory.landmark_points
+    )
+    crossed = assess_local_trajectory(
+        LocalTrajectoryEvidenceLookup(points=crossed_points),
+        ("target",),
+    )
+
+    with pytest.raises(ModeTrackContractError, match=message):
+        assign_mode_tracks(
+            processing_owners=scenario.fixture.owners,
+            sample=scenario.fixture.sample("target"),
+            model_set=scenario.models,
+            candidates=(),
+            trajectory_assessment=crossed,
+        )
+
+
+def test_candidate_rejects_support_assessment_from_sibling_attempt(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    candidate = scenario.candidate(7.87, direct_support=True)
+    sibling = scenario.fixture.retry()
+    sibling_assessment = _assessment(
+        sibling,
+        "target",
+        support_apex=7.87,
+        scan_number=712,
+        invocation="candidate:sibling-assessment",
+    )
+
+    with pytest.raises(ModeTrackContractError):
+        mint_mode_track_candidate_observation(
+            processing_owners=scenario.fixture.owners,
+            sample=scenario.fixture.sample("target"),
+            peak_hypothesis=candidate.peak_hypothesis,
+            direct_support_assessment=sibling_assessment,
+        )
+
+
+def test_crossing_is_local_to_the_crossed_tracks(tmp_path: Path) -> None:
+    fixture = _study_fixture(
+        tmp_path,
+        ("anchor-1", "anchor-2", "unused", "target"),
+    )
+    spines = _mode_track_spines_many(
+        fixture,
+        track_anchor_rts=((7.90, 7.98), (8.30, 8.22), (8.40, 8.42)),
+    )
+    family_context = mint_family_context_ref(
+        mz_interval=(499.0, 501.0),
+        rt_interval=(7.0, 10.0),
+        context_policy_version="mode-track-family-context-v1",
+        source_lineage_refs=("synthetic:crossing-locality",),
+        mode_tracks=tuple(spine.group for spine in spines),
+    )
+    policy = ModeTrackTrajectoryPolicy(
+        trajectory_policy_version="piecewise-linear-injection-local-v1",
+        band_policy_version="explicit-half-width-v1",
+        prediction_half_width_min=0.1,
+        max_interpolation_gap=4,
+        max_extrapolation_gap=2,
+    )
+    model_set = fit_mode_track_model_set(
+        processing_owners=fixture.owners,
+        family_context=family_context,
+        direct_support_anchors=tuple(
+            anchor for spine in spines for anchor in spine.anchors
+        ),
+        policy=policy,
+    )
+    assessment, hypothesis = _candidate_assessment_hypothesis(
+        fixture,
+        sample_stem="target",
+        apex_rt=8.46,
+        invocation="candidate:crossing-locality-track-c",
+    )
+    candidate = mint_mode_track_candidate_observation(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("target"),
+        peak_hypothesis=hypothesis,
+    )
+    target_source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("target"),
+    )
+
+    result = assign_mode_tracks(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("target"),
+        model_set=model_set,
+        candidates=(candidate,),
+        trajectory_assessment=_trajectory(
+            "target",
+            4,
+            target_source.acquisition_source_id,
+            fixture.owners,
+        ),
+    )
+
+    assert assessment.content.method_result == "SUPPORT"
+    assert result.assignments[0].state == "uniquely_assigned"
+    assert (
+        result.assignments[0].group_hypothesis_id
+        == spines[2].group.group_hypothesis_id
+    )
 
 
 def test_candidate_and_anchor_hypotheses_must_match_processing_owners(
@@ -751,6 +1188,44 @@ def test_candidate_and_anchor_hypotheses_must_match_processing_owners(
             sample=anchor.sample,
             direct_support_assessment=anchor.direct_support_assessment,
             peak_hypothesis=anchor.peak_hypothesis,
+        )
+
+
+def test_public_ingress_normalizes_invalid_owner_inputs(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path / "scenario")
+    foreign_root = tmp_path / "foreign"
+    foreign_root.mkdir()
+    foreign = _study_fixture(foreign_root, ("foreign",))
+    candidate = scenario.candidate(7.87, direct_support=True)
+    anchor = scenario.track_a_spine.anchors[0]
+
+    with pytest.raises(ModeTrackContractError, match="different sample"):
+        mint_mode_track_candidate_observation(
+            processing_owners=scenario.fixture.owners,
+            sample=foreign.sample("foreign"),
+            peak_hypothesis=candidate.peak_hypothesis,
+        )
+    with pytest.raises(ModeTrackContractError, match="PeakHypothesis"):
+        mint_mode_track_support_anchor(
+            processing_owners=scenario.fixture.owners,
+            track=scenario.track_a,
+            sample=anchor.sample,
+            direct_support_assessment=anchor.direct_support_assessment,
+            peak_hypothesis=None,  # type: ignore[arg-type]
+        )
+    with pytest.raises(ModeTrackContractError, match="processing_owners"):
+        reinforce_mode_track_model_set(
+            processing_owners=None,  # type: ignore[arg-type]
+            model_set=scenario.models,
+            assignment_batch=assign_mode_tracks(
+                processing_owners=scenario.fixture.owners,
+                sample=scenario.fixture.sample("target"),
+                model_set=scenario.models,
+                candidates=(),
+                trajectory_assessment=scenario.missing_trajectory,
+            ),
         )
 
 
@@ -834,6 +1309,28 @@ def test_model_set_identity_binds_ordering_behavior_snapshot(
     assert original.assignments[0].state == "uniquely_assigned"
     assert reordered.assignments[0].state == "technical_unassessable"
     assert reordered.assignments[0].reason_codes == ("trajectory_crossing",)
+    assert canonical_mode_track_assignment_batch_bytes(reordered) != (
+        canonical_mode_track_assignment_batch_bytes(original)
+    )
+
+    changed_policy = fit_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
+        family_context=scenario.family_context,
+        direct_support_anchors=(
+            scenario.track_a_spine.anchors + scenario.track_b_spine.anchors
+        ),
+        policy=replace(scenario.policy, prediction_half_width_min=0.11),
+    )
+    changed_anchors = fit_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
+        family_context=scenario.family_context,
+        direct_support_anchors=(
+            scenario.track_a_spine.anchors[:1] + scenario.track_b_spine.anchors
+        ),
+        policy=scenario.policy,
+    )
+    assert changed_policy.model_set_id != scenario.models.model_set_id
+    assert changed_anchors.model_set_id != scenario.models.model_set_id
 
 
 def test_duplicate_physical_trajectory_evidence_cannot_authorize_interpolation(
@@ -846,6 +1343,12 @@ def test_duplicate_physical_trajectory_evidence_cannot_authorize_interpolation(
             sample_stem="target",
             injection_order=2,
             acquisition_source_id=scenario.target_acquisition_source_id,
+            processing_request_id=(
+                scenario.fixture.owners.request.processing_request_id
+            ),
+            processing_attempt_id=(
+                scenario.fixture.owners.attempt.processing_attempt_id
+            ),
             landmark_id=f"landmark:target:{index}",
             observed_rt_min=local_rt + shift,
             local_trajectory_rt_min=local_rt,
@@ -910,13 +1413,14 @@ def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
             "target",
             2,
             poor_landmarks.target_acquisition_source_id,
+            poor_landmarks.fixture.owners,
         ),
     )
     assert poor_result.assignments[0].state == "technical_unassessable"
     assert "trajectory_poor_landmarks" in poor_result.assignments[0].reason_codes
 
 
-def test_mixed_prediction_availability_is_technical_unassessable(
+def test_fit_rejects_reinforced_anchors(
     tmp_path: Path,
 ) -> None:
     scenario = _scenario(tmp_path)
@@ -929,39 +1433,45 @@ def test_mixed_prediction_availability_is_technical_unassessable(
         trajectory_assessment=scenario.assessable_trajectory,
     )
     reinforced = reinforce_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
         model_set=scenario.models,
         assignment_batch=direct_batch,
     )
-    restrictive_models = fit_mode_track_model_set(
-        processing_owners=scenario.fixture.owners,
-        family_context=scenario.family_context,
-        direct_support_anchors=tuple(
-            anchor for track in reinforced.tracks for anchor in track.anchors
-        ),
-        policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="piecewise-linear-injection-local-v1",
-            band_policy_version="explicit-half-width-v1",
-            prediction_half_width_min=0.1,
-            max_interpolation_gap=1,
-            max_extrapolation_gap=2,
-        ),
+    with pytest.raises(ModeTrackContractError, match="initial anchors only"):
+        fit_mode_track_model_set(
+            processing_owners=scenario.fixture.owners,
+            family_context=scenario.family_context,
+            direct_support_anchors=tuple(
+                anchor for track in reinforced.tracks for anchor in track.anchors
+            ),
+            policy=scenario.policy,
+        )
+
+
+def test_mixed_prediction_availability_is_technical_unassessable() -> None:
+    predicted = ModeTrackPredictionAssessment(
+        group_hypothesis_id="track:a",
+        status="predicted",
+        predicted_rt_min=8.0,
+        prediction_interval_min=(7.9, 8.1),
+        anchor_refs=("anchor:a",),
+        support_artifact_content_ids=("assessment:a",),
+        reason_codes=("prediction_available",),
+    )
+    unavailable = ModeTrackPredictionAssessment(
+        group_hypothesis_id="track:b",
+        status="unsupported_interpolation",
+        predicted_rt_min=None,
+        prediction_interval_min=None,
+        anchor_refs=("anchor:b",),
+        support_artifact_content_ids=("assessment:b",),
+        reason_codes=("unsupported_interpolation",),
     )
 
-    result = assign_mode_tracks(
-        processing_owners=scenario.fixture.owners,
-        sample=scenario.fixture.sample("target"),
-        model_set=restrictive_models,
-        candidates=(direct,),
-        trajectory_assessment=scenario.assessable_trajectory,
+    assert _global_no_write_state(predictions=(predicted, unavailable)) == (
+        "technical_unassessable",
+        ("unsupported_interpolation",),
     )
-
-    assignment = result.assignments[0]
-    assert {item.status for item in assignment.prediction_assessments} == {
-        "predicted",
-        "unsupported_interpolation",
-    }
-    assert assignment.state == "technical_unassessable"
-    assert "unsupported_interpolation" in assignment.reason_codes
 
 
 def test_only_unique_direct_support_reinforces_one_track(tmp_path: Path) -> None:
@@ -975,6 +1485,7 @@ def test_only_unique_direct_support_reinforces_one_track(tmp_path: Path) -> None
         trajectory_assessment=scenario.assessable_trajectory,
     )
     reinforced = reinforce_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
         model_set=scenario.models,
         assignment_batch=direct_batch,
     )
@@ -1004,6 +1515,7 @@ def test_only_unique_direct_support_reinforces_one_track(tmp_path: Path) -> None
     )
     assert (
         reinforce_mode_track_model_set(
+            processing_owners=scenario.fixture.owners,
             model_set=scenario.models,
             assignment_batch=non_training_batch,
         )
@@ -1022,6 +1534,7 @@ def test_duplicate_direct_support_reinforcement_is_idempotent(tmp_path: Path) ->
         trajectory_assessment=scenario.assessable_trajectory,
     )
     first = reinforce_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
         model_set=scenario.models,
         assignment_batch=first_batch,
     )
@@ -1034,6 +1547,7 @@ def test_duplicate_direct_support_reinforcement_is_idempotent(tmp_path: Path) ->
     )
 
     replayed = reinforce_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
         model_set=first,
         assignment_batch=replay_batch,
     )
@@ -1048,13 +1562,16 @@ def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
         ModeTrackAssignment(
             assignment_id="mode-track-assignment:forged",
             family_context_id="family-context:forged",
+            processing_request_id="processing-request:forged",
+            processing_attempt_id="processing-attempt:forged",
             canonical_sample_identity_id="sample:forged",
             acquisition_source_id="acquisition-source:forged",
             injection_order=1,
             candidate_observation_id=None,
             peak_hypothesis_id=None,
+            peak_observation_content_id=None,
             candidate_observation_class=None,
-            direct_support_cell_artifact_content_id=None,
+            direct_support_assessment_artifact_content_id=None,
             group_hypothesis_id=None,
             state="not_observed",
             reason_codes=("not_observed",),
@@ -1063,8 +1580,7 @@ def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
             lineage_refs=("lineage:forged",),
             sample=None,
             acquisition_source=None,
-            peak_hypothesis=None,
-            direct_support_cell=None,
+            candidate_observation=None,
         )
 
     forbidden_tokens = {
@@ -1082,6 +1598,15 @@ def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
         for field in fields(ModeTrackAssignment)
         if any(token in field.name for token in forbidden_tokens)
     }
+
+    for owner_type in (
+        ModeTrackSupportAnchor,
+        ModeTrackCandidateObservation,
+        ModeTrackAssignment,
+    ):
+        assert not {
+            field.name for field in fields(owner_type) if "cell" in field.name
+        }
 
 
 def test_mode_track_owner_has_no_product_or_raw_scan_dependencies() -> None:
@@ -1145,6 +1670,7 @@ class _Scenario:
             "target",
             target_injection_order,
             self.target_acquisition_source_id,
+            self.fixture.owners,
         )
         self.missing_trajectory = assess_local_trajectory(
             LocalTrajectoryEvidenceLookup(points=()),
@@ -1152,17 +1678,17 @@ class _Scenario:
         )
 
     def candidate(self, apex_rt: float, *, direct_support: bool):
-        spine = _spine(
+        assessment, hypothesis = _candidate_assessment_hypothesis(
             self.fixture,
-            support_apex_by_sample={"target": apex_rt},
+            sample_stem="target",
+            apex_rt=apex_rt,
             invocation=f"candidate:{apex_rt:.5f}:{direct_support}",
         )
-        cell = _support_cells(spine)[0]
         return mint_mode_track_candidate_observation(
             processing_owners=self.fixture.owners,
             sample=self.fixture.sample("target"),
-            peak_hypothesis=cell.peak_hypothesis,
-            direct_support_cell=cell if direct_support else None,
+            peak_hypothesis=hypothesis,
+            direct_support_assessment=assessment if direct_support else None,
         )
 
 
@@ -1217,23 +1743,34 @@ def _scenario(
     )
 
 
-def _support_cells(spine) -> tuple[CellObservationRef, ...]:
-    return tuple(
-        cell for cell in spine.cells if cell.content.method_result == "SUPPORT"
-    )
-
-
 def _mode_track_spines(
     fixture,
     *,
     track_a_anchor_rts: tuple[float, float],
     track_b_anchor_rts: tuple[float, float],
 ):
-    declarations = (
-        ("anchor-1", track_a_anchor_rts[0], "track-a:anchor-1"),
-        ("anchor-2", track_a_anchor_rts[1], "track-a:anchor-2"),
-        ("anchor-1", track_b_anchor_rts[0], "track-b:anchor-1"),
-        ("anchor-2", track_b_anchor_rts[1], "track-b:anchor-2"),
+    return _mode_track_spines_many(
+        fixture,
+        track_anchor_rts=(track_a_anchor_rts, track_b_anchor_rts),
+    )
+
+
+def _mode_track_spines_many(
+    fixture,
+    *,
+    track_anchor_rts: tuple[tuple[float, float], ...],
+):
+    declarations = tuple(
+        (
+            sample_stem,
+            apex_rt,
+            f"track-{track_index}:anchor-{anchor_index}",
+        )
+        for track_index, anchor_rts in enumerate(track_anchor_rts, start=1)
+        for anchor_index, (sample_stem, apex_rt) in enumerate(
+            zip(("anchor-1", "anchor-2"), anchor_rts, strict=True),
+            start=1,
+        )
     )
     support_inputs = []
     for index, (sample_stem, apex_rt, invocation) in enumerate(
@@ -1267,18 +1804,16 @@ def _mode_track_spines(
         )
         support_inputs.append((sample, assessment, peak, hypothesis, owner))
 
-    within_track_delta_sec = (
-        max(
-            abs(track_a_anchor_rts[1] - track_a_anchor_rts[0]),
-            abs(track_b_anchor_rts[1] - track_b_anchor_rts[0]),
-        )
-        * 60.0
-    )
+    within_track_delta_sec = max(
+        abs(anchor_rts[1] - anchor_rts[0]) for anchor_rts in track_anchor_rts
+    ) * 60.0
     between_track_delta_sec = (
         min(
             abs(left - right)
-            for left in track_a_anchor_rts
-            for right in track_b_anchor_rts
+            for left_index, left_track in enumerate(track_anchor_rts)
+            for right_track in track_anchor_rts[left_index + 1 :]
+            for left in left_track
+            for right in right_track
         )
         * 60.0
     )
@@ -1292,7 +1827,7 @@ def _mode_track_spines(
         tuple(item[4] for item in support_inputs),
         config=config,
     )
-    assert len(groups) == 2
+    assert len(groups) == len(track_anchor_rts)
     spines = []
     for group in groups:
         members = tuple(
@@ -1312,16 +1847,83 @@ def _mode_track_spines(
     return tuple(sorted(spines, key=lambda item: item.group.group_center_rt))
 
 
+def _candidate_assessment_hypothesis(
+    fixture,
+    *,
+    sample_stem: str,
+    apex_rt: float,
+    invocation: str,
+):
+    sample = fixture.sample(sample_stem)
+    assessment = _assessment(
+        fixture,
+        sample_stem,
+        support_apex=apex_rt,
+        scan_number=9001,
+        invocation=invocation,
+    )
+    return assessment, _hypothesis_from_assessment(
+        fixture,
+        sample=sample,
+        assessment=assessment,
+    )
+
+
+def _hypothesis_from_assessment(fixture, *, sample, assessment):
+    support = compose_cid_nl_chromatographic_support_ref(
+        processing_owners=fixture.owners,
+        sample=sample,
+        scan_support_refs=assessment.individual_support_refs,
+    )
+    hypothesis = compose_cid_nl_peak_hypothesis(
+        processing_owners=fixture.owners,
+        sample=sample,
+        peak_observation=assessment.candidate_peaks[0],
+        chromatographic_support=support,
+    )
+    return hypothesis
+
+
+def _different_request_same_sources(fixture):
+    request = build_processing_request_identity(
+        acquisition_sources=fixture.request.acquisition_sources,
+        acquisition_bindings=fixture.request.acquisition_bindings,
+        scientific_input_schema_version=(
+            fixture.request.scientific_input_schema_version
+        ),
+        processing_algorithm_version="mode-track-foreign-request-v1",
+        processing_contract_version=fixture.request.processing_contract_version,
+        scientific_inputs=json.loads(
+            fixture.request.normalized_scientific_inputs_json
+        ),
+    )
+    attempt = issue_processing_attempt(request)
+    return compose_processing_owner_references(
+        request=request,
+        attempt=attempt,
+        sample_snapshot=fixture.samples[0].snapshot,
+        sample_resolutions=fixture.samples,
+        target_snapshot=fixture.target.snapshot,
+    )
+
+
 def _trajectory(
     sample_stem: str,
     injection_order: int,
     acquisition_source_id: str,
+    processing_owners: ProcessingOwnerReferences,
 ):
     points = tuple(
         LocalFeatureLandmarkEvidence(
             sample_stem=sample_stem,
             injection_order=injection_order,
             acquisition_source_id=acquisition_source_id,
+            processing_request_id=(
+                processing_owners.request.processing_request_id
+            ),
+            processing_attempt_id=(
+                processing_owners.attempt.processing_attempt_id
+            ),
             landmark_id=f"landmark:{sample_stem}:{index}",
             observed_rt_min=local_rt + 0.05,
             local_trajectory_rt_min=local_rt,
@@ -1341,11 +1943,14 @@ def _poor_trajectory(
     sample_stem: str,
     injection_order: int,
     acquisition_source_id: str,
+    processing_owners: ProcessingOwnerReferences,
 ):
     point = LocalFeatureLandmarkEvidence(
         sample_stem=sample_stem,
         injection_order=injection_order,
         acquisition_source_id=acquisition_source_id,
+        processing_request_id=processing_owners.request.processing_request_id,
+        processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         landmark_id=f"landmark:{sample_stem}:poor",
         observed_rt_min=7.87,
         local_trajectory_rt_min=7.82,
@@ -1365,12 +1970,19 @@ def _multi_point_trajectory(
     injection_order: int,
     acquisition_source_id: str,
     local_rt_and_shift: tuple[tuple[float, float], ...],
+    processing_owners: ProcessingOwnerReferences,
 ):
     points = tuple(
         LocalFeatureLandmarkEvidence(
             sample_stem=sample_stem,
             injection_order=injection_order,
             acquisition_source_id=acquisition_source_id,
+            processing_request_id=(
+                processing_owners.request.processing_request_id
+            ),
+            processing_attempt_id=(
+                processing_owners.attempt.processing_attempt_id
+            ),
             landmark_id=f"landmark:{sample_stem}:{index}",
             observed_rt_min=local_rt + shift,
             local_trajectory_rt_min=local_rt,

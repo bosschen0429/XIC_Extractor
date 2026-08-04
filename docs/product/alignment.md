@@ -127,10 +127,12 @@ labels, `method_subject_id`, display labels, and ordinals do not mint or replace
 the internal Family context.
 
 The initial model set is fit once per Family from canonical direct-SUPPORT
-`PeakHypothesis` anchors. A later uniquely assigned direct-SUPPORT observation
-may mint an immutable successor model set; consumers still do not refit per
-cell. Each track follows its own injection-order-local, piecewise-linear
-trajectory. At fit time, the M3 owner projects each existing group's canonical
+assessment × `PeakHypothesis` anchors. Family ModeTracks must have disjoint
+owner IDs, and one `PeakHypothesis` or physical peak observation may seed at
+most one track. Fit accepts initial anchors only. A later uniquely assigned
+direct-SUPPORT observation may mint an immutable successor model set; consumers
+still do not refit. Each track follows its own injection-order-local, piecewise-linear
+trajectory. At fit time, the M8 fit owner projects each existing group's canonical
 center RT into the model as `ordering_reference_rt_min`. This immutable behavior
 snapshot is bound into `model_set_id`, and crossing checks read the snapshot
 rather than a retained rich group object. Equal model identities therefore
@@ -143,9 +145,9 @@ landmarks, never one Family-wide median, and landmark extrapolation outside the
 retained local RT range is technically unassessable. The versioned lane policy
 supplies the prediction half-width and bounded
 interpolation/extrapolation limits; the owner introduces no universal drift,
-valley, width, shoulder, or intensity threshold. Missing or poor landmarks,
-sparse anchors, unsupported interpolation/extrapolation, and predicted interval
-crossing fail closed.
+valley, width, shoulder, or intensity threshold. An exact injection anchor is a
+complete local prediction even when no landmark is available. Other sparse or
+landmark-unassessable prediction branches fail closed.
 
 When every track is outside the policy's bounded interpolation/extrapolation
 coverage, the sample is `out_of_model`. When at least one track is predictable
@@ -159,32 +161,34 @@ all competitors are excluded. The other terminal states are
 `ambiguous_multiple_tracks`, `out_of_model`, `not_observed`, and
 `technical_unassessable`. Prediction-interval overlap is candidate-local: it
 does not block a candidate that lies in a single-track-only region. A track
+crossing is also candidate-local: only candidates whose sole match is one of
+the crossed tracks become `technical_unassessable`; an unaffected third track
+remains assignable. A candidate matching multiple intervals remains
+`ambiguous_multiple_tracks` before crossing adjudication. A track
 accepts at most one hypothesis per sample, and occupancy includes both its
 incumbent anchor for that injection and provisional candidates in the current
 batch. Replaying the incumbent hypothesis is the same occupant; a different
 hypothesis cannot become a second occupant. Only a uniquely assigned direct
 SUPPORT observation may reinforce that one track; MS1-only, Backfill, shadow,
 inferred, deconvolved, manual, and shared-set observations remain non-training.
-Model sets are bound to their exact processing request; anchors, candidates, and
-landmarks must retain the resolved acquisition source and injection order.
-Every observed assignment retains its exact candidate identity, and a direct
-SUPPORT assignment also retains the exact source cell artifact identity.
+Model sets, anchors, candidates, assignments, and retained landmarks are bound
+to their exact processing request and attempt, resolved acquisition source, and
+injection order. Anchors and candidates also retain the exact physical peak
+observation identity. Every ingress revalidates the live PeakHypothesis and,
+when present, direct-SUPPORT assessment against those current owners. M8 does
+not retain or depend on `CellObservationRef`.
 
 The retained fixture
 `docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`
-records the source-qualified M8 stop condition. Replay normalizes checkout CRLF
-to LF before hashing and parsing this text fixture, so its identity does not
-depend on the runner platform. Its required-oracle fields name
-the expected 85-open/85-call target; they are not observed counters for the
-retained historical packet. The required owner-bound v2 Discovery index and
-original seed packet bytes were unavailable, while the available historical
-packet had different hashes and no observed RAW-open/chromatogram-call
-completion counters. The authorized Windows-native reconstruction therefore
-did not launch and remains available for a future source-restored attempt.
-No-RAW replay reports one Family, 85 samples, zero RAW opens, zero chromatogram
-calls, and zero typed hypotheses, tracks, anchors, landmarks, assignments, or
-ambiguous assignments. Its evidence verdict is `inconclusive / no-write`; the
-historical morphology, intensity, and mode labels cannot seed tracks or grant a
+records the source-qualified M8 stop condition; it is not a replay fixture or a
+classification oracle. It preserves the producing code/base SHAs, required
+Discovery/sample/trace hashes, 85-sample census, and historical 85-open/85-call
+timing claim. The required owner-bound Discovery index and original seed bytes
+were unavailable, while the retained historical packet had different hashes
+and no observed completion counters. Reconstruction therefore did not launch,
+made zero RAW opens and zero chromatogram calls, and did not consume the
+authorized attempt. Its evidence verdict remains `inconclusive / no-write`;
+historical morphology, intensity, or mode labels cannot seed tracks or grant a
 current-checkout compatibility claim.
 
 `FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
@@ -240,8 +244,8 @@ Before changing alignment behavior, require the relevant subset of:
 - For shadow ModeTrack assignment, optional occupancy, per-track local drift,
   unique/both/neither interval cases, sparse anchors, missing/poor landmarks,
   bounded interpolation/extrapolation, crossing intervals, non-training
-  rejection, deterministic identity/serialization, and a zero-RAW retained
-  replay verdict.
+  rejection, request/attempt/physical-observation substitution, deterministic
+  identity/serialization, and the retained zero-RAW stop receipt.
 - Public hard zero: the shadow owner must not import or call Matrix identity,
   production decisions, TSV/XLSX/CSV writers, output packages, or activation.
 - Downstream consumer check when output filenames or columns change.

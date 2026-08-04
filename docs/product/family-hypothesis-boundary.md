@@ -86,9 +86,11 @@ display labels. Treat this as an adapter state:
 - Do not train a ModeTrack from MS1-only, Backfill, inferred, deconvolved,
   manual, shared-set, or other non-training observations. Only an existing
   owner-proven direct-SUPPORT `PeakHypothesis` may seed or reinforce one track,
-  and reinforcement follows unique assignment only. The assignment must retain
-  the exact candidate and direct-SUPPORT cell identities; matching only the
-  `PeakHypothesis` is insufficient provenance.
+  and reinforcement follows unique assignment only. M8 must retain and
+  revalidate the exact processing request/attempt, physical peak observation,
+  candidate, and direct-SUPPORT assessment identities. It must not retain or
+  depend on `CellObservationRef`; matching only the `PeakHypothesis` is
+  insufficient provenance.
 - Do not let a consumer refit ModeTracks or reinterpret an ambiguous,
   out-of-model, absent, or technically unassessable state as unique. Shadow
   assignments carry no value or writer authority.

@@ -1,6 +1,5 @@
 /.gitattributes text eol=lf
 /docs/superpowers/validation/productization_status_index_v1.tsv text eol=lf
-/docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json text eol=lf
 /docs/superpowers/validation/bounded_non_broad_lane_acceptance_v1.tsv text eol=lf
 /docs/superpowers/validation/*.tsv text eol=lf
 /docs/superpowers/validation/*.json text eol=lf

@@ -210,6 +210,11 @@ def _validate_tracks(
     expected_ids = tuple(track.group_hypothesis_id for track in mode_tracks)
     if group_hypothesis_ids != expected_ids:
         raise ValueError("group_hypothesis_ids must exactly match mode_tracks")
+    owner_ids = tuple(
+        owner_id for track in mode_tracks for owner_id in track.owner_ids
+    )
+    if len(owner_ids) != len(set(owner_ids)):
+        raise ValueError("ModeTracks must not share owner ids")
     for track in mode_tracks:
         center_mz = _finite_float(track.group_center_mz, field="group_center_mz")
         center_rt = _finite_float(track.group_center_rt, field="group_center_rt")

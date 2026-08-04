@@ -115,6 +115,37 @@ def test_family_context_ref_rejects_duplicate_or_out_of_context_tracks() -> None
         )
 
 
+def test_family_context_ref_rejects_tracks_that_share_an_owner() -> None:
+    shared_owner = "owner:shared-physical-hypothesis"
+    first = CrossSamplePeakGroupHypothesis(
+        group_hypothesis_id="track-a",
+        public_family_id="display-family",
+        owner_ids=(shared_owner,),
+        event_ids=("event:a",),
+        event_member_count=1,
+        group_center_mz=500.0,
+        group_center_rt=8.0,
+    )
+    second = CrossSamplePeakGroupHypothesis(
+        group_hypothesis_id="track-b",
+        public_family_id="display-family",
+        owner_ids=(shared_owner,),
+        event_ids=("event:b",),
+        event_member_count=1,
+        group_center_mz=500.0,
+        group_center_rt=8.4,
+    )
+
+    with pytest.raises(ValueError, match="ModeTracks must not share owner ids"):
+        mint_family_context_ref(
+            mz_interval=(499.9, 500.1),
+            rt_interval=(7.5, 8.8),
+            context_policy_version="mode-track-family-context-v1",
+            source_lineage_refs=("source-packet:abc",),
+            mode_tracks=(first, second),
+        )
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     (
