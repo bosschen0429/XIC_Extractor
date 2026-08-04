@@ -365,6 +365,78 @@ def test_ordered_one_to_one_mapping_retains_evidence_without_backfill_votes(
     )
 
 
+def test_mapping_retains_owner_universe_order_while_pairing_by_rt(
+    tmp_path: Path,
+) -> None:
+    fixture = _study_fixture(tmp_path, ("a1", "a2", "b1", "b2", "missing"))
+    candidate_peaks = tuple(
+        _peak(fixture, "missing", apex_rt=7.6 + index * 0.05)
+        for index in range(12)
+    )
+    opposite_order_pair = next(
+        (early, late)
+        for early in candidate_peaks
+        for late in candidate_peaks
+        if early.content.integration.rt_apex_min
+        < late.content.integration.rt_apex_min
+        and early.content.peak_observation_content_id
+        > late.content.peak_observation_content_id
+    )
+    early_peak, late_peak = opposite_order_pair
+    early_rt = early_peak.content.integration.rt_apex_min
+    late_rt = late_peak.content.integration.rt_apex_min
+    early = _spine(
+        fixture,
+        support_apex_by_sample={"a1": early_rt, "a2": early_rt},
+        invocation="owner-order-early",
+    )
+    late = _spine(
+        fixture,
+        support_apex_by_sample={"b1": late_rt, "b2": late_rt},
+        invocation="owner-order-late",
+    )
+    early_facts = assess_conservative_backfill_group(
+        early.cells,
+        sample_population=fixture.samples,
+    )
+    late_facts = assess_conservative_backfill_group(
+        late.cells,
+        sample_population=fixture.samples,
+    )
+    owner_ordered_peaks = tuple(
+        sorted(
+            opposite_order_pair,
+            key=lambda peak: peak.content.peak_observation_content_id,
+        )
+    )
+    assert owner_ordered_peaks == (late_peak, early_peak)
+    candidate_universe = _recovery_universe(
+        fixture,
+        (early_facts, late_facts),
+        "missing",
+        owner_ordered_peaks,
+    )
+
+    decisions = map_conservative_backfill_candidates(
+        (late_facts, early_facts),
+        sample=fixture.sample("missing"),
+        candidate_universes=(candidate_universe,),
+    )
+
+    assert tuple(
+        evidence.peak_observation for evidence in decisions[0].candidate_evidence
+    ) == candidate_universe.candidate_peaks
+    assert {
+        decision.group_facts.group_context.group.group_center_rt:
+        decision.matched_candidate.peak_observation
+        for decision in decisions
+        if decision.matched_candidate is not None
+    } == {
+        early_rt: early_peak,
+        late_rt: late_peak,
+    }
+
+
 def test_one_to_many_and_many_to_one_cardinality_remain_held(
     tmp_path: Path,
 ) -> None:

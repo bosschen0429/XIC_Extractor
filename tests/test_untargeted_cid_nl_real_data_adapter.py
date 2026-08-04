@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
@@ -74,6 +75,60 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     assert result.acquisition.xic_batch_count == 1
     assert result.acquisition.adapter_chromatogram_call_count == 1
     assert vendor_raw.chromatogram_request_counts == [1]
+
+
+def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
+    tmp_path: Path,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((7.99,))
+    source_raw.intensity = 1000.0 * np.exp(
+        -0.5 * ((source_raw.rt - 8.10) / 0.035) ** 2
+    )
+    settings = replace(_settings(), neutral_loss_profile=None, rt_max=8.0)
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.best_seed_rt <= settings.rt_max
+    assert candidate.ms1_apex_rt is not None
+    assert candidate.ms1_apex_rt > settings.rt_max
+    assert candidate.ms1_apex_rt <= candidate.ms1_search_rt_max
+    raw, _vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        source_raw,
+        tmp_path=tmp_path,
+    )
+
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+
+    receipt = result.assessment_input.assessment.content.evaluation_receipt
+    assert receipt.query_rt_min == min(
+        settings.rt_min,
+        candidate.ms1_search_rt_min,
+    )
+    assert receipt.query_rt_max == max(
+        settings.rt_max,
+        candidate.ms1_search_rt_max,
+    )
 
 
 def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
