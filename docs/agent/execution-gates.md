@@ -17,8 +17,14 @@ uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py -
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write
 ```
 
-The doctor returns `READY`, `ENV_BLOCKED`, or `INCONCLUSIVE`. Stop product
-debugging on `ENV_BLOCKED`; fix the named runtime layer once before retrying.
+The doctor returns a machine-actionable status. `READY` may run in the current
+sandbox; `REWRITE_COMMAND` must change shape before execution;
+`APPROVAL_REQUIRED` goes directly to a bounded approval;
+`ENVIRONMENT_REPAIR_REQUIRED` stops product debugging until the named runtime
+layer changes; `HUMAN_DECISION_REQUIRED` waits for the operator; and
+`INCONCLUSIVE` collects only the finding's named next evidence. Add
+`--probe-github` only when the task needs GitHub; a runtime that advertises
+disabled sandbox networking must not first launch a predictably failing canary.
 
 ## Outputs And Validation Status
 

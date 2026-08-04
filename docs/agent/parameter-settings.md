@@ -135,6 +135,26 @@ worktree Python、bootstrap state、Git read 與 workspace write。它不讀 RAW
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write --command "<command-to-check>"
 ```
 
+任務確實需要 GitHub 時才加 `--probe-github`。如果目前 Codex runtime 已宣告
+sandbox network disabled，doctor 不會先執行一條必敗的 `git ls-remote`；它會直接
+回報 `github_network_approval_required`。如果 network 已啟用，canary 才會區分
+DNS、connection、auth/access failure：
+
+```powershell
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-github
+```
+
+Doctor 的 top-level status 直接決定下一步：
+
+| Status | 固定下一步 |
+| --- | --- |
+| `READY` | 在目前 sandbox 執行 |
+| `REWRITE_COMMAND` | 依 finding 改寫命令，不執行原形狀 |
+| `APPROVAL_REQUIRED` | 對同一個必要命令提出 bounded approval；不要先製造一次失敗 |
+| `ENVIRONMENT_REPAIR_REQUIRED` | 停止產品除錯，修復 named runtime layer 後再跑 doctor |
+| `HUMAN_DECISION_REQUIRED` | 等待 credentials、destructive action 或風險取捨的人工決定 |
+| `INCONCLUSIVE` | 只取得 finding 指定的下一個證據，不猜測 |
+
 只想分類命令、不做 runtime acceptance 時才加 `--command-only`。Git metadata
 write 是 Codex protected boundary；`--probe-git-write` 只用於有窄提權的 sandbox
 診斷，不是一般 preflight。一般 `git status` 已包含在 doctor；`git add` 由
@@ -151,6 +171,10 @@ approval。
 同時設定舊 `sandbox_mode` / `[sandbox_workspace_write]`。`.codex/config.toml`
 將 `GIT_CONFIG_GLOBAL` 設為 `NUL`，必要 identity/long-path settings 放 shared
 local Git config，避免 Windows elevated sandbox 讀 user-home `.gitconfig`。
+Doctor 在 Codex Windows thread 會先驗證這個 project shell environment 是否
+真的載入；若回報 `host_config_not_activated`，review/trust project `.codex` layer
+後重啟 Codex 並開新 thread。不要用目前 shell 的臨時環境覆寫掩蓋 host activation
+失敗，也不要再次修改已正確的 project config。
 
 ### Approval-First Commands
 

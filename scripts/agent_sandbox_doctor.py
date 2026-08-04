@@ -20,8 +20,31 @@ _NETWORK_COMMAND_PATTERNS = (
     r"\bpip\s+install\b",
     r"\buv\s+add\b",
     r"\buv\s+pip\s+install\b",
-    r"\bgit\s+clone\b",
-    r"\bgh\s+(?:pr|api|repo|release)\b",
+    r"\bgit\s+(?:clone|fetch|pull|push|ls-remote)\b",
+    r"\bgh\s+(?:auth\s+status|pr|api|repo|release)\b",
+)
+
+_REWRITE_COMMAND_CODES = frozenset(
+    {
+        "background_long_raw_run",
+        "output_outside_writable_roots",
+        "powershell_bash_heredoc",
+        "powershell_chain_operator",
+        "powershell_export",
+        "raw_runner_not_venv",
+    }
+)
+_APPROVAL_REQUIRED_CODES = frozenset(
+    {
+        "github_network_approval_required",
+        "network_or_github_approval_needed",
+    }
+)
+_HUMAN_DECISION_REQUIRED_CODES = frozenset(
+    {
+        "dangerous_runtime_config",
+        "github_auth_or_access_failed",
+    }
 )
 
 
@@ -31,6 +54,18 @@ class Finding:
     code: str
     message: str
     next_action: str
+
+    @property
+    def disposition(self) -> str:
+        if self.code in _REWRITE_COMMAND_CODES:
+            return "REWRITE_COMMAND"
+        if self.code in _APPROVAL_REQUIRED_CODES:
+            return "APPROVAL_REQUIRED"
+        if self.code in _HUMAN_DECISION_REQUIRED_CODES:
+            return "HUMAN_DECISION_REQUIRED"
+        if self.severity == "blocker":
+            return "ENVIRONMENT_REPAIR_REQUIRED"
+        return "INCONCLUSIVE"
 
 
 @dataclass(frozen=True)
@@ -43,7 +78,10 @@ class DoctorReport:
 
     def to_dict(self) -> dict[str, object]:
         payload = asdict(self)
-        payload["findings"] = [asdict(finding) for finding in self.findings]
+        payload["findings"] = [
+            {**asdict(finding), "disposition": finding.disposition}
+            for finding in self.findings
+        ]
         return payload
 
 
@@ -179,6 +217,7 @@ def build_environment_report(
     probe_write: bool = False,
     runtime_check: bool = False,
     probe_git_write: bool = False,
+    probe_github: bool = False,
 ) -> DoctorReport:
     resolved_workspace = workspace_root.resolve()
     resolved_roots = tuple(root.resolve() for root in allowed_write_roots)
@@ -196,15 +235,11 @@ def build_environment_report(
             _collect_runtime_findings(
                 workspace_root=resolved_workspace,
                 probe_git_write=probe_git_write,
+                probe_github=probe_github,
             )
         )
 
-    if any(finding.severity == "blocker" for finding in findings):
-        status = "ENV_BLOCKED"
-    elif any(finding.severity == "review" for finding in findings):
-        status = "INCONCLUSIVE"
-    else:
-        status = "READY"
+    status = _report_status(findings)
 
     return DoctorReport(
         status=status,
@@ -230,6 +265,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         probe_write=args.probe_write,
         runtime_check=not args.command_only,
         probe_git_write=args.probe_git_write,
+        probe_github=args.probe_github,
     )
     _print_report(report)
     if args.json_output is not None:
@@ -291,6 +327,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--probe-github",
+        action="store_true",
+        help=(
+            "Check whether the current Codex runtime can reach the GitHub "
+            "origin. Skips fail-first network access when the runtime advertises "
+            "that sandbox networking is disabled."
+        ),
+    )
+    parser.add_argument(
         "--command-only",
         action="store_true",
         help="Classify the command without running local runtime canaries.",
@@ -316,8 +361,25 @@ def _print_report(report: DoctorReport) -> None:
         return
     print("Findings:")
     for finding in report.findings:
-        print(f"  - [{finding.severity}] {finding.code}: {finding.message}")
+        print(
+            f"  - [{finding.severity}/{finding.disposition}] "
+            f"{finding.code}: {finding.message}"
+        )
         print(f"    next: {finding.next_action}")
+
+
+def _report_status(findings: Sequence[Finding]) -> str:
+    dispositions = {finding.disposition for finding in findings}
+    for status in (
+        "HUMAN_DECISION_REQUIRED",
+        "ENVIRONMENT_REPAIR_REQUIRED",
+        "REWRITE_COMMAND",
+        "APPROVAL_REQUIRED",
+        "INCONCLUSIVE",
+    ):
+        if status in dispositions:
+            return status
+    return "READY"
 
 
 def _normalize_command(command: str) -> str:
@@ -425,9 +487,15 @@ def _collect_runtime_findings(
     *,
     workspace_root: Path,
     probe_git_write: bool,
+    probe_github: bool,
 ) -> tuple[Finding, ...]:
     findings: list[Finding] = []
     findings.extend(_inspect_runtime_owner(os_name=os.name, environ=os.environ))
+    host_findings = _inspect_codex_host_activation(
+        os_name=os.name,
+        environ=os.environ,
+    )
+    findings.extend(host_findings)
     findings.extend(
         _inspect_python_runtime(
             workspace_root=workspace_root,
@@ -437,13 +505,59 @@ def _collect_runtime_findings(
         )
     )
     findings.extend(_inspect_bootstrap_state(workspace_root))
-    findings.extend(
-        _inspect_git_runtime(
+    git_findings: tuple[Finding, ...] = ()
+    if not host_findings:
+        git_findings = _inspect_git_runtime(
             workspace_root=workspace_root,
             probe_write=probe_git_write,
         )
-    )
+        findings.extend(git_findings)
+    if probe_github and (
+        not host_findings
+        and not git_findings
+        or _codex_sandbox_network_disabled(os.environ)
+    ):
+        findings.extend(
+            _inspect_github_runtime(
+                workspace_root=workspace_root,
+                environ=os.environ,
+            )
+        )
     return tuple(findings)
+
+
+def _inspect_codex_host_activation(
+    *,
+    os_name: str,
+    environ: Mapping[str, str],
+) -> tuple[Finding, ...]:
+    if os_name != "nt" or "CODEX_THREAD_ID" not in environ:
+        return ()
+    if environ.get("GIT_CONFIG_GLOBAL", "").upper() == "NUL":
+        return ()
+    return (
+        Finding(
+            severity="blocker",
+            code="host_config_not_activated",
+            message=(
+                "This Codex thread did not load the trusted project shell "
+                "environment; GIT_CONFIG_GLOBAL is not NUL."
+            ),
+            next_action=(
+                "Review/trust the project .codex layer if needed, then restart "
+                "Codex and open a new thread. Do not retry Git, expose the user "
+                "home, or rewrite the already-correct project config."
+            ),
+        ),
+    )
+
+
+def _codex_sandbox_network_disabled(environ: Mapping[str, str]) -> bool:
+    return environ.get("CODEX_SANDBOX_NETWORK_DISABLED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 def _inspect_runtime_owner(
@@ -667,6 +781,123 @@ def _inspect_git_runtime(
     if not probe_write:
         return ()
     return _probe_git_common_dir_write(workspace_root=workspace_root, run=run)
+
+
+def _inspect_github_runtime(
+    *,
+    workspace_root: Path,
+    environ: Mapping[str, str],
+    run: _CommandRunner = subprocess.run,
+) -> tuple[Finding, ...]:
+    if _codex_sandbox_network_disabled(environ):
+        return (
+            Finding(
+                severity="review",
+                code="github_network_approval_required",
+                message=(
+                    "The current Codex runtime advertises disabled sandbox "
+                    "networking, so the GitHub canary was not launched."
+                ),
+                next_action=(
+                    "Request narrow network approval for the intended GitHub "
+                    "command and run that same command once. Do not refresh or "
+                    "replace credentials based on an offline canary."
+                ),
+            ),
+        )
+
+    try:
+        completed = run(
+            ["git", "ls-remote", "--heads", "origin"],
+            cwd=workspace_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            Finding(
+                severity="blocker",
+                code="github_probe_timed_out",
+                message="GitHub connectivity canary exceeded 15 seconds.",
+                next_action=(
+                    "Inspect the active network profile or sandbox log once. Do "
+                    "not change GitHub credentials based on a timeout."
+                ),
+            ),
+        )
+    except OSError as exc:
+        return (
+            Finding(
+                severity="blocker",
+                code="github_probe_unavailable",
+                message=f"GitHub connectivity canary could not start: {exc}",
+                next_action=(
+                    "Repair the local Git runtime before diagnosing network or "
+                    "credentials."
+                ),
+            ),
+        )
+
+    if completed.returncode == 0:
+        return ()
+
+    detail = (completed.stderr or completed.stdout).strip()
+    lowered = detail.lower()
+    if "could not resolve host" in lowered or "could not resolve hostname" in lowered:
+        code = "github_dns_failed"
+        next_action = (
+            "Inspect the active sandbox network profile, DNS, or proxy and rerun "
+            "this bounded canary only after that state changes. Do not change "
+            "credentials for a name-resolution failure."
+        )
+    elif any(
+        marker in lowered
+        for marker in (
+            "authentication failed",
+            "invalid username or password",
+            "could not read username",
+            "terminal prompts disabled",
+            "repository not found",
+        )
+    ):
+        code = "github_auth_or_access_failed"
+        next_action = (
+            "Verify the origin exists and the current GitHub credential has "
+            "repository access. This is not evidence of a sandbox network block."
+        )
+    elif any(
+        marker in lowered
+        for marker in (
+            "failed to connect",
+            "could not connect to server",
+            "connection refused",
+            "connection timed out",
+        )
+    ):
+        code = "github_connection_failed"
+        next_action = (
+            "Networking was expected but GitHub could not be reached. Restart "
+            "Codex or inspect the sandbox log before one bounded retry; do not "
+            "change credentials for a connection failure."
+        )
+    else:
+        code = "github_probe_failed"
+        next_action = (
+            "Classify the exact GitHub origin error before retrying. Do not infer "
+            "credential failure from an unclassified canary."
+        )
+    return (
+        Finding(
+            severity=(
+                "blocker" if code != "github_auth_or_access_failed" else "review"
+            ),
+            code=code,
+            message=detail or f"GitHub canary exited {completed.returncode}.",
+            next_action=next_action,
+        ),
+    )
 
 
 def _probe_git_common_dir_write(

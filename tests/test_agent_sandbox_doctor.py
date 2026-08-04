@@ -58,6 +58,35 @@ def test_classify_output_outside_allowed_roots(tmp_path: Path) -> None:
     assert findings[0].severity == "review"
 
 
+def test_network_command_routes_to_bounded_approval(tmp_path: Path) -> None:
+    findings = agent_sandbox_doctor.classify_command(
+        "git push origin HEAD",
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+    )
+
+    assert [finding.code for finding in findings] == [
+        "network_or_github_approval_needed"
+    ]
+    assert findings[0].disposition == "APPROVAL_REQUIRED"
+
+    report = agent_sandbox_doctor.build_environment_report(
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+        command="git push origin HEAD",
+    )
+
+    assert report.status == "APPROVAL_REQUIRED"
+    assert report.to_dict()["findings"][0]["disposition"] == "APPROVAL_REQUIRED"
+
+    gh_findings = agent_sandbox_doctor.classify_command(
+        "gh auth status",
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+    )
+    assert [finding.disposition for finding in gh_findings] == ["APPROVAL_REQUIRED"]
+
+
 def test_documented_venv_alignment_command_is_clean(tmp_path: Path) -> None:
     command = (
         ".venv\\Scripts\\python.exe -m scripts.run_alignment "
@@ -97,7 +126,7 @@ def test_main_strict_json_output_reports_blockers(
 
     stdout = capsys.readouterr().out
     assert code == 2
-    assert "ENV_BLOCKED" in stdout
+    assert "REWRITE_COMMAND" in stdout
     assert "raw_runner_not_venv" in output.read_text(encoding="utf-8")
 
 
@@ -130,6 +159,32 @@ def test_runtime_owner_rejects_wsl_for_windows_owned_checkout() -> None:
 
     assert [finding.code for finding in findings] == ["runtime_owner_mismatch"]
     assert findings[0].severity == "blocker"
+
+
+def test_codex_host_activation_requires_project_git_environment() -> None:
+    findings = agent_sandbox_doctor._inspect_codex_host_activation(
+        os_name="nt",
+        environ={
+            "CODEX_THREAD_ID": "thread-123",
+            "CODEX_PERMISSION_PROFILE": ":workspace",
+        },
+    )
+
+    assert [finding.code for finding in findings] == ["host_config_not_activated"]
+    assert findings[0].disposition == "ENVIRONMENT_REPAIR_REQUIRED"
+    assert "restart" in findings[0].next_action.lower()
+
+
+def test_codex_host_activation_accepts_project_git_environment() -> None:
+    findings = agent_sandbox_doctor._inspect_codex_host_activation(
+        os_name="nt",
+        environ={
+            "CODEX_THREAD_ID": "thread-123",
+            "GIT_CONFIG_GLOBAL": "NUL",
+        },
+    )
+
+    assert findings == ()
 
 
 def test_python_runtime_requires_supported_worktree_interpreter(
@@ -179,6 +234,101 @@ def test_git_runtime_classifies_global_config_acl_failure(
 
     assert [finding.code for finding in findings] == ["git_global_config_unreadable"]
     assert findings[0].severity == "blocker"
+    assert findings[0].disposition == "ENVIRONMENT_REPAIR_REQUIRED"
+
+
+def test_github_probe_skips_fail_first_when_sandbox_network_is_disabled(
+    tmp_path: Path,
+) -> None:
+    def unexpected_git(*args, **kwargs):
+        raise AssertionError("network-disabled runtime must not launch git ls-remote")
+
+    findings = agent_sandbox_doctor._inspect_github_runtime(
+        workspace_root=tmp_path,
+        environ={"CODEX_SANDBOX_NETWORK_DISABLED": "1"},
+        run=unexpected_git,
+    )
+
+    assert [finding.code for finding in findings] == [
+        "github_network_approval_required"
+    ]
+    assert findings[0].disposition == "APPROVAL_REQUIRED"
+    assert "credential" in findings[0].next_action.lower()
+
+
+def test_github_probe_distinguishes_dns_from_auth_failure(tmp_path: Path) -> None:
+    outcomes = iter(
+        (
+            subprocess.CompletedProcess(
+                ["git", "ls-remote"],
+                128,
+                stdout="",
+                stderr=(
+                    "fatal: unable to access 'https://github.com/org/repo.git/': "
+                    "Could not resolve host: github.com"
+                ),
+            ),
+            subprocess.CompletedProcess(
+                ["git", "ls-remote"],
+                128,
+                stdout="",
+                stderr=(
+                    "remote: Invalid username or password.\n"
+                    "fatal: Authentication failed for "
+                    "'https://github.com/org/private-repo.git/'"
+                ),
+            ),
+        )
+    )
+
+    def fake_git(*args, **kwargs):
+        return next(outcomes)
+
+    dns_findings = agent_sandbox_doctor._inspect_github_runtime(
+        workspace_root=tmp_path,
+        environ={},
+        run=fake_git,
+    )
+    auth_findings = agent_sandbox_doctor._inspect_github_runtime(
+        workspace_root=tmp_path,
+        environ={},
+        run=fake_git,
+    )
+
+    assert [finding.code for finding in dns_findings] == ["github_dns_failed"]
+    assert dns_findings[0].disposition == "ENVIRONMENT_REPAIR_REQUIRED"
+    assert "credential" in dns_findings[0].next_action.lower()
+    assert [finding.code for finding in auth_findings] == [
+        "github_auth_or_access_failed"
+    ]
+    assert auth_findings[0].disposition == "HUMAN_DECISION_REQUIRED"
+
+
+def test_github_connection_failure_does_not_claim_invalid_credentials(
+    tmp_path: Path,
+) -> None:
+    def connection_failed(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args[0],
+            128,
+            stdout="",
+            stderr=(
+                "fatal: unable to access "
+                "'https://github.com/Chao-hu-Lab/XIC_Extractor.git/': "
+                "Failed to connect to github.com port 443: Could not connect "
+                "to server"
+            ),
+        )
+
+    findings = agent_sandbox_doctor._inspect_github_runtime(
+        workspace_root=tmp_path,
+        environ={},
+        run=connection_failed,
+    )
+
+    assert [finding.code for finding in findings] == ["github_connection_failed"]
+    assert findings[0].disposition == "ENVIRONMENT_REPAIR_REQUIRED"
+    assert "do not change credentials" in findings[0].next_action.lower()
 
 
 def test_git_runtime_bounds_status_canary(tmp_path: Path) -> None:
@@ -236,6 +386,11 @@ def test_runtime_report_blocks_when_bootstrap_is_not_ready(
     )
     monkeypatch.setattr(
         agent_sandbox_doctor,
+        "_inspect_codex_host_activation",
+        lambda **kwargs: (),
+    )
+    monkeypatch.setattr(
+        agent_sandbox_doctor,
         "_inspect_python_runtime",
         lambda **kwargs: (),
     )
@@ -263,5 +418,5 @@ def test_runtime_report_blocks_when_bootstrap_is_not_ready(
         runtime_check=True,
     )
 
-    assert report.status == "ENV_BLOCKED"
+    assert report.status == "ENVIRONMENT_REPAIR_REQUIRED"
     assert [finding.code for finding in report.findings] == ["bootstrap_not_ready"]
