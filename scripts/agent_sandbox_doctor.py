@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from scripts import bootstrap_worktree
+from tools.git_command_policy import git_invocations
 
 _NETWORK_COMMAND_PATTERNS = (
     r"\bnpx\b",
@@ -23,9 +24,9 @@ _NETWORK_COMMAND_PATTERNS = (
     r"\buv\s+pip\s+install\b",
     r"\buv\s+run\b[^\r\n]*?--with(?:=|\s)",
     r"\bplaywright\s+install\b",
-    r"\bgit\s+(?:clone|fetch|pull|push|ls-remote)\b",
     r"\bgh\s+(?:auth\s+status|pr|api|repo|release)\b",
 )
+_GIT_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull", "push"})
 
 _REWRITE_COMMAND_CODES = frozenset(
     {
@@ -181,7 +182,13 @@ def classify_command(
                 )
             )
 
-    if any(re.search(pattern, lower) for pattern in _NETWORK_COMMAND_PATTERNS):
+    needs_network = any(
+        re.search(pattern, lower) for pattern in _NETWORK_COMMAND_PATTERNS
+    ) or any(
+        invocation.subcommand in _GIT_NETWORK_SUBCOMMANDS
+        for invocation in git_invocations(normalized)
+    )
+    if needs_network:
         findings.append(
             Finding(
                 severity="review",

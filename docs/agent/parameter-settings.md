@@ -214,6 +214,19 @@ Doctor 在 Codex Windows thread 會先驗證這個 project shell environment 是
 | 遞迴掃描太慢、掃到 access denied、或 output/build/.worktrees 噪音 | 優先用 `git ls-files`、`rg --files`、targeted `rg`，再讀特定 range | 不要用 blanket `Get-ChildItem -Recurse` 掃整個 repo、`output/`、`.worktrees/`、或 build/cache 目錄 |
 | output / workbook overwrite `Permission denied` | 先假設檔案可能被 Excel/browser/previewer 鎖住；改寫到 timestamped 或 suffixed output，並回報原檔可能被鎖 | 不要強刪或反覆覆蓋；不要把 permission denied 當成 pipeline 邏輯失敗 |
 
+已獲准的 Git metadata mutation 若在 elevated Windows user 下回報 `dubious
+ownership`，原因通常是 `.git` 由 sandbox identity 建立，而 project
+`GIT_CONFIG_GLOBAL=NUL` 不讀 user-global `safe.directory`。先確認目前目錄就是
+目標 worktree，再只對這次 Git invocation 加 exact exception：
+
+```powershell
+$xicRepoRoot = (Resolve-Path .).Path.Replace('\', '/')
+git -c "safe.directory=$xicRepoRoot" add -- <task-files...>
+```
+
+後續 commit／push 同樣把 `-c "safe.directory=$xicRepoRoot"` 放在 subcommand
+前；不要寫入 global `safe.directory`，也不要把其他 repo 加進例外。
+
 只有在「失敗模式重複、doctor 或現有 preflight 無法降低風險、且人工 approval
 本身變成主要摩擦」時，才考慮新增 project-local execpolicy 或 hook。新增前
 必須回答：

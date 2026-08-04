@@ -18,6 +18,7 @@ PROJECT_CONFIG = ROOT / ".codex" / "config.toml"
 HOOKS_DIR = ROOT / ".codex" / "hooks"
 RULES_PATH = ROOT / ".codex" / "rules" / "xic-safety.rules"
 OPERATING_SYSTEM = ROOT / "docs" / "agent" / "codex-operating-system.md"
+PARAMETER_SETTINGS = ROOT / "docs" / "agent" / "parameter-settings.md"
 SUBAGENT_ROUTING = ROOT / "docs" / "agent" / "subagent-routing.md"
 HOOK_COMMAND_PATTERNS = {
     "command": re.compile(
@@ -297,6 +298,14 @@ def test_subagent_routing_uses_current_project_sandbox_contract() -> None:
     ) in routing
 
 
+def test_elevated_git_ownership_recovery_stays_invocation_scoped() -> None:
+    settings = PARAMETER_SETTINGS.read_text(encoding="utf-8")
+
+    assert "$xicRepoRoot = (Resolve-Path .).Path.Replace('\\', '/')" in settings
+    assert 'git -c "safe.directory=$xicRepoRoot" add -- <task-files...>' in settings
+    assert "不要寫入 global `safe.directory`" in settings
+
+
 def test_all_enabled_hook_references_resolve_start_and_noop() -> None:
     _assert_hook_contract(_load_hooks_config())
 
@@ -445,6 +454,53 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
     completed = _run_pre_hook(" ".join(tokens))
     assert completed.returncode == 0
     assert completed.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git -C C:\\repo push origin HEAD",
+        "git --git-dir C:\\repo\\.git push origin HEAD",
+        "pwsh -Command " + json.dumps("git --no-pager push origin HEAD"),
+        "env -u CI git -C C:\\repo push origin HEAD",
+        "bash -lc "
+        + json.dumps("FOO=1 command git --git-dir C:\\repo\\.git push origin HEAD"),
+    ],
+)
+def test_pre_hook_rewrites_optioned_git_push_to_policy_visible_form(
+    command: str,
+) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "direct `git push`" in hook_output["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git -C C:\\repo status --short",
+        "env -u CI git -C C:\\repo status --short",
+    ],
+)
+def test_pre_hook_preserves_read_only_git_global_option_commands(
+    command: str,
+) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+def test_pre_hook_leaves_direct_git_push_to_execpolicy_prompt() -> None:
+    completed = _run_pre_hook("git push origin HEAD")
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+    assert 'decision = "prompt"' in _rule_block(("git", "push"))
 
 
 WRAPPERS = [

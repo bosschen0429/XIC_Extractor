@@ -5,12 +5,21 @@ import json
 import re
 import shlex
 import sys
+from pathlib import Path
 
-from xic_hook_policy import (
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from xic_hook_policy import (  # noqa: E402
     git_commit_uses_autostage_or_pathspec,
     is_git_commit_command,
-    is_git_executable,
     is_shell_command_event,
+)
+
+from tools.git_command_policy import (  # noqa: E402
+    git_invocations,
+    is_git_executable,
     is_shell_command_flag,
     skip_git_global_options,
 )
@@ -68,8 +77,10 @@ EXEC_CONFIG_PATHS = [
     "docs/agent/",
 ]
 
+
 def emit(payload: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False))
+
 
 def deny(reason: str) -> None:
     emit(
@@ -82,6 +93,7 @@ def deny(reason: str) -> None:
         }
     )
 
+
 def context(message: str) -> None:
     emit(
         {
@@ -92,6 +104,7 @@ def context(message: str) -> None:
         }
     )
 
+
 def get_command(event: dict[str, object]) -> str:
     tool_input = event.get("tool_input")
     if isinstance(tool_input, dict):
@@ -99,6 +112,7 @@ def get_command(event: dict[str, object]) -> str:
         if isinstance(command, str):
             return command
     return ""
+
 
 def text_from_value(value: object) -> str:
     if isinstance(value, str):
@@ -109,11 +123,14 @@ def text_from_value(value: object) -> str:
         return "\n".join(text_from_value(item) for item in value)
     return ""
 
+
 def tool_payload_text(event: dict[str, object]) -> str:
     return text_from_value(event.get("tool_input"))
 
+
 def executable_name(token: str) -> str:
     return token.replace("\\", "/").rsplit("/", 1)[-1].lower()
+
 
 def wrapped_shell_payload(command: str) -> str | None:
     try:
@@ -146,6 +163,7 @@ def wrapped_shell_payload(command: str) -> str | None:
             return " ".join(tokens[index + 1 :])
     return None
 
+
 def shell_command_segments(payload: str) -> list[str]:
     try:
         lexer = shlex.shlex(
@@ -173,6 +191,7 @@ def shell_command_segments(payload: str) -> list[str]:
         segments.append(" ".join(current))
     return segments
 
+
 def strip_shell_control_prefixes(segment: str) -> str:
     try:
         tokens = shlex.split(segment, posix=True)
@@ -181,6 +200,7 @@ def strip_shell_control_prefixes(segment: str) -> str:
     while tokens and tokens[0].lower() in SHELL_CONTROL_PREFIXES:
         tokens = tokens[1:]
     return " ".join(tokens)
+
 
 def normalize_wrapped_git_invocation(segment: str) -> str:
     try:
@@ -214,6 +234,7 @@ def normalize_wrapped_git_invocation(segment: str) -> str:
     subcommand_index = skip_git_global_options(tokens, 1)
     return " ".join(("git", *tokens[subcommand_index:]))
 
+
 def wrapped_git_clean_is_forced(segment: str) -> bool:
     try:
         tokens = shlex.split(normalize_wrapped_git_invocation(segment), posix=True)
@@ -235,6 +256,7 @@ def wrapped_git_clean_is_forced(segment: str) -> bool:
             return True
     return False
 
+
 def contains_background_process(segment: str) -> bool:
     try:
         tokens = shlex.split(segment, posix=True)
@@ -246,6 +268,7 @@ def contains_background_process(segment: str) -> bool:
         if index == 0 or tokens[index - 1].lower() in SHELL_CONTROL_PREFIXES:
             return True
     return False
+
 
 def has_raw_background_launch(segments: list[str]) -> bool:
     raw_variables: set[str] = set()
@@ -268,6 +291,7 @@ def has_raw_background_launch(segments: list[str]) -> bool:
             return True
     return False
 
+
 def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
     payload = wrapped_shell_payload(command)
     if payload is None:
@@ -281,6 +305,7 @@ def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
     for segment in segments:
         expanded.extend(wrapped_command_segments(segment, depth=depth + 1))
     return expanded
+
 
 def main() -> int:
     try:
@@ -313,6 +338,15 @@ def main() -> int:
     if has_raw_background_launch(effective_segments):
         deny(
             "Background RAW launch through Start-Process is blocked. Use the documented foreground heartbeat/timing command shape, or get explicit external-terminal approval."
+        )
+        return 0
+
+    if any(
+        invocation.subcommand == "push" and invocation.uses_global_options
+        for invocation in git_invocations(command)
+    ):
+        deny(
+            "Git push with global options is blocked because execpolicy matches exact prefixes. Run the command from the intended workdir using direct `git push`, so the repository prompt rule remains visible."
         )
         return 0
 

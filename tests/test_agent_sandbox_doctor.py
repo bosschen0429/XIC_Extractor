@@ -92,6 +92,53 @@ def test_network_command_routes_to_bounded_approval(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "command",
     [
+        "git -C C:\\repo push origin HEAD",
+        "git --git-dir C:\\repo\\metadata push origin HEAD",
+        "git --work-tree=C:\\repo --git-dir=C:\\repo\\metadata fetch origin",
+        "git -c http.version=HTTP/1.1 pull --ff-only",
+        "env -u CI git -C C:\\repo push origin HEAD",
+        "FOO=1 command git --git-dir C:\\repo\\metadata push origin HEAD",
+    ],
+)
+def test_git_network_commands_with_global_options_require_approval(
+    command: str, tmp_path: Path
+) -> None:
+    findings = agent_sandbox_doctor.classify_command(
+        command,
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+    )
+
+    assert [finding.code for finding in findings] == [
+        "network_or_github_approval_needed"
+    ]
+    assert findings[0].disposition == "APPROVAL_REQUIRED"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git -C C:\\repo status --short",
+        "env -u CI git -C C:\\repo status --short",
+        "Write-Host C:\\repo\\.git push",
+        'rg -n "git -C C:\\repo push" docs',
+    ],
+)
+def test_non_network_git_text_does_not_require_approval(
+    command: str, tmp_path: Path
+) -> None:
+    findings = agent_sandbox_doctor.classify_command(
+        command,
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+    )
+
+    assert findings == ()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "uv lock",
         "uv sync --extra dev --group dev",
         "uv run --with playwright python --version",
