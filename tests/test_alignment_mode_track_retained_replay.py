@@ -102,6 +102,12 @@ def test_retained_fixture_preserves_source_mismatch_and_85_sample_census() -> No
         "chromatogram_call_count": 0,
         "authorized_attempt_consumed": False,
     }
+    assert sum(
+        payload["historical_diagnostic_counts"]["trace_packet_assigned_mode"].values()
+    ) == 85
+    assert sum(
+        payload["historical_diagnostic_counts"]["irt_refined_label"].values()
+    ) == 85
 
 
 @pytest.mark.parametrize(
@@ -134,6 +140,25 @@ def test_retained_replay_rejects_authority_and_evidence_overclaims(
     payload[path[0]][path[1]] = value
 
     with pytest.raises(ModeTrackRetainedReplayError, match=message):
+        replay_retained_mode_track_fixture(json.dumps(payload).encode())
+
+
+def test_retained_replay_seals_historical_context_and_budget_fields() -> None:
+    payload = json.loads(FIXTURE_PATH.read_bytes())
+    payload["source_qualification"]["required_seed_oracle"]["raw_open_count"] = 84
+    with pytest.raises(ModeTrackRetainedReplayError, match="source budget"):
+        replay_retained_mode_track_fixture(json.dumps(payload).encode())
+
+    payload = json.loads(FIXTURE_PATH.read_bytes())
+    payload["historical_diagnostic_counts"]["trace_packet_assigned_mode"][
+        "mode_5min"
+    ] = 0
+    with pytest.raises(ModeTrackRetainedReplayError, match="sample census"):
+        replay_retained_mode_track_fixture(json.dumps(payload).encode())
+
+    payload = json.loads(FIXTURE_PATH.read_bytes())
+    payload["family_context"]["label_is_identity"] = True
+    with pytest.raises(ModeTrackRetainedReplayError, match="cannot become"):
         replay_retained_mode_track_fixture(json.dumps(payload).encode())
 
 

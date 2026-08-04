@@ -122,10 +122,12 @@ Family nor the ModeTrack is a chemical-identity claim. Public or legacy family
 labels, `method_subject_id`, display labels, and ordinals do not mint or replace
 the internal Family context.
 
-Track models are fit once per Family from canonical direct-SUPPORT
-`PeakHypothesis` anchors. Each track follows its own injection-order-local,
-piecewise-linear trajectory and may use an accepted local feature-landmark
-shift. The versioned lane policy supplies the prediction half-width and bounded
+The initial model set is fit once per Family from canonical direct-SUPPORT
+`PeakHypothesis` anchors. A later uniquely assigned direct-SUPPORT observation
+may mint an immutable successor model set; consumers still do not refit per
+cell. Each track follows its own injection-order-local, piecewise-linear
+trajectory and may use an accepted local feature-landmark shift. The versioned
+lane policy supplies the prediction half-width and bounded
 interpolation/extrapolation limits; the owner introduces no universal drift,
 valley, width, shoulder, or intensity threshold. Missing or poor landmarks,
 sparse anchors, unsupported interpolation/extrapolation, and predicted interval
@@ -143,10 +145,12 @@ inferred, deconvolved, manual, and shared-set observations remain non-training.
 
 The retained fixture
 `docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`
-records the source-qualified M8 stop condition. The required owner-bound v2
-Discovery index and original seed packet bytes were unavailable, while the
-available historical packet had different hashes and no 85-open/85-call
-completion evidence. The authorized Windows-native reconstruction therefore
+records the source-qualified M8 stop condition. Its required-oracle fields name
+the expected 85-open/85-call target; they are not observed counters for the
+retained historical packet. The required owner-bound v2 Discovery index and
+original seed packet bytes were unavailable, while the available historical
+packet had different hashes and no observed RAW-open/chromatogram-call
+completion counters. The authorized Windows-native reconstruction therefore
 did not launch and remains available for a future source-restored attempt.
 No-RAW replay reports one Family, 85 samples, zero RAW opens, zero chromatogram
 calls, and zero typed hypotheses, tracks, anchors, landmarks, assignments, or

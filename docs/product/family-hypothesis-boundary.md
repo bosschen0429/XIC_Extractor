@@ -8,6 +8,11 @@ activation, or any matrix identity sidecar.
 
 ## Contract
 
+`FamilyContextRef`, ModeTrack, and `ModeTrackAssignment` are topic-local
+internal alignment terms owned by this page. They do not rename the public or
+legacy `family` vocabulary and do not add public DTO, schema, or identifier
+surface.
+
 - `peak_anchor_id` (discovery `feature_family_id`) groups candidates that share
   the same MS1 chromatographic peak within a single sample. It is a per-sample
   trace-identity label, not a chemical identity claim.
