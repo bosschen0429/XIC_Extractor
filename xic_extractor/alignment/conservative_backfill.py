@@ -1363,15 +1363,7 @@ def _decision(
         group_facts=facts,
         target_cell=cell,
         candidate_universe=candidate_universe,
-        candidate_evidence=tuple(
-            sorted(
-                candidates,
-                key=lambda item: (
-                    item.peak_observation.content.integration.rt_apex_min,
-                    item.peak_observation.content.peak_observation_content_id,
-                ),
-            )
-        ),
+        candidate_evidence=candidates,
         matched_candidate=matched_candidate,
         disposition=disposition,
         reason_codes=tuple(sorted(set(reasons))),
