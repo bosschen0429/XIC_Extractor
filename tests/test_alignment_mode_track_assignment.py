@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,6 +32,7 @@ from xic_extractor.alignment.identity_coherence.family_context import (
 from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     ModeTrackAssignment,
     ModeTrackContractError,
+    ModeTrackModel,
     ModeTrackTrajectoryPolicy,
     _peak_hypothesis_family_exclusions,
     assign_mode_tracks,
@@ -664,6 +665,77 @@ def test_policy_rejects_integer_float_identity_alias() -> None:
             max_interpolation_gap=4,
             max_extrapolation_gap=2,
         )
+
+
+def test_mode_track_model_retains_only_identity_bound_behavior_fields() -> None:
+    assert {field.name for field in fields(ModeTrackModel)} == {
+        "group_hypothesis_id",
+        "ordering_reference_rt_min",
+        "anchors",
+    }
+
+
+def test_model_set_identity_binds_ordering_behavior_snapshot(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    reordered_context = mint_family_context_ref(
+        mz_interval=scenario.family_context.mz_interval,
+        rt_interval=scenario.family_context.rt_interval,
+        context_policy_version=scenario.family_context.context_policy_version,
+        source_lineage_refs=scenario.family_context.source_lineage_refs,
+        mode_tracks=(
+            replace(
+                scenario.track_a,
+                group_center_rt=scenario.track_b.group_center_rt,
+            ),
+            replace(
+                scenario.track_b,
+                group_center_rt=scenario.track_a.group_center_rt,
+            ),
+        ),
+    )
+    reordered_models = fit_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
+        family_context=reordered_context,
+        direct_support_anchors=(
+            scenario.track_a_spine.anchors + scenario.track_b_spine.anchors
+        ),
+        policy=scenario.policy,
+    )
+
+    assert (
+        reordered_context.family_context_id
+        == scenario.family_context.family_context_id
+    )
+    assert reordered_models.model_set_id != scenario.models.model_set_id
+    assert tuple(
+        (track.group_hypothesis_id, track.ordering_reference_rt_min)
+        for track in reordered_models.tracks
+    ) != tuple(
+        (track.group_hypothesis_id, track.ordering_reference_rt_min)
+        for track in scenario.models.tracks
+    )
+
+    candidate = scenario.candidate(7.87, direct_support=False)
+    original = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(candidate,),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+    reordered = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=reordered_models,
+        candidates=(candidate,),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    assert original.assignments[0].state == "uniquely_assigned"
+    assert reordered.assignments[0].state == "technical_unassessable"
+    assert reordered.assignments[0].reason_codes == ("trajectory_crossing",)
 
 
 def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(

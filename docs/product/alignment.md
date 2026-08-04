@@ -127,7 +127,14 @@ The initial model set is fit once per Family from canonical direct-SUPPORT
 `PeakHypothesis` anchors. A later uniquely assigned direct-SUPPORT observation
 may mint an immutable successor model set; consumers still do not refit per
 cell. Each track follows its own injection-order-local, piecewise-linear
-trajectory. Accepted feature landmarks remain a complete local point set: a
+trajectory. At fit time, the M3 owner projects each existing group's canonical
+center RT into the model as `ordering_reference_rt_min`. This immutable behavior
+snapshot is bound into `model_set_id`, and crossing checks read the snapshot
+rather than a retained rich group object. Equal model identities therefore
+cannot hide different elution-order behavior, while `group_hypothesis_id`
+remains the existing ModeTrack identity.
+
+Accepted feature landmarks remain a complete local point set: a
 track uses its exact local landmark or interpolation between bracketing local
 landmarks, never one Family-wide median, and landmark extrapolation outside the
 retained local RT range is technically unassessable. The versioned lane policy

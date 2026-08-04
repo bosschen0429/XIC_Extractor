@@ -36,7 +36,7 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SCHEMA_VERSION = "mode_track_assignment_v1"
 BATCH_SCHEMA_VERSION = "mode_track_assignment_batch_v1"
-MODEL_SET_SCHEMA_VERSION = "mode_track_model_set_v1"
+MODEL_SET_SCHEMA_VERSION = "mode_track_model_set_v2"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 
@@ -181,14 +181,22 @@ class ModeTrackModel:
     """One existing group identity plus its direct-SUPPORT trajectory anchors."""
 
     group_hypothesis_id: str
+    ordering_reference_rt_min: float
     anchors: tuple[ModeTrackSupportAnchor, ...]
-    track: CrossSamplePeakGroupHypothesis = field(compare=False, repr=False)
 
     def __post_init__(self) -> None:
-        if not isinstance(self.track, CrossSamplePeakGroupHypothesis):
-            raise ModeTrackContractError("track must be an existing group hypothesis")
-        if self.group_hypothesis_id != self.track.group_hypothesis_id:
-            raise ModeTrackContractError("track group identity was substituted")
+        _required_text(self.group_hypothesis_id, field="group_hypothesis_id")
+        ordering_reference = _finite_float(
+            self.ordering_reference_rt_min,
+            field="ordering_reference_rt_min",
+        )
+        if (
+            not isinstance(self.ordering_reference_rt_min, float)
+            or ordering_reference != self.ordering_reference_rt_min
+        ):
+            raise ModeTrackContractError(
+                "ordering_reference_rt_min must use a canonical float"
+            )
         canonical = _canonical_anchors(self.anchors)
         if canonical != self.anchors:
             raise ModeTrackContractError("track anchors must be canonical-sorted")
@@ -238,6 +246,21 @@ class ModeTrackModelSet:
         ):
             raise ModeTrackContractError(
                 "model tracks must close the exact Family membership"
+            )
+        ordering_references = {
+            track.group_hypothesis_id: _finite_float(
+                track.group_center_rt,
+                field="family_context.mode_tracks.group_center_rt",
+            )
+            for track in self.family_context.mode_tracks
+        }
+        if any(
+            track.ordering_reference_rt_min
+            != ordering_references[track.group_hypothesis_id]
+            for track in self.tracks
+        ):
+            raise ModeTrackContractError(
+                "model track ordering reference was substituted"
             )
         _require_canonical_texts(self.lineage_refs, field="lineage_refs")
         _validate_shadow_authority(self.validation_status, self.product_authority)
@@ -645,10 +668,13 @@ def fit_mode_track_model_set(
     tracks = tuple(
         ModeTrackModel(
             group_hypothesis_id=track.group_hypothesis_id,
+            ordering_reference_rt_min=_finite_float(
+                track.group_center_rt,
+                field="track.group_center_rt",
+            ),
             anchors=_canonical_anchors(
                 tuple(anchors_by_track[track.group_hypothesis_id])
             ),
-            track=track,
         )
         for track in family_context.mode_tracks
     )
@@ -987,8 +1013,8 @@ def reinforce_mode_track_model_set(
         updated_tracks.append(
             ModeTrackModel(
                 group_hypothesis_id=track.group_hypothesis_id,
+                ordering_reference_rt_min=track.ordering_reference_rt_min,
                 anchors=_canonical_anchors(tuple(anchors)),
-                track=track.track,
             )
         )
     if not anchor_added:
@@ -1743,15 +1769,12 @@ def _trajectories_cross(
         sorted(
             model_set.tracks,
             key=lambda item: (
-                _finite_float(item.track.group_center_rt, field="group_center_rt"),
+                item.ordering_reference_rt_min,
                 item.group_hypothesis_id,
             ),
         )
     )
-    base_centers = tuple(
-        _finite_float(item.track.group_center_rt, field="group_center_rt")
-        for item in ordered
-    )
+    base_centers = tuple(item.ordering_reference_rt_min for item in ordered)
     predicted_centers = tuple(
         prediction_by_id[item.group_hypothesis_id].predicted_rt_min for item in ordered
     )
@@ -1979,6 +2002,7 @@ def _model_set_identity_payload(
         "tracks": [
             {
                 "group_hypothesis_id": track.group_hypothesis_id,
+                "ordering_reference_rt_min": track.ordering_reference_rt_min,
                 "anchor_ids": [anchor.anchor_id for anchor in track.anchors],
             }
             for track in tracks
