@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from scripts import bootstrap_worktree
-from tools.git_command_policy import git_invocations
+from tools.command_policy import analyze_command
 
 _NETWORK_COMMAND_PATTERNS = (
     r"\bnpx\b",
@@ -26,16 +26,17 @@ _NETWORK_COMMAND_PATTERNS = (
     r"\bplaywright\s+install\b",
     r"\bgh\s+(?:auth\s+status|pr|api|repo|release)\b",
 )
-_GIT_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull", "push"})
-
 _REWRITE_COMMAND_CODES = frozenset(
     {
         "background_long_raw_run",
+        "ambiguous_git_command",
+        "git_network_prompt_prefix_mismatch",
         "output_outside_writable_roots",
         "powershell_bash_heredoc",
         "powershell_chain_operator",
         "powershell_export",
         "raw_runner_not_venv",
+        "unsupported_shell_wrapper",
     }
 )
 _APPROVAL_REQUIRED_CODES = frozenset(
@@ -182,11 +183,47 @@ def classify_command(
                 )
             )
 
-    needs_network = any(
-        re.search(pattern, lower) for pattern in _NETWORK_COMMAND_PATTERNS
-    ) or any(
-        invocation.subcommand in _GIT_NETWORK_SUBCOMMANDS
-        for invocation in git_invocations(command)
+    command_analysis = analyze_command(command)
+    if command_analysis.requires_rewrite:
+        findings.append(
+            Finding(
+                severity="blocker",
+                code=command_analysis.rewrite_code,
+                message=command_analysis.rewrite_reason,
+                next_action=(
+                    "Remove the wrapper or compound shape and run one direct command "
+                    "so execpolicy can apply the documented forbid or prompt prefix."
+                ),
+            )
+        )
+
+    git_invocation = command_analysis.git_invocation
+    git_needs_network = bool(
+        git_invocation is not None and git_invocation.needs_network
+    )
+    git_prompt_prefix_mismatch = bool(
+        git_invocation is not None and git_invocation.network_prompt_prefix_mismatch
+    )
+    if git_prompt_prefix_mismatch:
+        findings.append(
+            Finding(
+                severity="blocker",
+                code="git_network_prompt_prefix_mismatch",
+                message=(
+                    "This direct Git network command uses global options that do "
+                    "not reach a bounded execpolicy prompt prefix."
+                ),
+                next_action=(
+                    "Rewrite it as direct `git <network-subcommand> ...`; use direct "
+                    "`git -c safe.directory=<repo> <network-subcommand> ...` only "
+                    "for invocation-scoped ownership recovery."
+                ),
+            )
+        )
+
+    needs_network = not command_analysis.requires_rewrite and (
+        any(re.search(pattern, lower) for pattern in _NETWORK_COMMAND_PATTERNS)
+        or (git_needs_network and not git_prompt_prefix_mismatch)
     )
     if needs_network:
         findings.append(

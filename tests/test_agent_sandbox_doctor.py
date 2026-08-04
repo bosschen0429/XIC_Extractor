@@ -92,20 +92,10 @@ def test_network_command_routes_to_bounded_approval(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "command",
     [
-        "git -C C:\\repo push origin HEAD",
-        "git --git-dir C:\\repo\\metadata push origin HEAD",
-        "git --work-tree=C:\\repo --git-dir=C:\\repo\\metadata fetch origin",
         "git -c http.version=HTTP/1.1 pull --ff-only",
-        "env -u CI git -C C:\\repo push origin HEAD",
-        "FOO=1 command git --git-dir C:\\repo\\metadata push origin HEAD",
-        "Write-Host ready\ngit -C C:\\repo push origin HEAD",
-        'env -S "git -C C:\\repo push origin HEAD"',
-        'env --split-string="git -C C:\\repo fetch origin"',
-        'env -u CI -S "git -C C:\\repo push origin HEAD"',
-        'env -S "git -C C:\\repo" push origin HEAD',
     ],
 )
-def test_git_network_commands_with_global_options_require_approval(
+def test_git_network_command_with_prompt_prefix_requires_approval(
     command: str, tmp_path: Path
 ) -> None:
     findings = agent_sandbox_doctor.classify_command(
@@ -123,18 +113,130 @@ def test_git_network_commands_with_global_options_require_approval(
 @pytest.mark.parametrize(
     "command",
     [
-        "git -C C:\\repo status --short",
+        "git -C C:\\repo push origin HEAD",
+        "git --git-dir C:\\repo\\metadata push origin HEAD",
+        "git --work-tree=C:\\repo --git-dir=C:\\repo\\metadata fetch origin",
+        "git -C C:\\repo pull --ff-only",
+        "git -C C:\\repo clone https://example.invalid/repo.git",
+        "git -C C:\\repo ls-remote origin",
+    ],
+)
+def test_git_network_command_without_prompt_prefix_requires_rewrite(
+    command: str, tmp_path: Path
+) -> None:
+    findings = agent_sandbox_doctor.classify_command(
+        command,
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+    )
+
+    assert [finding.code for finding in findings] == [
+        "git_network_prompt_prefix_mismatch"
+    ]
+    assert findings[0].disposition == "REWRITE_COMMAND"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "cmd /c if exist .git git -C C:\\repo push origin HEAD",
+        "$result = git -C C:\\repo push origin HEAD",
+        'pwsh -Command "$result = git -C C:\\repo push origin HEAD"',
+        "git --unknown value push origin HEAD",
+        "git.exe push origin HEAD",
+        "git.cmd reset --hard",
+        "git.bat push origin HEAD",
+        "git.ps1 clean -fd",
+        "git.com status --short",
+        "git.sh push origin HEAD",
+        "GIT push origin HEAD",
+        '"git" push origin HEAD',
+        "/usr/bin/git push origin HEAD",
+        'FOO=1 bash -lc "git push origin HEAD"',
+        'nice bash -lc "git push origin HEAD"',
+        "git push>output.log",
+        'Write-Output "$(git push origin HEAD)"',
+        'rg --pre "git" PATTERN push',
+        "git PUSH origin HEAD",
+        "git RESET --hard",
+        "git CLEAN -fd",
+        "git STATUS --short",
+        "env -u CI git -C C:\\repo push origin HEAD",
+        "FOO=1 command git --git-dir C:\\repo\\metadata push origin HEAD",
+        "Write-Host ready\ngit -C C:\\repo push origin HEAD",
+        'env -S "git -C C:\\repo push origin HEAD"',
+        'env --split-string="git -C C:\\repo fetch origin"',
+        'env -u CI -S "git -C C:\\repo push origin HEAD"',
+        'env -S "git -C C:\\repo" push origin HEAD',
         "env -u CI git -C C:\\repo status --short",
-        "Write-Host C:\\repo\\.git push",
-        'rg -n "git -C C:\\repo push" docs',
-        'rg -n "prefix\ngit -C C:\\repo push origin HEAD" docs',
         'env -S "git -C C:\\repo status --short"',
         'env --split-string="git -C C:\\repo status --short"',
         "env -S",
-        'rg -n "env -S git -C C:\\repo push origin HEAD" docs',
+        "wsl echo ready",
+        'bash -lc "gh pr list"',
+        '& bash -lc "echo ready"',
+        'FOO=1 bash -lc "echo ready"',
+        'FOO="a b" bash -lc "echo ready"',
+        'FOO=a\\ b bash -lc "echo ready"',
+        'FOO=`echo` bash -lc "echo ready"',
+        'FOO="a b" C:\\bin\\bash.exe -lc "echo ready"',
+        'bash -lc "unterminated',
+    ],
+)
+def test_unsupported_command_shape_requires_rewrite(
+    command: str, tmp_path: Path
+) -> None:
+    findings = agent_sandbox_doctor.classify_command(
+        command,
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+    )
+
+    assert len(findings) == 1
+    assert findings[0].code in {
+        "ambiguous_git_command",
+        "unsupported_shell_wrapper",
+    }
+    assert findings[0].disposition == "REWRITE_COMMAND"
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "git -C C:\\repo status --short",
+        "Write-Host C:\\repo\\.git push",
+        'Select-String -Pattern "git -C C:\\repo push" -Path README.md',
+        'Select-String -Pattern "prefix\ngit -C C:\\repo push origin HEAD" '
+        "-Path README.md",
+        'Select-String -Pattern "env -S git -C C:\\repo push origin HEAD" '
+        "-Path README.md",
         'Write-Host env -S "git -C C:\\repo push origin HEAD"',
-        'rg -n env -S "git -C C:\\repo push origin HEAD" docs',
         'Write-Host bash -lc "git -C C:\\repo push origin HEAD"',
+        'Write-Output "git push origin HEAD"',
+        'echo "git push origin HEAD"',
+        "Get-ChildItem Env:PATH",
+        "rg command docs",
+        "python env\\script.py",
+        "FOO=1 python env\\script.py",
+        "python tool.py --shell=bash",
+        "python tool.py --label=env",
+        "SHELL=bash python tool.py",
+        "$result = python tool.py --shell=bash",
+        "& python tool.py --shell=bash",
+        "[ $x = bash ]",
+        "[[ $x = bash ]]",
+        '$runner = "bash"',
+        '[string]$runner = "bash"',
+        '$runner="bash"',
+        'python tool.py ";" bash',
+        'python tool.py --separator=";" bash',
+        '$runner = bash -lc "echo ready"',
+        '[string]$runner = & "bash" -lc "echo ready"',
+        'Write-Host ready; bash -lc "echo ready"',
+        'true; 2>&1 bash -lc "echo ready"',
+        '>trace.log bash -lc "echo ready"',
+        '&>trace.log bash -lc "echo ready"',
+        "Get-Command bash",
     ],
 )
 def test_non_network_git_text_does_not_require_approval(

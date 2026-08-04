@@ -64,10 +64,11 @@ The hook set is intentionally small:
   Ordinary review, goal, handoff, closeout, and compaction prompts remain with
   their global workflows and load XIC owners only when the task actually crosses
   an XIC contract boundary.
-- `PreToolUse`: blocks wrapped destructive Git commands, commit forms that can
-  sweep unrelated paths, and background RAW launches through `Start-Process`.
-  It adds one reminder when execution-affecting config changes require the
-  smoke-and-scan contract below.
+- `PreToolUse`: rejects nested shell/command wrappers found at the bounded outer
+  executable position before inspecting their payload, blocks ambiguous or
+  optioned destructive Git forms, commit forms that can sweep unrelated paths,
+  and background RAW launches through `Start-Process`. It adds one reminder when
+  execution-affecting config changes require the smoke-and-scan contract below.
 - `PostToolUse`: catches pytest runs that collected zero tests or used an invalid
   node id. Other failures and governance decisions remain visible in their
   command output or canonical owner instead of being reclassified after every
@@ -109,10 +110,14 @@ mismatch, or behavior change fails the #160 governance read-back.
 | `execution_affecting_config` | `docs/agent/codex-operating-system.md#change-protocol` | `advisory_context` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
 | `pr_validation_gate` | `docs/agent/execution-gates.md#pr-verification-gate` | `ci_checker` | `tools/testing/test_shards.py` | `.github/workflows/ci.yml` | `none` |
 
-The repository-side hook/config gaps are closed by the ordinary `docs-config`
-contract in `tests/test_config_codex_hooks.py`. This read-back does not claim
-that CI can observe whether a particular Codex host has trusted or activated the
-project layer; that remains a host-runtime check under Trust And Review.
+The ordinary `docs-config` contract in `tests/test_config_codex_hooks.py`
+verifies the bounded repository behavior above. Wrapper
+payloads are not interpreted. Hooks also do not interpret commands constructed
+dynamically inside arbitrary Python, eval, or other process-launching programs;
+host sandbox enforcement and the global destructive-action contract remain
+authoritative there. This read-back does not claim that CI can observe whether
+a particular Codex host has trusted or activated the project layer; that
+remains a host-runtime check under Trust And Review.
 
 ## Adoption Rules
 
@@ -173,6 +178,7 @@ python .codex\hooks\fixtures\assert_hook_outputs.py
 .venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_hooks.py -q
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "git -C C:\repo push origin HEAD"
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "git --git-dir C:\repo\.git push origin HEAD"
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "cmd /c git push origin HEAD"
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add -A
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add --all
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add .
@@ -183,10 +189,39 @@ codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git pus
 
 All `git add` checks must remain unmatched by an `allow` rule; direct `git push`
 and the invocation-scoped `git -c ... push` recovery must remain `prompt`. The
-two doctor checks with `-C` and `--git-dir` must report `APPROVAL_REQUIRED`.
+two direct doctor checks with `-C` and `--git-dir` must report
+`REWRITE_COMMAND`, matching the hook's inability to route them to an exact
+prompt prefix. The nested `cmd /c` check must also report `REWRITE_COMMAND`.
 Execpolicy rules match exact argument prefixes, so the pre-tool hook lets direct
-`git -c ... push` reach its dedicated prompt rule, but rejects wrapped pushes and
-other optioned pushes instead of prompting every read-only `git -C ...` command.
+`git -c ... push` reach its dedicated prompt rule and keeps direct read-only
+`git -C ...` usable. Explicit `bash -c`, `pwsh -Command`, `cmd /c`, `wsl`,
+`env`, `command`, and `exec` wrappers are rejected without parsing their
+payload, including POSIX-assignment- or initial-call-operator-prefixed forms.
+Compound, assignment-RHS, path-qualified, malformed, or unsupported direct Git
+forms are also rejected and must be rewritten as one direct command. Optioned
+`clone`, `fetch`, `ls-remote`, `pull`, and `push` commands that miss a prompt
+prefix are rewrites in both the hook and doctor.
+
+Git subcommands must use canonical lowercase spelling because the execpolicy
+rules use exact prefixes. Wrapper words in ordinary simple-command argument or
+path positions and option values are data, not wrapper executables. The bounded
+locator recognizes only the outer executable, including after a POSIX
+assignment prefix or initial call operator. Redirection prefixes, PowerShell
+assignment RHS, later compound segments, shell control words, and dynamic
+executable expressions remain outside repository wrapper parsing. Any
+non-direct Git-bearing shape still fails closed.
+The separate RAW hard guard still detects `Start-Process` plus a RAW signal or
+propagated RAW argument variable anywhere in the same non-inert lexical segment;
+it does not combine unrelated evidence across segments.
+An inert text command is exempt only when it has no evaluated subexpression,
+command substitution, or unquoted control structure.
+Other launcher/control prefixes and dynamically constructed executables remain
+outside repository parsing and under host sandbox/global safety authority.
+
+Redirection and command substitution are ambiguous. Quoted Git text is inert
+only for top-level `grep`, `findstr`, `Select-String`, `Write-Host`,
+`Write-Output`, `echo`, or `printf` commands. `rg` is intentionally excluded
+because its `--pre` mode can execute a command for each input path.
 
 Also scan the diff for secrets, private local paths, absolute machine-specific
 paths, and accidentally tracked local Codex config.

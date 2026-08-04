@@ -227,9 +227,33 @@ git -c "safe.directory=$xicRepoRoot" push
 
 後續 commit／push 同樣把 `-c "safe.directory=$xicRepoRoot"` 放在 subcommand
 前。`git -c` 由 repo execpolicy 的獨立 `prompt` rule 擁有；pre-tool guard 只放行
-直接、非 wrapper 的 `git -c ... push` 進入該 prompt，其他 optioned／wrapped push
-仍會拒絕並要求改寫。不要寫入 global `safe.directory`，也不要把其他 repo 加進
-例外。
+直接、非 wrapper 的 `git -c ... push` 進入該 prompt，其他 optioned push 仍會
+拒絕並要求改寫。明確的 `bash -c`、`pwsh -Command`、`cmd /c`、`wsl`、`env`、
+`command`、`exec` wrapper 不進行 payload 解析，一律回
+`REWRITE_COMMAND`／hook denial；把 payload 改成目前 shell 的直接命令。
+不要寫入 global `safe.directory`，也不要把其他 repo 加進例外。
+
+Repo command policy 只解析 canonical lowercase、單一直接 `git` invocation。
+`git.exe`／`git.cmd`／`git.bat`／`git.ps1`／`git.com`／`git.sh`、大小寫或
+path-qualified executable alias、compound block、assignment
+RHS、redirection、command substitution、malformed quoting 與不支援的 Git
+global option 都 fail closed；不要為了繞過這個 gate 再包一層 shell。Quoted Git
+文字只有在頂層 `grep`、`findstr`、`Select-String`、`Write-Host`、`Write-Output`、
+`echo` 或 `printf` 中視為普通資料；`rg` 的 `--pre` 可啟動外部 command，因此不在
+inert allowlist。Outer wrapper executable 即使前面有 assignment、call operator
+也 fail closed；普通 simple command 的 argument／path／option value
+位置可把 wrapper 文字當資料。Bounded locator 只辨識 outer executable，包括
+POSIX assignment prefix 或 initial call operator 後的位置；redirection prefix、
+PowerShell assignment RHS、later compound segment、shell control words 與 dynamic
+executable expression 都不由 repo wrapper parser 解讀。任何 non-direct
+Git-bearing shape 仍 fail closed。Git
+subcommand 必須是 canonical lowercase，避免 Windows 執行成功但 exact execpolicy
+prefix 沒命中。無法命中 prompt prefix 的 optioned `clone`、`fetch`、
+`ls-remote`、`pull`、`push` 都由 hook 與 doctor 一致要求 rewrite。任意 Python、
+eval 或其他程式內部動態啟動 subprocess 不由 repo parser 宣稱覆蓋，仍由 host
+sandbox 與 global destructive-action contract 管理。
+其他 launcher／control prefix 也不由 repo parser 模擬，仍由相同 host/global
+authority 管理。
 
 只有在「失敗模式重複、doctor 或現有 preflight 無法降低風險、且人工 approval
 本身變成主要摩擦」時，才考慮新增 project-local execpolicy 或 hook。新增前

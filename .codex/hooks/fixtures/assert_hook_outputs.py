@@ -244,7 +244,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", split_raw_background_payload),
-        "Background RAW launch",
+        "payload directly",
     )
 
     execution_config_payload = {
@@ -270,7 +270,9 @@ def main() -> int:
         "permission_mode": "default",
         "tool_input": {
             "command": (
-                "rg -n " + json.dumps(" ".join(("git", "reset", "--hard"))) + " docs"
+                "Select-String -Pattern "
+                + json.dumps(" ".join(("git", "reset", "--hard")))
+                + " -Path README.md"
             )
         },
     }
@@ -284,7 +286,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", wrapped_cleanup_payload),
-        "interactive approval",
+        "single direct Git command",
     )
 
     wrapped_long_cleanup_payload = {
@@ -296,7 +298,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", wrapped_long_cleanup_payload),
-        "interactive approval",
+        "single direct Git command",
     )
 
     multiline_reset_payload = {
@@ -309,7 +311,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", multiline_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     conditional_reset_payload = {
@@ -323,7 +325,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", conditional_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     condition_list_reset_payload = {
@@ -335,7 +337,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", condition_list_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     controlled_raw_background_payload = {
@@ -349,6 +351,35 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", controlled_raw_background_payload),
+        "payload directly",
+    )
+
+    later_wrapper_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                'Write-Host ready; pwsh -Command "Start-Process python '
+                "-ArgumentList '-m scripts.run_alignment --raw-dir "
+                "$env:XIC_RAW_ROOT'\""
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", later_wrapper_raw_background_payload),
+        "Background RAW launch",
+    )
+
+    evaluated_raw_background_payload = {
+        **raw_background_payload,
+        "tool_input": {
+            "command": (
+                "Write-Host $( Start-Process python -ArgumentList "
+                "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT' )"
+            )
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", evaluated_raw_background_payload),
         "Background RAW launch",
     )
 
@@ -364,7 +395,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", assigned_process_payload),
-        "Background RAW launch",
+        "payload directly",
     )
 
     env_option_reset_payload = {
@@ -376,7 +407,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", env_option_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     combined_flag_reset_payload = {
@@ -387,7 +418,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", combined_flag_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     nested_git_reset_payload = {
@@ -399,7 +430,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", nested_git_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     cmd_reset_payload = {
@@ -410,7 +441,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", cmd_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     exec_reset_payload = {
@@ -424,7 +455,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", exec_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     assignment_reset_payload = {
@@ -436,7 +467,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", assignment_reset_payload),
-        "is blocked",
+        "single direct Git command",
     )
 
     aliased_raw_background_payload = {
@@ -450,7 +481,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", aliased_raw_background_payload),
-        "Background RAW launch",
+        "payload directly",
     )
 
     ordered_raw_background_payload = {
@@ -465,7 +496,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", ordered_raw_background_payload),
-        "Background RAW launch",
+        "payload directly",
     )
 
     non_product_payload = {
@@ -584,7 +615,7 @@ def main() -> int:
     }
     assert_contains(
         run_hook("xic_pre_tool_guard.py", git_commit_pwsh_wrapped_autostage_payload),
-        "git commit with -a/--all or pathspec is blocked",
+        "single direct Git command",
     )
 
     git_commit_bash_lc_wrapped_autostage_payload = {
@@ -603,7 +634,7 @@ def main() -> int:
             "xic_pre_tool_guard.py",
             git_commit_bash_lc_wrapped_autostage_payload,
         ),
-        "git commit with -a/--all or pathspec is blocked",
+        "single direct Git command",
     )
 
     return 0

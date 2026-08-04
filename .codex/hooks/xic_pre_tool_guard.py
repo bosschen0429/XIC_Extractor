@@ -12,52 +12,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from xic_hook_policy import (  # noqa: E402
-    git_commit_uses_autostage_or_pathspec,
-    is_git_commit_command,
+    commit_tail_uses_autostage_or_pathspec,
     is_shell_command_event,
 )
 
-from tools.git_command_policy import (  # noqa: E402
-    GitInvocation,
-    git_invocations,
-    is_git_executable,
-    is_shell_command_flag,
-    skip_git_global_options,
+from tools.command_policy import (  # noqa: E402
+    GitPolicyPrefix,
+    analyze_command,
 )
 
-WRAPPED_DESTRUCTIVE_COMMANDS = [
-    (
-        re.compile(r"\bgit\s+reset\s+--hard\b", re.IGNORECASE),
-        "git reset --hard is blocked. Do not discard user work; inspect the diff and ask for explicit rollback approval.",
-    ),
-    (
-        re.compile(r"\bgit\s+checkout\s+--(?:\s|$)", re.IGNORECASE),
-        "git checkout -- is blocked because it reverts files. Use targeted review and explicit user approval.",
-    ),
-]
-WRAPPED_CLEAN_REASON = (
-    "Wrapped forced cleanup is denied because PreToolUse cannot request "
-    "interactive approval."
-)
-
-POSIX_SHELLS = {"bash", "sh"}
-POWERSHELLS = {"pwsh", "pwsh.exe", "powershell", "powershell.exe"}
-CMD_SHELLS = {"cmd", "cmd.exe"}
-SHELL_CONTROL_PREFIXES = {
-    "if",
-    "while",
-    "until",
-    "then",
-    "do",
-    "else",
-    "{",
-    "(",
-    "!",
-    "=",
-}
 SHELL_SEPARATOR_CHARS = ";&|\n"
-MAX_WRAPPER_DEPTH = 3
-
 RAW_LAUNCH_SIGNAL = re.compile(
     r"(?:85\s*-?\s*RAW|\.raw\b|RAW-backed|--preset\b|run_alignment\b|"
     r"--raw-dir\b|XIC_RAW_ROOT\b|THERMO_RAWFILE_READER)",
@@ -67,8 +31,6 @@ POWERSHELL_VARIABLE = re.compile(r"\$[A-Za-z_][A-Za-z0-9_:]*")
 POWERSHELL_ASSIGNMENT = re.compile(
     r"^\s*(?P<name>\$[A-Za-z_][A-Za-z0-9_:]*)\s*=", re.IGNORECASE
 )
-POSIX_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
-SHELL_REDIRECTION = re.compile(r"^(?:\d*)?(?:>>?|<<?|<>|>&|<&)(?P<target>.*)$")
 EXEC_CONFIG_PATHS = [
     "AGENTS.md",
     ".codex/hooks.json",
@@ -77,6 +39,18 @@ EXEC_CONFIG_PATHS = [
     ".codex/agents/",
     "docs/agent/",
 ]
+INERT_TEXT_COMMANDS = {
+    "echo",
+    "echo.exe",
+    "findstr",
+    "findstr.exe",
+    "grep",
+    "grep.exe",
+    "printf",
+    "select-string",
+    "write-host",
+    "write-output",
+}
 
 
 def emit(payload: dict[str, object]) -> None:
@@ -133,38 +107,6 @@ def executable_name(token: str) -> str:
     return token.replace("\\", "/").rsplit("/", 1)[-1].lower()
 
 
-def wrapped_shell_payload(command: str) -> str | None:
-    try:
-        tokens = shlex.split(command, posix=True)
-    except ValueError:
-        return None
-    if tokens and tokens[0] == "&":
-        tokens = tokens[1:]
-    if tokens and executable_name(tokens[0]) == "env":
-        shell_index = next(
-            (
-                index
-                for index, token in enumerate(tokens[1:], start=1)
-                if executable_name(token) in POSIX_SHELLS | POWERSHELLS | CMD_SHELLS
-            ),
-            None,
-        )
-        if shell_index is None:
-            return None
-        tokens = tokens[shell_index:]
-    if not tokens:
-        return None
-
-    shell = executable_name(tokens[0])
-    if shell not in POSIX_SHELLS | POWERSHELLS | CMD_SHELLS:
-        return None
-
-    for index, token in enumerate(tokens[1:], start=1):
-        if is_shell_command_flag(tokens[0], token.lower()) and index + 1 < len(tokens):
-            return " ".join(tokens[index + 1 :])
-    return None
-
-
 def shell_command_segments(payload: str) -> list[str]:
     try:
         lexer = shlex.shlex(
@@ -193,64 +135,6 @@ def shell_command_segments(payload: str) -> list[str]:
     return segments
 
 
-def strip_shell_control_prefixes(segment: str) -> str:
-    try:
-        tokens = shlex.split(segment, posix=True)
-    except ValueError:
-        return segment
-    while tokens and tokens[0].lower() in SHELL_CONTROL_PREFIXES:
-        tokens = tokens[1:]
-    return " ".join(tokens)
-
-
-def normalize_wrapped_git_invocation(segment: str) -> str:
-    try:
-        tokens = shlex.split(strip_shell_control_prefixes(segment), posix=True)
-    except ValueError:
-        return segment
-    while tokens:
-        if POSIX_ASSIGNMENT.match(tokens[0]):
-            tokens = tokens[1:]
-            continue
-        redirection = SHELL_REDIRECTION.match(tokens[0])
-        if redirection is None:
-            break
-        tokens = tokens[1:]
-        if not redirection.group("target") and tokens:
-            tokens = tokens[1:]
-    if tokens and tokens[0].lower() == "command":
-        if any(token.lower() in {"-v", "-V"} for token in tokens[1:2]):
-            return " ".join(tokens)
-        tokens = tokens[1:]
-        while tokens and tokens[0].startswith("-"):
-            tokens = tokens[1:]
-    if tokens and tokens[0].lower() == "exec":
-        tokens = tokens[1:]
-        while tokens and tokens[0].startswith("-"):
-            option = tokens.pop(0)
-            if option == "-a" and tokens:
-                tokens.pop(0)
-    if not tokens or not is_git_executable(tokens[0]):
-        return " ".join(tokens)
-    subcommand_index = skip_git_global_options(tokens, 1)
-    return " ".join(("git", *tokens[subcommand_index:]))
-
-
-def wrapped_git_clean_is_forced(segment: str) -> bool:
-    try:
-        tokens = shlex.split(normalize_wrapped_git_invocation(segment), posix=True)
-    except ValueError:
-        return False
-    if len(tokens) < 3:
-        return False
-    if executable_name(tokens[0]) not in {"git", "git.exe"}:
-        return False
-    if tokens[1].lower() != "clean":
-        return False
-
-    return git_clean_tail_is_forced(tokens[2:])
-
-
 def git_clean_tail_is_forced(tokens: list[str] | tuple[str, ...]) -> bool:
     force = False
     dry_run = False
@@ -268,33 +152,54 @@ def git_clean_tail_is_forced(tokens: list[str] | tuple[str, ...]) -> bool:
     return force and not dry_run
 
 
-def git_invocation_reaches_execpolicy(invocation: GitInvocation) -> bool:
-    if invocation.uses_wrapper or invocation.executable != "git":
-        return False
-    if not invocation.global_options:
-        return True
-    return invocation.global_options[0] == "-c"
-
-
-def git_invocation_reaches_subcommand_policy(invocation: GitInvocation) -> bool:
+def contains_background_process(segment: str) -> bool:
     return (
-        not invocation.uses_wrapper
-        and invocation.executable == "git"
-        and not invocation.global_options
+        re.search(
+            r"(?<![A-Za-z0-9_-])Start-Process(?![A-Za-z0-9_-])",
+            segment,
+            re.IGNORECASE,
+        )
+        is not None
     )
 
 
-def contains_background_process(segment: str) -> bool:
+def is_inert_text_only_command(command: str) -> bool:
     try:
-        tokens = shlex.split(segment, posix=True)
+        tokens = shlex.split(command, posix=True)
     except ValueError:
         return False
-    for index, token in enumerate(tokens):
-        if executable_name(token) != "start-process":
+    if not tokens or executable_name(tokens[0]) not in INERT_TEXT_COMMANDS:
+        return False
+
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(command):
+        if escaped:
+            escaped = False
             continue
-        if index == 0 or tokens[index - 1].lower() in SHELL_CONTROL_PREFIXES:
-            return True
-    return False
+        if character == "`":
+            # POSIX shells execute backtick substitutions; PowerShell uses the
+            # same character for escaping. Neither shape is provably inert.
+            return False
+        if quote == "'":
+            if character == "'":
+                quote = None
+            continue
+        if quote == '"':
+            if character == '"':
+                quote = None
+            elif character == "\\":
+                escaped = True
+            elif character == "$" and command[index : index + 2] == "$(":
+                return False
+            continue
+        if character in {"'", '"'}:
+            quote = character
+        elif character in ";&|(){}\r\n":
+            return False
+        elif character == "$" and command[index : index + 2] == "$(":
+            return False
+    return quote is None
 
 
 def has_raw_background_launch(segments: list[str]) -> bool:
@@ -319,21 +224,6 @@ def has_raw_background_launch(segments: list[str]) -> bool:
     return False
 
 
-def wrapped_command_segments(command: str, *, depth: int = 0) -> list[str]:
-    payload = wrapped_shell_payload(command)
-    if payload is None:
-        return []
-
-    segments = shell_command_segments(payload)
-    if depth >= MAX_WRAPPER_DEPTH:
-        return segments
-
-    expanded = list(segments)
-    for segment in segments:
-        expanded.extend(wrapped_command_segments(segment, depth=depth + 1))
-    return expanded
-
-
 def main() -> int:
     try:
         event = json.load(sys.stdin)
@@ -345,63 +235,53 @@ def main() -> int:
     if not command and not payload:
         return 0
 
-    wrapped_payload = wrapped_shell_payload(command)
-    if wrapped_payload is not None:
-        for segment in wrapped_command_segments(command):
-            command_segment = normalize_wrapped_git_invocation(segment)
-            for pattern, reason in WRAPPED_DESTRUCTIVE_COMMANDS:
-                if pattern.match(command_segment):
-                    deny(reason)
-                    return 0
-            if wrapped_git_clean_is_forced(segment):
-                deny(WRAPPED_CLEAN_REASON)
-                return 0
+    command_analysis = analyze_command(command)
+    if command_analysis.requires_rewrite:
+        deny(command_analysis.rewrite_reason)
+        return 0
 
-    effective_segments = (
-        wrapped_command_segments(command)
-        if wrapped_payload is not None
-        else shell_command_segments(command)
-    )
-    if has_raw_background_launch(effective_segments):
+    effective_segments = shell_command_segments(command)
+    if not is_inert_text_only_command(command) and has_raw_background_launch(
+        effective_segments
+    ):
         deny(
             "Background RAW launch through Start-Process is blocked. Use the documented foreground heartbeat/timing command shape, or get explicit external-terminal approval."
         )
         return 0
 
-    for invocation in git_invocations(command):
+    invocation = command_analysis.git_invocation
+    if invocation is not None:
+        if invocation.network_prompt_prefix_mismatch:
+            deny(
+                "Optioned Git network commands are denied because they cannot reach a bounded execpolicy prompt prefix. Run direct `git <network-subcommand> ...`; use direct `git -c safe.directory=<repo> <network-subcommand> ...` only for invocation-scoped ownership recovery."
+            )
+            return 0
         if invocation.subcommand == "reset" and "--hard" in invocation.tail:
-            if not git_invocation_reaches_subcommand_policy(invocation):
+            if invocation.policy_prefix is not GitPolicyPrefix.SUBCOMMAND:
                 deny(
                     "git reset --hard is blocked. Do not discard user work; inspect the diff and ask for explicit rollback approval."
                 )
                 return 0
-            continue
-        if invocation.subcommand == "checkout" and "--" in invocation.tail:
-            if not git_invocation_reaches_subcommand_policy(invocation):
+        elif invocation.subcommand == "checkout" and "--" in invocation.tail:
+            if invocation.policy_prefix is not GitPolicyPrefix.SUBCOMMAND:
                 deny(
                     "git checkout -- is blocked because it reverts files. Use targeted review and explicit user approval."
                 )
                 return 0
-            continue
-        if invocation.subcommand == "clean" and git_clean_tail_is_forced(
+        elif invocation.subcommand == "clean" and git_clean_tail_is_forced(
             invocation.tail
         ):
-            if not git_invocation_reaches_execpolicy(invocation):
-                deny(WRAPPED_CLEAN_REASON)
+            if invocation.policy_prefix is GitPolicyPrefix.UNSUPPORTED:
+                deny(
+                    "Optioned Git cleanup is denied because it cannot reach a bounded execpolicy prompt prefix. Run one direct `git clean ...` command."
+                )
                 return 0
-            continue
-        if invocation.subcommand == "push" and not git_invocation_reaches_execpolicy(
-            invocation
-        ):
-            deny(
-                "Wrapped Git push or Git push with unsupported global options is blocked because execpolicy matches exact prefixes. Run direct `git push`; for invocation-scoped ownership recovery, run direct `git -c safe.directory=<repo> push`. Both prefixes retain an explicit prompt rule."
-            )
-            return 0
-
-    if is_shell_command_event(str(event.get("tool_name", "")), command) and (
-        is_git_commit_command(command)
+    if (
+        is_shell_command_event(str(event.get("tool_name", "")), command)
+        and invocation is not None
+        and invocation.subcommand == "commit"
     ):
-        if git_commit_uses_autostage_or_pathspec(command):
+        if commit_tail_uses_autostage_or_pathspec(invocation.tail):
             deny(
                 "git commit with -a/--all or pathspec is blocked because it can sweep unrelated changes into the commit. Stage explicit paths, review the staged diff, then commit."
             )

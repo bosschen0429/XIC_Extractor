@@ -437,7 +437,9 @@ DESTRUCTIVE_TEXTS = [
 
 @pytest.mark.parametrize("needle", DESTRUCTIVE_TEXTS)
 def test_pre_hook_does_not_block_read_only_search_for_rule_text(needle: str) -> None:
-    completed = _run_pre_hook(f"rg -n {json.dumps(needle)} docs")
+    completed = _run_pre_hook(
+        f"Select-String -Pattern {json.dumps(needle)} -Path README.md"
+    )
     assert completed.returncode == 0
     assert completed.stdout == ""
 
@@ -463,6 +465,10 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
     [
         "git -C C:\\repo push origin HEAD",
         "git --git-dir C:\\repo\\.git push origin HEAD",
+        "git -C C:\\repo fetch origin",
+        "git -C C:\\repo pull --ff-only",
+        "git -C C:\\repo clone https://example.invalid/repo.git",
+        "git -C C:\\repo ls-remote origin",
         "pwsh -Command " + json.dumps("git --no-pager push origin HEAD"),
         "env -u CI git -C C:\\repo push origin HEAD",
         "bash -lc "
@@ -476,7 +482,7 @@ def test_pre_hook_does_not_duplicate_static_destructive_prefix_policy(
         'env -S "git -c safe.directory=C:/repo push origin HEAD"',
     ],
 )
-def test_pre_hook_rewrites_optioned_git_push_to_policy_visible_form(
+def test_pre_hook_rewrites_optioned_git_network_command_to_policy_visible_form(
     command: str,
 ) -> None:
     completed = _run_pre_hook(command)
@@ -485,28 +491,24 @@ def test_pre_hook_rewrites_optioned_git_push_to_policy_visible_form(
     output = json.loads(completed.stdout)
     hook_output = output["hookSpecificOutput"]
     assert hook_output["permissionDecision"] == "deny"
-    assert "direct `git push`" in hook_output["permissionDecisionReason"]
+    assert hook_output["permissionDecisionReason"]
 
 
 @pytest.mark.parametrize(
     "command",
     [
-        "bash -lc "
-        + json.dumps("if true; then git -C C:\\repo push origin HEAD; fi"),
+        "bash -lc " + json.dumps("if true; then git -C C:\\repo push origin HEAD; fi"),
         "bash -lc "
         + json.dumps(
             "while true; do git --git-dir C:\\repo\\.git push origin HEAD; done"
         ),
         "bash -lc "
-        + json.dumps(
-            "if false; then :; else git -C C:\\repo push origin HEAD; fi"
-        ),
+        + json.dumps("if false; then :; else git -C C:\\repo push origin HEAD; fi"),
         "pwsh -Command "
         + json.dumps("if ($true) { git -C C:\\repo push origin HEAD }"),
         "pwsh -Command "
         + json.dumps(
-            "if ($false) { Write-Host no } "
-            "else { git -C C:\\repo push origin HEAD }"
+            "if ($false) { Write-Host no } else { git -C C:\\repo push origin HEAD }"
         ),
         "pwsh -Command "
         + json.dumps(
@@ -524,36 +526,70 @@ def test_pre_hook_blocks_optioned_git_push_inside_control_blocks(
     output = json.loads(completed.stdout)
     hook_output = output["hookSpecificOutput"]
     assert hook_output["permissionDecision"] == "deny"
-    assert "direct `git push`" in hook_output["permissionDecisionReason"]
+    assert hook_output["permissionDecisionReason"]
 
 
 @pytest.mark.parametrize(
     "command",
     [
-        "bash -lc "
-        + json.dumps("if true; then git -C C:\\repo status --short; fi"),
-        "pwsh -Command "
-        + json.dumps("if ($true) { git -C C:\\repo status --short }"),
-        "bash -lc "
-        + json.dumps("echo then git -C C:\\repo push origin HEAD"),
+        "cmd /c if exist .git git -C C:\\repo push origin HEAD",
+        "$result = git -C C:\\repo push origin HEAD",
+        'pwsh -Command "$result = git -C C:\\repo push origin HEAD"',
+        "git --unknown value push origin HEAD",
+        "git.exe push origin HEAD",
+        "git.cmd reset --hard",
+        "git.bat push origin HEAD",
+        "git.ps1 clean -fd",
+        "git.com status --short",
+        "git.sh push origin HEAD",
+        "GIT push origin HEAD",
+        '"git" push origin HEAD',
+        "/usr/bin/git push origin HEAD",
+        'FOO=1 bash -lc "git push origin HEAD"',
+        'nice bash -lc "git push origin HEAD"',
+        "git push>output.log",
+        'Write-Output "$(git push origin HEAD)"',
+        'rg --pre "git" PATTERN push',
+        "git PUSH origin HEAD",
+        "git RESET --hard",
+        "git CLEAN -fd",
+        "git STATUS --short",
+    ],
+)
+def test_pre_hook_denies_ambiguous_git_bearing_commands(command: str) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "single direct Git command" in hook_output["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "bash -lc " + json.dumps("if true; then git -C C:\\repo status --short; fi"),
+        "pwsh -Command " + json.dumps("if ($true) { git -C C:\\repo status --short }"),
+        "bash -lc " + json.dumps("echo then git -C C:\\repo push origin HEAD"),
         "pwsh -Command "
         + json.dumps("Write-Host '{' git -C C:\\repo push origin HEAD"),
     ],
 )
-def test_pre_hook_preserves_safe_control_block_commands(command: str) -> None:
+def test_pre_hook_denies_git_text_inside_shell_control_blocks(command: str) -> None:
     completed = _run_pre_hook(command)
 
     assert completed.returncode == 0
-    assert completed.stdout == ""
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 @pytest.mark.parametrize(
     "command",
     [
         "git -C C:\\repo status --short",
-        "env -u CI git -C C:\\repo status --short",
-        'env -S "git -C C:\\repo status --short"',
-        'env --split-string="git -C C:\\repo status --short"',
+        "git --git-dir C:\\repo\\.git status --short",
+        "git --no-pager status --short",
     ],
 )
 def test_pre_hook_preserves_read_only_git_global_option_commands(
@@ -603,18 +639,88 @@ def test_pre_hook_enforces_git_policy_inside_env_split_string(command: str) -> N
 @pytest.mark.parametrize(
     "command",
     [
-        'env -S "git -C C:\\repo clean -nfd"',
-        'env -S "git commit -m docs"',
-        'rg -n "env -S git -C C:\\repo push origin HEAD" docs',
+        'Select-String -Pattern "env -S git -C C:\\repo push origin HEAD" '
+        "-Path README.md",
         'Write-Host env -S "git -C C:\\repo push origin HEAD"',
-        'rg -n env -S "git -C C:\\repo push origin HEAD" docs',
         'Write-Host bash -lc "git -C C:\\repo push origin HEAD"',
-        "env -S",
+        'Write-Output "git push origin HEAD"',
+        'echo "git push origin HEAD"',
     ],
 )
 def test_pre_hook_preserves_safe_env_split_string_forms(command: str) -> None:
     completed = _run_pre_hook(command)
 
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        'bash -lc "echo ready"',
+        'pwsh -Command "Write-Host ready"',
+        "cmd /c echo ready",
+        "wsl echo ready",
+        "command echo ready",
+        "env -S",
+        '& bash -lc "echo ready"',
+        'FOO=1 bash -lc "echo ready"',
+        'FOO="a b" bash -lc "echo ready"',
+        'FOO=a\\ b bash -lc "echo ready"',
+        'FOO=`echo` bash -lc "echo ready"',
+        'FOO="a b" C:\\bin\\bash.exe -lc "echo ready"',
+        'bash -lc "unterminated',
+    ],
+)
+def test_pre_hook_denies_explicit_shell_wrappers_without_parsing_payload(
+    command: str,
+) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "payload directly" in hook_output["permissionDecisionReason"]
+
+
+def test_pre_hook_does_not_treat_powershell_env_drive_as_wrapper() -> None:
+    completed = _run_pre_hook("Get-ChildItem Env:PATH")
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "rg command docs",
+        "python env\\script.py",
+        "FOO=1 python env\\script.py",
+        "python tool.py --shell=bash",
+        "python tool.py --label=env",
+        "SHELL=bash python tool.py",
+        "$result = python tool.py --shell=bash",
+        "& python tool.py --shell=bash",
+        "[ $x = bash ]",
+        "[[ $x = bash ]]",
+        '$runner = "bash"',
+        '[string]$runner = "bash"',
+        '$runner="bash"',
+        'python tool.py ";" bash',
+        'python tool.py --separator=";" bash',
+        '$runner = bash -lc "echo ready"',
+        '[string]$runner = & "bash" -lc "echo ready"',
+        'Write-Host ready; bash -lc "echo ready"',
+        'true; 2>&1 bash -lc "echo ready"',
+        '>trace.log bash -lc "echo ready"',
+        '&>trace.log bash -lc "echo ready"',
+        "Get-Command bash",
+    ],
+)
+def test_pre_hook_ignores_wrapper_words_outside_executable_position(
+    command: str,
+) -> None:
+    completed = _run_pre_hook(command)
     assert completed.returncode == 0
     assert completed.stdout == ""
 
@@ -634,7 +740,7 @@ WRAPPERS = [
     "wrapper",
     ["env -u CI bash -lc", "env --unset=CI /bin/bash -lc"],
 )
-def test_pre_hook_locates_wrapped_shell_after_env_options(wrapper: str) -> None:
+def test_pre_hook_rejects_wrapped_shell_after_env_options(wrapper: str) -> None:
     completed = _run_pre_hook(f"{wrapper} {json.dumps(DESTRUCTIVE_TEXTS[0])}")
     output = json.loads(completed.stdout)
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
@@ -651,7 +757,7 @@ def test_pre_hook_locates_wrapped_shell_after_env_options(wrapper: str) -> None:
         "git -C /tmp",
     ],
 )
-def test_pre_hook_normalizes_nested_git_invocations(git_invocation: str) -> None:
+def test_pre_hook_rejects_nested_git_invocations(git_invocation: str) -> None:
     payload = " ".join((git_invocation, "reset", "--hard"))
     completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
     output = json.loads(completed.stdout)
@@ -659,7 +765,7 @@ def test_pre_hook_normalizes_nested_git_invocations(git_invocation: str) -> None
 
 
 @pytest.mark.parametrize("prefix", ["FOO=1 ", ">/tmp/xic-hook-log "])
-def test_pre_hook_normalizes_simple_command_prefixes(prefix: str) -> None:
+def test_pre_hook_rejects_wrapped_command_prefixes(prefix: str) -> None:
     payload = prefix + DESTRUCTIVE_TEXTS[0]
     completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
     output = json.loads(completed.stdout)
@@ -675,7 +781,7 @@ def test_pre_hook_normalizes_simple_command_prefixes(prefix: str) -> None:
         ("git", "clean", "-fd"),
     ],
 )
-def test_pre_hook_preserves_wrapped_destructive_owner_semantics(
+def test_pre_hook_rejects_wrapped_destructive_commands(
     wrapper: str, tokens: tuple[str, ...]
 ) -> None:
     completed = _run_pre_hook(f"{wrapper} {json.dumps(' '.join(tokens))}")
@@ -705,22 +811,24 @@ def test_pre_hook_denies_all_wrapped_forced_clean_forms(
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
-def test_pre_hook_allows_wrapped_clean_dry_run() -> None:
+def test_pre_hook_denies_wrapped_clean_dry_run_as_ambiguous() -> None:
     payload = " ".join(("git", "clean", "-n", "-d"))
     completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
     assert completed.returncode == 0
-    assert completed.stdout == ""
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 @pytest.mark.parametrize(
     "wrapper", ["sh -c", "/bin/bash -lc", "pwsh -NoProfile -Command"]
 )
-def test_pre_hook_does_not_deny_wrapped_read_only_search(wrapper: str) -> None:
+def test_pre_hook_denies_wrapped_git_search_text_as_ambiguous(wrapper: str) -> None:
     needle = " ".join(("git", "reset", "--hard"))
     payload = f"rg -n {json.dumps(needle)} docs"
     completed = _run_pre_hook(f"{wrapper} {json.dumps(payload)}")
     assert completed.returncode == 0
-    assert completed.stdout == ""
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 @pytest.mark.parametrize(
@@ -764,119 +872,102 @@ def test_pre_hook_blocks_multiline_wrapped_destructive_commands(wrapper: str) ->
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
-def test_pre_hook_preserves_quoted_newline_in_wrapped_search() -> None:
+def test_pre_hook_denies_quoted_newline_git_text_inside_wrapper() -> None:
     needle = "prefix\n" + DESTRUCTIVE_TEXTS[0]
     payload = f"rg -n {json.dumps(needle)} docs"
     completed = _run_pre_hook(f"bash -lc '{payload}'")
     assert completed.returncode == 0
-    assert completed.stdout == ""
+    output = json.loads(completed.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_pre_hook_preserves_quoted_newline_in_git_search() -> None:
     needle = "prefix\ngit -C C:\\repo push origin HEAD"
-    completed = _run_pre_hook(f"rg -n {json.dumps(needle)} docs")
+    completed = _run_pre_hook(
+        f"Select-String -Pattern {json.dumps(needle)} -Path README.md"
+    )
     assert completed.returncode == 0
     assert completed.stdout == ""
 
 
-def test_pre_hook_preserves_quoted_separators_in_wrapped_search() -> None:
+def test_pre_hook_denies_quoted_separator_git_text_inside_wrapper() -> None:
     needle = "prefix; " + " ".join(("git", "reset", "--hard"))
     payload = f"rg -n {json.dumps(needle)} docs"
     completed = _run_pre_hook(f"bash -lc {json.dumps(payload)}")
     assert completed.returncode == 0
-    assert completed.stdout == ""
-
-
-def test_pre_hook_blocks_wrapped_raw_launch_without_preset_token() -> None:
-    payload = (
-        "Write-Host ok; Start-Process python -ArgumentList "
-        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT "
-        "--dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR'"
-    )
-    completed = _run_pre_hook(f"pwsh -Command {json.dumps(payload)}")
-    output = json.loads(completed.stdout)
-    hook_output = output["hookSpecificOutput"]
-    assert hook_output["permissionDecision"] == "deny"
-    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
-
-
-def test_pre_hook_correlates_raw_signals_across_powershell_statements() -> None:
-    payload = (
-        "$rawArgs='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
-        "Start-Process python -ArgumentList $rawArgs"
-    )
-    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
-    output = json.loads(completed.stdout)
-    hook_output = output["hookSpecificOutput"]
-    assert hook_output["permissionDecision"] == "deny"
-    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
-
-
-def test_pre_hook_propagates_raw_argument_aliases() -> None:
-    payload = (
-        "$a='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
-        "$b=$a; Start-Process python -ArgumentList $b"
-    )
-    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
-    output = json.loads(completed.stdout)
-    hook_output = output["hookSpecificOutput"]
-    assert hook_output["permissionDecision"] == "deny"
-    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
-
-
-def test_pre_hook_resolves_raw_assignment_state_at_launch_time() -> None:
-    raw_then_safe = (
-        "$a='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
-        "Start-Process python -ArgumentList $a; $a='-c print(1)'"
-    )
-    completed = _run_pre_hook(f'pwsh -Command "{raw_then_safe}"')
     output = json.loads(completed.stdout)
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
-    safe_then_raw = (
-        "$a='-c print(1)'; Start-Process python -ArgumentList $a; "
-        "$a='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'"
-    )
-    completed = _run_pre_hook(f'pwsh -Command "{safe_then_raw}"')
-    assert completed.returncode == 0
-    assert completed.stdout == ""
 
-
-def test_pre_hook_blocks_raw_launch_inside_powershell_control_block() -> None:
-    payload = (
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "Write-Host ok; Start-Process python -ArgumentList "
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'",
+        "$rawArgs='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
+        "Start-Process python -ArgumentList $rawArgs",
+        "$a='-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'; "
+        "$b=$a; Start-Process python -ArgumentList $b",
         "if ($true) { Start-Process python -ArgumentList "
-        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT' }"
-    )
-    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
-    output = json.loads(completed.stdout)
-    hook_output = output["hookSpecificOutput"]
-    assert hook_output["permissionDecision"] == "deny"
-    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
-
-
-def test_pre_hook_blocks_raw_launch_on_assignment_rhs() -> None:
-    payload = (
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT' }",
         "$proc = Start-Process python -PassThru -ArgumentList "
-        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'"
-    )
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'",
+        "Write-Host run_alignment; Start-Process python -ArgumentList '-c print(1)'",
+    ],
+)
+def test_pre_hook_rejects_wrapped_raw_shapes_without_payload_parsing(
+    payload: str,
+) -> None:
     completed = _run_pre_hook(f'pwsh -Command "{payload}"')
-    output = json.loads(completed.stdout)
-    hook_output = output["hookSpecificOutput"]
-    assert hook_output["permissionDecision"] == "deny"
-    assert "Background RAW launch" in hook_output["permissionDecisionReason"]
-
-
-def test_pre_hook_does_not_treat_start_process_text_as_a_raw_launch() -> None:
-    completed = _run_pre_hook('bash -lc "echo Start-Process run_alignment"')
     assert completed.returncode == 0
-    assert completed.stdout == ""
+    output = json.loads(completed.stdout)
+    reason = output["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "payload directly" in reason
 
 
-def test_pre_hook_does_not_cross_correlate_unrelated_raw_text() -> None:
-    payload = (
-        "Write-Host run_alignment; Start-Process python -ArgumentList '-c print(1)'"
+def test_pre_hook_rejects_later_compound_wrapper_raw_background_launch() -> None:
+    command = (
+        'Write-Host ready; pwsh -Command "Start-Process python -ArgumentList '
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT'\""
     )
-    completed = _run_pre_hook(f'pwsh -Command "{payload}"')
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    reason = output["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "Background RAW launch" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "Write-Host $( Start-Process python -ArgumentList "
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT' )",
+        'Write-Output "$(Start-Process python -ArgumentList '
+        "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT')\"",
+    ],
+)
+def test_pre_hook_rejects_evaluated_raw_background_expression(command: str) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    reason = output["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "Background RAW launch" in reason
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "Write-Host run_alignment; Start-Process python -ArgumentList '-c print(1)'",
+        'Write-Host "Start-Process python -ArgumentList '
+        "'-m scripts.run_alignment --raw-dir C:\\raw'\"",
+        "Write-Host '$(Start-Process python -ArgumentList "
+        '"-m scripts.run_alignment --raw-dir C:\\raw")\'',
+    ],
+)
+def test_pre_hook_does_not_cross_correlate_raw_background_text(command: str) -> None:
+    completed = _run_pre_hook(command)
     assert completed.returncode == 0
     assert completed.stdout == ""
 

@@ -8,10 +8,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.diagnostics import docs_policy as _doc_policy  # noqa: E402
-from tools.git_command_policy import (  # noqa: E402
-    command_word,
-    git_subcommand_tails,
-)
 
 CONTROL_PLANE_PATH = _doc_policy.CONTROL_PLANE_PATH
 HANDOFF_CURRENT_DIR = _doc_policy.HANDOFF_CURRENT_DIR
@@ -38,33 +34,15 @@ GIT_COMMIT_OPTIONS_WITH_VALUE = {
 }
 
 
-def is_git_commit_command(command: str) -> bool:
-    return bool(git_subcommand_tails(command, "commit"))
-
-
-def git_commit_tail(command: str) -> str:
-    tails = git_subcommand_tails(command, "commit")
-    if not tails:
-        return ""
-    return " ".join(tails[0])
-
-
-def git_commit_uses_autostage_or_pathspec(command: str) -> bool:
-    return any(
-        commit_tail_uses_autostage_or_pathspec(tail)
-        for tail in git_subcommand_tails(command, "commit")
-    )
-
-
 def short_option_uses_autostage(token: str) -> bool:
     return token.startswith("-") and not token.startswith("--") and "a" in token[1:]
 
 
-def commit_tail_uses_autostage_or_pathspec(tokens: list[str]) -> bool:
+def commit_tail_uses_autostage_or_pathspec(tokens: tuple[str, ...]) -> bool:
     index = 0
     after_separator = False
     while index < len(tokens):
-        token = command_word(tokens[index])
+        token = tokens[index]
         if not token:
             index += 1
             continue
