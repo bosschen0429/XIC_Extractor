@@ -738,6 +738,36 @@ def test_model_set_identity_binds_ordering_behavior_snapshot(
     assert reordered.assignments[0].reason_codes == ("trajectory_crossing",)
 
 
+def test_duplicate_physical_trajectory_evidence_cannot_authorize_interpolation(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    shared_evidence_ref = "peak-observation:target-shared-landmark"
+    points = tuple(
+        LocalFeatureLandmarkEvidence(
+            sample_stem="target",
+            injection_order=2,
+            acquisition_source_id=scenario.target_acquisition_source_id,
+            landmark_id=f"landmark:target:{index}",
+            observed_rt_min=local_rt + shift,
+            local_trajectory_rt_min=local_rt,
+            rt_drift_delta_min=shift,
+            quality="accepted",
+            evidence_ref=shared_evidence_ref,
+        )
+        for index, (local_rt, shift) in enumerate(
+            ((7.00, 0.10), (9.00, 0.30)),
+            start=1,
+        )
+    )
+
+    with pytest.raises(ValueError, match="physical evidence refs must be unique"):
+        assess_local_trajectory(
+            LocalTrajectoryEvidenceLookup(points=points),
+            ("target",),
+        )
+
+
 def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
     tmp_path: Path,
 ) -> None:

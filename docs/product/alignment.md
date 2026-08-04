@@ -60,6 +60,9 @@ The minimum model set is:
 
 Local feature landmarks retain sample, resolved acquisition source, injection
 order, observed RT, local trajectory RT, quality, and evidence reference.
+Each physical evidence reference may identify exactly one retained landmark in
+the lookup; duplicate references fail closed before trajectory assessment so
+one observation cannot become multiple interpolation points.
 Missing or poor landmarks are
 unassessable, not conflict. Conflict requires an explicit reference to a
 retained accepted landmark; an absent landmark cannot be relabelled as

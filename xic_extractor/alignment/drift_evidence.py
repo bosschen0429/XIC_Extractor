@@ -195,6 +195,11 @@ class LocalTrajectoryEvidenceLookup:
         keys = tuple((point.sample_stem, point.landmark_id) for point in self.points)
         if len(keys) != len(set(keys)):
             raise ValueError("local landmark evidence must be unique")
+        evidence_refs = tuple(point.evidence_ref for point in self.points)
+        if len(evidence_refs) != len(set(evidence_refs)):
+            raise ValueError(
+                "local landmark physical evidence refs must be unique"
+            )
         injection_orders_by_sample: dict[str, set[int]] = {}
         acquisition_sources_by_sample: dict[str, set[str]] = {}
         for point in self.points:

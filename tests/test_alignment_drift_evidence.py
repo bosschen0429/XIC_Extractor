@@ -217,6 +217,36 @@ def test_leave_one_landmark_out_retains_points_without_a_median_template() -> No
     assert leave_one_out_assessment.landmark_points == points[1:]
 
 
+def test_local_landmarks_reject_duplicate_physical_refs_across_lookup() -> None:
+    with pytest.raises(ValueError, match="physical evidence refs must be unique"):
+        LocalTrajectoryEvidenceLookup(
+            points=(
+                LocalFeatureLandmarkEvidence(
+                    sample_stem="sample-a",
+                    injection_order=1,
+                    acquisition_source_id="acquisition-source:sample-a",
+                    landmark_id="landmark-001",
+                    observed_rt_min=4.10,
+                    local_trajectory_rt_min=4.00,
+                    rt_drift_delta_min=0.10,
+                    quality="accepted",
+                    evidence_ref="peak-observation:shared",
+                ),
+                LocalFeatureLandmarkEvidence(
+                    sample_stem="sample-b",
+                    injection_order=2,
+                    acquisition_source_id="acquisition-source:sample-b",
+                    landmark_id="landmark-001",
+                    observed_rt_min=8.30,
+                    local_trajectory_rt_min=8.00,
+                    rt_drift_delta_min=0.30,
+                    quality="accepted",
+                    evidence_ref="peak-observation:shared",
+                ),
+            )
+        )
+
+
 def test_local_landmarks_reject_conflicting_sample_injection_order() -> None:
     with pytest.raises(ValueError, match="one injection order"):
         LocalTrajectoryEvidenceLookup(
