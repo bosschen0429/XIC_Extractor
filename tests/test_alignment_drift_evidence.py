@@ -88,6 +88,7 @@ def test_local_landmarks_retain_full_trace_and_explicit_quality() -> None:
             LocalFeatureLandmarkEvidence(
                 sample_stem="sample-a",
                 injection_order=1,
+                acquisition_source_id="acquisition-source:sample-a",
                 landmark_id="landmark-001",
                 observed_rt_min=4.10,
                 local_trajectory_rt_min=4.00,
@@ -98,6 +99,7 @@ def test_local_landmarks_retain_full_trace_and_explicit_quality() -> None:
             LocalFeatureLandmarkEvidence(
                 sample_stem="sample-a",
                 injection_order=1,
+                acquisition_source_id="acquisition-source:sample-a",
                 landmark_id="landmark-002",
                 observed_rt_min=8.30,
                 local_trajectory_rt_min=8.10,
@@ -108,6 +110,7 @@ def test_local_landmarks_retain_full_trace_and_explicit_quality() -> None:
             LocalFeatureLandmarkEvidence(
                 sample_stem="sample-b",
                 injection_order=2,
+                acquisition_source_id="acquisition-source:sample-b",
                 landmark_id="landmark-001",
                 observed_rt_min=4.00,
                 local_trajectory_rt_min=4.00,
@@ -138,6 +141,7 @@ def test_local_trajectory_conflict_requires_explicit_evidence_refs() -> None:
     point = LocalFeatureLandmarkEvidence(
         sample_stem="sample-a",
         injection_order=1,
+        acquisition_source_id="acquisition-source:sample-a",
         landmark_id="landmark-001",
         observed_rt_min=4.10,
         local_trajectory_rt_min=4.00,
@@ -178,6 +182,7 @@ def test_leave_one_landmark_out_retains_points_without_a_median_template() -> No
         LocalFeatureLandmarkEvidence(
             sample_stem="sample-a",
             injection_order=1,
+            acquisition_source_id="acquisition-source:sample-a",
             landmark_id="landmark-001",
             observed_rt_min=4.10,
             local_trajectory_rt_min=4.00,
@@ -188,6 +193,7 @@ def test_leave_one_landmark_out_retains_points_without_a_median_template() -> No
         LocalFeatureLandmarkEvidence(
             sample_stem="sample-a",
             injection_order=1,
+            acquisition_source_id="acquisition-source:sample-a",
             landmark_id="landmark-002",
             observed_rt_min=8.30,
             local_trajectory_rt_min=8.10,
@@ -218,6 +224,7 @@ def test_local_landmarks_reject_conflicting_sample_injection_order() -> None:
                 LocalFeatureLandmarkEvidence(
                     sample_stem="sample-a",
                     injection_order=1,
+                    acquisition_source_id="acquisition-source:sample-a",
                     landmark_id="landmark-001",
                     observed_rt_min=4.10,
                     local_trajectory_rt_min=4.00,
@@ -228,6 +235,37 @@ def test_local_landmarks_reject_conflicting_sample_injection_order() -> None:
                 LocalFeatureLandmarkEvidence(
                     sample_stem="sample-a",
                     injection_order=2,
+                    acquisition_source_id="acquisition-source:sample-a",
+                    landmark_id="landmark-002",
+                    observed_rt_min=8.30,
+                    local_trajectory_rt_min=8.10,
+                    rt_drift_delta_min=0.20,
+                    quality="accepted",
+                    evidence_ref="peak-observation:a2",
+                ),
+            )
+        )
+
+
+def test_local_landmarks_reject_conflicting_sample_acquisition_source() -> None:
+    with pytest.raises(ValueError, match="one acquisition source"):
+        LocalTrajectoryEvidenceLookup(
+            points=(
+                LocalFeatureLandmarkEvidence(
+                    sample_stem="sample-a",
+                    injection_order=1,
+                    acquisition_source_id="acquisition-source:first",
+                    landmark_id="landmark-001",
+                    observed_rt_min=4.10,
+                    local_trajectory_rt_min=4.00,
+                    rt_drift_delta_min=0.10,
+                    quality="accepted",
+                    evidence_ref="peak-observation:a1",
+                ),
+                LocalFeatureLandmarkEvidence(
+                    sample_stem="sample-a",
+                    injection_order=1,
+                    acquisition_source_id="acquisition-source:second",
                     landmark_id="landmark-002",
                     observed_rt_min=8.30,
                     local_trajectory_rt_min=8.10,

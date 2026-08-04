@@ -58,8 +58,9 @@ The minimum model set is:
 - `scientific_uncertainty`: a valid run-terminal result when the evidence does
   not resolve one of the four models.
 
-Local feature landmarks retain sample, injection order, observed RT, local
-trajectory RT, quality, and evidence reference. Missing or poor landmarks are
+Local feature landmarks retain sample, resolved acquisition source, injection
+order, observed RT, local trajectory RT, quality, and evidence reference.
+Missing or poor landmarks are
 unassessable, not conflict. Conflict requires an explicit reference to a
 retained accepted landmark; an absent landmark cannot be relabelled as
 conflict. Landmarks for one sample must agree on its injection order. The

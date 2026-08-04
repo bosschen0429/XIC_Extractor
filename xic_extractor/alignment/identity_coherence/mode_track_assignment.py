@@ -490,11 +490,11 @@ class ModeTrackAssignment:
                 raise ModeTrackContractError(
                     "assignment PeakHypothesis identity was substituted"
                 )
+            direct_support_cell = self.direct_support_cell
             expected_cell_content_id = (
                 None
-                if self.direct_support_cell is None
-                else self.direct_support_cell.artifact.content_identity
-                .artifact_content_id
+                if direct_support_cell is None
+                else direct_support_cell.artifact.content_identity.artifact_content_id
             )
             if self.direct_support_cell_artifact_content_id != expected_cell_content_id:
                 raise ModeTrackContractError(
@@ -794,6 +794,7 @@ def assign_mode_tracks(
     _validate_trajectory_sample(
         trajectory_assessment,
         sample,
+        acquisition_source=acquisition_source,
         injection_order=injection_order,
     )
     canonical_candidates = tuple(
@@ -1590,6 +1591,7 @@ def _validate_trajectory_sample(
     assessment: LocalTrajectoryAssessment,
     sample: ResolvedCanonicalSampleIdentity,
     *,
+    acquisition_source: AcquisitionSourceIdentity,
     injection_order: int,
 ) -> None:
     valid_tokens = {sample.metadata.sample_name, sample.metadata.raw_stem}
@@ -1604,6 +1606,13 @@ def _validate_trajectory_sample(
     ):
         raise ModeTrackContractError(
             "local trajectory landmarks reference a stale injection binding"
+        )
+    if any(
+        point.acquisition_source_id != acquisition_source.acquisition_source_id
+        for point in assessment.landmark_points
+    ):
+        raise ModeTrackContractError(
+            "local trajectory landmarks reference a stale acquisition source"
         )
 
 
@@ -1633,7 +1642,10 @@ def _trajectory_delta(
         )
     )
     if len(local_shifts) == 1:
-        return local_shifts[0][1], ("single_local_landmark_shift",)
+        local_rt, shift = local_shifts[0]
+        if math.isclose(predicted_rt_min, local_rt, rel_tol=0.0, abs_tol=1e-12):
+            return shift, ("exact_local_landmark_shift",)
+        return None, ("unsupported_local_landmark_extrapolation",)
     if not local_shifts[0][0] <= predicted_rt_min <= local_shifts[-1][0]:
         return None, ("unsupported_local_landmark_extrapolation",)
     for local_rt, shift in local_shifts:

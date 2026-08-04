@@ -198,9 +198,17 @@ def replay_retained_mode_track_fixture(
         required.get("sample_count"),
         field="required sample count",
     )
+    required_raw_open_count = _nonnegative_int(
+        required.get("raw_open_count"),
+        field="required RAW open count",
+    )
+    required_chromatogram_call_count = _nonnegative_int(
+        required.get("chromatogram_call_count"),
+        field="required chromatogram call count",
+    )
     if (
-        required.get("raw_open_count") != required_sample_count
-        or required.get("chromatogram_call_count") != required_sample_count
+        required_raw_open_count != required_sample_count
+        or required_chromatogram_call_count != required_sample_count
     ):
         raise ModeTrackRetainedReplayError(
             "required seed source budget must be one RAW open and call per sample"
@@ -240,10 +248,21 @@ def replay_retained_mode_track_fixture(
         )
 
     reconstruction = _mapping(root.get("reconstruction"), field="reconstruction")
+    reconstruction_raw_open_count = _nonnegative_int(
+        reconstruction.get("raw_open_count"),
+        field="reconstruction RAW open count",
+    )
+    reconstruction_chromatogram_call_count = _nonnegative_int(
+        reconstruction.get("chromatogram_call_count"),
+        field="reconstruction chromatogram call count",
+    )
     if (
         reconstruction.get("status") != "not_launched_missing_source"
-        or reconstruction.get("raw_open_count") != 0
-        or reconstruction.get("chromatogram_call_count") != 0
+        or reconstruction.get("reason_code")
+        != "required_owner_bound_discovery_index_unavailable"
+        or reconstruction_raw_open_count != 0
+        or reconstruction_chromatogram_call_count != 0
+        or reconstruction.get("authorized_attempt_consumed") is not False
     ):
         raise ModeTrackRetainedReplayError(
             "fixture must preserve the no-launch RAW stop condition"
@@ -262,7 +281,11 @@ def replay_retained_mode_track_fixture(
         raise ModeTrackRetainedReplayError(
             "sample census differs from the required seed oracle"
         )
-    if historical.get("trace_count") != sample_count:
+    historical_trace_count = _nonnegative_int(
+        historical.get("trace_count"),
+        field="historical trace count",
+    )
+    if historical_trace_count != sample_count:
         raise ModeTrackRetainedReplayError(
             "historical trace count differs from the retained census"
         )
@@ -318,10 +341,19 @@ def replay_retained_mode_track_fixture(
         )
 
     owner = _mapping(root.get("owner_evidence"), field="owner_evidence")
+    direct_support_count = _nonnegative_int(
+        owner.get("direct_support_peak_hypothesis_count"),
+        field="direct SUPPORT PeakHypothesis count",
+    )
+    canonical_track_seed_count = _nonnegative_int(
+        owner.get("canonical_track_seed_count"),
+        field="canonical track seed count",
+    )
     if (
-        owner.get("direct_support_peak_hypothesis_count") != 0
+        direct_support_count != 0
         or owner.get("owner_refs_complete") is not False
-        or owner.get("canonical_track_seed_count") != 0
+        or canonical_track_seed_count != 0
+        or owner.get("historical_labels_are_training_evidence") is not False
     ):
         raise ModeTrackRetainedReplayError(
             "unclosed historical evidence cannot seed or train ModeTracks"
@@ -353,11 +385,19 @@ def replay_retained_mode_track_fixture(
         "landmarks",
         "ambiguous_assignments",
     )
-    if any(counts.get(name) != 0 for name in zero_fields):
+    zero_counts = tuple(
+        _nonnegative_int(counts.get(name), field=f"expected {name} count")
+        for name in zero_fields
+    )
+    if any(zero_counts):
         raise ModeTrackRetainedReplayError(
             "inconclusive fixture cannot retain typed assignment counts"
         )
-    if counts.get("families") != 1:
+    family_count = _positive_int(
+        counts.get("families"),
+        field="expected Family count",
+    )
+    if family_count != 1:
         raise ModeTrackRetainedReplayError(
             "retained replay counts must describe exactly one Family"
         )

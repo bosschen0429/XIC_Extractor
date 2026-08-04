@@ -47,6 +47,7 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_cid_nl_peak_hypothesis,
 )
+from xic_extractor.processing_identity import resolve_request_acquisition_source
 
 
 def test_unique_assignment_is_owner_minted_typed_and_deterministic(
@@ -84,7 +85,10 @@ def test_unique_assignment_is_owner_minted_typed_and_deterministic(
     assert assignment.validation_status == "shadow_ready"
     assert assignment.product_authority == "none"
     assert assignment.prediction_assessments[0].anchor_refs
-    assert assignment.trajectory_evidence_refs == ("peak-observation:target-landmark",)
+    assert assignment.trajectory_evidence_refs == (
+        "peak-observation:target-landmark-1",
+        "peak-observation:target-landmark-2",
+    )
 
     payload = json.loads(canonical_mode_track_assignment_batch_bytes(forward))
     assert payload["schema_version"] == "mode_track_assignment_batch_v1"
@@ -342,6 +346,7 @@ def test_each_track_uses_its_local_landmark_region_without_global_median(
     trajectory = _multi_point_trajectory(
         "target",
         2,
+        scenario.target_acquisition_source_id,
         ((7.82, -0.20), (8.32, 0.20)),
     )
 
@@ -373,6 +378,7 @@ def test_local_landmarks_do_not_authorize_unbounded_rt_extrapolation(
     trajectory = _multi_point_trajectory(
         "target",
         2,
+        scenario.target_acquisition_source_id,
         ((7.90, -0.10), (8.00, 0.10)),
     )
 
@@ -387,6 +393,29 @@ def test_local_landmarks_do_not_authorize_unbounded_rt_extrapolation(
     assignment = result.assignments[0]
     assert assignment.state == "technical_unassessable"
     assert "unsupported_local_landmark_extrapolation" in assignment.reason_codes
+
+
+def test_single_landmark_does_not_authorize_nonlocal_tracks(tmp_path: Path) -> None:
+    scenario = _scenario(tmp_path)
+    trajectory = _multi_point_trajectory(
+        "target",
+        2,
+        scenario.target_acquisition_source_id,
+        ((7.82, 0.05),),
+    )
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(scenario.candidate(7.87, direct_support=False),),
+        trajectory_assessment=trajectory,
+    )
+
+    assert result.assignments[0].state == "technical_unassessable"
+    assert "unsupported_local_landmark_extrapolation" in (
+        result.assignments[0].reason_codes
+    )
 
 
 def test_candidate_physical_observation_must_stay_inside_family_universe(
@@ -469,7 +498,29 @@ def test_request_acquisition_and_injection_bindings_cannot_be_crossed(
             sample=original.fixture.sample("target"),
             model_set=original.models,
             candidates=(),
-            trajectory_assessment=_trajectory("target", 99),
+            trajectory_assessment=_trajectory(
+                "target",
+                99,
+                original.target_acquisition_source_id,
+            ),
+        )
+
+    stale_source = resolve_request_acquisition_source(
+        processing_owners=original.fixture.owners,
+        sample=original.fixture.sample("anchor-1"),
+    )
+    assert stale_source.acquisition_source_id != original.target_acquisition_source_id
+    with pytest.raises(ModeTrackContractError, match="stale acquisition source"):
+        assign_mode_tracks(
+            processing_owners=original.fixture.owners,
+            sample=original.fixture.sample("target"),
+            model_set=original.models,
+            candidates=(),
+            trajectory_assessment=_trajectory(
+                "target",
+                2,
+                stale_source.acquisition_source_id,
+            ),
         )
 
 
@@ -524,7 +575,11 @@ def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
         sample=poor_landmarks.fixture.sample("target"),
         model_set=poor_landmarks.models,
         candidates=(poor_landmarks.candidate(7.87, direct_support=False),),
-        trajectory_assessment=_poor_trajectory("target", 2),
+        trajectory_assessment=_poor_trajectory(
+            "target",
+            2,
+            poor_landmarks.target_acquisition_source_id,
+        ),
     )
     assert poor_result.assignments[0].state == "technical_unassessable"
     assert "trajectory_poor_landmarks" in poor_result.assignments[0].reason_codes
@@ -670,9 +725,15 @@ class _Scenario:
         self.family_context = family_context
         self.policy = policy
         self.models = models
+        target_source = resolve_request_acquisition_source(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("target"),
+        )
+        self.target_acquisition_source_id = target_source.acquisition_source_id
         self.assessable_trajectory = _trajectory(
             "target",
             target_injection_order,
+            self.target_acquisition_source_id,
         )
         self.missing_trajectory = assess_local_trajectory(
             LocalTrajectoryEvidenceLookup(points=()),
@@ -840,30 +901,43 @@ def _mode_track_spines(
     return tuple(sorted(spines, key=lambda item: item.group.group_center_rt))
 
 
-def _trajectory(sample_stem: str, injection_order: int):
-    point = LocalFeatureLandmarkEvidence(
-        sample_stem=sample_stem,
-        injection_order=injection_order,
-        landmark_id=f"landmark:{sample_stem}",
-        observed_rt_min=4.05,
-        local_trajectory_rt_min=4.00,
-        rt_drift_delta_min=0.05,
-        quality="accepted",
-        evidence_ref=f"peak-observation:{sample_stem}-landmark",
+def _trajectory(
+    sample_stem: str,
+    injection_order: int,
+    acquisition_source_id: str,
+):
+    points = tuple(
+        LocalFeatureLandmarkEvidence(
+            sample_stem=sample_stem,
+            injection_order=injection_order,
+            acquisition_source_id=acquisition_source_id,
+            landmark_id=f"landmark:{sample_stem}:{index}",
+            observed_rt_min=local_rt + 0.05,
+            local_trajectory_rt_min=local_rt,
+            rt_drift_delta_min=0.05,
+            quality="accepted",
+            evidence_ref=f"peak-observation:{sample_stem}-landmark-{index}",
+        )
+        for index, local_rt in enumerate((7.00, 9.00), start=1)
     )
     return assess_local_trajectory(
-        LocalTrajectoryEvidenceLookup(points=(point,)),
+        LocalTrajectoryEvidenceLookup(points=points),
         (sample_stem,),
     )
 
 
-def _poor_trajectory(sample_stem: str, injection_order: int):
+def _poor_trajectory(
+    sample_stem: str,
+    injection_order: int,
+    acquisition_source_id: str,
+):
     point = LocalFeatureLandmarkEvidence(
         sample_stem=sample_stem,
         injection_order=injection_order,
+        acquisition_source_id=acquisition_source_id,
         landmark_id=f"landmark:{sample_stem}:poor",
-        observed_rt_min=4.05,
-        local_trajectory_rt_min=4.00,
+        observed_rt_min=7.87,
+        local_trajectory_rt_min=7.82,
         rt_drift_delta_min=0.05,
         quality="poor",
         evidence_ref=f"peak-observation:{sample_stem}-poor-landmark",
@@ -878,12 +952,14 @@ def _poor_trajectory(sample_stem: str, injection_order: int):
 def _multi_point_trajectory(
     sample_stem: str,
     injection_order: int,
+    acquisition_source_id: str,
     local_rt_and_shift: tuple[tuple[float, float], ...],
 ):
     points = tuple(
         LocalFeatureLandmarkEvidence(
             sample_stem=sample_stem,
             injection_order=injection_order,
+            acquisition_source_id=acquisition_source_id,
             landmark_id=f"landmark:{sample_stem}:{index}",
             observed_rt_min=local_rt + shift,
             local_trajectory_rt_min=local_rt,

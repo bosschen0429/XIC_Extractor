@@ -42,6 +42,7 @@ class LocalFeatureLandmarkEvidence:
 
     sample_stem: str
     injection_order: int
+    acquisition_source_id: str
     landmark_id: str
     observed_rt_min: float
     local_trajectory_rt_min: float
@@ -53,7 +54,12 @@ class LocalFeatureLandmarkEvidence:
     product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
 
     def __post_init__(self) -> None:
-        for field_name in ("sample_stem", "landmark_id", "evidence_ref"):
+        for field_name in (
+            "sample_stem",
+            "acquisition_source_id",
+            "landmark_id",
+            "evidence_ref",
+        ):
             value = getattr(self, field_name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{field_name} must be non-empty text")
@@ -190,13 +196,21 @@ class LocalTrajectoryEvidenceLookup:
         if len(keys) != len(set(keys)):
             raise ValueError("local landmark evidence must be unique")
         injection_orders_by_sample: dict[str, set[int]] = {}
+        acquisition_sources_by_sample: dict[str, set[str]] = {}
         for point in self.points:
             injection_orders_by_sample.setdefault(point.sample_stem, set()).add(
                 point.injection_order
             )
+            acquisition_sources_by_sample.setdefault(point.sample_stem, set()).add(
+                point.acquisition_source_id
+            )
         if any(len(orders) != 1 for orders in injection_orders_by_sample.values()):
             raise ValueError(
                 "local landmarks for one sample require one injection order"
+            )
+        if any(len(sources) != 1 for sources in acquisition_sources_by_sample.values()):
+            raise ValueError(
+                "local landmarks for one sample require one acquisition source"
             )
         _validate_local_trajectory_authority(
             validation_status=self.validation_status,

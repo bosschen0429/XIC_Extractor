@@ -553,6 +553,7 @@ def _settlement(parent, component_partition, *, relation):
         LocalFeatureLandmarkEvidence(
             sample_stem=sample_stem,
             injection_order=index,
+            acquisition_source_id=f"acquisition-source:{sample_stem}",
             landmark_id=f"landmark-{index}",
             observed_rt_min=8.0 + index * 0.01,
             local_trajectory_rt_min=8.0,

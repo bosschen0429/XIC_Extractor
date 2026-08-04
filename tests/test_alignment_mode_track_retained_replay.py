@@ -126,6 +126,16 @@ def test_retained_fixture_preserves_source_mismatch_and_85_sample_census() -> No
             "no-launch",
         ),
         (
+            ("reconstruction", "authorized_attempt_consumed"),
+            True,
+            "no-launch",
+        ),
+        (
+            ("reconstruction", "reason_code"),
+            "different_missing_source",
+            "no-launch",
+        ),
+        (
             ("sensitivity", "shoulder_exclusion_status"),
             "passed",
             "technical_unassessable",
@@ -160,6 +170,35 @@ def test_retained_replay_seals_historical_context_and_budget_fields() -> None:
     payload = json.loads(FIXTURE_PATH.read_bytes())
     payload["family_context"]["label_is_identity"] = True
     with pytest.raises(ModeTrackRetainedReplayError, match="cannot become"):
+        replay_retained_mode_track_fixture(json.dumps(payload).encode())
+
+    payload = json.loads(FIXTURE_PATH.read_bytes())
+    payload["owner_evidence"]["historical_labels_are_training_evidence"] = True
+    with pytest.raises(ModeTrackRetainedReplayError, match="cannot seed or train"):
+        replay_retained_mode_track_fixture(json.dumps(payload).encode())
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        ("source_qualification", "required_seed_oracle", "raw_open_count"),
+        ("source_qualification", "retained_historical_packet", "trace_count"),
+        ("reconstruction", "raw_open_count"),
+        ("owner_evidence", "direct_support_peak_hypothesis_count"),
+        ("expected_replay_counts", "tracks"),
+        ("expected_replay_counts", "families"),
+    ),
+)
+def test_retained_replay_rejects_boolean_count_aliases(
+    path: tuple[str, ...],
+) -> None:
+    payload = json.loads(FIXTURE_PATH.read_bytes())
+    cursor = payload
+    for key in path[:-1]:
+        cursor = cursor[key]
+    cursor[path[-1]] = False if path[-1] != "families" else True
+
+    with pytest.raises(ModeTrackRetainedReplayError, match="integer"):
         replay_retained_mode_track_fixture(json.dumps(payload).encode())
 
 
