@@ -491,6 +491,65 @@ def test_pre_hook_rewrites_optioned_git_push_to_policy_visible_form(
 @pytest.mark.parametrize(
     "command",
     [
+        "bash -lc "
+        + json.dumps("if true; then git -C C:\\repo push origin HEAD; fi"),
+        "bash -lc "
+        + json.dumps(
+            "while true; do git --git-dir C:\\repo\\.git push origin HEAD; done"
+        ),
+        "bash -lc "
+        + json.dumps(
+            "if false; then :; else git -C C:\\repo push origin HEAD; fi"
+        ),
+        "pwsh -Command "
+        + json.dumps("if ($true) { git -C C:\\repo push origin HEAD }"),
+        "pwsh -Command "
+        + json.dumps(
+            "if ($false) { Write-Host no } "
+            "else { git -C C:\\repo push origin HEAD }"
+        ),
+        "pwsh -Command "
+        + json.dumps(
+            "try { git --git-dir C:\\repo\\.git push origin HEAD } "
+            "finally { Write-Host done }"
+        ),
+    ],
+)
+def test_pre_hook_blocks_optioned_git_push_inside_control_blocks(
+    command: str,
+) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    hook_output = output["hookSpecificOutput"]
+    assert hook_output["permissionDecision"] == "deny"
+    assert "direct `git push`" in hook_output["permissionDecisionReason"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "bash -lc "
+        + json.dumps("if true; then git -C C:\\repo status --short; fi"),
+        "pwsh -Command "
+        + json.dumps("if ($true) { git -C C:\\repo status --short }"),
+        "bash -lc "
+        + json.dumps("echo then git -C C:\\repo push origin HEAD"),
+        "pwsh -Command "
+        + json.dumps("Write-Host '{' git -C C:\\repo push origin HEAD"),
+    ],
+)
+def test_pre_hook_preserves_safe_control_block_commands(command: str) -> None:
+    completed = _run_pre_hook(command)
+
+    assert completed.returncode == 0
+    assert completed.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "git -C C:\\repo status --short",
         "env -u CI git -C C:\\repo status --short",
         'env -S "git -C C:\\repo status --short"',

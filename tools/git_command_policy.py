@@ -28,6 +28,33 @@ ENV_SPLIT_OPTIONS = {"-S", "--split-string"}
 POSIX_ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 SHELL_PUNCTUATION_CHARS = "();<>|&\n"
 SHELL_WHITESPACE = " \t\r"
+# Only skip these while a command is expected; this is a bounded control-block
+# scan, not a general Bash or PowerShell grammar.
+SHELL_CONTROL_PREFIXES = {
+    "!",
+    "begin",
+    "case",
+    "catch",
+    "do",
+    "elif",
+    "else",
+    "elseif",
+    "end",
+    "finally",
+    "for",
+    "foreach",
+    "function",
+    "if",
+    "process",
+    "select",
+    "switch",
+    "then",
+    "time",
+    "trap",
+    "try",
+    "until",
+    "while",
+}
 
 
 @dataclass(frozen=True)
@@ -80,6 +107,10 @@ def is_shell_separator(token: str) -> bool:
     return bool(cleaned) and all(char in ";&|()" for char in cleaned)
 
 
+def is_shell_control_prefix(token: str) -> bool:
+    return command_word(token).lower() in SHELL_CONTROL_PREFIXES
+
+
 def is_git_executable(token: str) -> bool:
     return token_basename(token) in {"git", "git.exe"}
 
@@ -128,12 +159,6 @@ def command_tail_until_separator(tokens: list[str], index: int) -> list[str]:
     return tail
 
 
-def next_command_start(tokens: list[str], index: int) -> int:
-    while index < len(tokens) and not is_shell_separator(tokens[index]):
-        index += 1
-    return index
-
-
 def nested_shell_commands(tokens: list[str]) -> list[str]:
     commands: list[str] = []
     for command_start in command_start_indices(tokens):
@@ -157,9 +182,20 @@ def nested_shell_commands(tokens: list[str]) -> list[str]:
 def command_start_indices(tokens: list[str]) -> list[int]:
     starts: list[int] = []
     at_command_start = True
+    shell_block_depth = 0
     for index, token in enumerate(tokens):
         if is_shell_separator(token):
             at_command_start = True
+            continue
+        cleaned = clean_shell_token(token)
+        if cleaned == "{" and at_command_start:
+            shell_block_depth += 1
+            continue
+        if cleaned == "}" and shell_block_depth:
+            shell_block_depth -= 1
+            at_command_start = True
+            continue
+        if at_command_start and is_shell_control_prefix(token):
             continue
         if at_command_start:
             starts.append(index)
@@ -264,21 +300,13 @@ def git_invocations(command: str, *, depth: int = 0) -> list[GitInvocation]:
         return []
     tokens = split_shell_words(command)
     invocations: list[GitInvocation] = []
-    index = 0
-    at_command_start = True
-    while index < len(tokens):
-        if is_shell_separator(tokens[index]):
-            at_command_start = True
-            index += 1
-            continue
+    for index in command_start_indices(tokens):
         token = command_word(tokens[index])
         if not token:
-            index += 1
             continue
         executable_index = command_executable_index(tokens, index)
         if (
-            at_command_start
-            and executable_index < len(tokens)
+            executable_index < len(tokens)
             and is_git_executable(tokens[executable_index])
         ):
             first_argument_index = executable_index + 1
@@ -304,10 +332,6 @@ def git_invocations(command: str, *, depth: int = 0) -> list[GitInvocation]:
                             uses_wrapper=(depth > 0 or executable_index != index),
                         )
                     )
-            index = next_command_start(tokens, first_argument_index)
-            continue
-        at_command_start = False
-        index += 1
 
     nested_commands = nested_shell_commands(tokens) + nested_env_split_commands(tokens)
     for nested in nested_commands:
