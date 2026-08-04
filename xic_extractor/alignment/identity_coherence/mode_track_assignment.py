@@ -1161,7 +1161,8 @@ def _predict_track(
             reason_codes=("sparse_track_anchors",),
         )
     orders = tuple(anchor.injection_order for anchor in anchors)
-    if injection_order in orders:
+    exact_anchor = injection_order in orders
+    if exact_anchor:
         center = anchors[orders.index(injection_order)].apex_rt_min
     elif orders[0] < injection_order < orders[-1]:
         left, right = _bracketing_anchors(anchors, injection_order)
@@ -1206,7 +1207,8 @@ def _predict_track(
             support_artifact_content_ids=support_refs,
             reason_codes=drift_reasons,
         )
-    center = _canonical_float(center + drift_delta)
+    if not exact_anchor:
+        center = _canonical_float(center + drift_delta)
     half_width = policy.prediction_half_width_min
     interval = (
         _canonical_float(center - half_width),

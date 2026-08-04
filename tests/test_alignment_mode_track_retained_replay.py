@@ -178,6 +178,18 @@ def test_retained_replay_seals_historical_context_and_budget_fields() -> None:
         replay_retained_mode_track_fixture(json.dumps(payload).encode())
 
 
+def test_retained_replay_requires_assigned_mode_names_to_match_windows() -> None:
+    payload = json.loads(FIXTURE_PATH.read_bytes())
+    assigned_modes = payload["historical_diagnostic_counts"][
+        "trace_packet_assigned_mode"
+    ]
+    count = assigned_modes.pop("mode_5min")
+    assigned_modes["unknown_mode"] = count
+
+    with pytest.raises(ModeTrackRetainedReplayError, match="declared mode windows"):
+        replay_retained_mode_track_fixture(json.dumps(payload).encode())
+
+
 @pytest.mark.parametrize(
     "path",
     (

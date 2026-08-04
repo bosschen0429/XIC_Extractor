@@ -339,6 +339,48 @@ def test_tracks_follow_independent_local_drift_without_fixed_gap(
     )
 
 
+def test_exact_anchor_prediction_does_not_reapply_same_injection_drift(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(
+        tmp_path,
+        sample_stems=("anchor-1", "target", "anchor-2"),
+        prediction_half_width_min=0.1,
+    )
+    anchor = scenario.track_a_spine.anchors[0]
+    candidate = mint_mode_track_candidate_observation(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        peak_hypothesis=anchor.peak_hypothesis,
+        direct_support_cell=anchor.direct_support_cell,
+    )
+    trajectory = _multi_point_trajectory(
+        "anchor-1",
+        anchor.injection_order,
+        anchor.acquisition_source_id,
+        ((7.0, 0.20), (9.0, 0.20)),
+    )
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        model_set=scenario.models,
+        candidates=(candidate,),
+        trajectory_assessment=trajectory,
+    )
+
+    assignment = result.assignments[0]
+    owning_prediction = next(
+        item
+        for item in assignment.prediction_assessments
+        if item.group_hypothesis_id == anchor.group_hypothesis_id
+    )
+    assert candidate.peak_hypothesis_id == anchor.peak_hypothesis_id
+    assert owning_prediction.predicted_rt_min == pytest.approx(anchor.apex_rt_min)
+    assert assignment.state == "uniquely_assigned"
+    assert assignment.group_hypothesis_id == anchor.group_hypothesis_id
+
+
 def test_each_track_uses_its_local_landmark_region_without_global_median(
     tmp_path: Path,
 ) -> None:

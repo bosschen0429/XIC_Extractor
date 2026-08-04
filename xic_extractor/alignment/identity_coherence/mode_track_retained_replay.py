@@ -314,8 +314,15 @@ def replay_retained_mode_track_fixture(
         root.get("historical_diagnostic_counts"),
         field="historical_diagnostic_counts",
     )
+    declared_mode_names = tuple(name for name, _interval in canonical_windows)
     for count_field in ("trace_packet_assigned_mode", "irt_refined_label"):
         values = _mapping(diagnostic.get(count_field), field=count_field)
+        if count_field == "trace_packet_assigned_mode" and tuple(
+            sorted(_text(name, field="assigned mode name") for name in values)
+        ) != declared_mode_names:
+            raise ModeTrackRetainedReplayError(
+                "assigned mode names must match the declared mode windows"
+            )
         if (
             sum(
                 _nonnegative_int(count, field=f"{count_field} {name}")
