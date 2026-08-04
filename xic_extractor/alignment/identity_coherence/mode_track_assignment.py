@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import statistics
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, final
 
@@ -48,6 +47,7 @@ CandidateObservationClass = Literal["direct_support", "non_training"]
 PredictionStatus = Literal[
     "predicted",
     "sparse_anchors",
+    "trajectory_unassessable",
     "unsupported_interpolation",
     "unsupported_extrapolation",
 ]
@@ -80,7 +80,10 @@ class ModeTrackTrajectoryPolicy:
             self.prediction_half_width_min,
             field="prediction_half_width_min",
         )
-        if half_width != self.prediction_half_width_min:
+        if (
+            not isinstance(self.prediction_half_width_min, float)
+            or half_width != self.prediction_half_width_min
+        ):
             raise ModeTrackContractError(
                 "prediction_half_width_min must use a canonical float"
             )
@@ -129,6 +132,25 @@ class ModeTrackSupportAnchor:
             self.evidence_artifact_ids,
             field="evidence_artifact_ids",
         )
+        if (
+            self.canonical_sample_identity_id != self.sample.identity.sample_identity_id
+            or self.acquisition_source_id
+            != self.acquisition_source.acquisition_source_id
+            or self.peak_hypothesis_id != self.peak_hypothesis.hypothesis_id
+        ):
+            raise ModeTrackContractError(
+                "support anchor contains crossed sample, acquisition, or "
+                "hypothesis refs"
+            )
+        expected_cell_content_id = (
+            None
+            if self.direct_support_cell is None
+            else self.direct_support_cell.artifact.content_identity.artifact_content_id
+        )
+        if self.support_cell_artifact_content_id != expected_cell_content_id:
+            raise ModeTrackContractError(
+                "support anchor cell artifact identity was substituted"
+            )
         if self.source_assignment_id is not None:
             _required_text(self.source_assignment_id, field="source_assignment_id")
         expected = _anchor_identity_payload(
@@ -185,6 +207,7 @@ class ModeTrackModelSet:
 
     model_set_id: str
     family_context_id: str
+    processing_request_id: str
     policy: ModeTrackTrajectoryPolicy
     tracks: tuple[ModeTrackModel, ...]
     lineage_refs: tuple[str, ...]
@@ -200,6 +223,7 @@ class ModeTrackModelSet:
             )
         if self.family_context_id != self.family_context.family_context_id:
             raise ModeTrackContractError("model set Family context was substituted")
+        _required_text(self.processing_request_id, field="processing_request_id")
         canonical_tracks = tuple(
             sorted(self.tracks, key=lambda item: item.group_hypothesis_id)
         )
@@ -215,6 +239,7 @@ class ModeTrackModelSet:
         _validate_shadow_authority(self.validation_status, self.product_authority)
         expected = _model_set_identity_payload(
             family_context_id=self.family_context_id,
+            processing_request_id=self.processing_request_id,
             policy=self.policy,
             tracks=self.tracks,
             lineage_refs=self.lineage_refs,
@@ -264,6 +289,24 @@ class ModeTrackCandidateObservation:
                 "non_training candidate cannot retain a training SUPPORT cell"
             )
         _positive_int(self.injection_order, field="injection_order")
+        if (
+            self.canonical_sample_identity_id != self.sample.identity.sample_identity_id
+            or self.acquisition_source_id
+            != self.acquisition_source.acquisition_source_id
+            or self.peak_hypothesis_id != self.peak_hypothesis.hypothesis_id
+        ):
+            raise ModeTrackContractError(
+                "candidate contains crossed sample, acquisition, or hypothesis refs"
+            )
+        expected_cell_content_id = (
+            None
+            if self.direct_support_cell is None
+            else self.direct_support_cell.artifact.content_identity.artifact_content_id
+        )
+        if self.direct_support_cell_artifact_content_id != expected_cell_content_id:
+            raise ModeTrackContractError(
+                "candidate SUPPORT cell artifact identity was substituted"
+            )
         expected = _candidate_identity_payload(
             canonical_sample_identity_id=self.canonical_sample_identity_id,
             acquisition_source_id=self.acquisition_source_id,
@@ -302,14 +345,21 @@ class ModeTrackPredictionAssessment:
         if self.status not in {
             "predicted",
             "sparse_anchors",
+            "trajectory_unassessable",
             "unsupported_interpolation",
             "unsupported_extrapolation",
         }:
             raise ModeTrackContractError("unsupported prediction status")
-        _require_canonical_texts(self.anchor_refs, field="anchor_refs")
+        allow_empty_support = self.status == "sparse_anchors"
+        _require_canonical_texts(
+            self.anchor_refs,
+            field="anchor_refs",
+            allow_empty=allow_empty_support,
+        )
         _require_canonical_texts(
             self.support_artifact_content_ids,
             field="support_artifact_content_ids",
+            allow_empty=allow_empty_support,
         )
         _require_canonical_texts(self.reason_codes, field="reason_codes")
         if self.status == "predicted":
@@ -344,8 +394,10 @@ class ModeTrackAssignment:
     canonical_sample_identity_id: str
     acquisition_source_id: str
     injection_order: int
+    candidate_observation_id: str | None
     peak_hypothesis_id: str | None
     candidate_observation_class: CandidateObservationClass | None
+    direct_support_cell_artifact_content_id: str | None
     group_hypothesis_id: str | None
     state: AssignmentState
     reason_codes: tuple[str, ...]
@@ -384,6 +436,14 @@ class ModeTrackAssignment:
             allow_empty=True,
         )
         _require_canonical_texts(self.lineage_refs, field="lineage_refs")
+        if (
+            self.canonical_sample_identity_id != self.sample.identity.sample_identity_id
+            or self.acquisition_source_id
+            != self.acquisition_source.acquisition_source_id
+        ):
+            raise ModeTrackContractError(
+                "assignment contains crossed sample or acquisition refs"
+            )
         prediction_ids = tuple(
             item.group_hypothesis_id for item in self.prediction_assessments
         )
@@ -401,14 +461,54 @@ class ModeTrackAssignment:
                 "non-unique assignment cannot grant a ModeTrack identity"
             )
         if self.state == "not_observed":
-            if self.peak_hypothesis is not None:
+            if (
+                self.candidate_observation_id is not None
+                or self.peak_hypothesis_id is not None
+                or self.peak_hypothesis is not None
+                or self.candidate_observation_class is not None
+                or self.direct_support_cell_artifact_content_id is not None
+                or self.direct_support_cell is not None
+            ):
                 raise ModeTrackContractError(
-                    "not_observed assignment cannot carry a PeakHypothesis"
+                    "not_observed assignment cannot carry candidate evidence"
                 )
-        elif self.peak_hypothesis is None:
-            raise ModeTrackContractError(
-                "observed assignment state requires a PeakHypothesis"
+        else:
+            if (
+                self.candidate_observation_id is None
+                or self.peak_hypothesis_id is None
+                or self.peak_hypothesis is None
+                or self.candidate_observation_class is None
+            ):
+                raise ModeTrackContractError(
+                    "observed assignment state requires its exact candidate"
+                )
+            _required_text(
+                self.candidate_observation_id,
+                field="candidate_observation_id",
             )
+            if self.peak_hypothesis_id != self.peak_hypothesis.hypothesis_id:
+                raise ModeTrackContractError(
+                    "assignment PeakHypothesis identity was substituted"
+                )
+            expected_cell_content_id = (
+                None
+                if self.direct_support_cell is None
+                else self.direct_support_cell.artifact.content_identity
+                .artifact_content_id
+            )
+            if self.direct_support_cell_artifact_content_id != expected_cell_content_id:
+                raise ModeTrackContractError(
+                    "assignment SUPPORT cell artifact identity was substituted"
+                )
+            if self.candidate_observation_class == "direct_support":
+                if self.direct_support_cell is None:
+                    raise ModeTrackContractError(
+                        "direct SUPPORT assignment requires its exact cell"
+                    )
+            elif self.direct_support_cell is not None:
+                raise ModeTrackContractError(
+                    "non-training assignment cannot retain a SUPPORT cell"
+                )
         _validate_shadow_authority(self.validation_status, self.product_authority)
         expected = _assignment_identity_payload(self)
         if self.assignment_id != _typed_digest(
@@ -521,7 +621,22 @@ def fit_mode_track_model_set(
             raise ModeTrackContractError(
                 "initial direct SUPPORT anchor is not an owner of its ModeTrack"
             )
-        _resolve_sample_acquisition(processing_owners, anchor.sample)
+        source, order = _resolve_sample_acquisition(processing_owners, anchor.sample)
+        if (
+            anchor.acquisition_source_id != source.acquisition_source_id
+            or anchor.injection_order != order
+        ):
+            raise ModeTrackContractError(
+                "training SUPPORT anchor references a stale request binding"
+            )
+        family_reasons = _peak_hypothesis_family_exclusions(
+            anchor.peak_hypothesis,
+            family_context=family_context,
+        )
+        if family_reasons:
+            raise ModeTrackContractError(
+                "training SUPPORT anchor is outside the Family context"
+            )
         anchors_by_track[group_id].append(anchor)
     tracks = tuple(
         ModeTrackModel(
@@ -554,6 +669,7 @@ def fit_mode_track_model_set(
     )
     return _mint_model_set(
         family_context=family_context,
+        processing_request_id=processing_owners.request.processing_request_id,
         policy=policy,
         tracks=tracks,
         lineage_refs=lineage_refs,
@@ -662,13 +778,24 @@ def assign_mode_tracks(
     )
     if not isinstance(model_set, ModeTrackModelSet):
         raise ModeTrackContractError("model_set must be owner-minted")
+    if (
+        model_set.processing_request_id
+        != processing_owners.request.processing_request_id
+    ):
+        raise ModeTrackContractError(
+            "model set belongs to a different processing request"
+        )
     if not isinstance(candidates, tuple):
         raise ModeTrackContractError("candidates must be an immutable tuple")
     if not isinstance(trajectory_assessment, LocalTrajectoryAssessment):
         raise ModeTrackContractError(
             "trajectory_assessment must be an M3 owner assessment"
         )
-    _validate_trajectory_sample(trajectory_assessment, sample)
+    _validate_trajectory_sample(
+        trajectory_assessment,
+        sample,
+        injection_order=injection_order,
+    )
     canonical_candidates = tuple(
         sorted(candidates, key=lambda item: item.candidate_observation_id)
     )
@@ -739,7 +866,7 @@ def assign_mode_tracks(
     provisional = tuple(
         _assign_candidate(
             candidate=candidate,
-            family_context_id=model_set.family_context_id,
+            family_context=model_set.family_context,
             sample=sample,
             acquisition_source=acquisition_source,
             injection_order=injection_order,
@@ -862,6 +989,7 @@ def reinforce_mode_track_model_set(
     )
     return _mint_model_set(
         family_context=model_set.family_context,
+        processing_request_id=model_set.processing_request_id,
         policy=model_set.policy,
         tracks=tuple(updated_tracks),
         lineage_refs=lineage_refs,
@@ -979,6 +1107,7 @@ def _mint_support_anchor(
 def _mint_model_set(
     *,
     family_context: FamilyContextRef,
+    processing_request_id: str,
     policy: ModeTrackTrajectoryPolicy,
     tracks: tuple[ModeTrackModel, ...],
     lineage_refs: tuple[str, ...],
@@ -987,6 +1116,7 @@ def _mint_model_set(
     canonical_lineage = tuple(sorted(set(lineage_refs)))
     payload = _model_set_identity_payload(
         family_context_id=family_context.family_context_id,
+        processing_request_id=processing_request_id,
         policy=policy,
         tracks=canonical_tracks,
         lineage_refs=canonical_lineage,
@@ -994,6 +1124,7 @@ def _mint_model_set(
     return ModeTrackModelSet(
         model_set_id=_typed_digest("mode-track-model-set:", payload),
         family_context_id=family_context.family_context_id,
+        processing_request_id=processing_request_id,
         policy=policy,
         tracks=canonical_tracks,
         lineage_refs=canonical_lineage,
@@ -1060,7 +1191,20 @@ def _predict_track(
             )
         left, right = anchors[:2] if injection_order < orders[0] else anchors[-2:]
         center = _linear_prediction(left, right, injection_order)
-    drift_delta = _trajectory_delta(trajectory_assessment)
+    drift_delta, drift_reasons = _trajectory_delta(
+        trajectory_assessment,
+        predicted_rt_min=center,
+    )
+    if drift_delta is None:
+        return ModeTrackPredictionAssessment(
+            group_hypothesis_id=track.group_hypothesis_id,
+            status="trajectory_unassessable",
+            predicted_rt_min=None,
+            prediction_interval_min=None,
+            anchor_refs=anchor_refs,
+            support_artifact_content_ids=support_refs,
+            reason_codes=drift_reasons,
+        )
     center = _canonical_float(center + drift_delta)
     half_width = policy.prediction_half_width_min
     interval = (
@@ -1096,7 +1240,9 @@ def _global_no_write_state(
             sorted({reason for item in unavailable for reason in item.reason_codes})
         )
         state: AssignmentState = (
-            "technical_unassessable" if "sparse_anchors" in statuses else "out_of_model"
+            "technical_unassessable"
+            if statuses.intersection({"sparse_anchors", "trajectory_unassessable"})
+            else "out_of_model"
         )
         return state, reasons
     if _trajectories_cross(model_set, predictions):
@@ -1109,7 +1255,7 @@ def _global_no_write_state(
 def _assign_candidate(
     *,
     candidate: ModeTrackCandidateObservation,
-    family_context_id: str,
+    family_context: FamilyContextRef,
     sample: ResolvedCanonicalSampleIdentity,
     acquisition_source: AcquisitionSourceIdentity,
     injection_order: int,
@@ -1118,7 +1264,16 @@ def _assign_candidate(
     lineage_refs: tuple[str, ...],
     global_state: tuple[AssignmentState, tuple[str, ...]] | None,
 ) -> ModeTrackAssignment:
-    if global_state is not None:
+    state: AssignmentState
+    family_exclusions = _peak_hypothesis_family_exclusions(
+        candidate.peak_hypothesis,
+        family_context=family_context,
+    )
+    if family_exclusions:
+        state = "out_of_model"
+        reasons = family_exclusions
+        group_id = None
+    elif global_state is not None:
         state, reasons = global_state
         group_id = None
     else:
@@ -1143,7 +1298,7 @@ def _assign_candidate(
             group_id = None
             reasons = ("candidate_outside_all_prediction_intervals",)
     return _mint_assignment(
-        family_context_id=family_context_id,
+        family_context_id=family_context.family_context_id,
         sample=sample,
         acquisition_source=acquisition_source,
         injection_order=injection_order,
@@ -1179,15 +1334,21 @@ def _mint_assignment(
     sample_id = sample.identity.sample_identity_id
     source_id = acquisition_source.acquisition_source_id
     hypothesis_id = None if candidate is None else candidate.peak_hypothesis_id
+    candidate_id = None if candidate is None else candidate.candidate_observation_id
     observation_class = None if candidate is None else candidate.observation_class
+    support_cell_content_id = (
+        None if candidate is None else candidate.direct_support_cell_artifact_content_id
+    )
     trajectory_refs = tuple(sorted(trajectory_assessment.landmark_evidence_refs))
     identity_payload = _assignment_payload(
         family_context_id=family_context_id,
         canonical_sample_identity_id=sample_id,
         acquisition_source_id=source_id,
         injection_order=injection_order,
+        candidate_observation_id=candidate_id,
         peak_hypothesis_id=hypothesis_id,
         candidate_observation_class=observation_class,
+        direct_support_cell_artifact_content_id=support_cell_content_id,
         group_hypothesis_id=group_hypothesis_id,
         state=state,
         reason_codes=canonical_reasons,
@@ -1204,8 +1365,10 @@ def _mint_assignment(
         canonical_sample_identity_id=sample_id,
         acquisition_source_id=source_id,
         injection_order=injection_order,
+        candidate_observation_id=candidate_id,
         peak_hypothesis_id=hypothesis_id,
         candidate_observation_class=observation_class,
+        direct_support_cell_artifact_content_id=support_cell_content_id,
         group_hypothesis_id=group_hypothesis_id,
         state=state,
         reason_codes=canonical_reasons,
@@ -1235,8 +1398,12 @@ def _remint_assignment(
         canonical_sample_identity_id=assignment.canonical_sample_identity_id,
         acquisition_source_id=assignment.acquisition_source_id,
         injection_order=assignment.injection_order,
+        candidate_observation_id=assignment.candidate_observation_id,
         peak_hypothesis_id=assignment.peak_hypothesis_id,
         candidate_observation_class=assignment.candidate_observation_class,
+        direct_support_cell_artifact_content_id=(
+            assignment.direct_support_cell_artifact_content_id
+        ),
         group_hypothesis_id=group_hypothesis_id,
         state=state,
         reason_codes=canonical_reasons,
@@ -1253,8 +1420,12 @@ def _remint_assignment(
         canonical_sample_identity_id=assignment.canonical_sample_identity_id,
         acquisition_source_id=assignment.acquisition_source_id,
         injection_order=assignment.injection_order,
+        candidate_observation_id=assignment.candidate_observation_id,
         peak_hypothesis_id=assignment.peak_hypothesis_id,
         candidate_observation_class=assignment.candidate_observation_class,
+        direct_support_cell_artifact_content_id=(
+            assignment.direct_support_cell_artifact_content_id
+        ),
         group_hypothesis_id=group_hypothesis_id,
         state=state,
         reason_codes=canonical_reasons,
@@ -1391,9 +1562,35 @@ def _validate_support_assessment(
     )
 
 
+def _peak_hypothesis_family_exclusions(
+    peak_hypothesis: PeakHypothesis,
+    *,
+    family_context: FamilyContextRef,
+) -> tuple[str, ...]:
+    if not peak_hypothesis.peak_observation_refs:
+        return ("peak_hypothesis_missing_physical_observation",)
+    mz_lower, mz_upper = family_context.mz_interval
+    rt_lower, rt_upper = family_context.rt_interval
+    reasons: set[str] = set()
+    if any(
+        not mz_lower <= observation.content.mz <= mz_upper
+        for observation in peak_hypothesis.peak_observation_refs
+    ):
+        reasons.add("peak_hypothesis_outside_family_mz")
+    apex_rt = _finite_float(
+        peak_hypothesis.integration.rt_apex_min,
+        field="peak_hypothesis.integration.rt_apex_min",
+    )
+    if not rt_lower <= apex_rt <= rt_upper:
+        reasons.add("peak_hypothesis_outside_family_rt")
+    return tuple(sorted(reasons))
+
+
 def _validate_trajectory_sample(
     assessment: LocalTrajectoryAssessment,
     sample: ResolvedCanonicalSampleIdentity,
+    *,
+    injection_order: int,
 ) -> None:
     valid_tokens = {sample.metadata.sample_name, sample.metadata.raw_stem}
     if len(assessment.sample_stems) != 1 or assessment.sample_stems[0] not in (
@@ -1402,21 +1599,52 @@ def _validate_trajectory_sample(
         raise ModeTrackContractError(
             "local trajectory assessment must cover exactly the assigned sample"
         )
+    if any(
+        point.injection_order != injection_order for point in assessment.landmark_points
+    ):
+        raise ModeTrackContractError(
+            "local trajectory landmarks reference a stale injection binding"
+        )
 
 
-def _trajectory_delta(assessment: LocalTrajectoryAssessment) -> float:
+def _trajectory_delta(
+    assessment: LocalTrajectoryAssessment,
+    *,
+    predicted_rt_min: float,
+) -> tuple[float | None, tuple[str, ...]]:
     if assessment.status != "assessable":
-        return 0.0
+        return None, tuple(sorted(assessment.reason_codes))
     accepted = tuple(
-        point.rt_drift_delta_min
-        for point in assessment.landmark_points
-        if point.quality == "accepted"
+        point for point in assessment.landmark_points if point.quality == "accepted"
     )
     if not accepted:
-        raise ModeTrackContractError(
-            "assessable trajectory must retain accepted local landmarks"
+        return None, ("assessable_trajectory_missing_accepted_local_landmarks",)
+    by_local_rt: dict[float, set[float]] = {}
+    for point in accepted:
+        local_rt = _canonical_float(point.local_trajectory_rt_min)
+        by_local_rt.setdefault(local_rt, set()).add(
+            _canonical_float(point.rt_drift_delta_min)
         )
-    return _canonical_float(statistics.median(accepted))
+    if any(len(deltas) != 1 for deltas in by_local_rt.values()):
+        return None, ("conflicting_local_landmark_shifts",)
+    local_shifts = tuple(
+        sorted(
+            (local_rt, next(iter(deltas))) for local_rt, deltas in by_local_rt.items()
+        )
+    )
+    if len(local_shifts) == 1:
+        return local_shifts[0][1], ("single_local_landmark_shift",)
+    if not local_shifts[0][0] <= predicted_rt_min <= local_shifts[-1][0]:
+        return None, ("unsupported_local_landmark_extrapolation",)
+    for local_rt, shift in local_shifts:
+        if math.isclose(predicted_rt_min, local_rt, rel_tol=0.0, abs_tol=1e-12):
+            return shift, ("exact_local_landmark_shift",)
+    left = max(item for item in local_shifts if item[0] < predicted_rt_min)
+    right = min(item for item in local_shifts if item[0] > predicted_rt_min)
+    span = right[0] - left[0]
+    fraction = (predicted_rt_min - left[0]) / span
+    shift = left[1] + fraction * (right[1] - left[1])
+    return _canonical_float(shift), ("interpolated_local_landmark_shift",)
 
 
 def _bracketing_anchors(
@@ -1545,8 +1773,12 @@ def _assignment_identity_payload(assignment: ModeTrackAssignment) -> dict[str, o
         canonical_sample_identity_id=assignment.canonical_sample_identity_id,
         acquisition_source_id=assignment.acquisition_source_id,
         injection_order=assignment.injection_order,
+        candidate_observation_id=assignment.candidate_observation_id,
         peak_hypothesis_id=assignment.peak_hypothesis_id,
         candidate_observation_class=assignment.candidate_observation_class,
+        direct_support_cell_artifact_content_id=(
+            assignment.direct_support_cell_artifact_content_id
+        ),
         group_hypothesis_id=assignment.group_hypothesis_id,
         state=assignment.state,
         reason_codes=assignment.reason_codes,
@@ -1562,8 +1794,10 @@ def _assignment_payload(
     canonical_sample_identity_id: str,
     acquisition_source_id: str,
     injection_order: int,
+    candidate_observation_id: str | None,
     peak_hypothesis_id: str | None,
     candidate_observation_class: CandidateObservationClass | None,
+    direct_support_cell_artifact_content_id: str | None,
     group_hypothesis_id: str | None,
     state: AssignmentState,
     reason_codes: tuple[str, ...],
@@ -1577,8 +1811,12 @@ def _assignment_payload(
         "canonical_sample_identity_id": canonical_sample_identity_id,
         "acquisition_source_id": acquisition_source_id,
         "injection_order": injection_order,
+        "candidate_observation_id": candidate_observation_id,
         "peak_hypothesis_id": peak_hypothesis_id,
         "candidate_observation_class": candidate_observation_class,
+        "direct_support_cell_artifact_content_id": (
+            direct_support_cell_artifact_content_id
+        ),
         "group_hypothesis_id": group_hypothesis_id,
         "state": state,
         "reason_codes": list(reason_codes),
@@ -1662,6 +1900,7 @@ def _candidate_identity_payload(**values: object) -> dict[str, object]:
 def _model_set_identity_payload(
     *,
     family_context_id: str,
+    processing_request_id: str,
     policy: ModeTrackTrajectoryPolicy,
     tracks: tuple[ModeTrackModel, ...],
     lineage_refs: tuple[str, ...],
@@ -1669,6 +1908,7 @@ def _model_set_identity_payload(
     return {
         "schema": MODEL_SET_SCHEMA_VERSION,
         "family_context_id": family_context_id,
+        "processing_request_id": processing_request_id,
         "policy": {
             "trajectory_policy_version": policy.trajectory_policy_version,
             "band_policy_version": policy.band_policy_version,

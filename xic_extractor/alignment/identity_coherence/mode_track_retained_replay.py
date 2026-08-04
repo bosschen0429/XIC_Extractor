@@ -15,6 +15,13 @@ ReplayValidationStatus = Literal["inconclusive"]
 ReplayVerdict = Literal["inconclusive_no_write"]
 
 _REPLAY_MINT_TOKEN = object()
+_ASSIGNMENT_STATES = (
+    "ambiguous_multiple_tracks",
+    "not_observed",
+    "out_of_model",
+    "technical_unassessable",
+    "uniquely_assigned",
+)
 
 
 class ModeTrackRetainedReplayError(ValueError):
@@ -80,11 +87,15 @@ class ModeTrackRetainedReplaySummary:
             raise ModeTrackRetainedReplayError(
                 "retained replay cannot grant product authority"
             )
-        if self.assignment_state_counts != tuple(
-            sorted(self.assignment_state_counts)
-        ):
+        if self.assignment_state_counts != tuple(sorted(self.assignment_state_counts)):
             raise ModeTrackRetainedReplayError(
                 "assignment_state_counts must be canonical-sorted"
+            )
+        if tuple(state for state, _count in self.assignment_state_counts) != (
+            _ASSIGNMENT_STATES
+        ):
+            raise ModeTrackRetainedReplayError(
+                "assignment_state_counts must contain the exact five M8 states"
             )
         if any(
             not isinstance(state, str)
@@ -115,7 +126,10 @@ def replay_retained_mode_track_fixture(
         raise ModeTrackRetainedReplayError("fixture_bytes must be non-empty bytes")
     fixture_sha256 = hashlib.sha256(fixture_bytes).hexdigest()
     try:
-        payload = json.loads(fixture_bytes)
+        payload = json.loads(
+            fixture_bytes,
+            object_pairs_hook=_reject_duplicate_object_pairs,
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ModeTrackRetainedReplayError(
             "retained replay fixture must be UTF-8 JSON"
@@ -218,8 +232,7 @@ def replay_retained_mode_track_fixture(
             "v1 replay requires explicit missing seed bytes"
         )
     if (
-        required["discovery_index_sha256"]
-        == historical["discovery_index_sha256"]
+        required["discovery_index_sha256"] == historical["discovery_index_sha256"]
         or required["trace_packet_sha256"] == historical["trace_packet_sha256"]
     ):
         raise ModeTrackRetainedReplayError(
@@ -267,11 +280,7 @@ def replay_retained_mode_track_fixture(
     if (
         sum(canonical_type_counts.values()) != sample_count
         or canonical_type_counts.get("QC") != pooled_qc_count
-        or sum(
-            count
-            for name, count in canonical_type_counts.items()
-            if name != "QC"
-        )
+        or sum(count for name, count in canonical_type_counts.items() if name != "QC")
         != study_count
     ):
         raise ModeTrackRetainedReplayError(
@@ -284,10 +293,13 @@ def replay_retained_mode_track_fixture(
     )
     for count_field in ("trace_packet_assigned_mode", "irt_refined_label"):
         values = _mapping(diagnostic.get(count_field), field=count_field)
-        if sum(
-            _nonnegative_int(count, field=f"{count_field} {name}")
-            for name, count in values.items()
-        ) != sample_count:
+        if (
+            sum(
+                _nonnegative_int(count, field=f"{count_field} {name}")
+                for name, count in values.items()
+            )
+            != sample_count
+        ):
             raise ModeTrackRetainedReplayError(
                 f"{count_field} does not close the historical sample census"
             )
@@ -298,9 +310,8 @@ def replay_retained_mode_track_fixture(
             field="same_raw_low_high_cooccurrence_expected_injection_orders",
         )
     )
-    if (
-        cooccurrence_orders != tuple(sorted(set(cooccurrence_orders)))
-        or any(value > sample_count for value in cooccurrence_orders)
+    if cooccurrence_orders != tuple(sorted(set(cooccurrence_orders))) or any(
+        value > sample_count for value in cooccurrence_orders
     ):
         raise ModeTrackRetainedReplayError(
             "cooccurrence injection orders must be unique within the census"
@@ -323,8 +334,7 @@ def replay_retained_mode_track_fixture(
         )
         is not True
         or sensitivity.get("canonical_segment_owner_refs_present") is not False
-        or
-        sensitivity.get("shoulder_exclusion_status") != "technical_unassessable"
+        or sensitivity.get("shoulder_exclusion_status") != "technical_unassessable"
         or sensitivity.get("low_absolute_intensity_exclusion_status")
         != "technical_unassessable"
     ):
@@ -355,6 +365,10 @@ def replay_retained_mode_track_fixture(
         counts.get("assignment_states"),
         field="assignment_states",
     )
+    if tuple(sorted(state_counts_mapping)) != _ASSIGNMENT_STATES:
+        raise ModeTrackRetainedReplayError(
+            "assignment_states must contain the exact five M8 states"
+        )
     state_counts = tuple(
         sorted(
             (
@@ -434,6 +448,19 @@ def _mapping(value: object, *, field: str) -> Mapping[str, object]:
     return value
 
 
+def _reject_duplicate_object_pairs(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ModeTrackRetainedReplayError(
+                f"retained replay fixture contains duplicate JSON key {key!r}"
+            )
+        result[key] = value
+    return result
+
+
 def _sequence(value: object, *, field: str) -> tuple[object, ...]:
     if not isinstance(value, list):
         raise ModeTrackRetainedReplayError(f"{field} must be a JSON array")
@@ -493,9 +520,7 @@ def _interval(value: object, *, field: str) -> tuple[float, float]:
 
 def _nonnegative_int(value: object, *, field: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ModeTrackRetainedReplayError(
-            f"{field} must be a nonnegative integer"
-        )
+        raise ModeTrackRetainedReplayError(f"{field} must be a nonnegative integer")
     return value
 
 

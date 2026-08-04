@@ -59,9 +59,7 @@ def test_retained_85raw_replay_is_deterministic_inconclusive_and_no_raw() -> Non
 
     summary = json.loads(canonical_retained_mode_track_replay_summary_bytes(first))
     assert summary["counts"]["samples"] == 85
-    assert summary["counts"]["assignment_states"] == dict(
-        first.assignment_state_counts
-    )
+    assert summary["counts"]["assignment_states"] == dict(first.assignment_state_counts)
 
 
 def test_retained_fixture_preserves_source_mismatch_and_85_sample_census() -> None:
@@ -79,9 +77,7 @@ def test_retained_fixture_preserves_source_mismatch_and_85_sample_census() -> No
     assert required["trace_packet_sha256"] == (
         "4b83dbcd0251e08589047b8c89b284c734094c128853e484fa2478f0f49d8b70"
     )
-    assert historical["discovery_index_sha256"] != required[
-        "discovery_index_sha256"
-    ]
+    assert historical["discovery_index_sha256"] != required["discovery_index_sha256"]
     assert historical["trace_packet_sha256"] != required["trace_packet_sha256"]
     assert qualification["required_seed_bytes_retained"] is False
     assert payload["sample_census"] == {
@@ -102,12 +98,17 @@ def test_retained_fixture_preserves_source_mismatch_and_85_sample_census() -> No
         "chromatogram_call_count": 0,
         "authorized_attempt_consumed": False,
     }
-    assert sum(
-        payload["historical_diagnostic_counts"]["trace_packet_assigned_mode"].values()
-    ) == 85
-    assert sum(
-        payload["historical_diagnostic_counts"]["irt_refined_label"].values()
-    ) == 85
+    assert (
+        sum(
+            payload["historical_diagnostic_counts"][
+                "trace_packet_assigned_mode"
+            ].values()
+        )
+        == 85
+    )
+    assert (
+        sum(payload["historical_diagnostic_counts"]["irt_refined_label"].values()) == 85
+    )
 
 
 @pytest.mark.parametrize(
@@ -159,6 +160,36 @@ def test_retained_replay_seals_historical_context_and_budget_fields() -> None:
     payload = json.loads(FIXTURE_PATH.read_bytes())
     payload["family_context"]["label_is_identity"] = True
     with pytest.raises(ModeTrackRetainedReplayError, match="cannot become"):
+        replay_retained_mode_track_fixture(json.dumps(payload).encode())
+
+
+def test_retained_replay_rejects_duplicate_json_keys() -> None:
+    with pytest.raises(ModeTrackRetainedReplayError, match="duplicate JSON key"):
+        replay_retained_mode_track_fixture(
+            b'{"schema_version":"first","schema_version":"second"}'
+        )
+
+
+@pytest.mark.parametrize(
+    "assignment_states",
+    (
+        {},
+        {"unknown_state": 0},
+        {
+            "ambiguous_multiple_tracks": 0,
+            "not_observed": 0,
+            "out_of_model": 0,
+            "technical_unassessable": 0,
+        },
+    ),
+)
+def test_retained_replay_requires_exact_assignment_state_schema(
+    assignment_states: dict[str, int],
+) -> None:
+    payload = json.loads(FIXTURE_PATH.read_bytes())
+    payload["expected_replay_counts"]["assignment_states"] = assignment_states
+
+    with pytest.raises(ModeTrackRetainedReplayError, match="exact five M8 states"):
         replay_retained_mode_track_fixture(json.dumps(payload).encode())
 
 

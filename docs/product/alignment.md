@@ -126,8 +126,11 @@ The initial model set is fit once per Family from canonical direct-SUPPORT
 `PeakHypothesis` anchors. A later uniquely assigned direct-SUPPORT observation
 may mint an immutable successor model set; consumers still do not refit per
 cell. Each track follows its own injection-order-local, piecewise-linear
-trajectory and may use an accepted local feature-landmark shift. The versioned
-lane policy supplies the prediction half-width and bounded
+trajectory. Accepted feature landmarks remain a complete local point set: a
+track uses its exact local landmark or interpolation between bracketing local
+landmarks, never one Family-wide median, and landmark extrapolation outside the
+retained local RT range is technically unassessable. The versioned lane policy
+supplies the prediction half-width and bounded
 interpolation/extrapolation limits; the owner introduces no universal drift,
 valley, width, shoulder, or intensity threshold. Missing or poor landmarks,
 sparse anchors, unsupported interpolation/extrapolation, and predicted interval
@@ -142,6 +145,10 @@ all competitors are excluded. The other terminal states are
 and a hypothesis accepts at most one track. Only a uniquely assigned direct
 SUPPORT observation may reinforce that one track; MS1-only, Backfill, shadow,
 inferred, deconvolved, manual, and shared-set observations remain non-training.
+Model sets are bound to their exact processing request; anchors, candidates, and
+landmarks must retain the resolved acquisition source and injection order.
+Every observed assignment retains its exact candidate identity, and a direct
+SUPPORT assignment also retains the exact source cell artifact identity.
 
 The retained fixture
 `docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`

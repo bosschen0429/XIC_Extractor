@@ -31,7 +31,9 @@ from xic_extractor.alignment.identity_coherence.family_context import (
 )
 from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     ModeTrackAssignment,
+    ModeTrackContractError,
     ModeTrackTrajectoryPolicy,
+    _peak_hypothesis_family_exclusions,
     assign_mode_tracks,
     canonical_mode_track_assignment_batch_bytes,
     fit_mode_track_model_set,
@@ -87,6 +89,14 @@ def test_unique_assignment_is_owner_minted_typed_and_deterministic(
     payload = json.loads(canonical_mode_track_assignment_batch_bytes(forward))
     assert payload["schema_version"] == "mode_track_assignment_batch_v1"
     assert payload["assignments"][0]["state"] == "uniquely_assigned"
+    assert (
+        payload["assignments"][0]["candidate_observation_id"]
+        == candidate.candidate_observation_id
+    )
+    assert (
+        payload["assignments"][0]["direct_support_cell_artifact_content_id"]
+        == candidate.direct_support_cell_artifact_content_id
+    )
 
 
 @pytest.mark.parametrize(
@@ -172,6 +182,33 @@ def test_sparse_anchors_and_unsupported_extrapolation_are_no_write(
     )
 
 
+def test_zero_anchor_tracks_are_typed_technical_no_write(tmp_path: Path) -> None:
+    scenario = _scenario(tmp_path)
+    empty_models = fit_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
+        family_context=scenario.family_context,
+        direct_support_anchors=(),
+        policy=scenario.policy,
+    )
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=empty_models,
+        candidates=(scenario.candidate(7.87, direct_support=False),),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    assert result.assignments[0].state == "technical_unassessable"
+    assert "sparse_track_anchors" in result.assignments[0].reason_codes
+    assert all(
+        assessment.status == "sparse_anchors"
+        and assessment.anchor_refs == ()
+        and assessment.support_artifact_content_ids == ()
+        for assessment in result.assignments[0].prediction_assessments
+    )
+
+
 def test_crossing_and_per_track_occupancy_are_explicit_no_write(
     tmp_path: Path,
 ) -> None:
@@ -229,8 +266,7 @@ def test_optional_occupancy_preserves_two_resolved_direct_support_peaks(
 ) -> None:
     scenario = _scenario(tmp_path / occupancy)
     candidates = tuple(
-        scenario.candidate(apex_rt, direct_support=True)
-        for apex_rt in candidate_rts
+        scenario.candidate(apex_rt, direct_support=True) for apex_rt in candidate_rts
     )
 
     result = assign_mode_tracks(
@@ -245,9 +281,7 @@ def test_optional_occupancy_preserves_two_resolved_direct_support_peaks(
         getattr(scenario, name).group_hypothesis_id for name in expected_tracks
     }
     if expected_ids:
-        assert {item.state for item in result.assignments} == {
-            "uniquely_assigned"
-        }
+        assert {item.state for item in result.assignments} == {"uniquely_assigned"}
         assert {item.group_hypothesis_id for item in result.assignments} == expected_ids
         assert all(
             item.candidate_observation_class == "direct_support"
@@ -301,6 +335,155 @@ def test_tracks_follow_independent_local_drift_without_fixed_gap(
     )
 
 
+def test_each_track_uses_its_local_landmark_region_without_global_median(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    trajectory = _multi_point_trajectory(
+        "target",
+        2,
+        ((7.82, -0.20), (8.32, 0.20)),
+    )
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(
+            scenario.candidate(7.62, direct_support=False),
+            scenario.candidate(8.52, direct_support=False),
+        ),
+        trajectory_assessment=trajectory,
+    )
+
+    assert {item.state for item in result.assignments} == {"uniquely_assigned"}
+    predictions = {
+        assessment.group_hypothesis_id: assessment.predicted_rt_min
+        for item in result.assignments
+        for assessment in item.prediction_assessments
+    }
+    assert predictions[scenario.track_a.group_hypothesis_id] == pytest.approx(7.62)
+    assert predictions[scenario.track_b.group_hypothesis_id] == pytest.approx(8.52)
+
+
+def test_local_landmarks_do_not_authorize_unbounded_rt_extrapolation(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    trajectory = _multi_point_trajectory(
+        "target",
+        2,
+        ((7.90, -0.10), (8.00, 0.10)),
+    )
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(scenario.candidate(7.87, direct_support=False),),
+        trajectory_assessment=trajectory,
+    )
+
+    assignment = result.assignments[0]
+    assert assignment.state == "technical_unassessable"
+    assert "unsupported_local_landmark_extrapolation" in assignment.reason_codes
+
+
+def test_candidate_physical_observation_must_stay_inside_family_universe(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    candidate = scenario.candidate(8.50, direct_support=False)
+    outside_mz_hypothesis = SimpleNamespace(
+        peak_observation_refs=(SimpleNamespace(content=SimpleNamespace(mz=700.0)),),
+        integration=candidate.peak_hypothesis.integration,
+    )
+    assert _peak_hypothesis_family_exclusions(
+        outside_mz_hypothesis,
+        family_context=scenario.family_context,
+    ) == ("peak_hypothesis_outside_family_mz",)
+
+    tight_rt_context = mint_family_context_ref(
+        mz_interval=scenario.family_context.mz_interval,
+        rt_interval=(7.0, 8.40),
+        context_policy_version="mode-track-family-context-v1",
+        source_lineage_refs=("synthetic:tight-family-rt-universe",),
+        mode_tracks=(scenario.track_a, scenario.track_b),
+    )
+    tight_models = fit_mode_track_model_set(
+        processing_owners=scenario.fixture.owners,
+        family_context=tight_rt_context,
+        direct_support_anchors=(
+            scenario.track_a_spine.anchors + scenario.track_b_spine.anchors
+        ),
+        policy=scenario.policy,
+    )
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=tight_models,
+        candidates=(candidate,),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    assert result.assignments[0].state == "out_of_model"
+    assert result.assignments[0].reason_codes == ("peak_hypothesis_outside_family_rt",)
+
+
+def test_request_acquisition_and_injection_bindings_cannot_be_crossed(
+    tmp_path: Path,
+) -> None:
+    original = _scenario(tmp_path / "original")
+    foreign = _scenario(
+        tmp_path / "foreign",
+        sample_stems=("target", "anchor-1", "anchor-2"),
+        target_injection_order=1,
+    )
+    assert (
+        original.fixture.owners.request.processing_request_id
+        != foreign.fixture.owners.request.processing_request_id
+    )
+
+    with pytest.raises(ModeTrackContractError, match="stale request binding"):
+        fit_mode_track_model_set(
+            processing_owners=foreign.fixture.owners,
+            family_context=original.family_context,
+            direct_support_anchors=(
+                original.track_a_spine.anchors + original.track_b_spine.anchors
+            ),
+            policy=original.policy,
+        )
+
+    with pytest.raises(ModeTrackContractError, match="different processing request"):
+        assign_mode_tracks(
+            processing_owners=foreign.fixture.owners,
+            sample=foreign.fixture.sample("target"),
+            model_set=original.models,
+            candidates=(),
+            trajectory_assessment=foreign.assessable_trajectory,
+        )
+
+    with pytest.raises(ModeTrackContractError, match="stale injection binding"):
+        assign_mode_tracks(
+            processing_owners=original.fixture.owners,
+            sample=original.fixture.sample("target"),
+            model_set=original.models,
+            candidates=(),
+            trajectory_assessment=_trajectory("target", 99),
+        )
+
+
+def test_policy_rejects_integer_float_identity_alias() -> None:
+    with pytest.raises(ModeTrackContractError, match="canonical float"):
+        ModeTrackTrajectoryPolicy(
+            trajectory_policy_version="piecewise-linear-injection-local-v1",
+            band_policy_version="explicit-half-width-v1",
+            prediction_half_width_min=1,  # type: ignore[arg-type]
+            max_interpolation_gap=4,
+            max_extrapolation_gap=2,
+        )
+
+
 def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
     tmp_path: Path,
 ) -> None:
@@ -312,9 +495,7 @@ def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
         processing_owners=unsupported_interpolation.fixture.owners,
         sample=unsupported_interpolation.fixture.sample("target"),
         model_set=unsupported_interpolation.models,
-        candidates=(
-            unsupported_interpolation.candidate(7.87, direct_support=False),
-        ),
+        candidates=(unsupported_interpolation.candidate(7.87, direct_support=False),),
         trajectory_assessment=unsupported_interpolation.assessable_trajectory,
     )
     assert interpolation_result.assignments[0].state == "out_of_model"
@@ -332,9 +513,7 @@ def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
         processing_owners=supported_extrapolation.fixture.owners,
         sample=supported_extrapolation.fixture.sample("target"),
         model_set=supported_extrapolation.models,
-        candidates=(
-            supported_extrapolation.candidate(7.97, direct_support=False),
-        ),
+        candidates=(supported_extrapolation.candidate(7.97, direct_support=False),),
         trajectory_assessment=supported_extrapolation.assessable_trajectory,
     )
     assert extrapolation_result.assignments[0].state == "uniquely_assigned"
@@ -406,8 +585,10 @@ def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
             canonical_sample_identity_id="sample:forged",
             acquisition_source_id="acquisition-source:forged",
             injection_order=1,
+            candidate_observation_id=None,
             peak_hypothesis_id=None,
             candidate_observation_class=None,
+            direct_support_cell_artifact_content_id=None,
             group_hypothesis_id=None,
             state="not_observed",
             reason_codes=("not_observed",),
@@ -690,5 +871,29 @@ def _poor_trajectory(sample_stem: str, injection_order: int):
     )
     return assess_local_trajectory(
         LocalTrajectoryEvidenceLookup(points=(point,)),
+        (sample_stem,),
+    )
+
+
+def _multi_point_trajectory(
+    sample_stem: str,
+    injection_order: int,
+    local_rt_and_shift: tuple[tuple[float, float], ...],
+):
+    points = tuple(
+        LocalFeatureLandmarkEvidence(
+            sample_stem=sample_stem,
+            injection_order=injection_order,
+            landmark_id=f"landmark:{sample_stem}:{index}",
+            observed_rt_min=local_rt + shift,
+            local_trajectory_rt_min=local_rt,
+            rt_drift_delta_min=shift,
+            quality="accepted",
+            evidence_ref=f"peak-observation:{sample_stem}-landmark-{index}",
+        )
+        for index, (local_rt, shift) in enumerate(local_rt_and_shift, start=1)
+    )
+    return assess_local_trajectory(
+        LocalTrajectoryEvidenceLookup(points=points),
         (sample_stem,),
     )
