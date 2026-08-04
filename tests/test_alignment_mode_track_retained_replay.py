@@ -62,6 +62,19 @@ def test_retained_85raw_replay_is_deterministic_inconclusive_and_no_raw() -> Non
     assert summary["counts"]["assignment_states"] == dict(first.assignment_state_counts)
 
 
+def test_retained_replay_hash_is_checkout_line_ending_stable() -> None:
+    lf_bytes = FIXTURE_PATH.read_bytes().replace(b"\r\n", b"\n")
+    crlf_bytes = lf_bytes.replace(b"\n", b"\r\n")
+
+    lf_summary = replay_retained_mode_track_fixture(lf_bytes)
+    crlf_summary = replay_retained_mode_track_fixture(crlf_bytes)
+
+    assert lf_summary.fixture_sha256 == crlf_summary.fixture_sha256
+    assert canonical_retained_mode_track_replay_summary_bytes(lf_summary) == (
+        canonical_retained_mode_track_replay_summary_bytes(crlf_summary)
+    )
+
+
 def test_retained_fixture_preserves_source_mismatch_and_85_sample_census() -> None:
     payload = json.loads(FIXTURE_PATH.read_bytes())
 

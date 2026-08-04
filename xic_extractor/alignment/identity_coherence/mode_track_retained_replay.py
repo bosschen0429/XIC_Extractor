@@ -124,10 +124,11 @@ def replay_retained_mode_track_fixture(
 
     if not isinstance(fixture_bytes, bytes) or not fixture_bytes:
         raise ModeTrackRetainedReplayError("fixture_bytes must be non-empty bytes")
-    fixture_sha256 = hashlib.sha256(fixture_bytes).hexdigest()
+    canonical_fixture_bytes = fixture_bytes.replace(b"\r\n", b"\n")
+    fixture_sha256 = hashlib.sha256(canonical_fixture_bytes).hexdigest()
     try:
         payload = json.loads(
-            fixture_bytes,
+            canonical_fixture_bytes,
             object_pairs_hook=_reject_duplicate_object_pairs,
         )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:

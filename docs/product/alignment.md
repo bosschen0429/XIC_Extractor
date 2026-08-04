@@ -153,7 +153,9 @@ SUPPORT assignment also retains the exact source cell artifact identity.
 
 The retained fixture
 `docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`
-records the source-qualified M8 stop condition. Its required-oracle fields name
+records the source-qualified M8 stop condition. Replay normalizes checkout CRLF
+to LF before hashing and parsing this text fixture, so its identity does not
+depend on the runner platform. Its required-oracle fields name
 the expected 85-open/85-call target; they are not observed counters for the
 retained historical packet. The required owner-bound v2 Discovery index and
 original seed packet bytes were unavailable, while the available historical
