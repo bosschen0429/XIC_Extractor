@@ -11,7 +11,6 @@ HOOKS = ROOT / ".codex" / "hooks"
 sys.path.insert(0, str(HOOKS))
 
 
-
 def run_hook(
     script: str,
     event: dict[str, object],
@@ -326,9 +325,7 @@ def main() -> int:
         "tool_input": {
             "command": "bash -lc "
             + json.dumps(
-                "if true; then "
-                + " ".join(("git", "reset", "--hard"))
-                + "; fi"
+                "if true; then " + " ".join(("git", "reset", "--hard")) + "; fi"
             )
         },
     }
@@ -341,9 +338,7 @@ def main() -> int:
         **static_rule_search_payload,
         "tool_input": {
             "command": "bash -lc "
-            + json.dumps(
-                "if " + " ".join(("git", "reset", "--hard")) + "; then :; fi"
-            )
+            + json.dumps("if " + " ".join(("git", "reset", "--hard")) + "; then :; fi")
         },
     }
     assert_contains(
@@ -355,7 +350,7 @@ def main() -> int:
         **raw_background_payload,
         "tool_input": {
             "command": (
-                "pwsh -Command \"if ($true) { Start-Process python -ArgumentList "
+                'pwsh -Command "if ($true) { Start-Process python -ArgumentList '
                 "'-m scripts.run_alignment --raw-dir $env:XIC_RAW_ROOT' }\""
             )
         },
@@ -369,7 +364,7 @@ def main() -> int:
         **raw_background_payload,
         "tool_input": {
             "command": (
-                "pwsh -Command \"$proc = Start-Process python -PassThru "
+                'pwsh -Command "$proc = Start-Process python -PassThru '
                 "-ArgumentList '-m scripts.run_alignment --raw-dir "
                 "$env:XIC_RAW_ROOT'\""
             )
@@ -395,8 +390,7 @@ def main() -> int:
     combined_flag_reset_payload = {
         **static_rule_search_payload,
         "tool_input": {
-            "command": "bash -xc "
-            + json.dumps(" ".join(("git", "reset", "--hard")))
+            "command": "bash -xc " + json.dumps(" ".join(("git", "reset", "--hard")))
         },
     }
     assert_contains(
@@ -419,8 +413,7 @@ def main() -> int:
     cmd_reset_payload = {
         **static_rule_search_payload,
         "tool_input": {
-            "command": "cmd /c "
-            + json.dumps(" ".join(("git", "reset", "--hard")))
+            "command": "cmd /c " + json.dumps(" ".join(("git", "reset", "--hard")))
         },
     }
     assert_contains(
@@ -433,9 +426,7 @@ def main() -> int:
         "tool_input": {
             "command": "bash -lc "
             + json.dumps(
-                " ".join(
-                    ("exec", "-a", "safe-name", "/usr/bin/git", "reset", "--hard")
-                )
+                " ".join(("exec", "-a", "safe-name", "/usr/bin/git", "reset", "--hard"))
             )
         },
     }
@@ -507,123 +498,6 @@ def main() -> int:
     )
     if result.stdout.strip():
         raise AssertionError("non-product path emitted productization context")
-
-    lock_text_search_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": 'rg -n "index.lock|cannot lock ref" docs .codex',
-        },
-        "tool_response": {
-            "stdout": "docs/agent/parameter-settings.md:149:.git\\index.lock\n"
-            ".codex/hooks/xic_post_tool_guard.py:181:cannot lock ref",
-            "stderr": "",
-        },
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(lock_text_search_payload),
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError("searching lock text emitted git lock warning")
-
-    git_commit_search_payload = {
-        "hook_event_name": "PreToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": 'rg -n "git commit" docs .codex',
-        },
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_pre_tool_guard.py")],
-        input=json.dumps(git_commit_search_payload),
-        cwd=ROOT,
-        env={
-            **os.environ,
-            "XIC_DOCS_PLACEMENT_GUARD_EXIT_CODE": "1",
-            "XIC_DOCS_PLACEMENT_GUARD_STDOUT": "should not run",
-        },
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError("searching git commit text triggered commit guard")
-
-    git_diff_lock_text_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "git diff -- .codex/hooks",
-        },
-        "tool_response": {
-            "stdout": (
-                "+fatal: Unable to create '.git/index.lock': File exists.\n"
-                "+cannot lock ref 'refs/heads/example'"
-            ),
-            "stderr": "",
-        },
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(git_diff_lock_text_payload),
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError("git diff lock text emitted git lock warning")
-
-    git_diff_string_response_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "git diff -- .codex/hooks",
-        },
-        "tool_response": (
-            "Exit code: 0\n"
-            "Output:\n"
-            "+fatal: Unable to create '.git/index.lock': File exists.\n"
-            "+cannot lock ref 'refs/heads/example'"
-        ),
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(git_diff_string_response_payload),
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError(
-            "successful git diff string response emitted git lock warning"
-        )
 
     git_commit_autostage_payload = {
         "hook_event_name": "PreToolUse",
@@ -700,21 +574,7 @@ def main() -> int:
             "command": 'git commit -m "docs update"',
         },
     }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_pre_tool_guard.py")],
-        input=json.dumps(git_commit_quoted_message_payload),
-        cwd=ROOT,
-        env={
-            **os.environ,
-            "XIC_DOCS_PLACEMENT_GUARD_EXIT_CODE": "0",
-        },
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError("quoted git commit message was treated as pathspec")
+    assert_hook_silent("xic_pre_tool_guard.py", git_commit_quoted_message_payload)
 
     git_commit_pwsh_wrapped_autostage_payload = {
         "hook_event_name": "PreToolUse",
@@ -753,142 +613,6 @@ def main() -> int:
         ),
         "git commit with -a/--all or pathspec is blocked",
     )
-
-    git_add_docs_guard_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "git add docs/superpowers/plans/example.md",
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    assert_hook_silent("xic_post_tool_guard.py", git_add_docs_guard_payload)
-
-    git_add_code_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "git add xic_extractor/extractor.py",
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(git_add_code_payload),
-        cwd=ROOT,
-        env={
-            **os.environ,
-            "XIC_DOCS_PLACEMENT_GUARD_EXIT_CODE": "0",
-        },
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError("git add for code path emitted docs placement warning")
-
-    git_add_formal_doc_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": (
-                "git add docs/product/backfill.md "
-                "docs/superpowers/handoffs/current/codex-example.md"
-            ),
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(git_add_formal_doc_payload),
-        cwd=ROOT,
-        env={
-            **os.environ,
-            "XIC_DOCS_PLACEMENT_GUARD_EXIT_CODE": "0",
-        },
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError("formal docs git add emitted docs placement warning")
-
-    apply_patch_mentions_git_add_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "apply_patch",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "patch": (
-                "*** Update File: docs/agent/example.md\n"
-                "+The hook checks git add after staging.\n"
-            ),
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(apply_patch_mentions_git_add_payload),
-        cwd=ROOT,
-        env={
-            **os.environ,
-            "XIC_DOCS_PLACEMENT_GUARD_EXIT_CODE": "1",
-            "XIC_DOCS_PLACEMENT_GUARD_STDOUT": "should not run",
-        },
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError("apply_patch text triggered docs placement guard")
-
-    unrelated_write_with_ambient_product_dirty_payload = {
-        "hook_event_name": "PostToolUse",
-        "turn_id": "fixture",
-        "tool_name": "Bash",
-        "tool_use_id": "fixture",
-        "cwd": ".",
-        "permission_mode": "default",
-        "tool_input": {
-            "command": "Set-Content docs\\scratch-note.md '# note'",
-        },
-        "tool_response": {"stdout": "", "stderr": ""},
-    }
-    result = subprocess.run(
-        [sys.executable, str(HOOKS / "xic_post_tool_guard.py")],
-        input=json.dumps(unrelated_write_with_ambient_product_dirty_payload),
-        cwd=ROOT,
-        env={
-            **os.environ,
-            "XIC_POST_TOOL_GUARD_CHANGED_PATHS_JSON": json.dumps(
-                ["xic_extractor/output/schema.py"]
-            ),
-            "XIC_POST_TOOL_GUARD_HANDOFF_LINE_COUNT": "250",
-        },
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=5,
-    )
-    if result.stdout.strip():
-        raise AssertionError("unrelated write emitted ambient product dirty warning")
 
     return 0
 

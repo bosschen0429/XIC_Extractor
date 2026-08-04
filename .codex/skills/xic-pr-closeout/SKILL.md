@@ -27,7 +27,8 @@ Include these when relevant:
 
 - verification evidence is scoped to the checked commit SHA. Follow
   `docs/agent/execution-gates.md#pr-verification-gate`; do not repeat hosted CI
-  locally only because the unchanged HEAD is pushed, opened, or marked ready;- readiness label: `diagnostic_only`, `shadow_ready`, `production_candidate`,
+  locally only because the unchanged HEAD is pushed, opened, or marked ready;
+- readiness label: `diagnostic_only`, `shadow_ready`, `production_candidate`,
   `production_ready`, or `inconclusive`;
 - validation tier: synthetic, focused tests, 8RAW, 85RAW, targeted benchmark,
   manual EIC/MS2 review, or CI shard;

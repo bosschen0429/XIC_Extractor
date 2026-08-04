@@ -19,7 +19,10 @@ _NETWORK_COMMAND_PATTERNS = (
     r"\bnpm\s+install\b",
     r"\bpip\s+install\b",
     r"\buv\s+add\b",
+    r"\buv\s+(?:lock|sync)\b",
     r"\buv\s+pip\s+install\b",
+    r"\buv\s+run\b[^\r\n]*?--with(?:=|\s)",
+    r"\bplaywright\s+install\b",
     r"\bgit\s+(?:clone|fetch|pull|push|ls-remote)\b",
     r"\bgh\s+(?:auth\s+status|pr|api|repo|release)\b",
 )

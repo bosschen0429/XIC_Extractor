@@ -1,18 +1,7 @@
 # XIC Extractor repo-local command policy.
-# Keep this small: narrowly allow recoverable repo-local operations, and block
-# or prompt only high-impact actions.
-
-prefix_rule(
-    pattern = ["git", "add"],
-    decision = "allow",
-    justification = "Staging explicit task files is recoverable and needs Git metadata access outside the sandbox.",
-    match = [
-        "git add scripts/agent_sandbox_doctor.py",
-    ],
-    not_match = [
-        "git commit -m checkpoint",
-    ],
-)
+# Keep this small: block or prompt only high-impact actions. Staging stays on
+# the normal approval path because a prefix rule cannot distinguish an explicit
+# task file from broad pathspecs such as -A, --all, or '.'.
 
 prefix_rule(
     pattern = ["git", "reset", "--hard"],

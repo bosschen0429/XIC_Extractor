@@ -157,9 +157,10 @@ Doctor 的 top-level status 直接決定下一步：
 
 只想分類命令、不做 runtime acceptance 時才加 `--command-only`。Git metadata
 write 是 Codex protected boundary；`--probe-git-write` 只用於有窄提權的 sandbox
-診斷，不是一般 preflight。一般 `git status` 已包含在 doctor；`git add` 由
-repo-local execpolicy 精確允許，commit／worktree／ref mutation 仍走 narrow
-approval。
+診斷，不是一般 preflight。一般 `git status` 已包含在 doctor；staging 前先核對
+dirty scope，精確 `git add <task-files...>` 與 commit／worktree／ref mutation 都走
+narrow approval。Execpolicy prefix 無法安全區分明確檔案與 `-A`、`--all`、`.` 等
+broad pathspec，所以不為 `git add` 設 blanket allow。
 
 ```powershell
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --strict --command ".venv\Scripts\python.exe -m scripts.run_alignment --expected-sample-count 85 ..."
@@ -208,7 +209,7 @@ Doctor 在 Codex Windows thread 會先驗證這個 project shell environment 是
 | RAW / DLL 讀不到 | 先跑本檔 Preflight 的 `Test-Path` 與 Python runner check；RAW 命令用 `.venv\Scripts\python.exe` | 不要用 bare `python` 重試 RAW，也不要掃 sibling directory 猜路徑 |
 | PowerShell 語法錯誤 | 改成 PowerShell 語法；多行命令用 backtick；inline Python 用 `python -c` 或 PowerShell here-string pipe；不確定時先跑 `scripts.agent_sandbox_doctor` | 不要貼 Bash heredoc、`export`、`&&` |
 | 長時間 85RAW 卡住 | 用 foreground command + `--timing-live-output`；先看 heartbeat / timing artifact 再重跑 | 不要背景 `Start-Process` 後回來輪詢 |
-| `git add` / `git commit` / `git stash` / `git worktree add` 出現 `.git\index.lock`、ref-lock、或 permission denied | 先跑 doctor 並確認 worktree；`git add` 命中 repo-local allow rule，commit/worktree/ref mutation 走同一命令的 narrow approval | 不要用 `GIT_CONFIG_GLOBAL=NUL` 作臨時 shell workaround（project config 已擁有它）；不要把 metadata boundary 誤判成程式碼問題 |
+| `git add` / `git commit` / `git stash` / `git worktree add` 出現 `.git\index.lock`、ref-lock、或 permission denied | 先跑 doctor 並確認 worktree；核對 dirty scope 後，對同一個精確命令走 narrow approval | 不要用 `git add -A`、`git add --all` 或 `git add .` 擴大 staging scope；不要用 `GIT_CONFIG_GLOBAL=NUL` 作臨時 shell workaround（project config 已擁有它）；不要把 metadata boundary 誤判成程式碼問題 |
 | 要續接舊 worktree / 舊 artifact | 先 `git worktree list` 與 `Test-Path` exact artifact；若 worktree/output 不存在，改用 `local_validation_artifacts/` 或明確重建 smoke path | 不要假設上一輪 worktree 還存在；不要把 `.worktrees/<branch>/output/...` 當長期可重用 input |
 | 遞迴掃描太慢、掃到 access denied、或 output/build/.worktrees 噪音 | 優先用 `git ls-files`、`rg --files`、targeted `rg`，再讀特定 range | 不要用 blanket `Get-ChildItem -Recurse` 掃整個 repo、`output/`、`.worktrees/`、或 build/cache 目錄 |
 | output / workbook overwrite `Permission denied` | 先假設檔案可能被 Excel/browser/previewer 鎖住；改寫到 timestamped 或 suffixed output，並回報原檔可能被鎖 | 不要強刪或反覆覆蓋；不要把 permission denied 當成 pipeline 邏輯失敗 |
@@ -223,8 +224,9 @@ Doctor 在 Codex Windows thread 會先驗證這個 project shell environment 是
 4. 它是否有 smoke check，且不會把使用者真正該審的決策藏起來？
 
 目前 `.codex/config.toml` 只擁有 XIC Git global-config isolation；
-`.codex/rules/xic-safety.rules` 只自動允許可回復的 `git add`。不要擴成任意
-Python/shell、commit/history rewrite、push、delete 或 network allow。
+`.codex/rules/xic-safety.rules` 不 blanket allow staging，只保留 destructive／
+external action 的 block 或 prompt。不要擴成任意 Python/shell、Git pathspec、
+commit/history rewrite、push、delete 或 network allow。
 
 ## Validation Tiers
 

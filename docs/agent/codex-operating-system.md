@@ -164,9 +164,15 @@ Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | python .codex\
 
 python .codex\hooks\fixtures\assert_hook_outputs.py
 .venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_hooks.py -q
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add -A
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add --all
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add .
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add README.md
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git push
 ```
+
+All `git add` checks must remain unmatched by an `allow` rule; `git push` must
+remain `prompt`.
 
 Also scan the diff for secrets, private local paths, absolute machine-specific
 paths, and accidentally tracked local Codex config.

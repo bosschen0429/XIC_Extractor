@@ -18,6 +18,7 @@ PROJECT_CONFIG = ROOT / ".codex" / "config.toml"
 HOOKS_DIR = ROOT / ".codex" / "hooks"
 RULES_PATH = ROOT / ".codex" / "rules" / "xic-safety.rules"
 OPERATING_SYSTEM = ROOT / "docs" / "agent" / "codex-operating-system.md"
+SUBAGENT_ROUTING = ROOT / "docs" / "agent" / "subagent-routing.md"
 HOOK_COMMAND_PATTERNS = {
     "command": re.compile(
         r'^python3 "\$\(git rev-parse --show-toplevel\)/\.codex/hooks/'
@@ -194,6 +195,31 @@ def _run_pre_hook(command: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_post_hook(
+    command: str, tool_response: object
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(HOOKS_DIR / "xic_post_tool_guard.py")],
+        input=json.dumps(
+            {
+                "hook_event_name": "PostToolUse",
+                "turn_id": "config-smoke",
+                "tool_name": "Bash",
+                "tool_use_id": "config-smoke",
+                "cwd": str(ROOT),
+                "permission_mode": "default",
+                "tool_input": {"command": command},
+                "tool_response": tool_response,
+            }
+        ),
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+
+
 def _rule_block(tokens: tuple[str, ...]) -> str:
     pattern = "pattern = [" + ", ".join(json.dumps(token) for token in tokens) + "]"
     matches = [
@@ -256,6 +282,19 @@ def test_project_config_isolates_git_from_unreadable_user_home() -> None:
             "set": {"GIT_CONFIG_GLOBAL": "NUL"},
         }
     }
+
+
+def test_subagent_routing_uses_current_project_sandbox_contract() -> None:
+    routing = SUBAGENT_ROUTING.read_text(encoding="utf-8")
+
+    assert "permission profile `workspace-github`" in routing
+    assert 'approval_policy = "on-request"' in routing
+    assert "`GIT_CONFIG_GLOBAL=NUL`" in routing
+    assert "intentionally not added" not in routing
+    assert (
+        ".venv\\Scripts\\python.exe -m scripts.agent_sandbox_doctor "
+        '--command-only --command "<command>"'
+    ) in routing
 
 
 def test_all_enabled_hook_references_resolve_start_and_noop() -> None:
@@ -353,9 +392,29 @@ def test_destructive_git_rules_are_primary_owner(
     assert f'decision = "{decision}"' in _rule_block(tokens)
 
 
-def test_git_add_is_the_only_explicitly_allowed_git_mutation() -> None:
-    assert 'decision = "allow"' in _rule_block(("git", "add"))
+def test_git_add_has_no_blanket_allow_rule() -> None:
+    rules = RULES_PATH.read_text(encoding="utf-8")
+
+    assert 'pattern = ["git", "add"]' not in rules
     assert 'decision = "prompt"' in _rule_block(("git", "push"))
+
+
+@pytest.mark.parametrize(
+    "tool_response",
+    [
+        {"stdout": "collected 0 items", "stderr": ""},
+        "ERROR: not found: tests/test_example.py::test_missing",
+    ],
+)
+def test_post_hook_rejects_empty_or_invalid_pytest_targets(
+    tool_response: object,
+) -> None:
+    completed = _run_post_hook("python -m pytest tests -q", tool_response)
+
+    assert completed.returncode == 0
+    output = json.loads(completed.stdout)
+    assert output["decision"] == "block"
+    assert "zero tests or used an invalid node id" in output["reason"]
 
 
 DESTRUCTIVE_TEXTS = [

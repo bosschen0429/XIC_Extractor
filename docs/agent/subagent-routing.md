@@ -409,28 +409,30 @@ task packets. The repo keeps only the rules those agents must honor here:
 
 Current recommended posture for this repo:
 
-- Main implementation sessions: `sandbox_mode = "workspace-write"` with
-  `approval_policy = "on-request"`.
+- Main implementation sessions use the permission profile `workspace-github`
+  with `approval_policy = "on-request"` and `auto_review`. Do not combine it
+  with the legacy `sandbox_mode` / `[sandbox_workspace_write]` settings.
 - The global `reviewer` uses `sandbox_mode = "read-only"`. A generic agent
   inherits the caller's runtime capabilities; a no-write prompt does not make
   it sandboxed. Snapshot `git status --short` before and after any generic
   review and report unexpected mutations.
 - Verification runs (pytest, validation commands, local runners) need
-  `sandbox_mode = "workspace-write"` only for caches, logs, and output sidecars;
-  the run must forbid source/docs/config/test edits, staging, commits, reverts,
-  renames, and deletes, and must report the final dirty scope.
+  workspace write access only for caches, logs, and output sidecars; the run
+  must forbid source/docs/config/test edits, staging, commits, reverts, renames,
+  and deletes, and must report the final dirty scope.
 - `danger-full-access`, `approval_policy = "never"`, broad writable roots, and
   persistent execpolicy rules are not default development settings. Use them
   only for a reviewed, bounded operation with a named rollback or recovery path.
-- Project-local `.codex/config.toml` is intentionally not added in this branch.
-  The global config already sets the normal model, sandbox, approvals, MCP, and
-  plugin posture. Duplicating that in-repo would create another drift surface.
-- If a future PR adds `.codex/config.toml` or `.codex/execpolicy/`, it must state
-  why `AGENTS.md`, parameter settings, and normal approval prompts are
-  insufficient, then run a config/TOML smoke check.
+- The tracked project `.codex/config.toml` owns only the repo-specific
+  `GIT_CONFIG_GLOBAL=NUL` shell environment needed to avoid unreadable Windows
+  user-home Git config. Global model, permission profile, MCP, and plugin policy
+  remain global. Project config changes require trust review, a Codex restart,
+  and the config/TOML smoke check.
 - Before changing sandbox posture for a command, prefer
-  `python -m scripts.agent_sandbox_doctor --command "<command>"`. The doctor is
-  diagnostic only; it does not execute the command or replace human approval.
+  `.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "<command>"`.
+  The doctor is diagnostic only; it does not execute the command or replace
+  human approval. Omit `--command-only` only when the full runtime acceptance
+  checks are required.
 - For RAW-backed runs, use `.codex/skills/xic-raw-validation/SKILL.md` before
   launching or accepting the result.
 

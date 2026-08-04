@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts import agent_sandbox_doctor
 
 
@@ -85,6 +87,30 @@ def test_network_command_routes_to_bounded_approval(tmp_path: Path) -> None:
         allowed_write_roots=(tmp_path,),
     )
     assert [finding.disposition for finding in gh_findings] == ["APPROVAL_REQUIRED"]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "uv lock",
+        "uv sync --extra dev --group dev",
+        "uv run --with playwright python --version",
+        "uv run python -m playwright install chromium",
+    ],
+)
+def test_documented_approval_first_commands_require_approval(
+    command: str, tmp_path: Path
+) -> None:
+    findings = agent_sandbox_doctor.classify_command(
+        command,
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+    )
+
+    assert [finding.code for finding in findings] == [
+        "network_or_github_approval_needed"
+    ]
+    assert findings[0].disposition == "APPROVAL_REQUIRED"
 
 
 def test_documented_venv_alignment_command_is_clean(tmp_path: Path) -> None:
