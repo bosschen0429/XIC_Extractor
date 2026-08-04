@@ -157,8 +157,12 @@ track, both through different hypotheses, or neither. A candidate is
 `uniquely_assigned` only when exactly one prediction interval contains it and
 all competitors are excluded. The other terminal states are
 `ambiguous_multiple_tracks`, `out_of_model`, `not_observed`, and
-`technical_unassessable`. A track accepts at most one hypothesis per sample,
-and a hypothesis accepts at most one track. Only a uniquely assigned direct
+`technical_unassessable`. Prediction-interval overlap is candidate-local: it
+does not block a candidate that lies in a single-track-only region. A track
+accepts at most one hypothesis per sample, and occupancy includes both its
+incumbent anchor for that injection and provisional candidates in the current
+batch. Replaying the incumbent hypothesis is the same occupant; a different
+hypothesis cannot become a second occupant. Only a uniquely assigned direct
 SUPPORT observation may reinforce that one track; MS1-only, Backfill, shadow,
 inferred, deconvolved, manual, and shared-set observations remain non-training.
 Model sets are bound to their exact processing request; anchors, candidates, and

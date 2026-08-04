@@ -917,15 +917,29 @@ def assign_mode_tracks(
     for assignment in provisional:
         if assignment.state == "uniquely_assigned":
             assert assignment.group_hypothesis_id is not None
+            assert assignment.peak_hypothesis_id is not None
             unique_by_track.setdefault(assignment.group_hypothesis_id, []).append(
                 assignment
             )
-    occupied_ids = {
-        assignment.assignment_id
-        for same_track in unique_by_track.values()
-        if len(same_track) > 1
-        for assignment in same_track
+    incumbent_by_track = {
+        track.group_hypothesis_id: anchor.peak_hypothesis_id
+        for track in model_set.tracks
+        for anchor in track.anchors
+        if anchor.injection_order == injection_order
     }
+    occupancy_conflict_ids: set[str] = set()
+    for group_hypothesis_id, same_track in unique_by_track.items():
+        incumbent_hypothesis_id = incumbent_by_track.get(group_hypothesis_id)
+        if incumbent_hypothesis_id is not None:
+            occupancy_conflict_ids.update(
+                assignment.assignment_id
+                for assignment in same_track
+                if assignment.peak_hypothesis_id != incumbent_hypothesis_id
+            )
+        elif len({item.peak_hypothesis_id for item in same_track}) > 1:
+            occupancy_conflict_ids.update(
+                assignment.assignment_id for assignment in same_track
+            )
     assignments = tuple(
         _remint_assignment(
             assignment,
@@ -933,7 +947,7 @@ def assign_mode_tracks(
             state="ambiguous_multiple_tracks",
             reason_codes=("track_occupancy_conflict",),
         )
-        if assignment.assignment_id in occupied_ids
+        if assignment.assignment_id in occupancy_conflict_ids
         else assignment
         for assignment in provisional
     )
@@ -1295,8 +1309,6 @@ def _global_no_write_state(
         return state, reasons
     if _trajectories_cross(model_set, predictions):
         return "technical_unassessable", ("trajectory_crossing",)
-    if _prediction_intervals_overlap(predictions):
-        return "ambiguous_multiple_tracks", ("prediction_intervals_overlap",)
     return None
 
 
@@ -1791,25 +1803,6 @@ def _trajectories_cross(
             available_centers[1:],
             strict=False,
         )
-    )
-
-
-def _prediction_intervals_overlap(
-    predictions: tuple[ModeTrackPredictionAssessment, ...],
-) -> bool:
-    intervals = tuple(
-        sorted(
-            (
-                item.prediction_interval_min
-                for item in predictions
-                if item.prediction_interval_min is not None
-            ),
-            key=lambda item: item[0],
-        )
-    )
-    return any(
-        left[1] >= right[0]
-        for left, right in zip(intervals, intervals[1:], strict=False)
     )
 
 

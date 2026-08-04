@@ -147,6 +147,35 @@ def test_assignment_truth_table_is_explicit(
         assert result.assignments[0].candidate_observation_class is None
 
 
+def test_prediction_interval_overlap_is_candidate_local(tmp_path: Path) -> None:
+    scenario = _scenario(tmp_path, prediction_half_width_min=0.26)
+    single_track_candidate = scenario.candidate(7.87, direct_support=False)
+    overlapping_candidate = scenario.candidate(8.12, direct_support=False)
+
+    result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(single_track_candidate, overlapping_candidate),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+
+    by_hypothesis = {
+        item.peak_hypothesis_id: item for item in result.assignments
+    }
+    single_track_assignment = by_hypothesis[
+        single_track_candidate.peak_hypothesis_id
+    ]
+    overlap_assignment = by_hypothesis[overlapping_candidate.peak_hypothesis_id]
+    assert single_track_assignment.state == "uniquely_assigned"
+    assert (
+        single_track_assignment.group_hypothesis_id
+        == scenario.track_a.group_hypothesis_id
+    )
+    assert overlap_assignment.state == "ambiguous_multiple_tracks"
+    assert overlap_assignment.reason_codes == ("candidate_matches_multiple_tracks",)
+
+
 def test_sparse_anchors_and_unsupported_extrapolation_are_no_write(
     tmp_path: Path,
 ) -> None:
@@ -251,6 +280,75 @@ def test_crossing_and_per_track_occupancy_are_explicit_no_write(
     assert all(
         "track_occupancy_conflict" in item.reason_codes
         for item in occupied_result.assignments
+    )
+
+
+def test_incumbent_anchor_occupies_track_for_other_hypotheses(
+    tmp_path: Path,
+) -> None:
+    scenario = _scenario(tmp_path)
+    anchor = scenario.track_a_spine.anchors[0]
+    replay = mint_mode_track_candidate_observation(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        peak_hypothesis=anchor.peak_hypothesis,
+        direct_support_cell=anchor.direct_support_cell,
+    )
+    challenger_spine = _spine(
+        scenario.fixture,
+        support_apex_by_sample={"anchor-1": 7.82},
+        invocation="candidate:incumbent-occupancy-challenger",
+    )
+    challenger_cell = _support_cells(challenger_spine)[0]
+    challenger = mint_mode_track_candidate_observation(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        peak_hypothesis=challenger_cell.peak_hypothesis,
+        direct_support_cell=None,
+    )
+    trajectory = _trajectory(
+        "anchor-1",
+        anchor.injection_order,
+        anchor.acquisition_source_id,
+    )
+
+    replay_result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        model_set=scenario.models,
+        candidates=(replay,),
+        trajectory_assessment=trajectory,
+    )
+    challenger_result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        model_set=scenario.models,
+        candidates=(challenger,),
+        trajectory_assessment=trajectory,
+    )
+    combined_result = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=anchor.sample,
+        model_set=scenario.models,
+        candidates=(replay, challenger),
+        trajectory_assessment=trajectory,
+    )
+
+    replay_assignment = replay_result.assignments[0]
+    challenger_assignment = challenger_result.assignments[0]
+    assert replay_assignment.state == "uniquely_assigned"
+    assert replay_assignment.group_hypothesis_id == anchor.group_hypothesis_id
+    assert challenger_assignment.state == "ambiguous_multiple_tracks"
+    assert challenger_assignment.group_hypothesis_id is None
+    assert challenger_assignment.reason_codes == ("track_occupancy_conflict",)
+    combined_by_hypothesis = {
+        item.peak_hypothesis_id: item for item in combined_result.assignments
+    }
+    assert combined_by_hypothesis[replay.peak_hypothesis_id].state == (
+        "uniquely_assigned"
+    )
+    assert combined_by_hypothesis[challenger.peak_hypothesis_id].state == (
+        "ambiguous_multiple_tracks"
     )
 
 
