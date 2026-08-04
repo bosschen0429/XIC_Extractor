@@ -1,0 +1,6 @@
+# XIC runs in a Windows-native sandbox. Git for this repository must not load
+# the user-home global config because elevated sandbox users cannot read it.
+# Required identity and long-path settings live in this repository's shared
+# local Git config instead.
+[shell_environment_policy.set]
+GIT_CONFIG_GLOBAL = "NUL"

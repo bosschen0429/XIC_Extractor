@@ -30,16 +30,19 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
 
 ## Python Runner
 
-這台 Windows 機器目前有兩個常用 Python 入口，但用途不同：
+本機 operator runtime 固定為 Windows Native；每個 worktree 的唯一 project
+runner 是該 worktree 自己的 `.venv\Scripts\python.exe`：
 
-| Runner | 用途 | 已觀察狀態 |
+| Surface | Runner | 契約 |
 | --- | --- | --- |
-| `python` | no-RAW 的窄範圍 pytest shard | Python 3.14 launcher；有 `pytest`；沒有 `pythonnet` |
-| `.venv\Scripts\python.exe` | Thermo RAW / RawFileReader / `pythonnet` run | Python 3.13.7；有 `pythonnet`；沒有 `pytest` |
+| local dev/test/RAW | `.venv\Scripts\python.exe` | Python `>=3.11,<3.14`；locked dev dependencies、`pytest` 與 `pythonnet` 由 bootstrap 驗證 |
+| hosted primary CI | workflow-provided Python 3.12 | clean-checkout default gate |
+| hosted compatibility CI | workflow-provided Python 3.11 | lower-bound compatibility gate |
 | `.venv/bin/python` | WSL 內、已有 task-specific CoreCLR/Thermo net8 canary 的 bounded RAW run | Package 3A canary 使用 Python 3.12.3、`PYTHONNET_RUNTIME=coreclr` 與官方 Thermo net8 `8.0.37` assemblies 通過；不是未經 canary 的通用替代 runner |
 
-專案契約是 Python `>=3.11,<3.14`。Python 3.14 不是有效 RAW runtime，因為
-目前沒有可用的 `pythonnet`。
+Bare `python` 只可作為 bootstrap driver 或檢查 launcher identity；不得用來跑
+project tests、scripts 或 RAW。即使 bare launcher 恰好有 pytest，也不代表它
+符合 locked environment、editable install 或 pythonnet 契約。
 
 規則：
 
@@ -48,10 +51,7 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
   current `.venv/bin/python`、`PYTHONNET_RUNTIME=coreclr`、官方 Thermo net8 DLL
   identity 與同 lane RAW canary 時才可使用；Package 3A 的 bounded canary owner
   是 `output/package3a_trace_canary_20260727/README.md`。
-- no-RAW 的窄範圍 pytest shard 可以用 `python -m pytest ...`。
-- 不要用 bare `python` 跑 RAW validation，即使命令看起來能啟動。
-- 如果 `.venv` 之後補上 pytest，優先用 `.venv\Scripts\python.exe -m pytest`
-  讓測試與 RAW runtime 一致。
+- no-RAW pytest、repo scripts 與 RAW validation 都使用 worktree `.venv`。
 - 在 worktree 內跑正式 85RAW 時，`scripts.run_alignment
   --expected-sample-count 85` 會要求 Python executable 位於該 worktree 的
   `.venv` 底下。不要用 root repo 的絕對路徑
@@ -110,10 +110,7 @@ mzML 相關路徑。
 
 ```powershell
 uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
-Get-Command python | Select-Object -ExpandProperty Source
-python --version
-.venv\Scripts\python.exe --version
-.venv\Scripts\python.exe -c "import importlib.util; print('pythonnet', importlib.util.find_spec('pythonnet') is not None); print('pytest', importlib.util.find_spec('pytest') is not None)"
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write
 Test-Path "$env:XIC_RAW_ROOT"
 Test-Path "$env:THERMO_RAWFILE_READER_DLL_DIR"
 ```
@@ -131,25 +128,29 @@ worktree 的 ignored `.venv`，也不要臨時逐套件安裝。
 如果本檔列出的 stable path 存在，就使用它。除非 `Test-Path` 失敗或使用者
 提供更新路徑，否則不要重新搜尋，也不要自行替換成 sibling directory。
 
-對 sandbox、PowerShell、approval、RAW runner、或 output 路徑不確定時，先跑
-repo-local doctor。它只分類命令，不執行命令，也不讀 RAW：
+repo-local doctor 預設會執行 bounded runtime canaries：Windows runtime owner、
+worktree Python、bootstrap state、Git read 與 workspace write。它不讀 RAW：
 
 ```powershell
-python -m scripts.agent_sandbox_doctor --command "<command-to-check>"
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write --command "<command-to-check>"
 ```
 
-長時間或昂貴命令可加 `--strict`，讓 blocker/review finding 以 non-zero exit
-code 先停下來：
+只想分類命令、不做 runtime acceptance 時才加 `--command-only`。Git metadata
+write 是 Codex protected boundary；`--probe-git-write` 只用於有窄提權的 sandbox
+診斷，不是一般 preflight。一般 `git status` 已包含在 doctor；`git add` 由
+repo-local execpolicy 精確允許，commit／worktree／ref mutation 仍走 narrow
+approval。
 
 ```powershell
-python -m scripts.agent_sandbox_doctor --strict --command ".venv\Scripts\python.exe -m scripts.run_alignment --expected-sample-count 85 ..."
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --strict --command ".venv\Scripts\python.exe -m scripts.run_alignment --expected-sample-count 85 ..."
 ```
 
 ## Sandbox Friction Playbook
 
-目前建議姿態是 `workspace-write + on-request`。這不是最順的模式，但對這個
-repo 是合理預設：agent 可以寫工作樹與 sandbox-provided temp dir，讀外部 RAW / DLL / reference
-data，遇到外部寫入、network、GUI、或高風險命令時才升權。
+目前建議姿態是單一 `workspace-github` permission profile + `on-request`；不要再
+同時設定舊 `sandbox_mode` / `[sandbox_workspace_write]`。`.codex/config.toml`
+將 `GIT_CONFIG_GLOBAL` 設為 `NUL`，必要 identity/long-path settings 放 shared
+local Git config，避免 Windows elevated sandbox 讀 user-home `.gitconfig`。
 
 ### Approval-First Commands
 
@@ -169,7 +170,7 @@ data，遇到外部寫入、network、GUI、或高風險命令時才升權。
 如果命令不在上表，才回到「先 doctor、再決定」：
 
 ```powershell
-python -m scripts.agent_sandbox_doctor --command "<command-to-check>"
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --command "<command-to-check>"
 ```
 
 常見 friction 不要全部用放寬 sandbox 解決：
@@ -183,7 +184,7 @@ python -m scripts.agent_sandbox_doctor --command "<command-to-check>"
 | RAW / DLL 讀不到 | 先跑本檔 Preflight 的 `Test-Path` 與 Python runner check；RAW 命令用 `.venv\Scripts\python.exe` | 不要用 bare `python` 重試 RAW，也不要掃 sibling directory 猜路徑 |
 | PowerShell 語法錯誤 | 改成 PowerShell 語法；多行命令用 backtick；inline Python 用 `python -c` 或 PowerShell here-string pipe；不確定時先跑 `scripts.agent_sandbox_doctor` | 不要貼 Bash heredoc、`export`、`&&` |
 | 長時間 85RAW 卡住 | 用 foreground command + `--timing-live-output`；先看 heartbeat / timing artifact 再重跑 | 不要背景 `Start-Process` 後回來輪詢 |
-| `git add` / `git commit` / `git stash` / `git worktree add` 出現 `.git\index.lock`、ref-lock、或 permission denied | 先確認正確 worktree：`git worktree list`、`git -C <worktree> status`；若是必要 git index/ref 操作，用同一命令的 narrow approval 或 `git -C <repo> ...` 重跑 | 不要把 index/ref lock 誤判成程式碼問題；不要用 `git reset --hard`、`git clean` 或強制刪分支除非使用者明確要求 |
+| `git add` / `git commit` / `git stash` / `git worktree add` 出現 `.git\index.lock`、ref-lock、或 permission denied | 先跑 doctor 並確認 worktree；`git add` 命中 repo-local allow rule，commit/worktree/ref mutation 走同一命令的 narrow approval | 不要用 `GIT_CONFIG_GLOBAL=NUL` 作臨時 shell workaround（project config 已擁有它）；不要把 metadata boundary 誤判成程式碼問題 |
 | 要續接舊 worktree / 舊 artifact | 先 `git worktree list` 與 `Test-Path` exact artifact；若 worktree/output 不存在，改用 `local_validation_artifacts/` 或明確重建 smoke path | 不要假設上一輪 worktree 還存在；不要把 `.worktrees/<branch>/output/...` 當長期可重用 input |
 | 遞迴掃描太慢、掃到 access denied、或 output/build/.worktrees 噪音 | 優先用 `git ls-files`、`rg --files`、targeted `rg`，再讀特定 range | 不要用 blanket `Get-ChildItem -Recurse` 掃整個 repo、`output/`、`.worktrees/`、或 build/cache 目錄 |
 | output / workbook overwrite `Permission denied` | 先假設檔案可能被 Excel/browser/previewer 鎖住；改寫到 timestamped 或 suffixed output，並回報原檔可能被鎖 | 不要強刪或反覆覆蓋；不要把 permission denied 當成 pipeline 邏輯失敗 |
@@ -197,9 +198,9 @@ python -m scripts.agent_sandbox_doctor --command "<command-to-check>"
 3. 它是否比把 output 改到 worktree、固定 runner、或更新本檔更好？
 4. 它是否有 smoke check，且不會把使用者真正該審的決策藏起來？
 
-目前不建議新增 repo-local `.codex/config.toml` 或 active hooks。先把重複失敗
-收斂到本檔、`docs/agent/subagent-routing.md`、或 CLI preflight；等 passive hook
-能證明它真的擋住反覆失敗，再考慮 blocking hook。
+目前 `.codex/config.toml` 只擁有 XIC Git global-config isolation；
+`.codex/rules/xic-safety.rules` 只自動允許可回復的 `git add`。不要擴成任意
+Python/shell、commit/history rewrite、push、delete 或 network allow。
 
 ## Validation Tiers
 

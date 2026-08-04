@@ -1,3 +1,4 @@
+import subprocess
 from pathlib import Path
 
 from scripts import agent_sandbox_doctor
@@ -44,8 +45,7 @@ def test_classify_output_outside_allowed_roots(tmp_path: Path) -> None:
     allowed_root = workspace_root
     outside = tmp_path / "external-output"
     command = (
-        ".venv\\Scripts\\python.exe -m scripts.run_alignment "
-        f'--output-dir "{outside}"'
+        f'.venv\\Scripts\\python.exe -m scripts.run_alignment --output-dir "{outside}"'
     )
 
     findings = agent_sandbox_doctor.classify_command(
@@ -90,20 +90,21 @@ def test_main_strict_json_output_reports_blockers(
             "python -m scripts.run_alignment --raw-dir C:\\raw --dll-dir C:\\dll",
             "--json-output",
             str(output),
+            "--command-only",
             "--strict",
         ]
     )
 
     stdout = capsys.readouterr().out
     assert code == 2
-    assert "preflight_blocked" in stdout
+    assert "ENV_BLOCKED" in stdout
     assert "raw_runner_not_venv" in output.read_text(encoding="utf-8")
 
 
 def test_default_allowed_write_roots_are_absolute(tmp_path: Path) -> None:
     roots = agent_sandbox_doctor._default_allowed_write_roots(tmp_path)
 
-    assert tmp_path.resolve() in roots
+    assert roots == (tmp_path.resolve(),)
     assert all(root.is_absolute() for root in roots)
 
 
@@ -117,5 +118,150 @@ def test_probe_write_does_not_clobber_existing_probe_file(tmp_path: Path) -> Non
         probe_write=True,
     )
 
-    assert report.status == "ok"
+    assert report.status == "READY"
     assert existing.read_text(encoding="utf-8") == "keep me\n"
+
+
+def test_runtime_owner_rejects_wsl_for_windows_owned_checkout() -> None:
+    findings = agent_sandbox_doctor._inspect_runtime_owner(
+        os_name="posix",
+        environ={"WSL_DISTRO_NAME": "Ubuntu"},
+    )
+
+    assert [finding.code for finding in findings] == ["runtime_owner_mismatch"]
+    assert findings[0].severity == "blocker"
+
+
+def test_python_runtime_requires_supported_worktree_interpreter(
+    tmp_path: Path,
+) -> None:
+    expected = tmp_path / ".venv" / "Scripts" / "python.exe"
+
+    outside_findings = agent_sandbox_doctor._inspect_python_runtime(
+        workspace_root=tmp_path,
+        os_name="nt",
+        executable=Path("C:/Python314/python.exe"),
+        version=(3, 14, 0),
+    )
+    supported_findings = agent_sandbox_doctor._inspect_python_runtime(
+        workspace_root=tmp_path,
+        os_name="nt",
+        executable=expected,
+        version=(3, 12, 8),
+    )
+
+    assert {finding.code for finding in outside_findings} == {
+        "python_outside_worktree_venv",
+        "unsupported_python_version",
+    }
+    assert supported_findings == ()
+
+
+def test_git_runtime_classifies_global_config_acl_failure(
+    tmp_path: Path,
+) -> None:
+    def denied_git(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args[0],
+            1,
+            stdout="",
+            stderr=(
+                "fatal: unable to read config file "
+                "'C:/Users/operator/.gitconfig': Permission denied"
+            ),
+        )
+
+    findings = agent_sandbox_doctor._inspect_git_runtime(
+        workspace_root=tmp_path,
+        probe_write=False,
+        run=denied_git,
+    )
+
+    assert [finding.code for finding in findings] == ["git_global_config_unreadable"]
+    assert findings[0].severity == "blocker"
+
+
+def test_git_runtime_bounds_status_canary(tmp_path: Path) -> None:
+    def timed_out_git(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], timeout=10)
+
+    findings = agent_sandbox_doctor._inspect_git_runtime(
+        workspace_root=tmp_path,
+        probe_write=False,
+        run=timed_out_git,
+    )
+
+    assert [finding.code for finding in findings] == ["git_canary_timed_out"]
+
+
+def test_git_runtime_requires_shared_local_identity(tmp_path: Path) -> None:
+    def git_without_identity(*args, **kwargs):
+        command = args[0]
+        return subprocess.CompletedProcess(
+            command,
+            0 if command[1] == "status" else 1,
+            stdout="",
+            stderr="",
+        )
+
+    findings = agent_sandbox_doctor._inspect_git_runtime(
+        workspace_root=tmp_path,
+        probe_write=False,
+        run=git_without_identity,
+    )
+
+    assert [finding.code for finding in findings] == ["git_local_identity_missing"]
+
+
+def test_git_write_probe_has_hard_timeout(tmp_path: Path) -> None:
+    def timed_out_probe(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], timeout=10)
+
+    findings = agent_sandbox_doctor._run_bounded_git_write_probe(
+        tmp_path,
+        run=timed_out_probe,
+    )
+
+    assert [finding.code for finding in findings] == ["git_metadata_write_timed_out"]
+
+
+def test_runtime_report_blocks_when_bootstrap_is_not_ready(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        agent_sandbox_doctor,
+        "_inspect_runtime_owner",
+        lambda **kwargs: (),
+    )
+    monkeypatch.setattr(
+        agent_sandbox_doctor,
+        "_inspect_python_runtime",
+        lambda **kwargs: (),
+    )
+    monkeypatch.setattr(
+        agent_sandbox_doctor,
+        "_inspect_git_runtime",
+        lambda **kwargs: (),
+    )
+    monkeypatch.setattr(
+        agent_sandbox_doctor,
+        "_inspect_bootstrap_state",
+        lambda workspace_root: (
+            agent_sandbox_doctor.Finding(
+                severity="blocker",
+                code="bootstrap_not_ready",
+                message="bootstrap stamp is missing or invalid",
+                next_action="Run the canonical bootstrap command.",
+            ),
+        ),
+    )
+
+    report = agent_sandbox_doctor.build_environment_report(
+        workspace_root=tmp_path,
+        allowed_write_roots=(tmp_path,),
+        runtime_check=True,
+    )
+
+    assert report.status == "ENV_BLOCKED"
+    assert [finding.code for finding in report.findings] == ["bootstrap_not_ready"]

@@ -1,5 +1,18 @@
 # XIC Extractor repo-local command policy.
-# Keep this small: rules should block or prompt only high-impact actions.
+# Keep this small: narrowly allow recoverable repo-local operations, and block
+# or prompt only high-impact actions.
+
+prefix_rule(
+    pattern = ["git", "add"],
+    decision = "allow",
+    justification = "Staging explicit task files is recoverable and needs Git metadata access outside the sandbox.",
+    match = [
+        "git add scripts/agent_sandbox_doctor.py",
+    ],
+    not_match = [
+        "git commit -m checkpoint",
+    ],
+)
 
 prefix_rule(
     pattern = ["git", "reset", "--hard"],

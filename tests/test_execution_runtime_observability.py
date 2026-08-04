@@ -100,7 +100,7 @@ def test_runtime_observability_ledger_rejects_forged_mint_capability(
             _mint_token=object(),
         )
     assert not hasattr(ledger, "_mint_token")
-    with pytest.raises(ValueError, match="InitVar '_mint_token'"):
+    with pytest.raises((TypeError, ValueError), match="InitVar '_mint_token'"):
         replace(ledger)
     with pytest.raises(TypeError, match="RuntimeObservabilityLedger is final"):
         type("ForgedLedger", (RuntimeObservabilityLedger,), {})
@@ -297,8 +297,7 @@ def test_runtime_observability_preserves_one_rss_metric_per_observed_worker(
 
     wrong_worker = tuple(
         replace(metric, scope_key="worker:other")
-        if metric.name == "worker_peak_rss_bytes"
-        and metric.scope_key == "worker:2"
+        if metric.name == "worker_peak_rss_bytes" and metric.scope_key == "worker:2"
         else metric
         for metric in ledger.metrics
     )

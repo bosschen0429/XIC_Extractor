@@ -9,12 +9,16 @@ root `AGENTS.md` keeps only the highest-frequency subset.
   scope. Do not stage, rewrite, or revert unrelated user changes.
 - Before Python, RAW, DLL, or validation commands, read
   `docs/agent/parameter-settings.md` and use documented runners and paths.
-- When sandbox, PowerShell syntax, output path, network approval, or RAW runner
-  choice is uncertain, preflight with:
+- Before product checks, require the per-worktree bootstrap and Windows-native
+  runtime acceptance:
 
 ```powershell
-python -m scripts.agent_sandbox_doctor
+uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write
 ```
+
+The doctor returns `READY`, `ENV_BLOCKED`, or `INCONCLUSIVE`. Stop product
+debugging on `ENV_BLOCKED`; fix the named runtime layer once before retrying.
 
 ## Outputs And Validation Status
 
@@ -91,6 +95,7 @@ Treat `.codex/config.toml`, `.codex/hooks.json`, `.codex/rules/`, hook scripts,
 execpolicy, and subagent TOML as execution-affecting config. Changes need:
 
 - hook/script smoke check where applicable;
+- `codex execpolicy check` for changed `.rules` decisions;
 - `git diff --check`;
 - secret, private local path, and accidentally tracked local config scan.
 

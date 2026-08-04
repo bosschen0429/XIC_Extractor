@@ -4,6 +4,7 @@ import configparser
 import json
 import shutil
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -12,6 +13,19 @@ import pytest
 from scripts import check_architecture_census as census
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _lint_imports_executable() -> str:
+    executable = shutil.which("lint-imports")
+    if executable is None:
+        entrypoint_name = (
+            "lint-imports.exe" if sys.platform == "win32" else "lint-imports"
+        )
+        sibling_entrypoint = Path(sys.executable).with_name(entrypoint_name)
+        if sibling_entrypoint.is_file():
+            executable = str(sibling_entrypoint)
+    assert executable is not None
+    return executable
 
 
 def test_current_architecture_census_is_valid_and_static_only() -> None:
@@ -865,8 +879,7 @@ allow_indirect_imports = False
 """.lstrip(),
         encoding="utf-8",
     )
-    executable = shutil.which("lint-imports")
-    assert executable is not None
+    executable = _lint_imports_executable()
 
     static_result = subprocess.run(
         [executable, "--config", str(config), "--no-cache"],
@@ -947,8 +960,7 @@ unmatched_ignore_imports_alerting = error
 """.lstrip(),
         encoding="utf-8",
     )
-    executable = shutil.which("lint-imports")
-    assert executable is not None
+    executable = _lint_imports_executable()
 
     grandfathered_result = subprocess.run(
         [executable, "--config", str(config), "--no-cache"],

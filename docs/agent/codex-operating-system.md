@@ -108,7 +108,6 @@ mismatch, or behavior change fails the #160 governance read-back.
 | `destructive_git_filesystem` | `docs/agent/codex-operating-system.md#current-repo-local-rules` | `hard_guard` | `.codex/rules/xic-safety.rules` | `tests/test_config_codex_hooks.py` | `none` |
 | `raw_background_launch` | `docs/agent/execution-gates.md#raw-and-long-runs` | `hard_guard` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
 | `execution_affecting_config` | `docs/agent/codex-operating-system.md#change-protocol` | `advisory_context` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
-
 | `pr_validation_gate` | `docs/agent/execution-gates.md#pr-verification-gate` | `ci_checker` | `tools/testing/test_shards.py` | `.github/workflows/ci.yml` | `none` |
 
 The repository-side hook/config gaps are closed by the ordinary `docs-config`
@@ -164,6 +163,9 @@ Get-Content .codex\hooks\fixtures\prompt_productization.json -Raw | python .code
 Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | python .codex\hooks\xic_post_tool_guard.py
 
 python .codex\hooks\fixtures\assert_hook_outputs.py
+.venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_hooks.py -q
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add README.md
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git push
 ```
 
 Also scan the diff for secrets, private local paths, absolute machine-specific

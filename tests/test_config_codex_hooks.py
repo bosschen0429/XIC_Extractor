@@ -7,12 +7,14 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS_CONFIG = ROOT / ".codex" / "hooks.json"
+PROJECT_CONFIG = ROOT / ".codex" / "config.toml"
 HOOKS_DIR = ROOT / ".codex" / "hooks"
 RULES_PATH = ROOT / ".codex" / "rules" / "xic-safety.rules"
 OPERATING_SYSTEM = ROOT / "docs" / "agent" / "codex-operating-system.md"
@@ -41,7 +43,6 @@ EXPECTED_GOVERNANCE_ROWS = {
     "destructive_git_filesystem",
     "raw_background_launch",
     "execution_affecting_config",
-
     "pr_validation_gate",
 }
 ALLOWED_MECHANISMS = {
@@ -54,6 +55,13 @@ ALLOWED_MECHANISMS = {
 
 def _load_hooks_config() -> dict[str, object]:
     return json.loads(HOOKS_CONFIG.read_text(encoding="utf-8"))
+
+
+def _project_shell_environment() -> dict[str, str]:
+    config = tomllib.loads(PROJECT_CONFIG.read_text(encoding="utf-8"))
+    environment = os.environ.copy()
+    environment.update(config["shell_environment_policy"]["set"])
+    return environment
 
 
 def _script_reference(command: object, field: str) -> Path:
@@ -156,6 +164,7 @@ def _run_configured_hook(
         argv,
         input=json.dumps(_minimal_payload(event_name)),
         cwd=ROOT,
+        env=_project_shell_environment(),
         check=False,
         capture_output=True,
         text=True,
@@ -237,6 +246,16 @@ def test_existing_hook_behavior_fixture_runs_in_ordinary_pytest() -> None:
         text=True,
         timeout=30,
     )
+
+
+def test_project_config_isolates_git_from_unreadable_user_home() -> None:
+    config = tomllib.loads(PROJECT_CONFIG.read_text(encoding="utf-8"))
+
+    assert config == {
+        "shell_environment_policy": {
+            "set": {"GIT_CONFIG_GLOBAL": "NUL"},
+        }
+    }
 
 
 def test_all_enabled_hook_references_resolve_start_and_noop() -> None:
@@ -332,6 +351,11 @@ def test_destructive_git_rules_are_primary_owner(
     tokens: tuple[str, ...], decision: str
 ) -> None:
     assert f'decision = "{decision}"' in _rule_block(tokens)
+
+
+def test_git_add_is_the_only_explicitly_allowed_git_mutation() -> None:
+    assert 'decision = "allow"' in _rule_block(("git", "add"))
+    assert 'decision = "prompt"' in _rule_block(("git", "push"))
 
 
 DESTRUCTIVE_TEXTS = [
@@ -605,17 +629,14 @@ def test_pre_hook_blocks_raw_launch_on_assignment_rhs() -> None:
 
 
 def test_pre_hook_does_not_treat_start_process_text_as_a_raw_launch() -> None:
-    completed = _run_pre_hook(
-        'bash -lc "echo Start-Process run_alignment"'
-    )
+    completed = _run_pre_hook('bash -lc "echo Start-Process run_alignment"')
     assert completed.returncode == 0
     assert completed.stdout == ""
 
 
 def test_pre_hook_does_not_cross_correlate_unrelated_raw_text() -> None:
     payload = (
-        "Write-Host run_alignment; "
-        "Start-Process python -ArgumentList '-c print(1)'"
+        "Write-Host run_alignment; Start-Process python -ArgumentList '-c print(1)'"
     )
     completed = _run_pre_hook(f'pwsh -Command "{payload}"')
     assert completed.returncode == 0
@@ -635,8 +656,7 @@ def test_pre_hook_emits_config_advisory_for_agent_contract() -> None:
                 "permission_mode": "default",
                 "tool_input": {
                     "patch": (
-                        "*** Update File: "
-                        "docs/agent/product-validation-contract.md\n"
+                        "*** Update File: docs/agent/product-validation-contract.md\n"
                     )
                 },
             }
@@ -650,7 +670,6 @@ def test_pre_hook_emits_config_advisory_for_agent_contract() -> None:
     output = json.loads(completed.stdout)
     message = output["hookSpecificOutput"]["additionalContext"]
     assert "Execution-affecting XIC agent config" in message
-
 
 
 def test_governance_index_closes_repository_side_residuals() -> None:
