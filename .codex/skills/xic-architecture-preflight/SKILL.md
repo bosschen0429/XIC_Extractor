@@ -1,6 +1,6 @@
 ---
 name: xic-architecture-preflight
-description: Preflight XIC architecture before non-trivial changes to diagnostics or RAW evidence, PeakHypothesis/EvidenceVector/model selection, matrix/activation/value-delta paths, runtime adapters/settlements/serializers, boundary projections, or new evidence providers.
+description: Preflight XIC changes that create or replace a semantic owner, cross an evidence/runtime boundary, or change Matrix, activation, public contracts, or scientific authority. Do not use for focused fixes inside an established owner, ordinary docs/tests, PR comment handling, or read-only explanation.
 ---
 
 # XIC Architecture Preflight
@@ -24,6 +24,10 @@ Completion criterion: one precise handoff, one falsifiable probe, and its
 decision consequence are named. If existing evidence closes the gap, return a
 reuse/no-code verdict and stop.
 
+If the requirement leaves a product or domain decision unstated, return
+`spec_gap` and name the missing decision. Do not let implementation or review
+comments silently choose the semantics.
+
 ## 2. Bind Owner And Cost
 
 Select exactly one behavior owner. List every existing helper it reuses, or
@@ -39,6 +43,13 @@ Completion criterion: one behavior-owner path is selected, reused helpers are
 explicit, rejected alternatives are briefly explained, every cost category is
 accounted for, and no parser, evidence computation, or RAW read is orphaned in
 a writer/CLI.
+
+Return `design_no_go` instead of coding when the proposed owner must interpret
+an open-ended shell language, AST, schema DSL, or similar unbounded grammar
+without an established parser and finite supported subset. Prefer constraining,
+deleting, or replacing that mechanism. If the change needs multiple independent
+new owners or cannot fit one reviewable semantic slice, split or refreeze the
+plan before edits.
 
 ## 3. Close Boundary Projections
 

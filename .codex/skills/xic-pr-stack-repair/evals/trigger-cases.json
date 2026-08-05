@@ -51,11 +51,11 @@
   "near_neighbor": [
     {
       "text": "Prepare closeout notes and residual risk for a normal XIC PR.",
-      "family": "xic-pr-closeout"
+      "family": "pr-closeout"
     },
     {
       "text": "Review a large diagnostics PR for public contract risk.",
-      "family": "xic-large-pr-review"
+      "family": "code-review"
     },
     {
       "text": "Run the PR CI-equivalent gate on the current clean branch.",

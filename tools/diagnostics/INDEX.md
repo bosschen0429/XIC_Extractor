@@ -2158,13 +2158,12 @@ Not entry-points, but referenced by multiple topic groups:
 - `tools/diagnostics/docs_routing_review.py` — docs/superpowers routing domain logic: route classification, lifecycle metadata, topic hints, topic-owner clustering, exact-referrer status, and TSV field contracts. Keep docs-route/product-authority rules here instead of rebuilding them inside CLI wrappers.
 - `tools/diagnostics/docs_topic_indexes.py` — generated topic-index README renderer. It writes navigation-only topic README files to a caller-provided ignored output directory, normally `output/docs-topic-indexes/<topic>/README.md`, from the topic-cluster summary and must not define product behavior, validation policy, matrix authority, or selected values.
 
-Large diagnostics refactor reviews should use
-`.codex/skills/xic-large-pr-review/SKILL.md`. Start from high blast-radius
-helpers and public contracts: shared tabular/overlay helpers, matrix identity,
-activation decisions, value deltas, output schemas, RAW access locality/reuse,
-and diagnostic-vs-production claims. Treat representative writer parity and
-focused tests as stronger evidence than an unactionable line-by-line pass over
-mechanical writer churn.
+Large diagnostics refactor reviews should use the `code-review` workflow with a
+fixed base and head. Start from high blast-radius helpers and public contracts:
+shared tabular/overlay helpers, matrix identity, activation decisions, value
+deltas, output schemas, RAW access locality/reuse, and diagnostic-vs-production
+claims. Treat representative writer parity and focused tests as stronger
+evidence than an unactionable line-by-line pass over mechanical writer churn.
 
 ## Maintenance Notes
 

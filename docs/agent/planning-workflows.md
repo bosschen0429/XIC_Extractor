@@ -148,9 +148,10 @@ a new source of evidence instead of another blind retry.
   diagnostics, RAW-backed evidence, preset-performance changes,
   matrix/activation/value-delta paths, model-selection work, HCD-PI, Delta Mass,
   CID-NL expansion, or other evidence-provider additions.
-- Use `xic-large-pr-review` for large diagnostics, architecture, preset
-  performance, parity, 8RAW/85RAW, activation/value-delta, matrix identity, or
-  RAW-locality PR reviews.
+- Use the global code-review workflow for explicit fixed-point review. Repeated
+  hosted findings follow the root review-incident rule: stop instance patches,
+  classify plan/design/implementation/oracle failure, and redesign or delete
+  when the failure universe cannot be bounded.
 
 ## Legacy Owner Transformation Policy
 

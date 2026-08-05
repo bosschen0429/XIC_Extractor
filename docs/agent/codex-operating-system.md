@@ -13,8 +13,8 @@ decision-directed. The problem to avoid is blind ceremony, not useful tool use.
 - `.codex/skills/`: XIC-specific reusable workflows that need a checklist at
   execution time.
 - `docs/solutions/`: searchable reusable lessons from solved XIC problems.
-  Use `$xic-compound` manually after a non-obvious fix, productization decision,
-  or validation lesson so future agents do not rediscover the same pattern.
+  Follow `docs/solutions/README.md` directly after a non-obvious fix,
+  productization decision, or validation lesson; no wrapper skill is required.
 - `.codex/rules/*.rules`: command-prefix policy for destructive or high-impact
   operations.
 - `.codex/hooks.json` and `.codex/hooks/*.py`: low-noise lifecycle checks.
@@ -52,7 +52,7 @@ The hook set is intentionally small:
 
 - `UserPromptSubmit`: scans the prompt for XIC high-risk keywords and injects
   workflow context for architecture preflight, performance diagnosis, RAW
-  validation, large-PR review, or stacked/superseded-PR repair. Mixed behavior
+  validation, productization, or stacked/superseded-PR repair. Mixed behavior
   edits plus RAW validation retain both architecture and RAW preflights;
   synthetic/no-RAW validation and generic heartbeat/schema work stay out of the
   RAW-launch gate unless the prompt explicitly names RAW execution or acceptance.
@@ -61,31 +61,18 @@ The hook set is intentionally small:
   `docs/superpowers/plans/2026-06-15-productization-control-plane.md` as a
   compatibility lookup, then route mutable lane state, writer authority, and
   readiness/promotion decisions to their separate canonical owners.
-  Handoff/closeout/compaction prompts remind the agent to first resolve the
-  active branch handoff, then rewrite and prune that snapshot instead of
-  appending chronological notes. They must not direct every branch to the same
-  productization compatibility lane registry.
-- `PreToolUse`: blocks wrapped forms of destructive Git commands whose direct
-  prefix rule is `forbidden`. Wrapped forced cleanup, including short, combined,
-  or long-form force flags, is conservatively denied because PreToolUse cannot
-  express the direct rule's interactive `prompt`; silent execution would bypass
-  review. Wrapper inspection locates supported shells after `env` options and
-  treats unquoted separators, newlines, and command-list control prefixes as
-  command boundaries while preserving quoted content. It also blocks background
-  RAW launches through `Start-Process`, including launches whose RAW arguments
-  are prepared in another statement of the same shell payload, and adds context
-  when edits touch
-  execution-affecting config, root agent contracts, or product/public surfaces
-  that may need a routed productization-owner update.
-- `PostToolUse`: catches pytest runs that collected zero tests, and points the
-  agent to fix the node id instead of treating the run as validation. It also
-  reminds write-like product/public surface changes to consult the
-  productization compatibility index, update the applicable structured owner, or
-  explicitly state that no maturity tier or authority changed.
-  If product/control-plane state may have changed without a branch handoff being
-  part of the update, it reminds closeout to resolve the active branch handoff
-  or state why no branch handoff update is needed. It also reminds when a
-  touched active handoff exceeds the 200-line target.
+  Ordinary review, goal, handoff, closeout, and compaction prompts remain with
+  their global workflows and load XIC owners only when the task actually crosses
+  an XIC contract boundary.
+- `PreToolUse`: rejects nested shell/command wrappers found at the bounded outer
+  executable position before inspecting their payload, blocks ambiguous or
+  optioned destructive Git forms, commit forms that can sweep unrelated paths,
+  and background RAW launches through `Start-Process`. It adds one reminder when
+  execution-affecting config changes require the smoke-and-scan contract below.
+- `PostToolUse`: catches pytest runs that collected zero tests or used an invalid
+  node id. Other failures and governance decisions remain visible in their
+  command output or canonical owner instead of being reclassified after every
+  tool call.
 
 Hooks are guardrails, not full enforcement. Keep them deterministic, fast, and
 rarely chatty. If a hook fires too often without changing behavior, remove or
@@ -121,13 +108,16 @@ mismatch, or behavior change fails the #160 governance read-back.
 | `destructive_git_filesystem` | `docs/agent/codex-operating-system.md#current-repo-local-rules` | `hard_guard` | `.codex/rules/xic-safety.rules` | `tests/test_config_codex_hooks.py` | `none` |
 | `raw_background_launch` | `docs/agent/execution-gates.md#raw-and-long-runs` | `hard_guard` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
 | `execution_affecting_config` | `docs/agent/codex-operating-system.md#change-protocol` | `advisory_context` | `.codex/hooks/xic_pre_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
-| `product_public_surface` | `docs/agent/architecture-public-contracts.md#public-contracts` | `advisory_context` | `.codex/hooks/xic_post_tool_guard.py` | `tests/test_config_codex_hooks.py` | `none` |
 | `pr_validation_gate` | `docs/agent/execution-gates.md#pr-verification-gate` | `ci_checker` | `tools/testing/test_shards.py` | `.github/workflows/ci.yml` | `none` |
 
-The repository-side hook/config gaps are closed by the ordinary `docs-config`
-contract in `tests/test_config_codex_hooks.py`. This read-back does not claim
-that CI can observe whether a particular Codex host has trusted or activated the
-project layer; that remains a host-runtime check under Trust And Review.
+The ordinary `docs-config` contract in `tests/test_config_codex_hooks.py`
+verifies the bounded repository behavior above. Wrapper
+payloads are not interpreted. Hooks also do not interpret commands constructed
+dynamically inside arbitrary Python, eval, or other process-launching programs;
+host sandbox enforcement and the global destructive-action contract remain
+authoritative there. This read-back does not claim that CI can observe whether
+a particular Codex host has trusted or activated the project layer; that
+remains a host-runtime check under Trust And Review.
 
 ## Adoption Rules
 
@@ -144,6 +134,14 @@ least one condition:
 Do not add one just because a feature exists. Prefer improving an existing hook,
 skill, or routing rule over adding a parallel one. Do use already-available
 tools generously when they answer a named question.
+
+A repo-local skill must own a distinct recurring XIC decision or workflow that
+canonical docs and global skills do not already cover. It needs explicit
+trigger/exclusion cases and observable outcome evidence; trigger accuracy alone
+does not prove that the skill improves delivery. Retire the skill when it only
+restates another owner, has no repeated-use evidence, or adds ceremony without
+reducing failures or review loops. Retirement removes routes and stale refs;
+move any still-valid invariant to its canonical rule or contract owner.
 
 ## Self-Improvement Rule
 
@@ -173,11 +171,57 @@ Before closeout:
 git diff --check
 Get-Content .codex\hooks\fixtures\prompt_architecture.json -Raw | python .codex\hooks\xic_prompt_router.py
 Get-Content .codex\hooks\fixtures\prompt_productization.json -Raw | python .codex\hooks\xic_prompt_router.py
-Get-Content .codex\hooks\fixtures\pretool_product_surface_edit.json -Raw | python .codex\hooks\xic_pre_tool_guard.py
+
 Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | python .codex\hooks\xic_post_tool_guard.py
-Get-Content .codex\hooks\fixtures\posttool_product_surface_edit.json -Raw | python .codex\hooks\xic_post_tool_guard.py
+
 python .codex\hooks\fixtures\assert_hook_outputs.py
+.venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_hooks.py -q
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "git -C C:\repo push origin HEAD"
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "git --git-dir C:\repo\.git push origin HEAD"
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "cmd /c git push origin HEAD"
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add -A
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add --all
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add .
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git add README.md
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git -c safe.directory=C:/repo push origin HEAD
+codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git push
 ```
+
+All `git add` checks must remain unmatched by an `allow` rule; direct `git push`
+and the invocation-scoped `git -c ... push` recovery must remain `prompt`. The
+two direct doctor checks with `-C` and `--git-dir` must report
+`REWRITE_COMMAND`, matching the hook's inability to route them to an exact
+prompt prefix. The nested `cmd /c` check must also report `REWRITE_COMMAND`.
+Execpolicy rules match exact argument prefixes, so the pre-tool hook lets direct
+`git -c ... push` reach its dedicated prompt rule and keeps direct read-only
+`git -C ...` usable. Explicit `bash -c`, `pwsh -Command`, `cmd /c`, `wsl`,
+`env`, `command`, and `exec` wrappers are rejected without parsing their
+payload, including POSIX-assignment- or initial-call-operator-prefixed forms.
+Compound, assignment-RHS, path-qualified, malformed, or unsupported direct Git
+forms are also rejected and must be rewritten as one direct command. Optioned
+`clone`, `fetch`, `ls-remote`, `pull`, and `push` commands that miss a prompt
+prefix are rewrites in both the hook and doctor.
+
+Git subcommands must use canonical lowercase spelling because the execpolicy
+rules use exact prefixes. Wrapper words in ordinary simple-command argument or
+path positions and option values are data, not wrapper executables. The bounded
+locator recognizes only the outer executable, including after a POSIX
+assignment prefix or initial call operator. Redirection prefixes, PowerShell
+assignment RHS, later compound segments, shell control words, and dynamic
+executable expressions remain outside repository wrapper parsing. Any
+non-direct Git-bearing shape still fails closed.
+The separate RAW hard guard still detects `Start-Process` plus a RAW signal or
+propagated RAW argument variable anywhere in the same non-inert lexical segment;
+it does not combine unrelated evidence across segments.
+An inert text command is exempt only when it has no evaluated subexpression,
+command substitution, or unquoted control structure.
+Other launcher/control prefixes and dynamically constructed executables remain
+outside repository parsing and under host sandbox/global safety authority.
+
+Redirection and command substitution are ambiguous. Quoted Git text is inert
+only for top-level `grep`, `findstr`, `Select-String`, `Write-Host`,
+`Write-Output`, `echo`, or `printf` commands. `rg` is intentionally excluded
+because its `--pre` mode can execute a command for each input path.
 
 Also scan the diff for secrets, private local paths, absolute machine-specific
 paths, and accidentally tracked local Codex config.

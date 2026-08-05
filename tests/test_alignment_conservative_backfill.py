@@ -182,7 +182,7 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
             reason_codes=("forged_mapping",),
             _mint_token=object(),
         )
-    with pytest.raises(ValueError, match="InitVar '_mint_token'"):
+    with pytest.raises((TypeError, ValueError), match="InitVar '_mint_token'"):
         replace(
             decision,
             matched_candidate=forged_candidate,

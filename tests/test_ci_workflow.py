@@ -100,22 +100,24 @@ def test_ci_workflow_reuses_one_environment_per_python_version() -> None:
     assert "uv venv" not in workflow
 
 
-def test_pr_gate_owner_matches_ci_commands_and_root_points_to_it() -> None:
+def test_pr_gate_points_to_ci_as_single_command_owner() -> None:
     root_agent_contract = Path("AGENTS.md").read_text(encoding="utf-8")
     execution_gate = Path("docs/agent/execution-gates.md").read_text(
         encoding="utf-8"
     )
+    normalized_execution_gate = " ".join(execution_gate.split())
     shard_commands = tuple(
         f"uv run python -m tools.testing.test_shards {shard} -- -v --tb=short -x"
         for shard in SHARD_PATTERNS
     )
 
+    assert "docs/agent/execution-gates.md#pr-verification-gate" in root_agent_contract
+    assert ".github/workflows/ci.yml" in execution_gate
     assert (
-        "docs/agent/execution-gates.md#pr-verification-gate"
-        in root_agent_contract
+        "only owner of the complete hosted command surface" in normalized_execution_gate
     )
     for command in (*CORE_CI_COMMANDS, *shard_commands):
-        assert command in execution_gate
+        assert command not in execution_gate
         assert command not in root_agent_contract
     assert "uv run pytest -v --tb=short -x" not in execution_gate
 

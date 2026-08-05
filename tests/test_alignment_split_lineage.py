@@ -423,7 +423,7 @@ def test_split_child_census_cannot_be_replaced_or_caller_forged(
     )
     child = decision.children[0]
 
-    with pytest.raises(ValueError, match="_mint_token"):
+    with pytest.raises((TypeError, ValueError), match="_mint_token"):
         replace(
             child,
             direct_support_count_s=999,

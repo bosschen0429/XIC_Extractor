@@ -678,7 +678,7 @@ def governance_index_problems(
     expected_ids = list(GOVERNANCE_RULE_FAMILY_CONTRACTS)
     if len(rows) != len(expected_ids) or set(row_ids) != set(expected_ids):
         problems.append(
-            "governance index must contain exactly the six declared rule families"
+            "governance index must contain exactly the declared rule families"
         )
     if len(row_ids) != len(set(row_ids)):
         problems.append("governance index contains duplicate rule-family rows")

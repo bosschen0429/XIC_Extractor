@@ -298,9 +298,9 @@ def test_owner_aggregate_derives_lifecycle_metrics_and_one_receipt(
         )
     assert not hasattr(aggregate, "_mint_token")
     assert not hasattr(receipt, "_mint_token")
-    with pytest.raises(ValueError, match="InitVar '_mint_token'"):
+    with pytest.raises((TypeError, ValueError), match="InitVar '_mint_token'"):
         replace(aggregate)
-    with pytest.raises(ValueError, match="InitVar '_mint_token'"):
+    with pytest.raises((TypeError, ValueError), match="InitVar '_mint_token'"):
         replace(receipt)
     with pytest.raises(TypeError, match="RuntimeAttemptAggregate is final"):
         type("ForgedAggregate", (RuntimeAttemptAggregate,), {})

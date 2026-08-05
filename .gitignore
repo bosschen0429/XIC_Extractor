@@ -35,7 +35,6 @@ local_validation_artifacts/
 .codegraph/
 graphify-out/
 .worktrees/
-.codex/config.toml
 .codex/execpolicy/
 progress-report.html
 progress-report.notes.json

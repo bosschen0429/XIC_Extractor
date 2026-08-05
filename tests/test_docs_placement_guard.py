@@ -411,7 +411,7 @@ def test_governance_index_ignores_fenced_only_table() -> None:
     )
 
     assert any(
-        "governance index must contain exactly the six declared rule families"
+        "governance index must contain exactly the declared rule families"
         in problem.reason
         for problem in result.problems
     )
@@ -433,7 +433,7 @@ def test_governance_index_ignores_indented_code_only_table() -> None:
     )
 
     assert any(
-        "governance index must contain exactly the six declared rule families"
+        "governance index must contain exactly the declared rule families"
         in problem.reason
         for problem in result.problems
     )
@@ -501,7 +501,7 @@ def test_governance_index_ignores_nested_fenced_only_table() -> None:
     )
 
     assert any(
-        "governance index must contain exactly the six declared rule families"
+        "governance index must contain exactly the declared rule families"
         in problem.reason
         for problem in result.problems
     )
@@ -529,7 +529,7 @@ def test_governance_index_ignores_blockquoted_fenced_only_table() -> None:
     )
 
     assert any(
-        "governance index must contain exactly the six declared rule families"
+        "governance index must contain exactly the declared rule families"
         in problem.reason
         for problem in result.problems
     )

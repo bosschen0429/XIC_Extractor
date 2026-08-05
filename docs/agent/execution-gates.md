@@ -9,12 +9,22 @@ root `AGENTS.md` keeps only the highest-frequency subset.
   scope. Do not stage, rewrite, or revert unrelated user changes.
 - Before Python, RAW, DLL, or validation commands, read
   `docs/agent/parameter-settings.md` and use documented runners and paths.
-- When sandbox, PowerShell syntax, output path, network approval, or RAW runner
-  choice is uncertain, preflight with:
+- Before product checks, require the per-worktree bootstrap and Windows-native
+  runtime acceptance:
 
 ```powershell
-python -m scripts.agent_sandbox_doctor
+uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
+.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write
 ```
+
+The doctor returns a machine-actionable status. `READY` may run in the current
+sandbox; `REWRITE_COMMAND` must change shape before execution;
+`APPROVAL_REQUIRED` goes directly to a bounded approval;
+`ENVIRONMENT_REPAIR_REQUIRED` stops product debugging until the named runtime
+layer changes; `HUMAN_DECISION_REQUIRED` waits for the operator; and
+`INCONCLUSIVE` collects only the finding's named next evidence. Add
+`--probe-github` only when the task needs GitHub; a runtime that advertises
+disabled sandbox networking must not first launch a predictably failing canary.
 
 ## Outputs And Validation Status
 
@@ -90,68 +100,32 @@ pattern.
 Treat `.codex/config.toml`, `.codex/hooks.json`, `.codex/rules/`, hook scripts,
 execpolicy, and subagent TOML as execution-affecting config. Changes need:
 
-- docs or handoff review;
 - hook/script smoke check where applicable;
+- `codex execpolicy check` for changed `.rules` decisions;
 - `git diff --check`;
 - secret, private local path, and accidentally tracked local config scan.
 
 ## PR Verification Gate
 
-Before opening a PR, changing its remote head, or marking it ready, run the
-CI-equivalent commands from `.github/workflows/ci.yml` in the current worktree.
-Root `AGENTS.md` links here instead of mirroring this command list:
+Validation evidence belongs to a commit SHA. Run the smallest focused checks
+that can detect the changed behavior during implementation and before commit.
+Do not rerun the full CI surface merely because the same HEAD is being pushed,
+used to open a PR, or moved between draft and ready states.
 
-CI is layered: pull requests run all required shards sequentially in one locked
-Python 3.12 self-hosted environment, while pushes to `main` or `master` also run
-the same shards in one Python 3.11 compatibility environment. While the
-self-hosted runner pool has only one concurrent execution slot, do not fan
-shards out into a job matrix: that only adds queue and repeated setup without
-adding parallel capacity. Reconsider two balanced lanes only after the pool has
-two measured concurrent slots. The local PR closeout gate below mirrors the
-command surface.
-Hosted lint/typecheck jobs use the GitHub uv cache keyed by `pyproject.toml` and
-`uv.lock`; self-hosted jobs use the same locked dependency contract, reuse one
-environment per Python version and the runner-persistent local uv cache, and do
-not upload that cache through GitHub Actions. They record install/per-shard
-seconds in the job summary so future CI tuning is based on observed timing.
-The hosted lint checkout fetches full Git history because the docs lifecycle
-audit must replay registered retirement packets from their fixed activation
-base through the commit that last wrote the registered packet on current
-ancestry. That endpoint is the final packet revision in authoring history and
-the squash commit in collapsed history, and it stays fixed across later commits
-that do not revise the packet. A shallow packet/digest read is not the
-acceptance oracle.
+- Before push or PR creation, confirm the intended branch, staged/dirty scope,
+  and exact checks already run for the current HEAD.
+- Required hosted checks on the final remote SHA are the merge-readiness
+  authority. Run a local same-layer check when hosted CI is unavailable or when
+  the change affects CI configuration, packaging, installation, or another
+  runtime layer that needs a pre-push smoke.
+- When HEAD changes, rerun the checks affected by the diff. When it does not,
+  reuse the recorded SHA-bound evidence instead of repeating it.
+- Real lint, type, test, or clean-checkout failures remain blockers. A sandbox,
+  dependency, or DLL failure is environment uncertainty; report it rather than
+  claiming a narrower check proved the unavailable layer.
+- `.github/workflows/ci.yml` is the only owner of the complete hosted command
+  surface. Do not mirror its shard list in this file, a skill, or a handoff.
 
-```powershell
-uv run --cache-dir .uv-cache --no-project python scripts/bootstrap_worktree.py --check
-$env:UV_CACHE_DIR='.uv-cache'; uv run ruff check xic_extractor tests
-$env:UV_CACHE_DIR='.uv-cache'; uv run lint-imports --no-cache
-$env:UV_CACHE_DIR='.uv-cache'; uv run python scripts/check_architecture_census.py
-$env:UV_CACHE_DIR='.uv-cache'; uv run python scripts/check_diagnostics_index.py
-$env:UV_CACHE_DIR='.uv-cache'; uv run python tools/diagnostics/docs_management_audit.py --repo-only --fail-on-completed-transient --json
-$env:UV_CACHE_DIR='.uv-cache'; uv run mypy xic_extractor
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards --check
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards docs-config -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards gui -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards targeted-core -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards alignment-core -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards product-gates-activation -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards product-gates-evidence -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards diagnostics-tools -- -v --tb=short -x
-```
-
-If a command fails because of real lint/type/test errors, fix the root cause and
-rerun the failed gate. If it fails only because sandbox blocks dependency
-resolution, executable spawn, or DLL loading, rerun the same command with
-approval instead of substituting a narrower check. PR descriptions and closeout
-notes must list exact commands and observed results.
-Do not replace the shard gate with a monolithic full-suite pytest run unless
-debugging the shard runner itself.
-
-Review-thread replies or resolutions on an unchanged remote head may reuse that
-head's recorded verification after confirming the head SHA and live thread
-state. When an authorized fix reaches the remote head, reply with the commit and
-verification evidence before resolving the thread. For a rejected finding,
-reply with the disproving evidence first. Before claiming review closeout, query
-the live PR and require zero unresolved threads unless each remaining thread is
-explicitly deferred.
+Record exact commands, results, and the checked SHA in the PR or closeout
+surface. Review-thread replies on an unchanged remote head may reuse that
+head's evidence after confirming the live thread state.

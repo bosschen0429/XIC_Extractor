@@ -36,8 +36,8 @@ add always-on context load. Use skills when their trigger threshold applies
 before recreating process instructions:
 
 - global `goal-execution` for goal contract creation, review, tightening, and
-  execution; `$xic-goal-execution` is a manual overlay for XIC validation tiers,
-  RAW stop rules, handoff, and productization constraints.
+  execution. XIC validation, RAW, handoff, and productization constraints stay
+  in their canonical repo contracts rather than a second goal workflow.
 - global `critical-artifact-review` for multi-angle review of durable specs,
   plans, goal prompts, workflow rules, handoff docs, and public contracts. It is
   the review orchestrator: it owns the generic review process and angles, while
@@ -48,19 +48,15 @@ before recreating process instructions:
   delta are not kept as repo roles: external research routes to the global
   `research` skill or `WebSearch`/`WebFetch`, and CI/ops triage routes to
   `$gh-fix-ci` plus `docs/agent/parameter-settings.md`.
-- `xic-large-pr-review` for large XIC PR reviews, especially diagnostics,
-  architecture, preset-performance, parity, 8RAW/85RAW, activation/value-delta,
-  matrix identity, or RAW-locality changes. It complements the normal
-  code-review stance by focusing on high blast-radius contracts and validation
-  evidence.
 - `xic-architecture-preflight` before implementing or planning non-trivial
   diagnostics, RAW-backed evidence, preset-performance changes,
   matrix/activation/value-delta paths, model-selection work, HCD-PI, Delta Mass,
   CID-NL expansion, or other evidence-provider additions. It forces reuse,
   ownership, call-cost, public-contract, and validation-gate decisions before
   coding.
-- global `pr-closeout` for durable PR/branch closeout; `$xic-pr-closeout` is a
-  manual overlay for XIC readiness labels and artifact rules.
+- global `pr-closeout` for durable PR/branch closeout. SHA-bound verification,
+  readiness labels, and artifact rules come from the PR gate and validation
+  owners instead of a repo-local overlay.
 - `xic-pr-stack-repair` before repairing, retargeting, rebuilding, or merging a
   stacked/superseded PR series when stale bases, repeated ledger edits,
   externalized artifacts, or clean-checkout CI dependencies are plausible.
@@ -254,10 +250,11 @@ closed by a task packet, canonical doc, global skill, or existing tool surface.
 - Any review finding that implicates a shared owner, default, invariant,
   provenance chain, writer/loader pair, fallback policy, or interacting hook
   predicate expands from the commented line to all live callsites and sibling
-  boundaries owned by that responsibility. A second same-class comment on one
-  PR pauses patch-by-patch resolution and requires the finding-expansion gate in
-  `xic-large-pr-review` on a refreshed head. Reviewer advice remains a lead; the
-  main agent must ground the accepted fix in repo and domain contracts.
+  boundaries owned by that responsibility. Follow the root review-incident
+  rule before another patch delivery: classify PRD/spec gap, unbounded design,
+  implementation regression, oracle gap, or unsupported reviewer claim; search
+  prior owner findings/tests; and redesign or delete when the universe cannot
+  be bounded. Reviewer advice remains a lead, not design authority.
 - Split work into a small self-contained slice (one reason to change, explicit
   write scope, related tests, no shared write surface) before handing it to the
   global `executor` or its generic fallback. Keep `qa-executor` or an equivalent
@@ -367,9 +364,8 @@ after because the prompt is not a sandbox.
 ## Goal Contracts
 
 Use the global `goal-execution` skill for goal creation, tightening, review, and
-runtime execution. Apply `$xic-goal-execution` manually only when the XIC-specific
-validation tiers, RAW stop rules, or handoff/productization constraints are the
-actual source of risk.
+runtime execution. Read the relevant XIC validation, RAW, handoff, or
+productization owner only when that constraint is actually in scope.
 
 Do not maintain a second goal template in this routing doc. The global skill is
 the canonical reusable contract shape. XIC goals should normally reference
@@ -409,28 +405,30 @@ task packets. The repo keeps only the rules those agents must honor here:
 
 Current recommended posture for this repo:
 
-- Main implementation sessions: `sandbox_mode = "workspace-write"` with
-  `approval_policy = "on-request"`.
+- Main implementation sessions use the permission profile `workspace-github`
+  with `approval_policy = "on-request"` and `auto_review`. Do not combine it
+  with the legacy `sandbox_mode` / `[sandbox_workspace_write]` settings.
 - The global `reviewer` uses `sandbox_mode = "read-only"`. A generic agent
   inherits the caller's runtime capabilities; a no-write prompt does not make
   it sandboxed. Snapshot `git status --short` before and after any generic
   review and report unexpected mutations.
 - Verification runs (pytest, validation commands, local runners) need
-  `sandbox_mode = "workspace-write"` only for caches, logs, and output sidecars;
-  the run must forbid source/docs/config/test edits, staging, commits, reverts,
-  renames, and deletes, and must report the final dirty scope.
+  workspace write access only for caches, logs, and output sidecars; the run
+  must forbid source/docs/config/test edits, staging, commits, reverts, renames,
+  and deletes, and must report the final dirty scope.
 - `danger-full-access`, `approval_policy = "never"`, broad writable roots, and
   persistent execpolicy rules are not default development settings. Use them
   only for a reviewed, bounded operation with a named rollback or recovery path.
-- Project-local `.codex/config.toml` is intentionally not added in this branch.
-  The global config already sets the normal model, sandbox, approvals, MCP, and
-  plugin posture. Duplicating that in-repo would create another drift surface.
-- If a future PR adds `.codex/config.toml` or `.codex/execpolicy/`, it must state
-  why `AGENTS.md`, parameter settings, and normal approval prompts are
-  insufficient, then run a config/TOML smoke check.
+- The tracked project `.codex/config.toml` owns only the repo-specific
+  `GIT_CONFIG_GLOBAL=NUL` shell environment needed to avoid unreadable Windows
+  user-home Git config. Global model, permission profile, MCP, and plugin policy
+  remain global. Project config changes require trust review, a Codex restart,
+  and the config/TOML smoke check.
 - Before changing sandbox posture for a command, prefer
-  `python -m scripts.agent_sandbox_doctor --command "<command>"`. The doctor is
-  diagnostic only; it does not execute the command or replace human approval.
+  `.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "<command>"`.
+  The doctor is diagnostic only; it does not execute the command or replace
+  human approval. Omit `--command-only` only when the full runtime acceptance
+  checks are required.
 - For RAW-backed runs, use `.codex/skills/xic-raw-validation/SKILL.md` before
   launching or accepting the result.
 
@@ -471,24 +469,17 @@ repo.
 
 Use the global `pr-closeout` workflow when preparing, opening, updating, or
 closing out a PR or development branch whose description will become future
-project memory. Apply `$xic-pr-closeout` manually when XIC readiness labels,
-validation tiers, downstream handoff, RAW artifacts, or merge/history
-expectations need extra closeout structure.
+project memory. Pull XIC readiness labels, validation tiers, downstream handoff,
+RAW artifacts, and merge/history expectations from their canonical owners only
+when relevant. For explicit fixed-point review, use the global code-review
+workflow; repeated hosted findings follow the root review-incident rule rather
+than another repo-local checklist.
 
-Use `.codex/skills/xic-large-pr-review/SKILL.md` when reviewing a large or
-diagnostics-heavy PR. The review should build a blast-radius map first, inspect
-shared helpers and public contracts before mechanical writer churn, and report
-the strongest evidence actually checked: CI, focused tests, 8RAW parity, 85RAW
-parity, targeted benchmark, manual EIC/MS2 review, or `diagnostic_only`.
-
-Before opening, updating, or marking a PR ready, the main agent must run the
-PR Verification Gate in `docs/agent/execution-gates.md` from the active
-worktree. Do not replace the shard gate with a monolithic full-suite pytest run.
-
-Any real lint, typecheck, or test failure is a blocker and must be fixed before
-PR. If the sandbox blocks dependency resolution, executable spawn, or DLL
-loading, rerun the same command with appropriate approval rather than replacing
-it with a narrower check. Record the exact commands and results in the closeout
+The main agent follows `docs/agent/execution-gates.md#pr-verification-gate`.
+Verification is commit-SHA scoped: rerun checks affected by a changed HEAD, but
+do not repeat an unchanged head's evidence for each push, PR update, or review
+transition. Required hosted checks on the final remote SHA are authoritative;
+record focused local checks and any unavailable runtime layer in the closeout
 surface.
 
 ## Acceptance Labels

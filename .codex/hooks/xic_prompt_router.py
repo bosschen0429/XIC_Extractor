@@ -7,7 +7,6 @@ import sys
 
 from xic_hook_policy import (
     CONTROL_PLANE_PATH,
-    HANDOFF_CURRENT_DIR,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_STATUS_INDEX_REL,
 )
@@ -43,6 +42,8 @@ PERFORMANCE_PATTERNS = [
     r"performance|perf\b|bottleneck",
     r"(optimi[sz]e|optimi[sz]ation|speed\s*up|faster|加速|優化|优化)[^\n]{0,40}"
     r"(perf|performance|bottleneck|瓶頸|效能|timing|runtime|batch|cache|locality|worker|耗時|call[\s_-]?cost)",
+    r"(perf|performance|bottleneck|瓶頸|效能|timing|runtime|batch|cache|locality|worker|耗時|call[\s_-]?cost)[^\n]{0,40}"
+    r"(optimi[sz]e|optimi[sz]ation|speed\s*up|faster|加速|優化|优化)",
     r"timing\.(json|live)|wall[\s-]?clock|profil(e|ing)|worker\s+budget|call[\s_-]?cost",
     r"效能|耗時|瓶頸",
 ]
@@ -80,15 +81,8 @@ RAW_BACKED_EVIDENCE_PATTERNS = [
 ]
 
 EDIT_INTENT_PATTERNS = [
-    r"\b(change|modify|edit|implement|fix|refactor|rewrite|add|remove)\b",
-    r"修改|改動|實作|修正|修復|重構|重寫|新增|移除",
-]
-
-PR_REVIEW_PATTERNS = [
-    r"\bPR\b",
-    r"pull request",
-    r"review",
-    r"code review",
+    r"\b(change|modify|edit|implement|fix|refactor|rewrite|add|remove|design|plan|propose|optimi[sz]e)\b",
+    r"修改|改動|改|實作|修正|修復|重構|重寫|新增|移除|設計|規劃|計畫|優化|优化",
 ]
 
 # Stacked/superseded PR CI trouble is a boundary problem, not an ordinary
@@ -98,14 +92,6 @@ PR_STACK_PATTERNS = [
     r"superseded\s+(branch|PR)|stale\s+base|retarget|rebuild[^\n]{0,20}(PR|branch|分支)",
     r"stack[\s-]?boundary|clean[\s-]?checkout",
     r"堆疊[^\n]{0,6}PR|PR[^\n]{0,6}堆疊|拆[^\n]{0,6}PR|重建[^\n]{0,6}(branch|分支|PR)|過時[^\n]{0,6}base|superseded",
-]
-
-GOAL_PATTERNS = [
-    r"\bgoal\b",
-    r"\$goal-execution",
-    r"設定.*goal",
-    r"用.*goal",
-    r"目標",
 ]
 
 PRODUCTIZATION_PATTERNS = [
@@ -118,19 +104,6 @@ PRODUCTIZATION_PATTERNS = [
     r"產品化|推到產品|正式推|正式產品|正式功能|正式輸出|正式矩陣",
     r"成熟度|控制板|控制台",
 ]
-
-HANDOFF_PATTERNS = [
-    r"\bhandoff\b",
-    r"worktree[-_\s]?report",
-    r"context\s+(window|compaction)",
-    r"\bcompaction\b",
-    r"compact\s+context",
-    r"long\s+pause",
-    r"next\s+(agent|session)",
-    r"收尾|交接|交接文檔|交接文件|下一個\s*(agent|session|會話)",
-    r"壓縮|上下文|長會話|長暫停",
-]
-
 
 def emit(payload: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False))
@@ -192,7 +165,7 @@ def main() -> int:
     # Pure performance/RAW execution prompts use their focused preflight. Any
     # mixed behavior edit keeps architecture preflight as well; a run or
     # performance gate must not hide the pre-edit contract.
-    if matches(ARCHITECTURE_PATTERNS) and (edit_intent or not (perf or raw_validation)):
+    if matches(ARCHITECTURE_PATTERNS) and edit_intent:
         contexts.append(
             "XIC high-risk work detected: before edits, use xic-architecture-preflight. "
             "Name existing owner/helper reuse, evidence-provider role, call-cost model, "
@@ -206,18 +179,6 @@ def main() -> int:
             "ownership first. Do not fix CI on top of a stale base or depend on a later cleanup PR to "
             "make an earlier PR pass."
         )
-    elif matches(PR_REVIEW_PATTERNS):
-        contexts.append(
-            "XIC PR/review context detected: use xic-large-pr-review for large or diagnostics-heavy PRs. "
-            "Start read-only, map blast radius, lead with findings, and label strongest evidence reviewed."
-        )
-
-    if matches(GOAL_PATTERNS):
-        contexts.append(
-            "XIC goal context detected: use the global goal-execution contract for phase-sized or drifting work. "
-            "Keep one objective and name context, constraints, verification, done condition, stop rules, and handoff."
-        )
-
     if matches(PRODUCTIZATION_PATTERNS):
         contexts.append(
             "XIC productization context detected: before claiming a feature is productized, read "
@@ -227,22 +188,6 @@ def main() -> int:
             "docs/agent/product-validation-contract.md. Name the current/proposed maturity tier and "
             "update only the applicable canonical owner, or explicitly state why no routed owner update is needed. "
             "Change the compatibility index itself only when a stable lane key or owner route changes."
-        )
-
-    if any(re.search(pattern, prompt, re.IGNORECASE) for pattern in HANDOFF_PATTERNS):
-        contexts.append(
-            "XIC handoff/closeout context detected: first resolve the active branch handoff from the goal, PR workflow, "
-            f"or a branch-scoped file under {HANDOFF_CURRENT_DIR}<branch-slug>-<topic>.md. "
-            "Do not default to another branch's handoff; only update an existing handoff when its Branch/status matches this work. "
-            "Rewrite and prune that active snapshot when branch status, validation evidence, productization tier, or next action changed. "
-            "Do not append chronological notes; keep only current objective/state, active decisions, validation, blockers, "
-            "rejected paths still likely to recur, and next 1-3 actions. "
-            "For PR closeout, condense the current handoff into the PR body and archive only completed phase summaries that must remain in repo. "
-            "The global $handoff skill writes a temporary conversation handoff; it is not the repo branch handoff. "
-            f"If productization tier or active lane changed, sync {PRODUCTIZATION_STATUS_INDEX_REL} and any "
-            f"applicable authority in {PRODUCTIZATION_AUTHORITY_MANIFEST_REL}; use {CONTROL_PLANE_PATH} only "
-            "to resolve stable lane keys and owner routes. "
-            "Hooks only remind; the executing agent owns the handoff rewrite."
         )
 
     if not contexts:

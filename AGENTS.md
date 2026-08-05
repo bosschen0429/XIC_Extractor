@@ -123,5 +123,11 @@ must remain clean-checkout safe.
   and define correctness gates; then use `xic-architecture-preflight` before code
   edits. This does not replace `xic-raw-validation` before launching or accepting
   RAW-backed validation.
-- For large XIC PRs, use `xic-large-pr-review`. It owns blast-radius expansion,
-  reviewer-finding adjudication, same-class sweeps, and thread-resolution gates.
+- Review comments are failure instances, not the fix scope. A second actionable
+  finding from the same class, or actionable findings on two delivered heads,
+  stops patch-by-patch push/reply/resolve work. Classify the root as a PRD/spec
+  gap, unbounded design, implementation regression, oracle gap, or unsupported
+  reviewer claim; search prior owner findings and tests before editing. If the
+  failure universe cannot be bounded, shrink, delete, replace, or redesign the
+  mechanism instead of adding another special case. If a product/domain choice
+  was never specified, refreeze the PRD rather than encoding a reviewer guess.

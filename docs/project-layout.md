@@ -396,7 +396,7 @@ Root `launch_gui.bat` 只服務本機開發雙擊啟動；release artifact 以
 │
 ├── 可重用解法 / 工作流知識
 │   └→ docs/solutions/<category>/<slug>.md
-│       （完成非直覺修正、產品化決策、validation lesson 後手動用 $xic-compound 產生）
+│       （完成非直覺修正、產品化決策、validation lesson 後依 docs/solutions/README.md 寫入）
 │
 ├── 執行產物（自動忽略）
 │   └→ output/

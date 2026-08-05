@@ -24,59 +24,61 @@ do not match the command's real failure mode.
 ## Problem
 
 Environment noise can make an already hard PR stack look worse than it is. In
-this closeout, stale read-only `git.exe` queries and an over-broad hook warning
-both produced repeated lock/ref-lock noise. One source was real local process
-friction; another was a false positive where searching or reading docs that
-mentioned `.git/index.lock` made the hook warn as if Git had failed.
+the historical closeout behind this note, stale read-only `git.exe` queries and
+an over-broad hook warning both produced repeated lock/ref-lock noise. The
+lock/ref warning was retired. The current post hook does not diagnose Git; it
+only rejects pytest runs that collect zero tests or use an invalid node id.
 
 ## Tempting Wrong Path
 
-Do not treat every hook warning as code failure. Do not keep retrying the same
-Git operation while a stale process or lock may exist. Do not disable the hook
-globally to stop noise; narrow the trigger so real safety warnings still fire.
+Do not treat every environment symptom as code failure. Do not keep retrying the
+same Git operation while a stale process or lock may exist. Do not infer Git
+state from the current post hook because it has no Git lock/ref owner.
 
 ## Working Pattern
 
-Separate three cases before changing code:
+Separate these cases before changing code:
 
 - actual Git lock failure: a Git command reports an error such as inability to
   create `.git/index.lock` or lock a ref;
 - stuck Git metadata query: read-only `git status`, `rev-parse`, `remote -v`,
   or config query remains alive long after it should have exited;
-- hook false positive: command output merely displays lock-related text from
-  docs, diffs, or source files, rather than reporting a lock failure from the
-  Git operation's error stream.
+- historical hook false positive: command output merely displayed lock-related
+  text from docs, diffs, or source files. No current post-hook warning should be
+  expected for this case.
 
-For actual lock/process friction, inspect `.git/*.lock` and live `git.exe`
-processes before removing stale locks or stopping stale read-only processes.
-For hook false positives, add a fixture that proves the noisy command is silent
-and the real failure still warns.
+For actual lock/process friction, use the failing Git command's output, then
+follow the Git/runtime guidance in `docs/agent/parameter-settings.md`. Inspect
+the exact lock target and live `git.exe` processes before requesting any
+destructive cleanup. Searching docs or showing a diff is not Git failure
+evidence.
 
 ## Evidence
 
 - Commands actually run:
   hook fixture smoke, ruff on hook files, `git diff --check`, and diff
   secret/local-path scan.
-- Code:
-  `xic_post_tool_guard.py` now only reports lock/ref friction when a Git command
-  produces lock-error output on the error stream, not when a search or diff
-  merely displays lock text.
-- Tests:
-  `assert_hook_outputs.py` covers the separation: `rg` and `git diff` output
-  with lock text stay silent; real `git status` lock error still emits the
-  warning.
+- Code: `xic_post_tool_guard.py` only matches pytest zero-test and invalid-node
+  output. It contains no Git lock/ref matching or warning path.
+- Tests: `assert_hook_outputs.py` exercises the current zero-test post-hook
+  contract. Git lock/ref diagnosis comes from actual Git command output, not a
+  synthetic post-hook classification.
+- Historical state: the over-broad lock/ref post-hook warning was retired; its
+  old search/diff fixtures are not current behavior claims.
 
 ## Limits
 
 This does not prevent external Git integrations from spawning short-lived Git
-queries. It only removes one false-positive warning class and records the manual
-triage path for stale read-only Git processes.
+queries, and it does not automatically classify or repair Git locks. It records
+the manual evidence path; destructive lock removal or process termination still
+requires exact-target inspection and the applicable runtime authority.
 
 ## Next Time
 
-1. If lock warnings repeat, inspect real `.git/*.lock` files and live `git.exe`
-   processes first.
-2. If the warning follows a docs/source search or a diff display, suspect hook
-   false positive and add a fixture before changing the hook.
-3. Keep hook changes narrow and rerun hook smoke, ruff, diff check, and
-   secret/local-path scan before closeout.
+1. If a Git command reports a lock/ref failure, preserve its exact command,
+   cwd, shell, exit code, and error before inspecting the exact lock target and
+   live `git.exe` processes.
+2. If only a docs/source search or diff contains lock text, do not classify it
+   as a Git failure; the current post hook should remain silent.
+3. For post-hook changes, keep the owner limited to zero/invalid pytest and
+   rerun hook fixtures, Ruff, diff check, and secret/local-path scan.

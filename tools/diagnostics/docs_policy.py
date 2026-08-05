@@ -288,13 +288,6 @@ GOVERNANCE_RULE_FAMILY_CONTRACTS = {
         "readback": "tests/test_config_codex_hooks.py",
         "residual": "none",
     },
-    "product_public_surface": {
-        "owner": "docs/agent/architecture-public-contracts.md#public-contracts",
-        "mechanism": "advisory_context",
-        "executable": ".codex/hooks/xic_post_tool_guard.py",
-        "readback": "tests/test_config_codex_hooks.py",
-        "residual": "none",
-    },
     "pr_validation_gate": {
         "owner": "docs/agent/execution-gates.md#pr-verification-gate",
         "mechanism": "ci_checker",
