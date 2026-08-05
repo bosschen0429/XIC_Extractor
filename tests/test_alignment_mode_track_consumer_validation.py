@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 
 import pytest
@@ -73,6 +73,28 @@ def _reseal(batch) -> None:
     batch_payload = mta._batch_identity_payload(batch)
     batch_id = mta._typed_digest("mode-track-assignment-batch:", batch_payload)
     object.__setattr__(batch, "assignment_batch_id", batch_id)
+
+
+def _reseal_candidate(candidate) -> None:
+    payload = mta._candidate_identity_payload(
+        **_identity_values(candidate, "candidate_observation_id")
+    )
+    candidate_id = mta._typed_digest("mode-track-candidate:", payload)
+    object.__setattr__(candidate, "candidate_observation_id", candidate_id)
+
+
+def _identity_values(value, identity_field: str) -> dict[str, object]:
+    live_refs = {
+        "sample",
+        "acquisition_source",
+        "peak_hypothesis",
+        "direct_support_assessment",
+    }
+    return {
+        item.name: getattr(value, item.name)
+        for item in fields(value)
+        if item.name not in live_refs | {identity_field}
+    }
 
 
 @pytest.mark.parametrize(
@@ -241,6 +263,99 @@ def test_reinforcement_reuses_consumer_validation(tmp_path: Path) -> None:
             model_set=scenario.models,
             assignment_batch=batch,
         )
+
+
+@pytest.mark.parametrize("field", ("state", "group_hypothesis_id", "reason_codes"))
+def test_consumer_validator_replays_exact_assignment_decision(
+    tmp_path: Path, field: str
+) -> None:
+    scenario, batch = _batch_for_case(tmp_path, "uniquely_assigned")
+    assignment = batch.assignments[0]
+    replacement = {
+        "state": "technical_unassessable",
+        "group_hypothesis_id": scenario.models.tracks[1].group_hypothesis_id,
+        "reason_codes": ("trajectory_crossing",),
+    }[field]
+    object.__setattr__(assignment, field, replacement)
+    if field == "state":
+        object.__setattr__(assignment, "group_hypothesis_id", None)
+    _reseal(batch)
+
+    with pytest.raises(ModeTrackContractError):
+        _validate(scenario.fixture.owners, scenario.models, batch)
+
+
+def test_consumer_validator_rejects_digest_consistent_candidate_apex(
+    tmp_path: Path,
+) -> None:
+    scenario, batch = _batch_for_case(tmp_path, "uniquely_assigned")
+    assignment = batch.assignments[0]
+    candidate = assignment.candidate_observation
+    assert candidate is not None
+    object.__setattr__(candidate, "apex_rt_min", candidate.apex_rt_min + 5.0)
+    _reseal_candidate(candidate)
+    object.__setattr__(
+        assignment, "candidate_observation_id", candidate.candidate_observation_id
+    )
+    _reseal(batch)
+
+    with pytest.raises(ModeTrackContractError):
+        _validate(scenario.fixture.owners, scenario.models, batch)
+
+
+def test_fit_rejects_digest_consistent_anchor_apex(tmp_path: Path) -> None:
+    scenario = _scenario(tmp_path)
+    anchor = scenario.models.tracks[0].anchors[0]
+    object.__setattr__(anchor, "apex_rt_min", anchor.apex_rt_min + 5.0)
+    payload = mta._anchor_identity_payload(**_identity_values(anchor, "anchor_id"))
+    object.__setattr__(
+        anchor, "anchor_id", mta._typed_digest("mode-track-anchor:", payload)
+    )
+
+    with pytest.raises(ModeTrackContractError):
+        fit_mode_track_model_set(
+            processing_owners=scenario.fixture.owners,
+            family_context=scenario.family_context,
+            direct_support_anchors=tuple(
+                item
+                for track in scenario.models.tracks
+                for item in track.anchors
+            ),
+            policy=scenario.policy,
+        )
+
+
+@pytest.mark.parametrize(
+    "field", ("prediction_assessments", "trajectory_evidence_refs", "lineage_refs")
+)
+def test_consumer_validator_rejects_assignment_specific_shared_facts(
+    tmp_path: Path, field: str
+) -> None:
+    scenario = _scenario(tmp_path)
+    batch = assign_mode_tracks(
+        processing_owners=scenario.fixture.owners,
+        sample=scenario.fixture.sample("target"),
+        model_set=scenario.models,
+        candidates=(
+            scenario.candidate(7.87, direct_support=False),
+            scenario.candidate(8.37, direct_support=False),
+        ),
+        trajectory_assessment=scenario.assessable_trajectory,
+    )
+    assignment = batch.assignments[1]
+    if field == "prediction_assessments":
+        prediction = replace(
+            assignment.prediction_assessments[0],
+            reason_codes=("prediction_available", "substituted"),
+        )
+        value = (prediction, *assignment.prediction_assessments[1:])
+    else:
+        value = tuple(sorted((*getattr(assignment, field), "substituted")))
+    object.__setattr__(assignment, field, value)
+    _reseal(batch)
+
+    with pytest.raises(ModeTrackContractError):
+        _validate(scenario.fixture.owners, scenario.models, batch)
 
 
 @pytest.mark.parametrize(

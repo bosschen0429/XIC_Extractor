@@ -159,6 +159,8 @@ class ModeTrackSupportAnchor(_RuntimeFinal):
                 "support anchor contains crossed sample, acquisition, or "
                 "hypothesis refs"
             )
+        if self.apex_rt_min != self.peak_hypothesis.integration.rt_apex_min:
+            raise ModeTrackContractError("support anchor apex RT was substituted")
         expected_assessment_content_id = (
             self.direct_support_assessment.artifact.content_identity.artifact_content_id
         )
@@ -351,6 +353,8 @@ class ModeTrackCandidateObservation(_RuntimeFinal):
             raise ModeTrackContractError(
                 "candidate contains crossed sample, acquisition, or hypothesis refs"
             )
+        if self.apex_rt_min != self.peak_hypothesis.integration.rt_apex_min:
+            raise ModeTrackContractError("candidate apex RT was substituted")
         expected_assessment_content_id = (
             None
             if self.direct_support_assessment is None
@@ -1019,11 +1023,12 @@ def assign_mode_tracks(
             assignments=not_observed_assignments,
         )
 
-    global_state = _global_no_write_state(
+    decisions = _resolve_candidate_decisions(
+        candidates=canonical_candidates,
+        model_set=model_set,
         predictions=predictions,
     )
-    crossed_track_ids = _crossed_track_ids(model_set, predictions)
-    provisional = tuple(
+    assignments = tuple(
         _assign_candidate(
             candidate=candidate,
             family_context=model_set.family_context,
@@ -1033,48 +1038,9 @@ def assign_mode_tracks(
             predictions=predictions,
             trajectory_assessment=trajectory_assessment,
             lineage_refs=lineage_refs,
-            global_state=global_state,
-            crossed_track_ids=crossed_track_ids,
+            decision=decisions[candidate.candidate_observation_id],
         )
         for candidate in canonical_candidates
-    )
-    unique_by_track: dict[str, list[ModeTrackAssignment]] = {}
-    for assignment in provisional:
-        if assignment.state == "uniquely_assigned":
-            assert assignment.group_hypothesis_id is not None
-            assert assignment.peak_hypothesis_id is not None
-            unique_by_track.setdefault(assignment.group_hypothesis_id, []).append(
-                assignment
-            )
-    incumbent_by_track = {
-        track.group_hypothesis_id: anchor.peak_hypothesis_id
-        for track in model_set.tracks
-        for anchor in track.anchors
-        if anchor.injection_order == injection_order
-    }
-    occupancy_conflict_ids: set[str] = set()
-    for group_hypothesis_id, same_track in unique_by_track.items():
-        incumbent_hypothesis_id = incumbent_by_track.get(group_hypothesis_id)
-        if incumbent_hypothesis_id is not None:
-            occupancy_conflict_ids.update(
-                assignment.assignment_id
-                for assignment in same_track
-                if assignment.peak_hypothesis_id != incumbent_hypothesis_id
-            )
-        elif len({item.peak_hypothesis_id for item in same_track}) > 1:
-            occupancy_conflict_ids.update(
-                assignment.assignment_id for assignment in same_track
-            )
-    assignments = tuple(
-        _remint_assignment(
-            assignment,
-            group_hypothesis_id=None,
-            state="ambiguous_multiple_tracks",
-            reason_codes=("track_occupancy_conflict",),
-        )
-        if assignment.assignment_id in occupancy_conflict_ids
-        else assignment
-        for assignment in provisional
     )
     return _mint_assignment_batch(
         model_set=model_set,
@@ -1138,23 +1104,31 @@ def validate_mode_track_assignment_batch_for_consumption(
         (track.group_hypothesis_id, *_track_evidence_refs(track))
         for track in model_set.tracks
     )
+    first_assignment = batch.assignments[0]
+    if any(
+        item.prediction_assessments != first_assignment.prediction_assessments
+        or item.trajectory_evidence_refs
+        != first_assignment.trajectory_evidence_refs
+        or item.lineage_refs != first_assignment.lineage_refs
+        for item in batch.assignments[1:]
+    ):
+        raise ModeTrackContractError(
+            "assignments disagree on batch-wide prediction or lineage facts"
+    )
     for assignment in batch.assignments:
         if (
-            assignment.family_context_id,
-            (assignment.processing_request_id, assignment.processing_attempt_id),
-            assignment.canonical_sample_identity_id,
-            assignment.acquisition_source_id,
-            assignment.injection_order,
-            assignment.sample,
-            assignment.acquisition_source,
-        ) != (
-            model_set.family_context_id,
-            owner_key,
-            batch.canonical_sample_identity_id,
-            source.acquisition_source_id,
-            order,
-            batch.sample,
-            source,
+            assignment.family_context_id != model_set.family_context_id
+            or (
+                assignment.processing_request_id,
+                assignment.processing_attempt_id,
+            )
+            != owner_key
+            or assignment.canonical_sample_identity_id
+            != batch.canonical_sample_identity_id
+            or assignment.acquisition_source_id != source.acquisition_source_id
+            or assignment.injection_order != order
+            or assignment.sample != batch.sample
+            or assignment.acquisition_source != source
         ):
             raise ModeTrackContractError("assignment contains crossed owner references")
         if tuple(
@@ -1164,28 +1138,45 @@ def validate_mode_track_assignment_batch_for_consumption(
                 item.support_artifact_content_ids,
             )
             for item in assignment.prediction_assessments
-        ) != model_predictions or (
-            assignment.group_hypothesis_id is not None
-            and assignment.group_hypothesis_id
-            not in model_set.family_context.group_hypothesis_ids
-        ):
+        ) != model_predictions:
             raise ModeTrackContractError("assignment crosses the supplied model")
         candidate = assignment.candidate_observation
         if candidate is not None:
             if (
-                candidate.sample,
-                candidate.acquisition_source,
-                candidate.injection_order,
-            ) != (
-                batch.sample,
-                source,
-                order,
+                candidate.sample != batch.sample
+                or candidate.acquisition_source != source
+                or candidate.injection_order != order
             ):
                 raise ModeTrackContractError("candidate has stale owner references")
             _validate_candidate_binding(
                 processing_owners=processing_owners,
                 sample=batch.sample, candidate=candidate
             )
+    if any(item.state == "not_observed" for item in batch.assignments):
+        if len(batch.assignments) != 1 or (
+            first_assignment.state,
+            first_assignment.group_hypothesis_id,
+            first_assignment.reason_codes,
+        ) != ("not_observed", None, ("not_observed",)):
+            raise ModeTrackContractError("not_observed batch has a forged decision")
+        return
+    candidates = tuple(
+        item.candidate_observation
+        for item in batch.assignments
+        if item.candidate_observation is not None
+    )
+    decisions = _resolve_candidate_decisions(
+        candidates=candidates,
+        model_set=model_set,
+        predictions=first_assignment.prediction_assessments,
+    )
+    if any(
+        (item.state, item.group_hypothesis_id, item.reason_codes)
+        != decisions[item.candidate_observation_id]
+        for item in batch.assignments
+        if item.candidate_observation_id is not None
+    ):
+        raise ModeTrackContractError("assignment decision was substituted")
 
 
 def reinforce_mode_track_model_set(
@@ -1513,6 +1504,89 @@ def _global_no_write_state(
     return None
 
 
+def _resolve_candidate_decisions(
+    *,
+    candidates: tuple[ModeTrackCandidateObservation, ...],
+    model_set: ModeTrackModelSet,
+    predictions: tuple[ModeTrackPredictionAssessment, ...],
+) -> dict[str, tuple[AssignmentState, str | None, tuple[str, ...]]]:
+    global_state = _global_no_write_state(predictions=predictions)
+    crossed_track_ids = _crossed_track_ids(model_set, predictions)
+    decisions = {
+        candidate.candidate_observation_id: _candidate_decision(
+            candidate=candidate,
+            family_context=model_set.family_context,
+            predictions=predictions,
+            global_state=global_state,
+            crossed_track_ids=crossed_track_ids,
+        )
+        for candidate in candidates
+    }
+    unique_counts: dict[str, int] = {}
+    for state, group_id, _ in decisions.values():
+        if state == "uniquely_assigned":
+            assert group_id is not None
+            unique_counts[group_id] = unique_counts.get(group_id, 0) + 1
+    incumbents = {
+        track.group_hypothesis_id: anchor.peak_hypothesis_id
+        for track in model_set.tracks
+        for anchor in track.anchors
+        if anchor.injection_order == candidates[0].injection_order
+    }
+    for candidate in candidates:
+        state, group_id, _ = decisions[candidate.candidate_observation_id]
+        if state != "uniquely_assigned":
+            continue
+        assert group_id is not None
+        incumbent_id = incumbents.get(group_id)
+        conflict = unique_counts[group_id] > 1
+        if incumbent_id is not None:
+            conflict = candidate.peak_hypothesis_id != incumbent_id
+        if conflict:
+            decisions[candidate.candidate_observation_id] = (
+                "ambiguous_multiple_tracks",
+                None,
+                ("track_occupancy_conflict",),
+            )
+    return decisions
+
+
+def _candidate_decision(
+    *,
+    candidate: ModeTrackCandidateObservation,
+    family_context: FamilyContextRef,
+    predictions: tuple[ModeTrackPredictionAssessment, ...],
+    global_state: tuple[AssignmentState, tuple[str, ...]] | None,
+    crossed_track_ids: frozenset[str],
+) -> tuple[AssignmentState, str | None, tuple[str, ...]]:
+    family_exclusions = _peak_hypothesis_family_exclusions(
+        candidate.peak_hypothesis,
+        family_context=family_context,
+    )
+    if family_exclusions:
+        return "out_of_model", None, family_exclusions
+    if global_state is not None:
+        state, reasons = global_state
+        return state, None, reasons
+    matching = tuple(
+        item
+        for item in predictions
+        if item.prediction_interval_min is not None
+        and item.prediction_interval_min[0]
+        <= candidate.apex_rt_min
+        <= item.prediction_interval_min[1]
+    )
+    if len(matching) == 1:
+        group_id = matching[0].group_hypothesis_id
+        if group_id in crossed_track_ids:
+            return "technical_unassessable", None, ("trajectory_crossing",)
+        reasons = ("unique_interval_all_competitors_excluded",)
+        return "uniquely_assigned", group_id, reasons
+    if len(matching) > 1:
+        return "ambiguous_multiple_tracks", None, ("candidate_matches_multiple_tracks",)
+    return "out_of_model", None, ("candidate_outside_all_prediction_intervals",)
+
+
 def _assign_candidate(
     *,
     candidate: ModeTrackCandidateObservation,
@@ -1523,48 +1597,9 @@ def _assign_candidate(
     predictions: tuple[ModeTrackPredictionAssessment, ...],
     trajectory_assessment: LocalTrajectoryAssessment,
     lineage_refs: tuple[str, ...],
-    global_state: tuple[AssignmentState, tuple[str, ...]] | None,
-    crossed_track_ids: frozenset[str],
+    decision: tuple[AssignmentState, str | None, tuple[str, ...]],
 ) -> ModeTrackAssignment:
-    state: AssignmentState
-    family_exclusions = _peak_hypothesis_family_exclusions(
-        candidate.peak_hypothesis,
-        family_context=family_context,
-    )
-    if family_exclusions:
-        state = "out_of_model"
-        reasons = family_exclusions
-        group_id = None
-    elif global_state is not None:
-        state, reasons = global_state
-        group_id = None
-    else:
-        matching = tuple(
-            item
-            for item in predictions
-            if item.prediction_interval_min is not None
-            and item.prediction_interval_min[0]
-            <= candidate.apex_rt_min
-            <= item.prediction_interval_min[1]
-        )
-        if len(matching) == 1:
-            matched_group_id = matching[0].group_hypothesis_id
-            if matched_group_id in crossed_track_ids:
-                state = "technical_unassessable"
-                group_id = None
-                reasons = ("trajectory_crossing",)
-            else:
-                state = "uniquely_assigned"
-                group_id = matched_group_id
-                reasons = ("unique_interval_all_competitors_excluded",)
-        elif len(matching) > 1:
-            state = "ambiguous_multiple_tracks"
-            group_id = None
-            reasons = ("candidate_matches_multiple_tracks",)
-        else:
-            state = "out_of_model"
-            group_id = None
-            reasons = ("candidate_outside_all_prediction_intervals",)
+    state, group_id, reasons = decision
     return _mint_assignment(
         family_context_id=family_context.family_context_id,
         processing_request_id=candidate.processing_request_id,
@@ -1665,66 +1700,6 @@ def _mint_assignment(
         sample=sample,
         acquisition_source=acquisition_source,
         candidate_observation=candidate,
-        _mint_token=_MODE_TRACK_MINT_TOKEN,
-    )
-
-
-def _remint_assignment(
-    assignment: ModeTrackAssignment,
-    *,
-    group_hypothesis_id: str | None,
-    state: AssignmentState,
-    reason_codes: tuple[str, ...],
-) -> ModeTrackAssignment:
-    canonical_reasons = tuple(sorted(set(reason_codes)))
-    identity_payload = _assignment_payload(
-        family_context_id=assignment.family_context_id,
-        processing_request_id=assignment.processing_request_id,
-        processing_attempt_id=assignment.processing_attempt_id,
-        canonical_sample_identity_id=assignment.canonical_sample_identity_id,
-        acquisition_source_id=assignment.acquisition_source_id,
-        injection_order=assignment.injection_order,
-        candidate_observation_id=assignment.candidate_observation_id,
-        peak_hypothesis_id=assignment.peak_hypothesis_id,
-        peak_observation_content_id=assignment.peak_observation_content_id,
-        candidate_observation_class=assignment.candidate_observation_class,
-        direct_support_assessment_artifact_content_id=(
-            assignment.direct_support_assessment_artifact_content_id
-        ),
-        group_hypothesis_id=group_hypothesis_id,
-        state=state,
-        reason_codes=canonical_reasons,
-        prediction_assessments=assignment.prediction_assessments,
-        trajectory_evidence_refs=assignment.trajectory_evidence_refs,
-        lineage_refs=assignment.lineage_refs,
-    )
-    return ModeTrackAssignment(
-        assignment_id=_typed_digest(
-            "mode-track-assignment:",
-            identity_payload,
-        ),
-        family_context_id=assignment.family_context_id,
-        processing_request_id=assignment.processing_request_id,
-        processing_attempt_id=assignment.processing_attempt_id,
-        canonical_sample_identity_id=assignment.canonical_sample_identity_id,
-        acquisition_source_id=assignment.acquisition_source_id,
-        injection_order=assignment.injection_order,
-        candidate_observation_id=assignment.candidate_observation_id,
-        peak_hypothesis_id=assignment.peak_hypothesis_id,
-        peak_observation_content_id=assignment.peak_observation_content_id,
-        candidate_observation_class=assignment.candidate_observation_class,
-        direct_support_assessment_artifact_content_id=(
-            assignment.direct_support_assessment_artifact_content_id
-        ),
-        group_hypothesis_id=group_hypothesis_id,
-        state=state,
-        reason_codes=canonical_reasons,
-        prediction_assessments=assignment.prediction_assessments,
-        trajectory_evidence_refs=assignment.trajectory_evidence_refs,
-        lineage_refs=assignment.lineage_refs,
-        sample=assignment.sample,
-        acquisition_source=assignment.acquisition_source,
-        candidate_observation=assignment.candidate_observation,
         _mint_token=_MODE_TRACK_MINT_TOKEN,
     )
 
