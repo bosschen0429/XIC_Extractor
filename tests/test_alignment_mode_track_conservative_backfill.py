@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from scripts.check_production_acceptance_manifest import (
+    REQUIRED_COLUMNS,
+    check_production_acceptance_manifest,
+    production_acceptance_manifest_sha256,
+)
 from tests.issue161_no_raw_fixture import (
     issue161_evidence,
     issue161_peak,
@@ -28,6 +34,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     mint_cid_nl_method_assessment_ref,
 )
+from xic_extractor.tabular_io import render_delimited_rows
 
 
 def test_mode_track_facts_split_mixed_assessments_without_m1_cells(
@@ -211,6 +218,19 @@ def test_mode_track_projection_prepares_only_m2_eligible_exact_owner_cells(
         and row["write_authority"] == "TRUE"
         for row in projection.pending_acceptance_rows
     )
+    source_rows = json.loads(projection.source_artifact_bytes)["rows"]
+    assert len(source_rows) == 2
+    assert all(
+        set(row)
+        >= {
+            "owner_ids",
+            "acquisition_ids",
+            "activation",
+            "direct_support_assignment_ids",
+            "physical_ids",
+        }
+        for row in source_rows
+    )
     assert projection.product_authority == "none_until_checked_manifest"
 
 
@@ -243,6 +263,43 @@ def test_mode_track_projection_does_not_publish_below_threshold_candidates(
 
     assert projection.pending_acceptance_rows == ()
     assert projection.expected_diff_rows == ()
+
+
+def test_mode_track_projection_enters_existing_checked_qmv_owner(
+    tmp_path: Path,
+) -> None:
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path
+    )
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+    projection = golden_path.build_untargeted_cid_nl_mode_track_projection(
+        processing_owners=fixture.owners,
+        mode_track_facts=facts,
+        source_artifact_relpath="output/m9/mode_track_source.json",
+    )
+    manifest_path = _checked_manifest(tmp_path, projection)
+
+    terminal = golden_path.build_untargeted_cid_nl_quant_matrix_version(
+        projection,
+        production_acceptance_manifest_path=manifest_path,
+        manifest_root=tmp_path,
+    )
+
+    assert len(terminal.quant_matrix_rows) == 2
+    assert all(
+        sum(bool(row.get(stem, "")) for stem in projection.matrix_header[2:]) == 3
+        for row in terminal.quant_matrix_rows
+    )
+    assert sum(
+        row["cell_status"] == "accepted_backfill"
+        for row in terminal.cell_provenance_rows
+    ) == 2
+    assert all("0" not in row.values() for row in terminal.quant_matrix_rows)
 
 
 def _assess(
@@ -379,3 +436,31 @@ def _two_peak_assessment(
         evidence_refs=evidence_refs,
         individual_support_refs=support_refs,
     )
+
+
+def _checked_manifest(tmp_path: Path, projection) -> Path:
+    source_path = tmp_path / projection.source_artifact_relpath
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_bytes(projection.source_artifact_bytes)
+    rows = tuple(dict(row) for row in projection.pending_acceptance_rows)
+    manifest_sha = production_acceptance_manifest_sha256(rows)
+    checked = tuple({**row, "manifest_sha256": manifest_sha} for row in rows)
+    manifest_path = tmp_path / "production_acceptance_manifest.tsv"
+    manifest_path.write_text(
+        render_delimited_rows(
+            checked,
+            REQUIRED_COLUMNS,
+            delimiter="\t",
+            extrasaction="raise",
+            lineterminator="\n",
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        check_production_acceptance_manifest(
+            manifest_path=manifest_path,
+            repo_root=tmp_path,
+        )
+        == []
+    )
+    return manifest_path

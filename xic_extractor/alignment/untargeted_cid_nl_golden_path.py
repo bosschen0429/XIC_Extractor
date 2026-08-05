@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, asdict, dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
-from typing import final
+from typing import cast, final
 
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     CidNlReferenceSpine,
@@ -26,9 +26,13 @@ from xic_extractor.alignment.conservative_backfill import (
     ConservativeBackfillCellDecision,
     ConservativeBackfillGroupFacts,
     ConservativeBackfillRecoveryCandidateUniverse,
+    ModeTrackConservativeBackfillGroupFacts,
     assess_untargeted_conservative_backfill_group,
     map_conservative_backfill_candidates,
     mint_conservative_backfill_recovery_candidate_universe,
+)
+from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+    ModeTrackAssignment,
 )
 from xic_extractor.alignment.production_acceptance import (
     CheckedProductionAcceptanceManifest,
@@ -205,6 +209,36 @@ class UntargetedCidNlGoldenPathProjection:
             raise UntargetedCidNlGoldenPathError(
                 "source artifact SHA does not match its exact bytes"
             )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class UntargetedCidNlModeTrackProjection:
+    """Prepared multi-row M9 facts immediately before the checked manifest."""
+
+    mode_track_facts: tuple[ModeTrackConservativeBackfillGroupFacts, ...]
+    backfill_decisions: tuple[ConservativeBackfillCellDecision, ...]
+    matrix_header: tuple[str, ...]
+    input_quant_matrix_rows: tuple[Mapping[str, str], ...]
+    input_matrix_identity_rows: tuple[Mapping[str, str], ...]
+    pending_acceptance_rows: tuple[Mapping[str, str], ...]
+    expected_diff_rows: tuple[Mapping[str, str], ...]
+    source_artifact_relpath: str
+    source_artifact_bytes: bytes
+    source_artifact_sha256: str
+    _mint_token: InitVar[object] = field(kw_only=True)
+    validation_status: str = VALIDATION_STATUS
+    product_authority: str = PRODUCT_AUTHORITY
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _GOLDEN_PATH_PROJECTION_MINT_TOKEN:
+            raise UntargetedCidNlGoldenPathError("projection requires the M6 owner")
+        expected = hashlib.sha256(self.source_artifact_bytes).hexdigest().upper()
+        if self.source_artifact_sha256 != expected or self.backfill_decisions:
+            raise UntargetedCidNlGoldenPathError("invalid ModeTrack projection")
+
+
+_Projection = UntargetedCidNlGoldenPathProjection | UntargetedCidNlModeTrackProjection
 
 
 def build_untargeted_cid_nl_golden_path(
@@ -456,14 +490,14 @@ def build_untargeted_cid_nl_golden_path(
 
 
 def build_untargeted_cid_nl_quant_matrix_version(
-    projection: UntargetedCidNlGoldenPathProjection,
+    projection: _Projection,
     *,
     production_acceptance_manifest_path: Path,
     manifest_root: Path,
 ) -> QuantMatrixVersionRows:
     """Revalidate the manifest file before entering the QuantMatrix owner."""
 
-    if not isinstance(projection, UntargetedCidNlGoldenPathProjection):
+    if not isinstance(projection, _Projection):
         raise UntargetedCidNlGoldenPathError(
             "QuantMatrix activation requires a prepared golden-path projection"
         )
@@ -483,9 +517,151 @@ def build_untargeted_cid_nl_quant_matrix_version(
     return rows
 
 
+def build_untargeted_cid_nl_mode_track_projection(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    mode_track_facts: tuple[ModeTrackConservativeBackfillGroupFacts, ...],
+    source_artifact_relpath: str,
+) -> UntargetedCidNlModeTrackProjection:
+    """Render M2-approved exact owners without recomputing assignment or S/K."""
+
+    source_artifact_relpath = _validate_source_relpath(source_artifact_relpath)
+    if not mode_track_facts:
+        raise UntargetedCidNlGoldenPathError("ModeTrack projection requires M2 facts")
+    model_set = mode_track_facts[0].model_set
+    expected_groups = model_set.family_context.mode_tracks
+    if len(mode_track_facts) != len(expected_groups) or any(
+        fact.model_set is not model_set or fact.group is not group
+        for fact, group in zip(mode_track_facts, expected_groups, strict=True)
+    ):
+        raise UntargetedCidNlGoldenPathError("incomplete ModeTrack group population")
+    owner_key = (
+        processing_owners.request.processing_request_id,
+        processing_owners.attempt.processing_attempt_id,
+    )
+    if owner_key != (model_set.processing_request_id, model_set.processing_attempt_id):
+        raise UntargetedCidNlGoldenPathError("ModeTrack facts crossed owners")
+    samples = _samples_in_injection_order(processing_owners)
+    sample_by_id = {sample.identity.sample_identity_id: sample for sample in samples}
+    matrix_header = ("Mz", "RT", *(sample.metadata.raw_stem for sample in samples))
+    matrix_rows = []
+    identity_rows = []
+    proposals = []
+    for row_index, fact in enumerate(mode_track_facts, start=1):
+        group_id = fact.group.group_hypothesis_id
+        direct = {
+            item.canonical_sample_identity_id: item
+            for item in fact.direct_support_assignments
+        }
+        candidates = {
+            item.canonical_sample_identity_id: item
+            for item in fact.exact_owner_candidate_assignments
+        }
+        if len(candidates) != len(fact.exact_owner_candidate_assignments) or set(
+            direct
+        ).intersection(candidates):
+            raise UntargetedCidNlGoldenPathError("conflicting ModeTrack observations")
+        row = {
+            "Mz": _format_number(fact.group.group_center_mz),
+            "RT": _format_number(fact.group.group_center_rt),
+        }
+        for sample_id, sample in sample_by_id.items():
+            assignment = direct.get(sample_id)
+            row[sample.metadata.raw_stem] = (
+                "" if assignment is None else _mode_track_assignment_area(assignment)
+            )
+        matrix_rows.append(row)
+        identity_rows.append(
+            {
+                "matrix_row_index": str(row_index),
+                "Mz": row["Mz"],
+                "RT": row["RT"],
+                "peak_hypothesis_id": group_id,
+                "row_identity_basis": "cid_nl_mode_track_group",
+                "source_feature_family_ids": group_id,
+            }
+        )
+        accepted = candidates if fact.may_attempt_recovery else {}
+        detected_count, backfilled_count = len(direct), len(accepted)
+        available_count = detected_count + backfilled_count
+        for sample_id, assignment in accepted.items():
+            value = _mode_track_assignment_area(assignment)
+            proposals.append(
+                {
+                    "group_hypothesis_id": group_id,
+                    "sample_identity_id": sample_id,
+                    "sample_stem": sample_by_id[sample_id].metadata.raw_stem,
+                    "physical_ids": [
+                        assignment.assignment_id,
+                        assignment.peak_hypothesis_id,
+                        assignment.peak_observation_content_id,
+                    ],
+                    "quant_value": value,
+                    "detected_count": detected_count,
+                    "backfilled_count": backfilled_count,
+                    "available_count": available_count,
+                    "owner_ids": [
+                        *owner_key,
+                        model_set.family_context_id,
+                        model_set.model_set_id,
+                    ],
+                    "acquisition_ids": [
+                        assignment.acquisition_source_id,
+                        assignment.injection_order,
+                    ],
+                    "activation": [
+                        fact.sample_count_n,
+                        fact.minimum_support_k,
+                        fact.direct_support_count_s,
+                    ],
+                    "direct_support_assignment_ids": [
+                        item.assignment_id for item in fact.direct_support_assignments
+                    ],
+                }
+            )
+    source_bytes = _canonical_json_bytes({
+        "schema_version": "m9_mode_track_source_v1", "rows": proposals
+    })
+    source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
+    acceptance_rows = tuple(
+        _mode_track_acceptance_row(
+            proposal=proposal,
+            sample_count=len(samples),
+            source_relpath=source_artifact_relpath,
+            source_sha=source_sha,
+        )
+        for proposal in proposals
+    )
+    expected_diff_rows = tuple(
+        {
+            "schema_version": "quant_matrix_version_expected_diff_v1",
+            "peak_hypothesis_id": row["peak_hypothesis_id"],
+            "sample_stem": row["sample_stem"],
+            "baseline_value": "",
+            "activated_value": row["quant_value"],
+            "expected_matrix_effect": "write_accepted_backfill",
+            "expected_reason": "untargeted_cid_nl_exact_mode_track_owner",
+        }
+        for row in acceptance_rows
+    )
+    return UntargetedCidNlModeTrackProjection(
+        mode_track_facts=mode_track_facts,
+        backfill_decisions=(),
+        matrix_header=matrix_header,
+        input_quant_matrix_rows=_freeze_rows(matrix_rows),
+        input_matrix_identity_rows=_freeze_rows(identity_rows),
+        pending_acceptance_rows=_freeze_rows(acceptance_rows),
+        expected_diff_rows=_freeze_rows(expected_diff_rows),
+        source_artifact_relpath=source_artifact_relpath,
+        source_artifact_bytes=source_bytes,
+        source_artifact_sha256=source_sha,
+        _mint_token=_GOLDEN_PATH_PROJECTION_MINT_TOKEN,
+    )
+
+
 def _load_terminal_acceptance_manifest(
     *,
-    projection: UntargetedCidNlGoldenPathProjection,
+    projection: _Projection,
     manifest_path: Path,
     manifest_root: Path,
 ) -> CheckedProductionAcceptanceManifest:
@@ -785,6 +961,71 @@ def _format_number(value: object) -> str:
     return f"{parsed:.12g}"
 
 
+def _mode_track_assignment_area(assignment: ModeTrackAssignment) -> str:
+    hypothesis = assignment.peak_hypothesis
+    if hypothesis is None:
+        raise UntargetedCidNlGoldenPathError("ModeTrack assignment has no hypothesis")
+    return _format_number(hypothesis.integration.area_raw_counts_seconds)
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    text = json.dumps(
+        value, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    )
+    return f"{text}\n".encode("utf-8")
+
+
+def _mode_track_acceptance_row(
+    *,
+    proposal: Mapping[str, object],
+    sample_count: int,
+    source_relpath: str,
+    source_sha: str,
+) -> Mapping[str, str]:
+    detected = cast(int, proposal["detected_count"])
+    backfilled = cast(int, proposal["backfilled_count"])
+    available = cast(int, proposal["available_count"])
+    return {
+        "schema_version": "production_acceptance_manifest_v1",
+        "peak_hypothesis_id": str(proposal["group_hypothesis_id"]),
+        "sample_stem": str(proposal["sample_stem"]),
+        "feature_family_id": str(proposal["group_hypothesis_id"]),
+        "acceptance_decision": "accept_basic_backfill",
+        "acceptance_basis": "machine_basic",
+        "truth_status": "not_truth_claimed",
+        "shadow_only": "FALSE",
+        "write_authority": "TRUE",
+        "matrix_write_allowed": "TRUE",
+        "quant_value": str(proposal["quant_value"]),
+        "quant_value_source": "owner_peak_observation_raw_area",
+        "matrix_area_source": "peak_observation.integration.area_raw_counts_seconds",
+        "detected_count": str(detected),
+        "backfilled_count": str(backfilled),
+        "quant_available_count": str(available),
+        "missing_count": str(sample_count - available),
+        "backfill_fraction": f"{backfilled / available:.6f}",
+        "prevalence_flags": "",
+        "hard_blocker_rule_ids": "",
+        "triggered_risk_rule_ids": "",
+        "closure_rule_ids": "",
+        "decision_reason": "exact_mode_track_owner_after_m2_activation",
+        "next_evidence_needed": "",
+        "doublet_status": "no_doublet_claim",
+        "reference_side": "not_applicable",
+        "doublet_allowed": "TRUE",
+        "doublet_source_relpath": source_relpath,
+        "doublet_source_sha256": source_sha,
+        "source_artifact_relpath": source_relpath,
+        "source_artifact_sha256": source_sha,
+        "source_row_sha256": hashlib.sha256(_canonical_json_bytes(proposal))
+        .hexdigest()
+        .upper(),
+        "manifest_sha256": "",
+        "acceptance_contract_version": "production_acceptance_manifest_contract_v1",
+    }
+
+
 def _freeze_rows(
     rows: Sequence[Mapping[str, str]],
 ) -> tuple[Mapping[str, str], ...]:
@@ -794,9 +1035,36 @@ def _freeze_rows(
 
 
 def _validate_terminal_rows(
-    projection: UntargetedCidNlGoldenPathProjection,
+    projection: _Projection,
     rows: QuantMatrixVersionRows,
 ) -> None:
+    if isinstance(projection, UntargetedCidNlModeTrackProjection):
+        if len(rows.quant_matrix_rows) != len(projection.input_quant_matrix_rows):
+            raise UntargetedCidNlGoldenPathError("ModeTrack Matrix rows changed")
+        accepted = {
+            (row["peak_hypothesis_id"], row["sample_stem"])
+            for row in projection.pending_acceptance_rows
+        }
+        for identity, baseline, result in zip(
+            projection.input_matrix_identity_rows,
+            projection.input_quant_matrix_rows,
+            rows.quant_matrix_rows,
+            strict=True,
+        ):
+            group_id = identity["peak_hypothesis_id"]
+            expected = {
+                sample
+                for sample in projection.matrix_header[2:]
+                if baseline.get(sample, "") or (group_id, sample) in accepted
+            }
+            actual = {
+                sample
+                for sample in projection.matrix_header[2:]
+                if result.get(sample, "")
+            }
+            if actual != expected:
+                raise UntargetedCidNlGoldenPathError("unauthorized ModeTrack value")
+        return
     if len(rows.quant_matrix_rows) != 1:
         raise UntargetedCidNlGoldenPathError(
             "golden path must produce exactly one QuantMatrix group row"
@@ -841,8 +1109,10 @@ __all__ = [
     "UntargetedCidNlAssessmentInput",
     "UntargetedCidNlGoldenPathError",
     "UntargetedCidNlGoldenPathProjection",
+    "UntargetedCidNlModeTrackProjection",
     "UntargetedCidNlRecoveryInput",
     "VALIDATION_STATUS",
     "build_untargeted_cid_nl_golden_path",
+    "build_untargeted_cid_nl_mode_track_projection",
     "build_untargeted_cid_nl_quant_matrix_version",
 ]
