@@ -5,12 +5,13 @@ import hashlib
 import json
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
+    ModeTrackConservativeBackfillGroupFacts,
     assess_mode_track_conservative_backfill_groups,
 )
 from xic_extractor.alignment.csv_io import (
@@ -59,6 +60,7 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
+from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -74,13 +76,153 @@ RUN_CONTEXT_FIELDS = frozenset(
 )
 
 
+@dataclass(frozen=True)
+class ModeTrackValidationRun:
+    projection: UntargetedCidNlModeTrackProjection
+    facts: tuple[ModeTrackConservativeBackfillGroupFacts, ...]
+    call_cost: Mapping[str, int]
+    discovery_index: Path
+    settings: DiscoverySettings
+    owners: ProcessingOwnerReferences
+    started: float
+
+
+def gate_c_launch_contract() -> dict[str, object]:
+    return {
+        "schema_version": "issue180_m9_gate_c_launch_contract_v1",
+        "validation_status": VALIDATION_STATUS,
+        "precursor_mz": PRECURSOR_MZ,
+        "neutral_loss_da": NEUTRAL_LOSS_DA,
+        "alignment_config": {"anchor_min_seed_events": 1},
+        "trajectory_policy": asdict(_mode_track_trajectory_policy()),
+        "call_budget": {"raw_open_count_max": 85, "xic_batch_count_max": 85},
+        "product_authority": "none_before_checked_c2",
+    }
+
+
 def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
-    if output_dir.exists():
-        raise ValueError(f"output directory already exists: {output_dir}")
-    if raw_file.stem != SAMPLE_STEM or not raw_file.is_file():
+    if raw_file.stem != SAMPLE_STEM:
         raise ValueError(f"expected the existing {SAMPLE_STEM}.raw canary")
-    if not dll_dir.is_dir():
-        raise ValueError("Thermo DLL directory does not exist")
+    metadata = SampleMetadata(
+        sample_name=SAMPLE_STEM,
+        raw_stem=SAMPLE_STEM,
+        injection_order=1,
+        sample_role="study_sample",
+        batch_id="issue180-m9-gate-b",
+        matrix_type="breast_tissue",
+        group="tumor",
+    )
+    run = _run_mode_track_batch(
+        raw_files=(raw_file,),
+        sample_metadata=(metadata,),
+        dll_dir=dll_dir,
+        output_dir=output_dir,
+        source_relpath=f"output/{output_dir.name}/mode_track_source.json",
+        identity_namespace="issue180-m9-gate-b",
+    )
+    (output_dir / "mode_track_source.json").write_bytes(
+        run.projection.source_artifact_bytes
+    )
+    rts = sorted(cast(float, fact.group.group_center_rt) for fact in run.facts)
+    if len(rts) != 2 or any(
+        abs(a - b) > 0.1 for a, b in zip(rts, (12.4123, 13.0354), strict=True)
+    ):
+        raise RuntimeError("Gate B two-track census changed")
+    if (
+        sum(f.direct_support_count_s for f in run.facts) != 1
+        or sum(len(f.exact_owner_candidate_assignments) for f in run.facts) != 1
+        or run.call_cost["raw_open_count"] != 1
+        or run.projection.pending_acceptance_rows
+        or run.projection.expected_diff_rows
+    ):
+        raise RuntimeError("Gate B support/candidate/write census changed")
+    receipt = output_dir / "gate_b_receipt.json"
+    _write_json(
+        receipt,
+        {
+            "schema_version": "issue180_m9_gate_b_receipt_v1",
+            "validation_status": VALIDATION_STATUS,
+            "sample_stem": SAMPLE_STEM,
+            "precursor_mz": PRECURSOR_MZ,
+            "neutral_loss_da": NEUTRAL_LOSS_DA,
+            "fresh_owner_bound_discovery_index_sha256": _sha256(run.discovery_index),
+            "sample_metadata": asdict(metadata),
+            "settings_sha256": _json_sha256(discovery_settings_payload(run.settings)),
+            "call_cost": dict(run.call_cost),
+            "track_facts": [_fact_row(fact) for fact in run.facts],
+            "pending_acceptance_count": 0,
+            "expected_diff_count": 0,
+            "source_artifact_sha256": run.projection.source_artifact_sha256,
+            "product_authority": run.projection.product_authority,
+            "elapsed_seconds": time.perf_counter() - run.started,
+        },
+    )
+    _write_json(output_dir / "timing.live.json", _heartbeat("completed", run.started))
+    return receipt
+
+
+def run_gate_c(
+    *,
+    raw_files: tuple[Path, ...],
+    sample_metadata: tuple[SampleMetadata, ...],
+    dll_dir: Path,
+    manifest_root: Path,
+    output_dir: Path,
+    code_sha: str,
+    metadata_sha256: str,
+) -> Path:
+    if len(raw_files) != 85 or len(sample_metadata) != 85:
+        raise ValueError("Gate C requires exactly 85 RAW and metadata rows")
+    proposal_dir = output_dir / "proposal"
+    source_relpath = (
+        proposal_dir.resolve().relative_to(manifest_root.resolve())
+        / "mode_track_source.json"
+    ).as_posix()
+    run = _run_mode_track_batch(
+        raw_files=raw_files,
+        sample_metadata=sample_metadata,
+        dll_dir=dll_dir,
+        output_dir=output_dir,
+        source_relpath=source_relpath,
+        identity_namespace="issue180-m9-gate-c",
+    )
+    if run.call_cost["raw_open_count"] > 85 or run.call_cost["xic_batch_count"] > 85:
+        raise RuntimeError("Gate C exceeded the sample-batched RAW call budget")
+    context = {
+        "code_sha": code_sha,
+        "processing_request_id": run.owners.request.processing_request_id,
+        "processing_attempt_id": run.owners.attempt.processing_attempt_id,
+        "call_cost": dict(run.call_cost),
+        "candidate_census": {
+            "metadata_sha256": metadata_sha256,
+            "discovery_index_sha256": _sha256(run.discovery_index),
+            "track_count": len(run.facts),
+            "pending": len(run.projection.pending_acceptance_rows),
+        },
+    }
+    receipt = freeze_gate_c_proposal(
+        projection=run.projection,
+        manifest_root=manifest_root,
+        output_dir=proposal_dir,
+        run_context=context,
+    )
+    _write_json(output_dir / "timing.live.json", _heartbeat("completed", run.started))
+    return receipt
+
+
+def _run_mode_track_batch(
+    *,
+    raw_files: tuple[Path, ...],
+    sample_metadata: tuple[SampleMetadata, ...],
+    dll_dir: Path,
+    output_dir: Path,
+    source_relpath: str,
+    identity_namespace: str,
+) -> ModeTrackValidationRun:
+    if output_dir.exists() or not raw_files or len(raw_files) != len(sample_metadata):
+        raise ValueError("validation batch output or sample universe is invalid")
+    if not dll_dir.is_dir() or any(not path.is_file() for path in raw_files):
+        raise ValueError("RAW or Thermo DLL input does not exist")
     output_dir.mkdir(parents=True)
     started = time.perf_counter()
     heartbeat_path = output_dir / "timing.live.json"
@@ -92,14 +234,9 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         )
     )
     discovery_dir = output_dir / "discovery"
-    peak_config = _peak_config(
-        raw_file.parent,
-        dll_dir,
-        discovery_dir,
-        settings,
-    )
+    peak_config = _peak_config(raw_files[0].parent, dll_dir, discovery_dir, settings)
     discovery = run_discovery_batch(
-        (raw_file,),
+        raw_files,
         output_dir=discovery_dir,
         settings=settings,
         peak_config=peak_config,
@@ -109,86 +246,79 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         discovery.batch_index_csv,
         require_owner_closure=True,
     )
-    receipt = batch.candidate_receipts[SAMPLE_STEM]
-    if receipt is None:
-        raise ValueError("fresh Discovery did not mint an owner receipt")
-    candidates = read_owner_bound_discovery_candidates_csv(
-        batch.candidate_csvs[SAMPLE_STEM],
-        receipt=receipt,
-        require_successor_columns=True,
-    )
-    metadata = SampleMetadata(
-        sample_name=SAMPLE_STEM,
-        raw_stem=SAMPLE_STEM,
-        injection_order=1,
-        sample_role="study_sample",
-        batch_id="issue180-m9-gate-b",
-        matrix_type="breast_tissue",
-        group="tumor",
-    )
+    candidates_by_sample = {}
+    receipts_by_sample = {}
+    for raw_file in raw_files:
+        receipt = batch.candidate_receipts[raw_file.stem]
+        if receipt is None:
+            raise ValueError("fresh Discovery did not mint every owner receipt")
+        receipts_by_sample[raw_file.stem] = receipt
+        candidates_by_sample[raw_file.stem] = read_owner_bound_discovery_candidates_csv(
+            batch.candidate_csvs[raw_file.stem],
+            receipt=receipt,
+            require_successor_columns=True,
+        )
     method_subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=PRECURSOR_MZ,
         precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
         neutral_loss_da=NEUTRAL_LOSS_DA,
     )
     context = build_untargeted_cid_nl_real_data_context(
-        raw_paths=(raw_file,),
-        sample_metadata=(metadata,),
+        raw_paths=raw_files,
+        sample_metadata=sample_metadata,
         method_subject=method_subject,
         settings=settings,
         peak_config=peak_config,
-        candidates_by_sample={SAMPLE_STEM: candidates},
-        discovery_receipts_by_sample={SAMPLE_STEM: receipt},
-        sample_identity_namespace="issue180-m9-gate-b",
+        candidates_by_sample=candidates_by_sample,
+        discovery_receipts_by_sample=receipts_by_sample,
+        sample_identity_namespace=identity_namespace,
     )
-    sample = context.samples[0]
-    job = UntargetedCidNlRealDataRuntimeJob(
-        processing_owners=context.processing_owners,
-        sample=sample,
-        method_subject=context.method_subject,
-        candidates=context.candidates_by_sample[SAMPLE_STEM],
-        discovery_receipt=receipt,
-        settings=context.settings,
-        peak_config=context.peak_config,
-        raw_path=raw_file,
-        dll_dir=dll_dir,
-        work_unit_key=f"untargeted-cid-nl:{SAMPLE_STEM}",
+    jobs = tuple(
+        UntargetedCidNlRealDataRuntimeJob(
+            processing_owners=context.processing_owners,
+            sample=sample,
+            method_subject=context.method_subject,
+            candidates=context.candidates_by_sample[raw_file.stem],
+            discovery_receipt=receipts_by_sample[raw_file.stem],
+            settings=context.settings,
+            peak_config=context.peak_config,
+            raw_path=raw_file,
+            dll_dir=dll_dir,
+            work_unit_key=f"untargeted-cid-nl:{raw_file.stem}",
+        )
+        for raw_file, sample in zip(raw_files, context.samples, strict=True)
     )
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
-        work_unit_keys=(job.work_unit_key,),
-        owner_completeness_attestation="issue180-m9-gate-b:v1",
+        work_unit_keys=tuple(job.work_unit_key for job in jobs),
+        owner_completeness_attestation=f"{identity_namespace}:v1",
     )
     runtime_result = execute_untargeted_cid_nl_real_data_runtime(
         runtime,
-        (job,),
+        jobs,
         telemetry_provider=_coarse_runtime_telemetry,
         recovery_marker=OwnerPathRuntimeMarker(
             output_dir / "runtime.json",
-            "issue180-m9-gate-b",
+            identity_namespace,
         ),
     )
-    if not runtime_result.succeeded or len(runtime_result.sample_results) != 1:
-        raise RuntimeError("M7 canary did not complete atomically")
+    if not runtime_result.succeeded or len(runtime_result.sample_results) != len(jobs):
+        raise RuntimeError("M7 validation batch did not complete atomically")
     call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
-    if call_cost["raw_open_count"] != 1:
-        raise RuntimeError("M7 canary did not preserve one sample-batched RAW open")
+    if call_cost["raw_open_count"] > len(raw_files):
+        raise RuntimeError("M7 validation batch exceeded one RAW open per sample")
     _write_json(heartbeat_path, _heartbeat("m7_complete", started))
-    assessment = runtime_result.sample_results[
-        0
-    ].adapter_result.assessment_input.assessment
-    sample_assessments = ((sample, assessment),)
+    sample_assessments = tuple(
+        (sample, result.adapter_result.assessment_input.assessment)
+        for sample, result in zip(
+            context.samples, runtime_result.sample_results, strict=True
+        )
+    )
     _, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
         processing_owners=context.processing_owners,
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        trajectory_policy=ModeTrackTrajectoryPolicy(
-            trajectory_policy_version="anchor-trajectory-v1",
-            band_policy_version="fixed-band-v1",
-            prediction_half_width_min=2 / 60,
-            max_interpolation_gap=10,
-            max_extrapolation_gap=10,
-        ),
+        trajectory_policy=_mode_track_trajectory_policy(),
     )
     facts = assess_mode_track_conservative_backfill_groups(
         processing_owners=context.processing_owners,
@@ -196,63 +326,42 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         assignment_batches=batches,
         sample_assessments=sample_assessments,
     )
-    source_relpath = f"output/{output_dir.name}/mode_track_source.json"
     projection = build_untargeted_cid_nl_mode_track_projection(
         processing_owners=context.processing_owners,
         mode_track_facts=facts,
         source_artifact_relpath=source_relpath,
     )
-    source_path = output_dir / "mode_track_source.json"
-    source_path.write_bytes(projection.source_artifact_bytes)
-    group_rts = tuple(sorted(cast(float, fact.group.group_center_rt) for fact in facts))
-    if len(group_rts) != 2 or any(
-        abs(observed - expected) > 0.1
-        for observed, expected in zip(group_rts, (12.4123, 13.0354), strict=True)
-    ):
-        raise RuntimeError("Gate B did not retain the expected two-track census")
-    if sum(fact.direct_support_count_s for fact in facts) != 1:
-        raise RuntimeError("Gate B direct-SUPPORT census changed")
-    if sum(len(fact.exact_owner_candidate_assignments) for fact in facts) != 1:
-        raise RuntimeError("Gate B exact-owner candidate census changed")
-    fact_rows = [
-        {
-            "group_hypothesis_id": fact.group.group_hypothesis_id,
-            "group_center_rt": fact.group.group_center_rt,
-            "sample_count_n": fact.sample_count_n,
-            "minimum_support_k": fact.minimum_support_k,
-            "direct_support_count_s": fact.direct_support_count_s,
-            "candidate_count": len(fact.exact_owner_candidate_assignments),
-            "may_attempt_recovery": fact.may_attempt_recovery,
-        }
-        for fact in facts
-    ]
-    if projection.pending_acceptance_rows or projection.expected_diff_rows:
-        raise RuntimeError("one-sample S<K canary must remain non-writing")
-    receipt_path = output_dir / "gate_b_receipt.json"
-    _write_json(
-        receipt_path,
-        {
-            "schema_version": "issue180_m9_gate_b_receipt_v1",
-            "validation_status": VALIDATION_STATUS,
-            "sample_stem": SAMPLE_STEM,
-            "precursor_mz": PRECURSOR_MZ,
-            "neutral_loss_da": NEUTRAL_LOSS_DA,
-            "fresh_owner_bound_discovery_index_sha256": _sha256(
-                discovery.batch_index_csv
-            ),
-            "sample_metadata": asdict(metadata),
-            "settings_sha256": _json_sha256(discovery_settings_payload(settings)),
-            "call_cost": call_cost,
-            "track_facts": fact_rows,
-            "pending_acceptance_count": len(projection.pending_acceptance_rows),
-            "expected_diff_count": len(projection.expected_diff_rows),
-            "source_artifact_sha256": projection.source_artifact_sha256,
-            "product_authority": projection.product_authority,
-            "elapsed_seconds": time.perf_counter() - started,
-        },
+    return ModeTrackValidationRun(
+        projection=projection,
+        facts=facts,
+        call_cost=call_cost,
+        discovery_index=discovery.batch_index_csv,
+        settings=settings,
+        owners=context.processing_owners,
+        started=started,
     )
-    _write_json(heartbeat_path, _heartbeat("completed", started))
-    return receipt_path
+
+
+def _mode_track_trajectory_policy() -> ModeTrackTrajectoryPolicy:
+    return ModeTrackTrajectoryPolicy(
+        trajectory_policy_version="anchor-trajectory-v1",
+        band_policy_version="fixed-band-v1",
+        prediction_half_width_min=2 / 60,
+        max_interpolation_gap=10,
+        max_extrapolation_gap=10,
+    )
+
+
+def _fact_row(fact: ModeTrackConservativeBackfillGroupFacts) -> dict[str, object]:
+    return {
+        "group_hypothesis_id": fact.group.group_hypothesis_id,
+        "group_center_rt": fact.group.group_center_rt,
+        "sample_count_n": fact.sample_count_n,
+        "minimum_support_k": fact.minimum_support_k,
+        "direct_support_count_s": fact.direct_support_count_s,
+        "candidate_count": len(fact.exact_owner_candidate_assignments),
+        "may_attempt_recovery": fact.may_attempt_recovery,
+    }
 
 
 def freeze_gate_c_proposal(
