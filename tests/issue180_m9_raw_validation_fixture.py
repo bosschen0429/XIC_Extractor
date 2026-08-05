@@ -1,18 +1,13 @@
-"""Task-scoped real-RAW fixture for Issue 180 Gate B.
-
-This is an explicit validation harness, not a public CLI or product writer.
-It creates one fresh owner-bound Discovery request and keeps the complete
-M7 -> M8 -> M2 -> M6 projection transaction in memory.
-"""
-
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
+from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
@@ -28,7 +23,13 @@ from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
 from xic_extractor.alignment.identity_coherence.mode_track_producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
 )
+from xic_extractor.alignment.production_acceptance import (
+    build_quant_matrix_version_from_checked_manifest,
+    load_checked_production_acceptance_manifest,
+)
+from xic_extractor.alignment.quant_matrix_version import QuantMatrixVersionRows
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+    UntargetedCidNlModeTrackProjection,
     build_untargeted_cid_nl_mode_track_projection,
 )
 from xic_extractor.config import ExtractionConfig
@@ -65,11 +66,15 @@ SAMPLE_STEM = "TumorBC2297_DNA"
 PRECURSOR_MZ = 349.215
 NEUTRAL_LOSS_DA = 116.0474
 VALIDATION_STATUS = "diagnostic_only"
+RUN_CONTEXT_FIELDS = frozenset(
+    (
+        "code_sha processing_request_id processing_attempt_id call_cost "
+        "candidate_census"
+    ).split()
+)
 
 
 def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
-    """Run the bounded one-RAW Gate B transaction and write its receipt."""
-
     if output_dir.exists():
         raise ValueError(f"output directory already exists: {output_dir}")
     if raw_file.stem != SAMPLE_STEM or not raw_file.is_file():
@@ -80,7 +85,6 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     started = time.perf_counter()
     heartbeat_path = output_dir / "timing.live.json"
     _write_json(heartbeat_path, _heartbeat("started", started))
-
     settings = DiscoverySettings(
         neutral_loss_profile=NeutralLossProfile(
             tag="DNA_dR",
@@ -101,7 +105,6 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
         peak_config=peak_config,
     )
     _write_json(heartbeat_path, _heartbeat("discovery_complete", started))
-
     batch = read_discovery_batch_index(
         discovery.batch_index_csv,
         require_owner_closure=True,
@@ -171,11 +174,9 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     if call_cost["raw_open_count"] != 1:
         raise RuntimeError("M7 canary did not preserve one sample-batched RAW open")
     _write_json(heartbeat_path, _heartbeat("m7_complete", started))
-
-    assessment = (
-        runtime_result.sample_results[0]
-        .adapter_result.assessment_input.assessment
-    )
+    assessment = runtime_result.sample_results[
+        0
+    ].adapter_result.assessment_input.assessment
     sample_assessments = ((sample, assessment),)
     _, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
         processing_owners=context.processing_owners,
@@ -203,8 +204,7 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     )
     source_path = output_dir / "mode_track_source.json"
     source_path.write_bytes(projection.source_artifact_bytes)
-
-    group_rts = tuple(sorted(fact.group.group_center_rt for fact in facts))
+    group_rts = tuple(sorted(cast(float, fact.group.group_center_rt) for fact in facts))
     if len(group_rts) != 2 or any(
         abs(observed - expected) > 0.1
         for observed, expected in zip(group_rts, (12.4123, 13.0354), strict=True)
@@ -228,7 +228,6 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     ]
     if projection.pending_acceptance_rows or projection.expected_diff_rows:
         raise RuntimeError("one-sample S<K canary must remain non-writing")
-
     receipt_path = output_dir / "gate_b_receipt.json"
     _write_json(
         receipt_path,
@@ -256,6 +255,257 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     return receipt_path
 
 
+def freeze_gate_c_proposal(
+    *,
+    projection: UntargetedCidNlModeTrackProjection,
+    manifest_root: Path,
+    output_dir: Path,
+    run_context: Mapping[str, object],
+) -> Path:
+    if set(run_context) != RUN_CONTEXT_FIELDS:
+        raise ValueError("Gate C run context fields changed")
+    manifest_root, output_dir = manifest_root.resolve(), output_dir.resolve()
+    if not output_dir.is_relative_to(manifest_root):
+        raise ValueError("proposal output must stay under manifest root")
+    source_path = manifest_root / projection.source_artifact_relpath
+    if source_path.parent.resolve() != output_dir:
+        raise ValueError("projection source path must be inside final proposal output")
+    if not projection.pending_acceptance_rows:
+        raise ValueError("Gate C proposal must contain at least one pending row")
+    staging = _new_output_dir(output_dir)
+    staged_source = staging / source_path.name
+    staged_source.write_bytes(projection.source_artifact_bytes)
+    proposal = {
+        "schema_version": "issue180_m9_gate_c_proposal_v1",
+        "matrix_header": list(projection.matrix_header),
+        "input_quant_matrix_rows": list(map(dict, projection.input_quant_matrix_rows)),
+        "input_matrix_identity_rows": list(
+            map(dict, projection.input_matrix_identity_rows)
+        ),
+        "pending_acceptance_rows": list(map(dict, projection.pending_acceptance_rows)),
+        "expected_diff_rows": list(map(dict, projection.expected_diff_rows)),
+        "source_artifact_relpath": projection.source_artifact_relpath,
+        "source_artifact_sha256": projection.source_artifact_sha256,
+    }
+    proposal_path = staging / "proposal.json"
+    _write_json(proposal_path, proposal)
+    receipt = {
+        "schema_version": "issue180_m9_gate_c_proposal_receipt_v1",
+        "proposal_sha256": _sha256(proposal_path),
+        "source_file_sha256": _sha256(staged_source),
+        "run_context": dict(run_context),
+    }
+    _validate_proposal_payload(proposal, receipt, staged_source)
+    _publish_json_marker(staging / "proposal_receipt.json", receipt)
+    return output_dir / "proposal_receipt.json"
+
+
+def finalize_gate_c_proposal(
+    *,
+    proposal_dir: Path,
+    manual_review_path: Path,
+    manifest_path: Path,
+    manifest_root: Path,
+    output_dir: Path,
+) -> Path:
+    proposal_path = proposal_dir / "proposal.json"
+    receipt_path = proposal_dir / "proposal_receipt.json"
+    proposal = _read_json_object(proposal_path)
+    receipt = _read_json_object(receipt_path)
+    source_path = manifest_root / str(proposal.get("source_artifact_relpath", ""))
+    if receipt.get("proposal_sha256") != _sha256(proposal_path):
+        raise ValueError("Gate C proposal hash changed")
+    if receipt.get("source_file_sha256") != _sha256(source_path):
+        raise ValueError("Gate C source file hash changed")
+    _validate_proposal_payload(proposal, receipt, source_path)
+    pending = _required_rows(proposal, "pending_acceptance_rows")
+    review = _read_json_object(manual_review_path)
+    _validate_manual_review(review, proposal, receipt, pending, source_path)
+    checked = load_checked_production_acceptance_manifest(
+        manifest_path=manifest_path,
+        repo_root=manifest_root,
+    )
+    _validate_pending_manifest_equality(pending, checked.rows)
+    result = build_quant_matrix_version_from_checked_manifest(
+        matrix_header=_required_strings(proposal, "matrix_header"),
+        input_quant_matrix_rows=_required_rows(proposal, "input_quant_matrix_rows"),
+        input_matrix_identity_rows=_required_rows(
+            proposal, "input_matrix_identity_rows"
+        ),
+        checked_manifest=checked,
+        expected_diff_rows=_required_rows(proposal, "expected_diff_rows"),
+    )
+    _validate_gate_c_terminal(proposal, pending, result)
+    result_payload = {
+        key: list(map(dict, value)) for key, value in vars(result).items()
+    }
+    final_receipt = {
+        "schema_version": "issue180_m9_gate_c_final_receipt_v1",
+        "validation_status": VALIDATION_STATUS,
+        "proposal_receipt_sha256": _sha256(receipt_path),
+        "manual_review_sha256": _sha256(manual_review_path),
+        "checked_manifest_file_sha256": checked.manifest_file_sha256,
+        "result_qmv_sha256": _json_sha256(result_payload),
+        "baseline_qmv_sha256": _json_sha256(
+            _required_rows(proposal, "input_quant_matrix_rows")
+        ),
+        "adopted_cell_count": len(pending),
+        "rollback_status": "baseline_exact",
+    }
+    staging = _new_output_dir(output_dir)
+    _write_json(staging / "result_qmv.json", result_payload)
+    _publish_json_marker(staging / "final_receipt.json", final_receipt)
+    return output_dir / "final_receipt.json"
+
+
+def _validate_proposal_payload(
+    proposal: Mapping[str, object],
+    receipt: Mapping[str, object],
+    source_path: Path,
+) -> None:
+    if proposal.get("schema_version") != "issue180_m9_gate_c_proposal_v1":
+        raise ValueError("Gate C proposal schema changed")
+    source_bytes = source_path.read_bytes()
+    source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
+    if proposal.get("source_artifact_sha256") != source_sha:
+        raise ValueError("Gate C owner source SHA changed")
+    source = json.loads(source_bytes)
+    pending = _required_rows(proposal, "pending_acceptance_rows")
+    expected = _required_rows(proposal, "expected_diff_rows")
+    if len(pending) != len(expected) or not pending:
+        raise ValueError("Gate C proposal candidate/diff census changed")
+    source_keys = {
+        (row["group_hypothesis_id"], row["sample_stem"])
+        for row in source.get("rows", ())
+    }
+    pending_keys = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
+    if source_keys != pending_keys:
+        raise ValueError("Gate C source and pending product keys differ")
+    context = receipt.get("run_context")
+    owner_keys = ("code_sha", "processing_request_id", "processing_attempt_id")
+    if not isinstance(context, dict) or not all(context.get(key) for key in owner_keys):
+        raise ValueError("Gate C proposal receipt owner context is incomplete")
+
+
+def _validate_manual_review(
+    review: Mapping[str, object],
+    proposal: Mapping[str, object],
+    receipt: Mapping[str, object],
+    pending: Sequence[Mapping[str, str]],
+    source_path: Path,
+) -> None:
+    if review.get("schema_version") != "issue180_m9_gate_c_manual_review_v1":
+        raise ValueError("Gate C manual review schema changed")
+    rows = review.get("rows")
+    if not isinstance(rows, list):
+        raise ValueError("Gate C manual review rows are missing")
+    source_rows = json.loads(source_path.read_bytes())["rows"]
+    candidate_hashes = {
+        (row["group_hypothesis_id"], row["sample_stem"]): _json_sha256(row)
+        for row in source_rows
+    }
+    context = cast(dict[str, object], receipt["run_context"])
+    expected = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Gate C manual review row is malformed")
+        key = (str(row.get("peak_hypothesis_id", "")), str(row.get("sample_stem", "")))
+        if key in seen or key not in expected:
+            raise ValueError("Gate C manual review key is duplicate or foreign")
+        seen.add(key)
+        bound = {
+            "proposal_sha256": receipt["proposal_sha256"],
+            "source_artifact_sha256": proposal["source_artifact_sha256"],
+            "processing_request_id": context["processing_request_id"],
+            "processing_attempt_id": context["processing_attempt_id"],
+            "verdict": "pass",
+            "candidate_key_sha256": candidate_hashes[key],
+        }
+        if any(row.get(name) != value for name, value in bound.items()) or any(
+            not row.get(name)
+            for name in ("reviewer_id", "reviewed_at", "evidence_locator")
+        ):
+            raise ValueError("Gate C manual review is unbound or not passing")
+    if seen != expected:
+        raise ValueError("Gate C manual review does not cover every pending row")
+
+
+def _validate_pending_manifest_equality(
+    pending: Sequence[Mapping[str, str]],
+    checked: Sequence[Mapping[str, str]],
+) -> None:
+    accepted = [
+        {key: value for key, value in row.items() if key != "manifest_sha256"}
+        for row in checked
+    ]
+    proposed = [
+        {key: value for key, value in row.items() if key != "manifest_sha256"}
+        for row in pending
+    ]
+    if accepted != proposed:
+        raise ValueError("checked manifest differs from C1 proposal")
+
+
+def _validate_gate_c_terminal(
+    proposal: Mapping[str, object],
+    pending: Sequence[Mapping[str, str]],
+    result: QuantMatrixVersionRows,
+) -> None:
+    header = _required_strings(proposal, "matrix_header")
+    baseline = _required_rows(proposal, "input_quant_matrix_rows")
+    identities = _required_rows(proposal, "input_matrix_identity_rows")
+    accepted = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
+    if len(result.quant_matrix_rows) != len(baseline):
+        raise ValueError("Gate C Matrix row count changed")
+    for identity, before, after in zip(
+        identities, baseline, result.quant_matrix_rows, strict=True
+    ):
+        group_id = identity["peak_hypothesis_id"]
+        expected = {
+            sample
+            for sample in header[2:]
+            if before.get(sample, "") or (group_id, sample) in accepted
+        }
+        actual = {sample for sample in header[2:] if after.get(sample, "")}
+        if actual != expected:
+            raise ValueError("Gate C terminal Matrix contains an unauthorized value")
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return value
+
+
+def _new_output_dir(output_dir: Path) -> Path:
+    if output_dir.exists():
+        raise ValueError(f"output already exists: {output_dir}")
+    output_dir.mkdir(parents=True)
+    return output_dir
+
+
+def _publish_json_marker(path: Path, payload: object) -> None:
+    temporary = path.with_suffix(".tmp")
+    _write_json(temporary, payload)
+    temporary.replace(path)
+
+
+def _required_rows(value: Mapping[str, object], key: str) -> list[dict[str, str]]:
+    rows = value.get(key)
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError(f"Gate C {key} rows are malformed")
+    return rows
+
+
+def _required_strings(value: Mapping[str, object], key: str) -> list[str]:
+    items = value.get(key)
+    if not isinstance(items, list) or any(not isinstance(item, str) for item in items):
+        raise ValueError(f"Gate C {key} must contain strings")
+    return items
+
+
 def _heartbeat(event: str, started: float) -> dict[str, object]:
     return {
         "schema_version": "issue180_m9_gate_b_heartbeat_v1",
@@ -278,24 +528,11 @@ def _peak_config(
         diagnostics_csv=output_dir / "unused_xic_diagnostics.csv",
         smooth_window=int(defaults["smooth_window"]),
         smooth_polyorder=int(defaults["smooth_polyorder"]),
-        ms1_morphology_smoothing_window_points=int(
-            defaults["ms1_morphology_smoothing_window_points"]
-        ),
         peak_rel_height=float(defaults["peak_rel_height"]),
         peak_min_prominence_ratio=float(defaults["peak_min_prominence_ratio"]),
         ms2_precursor_tol_da=settings.ms2_precursor_tol_da,
         nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
         resolver_mode=settings.resolver_mode,
-        resolver_chrom_threshold=float(defaults["resolver_chrom_threshold"]),
-        resolver_min_search_range_min=float(
-            defaults["resolver_min_search_range_min"]
-        ),
-        resolver_min_relative_height=float(defaults["resolver_min_relative_height"]),
-        resolver_min_absolute_height=float(defaults["resolver_min_absolute_height"]),
-        resolver_min_ratio_top_edge=float(defaults["resolver_min_ratio_top_edge"]),
-        resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
-        resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),
-        resolver_min_scans=int(defaults["resolver_min_scans"]),
     )
 
 

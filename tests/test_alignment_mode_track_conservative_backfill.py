@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from scripts.check_production_acceptance_manifest import (
     check_production_acceptance_manifest,
     production_acceptance_manifest_sha256,
 )
+from tests import issue180_m9_raw_validation_fixture as gate_c_fixture
 from tests.issue161_no_raw_fixture import (
     issue161_evidence,
     issue161_peak,
@@ -206,14 +208,12 @@ def test_mode_track_projection_prepares_only_m2_eligible_exact_owner_cells(
     assert projection.backfill_decisions == ()
     assert len(projection.input_quant_matrix_rows) == 2
     assert {
-        row["peak_hypothesis_id"]
-        for row in projection.input_matrix_identity_rows
+        row["peak_hypothesis_id"] for row in projection.input_matrix_identity_rows
     } == {item.group.group_hypothesis_id for item in facts}
     assert len(projection.pending_acceptance_rows) == 2
     assert len(projection.expected_diff_rows) == 2
     assert all(
-        row["peak_hypothesis_id"]
-        in {item.group.group_hypothesis_id for item in facts}
+        row["peak_hypothesis_id"] in {item.group.group_hypothesis_id for item in facts}
         and row["acceptance_decision"] == "accept_basic_backfill"
         and row["write_authority"] == "TRUE"
         for row in projection.pending_acceptance_rows
@@ -295,11 +295,161 @@ def test_mode_track_projection_enters_existing_checked_qmv_owner(
         sum(bool(row.get(stem, "")) for stem in projection.matrix_header[2:]) == 3
         for row in terminal.quant_matrix_rows
     )
-    assert sum(
-        row["cell_status"] == "accepted_backfill"
-        for row in terminal.cell_provenance_rows
-    ) == 2
+    assert (
+        sum(
+            row["cell_status"] == "accepted_backfill"
+            for row in terminal.cell_provenance_rows
+        )
+        == 2
+    )
     assert all("0" not in row.values() for row in terminal.quant_matrix_rows)
+
+
+def test_gate_c_two_stage_finalization_is_reproducible_and_rollback_exact(
+    tmp_path: Path,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection)
+    manifest_path = _checked_manifest(tmp_path, projection)
+
+    first = gate_c_fixture.finalize_gate_c_proposal(
+        proposal_dir=proposal_dir,
+        manual_review_path=review_path,
+        manifest_path=manifest_path,
+        manifest_root=tmp_path,
+        output_dir=tmp_path / "final-1",
+    )
+    second = gate_c_fixture.finalize_gate_c_proposal(
+        proposal_dir=proposal_dir,
+        manual_review_path=review_path,
+        manifest_path=manifest_path,
+        manifest_root=tmp_path,
+        output_dir=tmp_path / "final-2",
+    )
+
+    assert first.read_bytes() == second.read_bytes()
+    receipt = json.loads(first.read_bytes())
+    assert receipt["adopted_cell_count"] == 2
+    assert receipt["rollback_status"] == "baseline_exact"
+
+
+def test_gate_c_finalizer_rejects_tampered_proposal(tmp_path: Path) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    proposal_path = proposal_dir / "proposal.json"
+    proposal_path.write_text(
+        proposal_path.read_text(encoding="utf-8").replace(
+            '"matrix_header"', '"changed_matrix_header"'
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="proposal hash changed"):
+        gate_c_fixture.finalize_gate_c_proposal(
+            proposal_dir=proposal_dir,
+            manual_review_path=tmp_path / "missing-review.json",
+            manifest_path=tmp_path / "missing-manifest.tsv",
+            manifest_root=tmp_path,
+            output_dir=tmp_path / "blocked-final",
+        )
+
+
+def test_gate_c_finalizer_rejects_failed_review_and_manifest_drift(
+    tmp_path: Path,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection, verdict="fail")
+    manifest_path = _checked_manifest(tmp_path, projection)
+    with pytest.raises(ValueError, match="not passing"):
+        gate_c_fixture.finalize_gate_c_proposal(
+            proposal_dir=proposal_dir,
+            manual_review_path=review_path,
+            manifest_path=manifest_path,
+            manifest_root=tmp_path,
+            output_dir=tmp_path / "failed-review",
+        )
+
+    _gate_c_review(tmp_path, projection, verdict="pass")
+    rows = [dict(row) for row in projection.pending_acceptance_rows]
+    rows[0]["decision_reason"] = "owner_valid_but_changed_after_c1"
+    manifest_sha = production_acceptance_manifest_sha256(rows)
+    changed = tuple({**row, "manifest_sha256": manifest_sha} for row in rows)
+    manifest_path.write_text(
+        render_delimited_rows(
+            changed,
+            REQUIRED_COLUMNS,
+            delimiter="\t",
+            extrasaction="raise",
+            lineterminator="\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="differs from C1 proposal"):
+        gate_c_fixture.finalize_gate_c_proposal(
+            proposal_dir=proposal_dir,
+            manual_review_path=review_path,
+            manifest_path=manifest_path,
+            manifest_root=tmp_path,
+            output_dir=tmp_path / "changed-manifest",
+        )
+
+
+def test_gate_c_terminal_oracle_rejects_owner_output_with_missing_value(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection)
+    manifest_path = _checked_manifest(tmp_path, projection)
+    owner = gate_c_fixture.build_quant_matrix_version_from_checked_manifest
+
+    def missing_value(**kwargs):
+        result = owner(**kwargs)
+        rows = [dict(row) for row in result.quant_matrix_rows]
+        rows[0][projection.matrix_header[-1]] = ""
+        return type(result)(
+            quant_matrix_rows=tuple(rows),
+            cell_provenance_rows=result.cell_provenance_rows,
+            row_summary_rows=result.row_summary_rows,
+            expected_diff_summary_rows=result.expected_diff_summary_rows,
+        )
+
+    monkeypatch.setattr(
+        gate_c_fixture,
+        "build_quant_matrix_version_from_checked_manifest",
+        missing_value,
+    )
+    with pytest.raises(ValueError, match="unauthorized value"):
+        gate_c_fixture.finalize_gate_c_proposal(
+            proposal_dir=proposal_dir,
+            manual_review_path=review_path,
+            manifest_path=manifest_path,
+            manifest_root=tmp_path,
+            output_dir=tmp_path / "unauthorized-final",
+        )
 
 
 def _assess(
@@ -436,6 +586,90 @@ def _two_peak_assessment(
         evidence_refs=evidence_refs,
         individual_support_refs=support_refs,
     )
+
+
+def _gate_c_proposal(tmp_path: Path):
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path
+    )
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+    output_dir = tmp_path / "proposal"
+    projection = golden_path.build_untargeted_cid_nl_mode_track_projection(
+        processing_owners=fixture.owners,
+        mode_track_facts=facts,
+        source_artifact_relpath="proposal/mode_track_source.json",
+    )
+    return projection, output_dir
+
+
+def _gate_c_run_context(projection) -> dict[str, object]:
+    owner_ids = json.loads(projection.source_artifact_bytes)["rows"][0]["owner_ids"]
+    return {
+        "code_sha": "synthetic-no-raw",
+        "processing_request_id": owner_ids[0],
+        "processing_attempt_id": owner_ids[1],
+        "call_cost": {"raw_open_count": 0, "xic_batch_count": 0},
+        "candidate_census": {"pending": len(projection.pending_acceptance_rows)},
+    }
+
+
+def _gate_c_review(
+    tmp_path: Path,
+    projection,
+    *,
+    verdict: str = "pass",
+) -> Path:
+    receipt = json.loads((tmp_path / "proposal/proposal_receipt.json").read_bytes())
+    source_rows = json.loads(projection.source_artifact_bytes)["rows"]
+    source_by_key = {
+        (row["group_hypothesis_id"], row["sample_stem"]): row for row in source_rows
+    }
+    context = receipt["run_context"]
+    rows = []
+    for pending in projection.pending_acceptance_rows:
+        key = (pending["peak_hypothesis_id"], pending["sample_stem"])
+        candidate = source_by_key[key]
+        rows.append(
+            {
+                "peak_hypothesis_id": key[0],
+                "sample_stem": key[1],
+                "proposal_sha256": receipt["proposal_sha256"],
+                "source_artifact_sha256": projection.source_artifact_sha256,
+                "processing_request_id": context["processing_request_id"],
+                "processing_attempt_id": context["processing_attempt_id"],
+                "candidate_key_sha256": hashlib.sha256(
+                    json.dumps(
+                        candidate,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode()
+                ).hexdigest(),
+                "reviewer_id": "synthetic-reviewer",
+                "reviewed_at": "2026-08-05T00:00:00+08:00",
+                "evidence_locator": f"synthetic-eic-ms2:{key[0]}:{key[1]}",
+                "verdict": verdict,
+                "notes": "synthetic no-RAW rehearsal",
+            }
+        )
+    path = tmp_path / "manual_review.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "issue180_m9_gate_c_manual_review_v1",
+                "rows": rows,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def _checked_manifest(tmp_path: Path, projection) -> Path:
