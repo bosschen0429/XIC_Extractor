@@ -10,7 +10,7 @@ from tests.test_alignment_mode_track_assignment import (
     _different_request_same_sources,
     _scenario,
 )
-from xic_extractor.alignment.identity_coherence import mode_track_assignment
+from xic_extractor.alignment.identity_coherence import mode_track_assignment as mta
 from xic_extractor.alignment.identity_coherence.family_context import (
     mint_family_context_ref,
 )
@@ -20,18 +20,9 @@ from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     canonical_mode_track_assignment_batch_bytes,
     fit_mode_track_model_set,
     reinforce_mode_track_model_set,
+    validate_mode_track_assignment_batch_for_consumption,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
-
-
-def _validator():
-    validator = getattr(
-        mode_track_assignment,
-        "validate_mode_track_assignment_batch_for_consumption",
-        None,
-    )
-    assert validator is not None, "M8 lacks a public pure consumer validator"
-    return validator
 
 
 def _batch_for_case(tmp_path: Path, case: str):
@@ -45,10 +36,13 @@ def _batch_for_case(tmp_path: Path, case: str):
         apex = {
             "uniquely_assigned": 7.87,
             "ambiguous": 8.12,
+            "direct_support": 7.87,
             "out_of_model": 8.55,
             "technical_unassessable": 7.87,
         }[case]
-        candidates = (scenario.candidate(apex, direct_support=False),)
+        candidates = (
+            scenario.candidate(apex, direct_support=case == "direct_support"),
+        )
     trajectory = (
         scenario.missing_trajectory
         if case == "technical_unassessable"
@@ -82,10 +76,9 @@ def test_consumer_validator_accepts_all_states_and_exact_replay(
     scenario, batch = _batch_for_case(tmp_path, case)
     assert tuple(item.state for item in batch.assignments) == (expected_state,)
 
-    validator = _validator()
     original_bytes = canonical_mode_track_assignment_batch_bytes(batch)
     for _ in range(2):
-        result = validator(
+        result = validate_mode_track_assignment_batch_for_consumption(
             processing_owners=scenario.fixture.owners,
             model_set=scenario.models,
             assignment_batch=batch,
@@ -97,23 +90,17 @@ def test_consumer_validator_accepts_all_states_and_exact_replay(
 def test_direct_support_validation_is_pure_and_does_not_reinforce(
     tmp_path: Path,
 ) -> None:
-    scenario = _scenario(tmp_path)
-    batch = assign_mode_tracks(
-        processing_owners=scenario.fixture.owners,
-        sample=scenario.fixture.sample("target"),
-        model_set=scenario.models,
-        candidates=(scenario.candidate(7.87, direct_support=True),),
-        trajectory_assessment=scenario.assessable_trajectory,
-    )
+    scenario, batch = _batch_for_case(tmp_path, "direct_support")
     original_model = scenario.models
 
-    result = _validator()(
+    result = validate_mode_track_assignment_batch_for_consumption(
         processing_owners=scenario.fixture.owners,
         model_set=scenario.models,
         assignment_batch=batch,
     )
     assert result is None
     assert scenario.models is original_model
+    assert "validate_mode_track_assignment_batch_for_consumption" in mta.__all__
 
 
 @pytest.mark.parametrize(
@@ -130,7 +117,9 @@ def test_direct_support_validation_is_pure_and_does_not_reinforce(
         "foreign_equal_content_support",
         "forged_assignment_id",
         "forged_batch_id",
+        "duplicate_assignment_id",
         "duplicate_hypothesis_and_physical_wrapper",
+        "substituted_anchor_live_refs",
         "partial_tuple",
         "malformed_tuple",
     ),
@@ -145,7 +134,7 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
         processing_owners=scenario.fixture.owners,
         sample=scenario.fixture.sample("target"),
         model_set=scenario.models,
-        candidates=(direct,),
+        candidates=() if case == "duplicate_assignment_id" else (direct,),
         trajectory_assessment=scenario.assessable_trajectory,
     )
     owners = scenario.fixture.owners
@@ -210,15 +199,29 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
         object.__setattr__(batch.assignments[0], "assignment_id", "forged")
     elif case == "forged_batch_id":
         object.__setattr__(batch, "assignment_batch_id", "forged")
+    elif case == "duplicate_assignment_id":
+        object.__setattr__(batch, "assignments", batch.assignments * 2)
+        digest = mta._typed_digest(
+            "mode-track-assignment-batch:", mta._batch_identity_payload(batch)
+        )
+        object.__setattr__(batch, "assignment_batch_id", digest)
     elif case == "duplicate_hypothesis_and_physical_wrapper":
         object.__setattr__(batch, "assignments", batch.assignments * 2)
+    elif case == "substituted_anchor_live_refs":
+        victim, donor = models.tracks[0].anchors[0], models.tracks[1].anchors[0]
+        object.__setattr__(victim, "peak_hypothesis", donor.peak_hypothesis)
+        object.__setattr__(
+            victim, "direct_support_assessment", donor.direct_support_assessment
+        )
     elif case == "partial_tuple":
         object.__setattr__(batch, "assignments", ())
     elif case == "malformed_tuple":
         object.__setattr__(batch, "assignments", list(batch.assignments))
 
     with pytest.raises(ModeTrackContractError):
-        _validator()(processing_owners=owners, model_set=models, assignment_batch=batch)
+        validate_mode_track_assignment_batch_for_consumption(
+            processing_owners=owners, model_set=models, assignment_batch=batch
+        )
 
 
 def test_reinforcement_uses_the_same_consumer_validation_closure(
@@ -233,10 +236,3 @@ def test_reinforcement_uses_the_same_consumer_validation_closure(
             model_set=scenario.models,
             assignment_batch=batch,
         )
-
-
-def test_consumer_validator_is_exported() -> None:
-    assert (
-        "validate_mode_track_assignment_batch_for_consumption"
-        in mode_track_assignment.__all__
-    )

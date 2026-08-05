@@ -628,6 +628,9 @@ class ModeTrackAssignmentBatch:
             raise ModeTrackContractError(
                 "assignment batch contains crossed Family or sample references"
             )
+        assignment_ids = tuple(item.assignment_id for item in self.assignments)
+        if len(assignment_ids) != len(set(assignment_ids)):
+            raise ModeTrackContractError("assignment IDs must be unique within a batch")
         hypothesis_ids = tuple(
             item.peak_hypothesis_id
             for item in self.assignments
@@ -1945,6 +1948,7 @@ def _validate_model_set_binding(
 ) -> None:
     for track in model_set.tracks:
         for anchor in track.anchors:
+            anchor.__post_init__(_MODE_TRACK_MINT_TOKEN)
             _validate_support_anchor(
                 processing_owners=processing_owners,
                 anchor=anchor,
