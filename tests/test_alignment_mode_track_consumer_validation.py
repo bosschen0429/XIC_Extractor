@@ -57,6 +57,14 @@ def _batch_for_case(tmp_path: Path, case: str):
     return scenario, batch
 
 
+def _validate(owners, models, batch):
+    return validate_mode_track_assignment_batch_for_consumption(
+        processing_owners=owners,
+        model_set=models,
+        assignment_batch=batch,
+    )
+
+
 @pytest.mark.parametrize(
     ("case", "expected_state"),
     (
@@ -75,27 +83,16 @@ def test_validator_accepts_all_states_and_exact_replay(
 
     original_bytes = canonical_mode_track_assignment_batch_bytes(batch)
     for _ in range(2):
-        result = validate_mode_track_assignment_batch_for_consumption(
-            processing_owners=scenario.fixture.owners,
-            model_set=scenario.models,
-            assignment_batch=batch,
-        )
-        assert result is None
+        assert _validate(scenario.fixture.owners, scenario.models, batch) is None
         assert canonical_mode_track_assignment_batch_bytes(batch) == original_bytes
 
 
 def test_direct_support_validation_is_pure(tmp_path: Path) -> None:
     scenario, batch = _batch_for_case(tmp_path, "direct_support")
-    original_model = scenario.models
+    original_bytes = canonical_mode_track_assignment_batch_bytes(batch)
 
-    result = validate_mode_track_assignment_batch_for_consumption(
-        processing_owners=scenario.fixture.owners,
-        model_set=scenario.models,
-        assignment_batch=batch,
-    )
-    assert result is None
-    assert scenario.models is original_model
-    assert "validate_mode_track_assignment_batch_for_consumption" in mta.__all__
+    _validate(scenario.fixture.owners, scenario.models, batch)
+    assert canonical_mode_track_assignment_batch_bytes(batch) == original_bytes
 
 
 @pytest.mark.parametrize(
@@ -106,6 +103,8 @@ def test_direct_support_validation_is_pure(tmp_path: Path) -> None:
         "different_model",
         "different_family",
         "different_policy",
+        "invalid_family_authority",
+        "mutable_family_tracks",
         "stale_sample",
         "stale_acquisition",
         "stale_injection",
@@ -171,6 +170,11 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
             + scenario.track_b_spine.anchors,
             policy=replace(scenario.policy, prediction_half_width_min=0.11),
         )
+    elif case == "invalid_family_authority":
+        object.__setattr__(models.family_context, "product_authority", "matrix")
+    elif case == "mutable_family_tracks":
+        family = models.family_context
+        object.__setattr__(family, "mode_tracks", list(family.mode_tracks))
     elif case == "stale_sample":
         object.__setattr__(batch, "sample", scenario.fixture.sample("anchor-1"))
     elif case == "stale_acquisition":
@@ -221,9 +225,7 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
         object.__setattr__(models.tracks[0], "anchors", list(models.tracks[0].anchors))
 
     with pytest.raises(ModeTrackContractError):
-        validate_mode_track_assignment_batch_for_consumption(
-            processing_owners=owners, model_set=models, assignment_batch=batch
-        )
+        _validate(owners, models, batch)
 
 
 def test_reinforcement_reuses_consumer_validation(tmp_path: Path) -> None:

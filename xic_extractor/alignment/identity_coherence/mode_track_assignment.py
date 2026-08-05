@@ -17,7 +17,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.identity_coherence.family_context import (
     FamilyContextRef,
-    canonical_family_context_ref_bytes,
+    validate_family_context_ref_for_consumption,
 )
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -1956,8 +1956,8 @@ def _validate_model_set_binding(
 ) -> None:
     model_set.policy.__post_init__()
     try:
-        canonical_family_context_ref_bytes(model_set.family_context)
-    except ValueError as exc:
+        validate_family_context_ref_for_consumption(model_set.family_context)
+    except (TypeError, ValueError) as exc:
         raise ModeTrackContractError(str(exc)) from exc
     for track in model_set.tracks:
         track.__post_init__()
