@@ -200,7 +200,12 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
         )
         object.__setattr__(batch, "acquisition_source", stale)
     elif case == "stale_injection":
-        object.__setattr__(batch, "injection_order", 99)
+        object.__setattr__(direct, "injection_order", 99)
+        _reseal_candidate(direct)
+        candidate_id = direct.candidate_observation_id
+        assignment = batch.assignments[0]
+        object.__setattr__(assignment, "candidate_observation_id", candidate_id)
+        _reseal(batch)
     elif case == "foreign_equal_content_support":
         sibling = scenario.fixture.retry()
         foreign = _assessment(
@@ -249,7 +254,7 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
     elif case == "mutable_track_anchors":
         object.__setattr__(models.tracks[0], "anchors", list(models.tracks[0].anchors))
 
-    if case in {"stale_sample", "stale_acquisition"}:
+    if case in {"stale_sample", "stale_acquisition", "stale_injection"}:
         with pytest.raises(ModeTrackContractError):
             canonical_mode_track_assignment_batch_bytes(batch)
     with pytest.raises(ModeTrackContractError):
@@ -288,18 +293,15 @@ def test_consumer_validator_replays_exact_assignment_decision(
         _validate(scenario.fixture.owners, scenario.models, batch)
 
 
-def test_consumer_validator_rejects_digest_consistent_candidate_apex(
-    tmp_path: Path,
-) -> None:
+def test_validator_rejects_digest_consistent_candidate_apex(tmp_path: Path) -> None:
     scenario, batch = _batch_for_case(tmp_path, "uniquely_assigned")
     assignment = batch.assignments[0]
     candidate = assignment.candidate_observation
     assert candidate is not None
     object.__setattr__(candidate, "apex_rt_min", candidate.apex_rt_min + 5.0)
     _reseal_candidate(candidate)
-    object.__setattr__(
-        assignment, "candidate_observation_id", candidate.candidate_observation_id
-    )
+    candidate_id = candidate.candidate_observation_id
+    object.__setattr__(assignment, "candidate_observation_id", candidate_id)
     _reseal(batch)
 
     with pytest.raises(ModeTrackContractError):
@@ -320,9 +322,7 @@ def test_fit_rejects_digest_consistent_anchor_apex(tmp_path: Path) -> None:
             processing_owners=scenario.fixture.owners,
             family_context=scenario.family_context,
             direct_support_anchors=tuple(
-                item
-                for track in scenario.models.tracks
-                for item in track.anchors
+                item for track in scenario.models.tracks for item in track.anchors
             ),
             policy=scenario.policy,
         )

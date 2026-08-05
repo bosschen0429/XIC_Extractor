@@ -657,6 +657,8 @@ class ModeTrackAssignmentBatch(_RuntimeFinal):
                     item.candidate_observation.sample != self.sample
                     or item.candidate_observation.acquisition_source
                     != self.acquisition_source
+                    or item.candidate_observation.injection_order
+                    != self.injection_order
                 )
             )
             for item in self.assignments
