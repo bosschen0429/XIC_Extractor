@@ -361,7 +361,37 @@ def _fact_row(fact: ModeTrackConservativeBackfillGroupFacts) -> dict[str, object
         "direct_support_count_s": fact.direct_support_count_s,
         "candidate_count": len(fact.exact_owner_candidate_assignments),
         "may_attempt_recovery": fact.may_attempt_recovery,
+        "reason_codes": list(fact.reason_codes),
     }
+
+
+def _candidate_decision_rows(
+    facts: Sequence[ModeTrackConservativeBackfillGroupFacts],
+) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for fact in facts:
+        for assignment in fact.exact_owner_candidate_assignments:
+            rows.append(
+                {
+                    "group_hypothesis_id": fact.group.group_hypothesis_id,
+                    "sample_identity_id": assignment.canonical_sample_identity_id,
+                    "sample_stem": assignment.sample.metadata.raw_stem,
+                    "assignment_id": assignment.assignment_id,
+                    "peak_hypothesis_id": assignment.peak_hypothesis_id,
+                    "peak_observation_content_id": (
+                        assignment.peak_observation_content_id
+                    ),
+                    "decision": (
+                        "proposed" if fact.may_attempt_recovery else "rejected"
+                    ),
+                    "reason_code": (
+                        "m2_activation_passed"
+                        if fact.may_attempt_recovery
+                        else "m2_support_below_threshold"
+                    ),
+                }
+            )
+    return rows
 
 
 def freeze_gate_c_proposal(
@@ -384,6 +414,8 @@ def freeze_gate_c_proposal(
     staging = _new_output_dir(output_dir)
     staged_source = staging / source_path.name
     staged_source.write_bytes(projection.source_artifact_bytes)
+    fact_rows = [_fact_row(fact) for fact in projection.mode_track_facts]
+    decision_rows = _candidate_decision_rows(projection.mode_track_facts)
     proposal = {
         "schema_version": "issue180_m9_gate_c_proposal_v1",
         "matrix_header": list(projection.matrix_header),
@@ -393,16 +425,42 @@ def freeze_gate_c_proposal(
         ),
         "pending_acceptance_rows": list(map(dict, projection.pending_acceptance_rows)),
         "expected_diff_rows": list(map(dict, projection.expected_diff_rows)),
+        "mode_track_fact_rows": fact_rows,
+        "candidate_decision_rows": decision_rows,
         "source_artifact_relpath": projection.source_artifact_relpath,
         "source_artifact_sha256": projection.source_artifact_sha256,
     }
     proposal_path = staging / "proposal.json"
     _write_json(proposal_path, proposal)
+    context = dict(run_context)
+    supplied_census = context.get("candidate_census")
+    if not isinstance(supplied_census, dict):
+        raise ValueError("Gate C run context candidate census is missing")
+    proposed_count = sum(row["decision"] == "proposed" for row in decision_rows)
+    expected_supplied = {
+        "track_count": len(fact_rows),
+        "pending": proposed_count,
+    }
+    if any(
+        key in supplied_census and supplied_census[key] != value
+        for key, value in expected_supplied.items()
+    ):
+        raise ValueError("Gate C run context candidate census changed")
+    supplied_census.update(
+        {
+            **expected_supplied,
+            "rejected": len(decision_rows) - proposed_count,
+            "exact_owner_candidate_count": len(decision_rows),
+            "mode_track_facts_sha256": _json_sha256(fact_rows),
+            "candidate_decisions_sha256": _json_sha256(decision_rows),
+        }
+    )
+    context["candidate_census"] = supplied_census
     receipt = {
         "schema_version": "issue180_m9_gate_c_proposal_receipt_v1",
         "proposal_sha256": _sha256(proposal_path),
         "source_file_sha256": _sha256(staged_source),
-        "run_context": dict(run_context),
+        "run_context": context,
     }
     _validate_proposal_payload(proposal, receipt, staged_source)
     _publish_json_marker(staging / "proposal_receipt.json", receipt)
@@ -481,6 +539,8 @@ def _validate_proposal_payload(
     source = json.loads(source_bytes)
     pending = _required_rows(proposal, "pending_acceptance_rows")
     expected = _required_rows(proposal, "expected_diff_rows")
+    fact_rows = _required_rows(proposal, "mode_track_fact_rows")
+    decision_rows = _required_rows(proposal, "candidate_decision_rows")
     if len(pending) != len(expected) or not pending:
         raise ValueError("Gate C proposal candidate/diff census changed")
     source_keys = {
@@ -490,10 +550,46 @@ def _validate_proposal_payload(
     pending_keys = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
     if source_keys != pending_keys:
         raise ValueError("Gate C source and pending product keys differ")
+    fact_group_ids = [row.get("group_hypothesis_id") for row in fact_rows]
+    if not fact_group_ids or len(fact_group_ids) != len(set(fact_group_ids)):
+        raise ValueError("Gate C ModeTrack fact census is incomplete")
+    decision_keys = [
+        (
+            row.get("group_hypothesis_id"),
+            row.get("sample_stem"),
+            row.get("assignment_id"),
+        )
+        for row in decision_rows
+    ]
+    if len(decision_keys) != len(set(decision_keys)) or any(
+        row.get("decision") not in {"proposed", "rejected"}
+        for row in decision_rows
+    ):
+        raise ValueError("Gate C exact-owner decision census is malformed")
+    proposed_keys = {
+        (row["group_hypothesis_id"], row["sample_stem"])
+        for row in decision_rows
+        if row["decision"] == "proposed"
+    }
+    if proposed_keys != pending_keys:
+        raise ValueError("Gate C proposed decision and pending keys differ")
     context = receipt.get("run_context")
     owner_keys = ("code_sha", "processing_request_id", "processing_attempt_id")
     if not isinstance(context, dict) or not all(context.get(key) for key in owner_keys):
         raise ValueError("Gate C proposal receipt owner context is incomplete")
+    census = context.get("candidate_census")
+    expected_census = {
+        "track_count": len(fact_rows),
+        "pending": len(proposed_keys),
+        "rejected": len(decision_rows) - len(proposed_keys),
+        "exact_owner_candidate_count": len(decision_rows),
+        "mode_track_facts_sha256": _json_sha256(fact_rows),
+        "candidate_decisions_sha256": _json_sha256(decision_rows),
+    }
+    if not isinstance(census, dict) or any(
+        census.get(key) != value for key, value in expected_census.items()
+    ):
+        raise ValueError("Gate C receipt census does not bind proposal evidence")
 
 
 def _validate_manual_review(

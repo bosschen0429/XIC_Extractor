@@ -14,6 +14,7 @@ def test_preflight_closes_85_inputs_without_opening_raw(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
+    _patch_launch_identity(monkeypatch, tmp_path, "a" * 40)
     output_dir = tmp_path / "gate-c"
     launch_path = tmp_path / "launch.json"
     path_read_bytes = Path.read_bytes
@@ -48,6 +49,7 @@ def test_frozen_launch_calls_shared_core_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
+    _patch_launch_identity(monkeypatch, tmp_path, "b" * 40)
     output_dir = tmp_path / "gate-c"
     launch_path = tmp_path / "launch.json"
     inputs = runner.build_launch_inputs(
@@ -64,7 +66,10 @@ def test_frozen_launch_calls_shared_core_once(
 
     def fake_run_gate_c(**kwargs) -> Path:
         calls.append(kwargs)
-        return tmp_path / "proposal_receipt.json"
+        receipt = output_dir / "proposal" / "proposal_receipt.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text("{}\n", encoding="utf-8")
+        return receipt
 
     monkeypatch.setattr(runner.gate_c_fixture, "run_gate_c", fake_run_gate_c)
     receipt = runner.run_frozen_launch(
@@ -76,7 +81,7 @@ def test_frozen_launch_calls_shared_core_once(
         code_sha="b" * 40,
     )
 
-    assert receipt == tmp_path / "proposal_receipt.json"
+    assert receipt == output_dir / "proposal" / "proposal_receipt.json"
     assert len(calls) == 1
     assert len(calls[0]["raw_files"]) == 85
 
@@ -85,7 +90,9 @@ def test_frozen_launch_calls_shared_core_once(
 def test_preflight_rejects_unclosed_universe_before_core(
     tmp_path: Path,
     failure: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _patch_launch_identity(monkeypatch, tmp_path, "c" * 40)
     metadata_path, raw_dir, dll_dir = _inputs(
         tmp_path,
         duplicate_order=failure == "injection_order",
@@ -102,6 +109,41 @@ def test_preflight_rejects_unclosed_universe_before_core(
             output_dir=tmp_path / "gate-c",
             launch_manifest_path=tmp_path / "launch.json",
             code_sha="c" * 40,
+        )
+
+
+def test_frozen_launch_rejects_missing_terminal_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
+    _patch_launch_identity(monkeypatch, tmp_path, "d" * 40)
+    output_dir = tmp_path / "gate-c"
+    launch_path = tmp_path / "launch.json"
+    inputs = runner.build_launch_inputs(
+        metadata_path=metadata_path,
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        manifest_root=tmp_path,
+        output_dir=output_dir,
+        launch_manifest_path=launch_path,
+        code_sha="d" * 40,
+    )
+    runner.freeze_preflight(launch_path, inputs.launch_manifest)
+    monkeypatch.setattr(
+        runner.gate_c_fixture,
+        "run_gate_c",
+        lambda **kwargs: output_dir / "proposal" / "proposal_receipt.json",
+    )
+
+    with pytest.raises(RuntimeError, match="terminal proposal receipt"):
+        runner.run_frozen_launch(
+            inputs=inputs,
+            launch_manifest_path=launch_path,
+            dll_dir=dll_dir,
+            manifest_root=tmp_path,
+            output_dir=output_dir,
+            code_sha="d" * 40,
         )
 
 
@@ -146,3 +188,15 @@ def _inputs(
         encoding="utf-8",
     )
     return metadata_path, raw_dir, dll_dir
+
+
+def _patch_launch_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    root: Path,
+    code_sha: str,
+) -> None:
+    executable = root / ".venv" / "Scripts" / "python.exe"
+    executable.parent.mkdir(parents=True, exist_ok=True)
+    executable.write_bytes(b"fixture")
+    monkeypatch.setattr(runner, "_current_executable", lambda: executable.resolve())
+    monkeypatch.setattr(runner, "_checkout_sha", lambda checkout: code_sha)

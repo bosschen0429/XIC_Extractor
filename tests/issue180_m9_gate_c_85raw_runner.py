@@ -4,6 +4,8 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from tests import issue180_m9_raw_validation_fixture as gate_c_fixture
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 
 EXPECTED_SAMPLE_COUNT = 85
+MODULE_NAME = "tests.issue180_m9_gate_c_85raw_runner"
 _CODE_SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
 
@@ -55,6 +58,12 @@ def build_launch_inputs(
             target.relative_to(manifest_root)
         except ValueError as exc:
             raise ValueError("Gate C outputs must stay below manifest root") from exc
+    executable = _current_executable()
+    expected_executable = (manifest_root / ".venv" / "Scripts" / "python.exe").resolve()
+    if executable != expected_executable or not expected_executable.is_file():
+        raise ValueError("Gate C must run from the worktree .venv Python")
+    if _checkout_sha(manifest_root) != code_sha:
+        raise ValueError("Gate C code SHA does not match the current checkout")
 
     rows = tuple(row for row in load_sample_metadata(metadata_path) if not row.excluded)
     if len(rows) != EXPECTED_SAMPLE_COUNT:
@@ -91,10 +100,35 @@ def build_launch_inputs(
         }
         for path in ordered_raws
     ]
+    argv = [
+        str(executable),
+        "-m",
+        MODULE_NAME,
+        "--sample-metadata",
+        str(metadata_path),
+        "--raw-dir",
+        str(raw_dir),
+        "--dll-dir",
+        str(dll_dir),
+        "--manifest-root",
+        str(manifest_root),
+        "--output-dir",
+        str(output_dir),
+        "--launch-manifest",
+        str(launch_path),
+        "--code-sha",
+        code_sha,
+    ]
     manifest: dict[str, object] = {
         "schema_version": "issue180_m9_gate_c_launch_manifest_v1",
         "launch_contract": gate_c_fixture.gate_c_launch_contract(),
         "code_sha": code_sha,
+        "execution": {
+            "executable": str(executable),
+            "working_directory": str(manifest_root),
+            "argv": argv,
+            "command_sha256": _json_sha256(argv),
+        },
         "metadata": {"path": str(metadata_path), "sha256": metadata_sha256},
         "raw": {
             "root": str(raw_dir),
@@ -141,7 +175,13 @@ def run_frozen_launch(
     frozen = json.loads(launch_manifest_path.read_text(encoding="utf-8"))
     if frozen != inputs.launch_manifest:
         raise ValueError("Gate C launch inputs changed after no-RAW preflight")
-    return gate_c_fixture.run_gate_c(
+    execution = frozen.get("execution")
+    if not isinstance(execution, dict) or (
+        execution.get("executable") != str(_current_executable())
+        or _checkout_sha(manifest_root.resolve()) != code_sha
+    ):
+        raise ValueError("Gate C execution identity changed after preflight")
+    receipt = gate_c_fixture.run_gate_c(
         raw_files=inputs.raw_files,
         sample_metadata=inputs.sample_metadata,
         dll_dir=dll_dir.resolve(),
@@ -150,10 +190,32 @@ def run_frozen_launch(
         code_sha=code_sha,
         metadata_sha256=inputs.metadata_sha256,
     )
+    targets = frozen.get("receipt_targets")
+    if not isinstance(targets, dict):
+        raise RuntimeError("Gate C frozen receipt targets are missing")
+    expected_receipt = Path(str(targets.get("proposal_receipt", ""))).resolve()
+    if receipt.resolve() != expected_receipt or not expected_receipt.is_file():
+        raise RuntimeError("Gate C terminal proposal receipt is missing or misplaced")
+    return receipt
 
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _current_executable() -> Path:
+    return Path(sys.executable).resolve()
+
+
+def _checkout_sha(root: Path) -> str:
+    result = subprocess.run(
+        ("git", "rev-parse", "HEAD"),
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
 
 
 def _tree_sha256(root: Path) -> str:

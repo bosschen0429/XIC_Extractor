@@ -339,6 +339,61 @@ def test_gate_c_two_stage_finalization_is_reproducible_and_rollback_exact(
     assert receipt["rollback_status"] == "baseline_exact"
 
 
+def test_gate_c_proposal_binds_complete_mode_track_decision_census(
+    tmp_path: Path,
+) -> None:
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path,
+        support_pattern=(
+            ("s1", ("early",), 101),
+            ("s2", ("early",), 201),
+            ("s3", ("late",), 301),
+        ),
+    )
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+    projection = golden_path.build_untargeted_cid_nl_mode_track_projection(
+        processing_owners=fixture.owners,
+        mode_track_facts=facts,
+        source_artifact_relpath="proposal/mode_track_source.json",
+    )
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=tmp_path / "proposal",
+        run_context=_gate_c_run_context(projection),
+    )
+
+    proposal = json.loads((tmp_path / "proposal/proposal.json").read_bytes())
+    receipt = json.loads(
+        (tmp_path / "proposal/proposal_receipt.json").read_bytes()
+    )
+    decisions = proposal["candidate_decision_rows"]
+    support_counts = [
+        row["direct_support_count_s"] for row in proposal["mode_track_fact_rows"]
+    ]
+    assert support_counts == [
+        2,
+        1,
+    ]
+    assert sum(row["decision"] == "proposed" for row in decisions) == 1
+    assert sum(row["decision"] == "rejected" for row in decisions) == 2
+    assert receipt["run_context"]["candidate_census"] == {
+        "candidate_decisions_sha256": gate_c_fixture._json_sha256(decisions),
+        "exact_owner_candidate_count": 3,
+        "mode_track_facts_sha256": gate_c_fixture._json_sha256(
+            proposal["mode_track_fact_rows"]
+        ),
+        "pending": 1,
+        "rejected": 2,
+        "track_count": 2,
+    }
+
+
 def test_gate_c_finalizer_rejects_tampered_proposal(tmp_path: Path) -> None:
     projection, proposal_dir = _gate_c_proposal(tmp_path)
     gate_c_fixture.freeze_gate_c_proposal(
