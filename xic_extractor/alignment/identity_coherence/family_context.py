@@ -220,8 +220,13 @@ def _validate_tracks(
     expected_ids = tuple(track.group_hypothesis_id for track in mode_tracks)
     if group_hypothesis_ids != expected_ids:
         raise ValueError("group_hypothesis_ids must exactly match mode_tracks")
+    owner_id_groups = tuple(track.owner_ids for track in mode_tracks)
+    if any(not isinstance(owner_ids, tuple) for owner_ids in owner_id_groups):
+        raise ValueError("ModeTrack owner_ids must be a tuple")
     owner_ids = tuple(
-        owner_id for track in mode_tracks for owner_id in track.owner_ids
+        _required_text(owner_id, field="ModeTrack owner_ids")
+        for group_owner_ids in owner_id_groups
+        for owner_id in group_owner_ids
     )
     if len(owner_ids) != len(set(owner_ids)):
         raise ValueError("ModeTracks must not share owner ids")
