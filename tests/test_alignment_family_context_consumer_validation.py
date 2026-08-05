@@ -50,12 +50,12 @@ def test_consumer_validation_accepts_exact_replay_without_mutation(
     reference = _context(with_tracks=with_tracks)
     before = canonical_family_context_ref_bytes(reference)
 
-    assert validate_family_context_ref_for_consumption(reference) is None
-    assert validate_family_context_ref_for_consumption(reference) is None
+    assert validate_family_context_ref_for_consumption(reference) is None  # type: ignore[func-returns-value]
+    assert validate_family_context_ref_for_consumption(reference) is None  # type: ignore[func-returns-value]
     assert canonical_family_context_ref_bytes(reference) == before
 
 
-class _FamilyContextRefSubclass(FamilyContextRef):
+class _FamilyContextRefSubclass(FamilyContextRef):  # type: ignore[misc]
     pass
 
 

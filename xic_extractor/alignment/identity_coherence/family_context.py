@@ -160,6 +160,16 @@ def canonical_family_context_ref_bytes(reference: FamilyContextRef) -> bytes:
     )
 
 
+def validate_family_context_ref_for_consumption(
+    reference: FamilyContextRef,
+) -> None:
+    """Revalidate the complete current M3-owned reference contract."""
+
+    if type(reference) is not FamilyContextRef:
+        raise TypeError("consumer validation requires exact FamilyContextRef")
+    reference.__post_init__(_FAMILY_CONTEXT_MINT_TOKEN)
+
+
 def _family_context_id(
     *,
     mz_interval: tuple[float, float],
@@ -294,4 +304,5 @@ __all__ = (
     "FamilyContextRef",
     "canonical_family_context_ref_bytes",
     "mint_family_context_ref",
+    "validate_family_context_ref_for_consumption",
 )
