@@ -1,0 +1,75 @@
+{
+  "schema_version": "issue180_m9_gate_b_durable_receipt_v1",
+  "fixture_id": "issue180-m9-tumorbc2297-1raw-v1",
+  "producing_state": {
+    "product_code_state": "e3018fb3b5a8235b34ac9fb0f9fec9268b62affe",
+    "validation_harness_sha256": "54feccc4620508f1f204c832e7010d374c61b594ceeb2fdceee73dcc227b8d30",
+    "tree_state": "product_clean_plus_recorded_task_fixture"
+  },
+  "authority": {
+    "validation_status": "diagnostic_only",
+    "verdict": "accepted_gate_b",
+    "product_authority": "none_until_checked_manifest",
+    "matrix_or_backfill_authority": false
+  },
+  "lane": {
+    "sample_stem": "TumorBC2297_DNA",
+    "sample_role": "study_sample",
+    "matrix_type": "breast_tissue",
+    "precursor_mz": 349.215,
+    "neutral_loss_tag": "DNA_dR",
+    "neutral_loss_da": 116.0474
+  },
+  "fresh_request": {
+    "owner_bound_discovery_index_sha256": "9d673ce294fef9b433b013dc3af37a99c1d7d7a935d0ef5f7e5432d746a70742",
+    "discovery_receipt_id": "xic.discovery-candidate-universe.v1:04faaa2b7d83b332be908baa3ddc6af81f9d7b5ba2e976c8819a00c6f7b8bbe6",
+    "acquisition_source_id": "xic.acquisition-source.v1:4ada2bf4b226f1848a98fb5b15f50bf0d7367fcd1d593833ec9683d803185492",
+    "candidate_artifact_sha256": "41a525922a3a298167e8abf45566a8d5fc3f78a46d10cf86c1056c8b6b6f2e32",
+    "discovery_candidate_count": 4849,
+    "settings_sha256": "d732e48d28911c1adf6c11f2ec7ad78e74f655cf38a4a10969a12fff05a69b65"
+  },
+  "runtime": {
+    "runtime_succeeded": true,
+    "elapsed_seconds": 28.56174910000118,
+    "raw_open_count": 1,
+    "logical_xic_request_count": 2,
+    "xic_batch_count": 1,
+    "adapter_chromatogram_call_count": 2,
+    "trace_point_count": 19,
+    "runtime_receipt_sha256": "6dea570d38b2963bb0d244a197f1108ad7a44e97a6de5f3185fccfd548aa0e25",
+    "terminal_heartbeat_sha256": "2e60a1fd4560cfacc4bb88394e2aa5dbcbba6b8c9bb7c3e60899c90004999c46"
+  },
+  "mode_track_facts": [
+    {
+      "group_hypothesis_id": "FAM000001",
+      "group_center_rt_min": 12.412295636016667,
+      "sample_count_n": 1,
+      "minimum_support_k": 2,
+      "direct_support_count_s": 1,
+      "exact_owner_candidate_count": 0,
+      "may_attempt_recovery": false
+    },
+    {
+      "group_hypothesis_id": "FAM000002",
+      "group_center_rt_min": 13.035384504266666,
+      "sample_count_n": 1,
+      "minimum_support_k": 2,
+      "direct_support_count_s": 0,
+      "exact_owner_candidate_count": 1,
+      "may_attempt_recovery": false
+    }
+  ],
+  "projection": {
+    "pending_acceptance_count": 0,
+    "expected_diff_count": 0,
+    "source_artifact_sha256": "7CB2C74311FF3D599B1E1558DE6A691F8FFC3A522F5C27DCDC93773FD014D236",
+    "zero_write_reason": "one_sample_n1_k2_both_groups_below_threshold"
+  },
+  "compatibility": {
+    "m8_2_reference_fixture": "docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b_v1.json",
+    "dual_peak_apices_match": true,
+    "current_checkout_reproduced": true,
+    "gate_c_85raw_source_reconstructed": false
+  },
+  "stop_rule": "Gate B passed; Gate C remains blocked until its exact 85-sample owner-bound index and metadata are reconstructed or freshly generated under the one-attempt budget."
+}
