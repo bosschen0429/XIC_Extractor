@@ -9,3 +9,4 @@
 /xic_extractor/**/*.py text eol=lf
 /docs/superpowers/plans/2026-07-25-cid-nl-oracle-owner-decisions.md text eol=lf
 /docs/superpowers/validation/**/*.tsv whitespace=cr-at-eol,-blank-at-eol
+/docs/superpowers/validation/issue180_m9_gate_c_85raw_v1/** -text -eol

@@ -218,6 +218,15 @@ observed cross-sample multi-owner aggregation. This receipt remains
 anchor, and the evidence grants no Matrix, Backfill, chemical-identity, or
 ProductWriter authority.
 
+The bounded Issue #180 M9 Gate C packet at
+`docs/superpowers/validation/issue180_m9_gate_c_85raw_v1/README.md` closes the
+separate opt-in projection rehearsal. One fresh 85-sample C1 run produced 26
+exact-owner proposals across three ModeTracks; manual physical-observation
+review passed all 26, and checked C2 wrote all 26 expected Backfill cells with
+zero unused expected diffs and exact baseline rollback. The accepted packet
+remains `diagnostic_only`: it does not activate defaults, change M1, establish
+chemical identity, or grant a new writer authority.
+
 `FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
 `shadow_ready / product_authority=none` structure. The inconclusive retained
 evidence does not alter Targeted behavior, Backfill, acceptance manifests,
