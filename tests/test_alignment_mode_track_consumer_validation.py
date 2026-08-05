@@ -10,6 +10,10 @@ from tests.test_alignment_mode_track_assignment import (
     _different_request_same_sources,
     _scenario,
 )
+from xic_extractor.alignment.drift_evidence import (
+    LocalTrajectoryEvidenceLookup,
+    assess_local_trajectory,
+)
 from xic_extractor.alignment.identity_coherence import mode_track_assignment as mta
 from xic_extractor.alignment.identity_coherence.family_context import (
     mint_family_context_ref,
@@ -42,11 +46,17 @@ def _batch_for_case(tmp_path: Path, case: str):
         }[case]
         direct_support = case == "direct_support"
         candidates = (scenario.candidate(apex, direct_support=direct_support),)
-    trajectory = (
-        scenario.missing_trajectory
-        if case == "technical_unassessable"
-        else scenario.assessable_trajectory
-    )
+    trajectory = scenario.assessable_trajectory
+    if case == "technical_unassessable":
+        trajectory = assess_local_trajectory(
+            LocalTrajectoryEvidenceLookup(
+                points=scenario.assessable_trajectory.landmark_points
+            ),
+            ("target",),
+            conflict_evidence_refs=(
+                scenario.assessable_trajectory.landmark_evidence_refs[0],
+            ),
+        )
     batch = assign_mode_tracks(
         processing_owners=scenario.fixture.owners,
         sample=scenario.fixture.sample("target"),
@@ -118,6 +128,8 @@ def test_validator_accepts_all_states_and_exact_replay(
     for _ in range(2):
         assert _validate(scenario.fixture.owners, scenario.models, batch) is None
         assert canonical_mode_track_assignment_batch_bytes(batch) == original_bytes
+
+
 @pytest.mark.parametrize(
     "case",
     (

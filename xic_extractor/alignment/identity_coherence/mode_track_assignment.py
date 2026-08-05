@@ -27,8 +27,10 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_MS1_OBSERVATION,
     PeakHypothesisContractError,
     validate_cid_nl_peak_hypothesis_binding,
+    validate_ms1_observation_peak_hypothesis_binding,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -359,8 +361,7 @@ class ModeTrackCandidateObservation(_RuntimeFinal):
             None
             if self.direct_support_assessment is None
             else (
-                self.direct_support_assessment.artifact.content_identity
-                .artifact_content_id
+                self.direct_support_assessment.artifact.content_identity.artifact_content_id
             )
         )
         if (
@@ -416,7 +417,11 @@ class ModeTrackPredictionAssessment(_RuntimeFinal):
             "unsupported_extrapolation",
         }:
             raise ModeTrackContractError("unsupported prediction status")
-        allow_empty_support = self.status == "sparse_anchors"
+        provisional_geometry = (
+            self.status == "predicted"
+            and "provisional_group_geometry" in self.reason_codes
+        )
+        allow_empty_support = self.status == "sparse_anchors" or provisional_geometry
         _require_canonical_texts(
             self.anchor_refs,
             field="anchor_refs",
@@ -724,8 +729,7 @@ def fit_mode_track_model_set(
         track.group_hypothesis_id: track for track in family_context.mode_tracks
     }
     if any(
-        type(anchor) is not ModeTrackSupportAnchor
-        for anchor in direct_support_anchors
+        type(anchor) is not ModeTrackSupportAnchor for anchor in direct_support_anchors
     ):
         raise ModeTrackContractError(
             "training inputs must be owner-minted ModeTrackSupportAnchor refs"
@@ -957,8 +961,7 @@ def assign_mode_tracks(
         injection_order=injection_order,
     )
     if any(
-        type(candidate) is not ModeTrackCandidateObservation
-        for candidate in candidates
+        type(candidate) is not ModeTrackCandidateObservation for candidate in candidates
     ):
         raise ModeTrackContractError("candidates must be owner-minted")
     canonical_candidates = tuple(
@@ -979,9 +982,7 @@ def assign_mode_tracks(
             "candidate physical peak observations must be unique"
         )
     for candidate in canonical_candidates:
-        ModeTrackCandidateObservation.__post_init__(
-            candidate, _MODE_TRACK_MINT_TOKEN
-        )
+        ModeTrackCandidateObservation.__post_init__(candidate, _MODE_TRACK_MINT_TOKEN)
         if (
             candidate.canonical_sample_identity_id != sample.identity.sample_identity_id
             or candidate.acquisition_source_id
@@ -1115,29 +1116,32 @@ def validate_mode_track_assignment_batch_for_consumption(
     first_assignment = batch.assignments[0]
     if any(
         item.prediction_assessments != first_assignment.prediction_assessments
-        or item.trajectory_evidence_refs
-        != first_assignment.trajectory_evidence_refs
+        or item.trajectory_evidence_refs != first_assignment.trajectory_evidence_refs
         or item.lineage_refs != first_assignment.lineage_refs
         for item in batch.assignments[1:]
     ):
         raise ModeTrackContractError(
             "assignments disagree on batch-wide prediction or lineage facts"
-    )
+        )
     for assignment in batch.assignments:
-        if tuple(
-            (
-                item.group_hypothesis_id,
-                item.anchor_refs,
-                item.support_artifact_content_ids,
+        if (
+            tuple(
+                (
+                    item.group_hypothesis_id,
+                    item.anchor_refs,
+                    item.support_artifact_content_ids,
+                )
+                for item in assignment.prediction_assessments
             )
-            for item in assignment.prediction_assessments
-        ) != model_predictions:
+            != model_predictions
+        ):
             raise ModeTrackContractError("assignment crosses the supplied model")
         candidate = assignment.candidate_observation
         if candidate is not None:
             _validate_candidate_binding(
                 processing_owners=processing_owners,
-                sample=batch.sample, candidate=candidate
+                sample=batch.sample,
+                candidate=candidate,
             )
     if any(item.state == "not_observed" for item in batch.assignments):
         if len(batch.assignments) != 1 or (
@@ -1176,7 +1180,8 @@ def reinforce_mode_track_model_set(
 
     validate_mode_track_assignment_batch_for_consumption(
         processing_owners=processing_owners,
-        model_set=model_set, assignment_batch=assignment_batch
+        model_set=model_set,
+        assignment_batch=assignment_batch,
     )
     additions: dict[str, list[ModeTrackSupportAnchor]] = {}
     for assignment in assignment_batch.assignments:
@@ -1387,6 +1392,21 @@ def _predict_track(
     anchors = track.anchors
     anchor_refs, support_refs = _track_evidence_refs(track)
     orders = tuple(anchor.injection_order for anchor in anchors)
+    if not anchors:
+        center = track.ordering_reference_rt_min
+        half_width = policy.prediction_half_width_min
+        return ModeTrackPredictionAssessment(
+            group_hypothesis_id=track.group_hypothesis_id,
+            status="predicted",
+            predicted_rt_min=center,
+            prediction_interval_min=(
+                _canonical_float(center - half_width),
+                _canonical_float(center + half_width),
+            ),
+            anchor_refs=(),
+            support_artifact_content_ids=(),
+            reason_codes=("provisional_group_geometry",),
+        )
     if injection_order in orders:
         center = anchors[orders.index(injection_order)].apex_rt_min
         half_width = policy.prediction_half_width_min
@@ -1468,7 +1488,7 @@ def _predict_track(
         prediction_interval_min=interval,
         anchor_refs=anchor_refs,
         support_artifact_content_ids=support_refs,
-        reason_codes=("prediction_available",),
+        reason_codes=tuple(sorted({"prediction_available", *drift_reasons})),
     )
 
 
@@ -1650,9 +1670,7 @@ def _mint_assignment(
         peak_hypothesis_id=hypothesis_id,
         peak_observation_content_id=observation_id,
         candidate_observation_class=observation_class,
-        direct_support_assessment_artifact_content_id=(
-            support_assessment_content_id
-        ),
+        direct_support_assessment_artifact_content_id=(support_assessment_content_id),
         group_hypothesis_id=group_hypothesis_id,
         state=state,
         reason_codes=canonical_reasons,
@@ -1675,9 +1693,7 @@ def _mint_assignment(
         peak_hypothesis_id=hypothesis_id,
         peak_observation_content_id=observation_id,
         candidate_observation_class=observation_class,
-        direct_support_assessment_artifact_content_id=(
-            support_assessment_content_id
-        ),
+        direct_support_assessment_artifact_content_id=(support_assessment_content_id),
         group_hypothesis_id=group_hypothesis_id,
         state=state,
         reason_codes=canonical_reasons,
@@ -1774,6 +1790,21 @@ def _validate_peak_hypothesis_binding(
             "candidate PeakHypothesis must reference one physical observation"
         )
     support = peak_hypothesis.evidence.cid_nl_chromatographic_support_ref
+    if peak_hypothesis.hypothesis_method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
+        if support is not None:
+            raise ModeTrackContractError(
+                "observation-only PeakHypothesis cannot carry training support"
+            )
+        try:
+            validate_ms1_observation_peak_hypothesis_binding(
+                peak_hypothesis,
+                processing_owners=processing_owners,
+                sample=sample,
+                peak_observation=peak_hypothesis.peak_observation_refs[0],
+            )
+        except PeakHypothesisContractError as exc:
+            raise ModeTrackContractError(str(exc)) from exc
+        return
     if support is None:
         raise ModeTrackContractError(
             "candidate PeakHypothesis must reference chromatographic support"
@@ -1865,17 +1896,11 @@ def _validate_support_anchor(
     processing_owners: ProcessingOwnerReferences,
     anchor: ModeTrackSupportAnchor,
 ) -> None:
-    if (
-        anchor.processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
+    if anchor.processing_request_id != processing_owners.request.processing_request_id:
         raise ModeTrackContractError(
             "support anchor belongs to a different processing request"
         )
-    if (
-        anchor.processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
+    if anchor.processing_attempt_id != processing_owners.attempt.processing_attempt_id:
         raise ModeTrackContractError(
             "support anchor belongs to a different processing attempt"
         )
@@ -2056,16 +2081,14 @@ def _validate_trajectory_sample(
             "local trajectory landmarks reference a stale acquisition source"
         )
     if any(
-        point.processing_request_id
-        != processing_owners.request.processing_request_id
+        point.processing_request_id != processing_owners.request.processing_request_id
         for point in assessment.landmark_points
     ):
         raise ModeTrackContractError(
             "local trajectory landmarks reference a different processing request"
         )
     if any(
-        point.processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
+        point.processing_attempt_id != processing_owners.attempt.processing_attempt_id
         for point in assessment.landmark_points
     ):
         raise ModeTrackContractError(
@@ -2078,13 +2101,15 @@ def _trajectory_delta(
     *,
     predicted_rt_min: float,
 ) -> tuple[float | None, tuple[str, ...]]:
-    if assessment.status != "assessable":
+    if assessment.status == "conflict":
         return None, tuple(sorted(assessment.reason_codes))
+    if assessment.status in {"missing_landmarks", "poor_landmarks"}:
+        return 0.0, ("anchor_trajectory_without_local_correction",)
     accepted = tuple(
         point for point in assessment.landmark_points if point.quality == "accepted"
     )
     if not accepted:
-        return None, ("assessable_trajectory_missing_accepted_local_landmarks",)
+        return 0.0, ("anchor_trajectory_without_local_correction",)
     by_local_rt: dict[float, set[float]] = {}
     for point in accepted:
         local_rt = _canonical_float(point.local_trajectory_rt_min)
@@ -2102,9 +2127,9 @@ def _trajectory_delta(
         local_rt, shift = local_shifts[0]
         if math.isclose(predicted_rt_min, local_rt, rel_tol=0.0, abs_tol=1e-12):
             return shift, ("exact_local_landmark_shift",)
-        return None, ("unsupported_local_landmark_extrapolation",)
+        return 0.0, ("anchor_trajectory_without_local_correction",)
     if not local_shifts[0][0] <= predicted_rt_min <= local_shifts[-1][0]:
-        return None, ("unsupported_local_landmark_extrapolation",)
+        return 0.0, ("anchor_trajectory_without_local_correction",)
     for local_rt, shift in local_shifts:
         if math.isclose(predicted_rt_min, local_rt, rel_tol=0.0, abs_tol=1e-12):
             return shift, ("exact_local_landmark_shift",)
@@ -2169,13 +2194,10 @@ def _crossed_track_ids(
             if right_prediction is None:
                 continue
             if (
-                left.ordering_reference_rt_min
-                >= right.ordering_reference_rt_min
+                left.ordering_reference_rt_min >= right.ordering_reference_rt_min
                 or left_prediction >= right_prediction
             ):
-                crossed.update(
-                    (left.group_hypothesis_id, right.group_hypothesis_id)
-                )
+                crossed.update((left.group_hypothesis_id, right.group_hypothesis_id))
     return frozenset(crossed)
 
 
