@@ -67,9 +67,16 @@ class ModeTrackContractError(ValueError):
     """Raised when an M8 owner reference is crossed, forged, or incomplete."""
 
 
+class _RuntimeFinal:
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        super().__init_subclass__(**kwargs)
+        if _RuntimeFinal not in cls.__bases__:
+            raise TypeError(f"{cls.__bases__[0].__name__} is final")
+
+
 @final
 @dataclass(frozen=True, slots=True)
-class ModeTrackTrajectoryPolicy:
+class ModeTrackTrajectoryPolicy(_RuntimeFinal):
     """Explicit lane policy; M8 intentionally owns no universal thresholds."""
 
     trajectory_policy_version: str
@@ -101,7 +108,7 @@ class ModeTrackTrajectoryPolicy:
 
 @final
 @dataclass(frozen=True, slots=True)
-class ModeTrackSupportAnchor:
+class ModeTrackSupportAnchor(_RuntimeFinal):
     """One exact direct-SUPPORT training fact assigned to one ModeTrack."""
 
     anchor_id: str
@@ -186,7 +193,7 @@ class ModeTrackSupportAnchor:
 
 @final
 @dataclass(frozen=True, slots=True)
-class ModeTrackModel:
+class ModeTrackModel(_RuntimeFinal):
     """One existing group identity plus its direct-SUPPORT trajectory anchors."""
 
     group_hypothesis_id: str
@@ -223,7 +230,7 @@ class ModeTrackModel:
 
 @final
 @dataclass(frozen=True, slots=True)
-class ModeTrackModelSet:
+class ModeTrackModelSet(_RuntimeFinal):
     """One fit-once family snapshot used by all sample assignments."""
 
     model_set_id: str
@@ -291,7 +298,7 @@ class ModeTrackModelSet:
 
 @final
 @dataclass(frozen=True, slots=True)
-class ModeTrackCandidateObservation:
+class ModeTrackCandidateObservation(_RuntimeFinal):
     """One owner-backed PeakHypothesis eligible for shadow assignment."""
 
     candidate_observation_id: str
@@ -384,7 +391,7 @@ class ModeTrackCandidateObservation:
 
 @final
 @dataclass(frozen=True, slots=True)
-class ModeTrackPredictionAssessment:
+class ModeTrackPredictionAssessment(_RuntimeFinal):
     """One track's injection-local prediction or explicit exclusion reason."""
 
     group_hypothesis_id: str
@@ -441,7 +448,7 @@ class ModeTrackPredictionAssessment:
 
 @final
 @dataclass(frozen=True, slots=True)
-class ModeTrackAssignment:
+class ModeTrackAssignment(_RuntimeFinal):
     """One immutable, shadow-only candidate-to-track assignment fact."""
 
     assignment_id: str
@@ -503,13 +510,13 @@ class ModeTrackAssignment:
             raise ModeTrackContractError(
                 "assignment contains crossed sample or acquisition refs"
             )
-        if not isinstance(self.prediction_assessments, tuple) or any(
-            not isinstance(item, ModeTrackPredictionAssessment)
+        if type(self.prediction_assessments) is not tuple or any(
+            type(item) is not ModeTrackPredictionAssessment
             for item in self.prediction_assessments
         ):
             raise ModeTrackContractError("prediction assessments must be typed refs")
         for prediction in self.prediction_assessments:
-            prediction.__post_init__()
+            ModeTrackPredictionAssessment.__post_init__(prediction)
         prediction_ids = tuple(
             item.group_hypothesis_id for item in self.prediction_assessments
         )
@@ -555,7 +562,8 @@ class ModeTrackAssignment:
             )
             candidate = self.candidate_observation
             if (
-                self.candidate_observation_id != candidate.candidate_observation_id
+                type(candidate) is not ModeTrackCandidateObservation
+                or self.candidate_observation_id != candidate.candidate_observation_id
                 or self.peak_hypothesis_id != candidate.peak_hypothesis_id
                 or self.peak_observation_content_id
                 != candidate.peak_observation_content_id
@@ -591,7 +599,7 @@ class ModeTrackAssignment:
 
 @final
 @dataclass(frozen=True, slots=True)
-class ModeTrackAssignmentBatch:
+class ModeTrackAssignmentBatch(_RuntimeFinal):
     """Exactly one deterministic assignment pass for one sample and model set."""
 
     assignment_batch_id: str
@@ -679,11 +687,13 @@ def fit_mode_track_model_set(
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackContractError("processing_owners must be owner-validated")
-    if not isinstance(family_context, FamilyContextRef):
+    if type(family_context) is not FamilyContextRef:
         raise ModeTrackContractError("family_context must be owner-minted")
-    if not isinstance(policy, ModeTrackTrajectoryPolicy):
+    validate_family_context_ref_for_consumption(family_context)
+    if type(policy) is not ModeTrackTrajectoryPolicy:
         raise ModeTrackContractError("policy must be explicit and typed")
-    if not isinstance(direct_support_anchors, tuple):
+    ModeTrackTrajectoryPolicy.__post_init__(policy)
+    if type(direct_support_anchors) is not tuple:
         raise ModeTrackContractError("direct_support_anchors must be a tuple")
     anchors_by_track: dict[str, list[ModeTrackSupportAnchor]] = {
         group_id: [] for group_id in family_context.group_hypothesis_ids
@@ -692,7 +702,7 @@ def fit_mode_track_model_set(
         track.group_hypothesis_id: track for track in family_context.mode_tracks
     }
     if any(
-        not isinstance(anchor, ModeTrackSupportAnchor)
+        type(anchor) is not ModeTrackSupportAnchor
         for anchor in direct_support_anchors
     ):
         raise ModeTrackContractError(
@@ -700,6 +710,7 @@ def fit_mode_track_model_set(
         )
     _require_unique_support_entities(direct_support_anchors)
     for anchor in direct_support_anchors:
+        ModeTrackSupportAnchor.__post_init__(anchor, _MODE_TRACK_MINT_TOKEN)
         group_id = anchor.group_hypothesis_id
         if group_id not in anchors_by_track:
             raise ModeTrackContractError(
@@ -889,12 +900,13 @@ def assign_mode_tracks(
 ) -> ModeTrackAssignmentBatch:
     """Assign every sample hypothesis once without granting product authority."""
 
-    acquisition_source, injection_order = _resolve_sample_acquisition(
-        processing_owners,
-        sample,
+    _validate_model_set_binding(
+        processing_owners=processing_owners,
+        model_set=model_set,
     )
-    if not isinstance(model_set, ModeTrackModelSet):
-        raise ModeTrackContractError("model_set must be owner-minted")
+    acquisition_source, injection_order = _resolve_sample_acquisition(
+        processing_owners, sample
+    )
     if (
         model_set.processing_request_id
         != processing_owners.request.processing_request_id
@@ -909,11 +921,7 @@ def assign_mode_tracks(
         raise ModeTrackContractError(
             "model set belongs to a different processing attempt"
         )
-    _validate_model_set_binding(
-        processing_owners=processing_owners,
-        model_set=model_set,
-    )
-    if not isinstance(candidates, tuple):
+    if type(candidates) is not tuple:
         raise ModeTrackContractError("candidates must be an immutable tuple")
     if not isinstance(trajectory_assessment, LocalTrajectoryAssessment):
         raise ModeTrackContractError(
@@ -927,7 +935,7 @@ def assign_mode_tracks(
         injection_order=injection_order,
     )
     if any(
-        not isinstance(candidate, ModeTrackCandidateObservation)
+        type(candidate) is not ModeTrackCandidateObservation
         for candidate in candidates
     ):
         raise ModeTrackContractError("candidates must be owner-minted")
@@ -949,6 +957,9 @@ def assign_mode_tracks(
             "candidate physical peak observations must be unique"
         )
     for candidate in canonical_candidates:
+        ModeTrackCandidateObservation.__post_init__(
+            candidate, _MODE_TRACK_MINT_TOKEN
+        )
         if (
             candidate.canonical_sample_identity_id != sample.identity.sample_identity_id
             or candidate.acquisition_source_id
@@ -1084,82 +1095,96 @@ def validate_mode_track_assignment_batch_for_consumption(
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
         raise ModeTrackContractError("processing_owners must be owner-validated")
-    if not isinstance(model_set, ModeTrackModelSet) or not isinstance(
-        assignment_batch, ModeTrackAssignmentBatch
-    ):
-        raise ModeTrackContractError("consumption requires owner-minted inputs")
-    batch = assignment_batch
-    request_id = processing_owners.request.processing_request_id
-    attempt_id = processing_owners.attempt.processing_attempt_id
-    if model_set.processing_request_id != request_id or (
-        batch.processing_request_id != request_id
-    ):
-        raise ModeTrackContractError("inputs belong to a different request")
-    if model_set.processing_attempt_id != attempt_id or (
-        batch.processing_attempt_id != attempt_id
-    ):
-        raise ModeTrackContractError("inputs belong to a different attempt")
-    if (
-        assignment_batch.model_set_id != model_set.model_set_id
-        or assignment_batch.family_context_id != model_set.family_context_id
-    ):
-        raise ModeTrackContractError("batch belongs to a different model set")
-    if (
-        assignment_batch.trajectory_policy_version
-        != model_set.policy.trajectory_policy_version
-        or assignment_batch.band_policy_version != model_set.policy.band_policy_version
-    ):
-        raise ModeTrackContractError("assignment batch uses a different model policy")
-    model_set.__post_init__(_MODE_TRACK_MINT_TOKEN)
     _validate_model_set_binding(
         processing_owners=processing_owners, model_set=model_set
     )
-
+    _validate_assignment_batch_graph(assignment_batch)
+    batch = assignment_batch
+    owner_key = (
+        processing_owners.request.processing_request_id,
+        processing_owners.attempt.processing_attempt_id,
+    )
+    if any(
+        (item.processing_request_id, item.processing_attempt_id) != owner_key
+        for item in (model_set, batch)
+    ):
+        raise ModeTrackContractError("inputs belong to different processing owners")
+    if (
+        batch.model_set_id,
+        batch.family_context_id,
+        batch.trajectory_policy_version,
+        batch.band_policy_version,
+    ) != (
+        model_set.model_set_id,
+        model_set.family_context_id,
+        model_set.policy.trajectory_policy_version,
+        model_set.policy.band_policy_version,
+    ):
+        raise ModeTrackContractError("batch belongs to a different model or policy")
     source, order = _resolve_sample_acquisition(processing_owners, batch.sample)
     if (
-        assignment_batch.canonical_sample_identity_id
-        != assignment_batch.sample.identity.sample_identity_id
-        or assignment_batch.acquisition_source_id != source.acquisition_source_id
-        or assignment_batch.acquisition_source != source
-        or assignment_batch.injection_order != order
+        batch.canonical_sample_identity_id,
+        batch.acquisition_source_id,
+        batch.acquisition_source,
+        batch.injection_order,
+    ) != (
+        batch.sample.identity.sample_identity_id,
+        source.acquisition_source_id,
+        source,
+        order,
     ):
         raise ModeTrackContractError("assignment batch has a stale sample binding")
-    assignment_batch.__post_init__(_MODE_TRACK_MINT_TOKEN)
-    assignments = assignment_batch.assignments
-    track_ids = model_set.family_context.group_hypothesis_ids
-    for assignment in assignments:
+    model_predictions = tuple(
+        (track.group_hypothesis_id, *_track_evidence_refs(track))
+        for track in model_set.tracks
+    )
+    for assignment in batch.assignments:
         if (
-            assignment.family_context_id != model_set.family_context_id
-            or assignment.processing_request_id != request_id
-            or assignment.processing_attempt_id != attempt_id
-            or assignment.canonical_sample_identity_id
-            != assignment_batch.canonical_sample_identity_id
-            or assignment.acquisition_source_id != source.acquisition_source_id
-            or assignment.injection_order != order
-            or assignment.sample != assignment_batch.sample
-            or assignment.acquisition_source != source
+            assignment.family_context_id,
+            (assignment.processing_request_id, assignment.processing_attempt_id),
+            assignment.canonical_sample_identity_id,
+            assignment.acquisition_source_id,
+            assignment.injection_order,
+            assignment.sample,
+            assignment.acquisition_source,
+        ) != (
+            model_set.family_context_id,
+            owner_key,
+            batch.canonical_sample_identity_id,
+            source.acquisition_source_id,
+            order,
+            batch.sample,
+            source,
         ):
             raise ModeTrackContractError("assignment contains crossed owner references")
-        assignment.__post_init__(_MODE_TRACK_MINT_TOKEN)
         if tuple(
-            item.group_hypothesis_id for item in assignment.prediction_assessments
-        ) != track_ids or (
+            (
+                item.group_hypothesis_id,
+                item.anchor_refs,
+                item.support_artifact_content_ids,
+            )
+            for item in assignment.prediction_assessments
+        ) != model_predictions or (
             assignment.group_hypothesis_id is not None
-            and assignment.group_hypothesis_id not in track_ids
+            and assignment.group_hypothesis_id
+            not in model_set.family_context.group_hypothesis_ids
         ):
-            raise ModeTrackContractError("assignment crosses the model Family")
+            raise ModeTrackContractError("assignment crosses the supplied model")
         candidate = assignment.candidate_observation
         if candidate is not None:
-            candidate.__post_init__(_MODE_TRACK_MINT_TOKEN)
             if (
-                candidate.sample != assignment_batch.sample
-                or candidate.acquisition_source != source
-                or candidate.injection_order != order
+                candidate.sample,
+                candidate.acquisition_source,
+                candidate.injection_order,
+            ) != (
+                batch.sample,
+                source,
+                order,
             ):
                 raise ModeTrackContractError("candidate has stale owner references")
             _validate_candidate_binding(
                 processing_owners=processing_owners,
-                sample=assignment_batch.sample, candidate=candidate
+                sample=batch.sample, candidate=candidate
             )
 
 
@@ -1250,15 +1275,7 @@ def canonical_mode_track_assignment_batch_bytes(
 ) -> bytes:
     """Serialize one owner-validated batch without public/product projections."""
 
-    if not isinstance(batch, ModeTrackAssignmentBatch):
-        raise TypeError("canonical serialization requires ModeTrackAssignmentBatch")
-    if batch.assignment_batch_id != _typed_digest(
-        "mode-track-assignment-batch:",
-        _batch_identity_payload(batch),
-    ):
-        raise ModeTrackContractError(
-            "assignment_batch_id mismatches canonical owner content"
-        )
+    _validate_assignment_batch_graph(batch)
     payload = _batch_identity_payload(batch)
     payload["schema_version"] = BATCH_SCHEMA_VERSION
     payload["assignment_batch_id"] = batch.assignment_batch_id
@@ -1370,6 +1387,18 @@ def _mint_model_set(
     )
 
 
+def _track_evidence_refs(track: ModeTrackModel) -> tuple[tuple[str, ...], ...]:
+    return (
+        tuple(sorted(anchor.anchor_id for anchor in track.anchors)),
+        tuple(
+            sorted(
+                anchor.support_assessment_artifact_content_id
+                for anchor in track.anchors
+            )
+        ),
+    )
+
+
 def _predict_track(
     track: ModeTrackModel,
     *,
@@ -1378,13 +1407,7 @@ def _predict_track(
     policy: ModeTrackTrajectoryPolicy,
 ) -> ModeTrackPredictionAssessment:
     anchors = track.anchors
-    anchor_refs = tuple(sorted(anchor.anchor_id for anchor in anchors))
-    support_refs = tuple(
-        sorted(
-            anchor.support_assessment_artifact_content_id
-            for anchor in anchors
-        )
-    )
+    anchor_refs, support_refs = _track_evidence_refs(track)
     orders = tuple(anchor.injection_order for anchor in anchors)
     if injection_order in orders:
         center = anchors[orders.index(injection_order)].apex_rt_min
@@ -1949,27 +1972,50 @@ def _validate_candidate_binding(
         )
 
 
+def _validate_assignment_batch_graph(batch: ModeTrackAssignmentBatch) -> None:
+    try:
+        if type(batch) is not ModeTrackAssignmentBatch:
+            raise TypeError("assignment batch requires exact M8-owned types")
+        ModeTrackAssignmentBatch.__post_init__(batch, _MODE_TRACK_MINT_TOKEN)
+        for item in batch.assignments:
+            ModeTrackAssignment.__post_init__(item, _MODE_TRACK_MINT_TOKEN)
+            if item.candidate_observation is not None:
+                ModeTrackCandidateObservation.__post_init__(
+                    item.candidate_observation, _MODE_TRACK_MINT_TOKEN
+                )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ModeTrackContractError(str(exc)) from exc
+
+
 def _validate_model_set_binding(
     *,
     processing_owners: ProcessingOwnerReferences,
     model_set: ModeTrackModelSet,
 ) -> None:
-    model_set.policy.__post_init__()
     try:
+        if (
+            type(model_set) is not ModeTrackModelSet
+            or type(model_set.policy) is not ModeTrackTrajectoryPolicy
+            or type(model_set.family_context) is not FamilyContextRef
+            or type(model_set.tracks) is not tuple
+            or any(type(track) is not ModeTrackModel for track in model_set.tracks)
+        ):
+            raise TypeError("model set contains non-owner runtime types")
         validate_family_context_ref_for_consumption(model_set.family_context)
-    except (TypeError, ValueError) as exc:
+        ModeTrackModelSet.__post_init__(model_set, _MODE_TRACK_MINT_TOKEN)
+        ModeTrackTrajectoryPolicy.__post_init__(model_set.policy)
+        for track in model_set.tracks:
+            ModeTrackModel.__post_init__(track)
+            for anchor in track.anchors:
+                ModeTrackSupportAnchor.__post_init__(anchor, _MODE_TRACK_MINT_TOKEN)
+                _validate_support_anchor(
+                    processing_owners=processing_owners, anchor=anchor
+                )
+        _require_unique_support_entities(
+            tuple(anchor for track in model_set.tracks for anchor in track.anchors)
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
         raise ModeTrackContractError(str(exc)) from exc
-    for track in model_set.tracks:
-        track.__post_init__()
-        for anchor in track.anchors:
-            anchor.__post_init__(_MODE_TRACK_MINT_TOKEN)
-            _validate_support_anchor(
-                processing_owners=processing_owners,
-                anchor=anchor,
-            )
-    _require_unique_support_entities(
-        tuple(anchor for track in model_set.tracks for anchor in track.anchors)
-    )
 
 
 def _require_unique_support_entities(
@@ -2174,8 +2220,8 @@ def _crossed_track_ids(
 def _canonical_anchors(
     anchors: tuple[ModeTrackSupportAnchor, ...],
 ) -> tuple[ModeTrackSupportAnchor, ...]:
-    if not isinstance(anchors, tuple) or any(
-        not isinstance(item, ModeTrackSupportAnchor) for item in anchors
+    if type(anchors) is not tuple or any(
+        type(item) is not ModeTrackSupportAnchor for item in anchors
     ):
         raise ModeTrackContractError("anchors must be owner-minted immutable refs")
     ids = tuple(item.anchor_id for item in anchors)
@@ -2196,8 +2242,8 @@ def _canonical_anchors(
 def _canonical_assignments(
     assignments: tuple[ModeTrackAssignment, ...],
 ) -> tuple[ModeTrackAssignment, ...]:
-    if not isinstance(assignments, tuple) or any(
-        not isinstance(item, ModeTrackAssignment) for item in assignments
+    if type(assignments) is not tuple or any(
+        type(item) is not ModeTrackAssignment for item in assignments
     ):
         raise ModeTrackContractError("assignments must be owner-minted refs")
     return tuple(

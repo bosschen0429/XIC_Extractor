@@ -65,6 +65,16 @@ def _validate(owners, models, batch):
     )
 
 
+def _reseal(batch) -> None:
+    assignment = batch.assignments[0]
+    assignment_payload = mta._assignment_identity_payload(assignment)
+    assignment_id = mta._typed_digest("mode-track-assignment:", assignment_payload)
+    object.__setattr__(assignment, "assignment_id", assignment_id)
+    batch_payload = mta._batch_identity_payload(batch)
+    batch_id = mta._typed_digest("mode-track-assignment-batch:", batch_payload)
+    object.__setattr__(batch, "assignment_batch_id", batch_id)
+
+
 @pytest.mark.parametrize(
     ("case", "expected_state"),
     (
@@ -73,6 +83,7 @@ def _validate(owners, models, batch):
         ("out_of_model", "out_of_model"),
         ("not_observed", "not_observed"),
         ("technical_unassessable", "technical_unassessable"),
+        ("direct_support", "uniquely_assigned"),
     ),
 )
 def test_validator_accepts_all_states_and_exact_replay(
@@ -85,16 +96,6 @@ def test_validator_accepts_all_states_and_exact_replay(
     for _ in range(2):
         assert _validate(scenario.fixture.owners, scenario.models, batch) is None
         assert canonical_mode_track_assignment_batch_bytes(batch) == original_bytes
-
-
-def test_direct_support_validation_is_pure(tmp_path: Path) -> None:
-    scenario, batch = _batch_for_case(tmp_path, "direct_support")
-    original_bytes = canonical_mode_track_assignment_batch_bytes(batch)
-
-    _validate(scenario.fixture.owners, scenario.models, batch)
-    assert canonical_mode_track_assignment_batch_bytes(batch) == original_bytes
-
-
 @pytest.mark.parametrize(
     "case",
     (
@@ -103,8 +104,6 @@ def test_direct_support_validation_is_pure(tmp_path: Path) -> None:
         "different_model",
         "different_family",
         "different_policy",
-        "invalid_family_authority",
-        "mutable_family_tracks",
         "stale_sample",
         "stale_acquisition",
         "stale_injection",
@@ -116,7 +115,9 @@ def test_direct_support_validation_is_pure(tmp_path: Path) -> None:
         "substituted_anchor_live_refs",
         "partial_tuple",
         "malformed_tuple",
-        "mutable_prediction_refs",
+        "forged_prediction_anchor_refs",
+        "forged_prediction_support_refs",
+        "malformed_policy",
         "mutable_track_anchors",
     ),
 )
@@ -135,7 +136,6 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
     )
     owners = scenario.fixture.owners
     models = scenario.models
-
     if case == "same_sources_new_request":
         owners = _different_request_same_sources(scenario.fixture)
     elif case == "sibling_attempt":
@@ -170,11 +170,6 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
             + scenario.track_b_spine.anchors,
             policy=replace(scenario.policy, prediction_half_width_min=0.11),
         )
-    elif case == "invalid_family_authority":
-        object.__setattr__(models.family_context, "product_authority", "matrix")
-    elif case == "mutable_family_tracks":
-        family = models.family_context
-        object.__setattr__(family, "mode_tracks", list(family.mode_tracks))
     elif case == "stale_sample":
         object.__setattr__(batch, "sample", scenario.fixture.sample("anchor-1"))
     elif case == "stale_acquisition":
@@ -218,9 +213,17 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
         object.__setattr__(batch, "assignments", ())
     elif case == "malformed_tuple":
         object.__setattr__(batch, "assignments", list(batch.assignments))
-    elif case == "mutable_prediction_refs":
+    elif case in {"forged_prediction_anchor_refs", "forged_prediction_support_refs"}:
         prediction = batch.assignments[0].prediction_assessments[0]
-        object.__setattr__(prediction, "anchor_refs", list(prediction.anchor_refs))
+        field = (
+            "anchor_refs"
+            if case.endswith("anchor_refs")
+            else "support_artifact_content_ids"
+        )
+        object.__setattr__(prediction, field, ("forged",))
+        _reseal(batch)
+    elif case == "malformed_policy":
+        object.__setattr__(models, "policy", object())
     elif case == "mutable_track_anchors":
         object.__setattr__(models.tracks[0], "anchors", list(models.tracks[0].anchors))
 
@@ -238,3 +241,21 @@ def test_reinforcement_reuses_consumer_validation(tmp_path: Path) -> None:
             model_set=scenario.models,
             assignment_batch=batch,
         )
+
+
+@pytest.mark.parametrize(
+    "owner_type",
+    (
+        mta.ModeTrackTrajectoryPolicy,
+        mta.ModeTrackSupportAnchor,
+        mta.ModeTrackModel,
+        mta.ModeTrackModelSet,
+        mta.ModeTrackCandidateObservation,
+        mta.ModeTrackPredictionAssessment,
+        mta.ModeTrackAssignment,
+        mta.ModeTrackAssignmentBatch,
+    ),
+)
+def test_m8_owner_types_are_runtime_final(owner_type) -> None:
+    with pytest.raises(TypeError):
+        type(f"Forged{owner_type.__name__}", (owner_type,), {})
