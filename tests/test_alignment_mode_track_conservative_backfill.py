@@ -143,6 +143,35 @@ def test_mode_track_facts_reject_partial_sample_batch_population(
         )
 
 
+def test_mode_track_groups_activate_independently_of_exact_owner_candidates(
+    tmp_path: Path,
+) -> None:
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path,
+        support_pattern=(
+            ("s1", ("early",), 101),
+            ("s2", ("early", "late"), 201),
+            ("s3", ("early",), 301),
+        ),
+    )
+
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+    early, late = sorted(facts, key=lambda item: item.group.group_center_rt)
+
+    assert (early.direct_support_count_s, early.minimum_support_k) == (3, 2)
+    assert early.may_attempt_recovery is True
+    assert early.exact_owner_candidate_assignments == ()
+    assert (late.direct_support_count_s, late.minimum_support_k) == (1, 2)
+    assert late.may_attempt_recovery is False
+    assert len(late.exact_owner_candidate_assignments) == 2
+    assert late.reason_codes == ("direct_support_threshold_not_met",)
+
+
 def _assess(
     *,
     fixture: Package2NoRawFixture,
@@ -165,7 +194,18 @@ def _assess(
     )
 
 
-def _mixed_mode_track_fixture(tmp_path: Path):
+def _mixed_mode_track_fixture(
+    tmp_path: Path,
+    *,
+    support_pattern: tuple[
+        tuple[str, tuple[str, ...], int],
+        ...,
+    ] = (
+        ("s1", ("early",), 101),
+        ("s2", ("early", "late"), 201),
+        ("s3", ("late",), 301),
+    ),
+):
     fixture = build_package2_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2", "s3"),
@@ -185,11 +225,7 @@ def _mixed_mode_track_fixture(tmp_path: Path):
                 scan_number=scan_number,
             ),
         )
-        for sample_stem, supported, scan_number in (
-            ("s1", ("early",), 101),
-            ("s2", ("early", "late"), 201),
-            ("s3", ("late",), 301),
-        )
+        for sample_stem, supported, scan_number in support_pattern
     )
     _, model_set, batches = bootstrap_mode_tracks_from_cid_nl_support(
         processing_owners=fixture.owners,

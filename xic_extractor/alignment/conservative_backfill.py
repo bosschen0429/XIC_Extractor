@@ -22,6 +22,18 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     TargetedCellObservationReferenceProjection,
     UntargetedCellObservationReferenceProjection,
 )
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
+from xic_extractor.alignment.hypothesis_owner_adapter import (
+    validate_cid_nl_assessment_hypothesis_closure,
+)
+from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
+    ModeTrackAssignment,
+    ModeTrackAssignmentBatch,
+    ModeTrackModelSet,
+    validate_mode_track_assignment_batch_for_consumption,
+)
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
@@ -60,6 +72,7 @@ _RECOVERY_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = (
     )
 )
 _CELL_DECISION_MINT_TOKEN = object()
+_MODE_TRACK_GROUP_FACTS_MINT_TOKEN = object()
 ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset(
     {"study_sample", "qc", "pooled_qc"}
 )
@@ -179,6 +192,133 @@ class ConservativeBackfillGroupFacts:
         if self.product_authority != PRODUCT_AUTHORITY:
             raise ConservativeBackfillContractError(
                 "conservative Backfill facts cannot grant product authority"
+            )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class ModeTrackConservativeBackfillGroupFacts:
+    """M2 activation facts for one exact M3 group in an M8 model snapshot."""
+
+    model_set: ModeTrackModelSet
+    group: CrossSamplePeakGroupHypothesis
+    sample_population: tuple[ResolvedCanonicalSampleIdentity, ...]
+    activation_eligible_sample_ids: tuple[str, ...]
+    direct_support_sample_ids: tuple[str, ...]
+    direct_support_assignments: tuple[ModeTrackAssignment, ...]
+    exact_owner_candidate_assignments: tuple[ModeTrackAssignment, ...]
+    sample_count_n: int
+    minimum_support_k: int
+    direct_support_count_s: int
+    group_frozen: bool
+    may_attempt_recovery: bool
+    reason_codes: tuple[str, ...]
+    _mint_token: InitVar[object] = field(kw_only=True)
+    policy_version: str = POLICY_VERSION
+    validation_status: str = VALIDATION_STATUS
+    product_authority: str = PRODUCT_AUTHORITY
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("ModeTrackConservativeBackfillGroupFacts is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _MODE_TRACK_GROUP_FACTS_MINT_TOKEN:
+            raise ConservativeBackfillContractError(
+                "ModeTrack Backfill facts must be minted by the M2 owner"
+            )
+        if type(self.model_set) is not ModeTrackModelSet:
+            raise ConservativeBackfillContractError(
+                "ModeTrack Backfill facts require one exact M8 model set"
+            )
+        if not any(
+            self.group is item for item in self.model_set.family_context.mode_tracks
+        ):
+            raise ConservativeBackfillContractError(
+                "ModeTrack Backfill group was substituted"
+            )
+        samples = _canonical_samples(self.sample_population)
+        if samples != self.sample_population:
+            raise ConservativeBackfillContractError(
+                "ModeTrack Backfill samples must be canonical-sorted"
+            )
+        eligible_ids = tuple(
+            sample.identity.sample_identity_id
+            for sample in samples
+            if _sample_is_activation_eligible(sample)
+        )
+        direct_assignments = _canonical_mode_track_assignments(
+            self.direct_support_assignments
+        )
+        candidate_assignments = _canonical_mode_track_assignments(
+            self.exact_owner_candidate_assignments
+        )
+        if direct_assignments != self.direct_support_assignments or (
+            candidate_assignments != self.exact_owner_candidate_assignments
+        ):
+            raise ConservativeBackfillContractError(
+                "ModeTrack Backfill assignments must be canonical-sorted"
+            )
+        direct_sample_ids = tuple(
+            assignment.canonical_sample_identity_id
+            for assignment in direct_assignments
+        )
+        if len(direct_sample_ids) != len(set(direct_sample_ids)):
+            raise ConservativeBackfillContractError(
+                "one sample may contribute at most one direct-SUPPORT vote per group"
+            )
+        if any(
+            assignment.group_hypothesis_id != self.group.group_hypothesis_id
+            or assignment.peak_hypothesis_id not in self.group.owner_ids
+            or assignment.state != "uniquely_assigned"
+            or assignment.reason_codes != ("existing_group_owner_observation",)
+            or assignment.candidate_observation_class != expected_class
+            for assignments, expected_class in (
+                (direct_assignments, "direct_support"),
+                (candidate_assignments, "non_training"),
+            )
+            for assignment in assignments
+        ):
+            raise ConservativeBackfillContractError(
+                "ModeTrack Backfill assignments are not exact existing group owners"
+            )
+        support_count = len(
+            tuple(
+                sample_id
+                for sample_id in direct_sample_ids
+                if sample_id in eligible_ids
+            )
+        )
+        minimum_support = minimum_direct_support_count(len(eligible_ids))
+        expected = {
+            "activation_eligible_sample_ids": eligible_ids,
+            "direct_support_sample_ids": direct_sample_ids,
+            "sample_count_n": len(eligible_ids),
+            "minimum_support_k": minimum_support,
+            "direct_support_count_s": support_count,
+            "group_frozen": True,
+            "may_attempt_recovery": support_count >= minimum_support,
+            "reason_codes": _group_reason_codes(
+                group_frozen=True,
+                direct_support_count=support_count,
+                minimum_support=minimum_support,
+            ),
+        }
+        for field_name, expected_value in expected.items():
+            if getattr(self, field_name) != expected_value:
+                raise ConservativeBackfillContractError(
+                    f"{field_name} does not match ModeTrack owner-derived facts"
+                )
+        if self.policy_version != POLICY_VERSION:
+            raise ConservativeBackfillContractError(
+                f"policy_version must be {POLICY_VERSION!r}"
+            )
+        if self.validation_status != VALIDATION_STATUS:
+            raise ConservativeBackfillContractError(
+                f"validation_status must be {VALIDATION_STATUS!r}"
+            )
+        if self.product_authority != PRODUCT_AUTHORITY:
+            raise ConservativeBackfillContractError(
+                "ModeTrack Backfill facts cannot grant product authority"
             )
 
 
@@ -693,6 +833,202 @@ def assess_conservative_backfill_group(
     )
 
 
+def assess_mode_track_conservative_backfill_groups(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    model_set: ModeTrackModelSet,
+    assignment_batches: tuple[ModeTrackAssignmentBatch, ...],
+    sample_assessments: tuple[
+        tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+        ...,
+    ],
+) -> tuple[ModeTrackConservativeBackfillGroupFacts, ...]:
+    """Derive exact-owner per-ModeTrack S/K facts without entering M1."""
+
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill requires validated processing owners"
+        )
+    if type(model_set) is not ModeTrackModelSet:
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill requires one exact M8 model set"
+        )
+    assessments = _canonical_mode_track_sample_assessments(
+        sample_assessments,
+        processing_owners=processing_owners,
+    )
+    batches = _canonical_mode_track_assignment_batches(
+        assignment_batches,
+        processing_owners=processing_owners,
+        model_set=model_set,
+    )
+    if any(
+        assessment.artifact.content_identity.artifact_content_id
+        not in model_set.family_context.source_lineage_refs
+        for _, assessment in assessments
+    ):
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill assessment is outside the exact Family lineage"
+        )
+    assessment_sample_ids = tuple(
+        sample.identity.sample_identity_id for sample, _ in assessments
+    )
+    batch_sample_ids = tuple(batch.canonical_sample_identity_id for batch in batches)
+    if batch_sample_ids != assessment_sample_ids:
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill requires a complete sample population"
+        )
+
+    assessment_by_sample_id = {
+        sample.identity.sample_identity_id: assessment
+        for sample, assessment in assessments
+    }
+    assignments_by_hypothesis_id: dict[str, ModeTrackAssignment] = {}
+    direct_by_group_id: dict[str, list[ModeTrackAssignment]] = {
+        group_id: [] for group_id in model_set.family_context.group_hypothesis_ids
+    }
+    candidates_by_group_id: dict[str, list[ModeTrackAssignment]] = {
+        group_id: [] for group_id in model_set.family_context.group_hypothesis_ids
+    }
+    for batch in batches:
+        assessment = assessment_by_sample_id[batch.canonical_sample_identity_id]
+        candidate_peak_ids = tuple(
+            peak.content.peak_observation_content_id
+            for peak in assessment.candidate_peaks
+        )
+        observed_assignments = tuple(
+            assignment
+            for assignment in batch.assignments
+            if assignment.peak_observation_content_id is not None
+        )
+        assigned_peak_ids = tuple(
+            cast(str, assignment.peak_observation_content_id)
+            for assignment in observed_assignments
+        )
+        if set(assigned_peak_ids) != set(candidate_peak_ids) or len(
+            assigned_peak_ids
+        ) != len(candidate_peak_ids):
+            raise ConservativeBackfillContractError(
+                "ModeTrack assignments do not close the exact assessment peak universe"
+            )
+        for assignment in observed_assignments:
+            hypothesis_id = cast(str, assignment.peak_hypothesis_id)
+            if hypothesis_id in assignments_by_hypothesis_id:
+                raise ConservativeBackfillContractError(
+                    "one PeakHypothesis may enter ModeTrack Backfill at most once"
+                )
+            assignments_by_hypothesis_id[hypothesis_id] = assignment
+
+        support_peak_ids = tuple(
+            sorted(
+                {
+                    relation.content.peak_observation_content_id
+                    for relation in assessment.individual_support_refs
+                }
+            )
+        )
+        assignment_by_peak_id = {
+            assignment.peak_observation_content_id: assignment
+            for assignment in observed_assignments
+        }
+        for peak_id in support_peak_ids:
+            support_assignment = assignment_by_peak_id.get(peak_id)
+            if (
+                support_assignment is None
+                or support_assignment.peak_hypothesis is None
+            ):
+                raise ConservativeBackfillContractError(
+                    "direct-SUPPORT assessment closure is missing its M8 assignment"
+                )
+            if support_assignment.direct_support_assessment is not assessment:
+                raise ConservativeBackfillContractError(
+                    "M8 direct-SUPPORT assignment substituted its source assessment"
+                )
+            validate_cid_nl_assessment_hypothesis_closure(
+                sample=batch.sample,
+                assessment=assessment,
+                hypothesis=support_assignment.peak_hypothesis,
+            )
+            group_id = _exact_mode_track_owner_group_id(
+                support_assignment,
+                model_set=model_set,
+            )
+            if group_id is None:
+                raise ConservativeBackfillContractError(
+                    "direct-SUPPORT assignment has no exact destination group"
+                )
+            if support_assignment.candidate_observation_class != "direct_support":
+                raise ConservativeBackfillContractError(
+                    "assessment SUPPORT cannot be relabeled as a non-training candidate"
+                )
+            direct_by_group_id[group_id].append(support_assignment)
+
+        for assignment in observed_assignments:
+            if assignment.candidate_observation_class != "non_training":
+                continue
+            group_id = _exact_mode_track_owner_group_id(
+                assignment,
+                model_set=model_set,
+                allow_non_owner=True,
+            )
+            if group_id is not None:
+                candidates_by_group_id[group_id].append(assignment)
+
+    samples = tuple(sample for sample, _ in assessments)
+    eligible_ids = tuple(
+        sample.identity.sample_identity_id
+        for sample in samples
+        if _sample_is_activation_eligible(sample)
+    )
+    minimum_support = minimum_direct_support_count(len(eligible_ids))
+    facts = []
+    for group in model_set.family_context.mode_tracks:
+        direct_assignments = _canonical_mode_track_assignments(
+            tuple(direct_by_group_id[group.group_hypothesis_id])
+        )
+        candidate_assignments = _canonical_mode_track_assignments(
+            tuple(candidates_by_group_id[group.group_hypothesis_id])
+        )
+        direct_sample_ids = tuple(
+            assignment.canonical_sample_identity_id
+            for assignment in direct_assignments
+        )
+        if len(direct_sample_ids) != len(set(direct_sample_ids)):
+            raise ConservativeBackfillContractError(
+                "one sample may contribute at most one direct-SUPPORT vote per group"
+            )
+        support_count = len(
+            tuple(
+                sample_id
+                for sample_id in direct_sample_ids
+                if sample_id in eligible_ids
+            )
+        )
+        facts.append(
+            ModeTrackConservativeBackfillGroupFacts(
+                model_set=model_set,
+                group=group,
+                sample_population=samples,
+                activation_eligible_sample_ids=eligible_ids,
+                direct_support_sample_ids=direct_sample_ids,
+                direct_support_assignments=direct_assignments,
+                exact_owner_candidate_assignments=candidate_assignments,
+                sample_count_n=len(eligible_ids),
+                minimum_support_k=minimum_support,
+                direct_support_count_s=support_count,
+                group_frozen=True,
+                may_attempt_recovery=support_count >= minimum_support,
+                reason_codes=_group_reason_codes(
+                    group_frozen=True,
+                    direct_support_count=support_count,
+                    minimum_support=minimum_support,
+                ),
+                _mint_token=_MODE_TRACK_GROUP_FACTS_MINT_TOKEN,
+            )
+        )
+    return tuple(facts)
+
+
 def assess_targeted_conservative_backfill_group(
     projections: tuple[TargetedCellObservationReferenceProjection, ...],
     *,
@@ -1004,6 +1340,169 @@ def _canonical_cells(
             "Backfill facts must reuse one exact frozen group context"
         )
     return cells
+
+
+def _canonical_mode_track_sample_assessments(
+    sample_assessments: object,
+    *,
+    processing_owners: ProcessingOwnerReferences,
+) -> tuple[
+    tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+    ...,
+]:
+    if not isinstance(sample_assessments, tuple) or not sample_assessments:
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill requires typed immutable sample assessments"
+        )
+    if any(
+        not isinstance(item, tuple)
+        or len(item) != 2
+        or not isinstance(item[0], ResolvedCanonicalSampleIdentity)
+        or not isinstance(item[1], CidNlMethodAssessmentRef)
+        for item in sample_assessments
+    ):
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill requires typed immutable sample assessments"
+        )
+    typed = cast(
+        tuple[
+            tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
+            ...,
+        ],
+        sample_assessments,
+    )
+    ordered = tuple(
+        sorted(typed, key=lambda item: item[0].identity.sample_identity_id)
+    )
+    sample_ids = tuple(
+        sample.identity.sample_identity_id for sample, _ in ordered
+    )
+    if len(sample_ids) != len(set(sample_ids)):
+        raise ConservativeBackfillContractError(
+            "each sample may contribute exactly one M9 assessment"
+        )
+    owner_samples = tuple(
+        sorted(
+            processing_owners.sample_resolutions,
+            key=lambda sample: sample.identity.sample_identity_id,
+        )
+    )
+    if len(ordered) != len(owner_samples) or any(
+        sample is not owner_sample
+        for (sample, _), owner_sample in zip(ordered, owner_samples, strict=True)
+    ):
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill requires the complete owner sample population"
+        )
+    owner_key = (
+        processing_owners.request.processing_request_id,
+        processing_owners.attempt.processing_attempt_id,
+    )
+    if any(
+        (
+            assessment.artifact.producer_processing_request_id,
+            assessment.artifact.producer_processing_attempt_id,
+        )
+        != owner_key
+        or assessment.content.canonical_sample_identity_id
+        != sample.identity.sample_identity_id
+        for sample, assessment in ordered
+    ):
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill assessment crossed its owner or sample"
+        )
+    method_subject_ids = {
+        assessment.content.method_subject.method_subject_id
+        for _, assessment in ordered
+    }
+    if len(method_subject_ids) != 1:
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill assessments must share one exact method subject"
+        )
+    return ordered
+
+
+def _canonical_mode_track_assignment_batches(
+    assignment_batches: object,
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    model_set: ModeTrackModelSet,
+) -> tuple[ModeTrackAssignmentBatch, ...]:
+    if not isinstance(assignment_batches, tuple) or any(
+        type(item) is not ModeTrackAssignmentBatch for item in assignment_batches
+    ):
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill requires typed immutable assignment batches"
+        )
+    batches = cast(tuple[ModeTrackAssignmentBatch, ...], assignment_batches)
+    ordered = tuple(
+        sorted(batches, key=lambda item: item.canonical_sample_identity_id)
+    )
+    sample_ids = tuple(item.canonical_sample_identity_id for item in ordered)
+    if len(sample_ids) != len(set(sample_ids)):
+        raise ConservativeBackfillContractError(
+            "each sample may contribute exactly one M8 assignment batch"
+        )
+    for batch in ordered:
+        validate_mode_track_assignment_batch_for_consumption(
+            processing_owners=processing_owners,
+            model_set=model_set,
+            assignment_batch=batch,
+        )
+    return ordered
+
+
+def _canonical_mode_track_assignments(
+    assignments: object,
+) -> tuple[ModeTrackAssignment, ...]:
+    if not isinstance(assignments, tuple) or any(
+        type(item) is not ModeTrackAssignment for item in assignments
+    ):
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill requires typed immutable assignments"
+        )
+    typed = cast(tuple[ModeTrackAssignment, ...], assignments)
+    ordered = tuple(
+        sorted(
+            typed,
+            key=lambda item: (
+                item.canonical_sample_identity_id,
+                item.peak_hypothesis_id or "",
+                item.assignment_id,
+            ),
+        )
+    )
+    if len({item.assignment_id for item in ordered}) != len(ordered):
+        raise ConservativeBackfillContractError(
+            "ModeTrack Backfill assignments must be unique"
+        )
+    return ordered
+
+
+def _exact_mode_track_owner_group_id(
+    assignment: ModeTrackAssignment,
+    *,
+    model_set: ModeTrackModelSet,
+    allow_non_owner: bool = False,
+) -> str | None:
+    group_by_id = {
+        group.group_hypothesis_id: group
+        for group in model_set.family_context.mode_tracks
+    }
+    group = group_by_id.get(assignment.group_hypothesis_id or "")
+    exact_owner = (
+        assignment.state == "uniquely_assigned"
+        and assignment.reason_codes == ("existing_group_owner_observation",)
+        and group is not None
+        and assignment.peak_hypothesis_id in group.owner_ids
+    )
+    if not exact_owner:
+        if allow_non_owner:
+            return None
+        raise ConservativeBackfillContractError(
+            "direct-SUPPORT assignment is not an exact existing group owner"
+        )
+    return cast(str, assignment.group_hypothesis_id)
 
 
 def _canonical_recovery_group_facts(
@@ -1376,10 +1875,12 @@ __all__ = [
     "ConservativeBackfillCellDecision",
     "ConservativeBackfillContractError",
     "ConservativeBackfillGroupFacts",
+    "ModeTrackConservativeBackfillGroupFacts",
     "ConservativeBackfillRecoveryCandidateUniverse",
     "ConservativeBackfillRecoveryEvidence",
     "POLICY_VERSION",
     "assess_conservative_backfill_group",
+    "assess_mode_track_conservative_backfill_groups",
     "assess_targeted_conservative_backfill_group",
     "assess_untargeted_conservative_backfill_group",
     "canonical_conservative_backfill_recovery_universe_bytes",
