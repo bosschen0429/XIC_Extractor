@@ -17,6 +17,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.identity_coherence.family_context import (
     FamilyContextRef,
+    canonical_family_context_ref_bytes,
 )
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -502,6 +503,13 @@ class ModeTrackAssignment:
             raise ModeTrackContractError(
                 "assignment contains crossed sample or acquisition refs"
             )
+        if not isinstance(self.prediction_assessments, tuple) or any(
+            not isinstance(item, ModeTrackPredictionAssessment)
+            for item in self.prediction_assessments
+        ):
+            raise ModeTrackContractError("prediction assessments must be typed refs")
+        for prediction in self.prediction_assessments:
+            prediction.__post_init__()
         prediction_ids = tuple(
             item.group_hypothesis_id for item in self.prediction_assessments
         )
@@ -1946,7 +1954,13 @@ def _validate_model_set_binding(
     processing_owners: ProcessingOwnerReferences,
     model_set: ModeTrackModelSet,
 ) -> None:
+    model_set.policy.__post_init__()
+    try:
+        canonical_family_context_ref_bytes(model_set.family_context)
+    except ValueError as exc:
+        raise ModeTrackContractError(str(exc)) from exc
     for track in model_set.tracks:
+        track.__post_init__()
         for anchor in track.anchors:
             anchor.__post_init__(_MODE_TRACK_MINT_TOKEN)
             _validate_support_anchor(

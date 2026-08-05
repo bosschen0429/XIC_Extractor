@@ -40,9 +40,8 @@ def _batch_for_case(tmp_path: Path, case: str):
             "out_of_model": 8.55,
             "technical_unassessable": 7.87,
         }[case]
-        candidates = (
-            scenario.candidate(apex, direct_support=case == "direct_support"),
-        )
+        direct_support = case == "direct_support"
+        candidates = (scenario.candidate(apex, direct_support=direct_support),)
     trajectory = (
         scenario.missing_trajectory
         if case == "technical_unassessable"
@@ -68,10 +67,8 @@ def _batch_for_case(tmp_path: Path, case: str):
         ("technical_unassessable", "technical_unassessable"),
     ),
 )
-def test_consumer_validator_accepts_all_states_and_exact_replay(
-    tmp_path: Path,
-    case: str,
-    expected_state: str,
+def test_validator_accepts_all_states_and_exact_replay(
+    tmp_path: Path, case: str, expected_state: str
 ) -> None:
     scenario, batch = _batch_for_case(tmp_path, case)
     assert tuple(item.state for item in batch.assignments) == (expected_state,)
@@ -87,9 +84,7 @@ def test_consumer_validator_accepts_all_states_and_exact_replay(
         assert canonical_mode_track_assignment_batch_bytes(batch) == original_bytes
 
 
-def test_direct_support_validation_is_pure_and_does_not_reinforce(
-    tmp_path: Path,
-) -> None:
+def test_direct_support_validation_is_pure(tmp_path: Path) -> None:
     scenario, batch = _batch_for_case(tmp_path, "direct_support")
     original_model = scenario.models
 
@@ -122,6 +117,8 @@ def test_direct_support_validation_is_pure_and_does_not_reinforce(
         "substituted_anchor_live_refs",
         "partial_tuple",
         "malformed_tuple",
+        "mutable_prediction_refs",
+        "mutable_track_anchors",
     ),
 )
 def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
@@ -217,6 +214,11 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
         object.__setattr__(batch, "assignments", ())
     elif case == "malformed_tuple":
         object.__setattr__(batch, "assignments", list(batch.assignments))
+    elif case == "mutable_prediction_refs":
+        prediction = batch.assignments[0].prediction_assessments[0]
+        object.__setattr__(prediction, "anchor_refs", list(prediction.anchor_refs))
+    elif case == "mutable_track_anchors":
+        object.__setattr__(models.tracks[0], "anchors", list(models.tracks[0].anchors))
 
     with pytest.raises(ModeTrackContractError):
         validate_mode_track_assignment_batch_for_consumption(
@@ -224,9 +226,7 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
         )
 
 
-def test_reinforcement_uses_the_same_consumer_validation_closure(
-    tmp_path: Path,
-) -> None:
+def test_reinforcement_reuses_consumer_validation(tmp_path: Path) -> None:
     scenario, batch = _batch_for_case(tmp_path, "not_observed")
     object.__setattr__(batch, "sample", scenario.fixture.sample("anchor-1"))
 
