@@ -37,6 +37,7 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 SCHEMA_VERSION = "peak_hypothesis_v1"
 HYPOTHESIS_METHOD_DDA_CID_NL = "dda_cid_nl"
+HYPOTHESIS_METHOD_MS1_OBSERVATION = "ms1_physical_observation"
 ANALYSIS_MODE_WORKFLOW_NEUTRAL = OWNER_BACKED_ANALYSIS_MODE
 ARTIFACT_SEMANTIC_ROLE = "owner_backed_peak_hypothesis"
 VALIDATION_STATUS = "diagnostic_only"
@@ -48,6 +49,14 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.peak_hypothesis_identity",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
+    validation_status=VALIDATION_STATUS,
+    media_type=MEDIA_TYPE,
+    serialization_format=SERIALIZATION_FORMAT,
+)
+_OBSERVATION_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.peak_detection.peak_hypothesis_identity",
+    semantic_role="owner_backed_ms1_observation_hypothesis",
+    schema_version="peak_hypothesis_ms1_observation_v1",
     validation_status=VALIDATION_STATUS,
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
@@ -110,6 +119,49 @@ def compose_cid_nl_peak_hypothesis(
     )
 
 
+def compose_ms1_observation_peak_hypothesis(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    peak_observation: PeakObservationRef,
+) -> PeakHypothesis:
+    """Compose one physical MS1 observation without training evidence."""
+
+    _validate_observation_reference(
+        processing_owners=processing_owners,
+        sample=sample,
+        peak_observation=peak_observation,
+    )
+    hypothesis_id = _observation_hypothesis_id(peak_observation)
+    artifact = _mint_evidence_artifact_ref(
+        producer_processing_request_id=processing_owners.request.processing_request_id,
+        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
+        semantic_contract=_OBSERVATION_ARTIFACT_SEMANTIC_CONTRACT,
+        payload_bytes=canonical_ms1_observation_peak_hypothesis_bytes(
+            hypothesis_id=hypothesis_id,
+            peak_observation=peak_observation,
+        ),
+        upstream_artifacts=(peak_observation.artifact,),
+    )
+    return PeakHypothesis(
+        hypothesis_id=hypothesis_id,
+        trace_group_id="",
+        target_label="",
+        role="",
+        istd_pair="",
+        analysis_mode=ANALYSIS_MODE_WORKFLOW_NEUTRAL,
+        resolver_mode=peak_observation.generation_provenance.resolver_mode,
+        integration=peak_observation.content.integration,
+        evidence=EvidenceVector(),
+        audit=AuditTrail(
+            proposal_sources=peak_observation.generation_provenance.proposal_sources,
+        ),
+        hypothesis_method=HYPOTHESIS_METHOD_MS1_OBSERVATION,
+        peak_observation_refs=(peak_observation,),
+        artifact=artifact,
+    )
+
+
 def validate_cid_nl_peak_hypothesis_binding(
     hypothesis: PeakHypothesis,
     *,
@@ -137,11 +189,34 @@ def validate_cid_nl_peak_hypothesis_binding(
         )
 
 
+def validate_ms1_observation_peak_hypothesis_binding(
+    hypothesis: PeakHypothesis,
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    peak_observation: PeakObservationRef,
+) -> None:
+    """Reject owner, observation, request, attempt, or sample substitution."""
+
+    expected = compose_ms1_observation_peak_hypothesis(
+        processing_owners=processing_owners,
+        sample=sample,
+        peak_observation=peak_observation,
+    )
+    if hypothesis != expected:
+        raise PeakHypothesisContractError(
+            "MS1 observation PeakHypothesis binding was substituted"
+        )
+
+
 def validate_owner_backed_peak_hypothesis_instance(
     hypothesis: PeakHypothesis,
 ) -> None:
     """Validate the immutable owner-backed branch of ``PeakHypothesis``."""
 
+    if hypothesis.hypothesis_method == HYPOTHESIS_METHOD_MS1_OBSERVATION:
+        _validate_ms1_observation_hypothesis_instance(hypothesis)
+        return
     if hypothesis.hypothesis_method != HYPOTHESIS_METHOD_DDA_CID_NL:
         raise PeakHypothesisContractError(
             f"hypothesis_method must be {HYPOTHESIS_METHOD_DDA_CID_NL!r}"
@@ -212,6 +287,56 @@ def validate_owner_backed_peak_hypothesis_instance(
     )
 
 
+def _validate_ms1_observation_hypothesis_instance(
+    hypothesis: PeakHypothesis,
+) -> None:
+    if (
+        hypothesis.trace_group_id
+        or hypothesis.target_label
+        or hypothesis.role
+        or hypothesis.istd_pair
+    ):
+        raise PeakHypothesisContractError(
+            "owner-backed MS1 hypotheses cannot mint Targeted context"
+        )
+    if hypothesis.analysis_mode != ANALYSIS_MODE_WORKFLOW_NEUTRAL:
+        raise PeakHypothesisContractError(
+            "owner-backed MS1 hypothesis must remain workflow neutral"
+        )
+    if (
+        not isinstance(hypothesis.peak_observation_refs, tuple)
+        or len(hypothesis.peak_observation_refs) != 1
+        or not isinstance(hypothesis.peak_observation_refs[0], PeakObservationRef)
+    ):
+        raise PeakHypothesisContractError(
+            "MS1 hypothesis requires exactly one owner-minted peak observation"
+        )
+    observation = hypothesis.peak_observation_refs[0]
+    if hypothesis.integration != observation.content.integration:
+        raise PeakHypothesisContractError(
+            "hypothesis integration must be the referenced physical observation"
+        )
+    if hypothesis.resolver_mode != observation.generation_provenance.resolver_mode:
+        raise PeakHypothesisContractError(
+            "hypothesis resolver_mode mismatches observation provenance"
+        )
+    if hypothesis.evidence != EvidenceVector():
+        raise PeakHypothesisContractError(
+            "observation-only hypothesis cannot carry training evidence"
+        )
+    if hypothesis.audit != AuditTrail(
+        proposal_sources=observation.generation_provenance.proposal_sources,
+    ):
+        raise PeakHypothesisContractError(
+            "observation-only hypothesis audit cannot carry selection authority"
+        )
+    if hypothesis.hypothesis_id != _observation_hypothesis_id(observation):
+        raise PeakHypothesisContractError(
+            "hypothesis_id mismatches owner-backed MS1 observation"
+        )
+    _validate_observation_hypothesis_artifact(hypothesis, observation)
+
+
 def canonical_owner_backed_peak_hypothesis_bytes(
     *,
     hypothesis_id: str,
@@ -243,6 +368,123 @@ def canonical_owner_backed_peak_hypothesis_bytes(
         },
     }
     return _canonical_json_bytes(payload)
+
+
+def canonical_ms1_observation_peak_hypothesis_bytes(
+    *,
+    hypothesis_id: str,
+    peak_observation: PeakObservationRef,
+) -> bytes:
+    expected_id = _observation_hypothesis_id(peak_observation)
+    if hypothesis_id != expected_id:
+        raise PeakHypothesisContractError(
+            "hypothesis_id mismatches canonical MS1 observation content"
+        )
+    return _canonical_json_bytes(
+        {
+            "schema_version": "peak_hypothesis_ms1_observation_v1",
+            "validation_status": VALIDATION_STATUS,
+            "hypothesis_id": hypothesis_id,
+            "content": _observation_hypothesis_content_basis(peak_observation),
+            "exact_upstream_content": {
+                "peak_observation_artifact_content_id": (
+                    peak_observation.artifact.content_identity.artifact_content_id
+                ),
+            },
+        }
+    )
+
+
+def _validate_observation_reference(
+    *,
+    processing_owners: object,
+    sample: object,
+    peak_observation: object,
+) -> None:
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise PeakHypothesisContractError(
+            "processing_owners must be a validated ProcessingOwnerReferences"
+        )
+    if not isinstance(sample, ResolvedCanonicalSampleIdentity):
+        raise PeakHypothesisContractError(
+            "sample must be an owner-resolved canonical sample"
+        )
+    if not isinstance(peak_observation, PeakObservationRef):
+        raise PeakHypothesisContractError(
+            "peak observation must be an owner-minted PeakObservationRef"
+        )
+    try:
+        validate_peak_observation_binding(
+            peak_observation,
+            processing_owners=processing_owners,
+            sample=sample,
+        )
+    except PeakObservationContractError as exc:
+        raise PeakHypothesisContractError(str(exc)) from exc
+
+
+def _validate_observation_hypothesis_artifact(
+    hypothesis: PeakHypothesis,
+    peak_observation: PeakObservationRef,
+) -> None:
+    artifact = hypothesis.artifact
+    if not isinstance(artifact, EvidenceArtifactRef):
+        raise PeakHypothesisContractError(
+            "owner-backed hypothesis requires an immutable evidence artifact"
+        )
+    if artifact.semantic_contract != _OBSERVATION_ARTIFACT_SEMANTIC_CONTRACT:
+        raise PeakHypothesisContractError(
+            "hypothesis artifact semantic contract is not MS1 observation-owned"
+        )
+    if artifact.upstream_artifact_ids != (
+        peak_observation.artifact.evidence_artifact_id,
+    ):
+        raise PeakHypothesisContractError(
+            "MS1 hypothesis artifact does not close its physical observation"
+        )
+    if artifact.producer_processing_request_id != (
+        peak_observation.artifact.producer_processing_request_id
+    ) or artifact.producer_processing_attempt_id != (
+        peak_observation.artifact.producer_processing_attempt_id
+    ):
+        raise PeakHypothesisContractError(
+            "MS1 hypothesis artifact references a different processing owner"
+        )
+    try:
+        verify_evidence_artifact_payload(
+            artifact,
+            canonical_ms1_observation_peak_hypothesis_bytes(
+                hypothesis_id=hypothesis.hypothesis_id,
+                peak_observation=peak_observation,
+            ),
+        )
+    except EvidenceArtifactContractError as exc:
+        raise PeakHypothesisContractError(
+            "MS1 hypothesis artifact mismatches immutable owner content"
+        ) from exc
+
+
+def _observation_hypothesis_id(peak_observation: PeakObservationRef) -> str:
+    digest = hashlib.sha256(
+        _canonical_json_bytes(_observation_hypothesis_content_basis(peak_observation))
+    ).hexdigest()
+    return f"{_HYPOTHESIS_ID_PREFIX}{digest}"
+
+
+def _observation_hypothesis_content_basis(
+    peak_observation: PeakObservationRef,
+) -> dict[str, object]:
+    return {
+        "schema": "peak_hypothesis_ms1_observation_content_v1",
+        "hypothesis_method": HYPOTHESIS_METHOD_MS1_OBSERVATION,
+        "canonical_sample_identity_id": (
+            peak_observation.content.canonical_sample_identity_id
+        ),
+        "peak_observation_content_ids": [
+            peak_observation.content.peak_observation_content_id
+        ],
+        "evidence_artifact_content_ids": [],
+    }
 
 
 def _validate_reference_pair(
@@ -443,9 +685,13 @@ def _canonical_json_bytes(value: object) -> bytes:
 __all__ = [
     "ARTIFACT_SEMANTIC_ROLE",
     "HYPOTHESIS_METHOD_DDA_CID_NL",
+    "HYPOTHESIS_METHOD_MS1_OBSERVATION",
     "PeakHypothesisContractError",
     "SCHEMA_VERSION",
     "canonical_owner_backed_peak_hypothesis_bytes",
+    "canonical_ms1_observation_peak_hypothesis_bytes",
     "compose_cid_nl_peak_hypothesis",
+    "compose_ms1_observation_peak_hypothesis",
     "validate_cid_nl_peak_hypothesis_binding",
+    "validate_ms1_observation_peak_hypothesis_binding",
 ]

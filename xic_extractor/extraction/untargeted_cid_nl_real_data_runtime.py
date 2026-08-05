@@ -9,9 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
     minimum_direct_support_count,
+)
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    construct_cross_sample_peak_group_hypotheses,
+)
+from xic_extractor.alignment.hypothesis_owner_adapter import (
+    compose_cid_nl_peak_hypotheses_from_assessment,
+    owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlGoldenPathError,
@@ -306,6 +314,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
         )
 
     direct_assessment_by_key: dict[str, bool] = {}
+    initial_raw_by_key: dict[str, bool] = {}
     planning_errors: dict[str, Exception] = {}
     for job in jobs:
         try:
@@ -318,8 +327,10 @@ def execute_untargeted_cid_nl_real_data_runtime(
             direct_assessment_by_key[job.work_unit_key] = (
                 _supports_direct_precursor_assessment(bounded)
             )
+            initial_raw_by_key[job.work_unit_key] = bool(bounded)
         except Exception as exc:
             direct_assessment_by_key[job.work_unit_key] = False
+            initial_raw_by_key[job.work_unit_key] = False
             planning_errors[job.work_unit_key] = exc
     eligible_jobs = tuple(
         job
@@ -336,7 +347,7 @@ def execute_untargeted_cid_nl_real_data_runtime(
     for job in jobs:
         resource_key: str | None = None
         error: Exception | None = planning_errors.get(job.work_unit_key)
-        initial_requires_raw = direct_assessment_by_key[job.work_unit_key]
+        initial_requires_raw = initial_raw_by_key[job.work_unit_key]
         try:
             recovery_may_need_raw = (
                 error is None
@@ -497,6 +508,34 @@ def _prepare_owner_authorized_recoveries(
         result.assessment_input.assessment.content.method_result == "SUPPORT"
         for result in adapter_results
     ):
+        return
+    support_owners = []
+    for state in states:
+        result = state.adapter_result
+        if result is None:
+            continue
+        assessment = result.assessment_input.assessment
+        if assessment.content.method_result != "SUPPORT":
+            continue
+        hypotheses = compose_cid_nl_peak_hypotheses_from_assessment(
+            processing_owners=state.job.processing_owners,
+            sample=state.job.sample,
+            assessment=assessment,
+        )
+        if len(hypotheses) != 1:
+            return
+        support_owners.append(
+            owner_from_cid_nl_assessment_support(
+                sample=state.job.sample,
+                assessment=assessment,
+                hypothesis=hypotheses[0],
+            )
+        )
+    legacy_groups = construct_cross_sample_peak_group_hypotheses(
+        tuple(support_owners),
+        config=AlignmentConfig(),
+    )
+    if len(legacy_groups) != 1:
         return
     first = states[0].job
     try:
