@@ -48,7 +48,12 @@ class FamilyContextRef:
             raise ValueError("FamilyContextRef must be minted by the M3 owner")
         normalized_mz = _validated_interval(self.mz_interval, field="mz_interval")
         normalized_rt = _validated_interval(self.rt_interval, field="rt_interval")
-        if self.mz_interval != normalized_mz or self.rt_interval != normalized_rt:
+        if (
+            _canonical_json_bytes(self.mz_interval)
+            != _canonical_json_bytes(normalized_mz)
+            or _canonical_json_bytes(self.rt_interval)
+            != _canonical_json_bytes(normalized_rt)
+        ):
             raise ValueError("Family context intervals must use canonical floats")
         _required_text(self.context_policy_version, field="context_policy_version")
         _require_canonical_refs(
@@ -134,17 +139,7 @@ def canonical_family_context_ref_bytes(reference: FamilyContextRef) -> bytes:
     than duplicating the complete group payload.
     """
 
-    if not isinstance(reference, FamilyContextRef):
-        raise TypeError("canonical serialization requires FamilyContextRef")
-    expected_id = _family_context_id(
-        mz_interval=reference.mz_interval,
-        rt_interval=reference.rt_interval,
-        context_policy_version=reference.context_policy_version,
-        source_lineage_refs=reference.source_lineage_refs,
-        group_hypothesis_ids=reference.group_hypothesis_ids,
-    )
-    if reference.family_context_id != expected_id:
-        raise ValueError("family_context_id mismatches canonical owner content")
+    validate_family_context_ref_for_consumption(reference)
     return _canonical_json_bytes(
         {
             "schema_version": SCHEMA_VERSION,
@@ -158,6 +153,16 @@ def canonical_family_context_ref_bytes(reference: FamilyContextRef) -> bytes:
             "group_hypothesis_ids": list(reference.group_hypothesis_ids),
         }
     )
+
+
+def validate_family_context_ref_for_consumption(
+    reference: FamilyContextRef,
+) -> None:
+    """Revalidate the complete current M3-owned reference contract."""
+
+    if type(reference) is not FamilyContextRef:
+        raise TypeError("consumer validation requires exact FamilyContextRef")
+    reference.__post_init__(_FAMILY_CONTEXT_MINT_TOKEN)
 
 
 def _family_context_id(
@@ -189,9 +194,10 @@ def _canonical_tracks(
         not isinstance(track, CrossSamplePeakGroupHypothesis) for track in mode_tracks
     ):
         raise ValueError("mode_tracks must contain existing group hypotheses")
-    ids = tuple(track.group_hypothesis_id for track in mode_tracks)
-    if any(not isinstance(group_id, str) or not group_id.strip() for group_id in ids):
-        raise ValueError("group_hypothesis_id must be non-empty text")
+    ids = tuple(
+        _required_text(track.group_hypothesis_id, field="group_hypothesis_id")
+        for track in mode_tracks
+    )
     if len(ids) != len(set(ids)):
         raise ValueError("mode_tracks contain duplicate group_hypothesis_id")
     return tuple(sorted(mode_tracks, key=lambda track: track.group_hypothesis_id))
@@ -210,8 +216,13 @@ def _validate_tracks(
     expected_ids = tuple(track.group_hypothesis_id for track in mode_tracks)
     if group_hypothesis_ids != expected_ids:
         raise ValueError("group_hypothesis_ids must exactly match mode_tracks")
+    owner_id_groups = tuple(track.owner_ids for track in mode_tracks)
+    if any(not isinstance(owner_ids, tuple) for owner_ids in owner_id_groups):
+        raise ValueError("ModeTrack owner_ids must be a tuple")
     owner_ids = tuple(
-        owner_id for track in mode_tracks for owner_id in track.owner_ids
+        _required_text(owner_id, field="ModeTrack owner_ids")
+        for group_owner_ids in owner_id_groups
+        for owner_id in group_owner_ids
     )
     if len(owner_ids) != len(set(owner_ids)):
         raise ValueError("ModeTracks must not share owner ids")
@@ -294,4 +305,5 @@ __all__ = (
     "FamilyContextRef",
     "canonical_family_context_ref_bytes",
     "mint_family_context_ref",
+    "validate_family_context_ref_for_consumption",
 )
