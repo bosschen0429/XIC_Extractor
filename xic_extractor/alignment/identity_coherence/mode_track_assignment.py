@@ -1063,6 +1063,95 @@ def assign_mode_tracks(
     )
 
 
+def validate_mode_track_assignment_batch_for_consumption(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    model_set: ModeTrackModelSet,
+    assignment_batch: ModeTrackAssignmentBatch,
+) -> None:
+    """Revalidate one M8 batch against its complete current owner closure."""
+
+    if not isinstance(processing_owners, ProcessingOwnerReferences):
+        raise ModeTrackContractError("processing_owners must be owner-validated")
+    if not isinstance(model_set, ModeTrackModelSet) or not isinstance(
+        assignment_batch, ModeTrackAssignmentBatch
+    ):
+        raise ModeTrackContractError("consumption requires owner-minted inputs")
+    batch = assignment_batch
+    request_id = processing_owners.request.processing_request_id
+    attempt_id = processing_owners.attempt.processing_attempt_id
+    if model_set.processing_request_id != request_id or (
+        batch.processing_request_id != request_id
+    ):
+        raise ModeTrackContractError("inputs belong to a different request")
+    if model_set.processing_attempt_id != attempt_id or (
+        batch.processing_attempt_id != attempt_id
+    ):
+        raise ModeTrackContractError("inputs belong to a different attempt")
+    if (
+        assignment_batch.model_set_id != model_set.model_set_id
+        or assignment_batch.family_context_id != model_set.family_context_id
+    ):
+        raise ModeTrackContractError("batch belongs to a different model set")
+    if (
+        assignment_batch.trajectory_policy_version
+        != model_set.policy.trajectory_policy_version
+        or assignment_batch.band_policy_version != model_set.policy.band_policy_version
+    ):
+        raise ModeTrackContractError("assignment batch uses a different model policy")
+    model_set.__post_init__(_MODE_TRACK_MINT_TOKEN)
+    _validate_model_set_binding(
+        processing_owners=processing_owners, model_set=model_set
+    )
+
+    source, order = _resolve_sample_acquisition(processing_owners, batch.sample)
+    if (
+        assignment_batch.canonical_sample_identity_id
+        != assignment_batch.sample.identity.sample_identity_id
+        or assignment_batch.acquisition_source_id != source.acquisition_source_id
+        or assignment_batch.acquisition_source != source
+        or assignment_batch.injection_order != order
+    ):
+        raise ModeTrackContractError("assignment batch has a stale sample binding")
+    assignment_batch.__post_init__(_MODE_TRACK_MINT_TOKEN)
+    assignments = assignment_batch.assignments
+    track_ids = model_set.family_context.group_hypothesis_ids
+    for assignment in assignments:
+        if (
+            assignment.family_context_id != model_set.family_context_id
+            or assignment.processing_request_id != request_id
+            or assignment.processing_attempt_id != attempt_id
+            or assignment.canonical_sample_identity_id
+            != assignment_batch.canonical_sample_identity_id
+            or assignment.acquisition_source_id != source.acquisition_source_id
+            or assignment.injection_order != order
+            or assignment.sample != assignment_batch.sample
+            or assignment.acquisition_source != source
+        ):
+            raise ModeTrackContractError("assignment contains crossed owner references")
+        assignment.__post_init__(_MODE_TRACK_MINT_TOKEN)
+        if tuple(
+            item.group_hypothesis_id for item in assignment.prediction_assessments
+        ) != track_ids or (
+            assignment.group_hypothesis_id is not None
+            and assignment.group_hypothesis_id not in track_ids
+        ):
+            raise ModeTrackContractError("assignment crosses the model Family")
+        candidate = assignment.candidate_observation
+        if candidate is not None:
+            candidate.__post_init__(_MODE_TRACK_MINT_TOKEN)
+            if (
+                candidate.sample != assignment_batch.sample
+                or candidate.acquisition_source != source
+                or candidate.injection_order != order
+            ):
+                raise ModeTrackContractError("candidate has stale owner references")
+            _validate_candidate_binding(
+                processing_owners=processing_owners,
+                sample=assignment_batch.sample, candidate=candidate
+            )
+
+
 def reinforce_mode_track_model_set(
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -1071,41 +1160,9 @@ def reinforce_mode_track_model_set(
 ) -> ModeTrackModelSet:
     """Add only uniquely assigned direct SUPPORT facts to exactly one track."""
 
-    if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise ModeTrackContractError("processing_owners must be owner-validated")
-    if not isinstance(model_set, ModeTrackModelSet) or not isinstance(
-        assignment_batch,
-        ModeTrackAssignmentBatch,
-    ):
-        raise ModeTrackContractError("reinforcement requires owner-minted inputs")
-    if (
-        assignment_batch.model_set_id != model_set.model_set_id
-        or assignment_batch.family_context_id != model_set.family_context_id
-    ):
-        raise ModeTrackContractError(
-            "assignment batch was produced from a different model set"
-        )
-    if (
-        model_set.processing_request_id
-        != processing_owners.request.processing_request_id
-        or assignment_batch.processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise ModeTrackContractError(
-            "reinforcement inputs belong to a different processing request"
-        )
-    if (
-        model_set.processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-        or assignment_batch.processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise ModeTrackContractError(
-            "reinforcement inputs belong to a different processing attempt"
-        )
-    _validate_model_set_binding(
+    validate_mode_track_assignment_batch_for_consumption(
         processing_owners=processing_owners,
-        model_set=model_set,
+        model_set=model_set, assignment_batch=assignment_batch
     )
     additions: dict[str, list[ModeTrackSupportAnchor]] = {}
     for assignment in assignment_batch.assignments:
@@ -2420,4 +2477,5 @@ __all__ = (
     "mint_mode_track_candidate_observation",
     "mint_mode_track_support_anchor",
     "reinforce_mode_track_model_set",
+    "validate_mode_track_assignment_batch_for_consumption",
 )

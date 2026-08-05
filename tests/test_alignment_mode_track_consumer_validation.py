@@ -17,6 +17,7 @@ from xic_extractor.alignment.identity_coherence.family_context import (
 from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     ModeTrackContractError,
     assign_mode_tracks,
+    canonical_mode_track_assignment_batch_bytes,
     fit_mode_track_model_set,
     reinforce_mode_track_model_set,
 )
@@ -82,6 +83,7 @@ def test_consumer_validator_accepts_all_states_and_exact_replay(
     assert tuple(item.state for item in batch.assignments) == (expected_state,)
 
     validator = _validator()
+    original_bytes = canonical_mode_track_assignment_batch_bytes(batch)
     for _ in range(2):
         result = validator(
             processing_owners=scenario.fixture.owners,
@@ -89,6 +91,7 @@ def test_consumer_validator_accepts_all_states_and_exact_replay(
             assignment_batch=batch,
         )
         assert result is None
+        assert canonical_mode_track_assignment_batch_bytes(batch) == original_bytes
 
 
 def test_direct_support_validation_is_pure_and_does_not_reinforce(
