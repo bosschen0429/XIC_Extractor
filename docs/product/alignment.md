@@ -199,6 +199,25 @@ authorized attempt. Its evidence verdict remains `inconclusive / no-write`;
 historical morphology, intensity, or mode labels cannot seed tracks or grant a
 current-checkout compatibility claim.
 
+The later fresh current-request Gate B receipt
+`docs/superpowers/fixtures/mode_track_assignment_85raw_gate_b_v1.json` closes
+that source gap for the CID-NL 116.0474, precursor 349.215 validation lane. The
+accepted 85-sample run retained 86 physical hypotheses in 11 ModeTracks, with
+9 multi-owner tracks, exact owner-to-assignment closure, no same-sample double
+occupancy, and no producer-added RAW calls. In `TumorBC2297_DNA`, the 12.412
+minute direct-SUPPORT peak and 13.035 minute non-training physical observation
+remain exact owners of two different cross-sample tracks.
+
+The lane must use the existing `CID_NL_ALIGNMENT_CONFIG` value
+`anchor_min_seed_events=1`: an MS1-only physical observation contributes one
+observation event. A rejected control using the generic default value `2`
+degenerated to one singleton track per physical hypothesis, so exact-owner
+assignment alone is not a sufficient Gate B oracle. Acceptance also requires
+observed cross-sample multi-owner aggregation. This receipt remains
+`shadow_ready / product_authority=none`; four tracks have no direct-SUPPORT
+anchor, and the evidence grants no Matrix, Backfill, chemical-identity, or
+ProductWriter authority.
+
 `FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
 `shadow_ready / product_authority=none` structure. The inconclusive retained
 evidence does not alter Targeted behavior, Backfill, acceptance manifests,
