@@ -271,7 +271,7 @@ def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
     assert result.sample_results[0].recovery_attempt is None
 
 
-def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
+def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -282,8 +282,8 @@ def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws = {
-        raw_paths[0]: _FakeRaw((7.98, 8.02)),
-        raw_paths[1]: _FakeRaw((7.98, 8.02)),
+        raw_paths[0]: _FakeRaw((8.0,)),
+        raw_paths[1]: _FakeRaw((8.0,)),
         raw_paths[2]: _FakeRaw((8.0,)),
         raw_paths[3]: _FakeRaw(()),
         raw_paths[4]: _FakeRaw((8.0,)),
@@ -397,6 +397,8 @@ def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
     by_stem = {
         item.job.sample.metadata.raw_stem: item for item in result.sample_results
     }
+    assert by_stem["S1"].adapter_result.strict_scan_count == 1
+    assert by_stem["S2"].adapter_result.strict_scan_count == 1
     assert by_stem["Missing"].recovery_attempt is not None
     assert by_stem["Missing"].recovery_input is not None
     assert by_stem["Missing"].result_ref.recovery_candidate_count == 1

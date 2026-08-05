@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
-from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
     minimum_direct_support_count,
@@ -22,6 +21,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+    CID_NL_ALIGNMENT_CONFIG,
     UntargetedCidNlGoldenPathError,
     UntargetedCidNlRecoveryInput,
     build_untargeted_cid_nl_golden_path,
@@ -533,7 +533,7 @@ def _prepare_owner_authorized_recoveries(
         )
     legacy_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(support_owners),
-        config=AlignmentConfig(),
+        config=CID_NL_ALIGNMENT_CONFIG,
     )
     if len(legacy_groups) != 1:
         return
