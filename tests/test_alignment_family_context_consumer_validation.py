@@ -32,15 +32,21 @@ def _track(
     )
 
 
-def _context(*, with_tracks: bool = True) -> FamilyContextRef:
-    tracks = (_track("track-a"), _track("track-b", center_rt=8.4))
+def _mint(
+    tracks: tuple[CrossSamplePeakGroupHypothesis, ...],
+) -> FamilyContextRef:
     return mint_family_context_ref(
         mz_interval=(499.9, 500.1),
         rt_interval=(7.5, 8.8),
         context_policy_version="mode-track-family-context-v1",
         source_lineage_refs=("source-packet:abc", "trace-query:def"),
-        mode_tracks=tracks if with_tracks else (),
+        mode_tracks=tracks,
     )
+
+
+def _context(*, with_tracks: bool = True) -> FamilyContextRef:
+    tracks = (_track("track-a"), _track("track-b", center_rt=8.4))
+    return _mint(tracks if with_tracks else ())
 
 
 @pytest.mark.parametrize("with_tracks", (False, True))
@@ -104,6 +110,10 @@ def test_consumer_validation_rejects_top_level_mutation(
     ("field", "value", "message"),
     (
         ("owner_ids", ("owner:track-a",), "share owner ids"),
+        ("owner_ids", ["owner:track-b"], "owner_ids must be a tuple"),
+        ("owner_ids", 1, "owner_ids must be a tuple"),
+        ("owner_ids", (1,), "owner_ids must contain canonical text"),
+        ("owner_ids", (" owner:track-b",), "owner_ids must contain canonical text"),
         ("group_center_mz", 501.0, "outside the Family context m/z"),
         ("group_center_rt", 9.0, "outside the Family context RT"),
     ),
@@ -118,6 +128,14 @@ def test_consumer_validation_rejects_mutated_track_facts(
 
     with pytest.raises(ValueError, match=message):
         validate_family_context_ref_for_consumption(reference)
+
+
+def test_family_mint_rejects_malformed_consumed_owner_ids() -> None:
+    track = _track("track-a")
+    object.__setattr__(track, "owner_ids", ["owner:track-a"])
+
+    with pytest.raises(ValueError, match="owner_ids must be a tuple"):
+        _mint((track,))
 
 
 def test_consumer_validation_is_exported_by_the_family_owner() -> None:
