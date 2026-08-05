@@ -2174,9 +2174,9 @@ def _trajectory_delta(
         local_rt, shift = local_shifts[0]
         if math.isclose(predicted_rt_min, local_rt, rel_tol=0.0, abs_tol=1e-12):
             return shift, ("exact_local_landmark_shift",)
-        return 0.0, ("anchor_trajectory_without_local_correction",)
+        return None, ("unsupported_local_landmark_extrapolation",)
     if not local_shifts[0][0] <= predicted_rt_min <= local_shifts[-1][0]:
-        return 0.0, ("anchor_trajectory_without_local_correction",)
+        return None, ("unsupported_local_landmark_extrapolation",)
     for local_rt, shift in local_shifts:
         if math.isclose(predicted_rt_min, local_rt, rel_tol=0.0, abs_tol=1e-12):
             return shift, ("exact_local_landmark_shift",)

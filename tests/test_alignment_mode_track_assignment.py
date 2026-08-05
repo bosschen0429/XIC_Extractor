@@ -606,7 +606,7 @@ def test_each_track_uses_its_local_landmark_region_without_global_median(
     assert predictions[scenario.track_b.group_hypothesis_id] == pytest.approx(8.52)
 
 
-def test_nonlocal_landmarks_leave_anchor_trajectory_uncorrected(
+def test_nonlocal_landmarks_keep_assignment_unassessable(
     tmp_path: Path,
 ) -> None:
     scenario = _scenario(tmp_path)
@@ -627,14 +627,11 @@ def test_nonlocal_landmarks_leave_anchor_trajectory_uncorrected(
     )
 
     assignment = result.assignments[0]
-    assert assignment.state == "uniquely_assigned"
-    assert any(
-        "anchor_trajectory_without_local_correction" in item.reason_codes
-        for item in assignment.prediction_assessments
-    )
+    assert assignment.state == "technical_unassessable"
+    assert "unsupported_local_landmark_extrapolation" in assignment.reason_codes
 
 
-def test_single_nonlocal_landmark_leaves_anchor_trajectory_uncorrected(
+def test_single_nonlocal_landmark_keeps_direct_support_unassessable(
     tmp_path: Path,
 ) -> None:
     scenario = _scenario(tmp_path)
@@ -650,14 +647,13 @@ def test_single_nonlocal_landmark_leaves_anchor_trajectory_uncorrected(
         processing_owners=scenario.fixture.owners,
         sample=scenario.fixture.sample("target"),
         model_set=scenario.models,
-        candidates=(scenario.candidate(7.87, direct_support=False),),
+        candidates=(scenario.candidate(7.87, direct_support=True),),
         trajectory_assessment=trajectory,
     )
 
-    assert result.assignments[0].state == "uniquely_assigned"
-    assert any(
-        "anchor_trajectory_without_local_correction" in item.reason_codes
-        for item in result.assignments[0].prediction_assessments
+    assert result.assignments[0].state == "technical_unassessable"
+    assert "unsupported_local_landmark_extrapolation" in (
+        result.assignments[0].reason_codes
     )
 
 
