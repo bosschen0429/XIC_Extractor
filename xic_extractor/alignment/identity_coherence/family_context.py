@@ -139,17 +139,7 @@ def canonical_family_context_ref_bytes(reference: FamilyContextRef) -> bytes:
     than duplicating the complete group payload.
     """
 
-    if not isinstance(reference, FamilyContextRef):
-        raise TypeError("canonical serialization requires FamilyContextRef")
-    expected_id = _family_context_id(
-        mz_interval=reference.mz_interval,
-        rt_interval=reference.rt_interval,
-        context_policy_version=reference.context_policy_version,
-        source_lineage_refs=reference.source_lineage_refs,
-        group_hypothesis_ids=reference.group_hypothesis_ids,
-    )
-    if reference.family_context_id != expected_id:
-        raise ValueError("family_context_id mismatches canonical owner content")
+    validate_family_context_ref_for_consumption(reference)
     return _canonical_json_bytes(
         {
             "schema_version": SCHEMA_VERSION,

@@ -64,7 +64,7 @@ def _refresh_family_context_id(reference: FamilyContextRef) -> None:
 
 
 @pytest.mark.parametrize("with_tracks", (False, True))
-def test_consumer_validation_accepts_exact_replay_without_mutation(with_tracks: bool) -> None:
+def test_consumer_accepts_exact_replay_without_mutation(with_tracks: bool) -> None:
     reference = _context(with_tracks=with_tracks)
     before = canonical_family_context_ref_bytes(reference)
 
