@@ -48,7 +48,12 @@ class FamilyContextRef:
             raise ValueError("FamilyContextRef must be minted by the M3 owner")
         normalized_mz = _validated_interval(self.mz_interval, field="mz_interval")
         normalized_rt = _validated_interval(self.rt_interval, field="rt_interval")
-        if self.mz_interval != normalized_mz or self.rt_interval != normalized_rt:
+        if (
+            _canonical_json_bytes(self.mz_interval)
+            != _canonical_json_bytes(normalized_mz)
+            or _canonical_json_bytes(self.rt_interval)
+            != _canonical_json_bytes(normalized_rt)
+        ):
             raise ValueError("Family context intervals must use canonical floats")
         _required_text(self.context_policy_version, field="context_policy_version")
         _require_canonical_refs(
@@ -199,9 +204,10 @@ def _canonical_tracks(
         not isinstance(track, CrossSamplePeakGroupHypothesis) for track in mode_tracks
     ):
         raise ValueError("mode_tracks must contain existing group hypotheses")
-    ids = tuple(track.group_hypothesis_id for track in mode_tracks)
-    if any(not isinstance(group_id, str) or not group_id.strip() for group_id in ids):
-        raise ValueError("group_hypothesis_id must be non-empty text")
+    ids = tuple(
+        _required_text(track.group_hypothesis_id, field="group_hypothesis_id")
+        for track in mode_tracks
+    )
     if len(ids) != len(set(ids)):
         raise ValueError("mode_tracks contain duplicate group_hypothesis_id")
     return tuple(sorted(mode_tracks, key=lambda track: track.group_hypothesis_id))
