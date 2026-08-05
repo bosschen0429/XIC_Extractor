@@ -249,6 +249,9 @@ def test_consumer_validator_rejects_crossed_stale_or_forged_closure(
     elif case == "mutable_track_anchors":
         object.__setattr__(models.tracks[0], "anchors", list(models.tracks[0].anchors))
 
+    if case in {"stale_sample", "stale_acquisition"}:
+        with pytest.raises(ModeTrackContractError):
+            canonical_mode_track_assignment_batch_bytes(batch)
     with pytest.raises(ModeTrackContractError):
         _validate(owners, models, batch)
 

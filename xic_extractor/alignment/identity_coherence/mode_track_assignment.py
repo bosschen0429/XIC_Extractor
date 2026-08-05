@@ -633,6 +633,12 @@ class ModeTrackAssignmentBatch(_RuntimeFinal):
         _required_text(self.processing_request_id, field="processing_request_id")
         _required_text(self.processing_attempt_id, field="processing_attempt_id")
         _positive_int(self.injection_order, field="injection_order")
+        if (
+            self.canonical_sample_identity_id != self.sample.identity.sample_identity_id
+            or self.acquisition_source_id
+            != self.acquisition_source.acquisition_source_id
+        ):
+            raise ModeTrackContractError("batch contains crossed live owner refs")
         canonical = _canonical_assignments(self.assignments)
         if self.assignments != canonical:
             raise ModeTrackContractError("assignments must be canonical-sorted")
@@ -643,6 +649,16 @@ class ModeTrackAssignmentBatch(_RuntimeFinal):
             or item.canonical_sample_identity_id != self.canonical_sample_identity_id
             or item.acquisition_source_id != self.acquisition_source_id
             or item.injection_order != self.injection_order
+            or item.sample != self.sample
+            or item.acquisition_source != self.acquisition_source
+            or (
+                item.candidate_observation is not None
+                and (
+                    item.candidate_observation.sample != self.sample
+                    or item.candidate_observation.acquisition_source
+                    != self.acquisition_source
+                )
+            )
             for item in self.assignments
         ):
             raise ModeTrackContractError(
@@ -1088,17 +1104,7 @@ def validate_mode_track_assignment_batch_for_consumption(
     ):
         raise ModeTrackContractError("batch belongs to a different model or policy")
     source, order = _resolve_sample_acquisition(processing_owners, batch.sample)
-    if (
-        batch.canonical_sample_identity_id,
-        batch.acquisition_source_id,
-        batch.acquisition_source,
-        batch.injection_order,
-    ) != (
-        batch.sample.identity.sample_identity_id,
-        source.acquisition_source_id,
-        source,
-        order,
-    ):
+    if batch.acquisition_source != source or batch.injection_order != order:
         raise ModeTrackContractError("assignment batch has a stale sample binding")
     model_predictions = tuple(
         (track.group_hypothesis_id, *_track_evidence_refs(track))
@@ -1116,21 +1122,6 @@ def validate_mode_track_assignment_batch_for_consumption(
             "assignments disagree on batch-wide prediction or lineage facts"
     )
     for assignment in batch.assignments:
-        if (
-            assignment.family_context_id != model_set.family_context_id
-            or (
-                assignment.processing_request_id,
-                assignment.processing_attempt_id,
-            )
-            != owner_key
-            or assignment.canonical_sample_identity_id
-            != batch.canonical_sample_identity_id
-            or assignment.acquisition_source_id != source.acquisition_source_id
-            or assignment.injection_order != order
-            or assignment.sample != batch.sample
-            or assignment.acquisition_source != source
-        ):
-            raise ModeTrackContractError("assignment contains crossed owner references")
         if tuple(
             (
                 item.group_hypothesis_id,
@@ -1142,12 +1133,6 @@ def validate_mode_track_assignment_batch_for_consumption(
             raise ModeTrackContractError("assignment crosses the supplied model")
         candidate = assignment.candidate_observation
         if candidate is not None:
-            if (
-                candidate.sample != batch.sample
-                or candidate.acquisition_source != source
-                or candidate.injection_order != order
-            ):
-                raise ModeTrackContractError("candidate has stale owner references")
             _validate_candidate_binding(
                 processing_owners=processing_owners,
                 sample=batch.sample, candidate=candidate
