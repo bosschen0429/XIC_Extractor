@@ -1534,21 +1534,53 @@ def _resolve_candidate_decisions(
         if state == "uniquely_assigned":
             assert group_id is not None
             unique_counts[group_id] = unique_counts.get(group_id, 0) + 1
-    incumbents = {
+    anchor_incumbents = {
         track.group_hypothesis_id: anchor.peak_hypothesis_id
         for track in model_set.tracks
         for anchor in track.anchors
         if anchor.injection_order == candidates[0].injection_order
     }
+    owner_candidates: dict[str, list[str]] = {}
+    for candidate in candidates:
+        for track in model_set.family_context.mode_tracks:
+            if candidate.peak_hypothesis_id in track.owner_ids:
+                owner_candidates.setdefault(track.group_hypothesis_id, []).append(
+                    candidate.peak_hypothesis_id
+                )
+    owner_incumbents = {
+        group_id: hypothesis_ids[0]
+        for group_id, hypothesis_ids in owner_candidates.items()
+        if len(hypothesis_ids) == 1
+    }
+    conflicting_owner_groups = {
+        group_id
+        for group_id, hypothesis_ids in owner_candidates.items()
+        if len(hypothesis_ids) > 1
+    }
+    conflicting_owner_groups.update(
+        group_id
+        for group_id, hypothesis_id in owner_incumbents.items()
+        if group_id in anchor_incumbents
+        and anchor_incumbents[group_id] != hypothesis_id
+    )
+    incumbents = dict(anchor_incumbents)
+    incumbents.update(
+        (group_id, hypothesis_id)
+        for group_id, hypothesis_id in owner_incumbents.items()
+        if group_id not in conflicting_owner_groups
+    )
     for candidate in candidates:
         state, group_id, _ = decisions[candidate.candidate_observation_id]
         if state != "uniquely_assigned":
             continue
         assert group_id is not None
         incumbent_id = incumbents.get(group_id)
-        conflict = unique_counts[group_id] > 1
-        if incumbent_id is not None:
+        if group_id in conflicting_owner_groups:
+            conflict = True
+        elif incumbent_id is not None:
             conflict = candidate.peak_hypothesis_id != incumbent_id
+        else:
+            conflict = unique_counts[group_id] > 1
         if conflict:
             decisions[candidate.candidate_observation_id] = (
                 "ambiguous_multiple_tracks",
@@ -1572,6 +1604,21 @@ def _candidate_decision(
     )
     if family_exclusions:
         return "out_of_model", None, family_exclusions
+    owner_group_ids = tuple(
+        track.group_hypothesis_id
+        for track in family_context.mode_tracks
+        if candidate.peak_hypothesis_id in track.owner_ids
+    )
+    if len(owner_group_ids) > 1:
+        raise ModeTrackContractError(
+            "candidate PeakHypothesis owns more than one ModeTrack"
+        )
+    if owner_group_ids:
+        return (
+            "uniquely_assigned",
+            owner_group_ids[0],
+            ("existing_group_owner_observation",),
+        )
     if global_state is not None:
         state, reasons = global_state
         return state, None, reasons

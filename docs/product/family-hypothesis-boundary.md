@@ -80,6 +80,10 @@ display labels. Treat this as an adapter state:
   `group_hypothesis_id`.
 - Do not use cross-sample group membership as same-peak proof. Same-peak support
   needs a typed anchor, selected mode, or PeakHypothesis-level reason.
+- When a `PeakHypothesis` is already an exact owner of one ModeTrack in the
+  current `FamilyContextRef`, preserve that M3 identity as observed occupancy;
+  do not reclassify the same owner from aggregate group-center geometry. This
+  grants no SUPPORT vote, trajectory reinforcement, or product authority.
 - Do not treat a Family as a same-peak or chemical-identity claim. Two resolved
   peaks in one sample may occupy different ModeTracks in the same Family, and
   either track may be absent in another sample.

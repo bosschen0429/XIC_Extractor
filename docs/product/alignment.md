@@ -155,9 +155,13 @@ but another competitor is unavailable, that competitor cannot be excluded and
 the sample is instead `technical_unassessable`.
 
 For one sample, resolved hypotheses may occupy the first track, the second
-track, both through different hypotheses, or neither. A candidate is
-`uniquely_assigned` only when exactly one prediction interval contains it and
-all competitors are excluded. The other terminal states are
+track, both through different hypotheses, or neither. A candidate that is
+already an exact owner of one Family ModeTrack is observed occupancy of that
+existing M3 identity; M8 preserves that one-to-one owner fact instead of
+reclassifying it from the track's aggregate center or predicted interval. This
+does not make an MS1-only owner a trajectory anchor or a SUPPORT vote. Other
+candidates are `uniquely_assigned` only when exactly one prediction interval
+contains them and all competitors are excluded. The other terminal states are
 `ambiguous_multiple_tracks`, `out_of_model`, `not_observed`, and
 `technical_unassessable`. Prediction-interval overlap is candidate-local: it
 does not block a candidate that lies in a single-track-only region. A track
@@ -165,12 +169,13 @@ crossing is also candidate-local: only candidates whose sole match is one of
 the crossed tracks become `technical_unassessable`; an unaffected third track
 remains assignable. A candidate matching multiple intervals remains
 `ambiguous_multiple_tracks` before crossing adjudication. A track
-accepts at most one hypothesis per sample, and occupancy includes both its
-incumbent anchor for that injection and provisional candidates in the current
-batch. Replaying the incumbent hypothesis is the same occupant; a different
-hypothesis cannot become a second occupant. Only a uniquely assigned direct
-SUPPORT observation may reinforce that one track; MS1-only, Backfill, shadow,
-inferred, deconvolved, manual, and shared-set observations remain non-training.
+accepts at most one hypothesis per sample, and occupancy includes its exact M3
+owner, its incumbent anchor for that injection, and provisional candidates in
+the current batch. Replaying an incumbent hypothesis is the same occupant; a
+different hypothesis cannot become a second occupant. Only a uniquely assigned
+direct SUPPORT observation may reinforce that one track; MS1-only, Backfill,
+shadow, inferred, deconvolved, manual, and shared-set observations remain
+non-training.
 Model sets, anchors, candidates, assignments, and retained landmarks are bound
 to their exact processing request and attempt, resolved acquisition source, and
 injection order. Anchors and candidates also retain the exact physical peak
