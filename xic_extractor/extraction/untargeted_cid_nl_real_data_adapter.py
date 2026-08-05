@@ -91,9 +91,6 @@ VALIDATION_STATUS = "diagnostic_only"
 _ADAPTER_NAMESPACE = "xic_extractor.untargeted_cid_nl_real_data_adapter"
 _WRITER_ROUNDING_REL_TOL = 5e-6
 _WRITER_ROUNDING_ABS_TOL = 5e-6
-_NON_DIRECT_PRECURSOR_BASIS_REASON = (
-    "non_direct_precursor_basis_not_supported"
-)
 
 
 class UntargetedCidNlRealDataAdapterError(ValueError):
@@ -147,10 +144,8 @@ class _UntargetedRealDataWorkObserver:
     def record_artifact(self, artifact: EvidenceArtifactRef) -> None:
         attempt = self._processing_owners.attempt
         if (
-            artifact.producer_processing_request_id
-            != attempt.processing_request_id
-            or artifact.producer_processing_attempt_id
-            != attempt.processing_attempt_id
+            artifact.producer_processing_request_id != attempt.processing_request_id
+            or artifact.producer_processing_attempt_id != attempt.processing_attempt_id
         ):
             raise UntargetedCidNlRealDataAdapterError(
                 "observer artifact must bind the current processing attempt"
@@ -237,32 +232,6 @@ def adapt_current_discovery_sample_subject(
             strict_scan_count=0,
             lineage_artifacts=lineage,
         )
-    if not _supports_direct_precursor_assessment(bounded):
-        assessment = _mint_assessment(
-            processing_owners=processing_owners,
-            sample=sample,
-            method_subject=method_subject,
-            settings=settings,
-            support_policy=support_policy,
-            technical_state="unsupported",
-            technical_reason_code=_NON_DIRECT_PRECURSOR_BASIS_REASON,
-        )
-        if _observer is not None:
-            _observer.record_artifact(assessment.artifact)
-        lineage = canonical_current_attempt_artifact_closure(
-            producer_attempt=processing_owners.attempt,
-            artifacts=(assessment.artifact,),
-        )
-        return UntargetedCidNlRealDataAdapterResult(
-            assessment_input=UntargetedCidNlAssessmentInput(
-                sample=sample,
-                assessment=assessment,
-            ),
-            acquisition=None,
-            source_candidate_ids=tuple(item.candidate_id for item in bounded),
-            strict_scan_count=0,
-            lineage_artifacts=lineage,
-        )
     if raw is None:
         raise UntargetedCidNlRealDataAdapterError(
             "bounded subject universe requires an owner-opened RAW adapter"
@@ -281,8 +250,21 @@ def adapt_current_discovery_sample_subject(
     try:
         strict_scan_seeds = read_complete_strict_scan_seeds(
             bound_raw,
-            candidates=bounded,
+            candidates=tuple(
+                candidate
+                for candidate in bounded
+                if candidate.precursor_mz_basis == "scan_precursor"
+            ),
             settings=settings,
+        )
+        strict_scan_seeds = tuple(
+            item
+            for item in strict_scan_seeds
+            if _within_ppm(
+                item[1].precursor_mz,
+                method_subject.precursor_mz,
+                method_subject.precursor_tolerance_ppm,
+            )
         )
     except StrictSeedReceiptError as exc:
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
@@ -349,23 +331,23 @@ def adapt_current_discovery_sample_subject(
         )
         if relation_kind == "individual":
             support = resolve_dda_cid_nl_peak_support_ref(
-                    processing_owners=processing_owners,
-                    sample=sample,
-                    canonical_evidence=evidence,
-                    candidate_peaks=candidate_universe,
-                    policy=support_policy,
-                )
+                processing_owners=processing_owners,
+                sample=sample,
+                canonical_evidence=evidence,
+                candidate_peaks=candidate_universe,
+                policy=support_policy,
+            )
             individual_refs.append(support)
             if _observer is not None:
                 _observer.record_artifact(support.artifact)
         elif relation_kind == "set":
             relation = resolve_dda_cid_nl_candidate_set_relation_ref(
-                    processing_owners=processing_owners,
-                    sample=sample,
-                    canonical_evidence=evidence,
-                    candidate_peaks=candidate_universe,
-                    policy=support_policy,
-                )
+                processing_owners=processing_owners,
+                sample=sample,
+                canonical_evidence=evidence,
+                candidate_peaks=candidate_universe,
+                policy=support_policy,
+            )
             set_refs.append(relation)
             if _observer is not None:
                 _observer.record_artifact(relation.artifact)
@@ -516,8 +498,7 @@ def recover_untargeted_cid_nl_sample_subject(
             request=request,
             xic_trace=acquired.trace,
             source=(
-                f"{_ADAPTER_NAMESPACE}.recovery:"
-                f"{TraceCoordinateKind.NATIVE_SCAN.value}"
+                f"{_ADAPTER_NAMESPACE}.recovery:{TraceCoordinateKind.NATIVE_SCAN.value}"
             ),
             acquisition_source_id=source.acquisition_source_id,
         )
@@ -778,17 +759,6 @@ def _mint_assessment(
         raise UntargetedCidNlRealDataAdapterError(str(exc)) from exc
 
 
-def _supports_direct_precursor_assessment(
-    candidates: tuple[DiscoveryCandidate, ...],
-) -> bool:
-    """Return whether M1 may evaluate the complete bounded receipt universe."""
-
-    return bool(candidates) and all(
-        candidate.precursor_mz_basis == "scan_precursor"
-        for candidate in candidates
-    )
-
-
 def _bounded_subject_candidates(
     candidates: tuple[DiscoveryCandidate, ...],
     *,
@@ -831,6 +801,16 @@ def _bounded_subject_candidates(
             ),
             key=lambda item: item.candidate_id,
         )
+    )
+
+
+def _supports_direct_precursor_assessment(
+    candidates: tuple[DiscoveryCandidate, ...],
+) -> bool:
+    """Return whether the universe contains exact scan-precursor evidence."""
+
+    return any(
+        candidate.precursor_mz_basis == "scan_precursor" for candidate in candidates
     )
 
 

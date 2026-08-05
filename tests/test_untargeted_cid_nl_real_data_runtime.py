@@ -181,7 +181,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_m6(
     assert projection.input_quant_matrix_rows[0]["S2"] == ""
 
 
-def test_runtime_does_not_open_raw_for_unsupported_inferred_precursor_universe(
+def test_runtime_preserves_inferred_precursor_as_nontraining_observation(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -189,8 +189,9 @@ def test_runtime_does_not_open_raw_for_unsupported_inferred_precursor_universe(
     raw_path.write_bytes(b"m7-runtime-unsupported:S1")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
+    source_raw = _FakeRaw((8.0,))
     direct = _current_candidates(
-        _FakeRaw((8.0,)),
+        source_raw,
         raw_file=raw_path,
         settings=settings,
         peak_config=peak_config,
@@ -240,10 +241,12 @@ def test_runtime_does_not_open_raw_for_unsupported_inferred_precursor_universe(
         owner_completeness_attestation="untargeted-cid-nl-m7-test:v1",
     )
 
-    def _unexpected_open(*_args, **_kwargs):
-        raise AssertionError("unsupported inferred precursor must not open RAW")
-
-    monkeypatch.setattr(runtime_module, "open_raw", _unexpected_open)
+    vendor_raw = _install_runtime_raw(
+        monkeypatch,
+        source_raw=source_raw,
+        raw_path=raw_path,
+        tmp_path=tmp_path,
+    )
     result = execute_untargeted_cid_nl_real_data_runtime(
         runtime,
         (job,),
@@ -254,17 +257,21 @@ def test_runtime_does_not_open_raw_for_unsupported_inferred_precursor_universe(
         ),
     )
 
-    assert result.succeeded is True
+    assert result.succeeded is True, (
+        result.finalization.coordinator.state.runtime.settlements
+    )
     assert len(result.sample_results) == 1
     adapter = result.sample_results[0].adapter_result
-    assert adapter.assessment_input.assessment.content.technical_state == "unsupported"
-    assert adapter.assessment_input.assessment.content.method_result is None
+    assert adapter.assessment_input.assessment.content.technical_state == "evaluated"
+    assert adapter.assessment_input.assessment.content.method_result == "HOLD"
     assert adapter.source_candidate_ids == (inferred.candidate_id,)
-    assert adapter.acquisition is None
+    assert len(adapter.assessment_input.assessment.candidate_peaks) == 1
+    assert adapter.acquisition is not None
+    assert vendor_raw.disposed is True
     assert result.sample_results[0].recovery_attempt is None
 
 
-def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
+def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -275,8 +282,8 @@ def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     source_raws = {
-        raw_paths[0]: _FakeRaw((7.98, 8.02)),
-        raw_paths[1]: _FakeRaw((7.98, 8.02)),
+        raw_paths[0]: _FakeRaw((8.0,)),
+        raw_paths[1]: _FakeRaw((8.0,)),
         raw_paths[2]: _FakeRaw((8.0,)),
         raw_paths[3]: _FakeRaw(()),
         raw_paths[4]: _FakeRaw((8.0,)),
@@ -390,6 +397,8 @@ def test_runtime_recovers_only_owner_eligible_hold_after_support_threshold(
     by_stem = {
         item.job.sample.metadata.raw_stem: item for item in result.sample_results
     }
+    assert by_stem["S1"].adapter_result.strict_scan_count == 1
+    assert by_stem["S2"].adapter_result.strict_scan_count == 1
     assert by_stem["Missing"].recovery_attempt is not None
     assert by_stem["Missing"].recovery_input is not None
     assert by_stem["Missing"].result_ref.recovery_candidate_count == 1

@@ -721,7 +721,6 @@ def _validate_upstream_bindings(
     )
     support_policy = evaluation_receipt.support_policy
     individual_evidence_ids: set[str] = set()
-    selected_peak_ids: set[str] = set()
     for support in individual_support_refs:
         canonical_evidence = evidence_by_content_id.get(
             support.content.cid_nl_evidence_content_id
@@ -756,12 +755,7 @@ def _validate_upstream_bindings(
                 "boundary, touching, or overlapping support requires a set-level "
                 "relation"
             )
-        selected_peak_ids.add(support.content.peak_observation_content_id)
         individual_evidence_ids.add(support.content.cid_nl_evidence_content_id)
-    if len(selected_peak_ids) > 1:
-        raise CidNlMethodAssessmentContractError(
-            "M1 cannot select multiple independently supported physical peaks"
-        )
     set_relation_evidence_ids: set[str] = set()
     for relation in set_relation_refs:
         if relation.content.candidate_peak_content_ids != candidate_ids:
@@ -795,11 +789,14 @@ def _validate_upstream_bindings(
             support_policy.neutral_loss_tolerance_ppm
         ):
             continue
-        if _evidence_matches_candidate_universe(
-            evidence=evidence,
-            candidate_peaks=candidate_peaks,
-            support_policy=support_policy,
-        ) and evidence_content_id not in settled_evidence_ids:
+        if (
+            _evidence_matches_candidate_universe(
+                evidence=evidence,
+                candidate_peaks=candidate_peaks,
+                support_policy=support_policy,
+            )
+            and evidence_content_id not in settled_evidence_ids
+        ):
             raise CidNlMethodAssessmentContractError(
                 "qualifying CID-NL evidence matching the candidate universe "
                 "requires an individual or set-level relation"

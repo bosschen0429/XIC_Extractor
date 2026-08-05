@@ -151,9 +151,7 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     write_discovery_candidates_csv(candidate_path, ())
     truncated_output_dir = tmp_path / "m7-truncated-output"
     truncated_argv = list(argv)
-    truncated_argv[truncated_argv.index("--output-dir") + 1] = str(
-        truncated_output_dir
-    )
+    truncated_argv[truncated_argv.index("--output-dir") + 1] = str(truncated_output_dir)
 
     truncated_exit_code = main(truncated_argv)
 
@@ -211,19 +209,20 @@ def test_runner_writes_replay_packet_and_qmv_for_one_support_canary(
     assert unsupported_summary["source_artifact_sha256"] is None
     assert unsupported_summary["pending_acceptance_count"] == 0
     assert unsupported_summary["pending_acceptance_manifest"] is None
-    assert unsupported_summary["samples"][0]["technical_state"] == "unsupported"
-    assert unsupported_summary["samples"][0]["method_result"] is None
+    assert unsupported_summary["samples"][0]["technical_state"] == "evaluated"
+    assert unsupported_summary["samples"][0]["method_result"] == "HOLD"
     assert unsupported_summary["samples"][0]["backfill_disposition"] is None
     assert unsupported_summary["samples"][0]["source_candidate_count"] == 1
     assert unsupported_summary["samples"][0]["strict_scan_count"] == 0
     assert unsupported_summary["call_cost"] == {
-        "raw_open_count": 0,
-        "logical_xic_request_count": 0,
-        "xic_batch_count": 0,
-        "adapter_chromatogram_call_count": 0,
-        "trace_point_count": 0,
+        "raw_open_count": 1,
+        "logical_xic_request_count": 1,
+        "xic_batch_count": 1,
+        "adapter_chromatogram_call_count": 1,
+        "trace_point_count": unsupported_summary["samples"][0]["trace_point_count"],
     }
-    assert len(opened[raw_path]) == 1
+    assert len(opened[raw_path]) == 2
+    assert opened[raw_path][1].disposed is True
     assert not (unsupported_output_dir / "untargeted_cid_nl_source.json").exists()
     assert not (unsupported_output_dir / "quant_matrix_version.csv").exists()
 

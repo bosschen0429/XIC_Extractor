@@ -108,9 +108,7 @@ def test_unique_assignment_is_owner_minted_typed_and_deterministic(
         == candidate.candidate_observation_id
     )
     assert (
-        payload["assignments"][0][
-            "direct_support_assessment_artifact_content_id"
-        ]
+        payload["assignments"][0]["direct_support_assessment_artifact_content_id"]
         == candidate.direct_support_assessment_artifact_content_id
     )
 
@@ -150,7 +148,7 @@ def test_assignment_serialization_canonicalizes_equivalent_candidate_order(
     (
         ("overlapping_intervals", "ambiguous_multiple_tracks"),
         ("outside_all_intervals", "out_of_model"),
-        ("missing_landmarks", "technical_unassessable"),
+        ("missing_landmarks", "uniquely_assigned"),
         ("no_candidate", "not_observed"),
     ),
 )
@@ -201,12 +199,8 @@ def test_prediction_interval_overlap_is_candidate_local(tmp_path: Path) -> None:
         trajectory_assessment=scenario.assessable_trajectory,
     )
 
-    by_hypothesis = {
-        item.peak_hypothesis_id: item for item in result.assignments
-    }
-    single_track_assignment = by_hypothesis[
-        single_track_candidate.peak_hypothesis_id
-    ]
+    by_hypothesis = {item.peak_hypothesis_id: item for item in result.assignments}
+    single_track_assignment = by_hypothesis[single_track_candidate.peak_hypothesis_id]
     overlap_assignment = by_hypothesis[overlapping_candidate.peak_hypothesis_id]
     assert single_track_assignment.state == "uniquely_assigned"
     assert (
@@ -257,7 +251,7 @@ def test_sparse_anchors_and_unsupported_extrapolation_are_no_write(
     )
 
 
-def test_zero_anchor_tracks_are_typed_technical_no_write(tmp_path: Path) -> None:
+def test_zero_anchor_tracks_use_provisional_group_geometry(tmp_path: Path) -> None:
     scenario = _scenario(tmp_path)
     empty_models = fit_mode_track_model_set(
         processing_owners=scenario.fixture.owners,
@@ -274,12 +268,12 @@ def test_zero_anchor_tracks_are_typed_technical_no_write(tmp_path: Path) -> None
         trajectory_assessment=scenario.assessable_trajectory,
     )
 
-    assert result.assignments[0].state == "technical_unassessable"
-    assert "sparse_track_anchors" in result.assignments[0].reason_codes
+    assert result.assignments[0].state == "uniquely_assigned"
     assert all(
-        assessment.status == "sparse_anchors"
+        assessment.status == "predicted"
         and assessment.anchor_refs == ()
         and assessment.support_artifact_content_ids == ()
+        and assessment.reason_codes == ("provisional_group_geometry",)
         for assessment in result.assignments[0].prediction_assessments
     )
 
@@ -575,8 +569,7 @@ def test_exact_anchor_prediction_does_not_require_local_drift_lookup(
     )
     assert missing_result.assignments[0].state == "uniquely_assigned"
     assert (
-        missing_result.assignments[0].group_hypothesis_id
-        == anchor.group_hypothesis_id
+        missing_result.assignments[0].group_hypothesis_id == anchor.group_hypothesis_id
     )
 
 
@@ -613,7 +606,7 @@ def test_each_track_uses_its_local_landmark_region_without_global_median(
     assert predictions[scenario.track_b.group_hypothesis_id] == pytest.approx(8.52)
 
 
-def test_local_landmarks_do_not_authorize_unbounded_rt_extrapolation(
+def test_nonlocal_landmarks_keep_assignment_unassessable(
     tmp_path: Path,
 ) -> None:
     scenario = _scenario(tmp_path)
@@ -638,7 +631,9 @@ def test_local_landmarks_do_not_authorize_unbounded_rt_extrapolation(
     assert "unsupported_local_landmark_extrapolation" in assignment.reason_codes
 
 
-def test_single_landmark_does_not_authorize_nonlocal_tracks(tmp_path: Path) -> None:
+def test_single_nonlocal_landmark_keeps_direct_support_unassessable(
+    tmp_path: Path,
+) -> None:
     scenario = _scenario(tmp_path)
     trajectory = _multi_point_trajectory(
         "target",
@@ -652,7 +647,7 @@ def test_single_landmark_does_not_authorize_nonlocal_tracks(tmp_path: Path) -> N
         processing_owners=scenario.fixture.owners,
         sample=scenario.fixture.sample("target"),
         model_set=scenario.models,
-        candidates=(scenario.candidate(7.87, direct_support=False),),
+        candidates=(scenario.candidate(7.87, direct_support=True),),
         trajectory_assessment=trajectory,
     )
 
@@ -824,9 +819,7 @@ def test_assignment_rejects_candidate_from_foreign_request_before_prediction(
     foreign_models = fit_mode_track_model_set(
         processing_owners=foreign_owners,
         family_context=foreign_context,
-        direct_support_anchors=(
-            foreign_track_a.anchors + foreign_track_b.anchors
-        ),
+        direct_support_anchors=(foreign_track_a.anchors + foreign_track_b.anchors),
         policy=scenario.policy,
     )
 
@@ -1141,8 +1134,7 @@ def test_crossing_is_local_to_the_crossed_tracks(tmp_path: Path) -> None:
     assert assessment.content.method_result == "SUPPORT"
     assert result.assignments[0].state == "uniquely_assigned"
     assert (
-        result.assignments[0].group_hypothesis_id
-        == spines[2].group.group_hypothesis_id
+        result.assignments[0].group_hypothesis_id == spines[2].group.group_hypothesis_id
     )
 
 
@@ -1278,8 +1270,7 @@ def test_model_set_identity_binds_ordering_behavior_snapshot(
     )
 
     assert (
-        reordered_context.family_context_id
-        == scenario.family_context.family_context_id
+        reordered_context.family_context_id == scenario.family_context.family_context_id
     )
     assert reordered_models.model_set_id != scenario.models.model_set_id
     assert tuple(
@@ -1369,7 +1360,7 @@ def test_duplicate_physical_trajectory_evidence_cannot_authorize_interpolation(
         )
 
 
-def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
+def test_interpolation_extrapolation_and_poor_landmark_fallback(
     tmp_path: Path,
 ) -> None:
     unsupported_interpolation = _scenario(
@@ -1416,8 +1407,11 @@ def test_interpolation_extrapolation_and_poor_landmarks_fail_closed(
             poor_landmarks.fixture.owners,
         ),
     )
-    assert poor_result.assignments[0].state == "technical_unassessable"
-    assert "trajectory_poor_landmarks" in poor_result.assignments[0].reason_codes
+    assert poor_result.assignments[0].state == "uniquely_assigned"
+    assert any(
+        "anchor_trajectory_without_local_correction" in item.reason_codes
+        for item in poor_result.assignments[0].prediction_assessments
+    )
 
 
 def test_fit_rejects_reinforced_anchors(
@@ -1604,9 +1598,7 @@ def test_owner_objects_cannot_be_forged_or_gain_product_surface() -> None:
         ModeTrackCandidateObservation,
         ModeTrackAssignment,
     ):
-        assert not {
-            field.name for field in fields(owner_type) if "cell" in field.name
-        }
+        assert not {field.name for field in fields(owner_type) if "cell" in field.name}
 
 
 def test_mode_track_owner_has_no_product_or_raw_scan_dependencies() -> None:
@@ -1804,9 +1796,10 @@ def _mode_track_spines_many(
         )
         support_inputs.append((sample, assessment, peak, hypothesis, owner))
 
-    within_track_delta_sec = max(
-        abs(anchor_rts[1] - anchor_rts[0]) for anchor_rts in track_anchor_rts
-    ) * 60.0
+    within_track_delta_sec = (
+        max(abs(anchor_rts[1] - anchor_rts[0]) for anchor_rts in track_anchor_rts)
+        * 60.0
+    )
     between_track_delta_sec = (
         min(
             abs(left - right)
@@ -1893,9 +1886,7 @@ def _different_request_same_sources(fixture):
         ),
         processing_algorithm_version="mode-track-foreign-request-v1",
         processing_contract_version=fixture.request.processing_contract_version,
-        scientific_inputs=json.loads(
-            fixture.request.normalized_scientific_inputs_json
-        ),
+        scientific_inputs=json.loads(fixture.request.normalized_scientific_inputs_json),
     )
     attempt = issue_processing_attempt(request)
     return compose_processing_owner_references(
@@ -1918,12 +1909,8 @@ def _trajectory(
             sample_stem=sample_stem,
             injection_order=injection_order,
             acquisition_source_id=acquisition_source_id,
-            processing_request_id=(
-                processing_owners.request.processing_request_id
-            ),
-            processing_attempt_id=(
-                processing_owners.attempt.processing_attempt_id
-            ),
+            processing_request_id=(processing_owners.request.processing_request_id),
+            processing_attempt_id=(processing_owners.attempt.processing_attempt_id),
             landmark_id=f"landmark:{sample_stem}:{index}",
             observed_rt_min=local_rt + 0.05,
             local_trajectory_rt_min=local_rt,
@@ -1977,12 +1964,8 @@ def _multi_point_trajectory(
             sample_stem=sample_stem,
             injection_order=injection_order,
             acquisition_source_id=acquisition_source_id,
-            processing_request_id=(
-                processing_owners.request.processing_request_id
-            ),
-            processing_attempt_id=(
-                processing_owners.attempt.processing_attempt_id
-            ),
+            processing_request_id=(processing_owners.request.processing_request_id),
+            processing_attempt_id=(processing_owners.attempt.processing_attempt_id),
             landmark_id=f"landmark:{sample_stem}:{index}",
             observed_rt_min=local_rt + shift,
             local_trajectory_rt_min=local_rt,
