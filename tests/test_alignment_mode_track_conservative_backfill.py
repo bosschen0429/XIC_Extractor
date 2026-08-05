@@ -36,6 +36,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     mint_cid_nl_method_assessment_ref,
 )
+from xic_extractor.peak_detection.observations import (
+    canonical_peak_observation_ref_bytes,
+)
 from xic_extractor.tabular_io import render_delimited_rows
 
 
@@ -282,6 +285,38 @@ def test_mode_track_projection_enters_existing_checked_qmv_owner(
         mode_track_facts=facts,
         source_artifact_relpath="output/m9/mode_track_source.json",
     )
+    source = json.loads(projection.source_artifact_bytes)
+    expected_assignments = {
+        (fact.group.group_hypothesis_id, assignment.sample.metadata.raw_stem): (
+            assignment
+        )
+        for fact in facts
+        if fact.may_attempt_recovery
+        for assignment in fact.exact_owner_candidate_assignments
+    }
+
+    assert source["schema_version"] == "m9_mode_track_source_v2"
+    assert len(source["rows"]) == len(expected_assignments)
+    for row in source["rows"]:
+        assignment = expected_assignments[
+            (row["group_hypothesis_id"], row["sample_stem"])
+        ]
+        observation = assignment.peak_hypothesis.peak_observation_refs[0]
+        assert row["peak_observation_artifact_id"] == (
+            observation.artifact.evidence_artifact_id
+        )
+        assert row["peak_observation_artifact_content_id"] == (
+            observation.artifact.content_identity.artifact_content_id
+        )
+        assert row["peak_observation"] == json.loads(
+            canonical_peak_observation_ref_bytes(
+                observation.content,
+                observation.generation_provenance,
+            )
+        )
+        assert row["peak_observation"]["content"][
+            "peak_observation_content_id"
+        ] == row["physical_ids"][2]
     manifest_path = _checked_manifest(tmp_path, projection)
 
     terminal = golden_path.build_untargeted_cid_nl_quant_matrix_version(

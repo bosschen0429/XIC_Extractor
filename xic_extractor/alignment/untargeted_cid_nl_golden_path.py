@@ -51,6 +51,9 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import CidNlMethodSubject
+from xic_extractor.peak_detection.observations import (
+    canonical_peak_observation_ref_bytes,
+)
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -586,6 +589,12 @@ def build_untargeted_cid_nl_mode_track_projection(
         available_count = detected_count + backfilled_count
         for sample_id, assignment in accepted.items():
             value = _mode_track_assignment_area(assignment)
+            hypothesis = assignment.peak_hypothesis
+            if hypothesis is None:
+                raise UntargetedCidNlGoldenPathError(
+                    "ModeTrack source assignment lost its PeakHypothesis"
+                )
+            observation = hypothesis.peak_observation_refs[0]
             proposals.append(
                 {
                     "group_hypothesis_id": group_id,
@@ -596,6 +605,18 @@ def build_untargeted_cid_nl_mode_track_projection(
                         assignment.peak_hypothesis_id,
                         assignment.peak_observation_content_id,
                     ],
+                    "peak_observation_artifact_id": (
+                        observation.artifact.evidence_artifact_id
+                    ),
+                    "peak_observation_artifact_content_id": (
+                        observation.artifact.content_identity.artifact_content_id
+                    ),
+                    "peak_observation": json.loads(
+                        canonical_peak_observation_ref_bytes(
+                            observation.content,
+                            observation.generation_provenance,
+                        )
+                    ),
                     "quant_value": value,
                     "detected_count": detected_count,
                     "backfilled_count": backfilled_count,
@@ -620,7 +641,7 @@ def build_untargeted_cid_nl_mode_track_projection(
                 }
             )
     source_bytes = _canonical_json_bytes({
-        "schema_version": "m9_mode_track_source_v1", "rows": proposals
+        "schema_version": "m9_mode_track_source_v2", "rows": proposals
     })
     source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
     acceptance_rows = tuple(
