@@ -15,6 +15,7 @@ from tests.package2_no_raw_fixture import (
     build_package2_no_raw_fixture,
 )
 from xic_extractor.alignment import conservative_backfill as backfill
+from xic_extractor.alignment import untargeted_cid_nl_golden_path as golden_path
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     ModeTrackTrajectoryPolicy,
@@ -170,6 +171,78 @@ def test_mode_track_groups_activate_independently_of_exact_owner_candidates(
     assert late.may_attempt_recovery is False
     assert len(late.exact_owner_candidate_assignments) == 2
     assert late.reason_codes == ("direct_support_threshold_not_met",)
+
+
+def test_mode_track_projection_prepares_only_m2_eligible_exact_owner_cells(
+    tmp_path: Path,
+) -> None:
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path
+    )
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+
+    build_projection = getattr(
+        golden_path,
+        "build_untargeted_cid_nl_mode_track_projection",
+    )
+    projection = build_projection(
+        processing_owners=fixture.owners,
+        mode_track_facts=facts,
+        source_artifact_relpath="output/m9/mode_track_source.json",
+    )
+
+    assert projection.backfill_decisions == ()
+    assert len(projection.input_quant_matrix_rows) == 2
+    assert {
+        row["peak_hypothesis_id"]
+        for row in projection.input_matrix_identity_rows
+    } == {item.group.group_hypothesis_id for item in facts}
+    assert len(projection.pending_acceptance_rows) == 2
+    assert len(projection.expected_diff_rows) == 2
+    assert all(
+        row["peak_hypothesis_id"]
+        in {item.group.group_hypothesis_id for item in facts}
+        and row["acceptance_decision"] == "accept_basic_backfill"
+        and row["write_authority"] == "TRUE"
+        for row in projection.pending_acceptance_rows
+    )
+    assert projection.product_authority == "none_until_checked_manifest"
+
+
+def test_mode_track_projection_does_not_publish_below_threshold_candidates(
+    tmp_path: Path,
+) -> None:
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path,
+        support_pattern=(
+            ("s1", ("early",), 101),
+            ("s2", ("early", "late"), 201),
+            ("s3", ("early",), 301),
+        ),
+    )
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+
+    projection = getattr(
+        golden_path,
+        "build_untargeted_cid_nl_mode_track_projection",
+    )(
+        processing_owners=fixture.owners,
+        mode_track_facts=facts,
+        source_artifact_relpath="output/m9/mode_track_source.json",
+    )
+
+    assert projection.pending_acceptance_rows == ()
+    assert projection.expected_diff_rows == ()
 
 
 def _assess(
