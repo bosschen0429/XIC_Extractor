@@ -176,7 +176,10 @@ to their exact processing request and attempt, resolved acquisition source, and
 injection order. Anchors and candidates also retain the exact physical peak
 observation identity. Every ingress revalidates the live PeakHypothesis and,
 when present, direct-SUPPORT assessment against those current owners. M8 does
-not retain or depend on `CellObservationRef`.
+not retain or depend on `CellObservationRef`. Downstream M8 consumers must call
+`validate_mode_track_assignment_batch_for_consumption` before using a retained
+assignment batch; the operation is pure and grants no reinforcement or product
+authority. Reinforcement enters through the same validation closure.
 
 The retained fixture
 `docs/superpowers/fixtures/mode_track_assignment_85raw_inconclusive_v1.json`
