@@ -1,0 +1,14 @@
+{
+  "adopted_cell_count": 26,
+  "baseline_qmv_sha256": "9bf5d6815ad4555d99489d22770e7b3eb2b35ab22b5f3002edc5b9a1006defe5",
+  "checked_manifest_file_sha256": "CEF81A3684146249E82CDB5AC79C208C07B4D7F95FB5C6340B8ECA44E85BBF48",
+  "fresh_scientific_projection_sha256": "89b572f807e8444cab72f51a9bb61f51a3c30d85bd97931c29e39510880208ad",
+  "manual_review_replay_sha256": "698d414d53241e593aac1af5d1456dd0406ef4ee0caeb37a763a279c6546a1cd",
+  "manual_review_sha256": "75e3ae8e451b0b1c9dc2fac75aed505d3ffed419281d8a6c3819bf38303d25e4",
+  "proposal_receipt_sha256": "43767d2cda2234adf2dedcd94ea59d11ceae39c11823ede6f0904eee79299ff6",
+  "result_qmv_sha256": "feee0ab9a84f3ba7253e62d83a619f6774b4c5ea272d625d33c06659531b9a6b",
+  "rollback_qmv_sha256": "9bf5d6815ad4555d99489d22770e7b3eb2b35ab22b5f3002edc5b9a1006defe5",
+  "rollback_status": "baseline_exact",
+  "schema_version": "issue180_m9_gate_c_final_receipt_v2",
+  "validation_status": "diagnostic_only"
+}

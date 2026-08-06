@@ -1,6 +1,7 @@
 # Python
 .venv/
 .uv-cache/
+.pre-commit-cache/
 __pycache__/
 *.pyc
 *.pyo

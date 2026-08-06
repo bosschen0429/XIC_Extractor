@@ -1,0 +1,10 @@
+{
+  "audit_review_transfer_receipt_sha256": "54158b3a3761ca6fa39d6d3e8c8dd1f046d05da531fbe750b731b9b264293d61",
+  "code_sha": "975c5ab9afc9f9a29f82566c35ef765328d07b57",
+  "final_receipt_sha256": "2ce924eea097b04a373bc36d63adf956d9d81fea2888829cb99ec1404f449f95",
+  "fresh_owner_receipt_sha256": "ef0ea03c6ffa30da9e48c5335ab7965cbbb01cb27930ebf5e003b72f3c7949be",
+  "metadata_sha256": "e2f98a6c59ac462030f9d0cda17d67d2e7676450292fc3659de57156fc28a21a",
+  "product_authority": "checked_qmv_owner_only",
+  "schema_version": "issue180_m9_gate_c_transaction_receipt_v2",
+  "validation_status": "diagnostic_only"
+}

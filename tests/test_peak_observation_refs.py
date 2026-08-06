@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import pytest
 
+import xic_extractor.peak_detection.observations as observation_owner
 from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
     build_peak_hypotheses,
@@ -18,8 +20,10 @@ from xic_extractor.peak_detection.models import (
 from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
     PeakObservationRef,
+    canonical_peak_observation_ref_bytes,
     mint_peak_observation_ref,
     validate_peak_observation_binding,
+    verify_persisted_peak_observation_claims,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -222,6 +226,103 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
             original.content,
             intensity=(50.0, 501.0, 50.0),
         )
+
+
+def test_persisted_content_verifies_supported_claims_and_rejects_stale_id(
+    tmp_path: Path,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    reference = _mint_standard_reference(identity.owners, identity.sample)
+    payload = json.loads(
+        canonical_peak_observation_ref_bytes(
+            reference.content,
+            reference.generation_provenance,
+        )
+    )["content"]
+
+    verified = verify_persisted_peak_observation_claims(payload)
+    assert verified.peak_observation_content_id == (
+        reference.content.peak_observation_content_id
+    )
+    assert verified.canonical_sample_identity_id == (
+        reference.content.canonical_sample_identity_id
+    )
+    assert verified.raw_apex_rt_min == reference.content.integration.raw_apex_rt_min
+    assert verified.height_raw == reference.content.integration.height_raw
+    assert math.isclose(
+        verified.area_raw_counts_seconds,
+        reference.content.integration.area_raw_counts_seconds,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    )
+    assert not hasattr(verified, "height_smoothed")
+    assert not hasattr(verified, "area_baseline_corrected")
+    assert not hasattr(verified, "gaussian15_fwhm_min")
+
+    payload["intensity"][0] += 1.0
+    with pytest.raises(
+        PeakObservationContractError,
+        match="peak_observation_content_id mismatches physical content",
+    ):
+        verify_persisted_peak_observation_claims(payload)
+
+
+@pytest.mark.parametrize(
+    ("field_name", "contradiction"),
+    [
+        ("area_raw_counts_seconds", 999999.0),
+        ("height_raw", 999999.0),
+        ("raw_apex_rt_min", 7.9),
+    ],
+)
+def test_persisted_content_rejects_resealed_signal_derived_claim(
+    tmp_path: Path,
+    field_name: str,
+    contradiction: float,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    reference = _mint_standard_reference(identity.owners, identity.sample)
+    payload = json.loads(
+        canonical_peak_observation_ref_bytes(
+            reference.content,
+            reference.generation_provenance,
+        )
+    )["content"]
+    integration = replace(
+        reference.content.integration,
+        **{field_name: contradiction},
+    )
+    payload["integration"] = json.loads(json.dumps(asdict(integration)))
+    payload["peak_observation_content_id"] = observation_owner._content_id(
+        canonical_sample_identity_id=reference.content.canonical_sample_identity_id,
+        mz=reference.content.mz,
+        rt=reference.content.rt,
+        intensity=reference.content.intensity,
+        integration=integration,
+    )
+
+    with pytest.raises(PeakObservationContractError, match=field_name):
+        verify_persisted_peak_observation_claims(payload)
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_persisted_content_rejects_undeclared_fields(
+    tmp_path: Path,
+    nested: bool,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    reference = _mint_standard_reference(identity.owners, identity.sample)
+    payload = json.loads(
+        canonical_peak_observation_ref_bytes(
+            reference.content,
+            reference.generation_provenance,
+        )
+    )["content"]
+    target = payload["integration"] if nested else payload
+    target["caller_assertion"] = "not-owner-content"
+
+    with pytest.raises(PeakObservationContractError, match="unexpected fields"):
+        verify_persisted_peak_observation_claims(payload)
 
 
 @pytest.mark.parametrize(

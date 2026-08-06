@@ -41,6 +41,23 @@ for the active task unless a hard gate below says otherwise.
   [`codex-operating-system.md`](docs/agent/codex-operating-system.md),
   `docs/engineering-skills/`, and [`.codex/skills`](.codex/skills)
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in this repository's GitHub Issues. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default Matt Pocock triage labels. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context domain documentation layout. See
+`docs/agents/domain.md`.
+
 ## Hard Defaults
 
 - Before non-trivial edits, confirm intended worktree, branch, and dirty diff
@@ -112,6 +129,13 @@ must remain clean-checkout safe.
   enter through its atomic execution/finalization API, not call partial lifecycle
   primitives, accept caller-authored ledgers/counts, or expose settlement-only
   public bypasses. See `docs/agent/architecture-public-contracts.md`.
+- Treat persisted JSON/TSV/maps as untrusted projections after deserialization.
+  Before a consumer claims domain or runtime semantics, route the complete content
+  through the original semantic owner to reconstruct the typed value and recompute
+  canonical identity and invariants. Embedded IDs, hashes, status, counts, and
+  locators are assertions, not proof, even when the outer envelope is re-sealed;
+  omitted content makes the corresponding claim unavailable. See
+  `docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration`.
 
 ## Workflow Routing
 

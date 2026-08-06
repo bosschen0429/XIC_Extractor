@@ -61,6 +61,70 @@ explicit. CI closure for a contract-bearing projection requires a source-to-
 terminal round trip plus the applicable cross-key, duplicate, malformed,
 reordered, partial, failure, serialization, recovery, and replay counterexamples.
 
+### Persisted Semantic Rehydration
+
+A durable envelope proves only the bytes, schema, location, and lineage owned by
+that envelope. JSON objects, TSV rows, free-form mappings, receipts, replays, and
+other persisted payloads are untrusted projections after deserialization; they do
+not regain domain or runtime authority merely because an embedded ID, digest,
+status, count, locator, or outer-envelope hash matches.
+
+Before a consumer may claim an embedded fact as owner-valid, it must route the
+complete persisted content through the original semantic owner's existing parser,
+constructor, or binding validator. That owner must reconstruct a typed value and
+recompute its canonical identity and invariants from the content. Comparing a
+payload's self-reported identity with another copied identity is not validation,
+even when a caller can re-seal the outer envelope after tampering.
+
+Apply these ownership rules:
+
+- Envelope, storage, and lineage helpers may validate exact bytes/digests, schema
+  version, path, provenance, and envelope cardinality. They must delegate embedded
+  domain payloads to their existing semantic owners rather than duplicating owner
+  constructors or introducing a generic central semantic manager.
+- If the persisted target omits content required by the owner validator, the
+  downstream claim must remain unavailable. Add the missing content through a
+  versioned schema or reduce the claim; do not infer it from IDs, summaries,
+  navigation locators, or a sibling artifact.
+- Terminal status, disposition, counts, and current-state claims must be derived
+  from the accepted owner result or current owner snapshot. Persisted literals may
+  be compared for audit, but cannot be the source of the certified result.
+- Positive tests must round-trip persisted content through the owner. Negative
+  tests must mutate every owner-bearing content class while preserving the
+  embedded ID, then re-seal the outer envelope and expect rejection; also cover
+  unknown/duplicate fields, cross-key substitution, stale owner snapshots,
+  reordered members, and partial payloads where applicable.
+
+### Closed Writer Transaction Authority
+
+A writer-adjacent finalizer must not reconstruct authority from several loose,
+caller-authored persisted projections. Proposal rows, decision rows, expected
+diffs, transfer receipts, checked manifests, and terminal counts may be useful
+audit or review artifacts, but an outer hash chain cannot make their combined
+scientific claim complete.
+
+For a transaction that crosses persisted human review into a current owner run:
+
+- one non-writing rehydration boundary may validate the complete persisted
+  review evidence and mint one immutable typed review set with an explicitly
+  reduced claim;
+- the writer finalizer accepts only the current typed scientific owner result
+  plus that owner-validated review set and output-location mechanics;
+- cell identity, selected value, eligibility, expected diff, manifest rows,
+  counts, rollback, and terminal status are derived inside that transaction
+  from the current owner result; callers may not supply those facts through
+  paths, mappings, receipts, or scalar parameters;
+- audit receipts may be bound into audit lineage, but their fields cannot select
+  a cell, value, state, or writer decision; and
+- the final output becomes visible only after the internally derived manifest,
+  existing writer owner, expected-diff oracle, rollback oracle, and terminal
+  receipt all succeed.
+
+Executable closure requires a writer-signature oracle plus re-seal attacks over
+every persisted writer-like field. A consistently re-hashed audit mutation must
+either leave the owner-derived result unchanged or fail before final output; it
+must never alter a writer cell or value.
+
 ## Runtime Construction Authority
 
 Package 0 owns one mechanical runtime aggregate and one finalization boundary.

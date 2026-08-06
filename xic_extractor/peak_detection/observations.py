@@ -12,7 +12,9 @@ import hashlib
 import json
 import math
 import re
-from dataclasses import asdict, dataclass, replace
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, fields, replace
+from typing import Any, cast
 
 import numpy as np
 
@@ -53,6 +55,29 @@ _CONTENT_ID_PREFIX = "xic.peak-observation-content.v1:"
 _SAMPLE_ID_PREFIX = "xic.sample.v1:"
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source.v1:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_CONTENT_PAYLOAD_FIELDS = frozenset(
+    {
+        "peak_observation_content_id",
+        "canonical_sample_identity_id",
+        "mz",
+        "rt",
+        "intensity",
+        "integration",
+    }
+)
+_INTEGRATION_PAYLOAD_FIELDS = frozenset(
+    field.name for field in fields(IntegrationResult)
+)
+_INTEGRATION_TEXT_FIELDS = frozenset(
+    {
+        "integration_method",
+        "area_uncertainty_formula_version",
+        "area_uncertainty_noise_source",
+        "baseline_type",
+        "ms1_morphology_area_source",
+        "ms1_morphology_trace_method",
+    }
+)
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.observations",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
@@ -125,6 +150,152 @@ class PeakObservationContent:
             raise PeakObservationContractError(
                 "peak_observation_content_id mismatches physical content"
             )
+
+
+@dataclass(frozen=True, slots=True)
+class _VerifiedPersistedPeakObservationClaims:
+    """Raw-signal claims that the persisted selected subtrace can prove."""
+
+    peak_observation_content_id: str
+    canonical_sample_identity_id: str
+    mz: float
+    raw_apex_rt_min: float
+    height_raw: float
+    area_raw_counts_seconds: float
+
+
+def verify_persisted_peak_observation_claims(
+    payload: object,
+) -> _VerifiedPersistedPeakObservationClaims:
+    """Verify only claims supported by retained selected RT/intensity samples."""
+
+    content = _exact_payload_mapping(
+        payload,
+        expected_fields=_CONTENT_PAYLOAD_FIELDS,
+        field="peak observation content",
+    )
+    integration_payload = _exact_payload_mapping(
+        content["integration"],
+        expected_fields=_INTEGRATION_PAYLOAD_FIELDS,
+        field="peak observation integration",
+    )
+    for field_name in _INTEGRATION_TEXT_FIELDS:
+        if not isinstance(integration_payload[field_name], str):
+            raise PeakObservationContractError(
+                f"peak observation integration {field_name} must be text"
+            )
+    boundary_sources = _payload_json_array(
+        integration_payload["boundary_sources"],
+        field="peak observation integration boundary_sources",
+    )
+    if any(not isinstance(value, str) for value in boundary_sources):
+        raise PeakObservationContractError(
+            "peak observation integration boundary_sources must contain text"
+        )
+    raw_scan_indices = _payload_json_array(
+        integration_payload["raw_scan_indices"],
+        field="peak observation integration raw_scan_indices",
+    )
+    if any(
+        isinstance(value, bool) or not isinstance(value, int)
+        for value in raw_scan_indices
+    ):
+        raise PeakObservationContractError(
+            "peak observation integration raw_scan_indices must contain integers"
+        )
+    integration_values = dict(integration_payload)
+    integration_values["boundary_sources"] = boundary_sources
+    integration_values["raw_scan_indices"] = raw_scan_indices
+    try:
+        integration = IntegrationResult(**cast(dict[str, Any], integration_values))
+        content_id = _required_text(
+            content["peak_observation_content_id"],
+            field="peak_observation_content_id",
+        )
+        _validate_typed_digest_id(
+            content_id,
+            prefix=_CONTENT_ID_PREFIX,
+            field="peak_observation_content_id",
+        )
+        sample_id = _required_text(
+            content["canonical_sample_identity_id"],
+            field="canonical_sample_identity_id",
+        )
+        _validate_typed_digest_id(
+            sample_id,
+            prefix=_SAMPLE_ID_PREFIX,
+            field="canonical_sample_identity_id",
+        )
+        mz = _finite_float(content["mz"], field="mz")
+        if mz <= 0.0:
+            raise PeakObservationContractError("mz must be positive")
+        rt = _finite_float_tuple(
+            _payload_json_array(content["rt"], field="rt"),
+            field="rt",
+        )
+        intensity = _finite_float_tuple(
+            _payload_json_array(content["intensity"], field="intensity"),
+            field="intensity",
+        )
+        if not rt or len(rt) != len(intensity):
+            raise PeakObservationContractError(
+                "selected rt and intensity must be matching non-empty tuples"
+            )
+        if any(right <= left for left, right in zip(rt, rt[1:], strict=False)):
+            raise PeakObservationContractError(
+                "selected rt values must be strictly increasing"
+            )
+        if integration.raw_scan_indices != tuple(range(len(rt))):
+            raise PeakObservationContractError(
+                "content integration indices must address the selected subtrace"
+            )
+        _validate_integration(integration, selected_rt=rt)
+        expected_id = _content_id(
+            canonical_sample_identity_id=sample_id,
+            mz=mz,
+            rt=rt,
+            intensity=intensity,
+            integration=integration,
+        )
+        if content_id != expected_id:
+            raise PeakObservationContractError(
+                "peak_observation_content_id mismatches physical content"
+            )
+
+        raw_apex_index = int(np.argmax(np.asarray(intensity, dtype=float)))
+        raw_apex_rt_min = rt[raw_apex_index]
+        height_raw = intensity[raw_apex_index]
+        area_raw_counts_seconds = integrate_area_counts_seconds(
+            np.asarray(intensity, dtype=float),
+            np.asarray(rt, dtype=float),
+            0,
+            len(rt),
+        )
+        _require_close(
+            integration.raw_apex_rt_min,
+            raw_apex_rt_min,
+            field="raw_apex_rt_min",
+        )
+        _require_close(integration.height_raw, height_raw, field="height_raw")
+        _require_close(
+            integration.area_raw_counts_seconds,
+            area_raw_counts_seconds,
+            field="area_raw_counts_seconds",
+        )
+        return _VerifiedPersistedPeakObservationClaims(
+            peak_observation_content_id=content_id,
+            canonical_sample_identity_id=sample_id,
+            mz=mz,
+            raw_apex_rt_min=raw_apex_rt_min,
+            height_raw=height_raw,
+            area_raw_counts_seconds=area_raw_counts_seconds,
+        )
+    except PeakObservationContractError:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise PeakObservationContractError(
+            "persisted peak observation content is malformed"
+        ) from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -511,6 +682,39 @@ def _content_payload(content: PeakObservationContent) -> dict[str, object]:
         "intensity": list(content.intensity),
         "integration": asdict(content.integration),
     }
+
+
+def _exact_payload_mapping(
+    value: object,
+    *,
+    expected_fields: frozenset[str],
+    field: str,
+) -> dict[str, object]:
+    if not isinstance(value, Mapping) or any(
+        not isinstance(key, str) for key in value
+    ):
+        raise PeakObservationContractError(f"{field} must be a JSON object")
+    normalized = dict(value)
+    actual_fields = frozenset(normalized)
+    if actual_fields != expected_fields:
+        missing = ", ".join(sorted(expected_fields - actual_fields))
+        unexpected = ", ".join(sorted(actual_fields - expected_fields))
+        detail = "; ".join(
+            item
+            for item in (
+                f"missing fields: {missing}" if missing else "",
+                f"unexpected fields: {unexpected}" if unexpected else "",
+            )
+            if item
+        )
+        raise PeakObservationContractError(f"{field} fields changed: {detail}")
+    return normalized
+
+
+def _payload_json_array(value: object, *, field: str) -> tuple[object, ...]:
+    if not isinstance(value, list):
+        raise PeakObservationContractError(f"{field} must be a JSON array")
+    return tuple(value)
 
 
 def _validate_integration(
@@ -951,4 +1155,5 @@ __all__ = [
     "canonical_peak_observation_ref_bytes",
     "mint_peak_observation_ref",
     "validate_peak_observation_binding",
+    "verify_persisted_peak_observation_claims",
 ]

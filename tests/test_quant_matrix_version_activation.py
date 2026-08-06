@@ -95,6 +95,28 @@ def test_quant_matrix_version_writes_accepted_backfill_with_provenance(
     assert expected_summary[0]["written_backfill_count"] == "1"
 
 
+def test_detected_only_matrix_uses_identity_rows_across_blank_matrix_rows() -> None:
+    detected_only = detected_only_matrix_rows_from_quant_version(
+        quant_matrix_rows=(
+            {"Mz": "100", "RT": "1", "SampleA": ""},
+            {"Mz": "200", "RT": "2", "SampleA": "20"},
+        ),
+        cell_provenance_rows=(
+            {
+                "peak_hypothesis_id": "PH002",
+                "sample_stem": "SampleA",
+                "cell_status": "detected",
+            },
+        ),
+        matrix_identity_rows=(
+            {"matrix_row_index": "1", "peak_hypothesis_id": "PH001"},
+            {"matrix_row_index": "2", "peak_hypothesis_id": "PH002"},
+        ),
+    )
+
+    assert detected_only == [{"Mz": "200", "RT": "2", "SampleA": "20"}]
+
+
 def test_quant_matrix_activation_consumes_the_checked_manifest_snapshot(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -1,0 +1,13 @@
+{
+  "adopted_cell_count": 26,
+  "baseline_qmv_sha256": "9bf5d6815ad4555d99489d22770e7b3eb2b35ab22b5f3002edc5b9a1006defe5",
+  "checked_manifest_file_sha256": "9BC04CDB277F2C9C07D5A28AA1B43B2DA1A064A23ED5DE1286580C3FDEA9C3D8",
+  "manual_review_replay_sha256": "52f8a927b7df8be55b87a0f165ca017be6c8aba9ce3cc219c818c0caeb5c1476",
+  "manual_review_sha256": "30569546a56e4398283930f4cd0d5d802405cd9724b936afc5a1529629c0030f",
+  "proposal_receipt_sha256": "1ddf0bafe0f1f017f838ad59b96758d06717b0781b0e2697ad9d014059e3fcba",
+  "result_qmv_sha256": "7404f1fa8807a81cf8cfdae345112c16b5a52c9f5b6ecf0a2acf3179eb5f91eb",
+  "rollback_qmv_sha256": "9bf5d6815ad4555d99489d22770e7b3eb2b35ab22b5f3002edc5b9a1006defe5",
+  "rollback_status": "baseline_exact",
+  "schema_version": "issue180_m9_gate_c_final_receipt_v1",
+  "validation_status": "diagnostic_only"
+}
