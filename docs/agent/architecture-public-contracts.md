@@ -95,6 +95,36 @@ Apply these ownership rules:
   unknown/duplicate fields, cross-key substitution, stale owner snapshots,
   reordered members, and partial payloads where applicable.
 
+### Closed Writer Transaction Authority
+
+A writer-adjacent finalizer must not reconstruct authority from several loose,
+caller-authored persisted projections. Proposal rows, decision rows, expected
+diffs, transfer receipts, checked manifests, and terminal counts may be useful
+audit or review artifacts, but an outer hash chain cannot make their combined
+scientific claim complete.
+
+For a transaction that crosses persisted human review into a current owner run:
+
+- one non-writing rehydration boundary may validate the complete persisted
+  review evidence and mint one immutable typed review set with an explicitly
+  reduced claim;
+- the writer finalizer accepts only the current typed scientific owner result
+  plus that owner-validated review set and output-location mechanics;
+- cell identity, selected value, eligibility, expected diff, manifest rows,
+  counts, rollback, and terminal status are derived inside that transaction
+  from the current owner result; callers may not supply those facts through
+  paths, mappings, receipts, or scalar parameters;
+- audit receipts may be bound into audit lineage, but their fields cannot select
+  a cell, value, state, or writer decision; and
+- the final output becomes visible only after the internally derived manifest,
+  existing writer owner, expected-diff oracle, rollback oracle, and terminal
+  receipt all succeed.
+
+Executable closure requires a writer-signature oracle plus re-seal attacks over
+every persisted writer-like field. A consistently re-hashed audit mutation must
+either leave the owner-derived result unchanged or fail before final output; it
+must never alter a writer cell or value.
+
 ## Runtime Construction Authority
 
 Package 0 owns one mechanical runtime aggregate and one finalization boundary.

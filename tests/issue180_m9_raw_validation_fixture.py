@@ -5,9 +5,9 @@ import hashlib
 import json
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import InitVar, asdict, dataclass
 from pathlib import Path
-from typing import cast
+from typing import cast, final
 
 from xic_extractor.alignment import quant_matrix_version as quant_matrix
 from xic_extractor.alignment.config import AlignmentConfig
@@ -92,6 +92,44 @@ class ModeTrackValidationRun:
     settings: DiscoverySettings
     owners: ProcessingOwnerReferences
     started: float
+
+
+@dataclass(frozen=True, slots=True, order=True)
+class _GateCReviewSubject:
+    group_hypothesis_id: str
+    sample_stem: str
+    sample_identity_id: str
+    peak_observation_content_id: str
+    raw_area: str
+
+
+_VALIDATED_GATE_C_REVIEW_MINT_TOKEN = object()
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class _ValidatedGateCReviewSet:
+    subjects: tuple[_GateCReviewSubject, ...]
+    manual_review_sha256: str
+    manual_review_replay_sha256: str
+    _mint_token: InitVar[object]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("_ValidatedGateCReviewSet is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _VALIDATED_GATE_C_REVIEW_MINT_TOKEN:
+            raise ValueError("Gate C review set must be minted by its validator")
+        if not self.subjects or len(self.subjects) != len(set(self.subjects)):
+            raise ValueError("Gate C validated review subject census is malformed")
+        for value in (
+            self.manual_review_sha256,
+            self.manual_review_replay_sha256,
+        ):
+            if len(value) != 64 or any(
+                character not in "0123456789abcdef" for character in value
+            ):
+                raise ValueError("Gate C validated review digest is malformed")
 
 
 def gate_c_launch_contract() -> dict[str, object]:
@@ -252,6 +290,16 @@ def run_gate_c_fresh_finalization(
         if not target.is_relative_to(manifest_root):
             raise ValueError("Gate C C2 outputs must stay under manifest root")
 
+    _validate_review_transfer_receipt(
+        receipt_path=review_transfer_receipt_path,
+        code_sha=code_sha,
+        proposal_dir=proposal_dir,
+        manual_review_path=manual_review_path,
+        manual_review_replay_path=manual_review_replay_path,
+        manifest_path=manifest_path,
+        manifest_root=manifest_root,
+    )
+
     source_path = replay_output_dir / "fresh_mode_track_source.json"
     run = _run_mode_track_batch(
         raw_files=raw_files,
@@ -282,30 +330,39 @@ def run_gate_c_fresh_finalization(
             "fresh_source_sha256": _sha256(source_path),
             "c1_proposal_sha256": _sha256(proposal_path),
             "c1_proposal_receipt_sha256": _sha256(proposal_receipt_path),
-            "review_transfer_receipt_sha256": _sha256(review_transfer_receipt_path),
+            "audit_review_transfer_receipt_sha256": _sha256(
+                review_transfer_receipt_path
+            ),
             "eligibility_authority": "live_typed_m2_facts_same_process_only",
+            "writer_input_authority": "fresh_projection_only",
         },
     )
-    final_receipt_path = finalize_gate_c_proposal(
+    validated_review = _rehydrate_gate_c_review_set(
         proposal_dir=proposal_dir,
         manual_review_path=manual_review_path,
         manual_review_replay_path=manual_review_replay_path,
-        manifest_path=manifest_path,
+        manifest_root=manifest_root,
+        fresh_projection=run.projection,
+    )
+    final_receipt_path = finalize_gate_c_fresh_projection(
+        projection=run.projection,
+        validated_review=validated_review,
         manifest_root=manifest_root,
         output_dir=final_output_dir,
-        fresh_mode_track_facts=run.facts,
     )
     transaction_receipt_path = final_output_dir / "transaction_receipt.json"
     _write_json(
         transaction_receipt_path,
         {
-            "schema_version": "issue180_m9_gate_c_transaction_receipt_v1",
+            "schema_version": "issue180_m9_gate_c_transaction_receipt_v2",
             "validation_status": VALIDATION_STATUS,
             "code_sha": code_sha,
             "metadata_sha256": metadata_sha256,
             "fresh_owner_receipt_sha256": _sha256(fresh_receipt_path),
             "final_receipt_sha256": _sha256(final_receipt_path),
-            "review_transfer_receipt_sha256": _sha256(review_transfer_receipt_path),
+            "audit_review_transfer_receipt_sha256": _sha256(
+                review_transfer_receipt_path
+            ),
             "product_authority": "checked_qmv_owner_only",
         },
     )
@@ -567,42 +624,39 @@ def _validate_fresh_mode_track_projection(
 
 def _validate_fresh_proposed_keys(
     proposal: Mapping[str, object],
-    fresh_rows: Sequence[Mapping[str, object]],
+    fresh_facts: Sequence[ModeTrackConservativeBackfillGroupFacts],
 ) -> None:
-    expected: dict[tuple[object, object, object], tuple[str, str]] = {}
-    for fact in fresh_rows:
-        decision = "proposed" if fact["may_attempt_recovery"] else "rejected"
+    expected: dict[tuple[object, object, object, object], tuple[str, str]] = {}
+    for fact in fresh_facts:
+        decision = "proposed" if fact.may_attempt_recovery else "rejected"
         reason = (
             "m2_activation_passed"
-            if fact["may_attempt_recovery"]
+            if fact.may_attempt_recovery
             else "m2_support_below_threshold"
         )
-        candidates = fact.get("exact_owner_candidates")
-        if not isinstance(candidates, list):
-            raise ValueError("fresh M2 candidate projection is malformed")
-        for candidate in candidates:
-            if not isinstance(candidate, dict):
-                raise ValueError("fresh M2 candidate projection is malformed")
-            key = (
-                fact["group_hypothesis_id"],
-                candidate.get("sample_identity_id"),
-                candidate.get("peak_observation_content_id"),
+        for candidate in fact.exact_owner_candidate_assignments:
+            fresh_key = (
+                fact.group.group_hypothesis_id,
+                candidate.canonical_sample_identity_id,
+                candidate.sample.metadata.raw_stem,
+                candidate.peak_observation_content_id,
             )
-            if key in expected or any(value is None for value in key):
-                raise ValueError("fresh M2 candidate projection is duplicate")
-            expected[key] = (decision, reason)
+            if fresh_key in expected or any(value is None for value in fresh_key):
+                raise ValueError("fresh M2 candidate identity is duplicate")
+            expected[fresh_key] = (decision, reason)
 
     decisions = _required_mapping_rows(proposal, "candidate_decision_rows")
-    observed: dict[tuple[object, object, object], tuple[object, object]] = {}
+    observed: dict[tuple[object, object, object, object], tuple[object, object]] = {}
     for row in decisions:
-        key = (
+        persisted_key = (
             row.get("group_hypothesis_id"),
             row.get("sample_identity_id"),
+            row.get("sample_stem"),
             row.get("peak_observation_content_id"),
         )
-        if key in observed:
+        if persisted_key in observed:
             raise ValueError("Gate C persisted candidate decision is duplicate")
-        observed[key] = (row.get("decision"), row.get("reason_code"))
+        observed[persisted_key] = (row.get("decision"), row.get("reason_code"))
     if observed != expected:
         raise ValueError("Gate C persisted candidate decisions differ from fresh M2")
 
@@ -653,7 +707,10 @@ def freeze_gate_c_proposal(
         raise ValueError("projection source path must be inside final proposal output")
     if not projection.pending_acceptance_rows:
         raise ValueError("Gate C proposal must contain at least one pending row")
-    staging = _new_output_dir(output_dir)
+    staging = output_dir.with_name(f"{output_dir.name}.staging")
+    if output_dir.exists() or staging.exists():
+        raise ValueError("Gate C proposal or staging output already exists")
+    staging.mkdir(parents=True)
     staged_source = staging / source_path.name
     staged_source.write_bytes(projection.source_artifact_bytes)
     fact_rows = [_fact_row(fact) for fact in projection.mode_track_facts]
@@ -710,6 +767,7 @@ def freeze_gate_c_proposal(
     }
     _validate_proposal_payload(proposal, receipt, staged_source)
     _publish_json_marker(staging / "proposal_receipt.json", receipt)
+    staging.replace(output_dir)
     return output_dir / "proposal_receipt.json"
 
 
@@ -863,6 +921,85 @@ def transfer_gate_c_review(
     return output_dir / "review_transfer_receipt.json"
 
 
+def _validate_review_transfer_receipt(
+    *,
+    receipt_path: Path,
+    code_sha: str,
+    proposal_dir: Path,
+    manual_review_path: Path,
+    manual_review_replay_path: Path,
+    manifest_path: Path,
+    manifest_root: Path,
+) -> Mapping[str, object]:
+    manifest_root = manifest_root.resolve()
+    paths = (
+        receipt_path.resolve(),
+        proposal_dir.resolve(),
+        manual_review_path.resolve(),
+        manual_review_replay_path.resolve(),
+        manifest_path.resolve(),
+    )
+    if any(not path.is_relative_to(manifest_root) for path in paths):
+        raise ValueError("Gate C review-transfer inputs must stay under manifest root")
+
+    receipt = _read_json_object(receipt_path)
+    required_fields = {
+        "schema_version",
+        "validation_status",
+        "code_sha",
+        "review_subject_count",
+        "review_subjects_sha256",
+        "reviewed_proposal_receipt_sha256",
+        "reviewed_manual_review_sha256",
+        "reviewed_replay_sha256",
+        "new_proposal_receipt_sha256",
+        "transferred_manual_review_sha256",
+        "transferred_replay_sha256",
+        "checked_manifest_sha256",
+        "transfer_rule",
+        "product_authority",
+    }
+    if set(receipt) != required_fields or (
+        receipt.get("schema_version")
+        != "issue180_m9_gate_c_review_transfer_receipt_v1"
+        or receipt.get("validation_status") != VALIDATION_STATUS
+        or receipt.get("code_sha") != code_sha
+        or receipt.get("transfer_rule")
+        != "exact_group_sample_identity_observation_content_area"
+        or receipt.get("product_authority") != "none_review_input_only"
+    ):
+        raise ValueError("Gate C review-transfer receipt contract changed")
+
+    proposal_path = proposal_dir / "proposal.json"
+    proposal_receipt_path = proposal_dir / "proposal_receipt.json"
+    proposal = _read_json_object(proposal_path)
+    proposal_receipt = _read_json_object(proposal_receipt_path)
+    source_path = manifest_root / str(proposal.get("source_artifact_relpath", ""))
+    _validate_proposal_payload(proposal, proposal_receipt, source_path)
+    review_subjects = _review_subject_rows(proposal, source_path)
+    expected_bindings = {
+        "review_subject_count": len(review_subjects),
+        "review_subjects_sha256": _json_sha256(review_subjects),
+        "new_proposal_receipt_sha256": _sha256(proposal_receipt_path),
+        "transferred_manual_review_sha256": _sha256(manual_review_path),
+        "transferred_replay_sha256": _sha256(manual_review_replay_path),
+        "checked_manifest_sha256": _sha256(manifest_path),
+    }
+    if any(receipt.get(key) != value for key, value in expected_bindings.items()):
+        raise ValueError("Gate C review-transfer receipt bindings changed")
+    for key in (
+        "reviewed_proposal_receipt_sha256",
+        "reviewed_manual_review_sha256",
+        "reviewed_replay_sha256",
+    ):
+        value = receipt.get(key)
+        if not isinstance(value, str) or len(value) != 64 or any(
+            character not in "0123456789abcdef" for character in value
+        ):
+            raise ValueError("Gate C reviewed packet digest is malformed")
+    return receipt
+
+
 def _validate_reviewed_packet_for_transfer(
     *,
     proposal: Mapping[str, object],
@@ -919,11 +1056,37 @@ def _review_subject_rows(
     proposal: Mapping[str, object],
     source_path: Path,
 ) -> list[dict[str, object]]:
+    return _review_subject_rows_from_payload(
+        pending=_required_rows(proposal, "pending_acceptance_rows"),
+        source=_read_json_object(source_path),
+    )
+
+
+def _projection_review_subject_rows(
+    projection: UntargetedCidNlModeTrackProjection,
+) -> list[dict[str, object]]:
+    source = json.loads(
+        projection.source_artifact_bytes,
+        object_pairs_hook=_unique_json_mapping,
+    )
+    if not isinstance(source, dict):
+        raise ValueError("Gate C fresh source must be a JSON object")
+    return _review_subject_rows_from_payload(
+        pending=projection.pending_acceptance_rows,
+        source=source,
+    )
+
+
+def _review_subject_rows_from_payload(
+    *,
+    pending: Sequence[Mapping[str, str]],
+    source: Mapping[str, object],
+) -> list[dict[str, object]]:
     pending_keys = {
         (row["peak_hypothesis_id"], row["sample_stem"])
-        for row in _required_rows(proposal, "pending_acceptance_rows")
+        for row in pending
     }
-    source_rows = _required_mapping_rows(_read_json_object(source_path), "rows")
+    source_rows = _required_mapping_rows(source, "rows")
     subjects: list[dict[str, object]] = []
     seen: set[tuple[object, object]] = set()
     for row in source_rows:
@@ -958,17 +1121,14 @@ def _review_subject_rows(
     )
 
 
-def finalize_gate_c_proposal(
+def _rehydrate_gate_c_review_set(
     *,
     proposal_dir: Path,
     manual_review_path: Path,
     manual_review_replay_path: Path,
-    manifest_path: Path,
     manifest_root: Path,
-    output_dir: Path,
-    fresh_mode_track_facts: tuple[ModeTrackConservativeBackfillGroupFacts, ...]
-    | None = None,
-) -> Path:
+    fresh_projection: UntargetedCidNlModeTrackProjection,
+) -> _ValidatedGateCReviewSet:
     proposal_path = proposal_dir / "proposal.json"
     receipt_path = proposal_dir / "proposal_receipt.json"
     proposal = _read_json_object(proposal_path)
@@ -979,22 +1139,20 @@ def finalize_gate_c_proposal(
     if receipt.get("source_file_sha256") != _sha256(source_path):
         raise ValueError("Gate C source file hash changed")
     _validate_proposal_payload(proposal, receipt, source_path)
-    if fresh_mode_track_facts is None:
-        raise ValueError("Gate C fresh M2 facts are required for finalization")
-    fresh_scientific_rows = _validate_fresh_mode_track_projection(
+    _validate_fresh_mode_track_projection(
         persisted_rows=_required_mapping_rows(
             proposal, "mode_track_scientific_projection_rows"
         ),
-        fresh_facts=fresh_mode_track_facts,
+        fresh_facts=fresh_projection.mode_track_facts,
     )
-    _validate_fresh_proposed_keys(proposal, fresh_scientific_rows)
+    _validate_fresh_proposed_keys(proposal, fresh_projection.mode_track_facts)
     pending = _required_rows(proposal, "pending_acceptance_rows")
-    review = _read_json_object(manual_review_path)
     replay_relpath = _manifest_relative_path(
         manual_review_replay_path,
         manifest_root=manifest_root,
     )
     replay = _read_json_object(manual_review_replay_path)
+    review = _read_json_object(manual_review_path)
     _validate_manual_review_replay(replay, proposal, receipt, pending, source_path)
     _validate_manual_review(
         review,
@@ -1005,45 +1163,128 @@ def finalize_gate_c_proposal(
         replay_relpath=replay_relpath,
         replay_sha256=_sha256(manual_review_replay_path),
     )
+    persisted_subjects = _review_subject_rows(proposal, source_path)
+    fresh_subjects = _projection_review_subject_rows(fresh_projection)
+    if persisted_subjects != fresh_subjects:
+        raise ValueError("Gate C reviewed subjects differ from fresh C2 owner")
+    subjects = tuple(
+        _GateCReviewSubject(
+            group_hypothesis_id=str(row["group_hypothesis_id"]),
+            sample_stem=str(row["sample_stem"]),
+            sample_identity_id=str(row["sample_identity_id"]),
+            peak_observation_content_id=str(row["peak_observation_content_id"]),
+            raw_area=str(row["raw_area"]),
+        )
+        for row in fresh_subjects
+    )
+    return _ValidatedGateCReviewSet(
+        subjects=subjects,
+        manual_review_sha256=_sha256(manual_review_path),
+        manual_review_replay_sha256=_sha256(manual_review_replay_path),
+        _mint_token=_VALIDATED_GATE_C_REVIEW_MINT_TOKEN,
+    )
+
+
+def finalize_gate_c_fresh_projection(
+    *,
+    projection: UntargetedCidNlModeTrackProjection,
+    validated_review: _ValidatedGateCReviewSet,
+    manifest_root: Path,
+    output_dir: Path,
+) -> Path:
+    if not isinstance(projection, UntargetedCidNlModeTrackProjection) or not isinstance(
+        validated_review, _ValidatedGateCReviewSet
+    ):
+        raise TypeError("Gate C finalization requires fresh typed owner authority")
+    manifest_root = manifest_root.resolve()
+    output_dir = output_dir.resolve()
+    if not output_dir.is_relative_to(manifest_root):
+        raise ValueError("Gate C final output must stay under manifest root")
+    source_path = manifest_root / projection.source_artifact_relpath
+    if (
+        not source_path.resolve().is_relative_to(manifest_root)
+        or not source_path.is_file()
+        or _sha256(source_path).upper() != projection.source_artifact_sha256.upper()
+    ):
+        raise ValueError("Gate C fresh projection source binding changed")
+
+    fresh_subjects = tuple(
+        _GateCReviewSubject(
+            group_hypothesis_id=str(row["group_hypothesis_id"]),
+            sample_stem=str(row["sample_stem"]),
+            sample_identity_id=str(row["sample_identity_id"]),
+            peak_observation_content_id=str(row["peak_observation_content_id"]),
+            raw_area=str(row["raw_area"]),
+        )
+        for row in _projection_review_subject_rows(projection)
+    )
+    if validated_review.subjects != fresh_subjects:
+        raise ValueError("Gate C validated review differs from fresh C2 subjects")
+
+    pending = list(map(dict, projection.pending_acceptance_rows))
+    manifest_sha = quant_matrix.production_acceptance_manifest_sha256(pending)
+    checked_rows = [{**row, "manifest_sha256": manifest_sha} for row in pending]
+    staging = output_dir.with_name(f"{output_dir.name}.staging")
+    if output_dir.exists() or staging.exists():
+        raise ValueError("Gate C final or staging output already exists")
+    staging.mkdir(parents=True)
+    manifest_path = staging / "checked_manifest_v1.tsv"
+    manifest_path.write_text(
+        render_delimited_rows(
+            checked_rows,
+            quant_matrix.PRODUCTION_ACCEPTANCE_COLUMNS,
+            delimiter="\t",
+            extrasaction="raise",
+            lineterminator="\n",
+        ),
+        encoding="utf-8",
+    )
     checked = load_checked_production_acceptance_manifest(
         manifest_path=manifest_path,
         repo_root=manifest_root,
     )
     _validate_pending_manifest_equality(pending, checked.rows)
     result = build_quant_matrix_version_from_checked_manifest(
-        matrix_header=_required_strings(proposal, "matrix_header"),
-        input_quant_matrix_rows=_required_rows(proposal, "input_quant_matrix_rows"),
-        input_matrix_identity_rows=_required_rows(
-            proposal, "input_matrix_identity_rows"
-        ),
+        matrix_header=projection.matrix_header,
+        input_quant_matrix_rows=projection.input_quant_matrix_rows,
+        input_matrix_identity_rows=projection.input_matrix_identity_rows,
         checked_manifest=checked,
-        expected_diff_rows=_required_rows(proposal, "expected_diff_rows"),
+        expected_diff_rows=projection.expected_diff_rows,
     )
-    rollback_status, rollback_rows = _validate_gate_c_terminal(
-        proposal, pending, result
+    rollback_status, rollback_rows = _validate_gate_c_fresh_terminal(
+        projection, pending, result
     )
     result_payload = {
         key: list(map(dict, value)) for key, value in vars(result).items()
     }
+    scientific_rows = _mode_track_scientific_projection_rows(
+        projection.mode_track_facts
+    )
     final_receipt = {
-        "schema_version": "issue180_m9_gate_c_final_receipt_v2",
+        "schema_version": "issue180_m9_gate_c_final_receipt_v3",
         "validation_status": VALIDATION_STATUS,
-        "proposal_receipt_sha256": _sha256(receipt_path),
-        "manual_review_sha256": _sha256(manual_review_path),
-        "manual_review_replay_sha256": _sha256(manual_review_replay_path),
+        "validated_review_subjects_sha256": _json_sha256(
+            [asdict(subject) for subject in validated_review.subjects]
+        ),
+        "manual_review_sha256": validated_review.manual_review_sha256,
+        "manual_review_replay_sha256": (
+            validated_review.manual_review_replay_sha256
+        ),
         "checked_manifest_file_sha256": checked.manifest_file_sha256,
         "result_qmv_sha256": _json_sha256(result_payload),
         "baseline_qmv_sha256": _json_sha256(
-            _required_rows(proposal, "input_quant_matrix_rows")
+            list(map(dict, projection.input_quant_matrix_rows))
         ),
         "rollback_qmv_sha256": _json_sha256(rollback_rows),
         "adopted_cell_count": len(pending),
         "rollback_status": rollback_status,
-        "fresh_scientific_projection_sha256": _json_sha256(fresh_scientific_rows),
+        "fresh_source_sha256": projection.source_artifact_sha256,
+        "fresh_scientific_projection_sha256": _json_sha256(scientific_rows),
+        "writer_authority": "fresh_projection_plus_validated_review_only",
     }
-    staging = _new_output_dir(output_dir)
     _write_json(staging / "result_qmv.json", result_payload)
     _publish_json_marker(staging / "final_receipt.json", final_receipt)
+    staging.replace(output_dir)
     return output_dir / "final_receipt.json"
 
 
@@ -1252,17 +1493,34 @@ def _validate_pending_manifest_equality(
         for row in pending
     ]
     if accepted != proposed:
-        raise ValueError("checked manifest differs from C1 proposal")
+        raise ValueError("checked manifest differs from fresh C2 projection")
 
 
-def _validate_gate_c_terminal(
-    proposal: Mapping[str, object],
+def _validate_gate_c_fresh_terminal(
+    projection: UntargetedCidNlModeTrackProjection,
     pending: Sequence[Mapping[str, str]],
     result: quant_matrix.QuantMatrixVersionRows,
 ) -> tuple[str, list[dict[str, str]]]:
-    header = _required_strings(proposal, "matrix_header")
-    baseline = _required_rows(proposal, "input_quant_matrix_rows")
-    identities = _required_rows(proposal, "input_matrix_identity_rows")
+    header = projection.matrix_header
+    baseline = list(map(dict, projection.input_quant_matrix_rows))
+    identities = projection.input_matrix_identity_rows
+    return _validate_gate_c_terminal_rows(
+        header=header,
+        baseline=baseline,
+        identities=identities,
+        pending=pending,
+        result=result,
+    )
+
+
+def _validate_gate_c_terminal_rows(
+    *,
+    header: Sequence[str],
+    baseline: Sequence[Mapping[str, str]],
+    identities: Sequence[Mapping[str, str]],
+    pending: Sequence[Mapping[str, str]],
+    result: quant_matrix.QuantMatrixVersionRows,
+) -> tuple[str, list[dict[str, str]]]:
     accepted = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
     if len(result.quant_matrix_rows) != len(baseline):
         raise ValueError("Gate C Matrix row count changed")
@@ -1295,7 +1553,7 @@ def _validate_gate_c_terminal(
     ]
     if rollback_rows != baseline_detected_rows:
         raise ValueError("Gate C result-derived rollback differs from baseline")
-    return "baseline_exact", baseline
+    return "baseline_exact", list(map(dict, baseline))
 
 
 def _manifest_relative_path(path: Path, *, manifest_root: Path) -> str:

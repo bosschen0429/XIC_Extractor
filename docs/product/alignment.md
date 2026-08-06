@@ -219,13 +219,18 @@ anchor, and the evidence grants no Matrix, Backfill, chemical-identity, or
 ProductWriter authority.
 
 The bounded Issue #180 M9 Gate C packet at
-`docs/superpowers/validation/issue180_m9_gate_c_85raw_v1/README.md` closes the
-separate opt-in projection rehearsal. One fresh 85-sample C1 run produced 26
-exact-owner proposals across three ModeTracks; manual physical-observation
-review passed all 26, and checked C2 wrote all 26 expected Backfill cells with
-zero unused expected diffs and exact baseline rollback. The accepted packet
-remains `diagnostic_only`: it does not activate defaults, change M1, establish
-chemical identity, or grant a new writer authority.
+`docs/superpowers/validation/issue180_m9_gate_c_85raw_v2/README.md` retains the
+historical RAW-backed acquisition, fresh-owner comparison, manual-review, and
+26-cell QMV evidence. Fresh 85-sample C1 and C2 owner runs produced the same
+stable scientific projection across three ModeTracks. Review after that run
+showed that the packet's multiple persisted projections still formed too broad
+an authority input surface. The current Gate C contract therefore treats the
+packet as `diagnostic_only` historical evidence: C2 writer finalization accepts
+only the fresh typed ModeTrack projection plus one in-memory owner-validated
+review set, derives its checked manifest and expected diff internally, and
+publishes the final output atomically. The retained packet is not a replayable
+writer input and does not activate defaults, change M1, establish chemical
+identity, or grant a new writer authority.
 
 `FamilyContextRef`, the model set, and `ModeTrackAssignment` remain internal
 `shadow_ready / product_authority=none` structure. The inconclusive retained
