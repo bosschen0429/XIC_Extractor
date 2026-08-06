@@ -121,6 +121,121 @@ def test_reviewed_mode_track_projection_rejects_changed_physical_area(
     assert not (tmp_path / "final").exists()
 
 
+def test_reviewed_mode_track_projection_rejects_resealed_cross_key_subjects(
+    tmp_path: Path,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection)
+    replay_path = tmp_path / "manual_review_replay.json"
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    expected_keys = {
+        (row["peak_hypothesis_id"], row["sample_stem"])
+        for row in replay["rows"]
+    }
+
+    for rows in (review["rows"], replay["rows"]):
+        first_key = (
+            rows[0]["peak_hypothesis_id"],
+            rows[0]["sample_stem"],
+        )
+        second_key = (
+            rows[1]["peak_hypothesis_id"],
+            rows[1]["sample_stem"],
+        )
+        rows[0]["peak_hypothesis_id"], rows[0]["sample_stem"] = second_key
+        rows[1]["peak_hypothesis_id"], rows[1]["sample_stem"] = first_key
+    for row in replay["rows"]:
+        row["feature_family_id"] = row["peak_hypothesis_id"]
+    assert {
+        (row["peak_hypothesis_id"], row["sample_stem"])
+        for row in replay["rows"]
+    } == expected_keys
+
+    _write_json(replay_path, replay)
+    review["observation_replay_sha256"] = hashlib.sha256(
+        replay_path.read_bytes()
+    ).hexdigest()
+    _write_json(review_path, review)
+
+    with pytest.raises(
+        ValueError,
+        match="validated review differs from fresh physical subject",
+    ):
+        finalization.finalize_reviewed_mode_track_projection(
+            projection=projection,
+            manual_review_path=review_path,
+            manual_review_replay_path=replay_path,
+            output_dir=tmp_path / "final",
+        )
+
+    assert not (tmp_path / "final").exists()
+
+
+def test_resealed_audit_digests_cannot_change_mode_track_writer_cells(
+    tmp_path: Path,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection)
+    replay_path = tmp_path / "manual_review_replay.json"
+    baseline = finalization.finalize_reviewed_mode_track_projection(
+        projection=projection,
+        manual_review_path=review_path,
+        manual_review_replay_path=replay_path,
+        output_dir=tmp_path / "baseline",
+    )
+
+    proposal_sha = "1" * 64
+    source_sha = "2" * 64
+    replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    replay["proposal_sha256"] = proposal_sha
+    replay["source_artifact_sha256"] = source_sha
+    _write_json(replay_path, replay)
+    review = json.loads(review_path.read_text(encoding="utf-8"))
+    review["observation_replay_sha256"] = hashlib.sha256(
+        replay_path.read_bytes()
+    ).hexdigest()
+    for row in review["rows"]:
+        row["proposal_sha256"] = proposal_sha
+        row["source_artifact_sha256"] = source_sha
+        row["candidate_key_sha256"] = "3" * 64
+    _write_json(review_path, review)
+
+    resealed = finalization.finalize_reviewed_mode_track_projection(
+        projection=projection,
+        manual_review_path=review_path,
+        manual_review_replay_path=replay_path,
+        output_dir=tmp_path / "resealed",
+    )
+
+    assert resealed.matrix_tsv.read_bytes() == baseline.matrix_tsv.read_bytes()
+    baseline_workbook = load_workbook(
+        baseline.matrix_xlsx,
+        read_only=True,
+        data_only=True,
+    )
+    resealed_workbook = load_workbook(
+        resealed.matrix_xlsx,
+        read_only=True,
+        data_only=True,
+    )
+    assert tuple(baseline_workbook["Matrix"].values) == tuple(
+        resealed_workbook["Matrix"].values
+    )
+
+
 def test_reviewed_mode_track_projection_does_not_publish_partial_table(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -186,3 +301,10 @@ def test_reviewed_mode_track_projection_retries_transient_windows_publish_denial
 
     assert attempts == 1
     assert result.matrix_tsv.is_file()
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )

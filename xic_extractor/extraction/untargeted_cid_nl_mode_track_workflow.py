@@ -40,6 +40,7 @@ from xic_extractor.execution_runtime_owner import (
     start_runtime_attempt,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    UntargetedCidNlRealDataContext,
     build_untargeted_cid_nl_real_data_context,
 )
 from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
@@ -134,20 +135,9 @@ def run_untargeted_cid_nl_mode_track_workflow(
         discovery_receipts_by_sample=receipts_by_sample,
         sample_identity_namespace=sample_identity_namespace,
     )
-    jobs = tuple(
-        UntargetedCidNlRealDataRuntimeJob(
-            processing_owners=context.processing_owners,
-            sample=sample,
-            method_subject=context.method_subject,
-            candidates=context.candidates_by_sample[raw_file.stem],
-            discovery_receipt=receipts_by_sample[raw_file.stem],
-            settings=context.settings,
-            peak_config=context.peak_config,
-            raw_path=raw_file,
-            dll_dir=dll_dir,
-            work_unit_key=f"untargeted-cid-nl:{raw_file.stem}",
-        )
-        for raw_file, sample in zip(raw_files, context.samples, strict=True)
+    jobs = _mode_track_runtime_jobs(
+        context=context,
+        dll_dir=dll_dir,
     )
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
@@ -205,6 +195,31 @@ def run_untargeted_cid_nl_mode_track_workflow(
             m7_call_cost=m7_call_cost,
         ),
     )
+
+
+def _mode_track_runtime_jobs(
+    *,
+    context: UntargetedCidNlRealDataContext,
+    dll_dir: Path,
+) -> tuple[UntargetedCidNlRealDataRuntimeJob, ...]:
+    jobs = []
+    for sample in context.samples:
+        sample_stem = sample.metadata.raw_stem
+        jobs.append(
+            UntargetedCidNlRealDataRuntimeJob(
+                processing_owners=context.processing_owners,
+                sample=sample,
+                method_subject=context.method_subject,
+                candidates=context.candidates_by_sample[sample_stem],
+                discovery_receipt=context.discovery_receipts_by_sample[sample_stem],
+                settings=context.settings,
+                peak_config=context.peak_config,
+                raw_path=context.raw_paths_by_sample[sample_stem],
+                dll_dir=dll_dir,
+                work_unit_key=f"untargeted-cid-nl:{sample_stem}",
+            )
+        )
+    return tuple(jobs)
 
 
 def _workflow_call_cost(

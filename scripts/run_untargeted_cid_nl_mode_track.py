@@ -117,7 +117,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
     except Exception as exc:
         if heartbeat is not None:
-            heartbeat.write(event="failed", error=f"{type(exc).__name__}: {exc}")
+            try:
+                heartbeat.write(event="failed", error=f"{type(exc).__name__}: {exc}")
+            except OSError as heartbeat_exc:
+                print(
+                    "warning: could not update failure heartbeat: "
+                    f"{heartbeat_exc}",
+                    file=sys.stderr,
+                )
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
 

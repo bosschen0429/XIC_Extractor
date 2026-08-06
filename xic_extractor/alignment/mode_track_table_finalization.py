@@ -8,8 +8,9 @@ import shutil
 import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import InitVar, dataclass
 from pathlib import Path, PurePosixPath
+from typing import final
 
 from xic_extractor.alignment import quant_matrix_version as quant_matrix
 from xic_extractor.alignment.production_acceptance import (
@@ -45,23 +46,46 @@ class ModeTrackReviewBundleSummary:
 
 
 @dataclass(frozen=True, slots=True)
-class _FreshReviewSubject:
+class _ModeTrackReviewSubject:
     peak_hypothesis_id: str
     sample_stem: str
     feature_family_id: str
     sample_identity_id: str
     peak_observation_content_id: str
     raw_area: str
-    observation_content: Mapping[str, object]
+    observation_content_bytes: bytes
 
 
+_VALIDATED_REVIEW_MINT_TOKEN = object()
+
+
+@final
 @dataclass(frozen=True, slots=True)
-class _LoadedReviewBundle:
-    review_rows: tuple[dict[str, object], ...]
-    replay_rows: tuple[dict[str, object], ...]
-    proposal_sha256: str
-    source_artifact_sha256: str
+class _ValidatedModeTrackReviewSet:
+    subjects: tuple[_ModeTrackReviewSubject, ...]
+    manual_review_sha256: str
+    manual_review_replay_sha256: str
     summary: ModeTrackReviewBundleSummary
+    _mint_token: InitVar[object]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("_ValidatedModeTrackReviewSet is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _VALIDATED_REVIEW_MINT_TOKEN:
+            raise ValueError("ModeTrack review set must be minted by its validator")
+        keys = tuple(
+            (subject.peak_hypothesis_id, subject.sample_stem)
+            for subject in self.subjects
+        )
+        if not keys or len(keys) != len(set(keys)):
+            raise ValueError("validated ModeTrack review subject census is malformed")
+        for digest in (
+            self.manual_review_sha256,
+            self.manual_review_replay_sha256,
+        ):
+            if not _is_sha256(digest):
+                raise ValueError("validated ModeTrack review digest is malformed")
 
 
 def inspect_mode_track_review_bundle(
@@ -71,7 +95,7 @@ def inspect_mode_track_review_bundle(
 ) -> ModeTrackReviewBundleSummary:
     """Validate retained review evidence without granting write authority."""
 
-    return _load_review_bundle(
+    return _rehydrate_mode_track_review_set(
         manual_review_path=manual_review_path,
         manual_review_replay_path=manual_review_replay_path,
     ).summary
@@ -90,10 +114,28 @@ def finalize_reviewed_mode_track_projection(
         raise TypeError(
             "ModeTrack table finalization requires a fresh typed projection"
         )
-    subjects = _validate_review_authority(
-        projection=projection,
+    validated_review = _rehydrate_mode_track_review_set(
         manual_review_path=manual_review_path,
         manual_review_replay_path=manual_review_replay_path,
+    )
+    return _finalize_mode_track_projection(
+        projection=projection,
+        validated_review=validated_review,
+        output_dir=output_dir,
+    )
+
+
+def _finalize_mode_track_projection(
+    *,
+    projection: UntargetedCidNlModeTrackProjection,
+    validated_review: _ValidatedModeTrackReviewSet,
+    output_dir: Path,
+) -> ModeTrackTableFinalizationResult:
+    if not isinstance(validated_review, _ValidatedModeTrackReviewSet):
+        raise TypeError("ModeTrack finalization requires owner-validated review")
+    subjects = _validate_review_authority(
+        projection=projection,
+        validated_review=validated_review,
     )
     pending = tuple(dict(row) for row in projection.pending_acceptance_rows)
     if len(subjects) != len(pending):
@@ -148,67 +190,36 @@ def finalize_reviewed_mode_track_projection(
 def _validate_review_authority(
     *,
     projection: UntargetedCidNlModeTrackProjection,
-    manual_review_path: Path,
-    manual_review_replay_path: Path,
-) -> tuple[_FreshReviewSubject, ...]:
+    validated_review: _ValidatedModeTrackReviewSet,
+) -> tuple[_ModeTrackReviewSubject, ...]:
     subjects = _fresh_review_subjects(projection)
     expected_keys = set(subjects)
-    bundle = _load_review_bundle(
-        manual_review_path=manual_review_path,
-        manual_review_replay_path=manual_review_replay_path,
-    )
-
-    reviewed: set[tuple[str, str]] = set()
-    for row in bundle.review_rows:
-        key = _row_key(row)
-        if key in reviewed or key not in expected_keys:
-            raise ValueError("manual review key is duplicate or foreign")
-        reviewed.add(key)
-    if reviewed != expected_keys:
-        raise ValueError("manual review does not cover every pending row")
-
-    replayed: set[tuple[str, str]] = set()
-    for row in bundle.replay_rows:
-        key = _row_key(row)
-        subject = subjects.get(key)
-        if key in replayed or subject is None:
-            raise ValueError("physical replay key is duplicate or foreign")
-        replayed.add(key)
-        observation = row.get("observation_content")
-        if not isinstance(observation, dict):
-            raise ValueError("physical replay observation content is malformed")
-        try:
-            verified = verify_persisted_peak_observation_claims(observation)
-        except PeakObservationContractError as exc:
-            raise ValueError(
-                "physical replay observation content is owner-invalid"
-            ) from exc
+    reviewed_by_key = {
+        (subject.peak_hypothesis_id, subject.sample_stem): subject
+        for subject in validated_review.subjects
+    }
+    if set(reviewed_by_key) != expected_keys:
+        raise ValueError("validated review does not cover every pending row")
+    for key, subject in subjects.items():
+        reviewed = reviewed_by_key[key]
         if (
-            row.get("feature_family_id") != subject.feature_family_id
-            or row.get("peak_observation_content_id")
+            reviewed.feature_family_id != subject.feature_family_id
+            or reviewed.sample_identity_id != subject.sample_identity_id
+            or reviewed.peak_observation_content_id
             != subject.peak_observation_content_id
-            or verified.peak_observation_content_id
-            != subject.peak_observation_content_id
-            or verified.canonical_sample_identity_id != subject.sample_identity_id
-            or row.get("area_parity") != "pass"
-            or observation != subject.observation_content
-            or not numeric_equal(row.get("proposal_quant_value"), subject.raw_area)
-            or not numeric_equal(
-                verified.area_raw_counts_seconds,
-                subject.raw_area,
-            )
+            or reviewed.observation_content_bytes
+            != subject.observation_content_bytes
+            or not numeric_equal(reviewed.raw_area, subject.raw_area)
         ):
-            raise ValueError("physical replay candidate binding changed")
-    if replayed != expected_keys:
-        raise ValueError("physical replay does not cover every pending row")
+            raise ValueError("validated review differs from fresh physical subject")
     return tuple(subjects[key] for key in sorted(subjects))
 
 
-def _load_review_bundle(
+def _rehydrate_mode_track_review_set(
     *,
     manual_review_path: Path,
     manual_review_replay_path: Path,
-) -> _LoadedReviewBundle:
+) -> _ValidatedModeTrackReviewSet:
     review_bytes = manual_review_path.read_bytes()
     replay_bytes = manual_review_replay_path.read_bytes()
     review = _read_json_bytes(review_bytes)
@@ -256,6 +267,7 @@ def _load_review_bundle(
     if replay.get("row_count") != len(replay_rows):
         raise ValueError("physical replay row census is malformed")
     replayed: set[tuple[str, str]] = set()
+    subjects: list[_ModeTrackReviewSubject] = []
     family_counts: Counter[str] = Counter()
     for row in replay_rows:
         key = _row_key(row)
@@ -289,6 +301,19 @@ def _load_review_bundle(
         ):
             raise ValueError("physical replay candidate binding changed")
         family_counts[family_id] += 1
+        subjects.append(
+            _ModeTrackReviewSubject(
+                peak_hypothesis_id=key[0],
+                sample_stem=key[1],
+                feature_family_id=family_id,
+                sample_identity_id=verified.canonical_sample_identity_id,
+                peak_observation_content_id=(
+                    verified.peak_observation_content_id
+                ),
+                raw_area=str(proposal_value),
+                observation_content_bytes=_canonical_json_bytes(observation),
+            )
+        )
     if not reviewed or reviewed != replayed:
         raise ValueError("manual review and physical replay census differ")
 
@@ -296,18 +321,26 @@ def _load_review_bundle(
         reviewed_cell_count=len(reviewed),
         feature_family_counts=tuple(sorted(family_counts.items())),
     )
-    return _LoadedReviewBundle(
-        review_rows=review_rows,
-        replay_rows=replay_rows,
-        proposal_sha256=proposal_sha,
-        source_artifact_sha256=source_sha,
+    return _ValidatedModeTrackReviewSet(
+        subjects=tuple(
+            sorted(
+                subjects,
+                key=lambda subject: (
+                    subject.peak_hypothesis_id,
+                    subject.sample_stem,
+                ),
+            )
+        ),
+        manual_review_sha256=hashlib.sha256(review_bytes).hexdigest(),
+        manual_review_replay_sha256=replay_sha,
         summary=summary,
+        _mint_token=_VALIDATED_REVIEW_MINT_TOKEN,
     )
 
 
 def _fresh_review_subjects(
     projection: UntargetedCidNlModeTrackProjection,
-) -> dict[tuple[str, str], _FreshReviewSubject]:
+) -> dict[tuple[str, str], _ModeTrackReviewSubject]:
     source = _read_json_bytes(projection.source_artifact_bytes)
     pending_by_key = {
         (row["peak_hypothesis_id"], row["sample_stem"]): row
@@ -315,7 +348,7 @@ def _fresh_review_subjects(
     }
     if not pending_by_key:
         raise ValueError("fresh ModeTrack projection has no reviewed write candidates")
-    subjects: dict[tuple[str, str], _FreshReviewSubject] = {}
+    subjects: dict[tuple[str, str], _ModeTrackReviewSubject] = {}
     for source_row in _mapping_rows(source, "rows"):
         key = (
             str(source_row.get("group_hypothesis_id", "")),
@@ -361,14 +394,14 @@ def _fresh_review_subjects(
             )
         ):
             raise ValueError("fresh ModeTrack review subject owner binding changed")
-        subjects[key] = _FreshReviewSubject(
+        subjects[key] = _ModeTrackReviewSubject(
             peak_hypothesis_id=key[0],
             sample_stem=key[1],
             feature_family_id=str(pending["feature_family_id"]),
             sample_identity_id=str(source_row["sample_identity_id"]),
             peak_observation_content_id=str(physical_ids[2]),
             raw_area=str(source_row["quant_value"]),
-            observation_content=observation,
+            observation_content_bytes=_canonical_json_bytes(observation),
         )
     if set(subjects) != set(pending_by_key):
         raise ValueError("fresh ModeTrack review subject census is incomplete")
@@ -509,6 +542,15 @@ def _read_json_bytes(content: bytes) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("expected JSON object")
     return value
+
+
+def _canonical_json_bytes(value: object) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 def _unique_json_mapping(pairs: list[tuple[str, object]]) -> dict[str, object]:

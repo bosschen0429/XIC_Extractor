@@ -78,6 +78,7 @@ def test_one_command_publishes_reviewed_mode_track_table(
 def test_failed_stage_never_publishes_final_output(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     projection, _proposal_dir = _gate_c_proposal(tmp_path)
     review_bundle = _review_bundle(tmp_path, projection)
@@ -92,6 +93,14 @@ def test_failed_stage_never_publishes_final_output(
         "run_untargeted_cid_nl_mode_track_workflow",
         fail_workflow,
     )
+    original_write = runner._Heartbeat.write
+
+    def fail_only_failure_heartbeat(self, *, event: str, **values: object) -> None:
+        if event == "failed":
+            raise OSError("synthetic heartbeat failure")
+        original_write(self, event=event, **values)
+
+    monkeypatch.setattr(runner._Heartbeat, "write", fail_only_failure_heartbeat)
 
     exit_code = runner.main(
         [
@@ -119,6 +128,9 @@ def test_failed_stage_never_publishes_final_output(
     assert exit_code == 2
     assert not output_dir.exists()
     assert (tmp_path / "failed-output.attempt/timing.live.json").is_file()
+    stderr = capsys.readouterr().err
+    assert "warning: could not update failure heartbeat" in stderr
+    assert "RuntimeError: synthetic Discovery failure" in stderr
 
 
 def test_preflight_closes_inputs_without_running_raw(
