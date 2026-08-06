@@ -152,8 +152,22 @@ class PeakObservationContent:
             )
 
 
-def rehydrate_peak_observation_content(payload: object) -> PeakObservationContent:
-    """Reconstruct persisted content and recompute its owner identity."""
+@dataclass(frozen=True, slots=True)
+class _VerifiedPersistedPeakObservationClaims:
+    """Raw-signal claims that the persisted selected subtrace can prove."""
+
+    peak_observation_content_id: str
+    canonical_sample_identity_id: str
+    mz: float
+    raw_apex_rt_min: float
+    height_raw: float
+    area_raw_counts_seconds: float
+
+
+def verify_persisted_peak_observation_claims(
+    payload: object,
+) -> _VerifiedPersistedPeakObservationClaims:
+    """Verify only claims supported by retained selected RT/intensity samples."""
 
     content = _exact_payload_mapping(
         payload,
@@ -193,28 +207,88 @@ def rehydrate_peak_observation_content(payload: object) -> PeakObservationConten
     integration_values["boundary_sources"] = boundary_sources
     integration_values["raw_scan_indices"] = raw_scan_indices
     try:
-        integration = IntegrationResult(
-            **cast(dict[str, Any], integration_values)
+        integration = IntegrationResult(**cast(dict[str, Any], integration_values))
+        content_id = _required_text(
+            content["peak_observation_content_id"],
+            field="peak_observation_content_id",
         )
-        return PeakObservationContent(
-            peak_observation_content_id=_required_text(
-                content["peak_observation_content_id"],
-                field="peak_observation_content_id",
-            ),
-            canonical_sample_identity_id=_required_text(
-                content["canonical_sample_identity_id"],
-                field="canonical_sample_identity_id",
-            ),
-            mz=_finite_float(content["mz"], field="mz"),
-            rt=_finite_float_tuple(
-                _payload_json_array(content["rt"], field="rt"),
-                field="rt",
-            ),
-            intensity=_finite_float_tuple(
-                _payload_json_array(content["intensity"], field="intensity"),
-                field="intensity",
-            ),
+        _validate_typed_digest_id(
+            content_id,
+            prefix=_CONTENT_ID_PREFIX,
+            field="peak_observation_content_id",
+        )
+        sample_id = _required_text(
+            content["canonical_sample_identity_id"],
+            field="canonical_sample_identity_id",
+        )
+        _validate_typed_digest_id(
+            sample_id,
+            prefix=_SAMPLE_ID_PREFIX,
+            field="canonical_sample_identity_id",
+        )
+        mz = _finite_float(content["mz"], field="mz")
+        if mz <= 0.0:
+            raise PeakObservationContractError("mz must be positive")
+        rt = _finite_float_tuple(
+            _payload_json_array(content["rt"], field="rt"),
+            field="rt",
+        )
+        intensity = _finite_float_tuple(
+            _payload_json_array(content["intensity"], field="intensity"),
+            field="intensity",
+        )
+        if not rt or len(rt) != len(intensity):
+            raise PeakObservationContractError(
+                "selected rt and intensity must be matching non-empty tuples"
+            )
+        if any(right <= left for left, right in zip(rt, rt[1:], strict=False)):
+            raise PeakObservationContractError(
+                "selected rt values must be strictly increasing"
+            )
+        if integration.raw_scan_indices != tuple(range(len(rt))):
+            raise PeakObservationContractError(
+                "content integration indices must address the selected subtrace"
+            )
+        _validate_integration(integration, selected_rt=rt)
+        expected_id = _content_id(
+            canonical_sample_identity_id=sample_id,
+            mz=mz,
+            rt=rt,
+            intensity=intensity,
             integration=integration,
+        )
+        if content_id != expected_id:
+            raise PeakObservationContractError(
+                "peak_observation_content_id mismatches physical content"
+            )
+
+        raw_apex_index = int(np.argmax(np.asarray(intensity, dtype=float)))
+        raw_apex_rt_min = rt[raw_apex_index]
+        height_raw = intensity[raw_apex_index]
+        area_raw_counts_seconds = integrate_area_counts_seconds(
+            np.asarray(intensity, dtype=float),
+            np.asarray(rt, dtype=float),
+            0,
+            len(rt),
+        )
+        _require_close(
+            integration.raw_apex_rt_min,
+            raw_apex_rt_min,
+            field="raw_apex_rt_min",
+        )
+        _require_close(integration.height_raw, height_raw, field="height_raw")
+        _require_close(
+            integration.area_raw_counts_seconds,
+            area_raw_counts_seconds,
+            field="area_raw_counts_seconds",
+        )
+        return _VerifiedPersistedPeakObservationClaims(
+            peak_observation_content_id=content_id,
+            canonical_sample_identity_id=sample_id,
+            mz=mz,
+            raw_apex_rt_min=raw_apex_rt_min,
+            height_raw=height_raw,
+            area_raw_counts_seconds=area_raw_counts_seconds,
         )
     except PeakObservationContractError:
         raise
@@ -1080,6 +1154,6 @@ __all__ = [
     "SCHEMA_VERSION",
     "canonical_peak_observation_ref_bytes",
     "mint_peak_observation_ref",
-    "rehydrate_peak_observation_content",
     "validate_peak_observation_binding",
+    "verify_persisted_peak_observation_claims",
 ]

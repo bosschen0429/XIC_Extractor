@@ -62,7 +62,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
-    rehydrate_peak_observation_content,
+    verify_persisted_peak_observation_claims,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import SampleMetadata
@@ -1448,7 +1448,9 @@ def _validate_manual_review_replay(
         if not isinstance(observation, dict):
             raise ValueError("Gate C physical replay observation content is malformed")
         try:
-            owner_observation = rehydrate_peak_observation_content(observation)
+            verified_observation = verify_persisted_peak_observation_claims(
+                observation
+            )
         except PeakObservationContractError as exc:
             raise ValueError(
                 "Gate C physical replay observation content is owner-invalid"
@@ -1458,8 +1460,8 @@ def _validate_manual_review_replay(
             or len(physical_ids) < 3
             or row.get("feature_family_id") != accepted.get("feature_family_id")
             or row.get("peak_observation_content_id") != physical_ids[2]
-            or owner_observation.peak_observation_content_id != physical_ids[2]
-            or owner_observation.canonical_sample_identity_id
+            or verified_observation.peak_observation_content_id != physical_ids[2]
+            or verified_observation.canonical_sample_identity_id
             != source.get("sample_identity_id")
             or row.get("proposal_quant_value") != accepted.get("quant_value")
             or source.get("quant_value") != accepted.get("quant_value")
@@ -1467,7 +1469,7 @@ def _validate_manual_review_replay(
         ):
             raise ValueError("Gate C physical replay candidate binding changed")
         if not numeric_equal(
-            owner_observation.integration.area_raw_counts_seconds,
+            verified_observation.area_raw_counts_seconds,
             accepted.get("quant_value"),
         ):
             raise ValueError("Gate C physical replay raw-area parity changed")
