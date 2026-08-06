@@ -19,10 +19,17 @@ _CODE_SHA_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
 
 @dataclass(frozen=True)
 class GateCLaunchInputs:
+    stage: str
     raw_files: tuple[Path, ...]
     sample_metadata: tuple[SampleMetadata, ...]
     metadata_sha256: str
     launch_manifest: dict[str, object]
+    output_dir: Path
+    proposal_dir: Path | None = None
+    manual_review_path: Path | None = None
+    manual_review_replay_path: Path | None = None
+    checked_manifest_path: Path | None = None
+    final_output_dir: Path | None = None
 
 
 def build_launch_inputs(
@@ -34,7 +41,15 @@ def build_launch_inputs(
     output_dir: Path,
     launch_manifest_path: Path,
     code_sha: str,
+    stage: str = "c1",
+    proposal_dir: Path | None = None,
+    manual_review_path: Path | None = None,
+    manual_review_replay_path: Path | None = None,
+    checked_manifest_path: Path | None = None,
+    final_output_dir: Path | None = None,
 ) -> GateCLaunchInputs:
+    if stage not in {"c1", "c2"}:
+        raise ValueError("Gate C stage must be c1 or c2")
     paths = tuple(
         path.resolve()
         for path in (
@@ -53,11 +68,69 @@ def build_launch_inputs(
         raise ValueError("RAW, DLL, or manifest root does not exist")
     if output_dir.exists():
         raise ValueError(f"output directory already exists: {output_dir}")
-    for target in (output_dir, launch_path):
+    c2_paths: tuple[Path, Path, Path, Path, Path] | None = None
+    if stage == "c2":
+        if any(
+            value is None
+            for value in (
+                proposal_dir,
+                manual_review_path,
+                manual_review_replay_path,
+                checked_manifest_path,
+                final_output_dir,
+            )
+        ):
+            raise ValueError(
+                "Gate C C2 requires proposal, review, manifest, and final paths"
+            )
+        assert proposal_dir is not None
+        assert manual_review_path is not None
+        assert manual_review_replay_path is not None
+        assert checked_manifest_path is not None
+        assert final_output_dir is not None
+        c2_paths = (
+            proposal_dir.resolve(),
+            manual_review_path.resolve(),
+            manual_review_replay_path.resolve(),
+            checked_manifest_path.resolve(),
+            final_output_dir.resolve(),
+        )
+        (
+            proposal_dir,
+            manual_review_path,
+            manual_review_replay_path,
+            checked_manifest_path,
+            final_output_dir,
+        ) = c2_paths
+        if not proposal_dir.is_dir() or any(
+            not path.is_file()
+            for path in (
+                manual_review_path,
+                manual_review_replay_path,
+                checked_manifest_path,
+            )
+        ):
+            raise ValueError("Gate C C2 frozen inputs do not exist")
+        if final_output_dir.exists():
+            raise ValueError(
+                f"final output directory already exists: {final_output_dir}"
+            )
+    output_targets = [output_dir, launch_path]
+    if final_output_dir is not None:
+        output_targets.append(final_output_dir)
+    for target in output_targets:
         try:
             target.relative_to(manifest_root)
         except ValueError as exc:
             raise ValueError("Gate C outputs must stay below manifest root") from exc
+    if c2_paths is not None:
+        for source in c2_paths[:-1]:
+            try:
+                source.relative_to(manifest_root)
+            except ValueError as exc:
+                raise ValueError(
+                    "Gate C C2 inputs must stay below manifest root"
+                ) from exc
     executable = _current_executable()
     expected_executable = (manifest_root / ".venv" / "Scripts" / "python.exe").resolve()
     if executable != expected_executable or not expected_executable.is_file():
@@ -106,6 +179,8 @@ def build_launch_inputs(
         str(executable),
         "-m",
         MODULE_NAME,
+        "--stage",
+        stage,
         "--sample-metadata",
         str(metadata_path),
         "--raw-dir",
@@ -121,8 +196,68 @@ def build_launch_inputs(
         "--code-sha",
         code_sha,
     ]
+    c2_inputs: dict[str, object] | None = None
+    if c2_paths is not None:
+        assert proposal_dir is not None
+        assert manual_review_path is not None
+        assert manual_review_replay_path is not None
+        assert checked_manifest_path is not None
+        assert final_output_dir is not None
+        argv.extend(
+            (
+                "--proposal-dir",
+                str(proposal_dir),
+                "--manual-review",
+                str(manual_review_path),
+                "--manual-review-replay",
+                str(manual_review_replay_path),
+                "--checked-manifest",
+                str(checked_manifest_path),
+                "--final-output-dir",
+                str(final_output_dir),
+            )
+        )
+        proposal_path = proposal_dir / "proposal.json"
+        proposal_receipt_path = proposal_dir / "proposal_receipt.json"
+        if not proposal_path.is_file() or not proposal_receipt_path.is_file():
+            raise ValueError("Gate C C2 proposal packet is incomplete")
+        c2_inputs = {
+            "proposal_dir": str(proposal_dir),
+            "proposal_sha256": _sha256(proposal_path),
+            "proposal_receipt_sha256": _sha256(proposal_receipt_path),
+            "manual_review": {
+                "path": str(manual_review_path),
+                "sha256": _sha256(manual_review_path),
+            },
+            "manual_review_replay": {
+                "path": str(manual_review_replay_path),
+                "sha256": _sha256(manual_review_replay_path),
+            },
+            "checked_manifest": {
+                "path": str(checked_manifest_path),
+                "sha256": _sha256(checked_manifest_path),
+            },
+            "final_output_dir": str(final_output_dir),
+        }
+    if stage == "c1":
+        receipt_targets = {
+            "proposal": str(output_dir / "proposal" / "proposal.json"),
+            "proposal_receipt": str(output_dir / "proposal" / "proposal_receipt.json"),
+            "runtime": str(output_dir / "runtime.json"),
+            "timing_live": str(output_dir / "timing.live.json"),
+        }
+    else:
+        assert final_output_dir is not None
+        receipt_targets = {
+            "fresh_owner_receipt": str(output_dir / "fresh_owner_receipt.json"),
+            "runtime": str(output_dir / "runtime.json"),
+            "timing_live": str(output_dir / "timing.live.json"),
+            "final_receipt": str(final_output_dir / "final_receipt.json"),
+            "transaction_receipt": str(final_output_dir / "transaction_receipt.json"),
+        }
     manifest: dict[str, object] = {
-        "schema_version": "issue180_m9_gate_c_launch_manifest_v1",
+        "schema_version": "issue180_m9_gate_c_launch_manifest_v2",
+        "stage": stage,
         "launch_contract": gate_c_fixture.gate_c_launch_contract(),
         "code_sha": code_sha,
         "execution": {
@@ -143,18 +278,21 @@ def build_launch_inputs(
         "manifest_root": str(manifest_root),
         "output_dir": str(output_dir),
         "launch_manifest_path": str(launch_path),
-        "receipt_targets": {
-            "proposal": str(output_dir / "proposal" / "proposal.json"),
-            "proposal_receipt": str(output_dir / "proposal" / "proposal_receipt.json"),
-            "runtime": str(output_dir / "runtime.json"),
-            "timing_live": str(output_dir / "timing.live.json"),
-        },
+        "c2_inputs": c2_inputs,
+        "receipt_targets": receipt_targets,
     }
     return GateCLaunchInputs(
+        stage=stage,
         raw_files=ordered_raws,
         sample_metadata=ordered_rows,
         metadata_sha256=metadata_sha256,
         launch_manifest=manifest,
+        output_dir=output_dir,
+        proposal_dir=proposal_dir,
+        manual_review_path=manual_review_path,
+        manual_review_replay_path=manual_review_replay_path,
+        checked_manifest_path=checked_manifest_path,
+        final_output_dir=final_output_dir,
     )
 
 
@@ -178,6 +316,8 @@ def run_frozen_launch(
     frozen = json.loads(launch_manifest_path.read_text(encoding="utf-8"))
     if frozen != inputs.launch_manifest:
         raise ValueError("Gate C launch inputs changed after no-RAW preflight")
+    if inputs.output_dir != output_dir.resolve():
+        raise ValueError("Gate C output changed after no-RAW preflight")
     execution = frozen.get("execution")
     if not isinstance(execution, dict) or (
         execution.get("executable") != str(_current_executable())
@@ -186,22 +326,93 @@ def run_frozen_launch(
         or bool(_worktree_status(manifest_root.resolve()))
     ):
         raise ValueError("Gate C execution identity changed after preflight")
-    receipt = gate_c_fixture.run_gate_c(
-        raw_files=inputs.raw_files,
-        sample_metadata=inputs.sample_metadata,
-        dll_dir=dll_dir.resolve(),
-        manifest_root=manifest_root.resolve(),
-        output_dir=output_dir.resolve(),
-        code_sha=code_sha,
-        metadata_sha256=inputs.metadata_sha256,
-    )
+    if inputs.stage == "c2":
+        _validate_frozen_c2_inputs(inputs, frozen)
+    if inputs.stage == "c1":
+        receipt = gate_c_fixture.run_gate_c(
+            raw_files=inputs.raw_files,
+            sample_metadata=inputs.sample_metadata,
+            dll_dir=dll_dir.resolve(),
+            manifest_root=manifest_root.resolve(),
+            output_dir=output_dir.resolve(),
+            code_sha=code_sha,
+            metadata_sha256=inputs.metadata_sha256,
+        )
+        terminal_target = "proposal_receipt"
+        terminal_label = "proposal"
+    else:
+        if any(
+            value is None
+            for value in (
+                inputs.proposal_dir,
+                inputs.manual_review_path,
+                inputs.manual_review_replay_path,
+                inputs.checked_manifest_path,
+                inputs.final_output_dir,
+            )
+        ):
+            raise RuntimeError("Gate C frozen C2 inputs are incomplete")
+        assert inputs.proposal_dir is not None
+        assert inputs.manual_review_path is not None
+        assert inputs.manual_review_replay_path is not None
+        assert inputs.checked_manifest_path is not None
+        assert inputs.final_output_dir is not None
+        receipt = gate_c_fixture.run_gate_c_fresh_finalization(
+            raw_files=inputs.raw_files,
+            sample_metadata=inputs.sample_metadata,
+            dll_dir=dll_dir.resolve(),
+            manifest_root=manifest_root.resolve(),
+            replay_output_dir=output_dir.resolve(),
+            final_output_dir=inputs.final_output_dir,
+            proposal_dir=inputs.proposal_dir,
+            manual_review_path=inputs.manual_review_path,
+            manual_review_replay_path=inputs.manual_review_replay_path,
+            manifest_path=inputs.checked_manifest_path,
+            code_sha=code_sha,
+            metadata_sha256=inputs.metadata_sha256,
+        )
+        terminal_target = "transaction_receipt"
+        terminal_label = "transaction"
     targets = frozen.get("receipt_targets")
     if not isinstance(targets, dict):
         raise RuntimeError("Gate C frozen receipt targets are missing")
-    expected_receipt = Path(str(targets.get("proposal_receipt", ""))).resolve()
+    expected_receipt = Path(str(targets.get(terminal_target, ""))).resolve()
     if receipt.resolve() != expected_receipt or not expected_receipt.is_file():
-        raise RuntimeError("Gate C terminal proposal receipt is missing or misplaced")
+        raise RuntimeError(
+            f"Gate C terminal {terminal_label} receipt is missing or misplaced"
+        )
     return receipt
+
+
+def _validate_frozen_c2_inputs(
+    inputs: GateCLaunchInputs,
+    frozen: dict[str, object],
+) -> None:
+    c2 = frozen.get("c2_inputs")
+    if not isinstance(c2, dict) or inputs.proposal_dir is None:
+        raise ValueError("Gate C frozen C2 inputs are incomplete")
+    file_bindings = (
+        (inputs.proposal_dir / "proposal.json", "proposal_sha256"),
+        (
+            inputs.proposal_dir / "proposal_receipt.json",
+            "proposal_receipt_sha256",
+        ),
+    )
+    if any(_sha256(path) != c2.get(key) for path, key in file_bindings):
+        raise ValueError("Gate C C2 proposal changed after no-RAW preflight")
+    for name, path in (
+        ("manual_review", inputs.manual_review_path),
+        ("manual_review_replay", inputs.manual_review_replay_path),
+        ("checked_manifest", inputs.checked_manifest_path),
+    ):
+        binding = c2.get(name)
+        if (
+            path is None
+            or not isinstance(binding, dict)
+            or binding.get("path") != str(path)
+            or binding.get("sha256") != _sha256(path)
+        ):
+            raise ValueError("Gate C C2 reviewed input changed after no-RAW preflight")
 
 
 def _sha256(path: Path) -> str:
@@ -261,6 +472,7 @@ def _write_json(path: Path, payload: object) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--stage", choices=("c1", "c2"), default="c1")
     parser.add_argument("--sample-metadata", required=True, type=Path)
     parser.add_argument("--raw-dir", required=True, type=Path)
     parser.add_argument("--dll-dir", required=True, type=Path)
@@ -268,6 +480,11 @@ def main() -> int:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--launch-manifest", required=True, type=Path)
     parser.add_argument("--code-sha", required=True)
+    parser.add_argument("--proposal-dir", type=Path)
+    parser.add_argument("--manual-review", type=Path)
+    parser.add_argument("--manual-review-replay", type=Path)
+    parser.add_argument("--checked-manifest", type=Path)
+    parser.add_argument("--final-output-dir", type=Path)
     parser.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args()
     inputs = build_launch_inputs(
@@ -278,6 +495,12 @@ def main() -> int:
         output_dir=args.output_dir,
         launch_manifest_path=args.launch_manifest,
         code_sha=args.code_sha,
+        stage=args.stage,
+        proposal_dir=args.proposal_dir,
+        manual_review_path=args.manual_review,
+        manual_review_replay_path=args.manual_review_replay,
+        checked_manifest_path=args.checked_manifest,
+        final_output_dir=args.final_output_dir,
     )
     if args.preflight_only:
         result = freeze_preflight(

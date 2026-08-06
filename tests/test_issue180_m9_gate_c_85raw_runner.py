@@ -128,6 +128,139 @@ def test_frozen_launch_calls_shared_core_once(
     assert len(calls[0]["raw_files"]) == 85
 
 
+def test_frozen_c2_launch_calls_fresh_owner_finalization_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
+    proposal_dir, review, replay, checked, final_output = _c2_inputs(tmp_path)
+    _patch_launch_identity(monkeypatch, tmp_path, "9" * 40)
+    replay_output = tmp_path / "gate-c-c2-replay"
+    launch_path = tmp_path / "launch-c2.json"
+    inputs = runner.build_launch_inputs(
+        metadata_path=metadata_path,
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        manifest_root=tmp_path,
+        output_dir=replay_output,
+        launch_manifest_path=launch_path,
+        code_sha="9" * 40,
+        stage="c2",
+        proposal_dir=proposal_dir,
+        manual_review_path=review,
+        manual_review_replay_path=replay,
+        checked_manifest_path=checked,
+        final_output_dir=final_output,
+    )
+    runner.freeze_preflight(launch_path, inputs.launch_manifest)
+    calls = []
+
+    def fake_run_gate_c_fresh_finalization(**kwargs) -> Path:
+        calls.append(kwargs)
+        receipt = final_output / "transaction_receipt.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text("{}\n", encoding="utf-8")
+        return receipt
+
+    monkeypatch.setattr(
+        runner.gate_c_fixture,
+        "run_gate_c_fresh_finalization",
+        fake_run_gate_c_fresh_finalization,
+    )
+    receipt = runner.run_frozen_launch(
+        inputs=inputs,
+        launch_manifest_path=launch_path,
+        dll_dir=dll_dir,
+        manifest_root=tmp_path,
+        output_dir=replay_output,
+        code_sha="9" * 40,
+    )
+
+    assert receipt == final_output / "transaction_receipt.json"
+    assert len(calls) == 1
+    assert len(calls[0]["raw_files"]) == 85
+    assert calls[0]["proposal_dir"] == proposal_dir
+    assert calls[0]["replay_output_dir"] == replay_output
+    assert calls[0]["final_output_dir"] == final_output
+
+
+def test_c2_preflight_requires_closed_inputs_and_new_outputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
+    proposal_dir, review, replay, checked, final_output = _c2_inputs(tmp_path)
+    _patch_launch_identity(monkeypatch, tmp_path, "8" * 40)
+
+    with pytest.raises(ValueError, match="requires proposal"):
+        runner.build_launch_inputs(
+            metadata_path=metadata_path,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            manifest_root=tmp_path,
+            output_dir=tmp_path / "replay-missing",
+            launch_manifest_path=tmp_path / "launch-missing.json",
+            code_sha="8" * 40,
+            stage="c2",
+        )
+
+    final_output.mkdir()
+    with pytest.raises(ValueError, match="final output directory already exists"):
+        runner.build_launch_inputs(
+            metadata_path=metadata_path,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            manifest_root=tmp_path,
+            output_dir=tmp_path / "replay-existing",
+            launch_manifest_path=tmp_path / "launch-existing.json",
+            code_sha="8" * 40,
+            stage="c2",
+            proposal_dir=proposal_dir,
+            manual_review_path=review,
+            manual_review_replay_path=replay,
+            checked_manifest_path=checked,
+            final_output_dir=final_output,
+        )
+
+
+def test_frozen_c2_launch_rejects_review_mutation_after_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
+    proposal_dir, review, replay, checked, final_output = _c2_inputs(tmp_path)
+    _patch_launch_identity(monkeypatch, tmp_path, "7" * 40)
+    replay_output = tmp_path / "gate-c-c2-replay"
+    launch_path = tmp_path / "launch-c2.json"
+    inputs = runner.build_launch_inputs(
+        metadata_path=metadata_path,
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        manifest_root=tmp_path,
+        output_dir=replay_output,
+        launch_manifest_path=launch_path,
+        code_sha="7" * 40,
+        stage="c2",
+        proposal_dir=proposal_dir,
+        manual_review_path=review,
+        manual_review_replay_path=replay,
+        checked_manifest_path=checked,
+        final_output_dir=final_output,
+    )
+    runner.freeze_preflight(launch_path, inputs.launch_manifest)
+    review.write_text('{"changed": true}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="reviewed input changed"):
+        runner.run_frozen_launch(
+            inputs=inputs,
+            launch_manifest_path=launch_path,
+            dll_dir=dll_dir,
+            manifest_root=tmp_path,
+            output_dir=replay_output,
+            code_sha="7" * 40,
+        )
+
+
 @pytest.mark.parametrize("failure", ["raw_stem", "injection_order"])
 def test_preflight_rejects_unclosed_universe_before_core(
     tmp_path: Path,
@@ -281,6 +414,19 @@ def _inputs(
         encoding="utf-8",
     )
     return metadata_path, raw_dir, dll_dir
+
+
+def _c2_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
+    proposal_dir = tmp_path / "gate-c-c1" / "proposal"
+    proposal_dir.mkdir(parents=True)
+    (proposal_dir / "proposal.json").write_text("{}\n", encoding="utf-8")
+    (proposal_dir / "proposal_receipt.json").write_text("{}\n", encoding="utf-8")
+    review = tmp_path / "manual_review.json"
+    replay = tmp_path / "manual_review_replay.json"
+    checked = tmp_path / "checked_manifest.json"
+    for path in (review, replay, checked):
+        path.write_text("{}\n", encoding="utf-8")
+    return proposal_dir, review, replay, checked, tmp_path / "gate-c-final"
 
 
 def _patch_launch_identity(

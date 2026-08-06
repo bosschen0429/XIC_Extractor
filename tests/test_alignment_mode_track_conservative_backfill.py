@@ -403,9 +403,10 @@ def test_mode_track_projection_enters_existing_checked_qmv_owner(
                 observation.generation_provenance,
             )
         )
-        assert row["peak_observation"]["content"][
-            "peak_observation_content_id"
-        ] == row["physical_ids"][2]
+        assert (
+            row["peak_observation"]["content"]["peak_observation_content_id"]
+            == row["physical_ids"][2]
+        )
     manifest_path = _checked_manifest(tmp_path, projection)
 
     terminal = golden_path.build_untargeted_cid_nl_quant_matrix_version(
@@ -450,6 +451,7 @@ def test_gate_c_two_stage_finalization_is_reproducible_and_rollback_exact(
         manifest_path=manifest_path,
         manifest_root=tmp_path,
         output_dir=tmp_path / "final-1",
+        fresh_mode_track_facts=projection.mode_track_facts,
     )
     second = gate_c_fixture.finalize_gate_c_proposal(
         proposal_dir=proposal_dir,
@@ -458,6 +460,7 @@ def test_gate_c_two_stage_finalization_is_reproducible_and_rollback_exact(
         manifest_path=manifest_path,
         manifest_root=tmp_path,
         output_dir=tmp_path / "final-2",
+        fresh_mode_track_facts=projection.mode_track_facts,
     )
 
     assert first.read_bytes() == second.read_bytes()
@@ -466,31 +469,23 @@ def test_gate_c_two_stage_finalization_is_reproducible_and_rollback_exact(
     assert receipt["rollback_status"] == "baseline_exact"
 
 
-def test_retained_gate_c_packet_replays_from_clean_checkout(tmp_path: Path) -> None:
+def test_retained_v1_gate_c_packet_has_no_fresh_owner_authority(
+    tmp_path: Path,
+) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    packet = (
-        repo_root
-        / "docs/superpowers/validation/issue180_m9_gate_c_85raw_v1"
-    )
+    packet = repo_root / "docs/superpowers/validation/issue180_m9_gate_c_85raw_v1"
 
-    receipt_path = gate_c_fixture.finalize_gate_c_proposal(
-        proposal_dir=packet / "proposal",
-        manual_review_path=packet / "manual_review_v1.json",
-        manual_review_replay_path=packet / "manual_review_observation_replay_v1.json",
-        manifest_path=packet / "checked_manifest_v1.tsv",
-        manifest_root=repo_root,
-        output_dir=tmp_path / "replayed-final",
-    )
-
-    receipt = json.loads(receipt_path.read_bytes())
-    assert receipt["adopted_cell_count"] == 26
-    assert receipt["rollback_status"] == "baseline_exact"
-    assert receipt == json.loads(
-        (packet / "c2_final_v1/final_receipt.json").read_bytes()
-    )
-    assert json.loads(
-        (tmp_path / "replayed-final/result_qmv.json").read_bytes()
-    ) == json.loads((packet / "c2_final_v1/result_qmv.json").read_bytes())
+    with pytest.raises(ValueError, match="proposal schema changed"):
+        gate_c_fixture.finalize_gate_c_proposal(
+            proposal_dir=packet / "proposal",
+            manual_review_path=packet / "manual_review_v1.json",
+            manual_review_replay_path=(
+                packet / "manual_review_observation_replay_v1.json"
+            ),
+            manifest_path=packet / "checked_manifest_v1.tsv",
+            manifest_root=repo_root,
+            output_dir=tmp_path / "replayed-final",
+        )
 
 
 def test_gate_c_proposal_binds_complete_mode_track_decision_census(
@@ -523,9 +518,7 @@ def test_gate_c_proposal_binds_complete_mode_track_decision_census(
     )
 
     proposal = json.loads((tmp_path / "proposal/proposal.json").read_bytes())
-    receipt = json.loads(
-        (tmp_path / "proposal/proposal_receipt.json").read_bytes()
-    )
+    receipt = json.loads((tmp_path / "proposal/proposal_receipt.json").read_bytes())
     decisions = proposal["candidate_decision_rows"]
     support_counts = [
         row["direct_support_count_s"] for row in proposal["mode_track_fact_rows"]
@@ -565,9 +558,7 @@ def test_gate_c_scientific_projection_is_stable_across_fresh_attempts(
             model_set=model_set,
             batches=batches,
         )
-        projections.append(
-            gate_c_fixture._mode_track_scientific_projection_rows(facts)
-        )
+        projections.append(gate_c_fixture._mode_track_scientific_projection_rows(facts))
         attempt_ids.append(fixture.owners.attempt.processing_attempt_id)
 
     assert attempt_ids[0] != attempt_ids[1]
@@ -603,6 +594,68 @@ def test_gate_c_fresh_owner_rejects_resealed_rejected_to_proposed_claim(
         gate_c_fixture._validate_fresh_mode_track_projection(
             persisted_rows=forged,
             fresh_facts=facts,
+        )
+
+
+def test_gate_c_finalizer_rejects_resealed_m2_eligibility_projection(
+    tmp_path: Path,
+) -> None:
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path,
+        support_pattern=(
+            ("s1", ("early",), 101),
+            ("s2", ("early",), 201),
+            ("s3", ("late",), 301),
+        ),
+    )
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+    projection = golden_path.build_untargeted_cid_nl_mode_track_projection(
+        processing_owners=fixture.owners,
+        mode_track_facts=facts,
+        source_artifact_relpath="proposal/mode_track_source.json",
+    )
+    proposal_dir = tmp_path / "proposal"
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    proposal_path = proposal_dir / "proposal.json"
+    receipt_path = proposal_dir / "proposal_receipt.json"
+    proposal = json.loads(proposal_path.read_bytes())
+    row = next(
+        item
+        for item in proposal["mode_track_scientific_projection_rows"]
+        if item["may_attempt_recovery"] is False
+    )
+    row["may_attempt_recovery"] = True
+    row["reason_codes"] = ["direct_support_threshold_met"]
+    proposal_path.write_text(
+        json.dumps(proposal, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    receipt = json.loads(receipt_path.read_bytes())
+    receipt["proposal_sha256"] = hashlib.sha256(proposal_path.read_bytes()).hexdigest()
+    receipt_path.write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="fresh M2 scientific projection differs"):
+        gate_c_fixture.finalize_gate_c_proposal(
+            proposal_dir=proposal_dir,
+            manual_review_path=tmp_path / "missing-review.json",
+            manual_review_replay_path=tmp_path / "missing-replay.json",
+            manifest_path=tmp_path / "missing-manifest.tsv",
+            manifest_root=tmp_path,
+            output_dir=tmp_path / "forged-final",
+            fresh_mode_track_facts=projection.mode_track_facts,
         )
 
 
@@ -654,6 +707,7 @@ def test_gate_c_finalizer_rejects_failed_review_and_manifest_drift(
             manifest_path=manifest_path,
             manifest_root=tmp_path,
             output_dir=tmp_path / "failed-review",
+            fresh_mode_track_facts=projection.mode_track_facts,
         )
 
     _gate_c_review(tmp_path, projection, verdict="pass")
@@ -679,6 +733,7 @@ def test_gate_c_finalizer_rejects_failed_review_and_manifest_drift(
             manifest_path=manifest_path,
             manifest_root=tmp_path,
             output_dir=tmp_path / "changed-manifest",
+            fresh_mode_track_facts=projection.mode_track_facts,
         )
 
 
@@ -722,6 +777,7 @@ def test_gate_c_terminal_oracle_rejects_owner_output_with_missing_value(
             manifest_path=manifest_path,
             manifest_root=tmp_path,
             output_dir=tmp_path / "unauthorized-final",
+            fresh_mode_track_facts=projection.mode_track_facts,
         )
 
 
@@ -753,6 +809,7 @@ def test_gate_c_finalizer_rejects_stale_or_incomplete_physical_replay(
             manifest_path=manifest_path,
             manifest_root=tmp_path,
             output_dir=tmp_path / "stale-replay-final",
+            fresh_mode_track_facts=projection.mode_track_facts,
         )
 
     receipt = json.loads((proposal_dir / "proposal_receipt.json").read_bytes())
@@ -773,6 +830,7 @@ def test_gate_c_finalizer_rejects_stale_or_incomplete_physical_replay(
             manifest_path=manifest_path,
             manifest_root=tmp_path,
             output_dir=tmp_path / "incomplete-replay-final",
+            fresh_mode_track_facts=projection.mode_track_facts,
         )
 
 
@@ -880,6 +938,7 @@ def test_gate_c_rollback_is_derived_from_result_provenance(
             manifest_path=manifest_path,
             manifest_root=tmp_path,
             output_dir=tmp_path / "false-rollback-final",
+            fresh_mode_track_facts=projection.mode_track_facts,
         )
 
 

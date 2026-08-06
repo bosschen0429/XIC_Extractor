@@ -200,13 +200,7 @@ def run_gate_c(
         source_relpath=source_relpath,
         identity_namespace="issue180-m9-gate-c",
     )
-    if (
-        run.call_cost["discovery_raw_open_count"] > 85
-        or run.call_cost["m7_raw_open_count"] > 85
-        or run.call_cost["total_raw_open_count"] > 170
-        or run.call_cost["m7_xic_batch_count"] > 85
-    ):
-        raise RuntimeError("Gate C exceeded the sample-batched RAW call budget")
+    _validate_gate_c_call_budget(run.call_cost)
     context = {
         "code_sha": code_sha,
         "processing_request_id": run.owners.request.processing_request_id,
@@ -227,6 +221,96 @@ def run_gate_c(
     )
     _write_json(output_dir / "timing.live.json", _heartbeat("completed", run.started))
     return receipt
+
+
+def run_gate_c_fresh_finalization(
+    *,
+    raw_files: tuple[Path, ...],
+    sample_metadata: tuple[SampleMetadata, ...],
+    dll_dir: Path,
+    manifest_root: Path,
+    replay_output_dir: Path,
+    final_output_dir: Path,
+    proposal_dir: Path,
+    manual_review_path: Path,
+    manual_review_replay_path: Path,
+    manifest_path: Path,
+    code_sha: str,
+    metadata_sha256: str,
+) -> Path:
+    """Recompute M2 through its owner and close Gate C in the same process."""
+
+    if len(raw_files) != 85 or len(sample_metadata) != 85:
+        raise ValueError("Gate C requires exactly 85 RAW and metadata rows")
+    manifest_root = manifest_root.resolve()
+    replay_output_dir = replay_output_dir.resolve()
+    final_output_dir = final_output_dir.resolve()
+    if replay_output_dir.exists() or final_output_dir.exists():
+        raise ValueError("Gate C C2 replay or final output already exists")
+    for target in (replay_output_dir, final_output_dir):
+        if not target.is_relative_to(manifest_root):
+            raise ValueError("Gate C C2 outputs must stay under manifest root")
+
+    source_path = replay_output_dir / "fresh_mode_track_source.json"
+    run = _run_mode_track_batch(
+        raw_files=raw_files,
+        sample_metadata=sample_metadata,
+        dll_dir=dll_dir,
+        output_dir=replay_output_dir,
+        source_relpath=source_path.relative_to(manifest_root).as_posix(),
+        identity_namespace="issue180-m9-gate-c",
+    )
+    _validate_gate_c_call_budget(run.call_cost)
+    source_path.write_bytes(run.projection.source_artifact_bytes)
+    scientific_rows = _mode_track_scientific_projection_rows(run.facts)
+    proposal_path = proposal_dir / "proposal.json"
+    proposal_receipt_path = proposal_dir / "proposal_receipt.json"
+    fresh_receipt_path = replay_output_dir / "fresh_owner_receipt.json"
+    _write_json(
+        fresh_receipt_path,
+        {
+            "schema_version": "issue180_m9_gate_c_fresh_owner_receipt_v1",
+            "validation_status": VALIDATION_STATUS,
+            "code_sha": code_sha,
+            "metadata_sha256": metadata_sha256,
+            "processing_request_id": run.owners.request.processing_request_id,
+            "processing_attempt_id": run.owners.attempt.processing_attempt_id,
+            "call_cost": dict(run.call_cost),
+            "call_cost_authority": "same_attempt_audit_only",
+            "scientific_projection_sha256": _json_sha256(scientific_rows),
+            "fresh_source_sha256": _sha256(source_path),
+            "c1_proposal_sha256": _sha256(proposal_path),
+            "c1_proposal_receipt_sha256": _sha256(proposal_receipt_path),
+            "eligibility_authority": "live_typed_m2_facts_same_process_only",
+        },
+    )
+    final_receipt_path = finalize_gate_c_proposal(
+        proposal_dir=proposal_dir,
+        manual_review_path=manual_review_path,
+        manual_review_replay_path=manual_review_replay_path,
+        manifest_path=manifest_path,
+        manifest_root=manifest_root,
+        output_dir=final_output_dir,
+        fresh_mode_track_facts=run.facts,
+    )
+    transaction_receipt_path = final_output_dir / "transaction_receipt.json"
+    _write_json(
+        transaction_receipt_path,
+        {
+            "schema_version": "issue180_m9_gate_c_transaction_receipt_v1",
+            "validation_status": VALIDATION_STATUS,
+            "code_sha": code_sha,
+            "metadata_sha256": metadata_sha256,
+            "fresh_owner_receipt_sha256": _sha256(fresh_receipt_path),
+            "final_receipt_sha256": _sha256(final_receipt_path),
+            "terminal_authority": "checked_c2_transaction",
+        },
+    )
+    _write_json(
+        replay_output_dir / "timing.live.json",
+        _heartbeat("completed", run.started),
+    )
+    return transaction_receipt_path
 
 
 def _run_mode_track_batch(
@@ -378,14 +462,22 @@ def _gate_c_workload_call_cost(
         "m7_raw_open_count": m7_raw_open_count,
         "total_raw_open_count": discovery_raw_open_count + m7_raw_open_count,
         "m7_xic_batch_count": m7_call_cost["xic_batch_count"],
-        "m7_logical_xic_request_count": m7_call_cost[
-            "logical_xic_request_count"
-        ],
+        "m7_logical_xic_request_count": m7_call_cost["logical_xic_request_count"],
         "m7_adapter_chromatogram_call_count": m7_call_cost[
             "adapter_chromatogram_call_count"
         ],
         "m7_trace_point_count": m7_call_cost["trace_point_count"],
     }
+
+
+def _validate_gate_c_call_budget(call_cost: Mapping[str, int]) -> None:
+    if (
+        call_cost["discovery_raw_open_count"] > 85
+        or call_cost["m7_raw_open_count"] > 85
+        or call_cost["total_raw_open_count"] > 170
+        or call_cost["m7_xic_batch_count"] > 85
+    ):
+        raise RuntimeError("Gate C exceeded the sample-batched RAW call budget")
 
 
 def _mode_track_trajectory_policy() -> ModeTrackTrajectoryPolicy:
@@ -409,6 +501,107 @@ def _fact_row(fact: ModeTrackConservativeBackfillGroupFacts) -> dict[str, object
         "may_attempt_recovery": fact.may_attempt_recovery,
         "reason_codes": list(fact.reason_codes),
     }
+
+
+def _mode_track_scientific_projection_rows(
+    facts: Sequence[ModeTrackConservativeBackfillGroupFacts],
+) -> list[dict[str, object]]:
+    """Render only cross-attempt-stable scientific facts from the live M2 owner."""
+
+    rows: list[dict[str, object]] = [
+        {
+            "group_hypothesis_id": fact.group.group_hypothesis_id,
+            "group_center_mz": fact.group.group_center_mz,
+            "group_center_rt": fact.group.group_center_rt,
+            "sample_population_ids": [
+                sample.identity.sample_identity_id for sample in fact.sample_population
+            ],
+            "activation_eligible_sample_ids": list(fact.activation_eligible_sample_ids),
+            "direct_support": [
+                {
+                    "sample_identity_id": assignment.canonical_sample_identity_id,
+                    "peak_observation_content_id": (
+                        assignment.peak_observation_content_id
+                    ),
+                }
+                for assignment in fact.direct_support_assignments
+            ],
+            "exact_owner_candidates": [
+                {
+                    "sample_identity_id": assignment.canonical_sample_identity_id,
+                    "peak_observation_content_id": (
+                        assignment.peak_observation_content_id
+                    ),
+                }
+                for assignment in fact.exact_owner_candidate_assignments
+            ],
+            "sample_count_n": fact.sample_count_n,
+            "minimum_support_k": fact.minimum_support_k,
+            "direct_support_count_s": fact.direct_support_count_s,
+            "group_frozen": fact.group_frozen,
+            "may_attempt_recovery": fact.may_attempt_recovery,
+            "reason_codes": list(fact.reason_codes),
+        }
+        for fact in facts
+    ]
+    group_ids = [row["group_hypothesis_id"] for row in rows]
+    if not rows or len(group_ids) != len(set(group_ids)):
+        raise ValueError("fresh M2 scientific projection group census is malformed")
+    return rows
+
+
+def _validate_fresh_mode_track_projection(
+    *,
+    persisted_rows: Sequence[Mapping[str, object]],
+    fresh_facts: Sequence[ModeTrackConservativeBackfillGroupFacts],
+) -> list[dict[str, object]]:
+    expected = _mode_track_scientific_projection_rows(fresh_facts)
+    loaded = [dict(row) for row in persisted_rows]
+    if loaded != expected:
+        raise ValueError("Gate C fresh M2 scientific projection differs from C1")
+    return expected
+
+
+def _validate_fresh_proposed_keys(
+    proposal: Mapping[str, object],
+    fresh_rows: Sequence[Mapping[str, object]],
+) -> None:
+    expected: dict[tuple[object, object, object], tuple[str, str]] = {}
+    for fact in fresh_rows:
+        decision = "proposed" if fact["may_attempt_recovery"] else "rejected"
+        reason = (
+            "m2_activation_passed"
+            if fact["may_attempt_recovery"]
+            else "m2_support_below_threshold"
+        )
+        candidates = fact.get("exact_owner_candidates")
+        if not isinstance(candidates, list):
+            raise ValueError("fresh M2 candidate projection is malformed")
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                raise ValueError("fresh M2 candidate projection is malformed")
+            key = (
+                fact["group_hypothesis_id"],
+                candidate.get("sample_identity_id"),
+                candidate.get("peak_observation_content_id"),
+            )
+            if key in expected or any(value is None for value in key):
+                raise ValueError("fresh M2 candidate projection is duplicate")
+            expected[key] = (decision, reason)
+
+    decisions = _required_mapping_rows(proposal, "candidate_decision_rows")
+    observed: dict[tuple[object, object, object], tuple[object, object]] = {}
+    for row in decisions:
+        key = (
+            row.get("group_hypothesis_id"),
+            row.get("sample_identity_id"),
+            row.get("peak_observation_content_id"),
+        )
+        if key in observed:
+            raise ValueError("Gate C persisted candidate decision is duplicate")
+        observed[key] = (row.get("decision"), row.get("reason_code"))
+    if observed != expected:
+        raise ValueError("Gate C persisted candidate decisions differ from fresh M2")
 
 
 def _candidate_decision_rows(
@@ -462,8 +655,11 @@ def freeze_gate_c_proposal(
     staged_source.write_bytes(projection.source_artifact_bytes)
     fact_rows = [_fact_row(fact) for fact in projection.mode_track_facts]
     decision_rows = _candidate_decision_rows(projection.mode_track_facts)
+    scientific_rows = _mode_track_scientific_projection_rows(
+        projection.mode_track_facts
+    )
     proposal = {
-        "schema_version": "issue180_m9_gate_c_proposal_v1",
+        "schema_version": "issue180_m9_gate_c_proposal_v2",
         "matrix_header": list(projection.matrix_header),
         "input_quant_matrix_rows": list(map(dict, projection.input_quant_matrix_rows)),
         "input_matrix_identity_rows": list(
@@ -473,6 +669,7 @@ def freeze_gate_c_proposal(
         "expected_diff_rows": list(map(dict, projection.expected_diff_rows)),
         "mode_track_fact_rows": fact_rows,
         "candidate_decision_rows": decision_rows,
+        "mode_track_scientific_projection_rows": scientific_rows,
         "source_artifact_relpath": projection.source_artifact_relpath,
         "source_artifact_sha256": projection.source_artifact_sha256,
     }
@@ -503,7 +700,7 @@ def freeze_gate_c_proposal(
     )
     context["candidate_census"] = supplied_census
     receipt = {
-        "schema_version": "issue180_m9_gate_c_proposal_receipt_v1",
+        "schema_version": "issue180_m9_gate_c_proposal_receipt_v2",
         "proposal_sha256": _sha256(proposal_path),
         "source_file_sha256": _sha256(staged_source),
         "run_context": context,
@@ -521,6 +718,8 @@ def finalize_gate_c_proposal(
     manifest_path: Path,
     manifest_root: Path,
     output_dir: Path,
+    fresh_mode_track_facts: tuple[ModeTrackConservativeBackfillGroupFacts, ...]
+    | None = None,
 ) -> Path:
     proposal_path = proposal_dir / "proposal.json"
     receipt_path = proposal_dir / "proposal_receipt.json"
@@ -532,6 +731,15 @@ def finalize_gate_c_proposal(
     if receipt.get("source_file_sha256") != _sha256(source_path):
         raise ValueError("Gate C source file hash changed")
     _validate_proposal_payload(proposal, receipt, source_path)
+    if fresh_mode_track_facts is None:
+        raise ValueError("Gate C fresh M2 facts are required for finalization")
+    fresh_scientific_rows = _validate_fresh_mode_track_projection(
+        persisted_rows=_required_mapping_rows(
+            proposal, "mode_track_scientific_projection_rows"
+        ),
+        fresh_facts=fresh_mode_track_facts,
+    )
+    _validate_fresh_proposed_keys(proposal, fresh_scientific_rows)
     pending = _required_rows(proposal, "pending_acceptance_rows")
     review = _read_json_object(manual_review_path)
     replay_relpath = _manifest_relative_path(
@@ -570,7 +778,7 @@ def finalize_gate_c_proposal(
         key: list(map(dict, value)) for key, value in vars(result).items()
     }
     final_receipt = {
-        "schema_version": "issue180_m9_gate_c_final_receipt_v1",
+        "schema_version": "issue180_m9_gate_c_final_receipt_v2",
         "validation_status": VALIDATION_STATUS,
         "proposal_receipt_sha256": _sha256(receipt_path),
         "manual_review_sha256": _sha256(manual_review_path),
@@ -583,6 +791,7 @@ def finalize_gate_c_proposal(
         "rollback_qmv_sha256": _json_sha256(rollback_rows),
         "adopted_cell_count": len(pending),
         "rollback_status": rollback_status,
+        "fresh_scientific_projection_sha256": _json_sha256(fresh_scientific_rows),
     }
     staging = _new_output_dir(output_dir)
     _write_json(staging / "result_qmv.json", result_payload)
@@ -595,8 +804,10 @@ def _validate_proposal_payload(
     receipt: Mapping[str, object],
     source_path: Path,
 ) -> None:
-    if proposal.get("schema_version") != "issue180_m9_gate_c_proposal_v1":
+    if proposal.get("schema_version") != "issue180_m9_gate_c_proposal_v2":
         raise ValueError("Gate C proposal schema changed")
+    if receipt.get("schema_version") != "issue180_m9_gate_c_proposal_receipt_v2":
+        raise ValueError("Gate C proposal receipt schema changed")
     source_bytes = source_path.read_bytes()
     source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
     if proposal.get("source_artifact_sha256") != source_sha:
@@ -608,9 +819,9 @@ def _validate_proposal_payload(
     decision_rows = _required_rows(proposal, "candidate_decision_rows")
     if len(pending) != len(expected) or not pending:
         raise ValueError("Gate C proposal candidate/diff census changed")
+    source_rows = _required_rows(source, "rows")
     source_keys = {
-        (row["group_hypothesis_id"], row["sample_stem"])
-        for row in source.get("rows", ())
+        (row["group_hypothesis_id"], row["sample_stem"]) for row in source_rows
     }
     pending_keys = {(row["peak_hypothesis_id"], row["sample_stem"]) for row in pending}
     if source_keys != pending_keys:
@@ -627,8 +838,7 @@ def _validate_proposal_payload(
         for row in decision_rows
     ]
     if len(decision_keys) != len(set(decision_keys)) or any(
-        row.get("decision") not in {"proposed", "rejected"}
-        for row in decision_rows
+        row.get("decision") not in {"proposed", "rejected"} for row in decision_rows
     ):
         raise ValueError("Gate C exact-owner decision census is malformed")
     proposed_keys = {
@@ -717,8 +927,7 @@ def _validate_manual_review_replay(
     source_path: Path,
 ) -> None:
     if (
-        replay.get("schema_version")
-        != "issue180_m9_gate_c_observation_replay_v1"
+        replay.get("schema_version") != "issue180_m9_gate_c_observation_replay_v1"
         or replay.get("validation_status") != VALIDATION_STATUS
         or replay.get("proposal_sha256") != receipt["proposal_sha256"]
         or str(replay.get("source_artifact_sha256", "")).upper()
@@ -730,8 +939,7 @@ def _validate_manual_review_replay(
         raise ValueError("Gate C physical replay row census is malformed")
     source_rows = _required_rows(_read_json_object(source_path), "rows")
     source_by_key = {
-        (row["group_hypothesis_id"], row["sample_stem"]): row
-        for row in source_rows
+        (row["group_hypothesis_id"], row["sample_stem"]): row for row in source_rows
     }
     pending_by_key = {
         (row["peak_hypothesis_id"], row["sample_stem"]): row for row in pending
@@ -814,8 +1022,7 @@ def _validate_gate_c_terminal(
         identities, baseline, result.quant_matrix_rows, strict=True
     ):
         if any(
-            after.get(column, "") != before.get(column, "")
-            for column in ("Mz", "RT")
+            after.get(column, "") != before.get(column, "") for column in ("Mz", "RT")
         ):
             raise ValueError("Gate C terminal Matrix row identity changed")
         group_id = identity["peak_hypothesis_id"]
@@ -833,13 +1040,10 @@ def _validate_gate_c_terminal(
         matrix_identity_rows=identities,
     )
     rollback_rows = [
-        {column: row.get(column, "") for column in header}
-        for row in detected_only_rows
+        {column: row.get(column, "") for column in header} for row in detected_only_rows
     ]
     baseline_detected_rows = [
-        row
-        for row in baseline
-        if any(row.get(sample, "") for sample in header[2:])
+        row for row in baseline if any(row.get(sample, "") for sample in header[2:])
     ]
     if rollback_rows != baseline_detected_rows:
         raise ValueError("Gate C result-derived rollback differs from baseline")
@@ -892,6 +1096,15 @@ def _publish_json_marker(path: Path, payload: object) -> None:
 
 
 def _required_rows(value: Mapping[str, object], key: str) -> list[dict[str, str]]:
+    rows = value.get(key)
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError(f"Gate C {key} rows are malformed")
+    return rows
+
+
+def _required_mapping_rows(
+    value: Mapping[str, object], key: str
+) -> list[dict[str, object]]:
     rows = value.get(key)
     if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
         raise ValueError(f"Gate C {key} rows are malformed")
