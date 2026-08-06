@@ -267,6 +267,14 @@ class ModeTrackConservativeBackfillGroupFacts:
                 "one sample may contribute at most one direct-SUPPORT vote per group"
             )
         if any(
+            assignment.canonical_sample_identity_id not in eligible_ids
+            for assignment in candidate_assignments
+        ):
+            raise ConservativeBackfillContractError(
+                "ModeTrack Backfill candidates must belong to the "
+                "activation-eligible population"
+            )
+        if any(
             assignment.group_hypothesis_id != self.group.group_hypothesis_id
             or assignment.peak_hypothesis_id not in self.group.owner_ids
             or assignment.state != "uniquely_assigned"
@@ -965,6 +973,8 @@ def assess_mode_track_conservative_backfill_groups(
 
         for assignment in observed_assignments:
             if assignment.candidate_observation_class != "non_training":
+                continue
+            if not _sample_is_activation_eligible(batch.sample):
                 continue
             group_id = _exact_mode_track_owner_group_id(
                 assignment,

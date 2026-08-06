@@ -139,6 +139,7 @@ def build_package2_no_raw_fixture(
     *,
     sample_stems: tuple[str, ...],
     sample_roles: Mapping[str, SampleRole] | None = None,
+    excluded_samples: frozenset[str] = frozenset(),
 ) -> Package2NoRawFixture:
     declared_roles = dict(sample_roles or {})
     unknown_role_samples = set(declared_roles).difference(sample_stems)
@@ -146,6 +147,12 @@ def build_package2_no_raw_fixture(
         raise ValueError(
             "sample_roles contains samples outside sample_stems: "
             + ", ".join(sorted(unknown_role_samples))
+        )
+    unknown_excluded_samples = excluded_samples.difference(sample_stems)
+    if unknown_excluded_samples:
+        raise ValueError(
+            "excluded_samples contains samples outside sample_stems: "
+            + ", ".join(sorted(unknown_excluded_samples))
         )
     sources = []
     bindings = []
@@ -171,6 +178,12 @@ def build_package2_no_raw_fixture(
                 sample_name=sample_stem,
                 raw_stem=sample_stem,
                 sample_role=declared_roles.get(sample_stem, "unknown"),
+                excluded=sample_stem in excluded_samples,
+                exclusion_reason=(
+                    "synthetic fixture exclusion"
+                    if sample_stem in excluded_samples
+                    else ""
+                ),
             )
         )
 

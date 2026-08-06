@@ -156,6 +156,44 @@ def test_mode_track_facts_reject_partial_sample_batch_population(
         )
 
 
+@pytest.mark.parametrize("ineligible_kind", ("role", "excluded"))
+def test_mode_track_candidates_exclude_activation_ineligible_samples(
+    tmp_path: Path,
+    ineligible_kind: str,
+) -> None:
+    roles = {
+        "s1": "study_sample",
+        "s2": "study_sample",
+        "s3": "unknown" if ineligible_kind == "role" else "study_sample",
+    }
+    excluded = frozenset({"s3"}) if ineligible_kind == "excluded" else frozenset()
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path,
+        sample_roles=roles,
+        excluded_samples=excluded,
+    )
+
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+    early, late = sorted(facts, key=lambda item: item.group.group_center_rt)
+
+    assert early.may_attempt_recovery is True
+    assert early.exact_owner_candidate_assignments == ()
+    assert {
+        fixture.sample("s1").identity.sample_identity_id,
+        fixture.sample("s2").identity.sample_identity_id,
+    } == set(early.activation_eligible_sample_ids)
+    assert all(
+        assignment.sample.metadata.raw_stem != "s3"
+        for fact in (early, late)
+        for assignment in fact.exact_owner_candidate_assignments
+    )
+
+
 def test_mode_track_groups_activate_independently_of_exact_owner_candidates(
     tmp_path: Path,
 ) -> None:
@@ -374,6 +412,26 @@ def test_gate_c_two_stage_finalization_is_reproducible_and_rollback_exact(
     assert receipt["rollback_status"] == "baseline_exact"
 
 
+def test_retained_gate_c_packet_replays_from_clean_checkout(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    packet = (
+        repo_root
+        / "docs/superpowers/validation/issue180_m9_gate_c_85raw_v1"
+    )
+
+    receipt_path = gate_c_fixture.finalize_gate_c_proposal(
+        proposal_dir=packet / "proposal",
+        manual_review_path=packet / "manual_review_v1.json",
+        manifest_path=packet / "checked_manifest_v1.tsv",
+        manifest_root=repo_root,
+        output_dir=tmp_path / "replayed-final",
+    )
+
+    receipt = json.loads(receipt_path.read_bytes())
+    assert receipt["adopted_cell_count"] == 26
+    assert receipt["rollback_status"] == "baseline_exact"
+
+
 def test_gate_c_proposal_binds_complete_mode_track_decision_census(
     tmp_path: Path,
 ) -> None:
@@ -567,6 +625,8 @@ def _assess(
 def _mixed_mode_track_fixture(
     tmp_path: Path,
     *,
+    sample_roles: dict[str, str] | None = None,
+    excluded_samples: frozenset[str] = frozenset(),
     support_pattern: tuple[
         tuple[str, tuple[str, ...], int],
         ...,
@@ -579,11 +639,9 @@ def _mixed_mode_track_fixture(
     fixture = build_package2_no_raw_fixture(
         tmp_path,
         sample_stems=("s1", "s2", "s3"),
-        sample_roles={
-            "s1": "study_sample",
-            "s2": "study_sample",
-            "s3": "study_sample",
-        },
+        sample_roles=sample_roles
+        or {"s1": "study_sample", "s2": "study_sample", "s3": "study_sample"},
+        excluded_samples=excluded_samples,
     )
     sample_assessments = tuple(
         (

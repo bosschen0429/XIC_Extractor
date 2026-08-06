@@ -1,5 +1,5 @@
 {
-  "proposal_sha256": "31edd1bd1e1078f9e8ae3d6b2090cc29963d1f76775061b0c4809bf9333fc707",
+  "proposal_sha256": "32b52bec7b3aebf7c6d5ffa19f4c3dcffe3a8a35b8f62eef4381e83d9d1f0722",
   "run_context": {
     "call_cost": {
       "adapter_chromatogram_call_count": 86,
