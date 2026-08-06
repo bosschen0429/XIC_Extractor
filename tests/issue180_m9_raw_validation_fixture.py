@@ -64,6 +64,7 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
     verify_persisted_peak_observation_claims,
 )
+from xic_extractor.persisted_mapping_contract import ClosedMappingContract
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
@@ -80,6 +81,69 @@ RUN_CONTEXT_FIELDS = frozenset(
         "code_sha processing_request_id processing_attempt_id call_cost "
         "candidate_census"
     ).split()
+)
+MANUAL_REVIEW_CONTRACT = ClosedMappingContract(
+    name="Gate C manual review",
+    declared_fields=frozenset(
+        (
+            "schema_version observation_replay_relpath "
+            "observation_replay_sha256 rows"
+        ).split()
+    ),
+    required_fields=frozenset(
+        (
+            "schema_version observation_replay_relpath "
+            "observation_replay_sha256 rows"
+        ).split()
+    ),
+)
+MANUAL_REVIEW_ROW_CONTRACT = ClosedMappingContract(
+    name="Gate C manual review row",
+    declared_fields=frozenset(
+        (
+            "candidate_key_sha256 evidence_locator notes peak_hypothesis_id "
+            "processing_attempt_id processing_request_id proposal_sha256 reviewed_at "
+            "reviewer_id sample_stem source_artifact_sha256 verdict"
+        ).split()
+    ),
+    required_fields=frozenset(
+        (
+            "candidate_key_sha256 evidence_locator notes peak_hypothesis_id "
+            "processing_attempt_id processing_request_id proposal_sha256 reviewed_at "
+            "reviewer_id sample_stem source_artifact_sha256 verdict"
+        ).split()
+    ),
+)
+PHYSICAL_REPLAY_CONTRACT = ClosedMappingContract(
+    name="Gate C physical replay",
+    declared_fields=frozenset(
+        (
+            "discovery_index_sha256 proposal_sha256 raw_open_count row_count rows "
+            "schema_version source_artifact_sha256 validation_status"
+        ).split()
+    ),
+    required_fields=frozenset(
+        (
+            "proposal_sha256 row_count rows schema_version source_artifact_sha256 "
+            "validation_status"
+        ).split()
+    ),
+)
+PHYSICAL_REPLAY_ROW_CONTRACT = ClosedMappingContract(
+    name="Gate C physical replay row",
+    declared_fields=frozenset(
+        (
+            "area_parity assessment_artifact_id eic_overlay_locator feature_family_id "
+            "observation_content peak_hypothesis_id peak_observation_content_id "
+            "proposal_quant_value sample_stem source_candidate_ids trace_data_locator"
+        ).split()
+    ),
+    required_fields=frozenset(
+        (
+            "area_parity feature_family_id observation_content peak_hypothesis_id "
+            "peak_observation_content_id proposal_quant_value sample_stem"
+        ).split()
+    ),
 )
 
 
@@ -868,12 +932,17 @@ def transfer_gate_c_review(
         raise ValueError("Gate C review-transfer staging output already exists")
     staging.mkdir(parents=True)
     old_replay = _read_json_object(old_replay_path)
-    transferred_replay = {
-        **old_replay,
-        "proposal_sha256": new_receipt["proposal_sha256"],
-        "source_artifact_sha256": new_proposal["source_artifact_sha256"],
-        "rows": _required_mapping_rows(old_replay, "rows"),
-    }
+    transferred_replay = PHYSICAL_REPLAY_CONTRACT.project(
+        old_replay,
+        overrides={
+            "proposal_sha256": new_receipt["proposal_sha256"],
+            "source_artifact_sha256": new_proposal["source_artifact_sha256"],
+            "rows": [
+                PHYSICAL_REPLAY_ROW_CONTRACT.project(row)
+                for row in _required_mapping_rows(old_replay, "rows")
+            ],
+        },
+    )
     replay_path = staging / "manual_review_observation_replay_v1.json"
     _write_json(replay_path, transferred_replay)
 
@@ -888,14 +957,18 @@ def transfer_gate_c_review(
     for row in _required_mapping_rows(old_review, "rows"):
         key = (str(row.get("peak_hypothesis_id", "")), str(row.get("sample_stem", "")))
         transferred_review_rows.append(
-            {
-                **row,
-                "proposal_sha256": new_receipt["proposal_sha256"],
-                "source_artifact_sha256": new_proposal["source_artifact_sha256"],
-                "processing_request_id": new_context["processing_request_id"],
-                "processing_attempt_id": new_context["processing_attempt_id"],
-                "candidate_key_sha256": candidate_hashes[key],
-            }
+            MANUAL_REVIEW_ROW_CONTRACT.project(
+                row,
+                overrides={
+                    "proposal_sha256": new_receipt["proposal_sha256"],
+                    "source_artifact_sha256": new_proposal[
+                        "source_artifact_sha256"
+                    ],
+                    "processing_request_id": new_context["processing_request_id"],
+                    "processing_attempt_id": new_context["processing_attempt_id"],
+                    "candidate_key_sha256": candidate_hashes[key],
+                },
+            )
         )
     final_replay_path = output_dir / replay_path.name
     final_replay_relpath = final_replay_path.relative_to(manifest_root).as_posix()
@@ -1405,6 +1478,7 @@ def _validate_manual_review(
     replay_relpath: str,
     replay_sha256: str,
 ) -> None:
+    MANUAL_REVIEW_CONTRACT.validate(review)
     if review.get("schema_version") != "issue180_m9_gate_c_manual_review_v1":
         raise ValueError("Gate C manual review schema changed")
     rows = review.get("rows")
@@ -1426,6 +1500,7 @@ def _validate_manual_review(
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("Gate C manual review row is malformed")
+        MANUAL_REVIEW_ROW_CONTRACT.validate(row)
         key = (str(row.get("peak_hypothesis_id", "")), str(row.get("sample_stem", "")))
         if key in seen or key not in expected:
             raise ValueError("Gate C manual review key is duplicate or foreign")
@@ -1454,6 +1529,7 @@ def _validate_manual_review_replay(
     pending: Sequence[Mapping[str, str]],
     source_path: Path,
 ) -> None:
+    PHYSICAL_REPLAY_CONTRACT.validate(replay)
     if (
         replay.get("schema_version") != "issue180_m9_gate_c_observation_replay_v1"
         or replay.get("validation_status") != VALIDATION_STATUS
@@ -1476,6 +1552,7 @@ def _validate_manual_review_replay(
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError("Gate C physical replay row is malformed")
+        PHYSICAL_REPLAY_ROW_CONTRACT.validate(row)
         key = (str(row.get("peak_hypothesis_id", "")), str(row.get("sample_stem", "")))
         source = source_by_key.get(key)
         accepted = pending_by_key.get(key)

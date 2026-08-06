@@ -121,6 +121,10 @@ reviewer, diagnostic script, or report is not a semantic owner.
   are assertions, not proof. If required content is absent, the claim is
   unavailable. A renderer or structural diagnostic does not gain product
   authority by inspecting the bytes.
+- Persisted and inter-step mappings are closed-world. Declare required and
+  optional fields, reject undeclared fields, and reconstruct transfers through
+  the shared structural contract. Never spread an untrusted mapping across a
+  boundary. Nested semantics still return to their original owner.
 - Domain logic depends inward and never imports GUI, workbook, CLI, process,
   report, or RAW/CSV adapter layers. Writers render accepted owner results; they
   do not recompute science.

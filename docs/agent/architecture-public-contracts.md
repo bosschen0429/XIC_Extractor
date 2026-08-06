@@ -76,6 +76,16 @@ recompute its canonical identity and invariants from the content. Comparing a
 payload's self-reported identity with another copied identity is not validation,
 even when a caller can re-seal the outer envelope after tampering.
 
+Every mapping that crosses a persisted or inter-step boundary is closed-world.
+Its structural owner must declare required and optional fields. A reader rejects
+undeclared fields and missing required fields before semantic rehydration. A
+transfer rebuilds the target mapping through that same contract; it must not
+spread or copy an untrusted mapping wholesale. Schema growth is an owner change:
+add the field to the contract and use a version or migration when compatibility
+changes. Use `xic_extractor.persisted_mapping_contract.ClosedMappingContract`
+for shared structural enforcement. This helper proves shape only; nested domain
+content still goes to its original semantic owner.
+
 Apply these ownership rules:
 
 - Envelope, storage, and lineage helpers may validate exact bytes/digests, schema
@@ -94,6 +104,9 @@ Apply these ownership rules:
   embedded ID, then re-seal the outer envelope and expect rejection; also cover
   unknown/duplicate fields, cross-key substitution, stale owner snapshots,
   reordered members, and partial payloads where applicable.
+- For every mapping surface, inject one unknown field at root and repeated-row
+  levels where present. The reader and every transfer path must reject it. Test
+  the mechanism across declared surfaces instead of adding one test per field.
 
 ### Closed Writer Transaction Authority
 

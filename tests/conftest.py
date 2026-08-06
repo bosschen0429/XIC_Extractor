@@ -10,7 +10,12 @@ from PyQt6.QtWidgets import QApplication
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-_TMP_ROOT = Path(__file__).resolve().parent.parent / "tmp_runtime"
+_TMP_ROOT = Path(
+    os.environ.get(
+        "XIC_TEST_TMP_ROOT",
+        Path(__file__).resolve().parent.parent / "tmp_runtime",
+    )
+)
 
 
 class _QtBot:

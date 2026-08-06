@@ -679,6 +679,67 @@ def test_gate_c_review_transfer_rebinds_exact_subjects_and_finalizes(
     assert retained_manifest.is_file()
 
 
+@pytest.mark.parametrize(
+    "payload_surface",
+    (
+        "manual_review",
+        "manual_review_row",
+        "physical_replay",
+        "physical_replay_row",
+    ),
+)
+def test_gate_c_review_transfer_rejects_undeclared_fields_at_every_surface(
+    tmp_path: Path,
+    payload_surface: str,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection).replace(
+        tmp_path / "manual_review_v1.json"
+    )
+    replay_path = (tmp_path / "manual_review_replay.json").replace(
+        tmp_path / "manual_review_observation_replay_v1.json"
+    )
+    _checked_manifest(tmp_path, projection).replace(
+        tmp_path / "checked_manifest_v1.tsv"
+    )
+    review = json.loads(review_path.read_bytes())
+    replay = json.loads(replay_path.read_bytes())
+
+    if payload_surface == "manual_review":
+        review["unexpected_passthrough"] = "must-not-cross-owner-boundary"
+    elif payload_surface == "manual_review_row":
+        review["rows"][0]["unexpected_passthrough"] = "must-not-cross-owner-boundary"
+    elif payload_surface == "physical_replay":
+        replay["unexpected_passthrough"] = "must-not-cross-owner-boundary"
+    else:
+        replay["rows"][0]["unexpected_passthrough"] = "must-not-cross-owner-boundary"
+
+    replay_path.write_text(
+        json.dumps(replay, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    review_path.write_text(
+        json.dumps(review, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _bind_review_replay(review_path, replay_path, tmp_path)
+
+    with pytest.raises(ValueError, match="has undeclared fields"):
+        gate_c_fixture.transfer_gate_c_review(
+            reviewed_packet_dir=tmp_path,
+            proposal_dir=proposal_dir,
+            manifest_root=tmp_path,
+            output_dir=tmp_path / f"blocked-{payload_surface}",
+            code_sha="synthetic-undeclared-field",
+        )
+
+
 def test_gate_c_review_transfer_receipt_rejects_resealed_input_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1108,6 +1169,61 @@ def test_gate_c_finalizer_rejects_stale_or_incomplete_physical_replay(
             manual_review_replay_path=replay_path,
             manifest_root=tmp_path,
             output_dir=tmp_path / "incomplete-replay-final",
+        )
+
+
+@pytest.mark.parametrize(
+    "payload_surface",
+    (
+        "manual_review",
+        "manual_review_row",
+        "physical_replay",
+        "physical_replay_row",
+    ),
+)
+def test_gate_c_rejects_undeclared_fields_at_every_review_payload_surface(
+    tmp_path: Path,
+    payload_surface: str,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection)
+    replay_path = tmp_path / "manual_review_replay.json"
+    review = json.loads(review_path.read_bytes())
+    replay = json.loads(replay_path.read_bytes())
+
+    if payload_surface == "manual_review":
+        review["unexpected_passthrough"] = "must-not-cross-owner-boundary"
+    elif payload_surface == "manual_review_row":
+        review["rows"][0]["unexpected_passthrough"] = "must-not-cross-owner-boundary"
+    elif payload_surface == "physical_replay":
+        replay["unexpected_passthrough"] = "must-not-cross-owner-boundary"
+    else:
+        replay["rows"][0]["unexpected_passthrough"] = "must-not-cross-owner-boundary"
+
+    replay_path.write_text(
+        json.dumps(replay, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    review_path.write_text(
+        json.dumps(review, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _bind_review_replay(review_path, replay_path, tmp_path)
+
+    with pytest.raises(ValueError, match="has undeclared fields"):
+        _finalize_gate_c_reviewed_projection(
+            projection=projection,
+            proposal_dir=proposal_dir,
+            manual_review_path=review_path,
+            manual_review_replay_path=replay_path,
+            manifest_root=tmp_path,
+            output_dir=tmp_path / f"undeclared-{payload_surface}",
         )
 
 
