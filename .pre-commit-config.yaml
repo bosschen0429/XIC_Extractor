@@ -5,20 +5,20 @@ repos:
     hooks:
       - id: ruff-staged-python
         name: Ruff staged Python files
-        entry: uv run ruff check --fix
+        entry: uv run --cache-dir .uv-cache ruff check --fix
         language: system
         types: [python]
 
       - id: mypy-staged-package
         name: mypy staged xic_extractor files
-        entry: uv run mypy
+        entry: uv run --cache-dir .uv-cache mypy
         language: system
         files: ^xic_extractor/.*\.py$
         types: [python]
 
       - id: pytest-staged-tests
         name: pytest staged test files
-        entry: uv run pytest -q
+        entry: uv run --cache-dir .uv-cache pytest -q
         language: system
         files: ^tests/.*\.py$
         types: [python]
