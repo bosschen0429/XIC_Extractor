@@ -112,6 +112,13 @@ must remain clean-checkout safe.
   enter through its atomic execution/finalization API, not call partial lifecycle
   primitives, accept caller-authored ledgers/counts, or expose settlement-only
   public bypasses. See `docs/agent/architecture-public-contracts.md`.
+- Treat persisted JSON/TSV/maps as untrusted projections after deserialization.
+  Before a consumer claims domain or runtime semantics, route the complete content
+  through the original semantic owner to reconstruct the typed value and recompute
+  canonical identity and invariants. Embedded IDs, hashes, status, counts, and
+  locators are assertions, not proof, even when the outer envelope is re-sealed;
+  omitted content makes the corresponding claim unavailable. See
+  `docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration`.
 
 ## Workflow Routing
 

@@ -43,6 +43,36 @@ def test_current_architecture_census_is_valid_and_static_only() -> None:
     } & set(observed.serializable())
 
 
+def test_persisted_semantic_rehydration_is_canonical_and_root_routed() -> None:
+    root_contract = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    public_contract = (
+        ROOT / "docs/agent/architecture-public-contracts.md"
+    ).read_text(encoding="utf-8")
+    normalized_root = " ".join(root_contract.split())
+    normalized_public = " ".join(public_contract.split())
+
+    assert "### Persisted Semantic Rehydration" in public_contract
+    for required_rule in (
+        "untrusted projections after deserialization",
+        "original semantic owner's existing parser, constructor, or binding validator",
+        "reconstruct a typed value and recompute its canonical identity and invariants",
+        "re-seal the outer envelope after tampering",
+        "generic central semantic manager",
+        "downstream claim must remain unavailable",
+        "stale owner snapshots",
+    ):
+        assert required_rule in normalized_public
+
+    assert (
+        "docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration"
+        in root_contract
+    )
+    root_summary = (
+        "Embedded IDs, hashes, status, counts, and locators are assertions, not proof"
+    )
+    assert root_summary in normalized_root
+
+
 def test_runtime_low_level_exports_evaluate_to_exact_immutable_tuples() -> None:
     assert census._runtime_export_invariant_problems() == []
 
