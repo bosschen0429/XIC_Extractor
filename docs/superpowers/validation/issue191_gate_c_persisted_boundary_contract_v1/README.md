@@ -30,6 +30,15 @@ and `mz` each have separate numeric-value and observation-content-identity
 claims. Dynamic Matrix sample columns collapse to `{sample_column}` while the
 completeness relation remains the exact current header/row closure.
 
+Every role is also materialized by the current no-RAW producers and compared
+as a complete canonical `path -> JSON type set` mapping. Typed observation
+subtrees delegate type authority directly to the existing
+`PeakObservationContent` and `IntegrationResult` dataclass annotations. Thus
+optional numeric fields normalize to `null|number`, while an incompatible
+same-path `string` fails closed. Empty arrays contribute container evidence but
+do not invent a second element type. Retained 85RAW values remain comparison
+evidence; they are not schema authority.
+
 ## Bounded universe
 
 The 15 roles cover the current runner's complete named-field boundary:
@@ -96,8 +105,13 @@ No RAW or DLL load is performed:
 Use `--write` only when deliberately refreezing the enumerated contract after
 an authorized boundary change. The default command regenerates in memory and
 fails on missing, stale, changed, duplicate, unresolved, or unresolvable
-owner/oracle rows.
+owner/oracle rows. Focused tests also require complete live field/type equality
+for all 15 roles and exercise both nullable-union and incompatible-type
+counterexamples.
 
 This closes only the enumerated ModeTrack Gate C slice of ledger Class A.
 Global Class A remains open until its full 35-instance census is rerun and
 satisfies its own closure rule.
+
+The live type witness closes only this bounded Gate C instance of ledger Class
+E. Global Class E remains open.

@@ -278,7 +278,80 @@ def _assert_all_other_artifact_shapes(
             live_paths[artifact_id],
             source_label=f"live:{artifact_id}",
         )
-        assert set(live_fields) == set(boundary._artifact_fields(spec)), artifact_id
+        assert live_fields == boundary._artifact_fields(spec), artifact_id
+
+
+def test_owner_declared_nullable_numeric_type_normalizes_live_values(
+    tmp_path: Path,
+) -> None:
+    spec = next(
+        spec
+        for spec in boundary.ARTIFACT_SPECS
+        if spec.artifact_id == "c1_mode_track_source"
+    )
+    source_payload = json.loads(
+        (boundary.ROOT / spec.enumeration_source).read_text(encoding="utf-8")
+    )
+    target_path = (
+        "$.rows[].peak_observation.content.integration."
+        "area_baseline_corrected"
+    )
+
+    normalized_fields = []
+    for label, value in (("null", None), ("number", 1.0)):
+        payload = json.loads(json.dumps(source_payload))
+        for row in payload["rows"]:
+            row["peak_observation"]["content"]["integration"][
+                "area_baseline_corrected"
+            ] = value
+        source_path = tmp_path / f"mode_track_source_{label}.json"
+        source_path.write_text(json.dumps(payload), encoding="utf-8")
+        normalized_fields.append(
+            boundary.artifact_fields_from_path(
+                spec,
+                source_path,
+                source_label=f"test:{label}",
+            )
+        )
+
+    assert normalized_fields[0][target_path] == "null|number"
+    assert normalized_fields[1][target_path] == "null|number"
+    assert normalized_fields[0] == normalized_fields[1]
+
+
+def test_owner_declared_numeric_field_rejects_same_path_string(
+    tmp_path: Path,
+) -> None:
+    spec = next(
+        spec
+        for spec in boundary.ARTIFACT_SPECS
+        if spec.artifact_id == "c1_mode_track_source"
+    )
+    payload = json.loads(
+        (boundary.ROOT / spec.enumeration_source).read_text(encoding="utf-8")
+    )
+    for row in payload["rows"]:
+        row["peak_observation"]["content"]["integration"][
+            "area_baseline_corrected"
+        ] = "not-a-number"
+    source_path = tmp_path / "mode_track_source_string.json"
+    source_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="incompatible live type string"):
+        boundary.artifact_fields_from_path(
+            spec,
+            source_path,
+            source_label="test:string",
+        )
+
+
+def test_empty_array_adds_no_element_type_when_live_elements_exist() -> None:
+    fields = boundary.canonical_json_fields(
+        {"rows": [{"values": []}, {"values": [{"id": "one"}]}]},
+        artifact_id="test",
+    )
+
+    assert fields["$.rows[].values"] == "array[object]"
 
 
 def test_source_numeric_values_and_identity_components_are_separate_claims() -> None:

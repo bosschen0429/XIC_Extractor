@@ -13,11 +13,16 @@ import csv
 import json
 import re
 import sys
+import types
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
+from dataclasses import fields as dataclass_fields
 from functools import cache
 from pathlib import Path
+from typing import Union, get_args, get_origin, get_type_hints
+
+from xic_extractor.peak_detection.observations import PeakObservationContent
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONTRACT_PATH = (
@@ -216,6 +221,20 @@ ARTIFACT_SPECS = (
         expected_root_schema="issue180_m9_gate_c_transaction_receipt_v2",
     ),
 )
+
+TYPED_JSON_SUBTREE_OWNERS: Mapping[
+    str, tuple[tuple[str, type[object]], ...]
+] = {
+    "c1_mode_track_source": (
+        ("$.rows[].peak_observation.content", PeakObservationContent),
+    ),
+    "physical_replay": (
+        ("$.rows[].observation_content", PeakObservationContent),
+    ),
+    "fresh_mode_track_source": (
+        ("$.rows[].peak_observation.content", PeakObservationContent),
+    ),
+}
 
 POLICIES = {
     "launch": FieldPolicy(
@@ -547,14 +566,31 @@ def canonical_json_fields(
     """Return stable named-field paths, collapsing dynamic Matrix columns."""
     fields: dict[str, set[str]] = {}
     _collect_json_fields(payload, "$", fields, artifact_id)
-    return {path: "|".join(sorted(types)) for path, types in fields.items()}
+    return {
+        path: _canonical_json_type_union(types)
+        for path, types in fields.items()
+    }
 
 
 def declared_launch_manifest_fields() -> dict[str, str]:
     fields: dict[str, set[str]] = {}
     for shape in declared_launch_manifest_shapes():
         _collect_json_fields(shape, "$", fields, "launch_manifest")
-    return {path: "|".join(sorted(types)) for path, types in fields.items()}
+    return {
+        path: _canonical_json_type_union(types)
+        for path, types in fields.items()
+    }
+
+
+def _canonical_json_type_union(types: Iterable[str]) -> str:
+    canonical_types = set(types)
+    if "array[empty]" in canonical_types and any(
+        observed_type.startswith("array[")
+        and observed_type != "array[empty]"
+        for observed_type in canonical_types
+    ):
+        canonical_types.remove("array[empty]")
+    return "|".join(sorted(canonical_types))
 
 
 def check_gate_c_persisted_boundary_contract(
@@ -658,7 +694,150 @@ def artifact_fields_from_path(
         raise ValueError(f"{source}: root schema changed")
     if spec.artifact_id == "result_qmv":
         _validate_result_qmv_components(payload, source=source)
-    return canonical_json_fields(payload, artifact_id=spec.artifact_id)
+    observed_fields = canonical_json_fields(payload, artifact_id=spec.artifact_id)
+    return _normalize_owner_declared_fields(
+        spec,
+        observed_fields,
+        source=source,
+    )
+
+
+def _normalize_owner_declared_fields(
+    spec: ArtifactSpec,
+    observed_fields: Mapping[str, str],
+    *,
+    source: str,
+) -> dict[str, str]:
+    normalized = dict(observed_fields)
+    for root_path, owner_type in TYPED_JSON_SUBTREE_OWNERS.get(
+        spec.artifact_id, ()
+    ):
+        declared_fields = _declared_dataclass_json_fields(owner_type, root_path)
+        observed_subtree = {
+            path: observed_type
+            for path, observed_type in observed_fields.items()
+            if path == root_path or path.startswith(f"{root_path}.")
+        }
+        if set(observed_subtree) != set(declared_fields):
+            missing = sorted(set(declared_fields) - set(observed_subtree))
+            unexpected = sorted(set(observed_subtree) - set(declared_fields))
+            raise ValueError(
+                f"{source}: {owner_type.__name__} field paths changed "
+                f"(missing={missing[:5]}, unexpected={unexpected[:5]})"
+            )
+        for path, observed_type in observed_subtree.items():
+            declared_types = _split_json_type_union(declared_fields[path])
+            incompatible = sorted(
+                concrete_type
+                for concrete_type in _split_json_type_union(observed_type)
+                if not _concrete_type_matches_declaration(
+                    concrete_type,
+                    declared_types,
+                )
+            )
+            if incompatible:
+                raise ValueError(
+                    f"{source}: {path} has incompatible live type "
+                    f"{'|'.join(incompatible)}; "
+                    f"{owner_type.__name__} declares "
+                    f"{declared_fields[path]}"
+                )
+        normalized.update(declared_fields)
+    return normalized
+
+
+def _declared_dataclass_json_fields(
+    owner_type: type[object], root_path: str
+) -> dict[str, str]:
+    if not is_dataclass(owner_type):
+        raise ValueError(f"{owner_type!r} is not a dataclass semantic owner")
+    declared = {root_path: "object"}
+    _append_dataclass_json_fields(owner_type, root_path, declared)
+    return declared
+
+
+def _append_dataclass_json_fields(
+    owner_type: type[object],
+    root_path: str,
+    declared: dict[str, str],
+) -> None:
+    type_hints = get_type_hints(owner_type)
+    for owner_field in dataclass_fields(owner_type):
+        annotation = type_hints.get(owner_field.name)
+        if annotation is None:
+            raise ValueError(
+                f"{owner_type.__name__}.{owner_field.name} has no type annotation"
+            )
+        path = f"{root_path}.{owner_field.name}"
+        declared[path] = _annotation_json_type(annotation)
+        if isinstance(annotation, type) and is_dataclass(annotation):
+            _append_dataclass_json_fields(annotation, path, declared)
+
+
+def _annotation_json_type(annotation: object) -> str:
+    origin = get_origin(annotation)
+    if origin in {types.UnionType, Union}:
+        union_types: set[str] = set()
+        for member in get_args(annotation):
+            union_types.update(
+                _split_json_type_union(_annotation_json_type(member))
+            )
+        return "|".join(sorted(union_types))
+    if annotation is type(None):
+        return "null"
+    if annotation is bool:
+        return "boolean"
+    if annotation in {float, int}:
+        return "number"
+    if annotation is str:
+        return "string"
+    if isinstance(annotation, type) and is_dataclass(annotation):
+        return "object"
+    if origin in {tuple, list}:
+        args = get_args(annotation)
+        if not args:
+            raise ValueError(
+                f"unsupported untyped JSON array annotation: {annotation!r}"
+            )
+        element_annotations = args[:-1] if args[-1:] == (Ellipsis,) else args
+        element_types: set[str] = set()
+        for element_annotation in element_annotations:
+            element_types.update(
+                _split_json_type_union(
+                    _annotation_json_type(element_annotation)
+                )
+            )
+        return f"array[{'|'.join(sorted(element_types))}]"
+    raise ValueError(f"unsupported JSON type annotation: {annotation!r}")
+
+
+def _split_json_type_union(type_union: str) -> set[str]:
+    members: set[str] = set()
+    start = 0
+    bracket_depth = 0
+    for index, character in enumerate(type_union):
+        if character == "[":
+            bracket_depth += 1
+        elif character == "]":
+            bracket_depth -= 1
+        elif character == "|" and bracket_depth == 0:
+            members.add(type_union[start:index])
+            start = index + 1
+    members.add(type_union[start:])
+    if "" in members or bracket_depth != 0:
+        raise ValueError(f"invalid canonical JSON type union: {type_union!r}")
+    return members
+
+
+def _concrete_type_matches_declaration(
+    concrete_type: str,
+    declared_types: set[str],
+) -> bool:
+    if concrete_type in declared_types:
+        return True
+    return concrete_type == "array[empty]" and any(
+        declared_type.startswith("array[") for declared_type in declared_types
+    )
 
 
 def _validate_result_qmv_components(
@@ -769,7 +948,7 @@ def _semantic_claims(path: str, observed_type: str) -> tuple[str, ...]:
         for token in ("status", "decision", "verdict", "authority", "rule")
     ):
         claims = ["status_or_decision"]
-    elif observed_type == "number" or any(
+    elif "number" in _split_json_type_union(observed_type) or any(
         token in lowered
         for token in ("value", "area", "height", "mz", "rt", "intensity")
     ):
