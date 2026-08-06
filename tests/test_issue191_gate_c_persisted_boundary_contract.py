@@ -272,13 +272,64 @@ def _assert_all_other_artifact_shapes(
     }
 
     assert live_paths.keys() == specs.keys()
+    live_proposal = json.loads(
+        live_paths["c1_proposal"].read_text(encoding="utf-8")
+    )
+    live_matrix_header = live_proposal["matrix_header"]
     for artifact_id, spec in specs.items():
         live_fields = boundary.artifact_fields_from_path(
             spec,
             live_paths[artifact_id],
             source_label=f"live:{artifact_id}",
+            matrix_header=(
+                live_matrix_header if artifact_id == "result_qmv" else None
+            ),
         )
         assert live_fields == boundary._artifact_fields(spec), artifact_id
+
+
+def test_matrix_owner_preserves_fixed_fields_and_collapses_only_samples(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    header = ("Mz", "RT", "FeatureId", "sample-a")
+    observed_headers = []
+
+    def owner_sample_columns(value: tuple[str, ...]) -> tuple[str, ...]:
+        observed_headers.append(value)
+        return ("sample-a",)
+
+    monkeypatch.setattr(
+        boundary.quant_matrix,
+        "_sample_columns",
+        owner_sample_columns,
+    )
+    fields = boundary.canonical_json_fields(
+        {
+            "matrix_header": list(header),
+            "input_quant_matrix_rows": [
+                {
+                    "Mz": "100.0",
+                    "RT": "2.0",
+                    "FeatureId": "feature-1",
+                    "sample-a": "12.0",
+                }
+            ],
+        },
+        artifact_id="c1_proposal",
+    )
+
+    assert observed_headers == [header]
+    assert fields["$.input_quant_matrix_rows[].FeatureId"] == "string"
+    assert fields["$.input_quant_matrix_rows[].{sample_column}"] == "string"
+    assert "$.input_quant_matrix_rows[].sample-a" not in fields
+
+
+def test_result_qmv_requires_matrix_owner_header_context() -> None:
+    with pytest.raises(ValueError, match="Matrix header context is required"):
+        boundary.canonical_json_fields(
+            {"quant_matrix_rows": [{"Mz": "100", "RT": "2"}]},
+            artifact_id="result_qmv",
+        )
 
 
 def test_owner_declared_nullable_numeric_type_normalizes_live_values(
@@ -388,6 +439,38 @@ def test_source_numeric_values_and_identity_components_are_separate_claims() -> 
             "index_2_observation_content_identity",
         )
     ]["semantic_class"] == "raw_owner_only"
+
+
+def test_matrix_coordinates_never_claim_observation_content_identity() -> None:
+    rows = boundary.enumerate_gate_c_boundary()
+    matrix_coordinates = [
+        row
+        for row in rows
+        if row["artifact_id"] in {"c1_proposal", "result_qmv"}
+        and row["canonical_field_path"].rsplit(".", 1)[-1] in {"Mz", "RT"}
+        and boundary._is_matrix_row_path(
+            row["artifact_id"],
+            row["canonical_field_path"],
+        )
+    ]
+    observation_identity_rows = [
+        row
+        for row in rows
+        if row["semantic_claim"] == "observation_content_identity_component"
+    ]
+
+    assert len(matrix_coordinates) == 6
+    assert {row["semantic_claim"] for row in matrix_coordinates} == {
+        "matrix_coordinate_numeric_value"
+    }
+    assert observation_identity_rows
+    assert all(
+        boundary._is_observation_content_path(
+            row["artifact_id"],
+            row["canonical_field_path"],
+        )
+        for row in observation_identity_rows
+    )
 
 
 def test_external_manifest_stays_audit_only_while_terminal_manifest_is_fresh() -> None:

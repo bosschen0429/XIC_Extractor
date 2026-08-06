@@ -22,6 +22,7 @@ from functools import cache
 from pathlib import Path
 from typing import Union, get_args, get_origin, get_type_hints
 
+from xic_extractor.alignment import quant_matrix_version as quant_matrix
 from xic_extractor.peak_detection.observations import PeakObservationContent
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -234,6 +235,18 @@ TYPED_JSON_SUBTREE_OWNERS: Mapping[
     "fresh_mode_track_source": (
         ("$.rows[].peak_observation.content", PeakObservationContent),
     ),
+}
+
+DYNAMIC_MATRIX_ROW_PATHS = {
+    "c1_proposal": "$.input_quant_matrix_rows[]",
+    "result_qmv": "$.quant_matrix_rows[]",
+}
+MATRIX_ROW_PATHS = {
+    "c1_proposal": (
+        "$.input_matrix_identity_rows[]",
+        "$.input_quant_matrix_rows[]",
+    ),
+    "result_qmv": ("$.quant_matrix_rows[]",),
 }
 
 POLICIES = {
@@ -524,7 +537,11 @@ def enumerate_gate_c_boundary() -> list[dict[str, str]]:
     for spec in ARTIFACT_SPECS:
         fields = _artifact_fields(spec)
         for path, observed_type in sorted(fields.items()):
-            for semantic_claim in _semantic_claims(path, observed_type):
+            for semantic_claim in _semantic_claims(
+                spec.artifact_id,
+                path,
+                observed_type,
+            ):
                 policy = _field_policy(spec.artifact_id, path, semantic_claim)
                 rows.append(
                     {
@@ -561,11 +578,25 @@ def enumerate_gate_c_boundary() -> list[dict[str, str]]:
 
 
 def canonical_json_fields(
-    payload: Mapping[str, object], *, artifact_id: str
+    payload: Mapping[str, object],
+    *,
+    artifact_id: str,
+    matrix_header: Sequence[str] | None = None,
 ) -> dict[str, str]:
     """Return stable named-field paths, collapsing dynamic Matrix columns."""
     fields: dict[str, set[str]] = {}
-    _collect_json_fields(payload, "$", fields, artifact_id)
+    sample_columns = _matrix_sample_columns(
+        payload,
+        artifact_id=artifact_id,
+        matrix_header=matrix_header,
+    )
+    _collect_json_fields(
+        payload,
+        "$",
+        fields,
+        artifact_id,
+        sample_columns=sample_columns,
+    )
     return {
         path: _canonical_json_type_union(types)
         for path, types in fields.items()
@@ -575,7 +606,13 @@ def canonical_json_fields(
 def declared_launch_manifest_fields() -> dict[str, str]:
     fields: dict[str, set[str]] = {}
     for shape in declared_launch_manifest_shapes():
-        _collect_json_fields(shape, "$", fields, "launch_manifest")
+        _collect_json_fields(
+            shape,
+            "$",
+            fields,
+            "launch_manifest",
+            sample_columns=frozenset(),
+        )
     return {
         path: _canonical_json_type_union(types)
         for path, types in fields.items()
@@ -654,10 +691,16 @@ def _artifact_fields(spec: ArtifactSpec) -> dict[str, str]:
         return declared_launch_manifest_fields()
 
     source_path = ROOT / spec.enumeration_source
+    matrix_header = (
+        _retained_proposal_matrix_header()
+        if spec.artifact_id == "result_qmv"
+        else None
+    )
     return artifact_fields_from_path(
         spec,
         source_path,
         source_label=spec.enumeration_source,
+        matrix_header=matrix_header,
     )
 
 
@@ -666,6 +709,7 @@ def artifact_fields_from_path(
     source_path: Path,
     *,
     source_label: str | None = None,
+    matrix_header: Sequence[str] | None = None,
 ) -> dict[str, str]:
     """Enumerate one artifact while enforcing its declared live schema marker."""
 
@@ -694,7 +738,11 @@ def artifact_fields_from_path(
         raise ValueError(f"{source}: root schema changed")
     if spec.artifact_id == "result_qmv":
         _validate_result_qmv_components(payload, source=source)
-    observed_fields = canonical_json_fields(payload, artifact_id=spec.artifact_id)
+    observed_fields = canonical_json_fields(
+        payload,
+        artifact_id=spec.artifact_id,
+        matrix_header=matrix_header,
+    )
     return _normalize_owner_declared_fields(
         spec,
         observed_fields,
@@ -869,29 +917,121 @@ def _validate_result_qmv_components(
         raise ValueError(f"{source}: quant_matrix_rows changed")
 
 
+def _retained_proposal_matrix_header() -> tuple[str, ...]:
+    proposal_spec = next(
+        spec for spec in ARTIFACT_SPECS if spec.artifact_id == "c1_proposal"
+    )
+    proposal_path = ROOT / proposal_spec.enumeration_source
+    payload = json.loads(proposal_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"{proposal_spec.enumeration_source}: invalid proposal")
+    return _declared_matrix_header(
+        payload.get("matrix_header"),
+        source=proposal_spec.enumeration_source,
+    )
+
+
+def _matrix_sample_columns(
+    payload: Mapping[str, object],
+    *,
+    artifact_id: str,
+    matrix_header: Sequence[str] | None,
+) -> frozenset[str]:
+    row_path = DYNAMIC_MATRIX_ROW_PATHS.get(artifact_id)
+    if row_path is None:
+        return frozenset()
+
+    if artifact_id == "c1_proposal":
+        embedded_header = _declared_matrix_header(
+            payload.get("matrix_header"),
+            source="c1_proposal.matrix_header",
+        )
+        if matrix_header is not None and tuple(matrix_header) != embedded_header:
+            raise ValueError("c1_proposal: supplied Matrix header changed")
+        header = embedded_header
+        row_field = "input_quant_matrix_rows"
+    else:
+        if matrix_header is None:
+            raise ValueError("result_qmv: Matrix header context is required")
+        header = _declared_matrix_header(
+            matrix_header,
+            source="result_qmv Matrix header",
+        )
+        row_field = "quant_matrix_rows"
+
+    try:
+        sample_columns = tuple(quant_matrix._sample_columns(header))
+    except ValueError as exc:
+        raise ValueError(f"{artifact_id}: invalid Matrix header: {exc}") from exc
+    if not sample_columns or len(set(sample_columns)) != len(sample_columns):
+        raise ValueError(f"{artifact_id}: Matrix sample columns changed")
+
+    rows = payload.get(row_field)
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"{artifact_id}: {row_field} must contain rows")
+    expected_fields = set(header)
+    if any(not isinstance(row, dict) or set(row) != expected_fields for row in rows):
+        raise ValueError(f"{artifact_id}: {row_field} differs from Matrix header")
+    return frozenset(sample_columns)
+
+
+def _declared_matrix_header(value: object, *, source: str) -> tuple[str, ...]:
+    if (
+        not isinstance(value, (list, tuple))
+        or not value
+        or any(not isinstance(column, str) or not column for column in value)
+    ):
+        raise ValueError(f"{source}: Matrix header must be non-empty strings")
+    header = tuple(value)
+    if len(set(header)) != len(header):
+        raise ValueError(f"{source}: Matrix header contains duplicates")
+    return header
+
+
 def _collect_json_fields(
     value: object,
     parent: str,
     fields: dict[str, set[str]],
     artifact_id: str,
+    *,
+    sample_columns: frozenset[str],
 ) -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            normalized_key = _normalized_json_key(artifact_id, parent, str(key))
+            normalized_key = _normalized_json_key(
+                artifact_id,
+                parent,
+                str(key),
+                sample_columns=sample_columns,
+            )
             path = f"{parent}.{normalized_key}"
             fields.setdefault(path, set()).add(_json_type(child))
-            _collect_json_fields(child, path, fields, artifact_id)
+            _collect_json_fields(
+                child,
+                path,
+                fields,
+                artifact_id,
+                sample_columns=sample_columns,
+            )
     elif isinstance(value, list):
         for child in value:
-            _collect_json_fields(child, f"{parent}[]", fields, artifact_id)
+            _collect_json_fields(
+                child,
+                f"{parent}[]",
+                fields,
+                artifact_id,
+                sample_columns=sample_columns,
+            )
 
 
-def _normalized_json_key(artifact_id: str, parent: str, key: str) -> str:
-    dynamic_matrix_parents = {
-        ("c1_proposal", "$.input_quant_matrix_rows[]"),
-        ("result_qmv", "$.quant_matrix_rows[]"),
-    }
-    if (artifact_id, parent) in dynamic_matrix_parents and key not in {"Mz", "RT"}:
+def _normalized_json_key(
+    artifact_id: str,
+    parent: str,
+    key: str,
+    *,
+    sample_columns: frozenset[str],
+) -> str:
+    if parent == DYNAMIC_MATRIX_ROW_PATHS.get(artifact_id) and key in sample_columns:
         return "{sample_column}"
     return key
 
@@ -913,14 +1053,23 @@ def _json_type(value: object) -> str:
     return "string"
 
 
-def _semantic_claims(path: str, observed_type: str) -> tuple[str, ...]:
+def _semantic_claims(
+    artifact_id: str,
+    path: str,
+    observed_type: str,
+) -> tuple[str, ...]:
     leaf = path.rsplit(".", 1)[-1].removeprefix("column:")
     lowered = leaf.lower()
     claims: list[str]
-    if lowered in {"rt", "intensity", "mz"}:
+    if lowered in {"rt", "intensity", "mz"} and _is_observation_content_path(
+        artifact_id,
+        path,
+    ):
         claims = ["numeric_value", "observation_content_identity_component"]
         if "array" in observed_type:
             claims.insert(0, "container_shape_and_presence")
+    elif lowered in {"mz", "rt"} and _is_matrix_row_path(artifact_id, path):
+        claims = ["matrix_coordinate_numeric_value"]
     elif lowered == "physical_ids":
         claims = [
             "container_shape_and_presence",
@@ -958,6 +1107,23 @@ def _semantic_claims(path: str, observed_type: str) -> tuple[str, ...]:
     else:
         claims = ["field_value"]
     return tuple(claims)
+
+
+def _is_observation_content_path(artifact_id: str, path: str) -> bool:
+    return any(
+        owner_type is PeakObservationContent
+        and (path == root_path or path.startswith(f"{root_path}."))
+        for root_path, owner_type in TYPED_JSON_SUBTREE_OWNERS.get(
+            artifact_id, ()
+        )
+    )
+
+
+def _is_matrix_row_path(artifact_id: str, path: str) -> bool:
+    return any(
+        path.startswith(f"{root_path}.")
+        for root_path in MATRIX_ROW_PATHS.get(artifact_id, ())
+    )
 
 
 def _field_policy(

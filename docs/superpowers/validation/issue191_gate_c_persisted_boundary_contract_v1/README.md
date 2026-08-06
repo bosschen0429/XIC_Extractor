@@ -6,11 +6,11 @@ counted-detection, Matrix, preset, or default authority.
 
 ## Outcome
 
-The unchanged enumeration reports 593 semantic claims across 15 artifact
+The unchanged enumeration reports 587 semantic claims across 15 artifact
 roles:
 
 - `fixed=256`
-- `verified_unaffected=337`
+- `verified_unaffected=331`
 - `unknown=0`
 
 The current closed writer has no remaining reachable caller/persisted-value
@@ -39,18 +39,25 @@ same-path `string` fails closed. Empty arrays contribute container evidence but
 do not invent a second element type. Retained 85RAW values remain comparison
 evidence; they are not schema authority.
 
+Matrix field roles are likewise owner-derived. The proposal's
+`matrix_header`, interpreted by the existing QuantMatrixVersion sample-column
+owner, is carried into terminal QMV enumeration. Only owner-declared sample
+columns collapse to `{sample_column}`; fixed coordinates or metadata retain
+their names. Matrix `Mz` and `RT` are recorded as
+`matrix_coordinate_numeric_value`, never as peak-observation identity.
+
 ## Bounded universe
 
 The 15 roles cover the current runner's complete named-field boundary:
 
 - C1/C2 launch manifest (72 claims)
-- C1 ModeTrack source, proposal, and proposal receipt (203 claims)
+- C1 ModeTrack source, proposal, and proposal receipt (199 claims)
 - timing payload (3 claims)
 - manual review, physical replay, and review-transfer receipt (86 claims)
 - transferred review checked manifest (34 claims)
 - fresh ModeTrack source and fresh-owner receipt (97 claims)
 - terminal checked manifest, QMV, final receipt, and transaction receipt
-  (98 claims)
+  (96 claims)
 
 The launch manifest is represented by private-value-free C1/C2 structural
 witnesses. A focused test materializes both current runner stages with 85 fake
@@ -115,3 +122,6 @@ satisfies its own closure rule.
 
 The live type witness closes only this bounded Gate C instance of ledger Class
 E. Global Class E remains open.
+
+The Matrix field-role witness closes only this bounded Gate C instance of
+ledger Class I. Global Class I remains open.
