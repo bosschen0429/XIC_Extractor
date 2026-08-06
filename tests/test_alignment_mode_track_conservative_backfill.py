@@ -548,6 +548,64 @@ def test_gate_c_proposal_binds_complete_mode_track_decision_census(
     }
 
 
+def test_gate_c_scientific_projection_is_stable_across_fresh_attempts(
+    tmp_path: Path,
+) -> None:
+    projections = []
+    attempt_ids = []
+    for stage in ("c1", "c2"):
+        stage_root = tmp_path / stage
+        stage_root.mkdir()
+        fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+            stage_root
+        )
+        facts = _assess(
+            fixture=fixture,
+            sample_assessments=sample_assessments,
+            model_set=model_set,
+            batches=batches,
+        )
+        projections.append(
+            gate_c_fixture._mode_track_scientific_projection_rows(facts)
+        )
+        attempt_ids.append(fixture.owners.attempt.processing_attempt_id)
+
+    assert attempt_ids[0] != attempt_ids[1]
+    assert projections[0] == projections[1]
+
+
+def test_gate_c_fresh_owner_rejects_resealed_rejected_to_proposed_claim(
+    tmp_path: Path,
+) -> None:
+    fixture, sample_assessments, model_set, batches = _mixed_mode_track_fixture(
+        tmp_path,
+        support_pattern=(
+            ("s1", ("early",), 101),
+            ("s2", ("early",), 201),
+            ("s3", ("late",), 301),
+        ),
+    )
+    facts = _assess(
+        fixture=fixture,
+        sample_assessments=sample_assessments,
+        model_set=model_set,
+        batches=batches,
+    )
+    rows = gate_c_fixture._mode_track_scientific_projection_rows(facts)
+    forged = [dict(row) for row in rows]
+    below_threshold = next(
+        row for row in forged if row["may_attempt_recovery"] is False
+    )
+    below_threshold["may_attempt_recovery"] = True
+    below_threshold["reason_codes"] = ["direct_support_threshold_met"]
+
+    with pytest.raises(ValueError, match="fresh M2 scientific projection differs"):
+        gate_c_fixture._validate_fresh_mode_track_projection(
+            persisted_rows=forged,
+            fresh_facts=facts,
+        )
+
+
 def test_gate_c_finalizer_rejects_tampered_proposal(tmp_path: Path) -> None:
     projection, proposal_dir = _gate_c_proposal(tmp_path)
     gate_c_fixture.freeze_gate_c_proposal(
