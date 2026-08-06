@@ -64,6 +64,8 @@ def build_launch_inputs(
         raise ValueError("Gate C must run from the worktree .venv Python")
     if _checkout_sha(manifest_root) != code_sha:
         raise ValueError("Gate C code SHA does not match the current checkout")
+    if _worktree_status(manifest_root):
+        raise ValueError("Gate C requires a clean Git worktree")
 
     rows = tuple(row for row in load_sample_metadata(metadata_path) if not row.excluded)
     if len(rows) != EXPECTED_SAMPLE_COUNT:
@@ -128,6 +130,7 @@ def build_launch_inputs(
             "working_directory": str(manifest_root),
             "argv": argv,
             "command_sha256": _json_sha256(argv),
+            "worktree_status": "clean",
         },
         "metadata": {"path": str(metadata_path), "sha256": metadata_sha256},
         "raw": {
@@ -178,7 +181,9 @@ def run_frozen_launch(
     execution = frozen.get("execution")
     if not isinstance(execution, dict) or (
         execution.get("executable") != str(_current_executable())
+        or execution.get("worktree_status") != "clean"
         or _checkout_sha(manifest_root.resolve()) != code_sha
+        or bool(_worktree_status(manifest_root.resolve()))
     ):
         raise ValueError("Gate C execution identity changed after preflight")
     receipt = gate_c_fixture.run_gate_c(
@@ -210,6 +215,17 @@ def _current_executable() -> Path:
 def _checkout_sha(root: Path) -> str:
     result = subprocess.run(
         ("git", "rev-parse", "HEAD"),
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _worktree_status(root: Path) -> str:
+    result = subprocess.run(
+        ("git", "status", "--porcelain=v1", "--untracked-files=all"),
         cwd=root,
         check=True,
         capture_output=True,

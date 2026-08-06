@@ -142,6 +142,57 @@ def test_preflight_rejects_unclosed_universe_before_core(
         )
 
 
+def test_preflight_rejects_dirty_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
+    _patch_launch_identity(monkeypatch, tmp_path, "e" * 40)
+    monkeypatch.setattr(runner, "_worktree_status", lambda root: "M dirty.py")
+
+    with pytest.raises(ValueError, match="clean Git worktree"):
+        runner.build_launch_inputs(
+            metadata_path=metadata_path,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            manifest_root=tmp_path,
+            output_dir=tmp_path / "gate-c",
+            launch_manifest_path=tmp_path / "launch.json",
+            code_sha="e" * 40,
+        )
+
+
+def test_frozen_launch_rejects_checkout_dirtied_after_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
+    _patch_launch_identity(monkeypatch, tmp_path, "f" * 40)
+    output_dir = tmp_path / "gate-c"
+    launch_path = tmp_path / "launch.json"
+    inputs = runner.build_launch_inputs(
+        metadata_path=metadata_path,
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        manifest_root=tmp_path,
+        output_dir=output_dir,
+        launch_manifest_path=launch_path,
+        code_sha="f" * 40,
+    )
+    runner.freeze_preflight(launch_path, inputs.launch_manifest)
+    monkeypatch.setattr(runner, "_worktree_status", lambda root: "M dirty.py")
+
+    with pytest.raises(ValueError, match="execution identity changed"):
+        runner.run_frozen_launch(
+            inputs=inputs,
+            launch_manifest_path=launch_path,
+            dll_dir=dll_dir,
+            manifest_root=tmp_path,
+            output_dir=output_dir,
+            code_sha="f" * 40,
+        )
+
+
 def test_frozen_launch_rejects_missing_terminal_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -230,3 +281,4 @@ def _patch_launch_identity(
     executable.write_bytes(b"fixture")
     monkeypatch.setattr(runner, "_current_executable", lambda: executable.resolve())
     monkeypatch.setattr(runner, "_checkout_sha", lambda checkout: code_sha)
+    monkeypatch.setattr(runner, "_worktree_status", lambda checkout: "")
