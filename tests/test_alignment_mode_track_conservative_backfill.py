@@ -555,6 +555,74 @@ def test_gate_c_writer_boundary_accepts_only_fresh_typed_authority() -> None:
     ) == {"projection", "validated_review", "manifest_root", "output_dir"}
 
 
+def test_gate_c_transaction_receipt_publishes_atomically_or_not_at_all(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection)
+    replay_path = tmp_path / "manual_review_replay.json"
+    validated_review = gate_c_fixture._rehydrate_gate_c_review_set(
+        proposal_dir=proposal_dir,
+        manual_review_path=review_path,
+        manual_review_replay_path=replay_path,
+        manifest_root=tmp_path,
+        fresh_projection=projection,
+    )
+    fresh_owner_receipt = tmp_path / "fresh_owner_receipt.json"
+    review_transfer_receipt = tmp_path / "review_transfer_receipt.json"
+    fresh_owner_receipt.write_text("{}\n", encoding="utf-8")
+    review_transfer_receipt.write_text("{}\n", encoding="utf-8")
+    published_output = tmp_path / "published-c2-final"
+    published_receipt = gate_c_fixture._finalize_gate_c_transaction(
+        projection=projection,
+        validated_review=validated_review,
+        manifest_root=tmp_path,
+        final_output_dir=published_output,
+        code_sha="synthetic-no-raw",
+        metadata_sha256="synthetic-metadata",
+        fresh_owner_receipt_path=fresh_owner_receipt,
+        review_transfer_receipt_path=review_transfer_receipt,
+    )
+    assert published_receipt == published_output / "transaction_receipt.json"
+    assert (published_output / "result_qmv.json").is_file()
+    assert (published_output / "final_receipt.json").is_file()
+    assert published_receipt.is_file()
+
+    final_output = tmp_path / "c2-final"
+    original_write_json = gate_c_fixture._write_json
+
+    def fail_transaction_receipt(path: Path, payload: object) -> None:
+        if path.name == "transaction_receipt.json":
+            raise OSError("injected transaction receipt failure")
+        original_write_json(path, payload)
+
+    monkeypatch.setattr(gate_c_fixture, "_write_json", fail_transaction_receipt)
+
+    with pytest.raises(OSError, match="injected transaction receipt failure"):
+        gate_c_fixture._finalize_gate_c_transaction(
+            projection=projection,
+            validated_review=validated_review,
+            manifest_root=tmp_path,
+            final_output_dir=final_output,
+            code_sha="synthetic-no-raw",
+            metadata_sha256="synthetic-metadata",
+            fresh_owner_receipt_path=fresh_owner_receipt,
+            review_transfer_receipt_path=review_transfer_receipt,
+        )
+
+    assert not final_output.exists()
+    staging = gate_c_fixture._gate_c_transaction_staging_dir(final_output)
+    assert (staging / "final_receipt.json").is_file()
+    assert not (staging / "transaction_receipt.json").exists()
+
+
 def test_gate_c_review_transfer_rebinds_exact_subjects_and_finalizes(
     tmp_path: Path,
 ) -> None:

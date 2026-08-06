@@ -284,7 +284,12 @@ def run_gate_c_fresh_finalization(
     manifest_root = manifest_root.resolve()
     replay_output_dir = replay_output_dir.resolve()
     final_output_dir = final_output_dir.resolve()
-    if replay_output_dir.exists() or final_output_dir.exists():
+    transaction_staging_dir = _gate_c_transaction_staging_dir(final_output_dir)
+    if (
+        replay_output_dir.exists()
+        or final_output_dir.exists()
+        or transaction_staging_dir.exists()
+    ):
         raise ValueError("Gate C C2 replay or final output already exists")
     for target in (replay_output_dir, final_output_dir):
         if not target.is_relative_to(manifest_root):
@@ -344,13 +349,50 @@ def run_gate_c_fresh_finalization(
         manifest_root=manifest_root,
         fresh_projection=run.projection,
     )
-    final_receipt_path = finalize_gate_c_fresh_projection(
+    transaction_receipt_path = _finalize_gate_c_transaction(
         projection=run.projection,
         validated_review=validated_review,
         manifest_root=manifest_root,
-        output_dir=final_output_dir,
+        final_output_dir=final_output_dir,
+        code_sha=code_sha,
+        metadata_sha256=metadata_sha256,
+        fresh_owner_receipt_path=fresh_receipt_path,
+        review_transfer_receipt_path=review_transfer_receipt_path,
     )
-    transaction_receipt_path = final_output_dir / "transaction_receipt.json"
+    _write_json(
+        replay_output_dir / "timing.live.json",
+        _heartbeat("completed", run.started),
+    )
+    return transaction_receipt_path
+
+
+def _gate_c_transaction_staging_dir(final_output_dir: Path) -> Path:
+    return final_output_dir.with_name(f"{final_output_dir.name}.transaction-staging")
+
+
+def _finalize_gate_c_transaction(
+    *,
+    projection: UntargetedCidNlModeTrackProjection,
+    validated_review: _ValidatedGateCReviewSet,
+    manifest_root: Path,
+    final_output_dir: Path,
+    code_sha: str,
+    metadata_sha256: str,
+    fresh_owner_receipt_path: Path,
+    review_transfer_receipt_path: Path,
+) -> Path:
+    """Publish the QMV, final receipt, and transaction receipt in one rename."""
+
+    transaction_staging_dir = _gate_c_transaction_staging_dir(final_output_dir)
+    if final_output_dir.exists() or transaction_staging_dir.exists():
+        raise ValueError("Gate C final or transaction staging output already exists")
+    final_receipt_path = finalize_gate_c_fresh_projection(
+        projection=projection,
+        validated_review=validated_review,
+        manifest_root=manifest_root,
+        output_dir=transaction_staging_dir,
+    )
+    transaction_receipt_path = transaction_staging_dir / "transaction_receipt.json"
     _write_json(
         transaction_receipt_path,
         {
@@ -358,7 +400,7 @@ def run_gate_c_fresh_finalization(
             "validation_status": VALIDATION_STATUS,
             "code_sha": code_sha,
             "metadata_sha256": metadata_sha256,
-            "fresh_owner_receipt_sha256": _sha256(fresh_receipt_path),
+            "fresh_owner_receipt_sha256": _sha256(fresh_owner_receipt_path),
             "final_receipt_sha256": _sha256(final_receipt_path),
             "audit_review_transfer_receipt_sha256": _sha256(
                 review_transfer_receipt_path
@@ -366,11 +408,8 @@ def run_gate_c_fresh_finalization(
             "product_authority": "checked_qmv_owner_only",
         },
     )
-    _write_json(
-        replay_output_dir / "timing.live.json",
-        _heartbeat("completed", run.started),
-    )
-    return transaction_receipt_path
+    transaction_staging_dir.replace(final_output_dir)
+    return final_output_dir / "transaction_receipt.json"
 
 
 def _run_mode_track_batch(
