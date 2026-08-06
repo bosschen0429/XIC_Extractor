@@ -28,6 +28,10 @@ root `AGENTS.md`. Keep the root file limited to high-frequency guardrails.
 - Separate machine artifacts from human review surfaces. TSV/JSON may be
   exhaustive; Markdown specs are mostly for agents; human-facing reports should
   be short, visual or indexed, and decision-oriented.
+- Use [`.github/pr_comment_template.md`](../../.github/pr_comment_template.md)
+  for non-trivial inline review replies and top-level review updates. Every
+  reply must separate the reviewed instance, the recurring finding class, and
+  the overall PR outcome; a commit hash or “fixed” alone is not closure.
 - Manual review requests should include a compact review index with identifiers:
   sample, label or family id, m/z, RT/window, status, reason, and linked
   artifact path.
