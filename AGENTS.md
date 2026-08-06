@@ -41,6 +41,23 @@ for the active task unless a hard gate below says otherwise.
   [`codex-operating-system.md`](docs/agent/codex-operating-system.md),
   `docs/engineering-skills/`, and [`.codex/skills`](.codex/skills)
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in this repository's GitHub Issues. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default Matt Pocock triage labels. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context domain documentation layout. See
+`docs/agents/domain.md`.
+
 ## Hard Defaults
 
 - Before non-trivial edits, confirm intended worktree, branch, and dirty diff
