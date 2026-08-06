@@ -327,6 +327,41 @@ automatically only when no Backfill acceptance row is pending; otherwise the
 run remains `diagnostic_only` until a supplied acceptance manifest passes the
 existing M6 gate.
 
+Opt-in RAW-to-ModeTrack table runner for the reviewed #180 85-sample lane:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.run_untargeted_cid_nl_mode_track `
+  --raw-dir $env:XIC_RAW_ROOT `
+  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
+  --sample-metadata docs\superpowers\fixtures\issue180_m9_gate_c_sample_metadata_v1.tsv `
+  --preset dna_dr `
+  --precursor-mz 349.215 `
+  --review-bundle-dir docs\superpowers\validation\issue180_m9_gate_c_closed_writer_v3\review_transfer `
+  --output-dir output\issue159-mode-track-table `
+  --manifest-root . `
+  --expected-sample-count 85 `
+  --expected-backfill-cell-count 26 `
+  --expected-backfill-family-count FAM000004=10 `
+  --expected-backfill-family-count FAM000007=11 `
+  --expected-backfill-family-count FAM000009=5 `
+  --sample-identity-namespace issue180-m9-gate-c
+```
+
+Append `--preflight-only` to close the RAW/DLL/metadata/review/output universe
+and validate the review/replay SHA, schema, 26-cell census, and 10/11/5 family
+distribution without opening RAW files. Remove it only after the RAW run is
+explicitly authorized.
+
+This command is `diagnostic_only`. It runs Discovery, the current Untargeted
+CID-NL RAW owner, ModeTrack bootstrap/alignment, conservative Backfill, and the
+existing acceptance/QMV owner in one process. The review bundle supplies the
+already-reviewed physical observations; its old checked manifest is not an
+input. Fresh typed values remain authoritative in memory. The attempt directory
+retains Discovery/runtime/source audit artifacts, while the requested output
+directory appears atomically only after both `alignment_matrix.tsv` and
+`alignment_matrix.xlsx` are complete. A failed stage leaves the requested final
+output directory absent.
+
 Validation / downstream handoff alignment should use the minimal machine gate
 surface by default. For 85RAW validation, the current canonical shape is
 `validation-minimal + production-equivalent + validation-fast + super-window +

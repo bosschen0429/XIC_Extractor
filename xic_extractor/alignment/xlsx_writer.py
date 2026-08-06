@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,12 @@ from xic_extractor.alignment.product_matrix import build_product_matrix_rows
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
     build_production_decisions,
+)
+from xic_extractor.alignment.quant_matrix_version import (
+    CELL_PROVENANCE_COLUMNS,
+    EXPECTED_DIFF_SUMMARY_COLUMNS,
+    ROW_SUMMARY_COLUMNS,
+    QuantMatrixVersionRows,
 )
 
 
@@ -48,6 +54,63 @@ def write_alignment_results_xlsx(
     _write_metadata_sheet(workbook.create_sheet("Metadata"), metadata)
     workbook.save(path)
     return path
+
+
+def write_quant_matrix_version_xlsx(
+    path: Path,
+    *,
+    matrix_header: Sequence[str],
+    quant_matrix_version: QuantMatrixVersionRows,
+    metadata: Mapping[str, str],
+) -> Path:
+    """Render an already-authorized QuantMatrixVersion without recomputation."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    workbook = Workbook()
+    matrix_sheet = workbook.active
+    matrix_sheet.title = "Matrix"
+    _write_mapping_rows(
+        matrix_sheet,
+        matrix_header,
+        quant_matrix_version.quant_matrix_rows,
+        matrix_values=True,
+    )
+    _write_mapping_rows(
+        workbook.create_sheet("CellProvenance"),
+        CELL_PROVENANCE_COLUMNS,
+        quant_matrix_version.cell_provenance_rows,
+    )
+    _write_mapping_rows(
+        workbook.create_sheet("RowSummary"),
+        ROW_SUMMARY_COLUMNS,
+        quant_matrix_version.row_summary_rows,
+    )
+    _write_mapping_rows(
+        workbook.create_sheet("ExpectedDiff"),
+        EXPECTED_DIFF_SUMMARY_COLUMNS,
+        quant_matrix_version.expected_diff_summary_rows,
+    )
+    _write_metadata_sheet(
+        workbook.create_sheet("Metadata"),
+        dict(metadata),
+    )
+    workbook.save(path)
+    return path
+
+
+def _write_mapping_rows(
+    sheet: Any,
+    columns: Sequence[str],
+    rows: Sequence[Mapping[str, str]],
+    *,
+    matrix_values: bool = False,
+) -> None:
+    _append_xlsx_row(sheet, columns)
+    for row in rows:
+        values: list[object] = [row.get(column, "") for column in columns]
+        if matrix_values:
+            values = [_xlsx_quant_matrix_value(value) for value in values]
+        _append_xlsx_row(sheet, values)
 
 
 def _write_matrix_sheet(
@@ -276,6 +339,10 @@ def _xlsx_value(value: object) -> object:
 
 def _xlsx_matrix_value(text: str) -> float | None:
     return float(text) if text else None
+
+
+def _xlsx_quant_matrix_value(value: object) -> float | None:
+    return float(str(value)) if value != "" else None
 
 
 def _claim_state(cell: AlignedCell) -> str:
