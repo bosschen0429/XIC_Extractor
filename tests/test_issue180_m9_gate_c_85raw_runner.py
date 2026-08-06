@@ -133,7 +133,7 @@ def test_frozen_c2_launch_calls_fresh_owner_finalization_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
-    proposal_dir, review, replay, checked, final_output = _c2_inputs(tmp_path)
+    proposal_dir, review, replay, transfer, checked, final_output = _c2_inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "9" * 40)
     replay_output = tmp_path / "gate-c-c2-replay"
     launch_path = tmp_path / "launch-c2.json"
@@ -149,6 +149,7 @@ def test_frozen_c2_launch_calls_fresh_owner_finalization_once(
         proposal_dir=proposal_dir,
         manual_review_path=review,
         manual_review_replay_path=replay,
+        review_transfer_receipt_path=transfer,
         checked_manifest_path=checked,
         final_output_dir=final_output,
     )
@@ -189,7 +190,7 @@ def test_c2_preflight_requires_closed_inputs_and_new_outputs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
-    proposal_dir, review, replay, checked, final_output = _c2_inputs(tmp_path)
+    proposal_dir, review, replay, transfer, checked, final_output = _c2_inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "8" * 40)
 
     with pytest.raises(ValueError, match="requires proposal"):
@@ -218,6 +219,7 @@ def test_c2_preflight_requires_closed_inputs_and_new_outputs(
             proposal_dir=proposal_dir,
             manual_review_path=review,
             manual_review_replay_path=replay,
+            review_transfer_receipt_path=transfer,
             checked_manifest_path=checked,
             final_output_dir=final_output,
         )
@@ -228,7 +230,7 @@ def test_frozen_c2_launch_rejects_review_mutation_after_preflight(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     metadata_path, raw_dir, dll_dir = _inputs(tmp_path)
-    proposal_dir, review, replay, checked, final_output = _c2_inputs(tmp_path)
+    proposal_dir, review, replay, transfer, checked, final_output = _c2_inputs(tmp_path)
     _patch_launch_identity(monkeypatch, tmp_path, "7" * 40)
     replay_output = tmp_path / "gate-c-c2-replay"
     launch_path = tmp_path / "launch-c2.json"
@@ -244,6 +246,7 @@ def test_frozen_c2_launch_rejects_review_mutation_after_preflight(
         proposal_dir=proposal_dir,
         manual_review_path=review,
         manual_review_replay_path=replay,
+        review_transfer_receipt_path=transfer,
         checked_manifest_path=checked,
         final_output_dir=final_output,
     )
@@ -416,17 +419,18 @@ def _inputs(
     return metadata_path, raw_dir, dll_dir
 
 
-def _c2_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path]:
+def _c2_inputs(tmp_path: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     proposal_dir = tmp_path / "gate-c-c1" / "proposal"
     proposal_dir.mkdir(parents=True)
     (proposal_dir / "proposal.json").write_text("{}\n", encoding="utf-8")
     (proposal_dir / "proposal_receipt.json").write_text("{}\n", encoding="utf-8")
     review = tmp_path / "manual_review.json"
     replay = tmp_path / "manual_review_replay.json"
+    transfer = tmp_path / "review_transfer_receipt.json"
     checked = tmp_path / "checked_manifest.json"
-    for path in (review, replay, checked):
+    for path in (review, replay, transfer, checked):
         path.write_text("{}\n", encoding="utf-8")
-    return proposal_dir, review, replay, checked, tmp_path / "gate-c-final"
+    return proposal_dir, review, replay, transfer, checked, tmp_path / "gate-c-final"
 
 
 def _patch_launch_identity(

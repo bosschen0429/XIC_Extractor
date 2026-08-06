@@ -28,6 +28,7 @@ class GateCLaunchInputs:
     proposal_dir: Path | None = None
     manual_review_path: Path | None = None
     manual_review_replay_path: Path | None = None
+    review_transfer_receipt_path: Path | None = None
     checked_manifest_path: Path | None = None
     final_output_dir: Path | None = None
 
@@ -45,6 +46,7 @@ def build_launch_inputs(
     proposal_dir: Path | None = None,
     manual_review_path: Path | None = None,
     manual_review_replay_path: Path | None = None,
+    review_transfer_receipt_path: Path | None = None,
     checked_manifest_path: Path | None = None,
     final_output_dir: Path | None = None,
 ) -> GateCLaunchInputs:
@@ -68,7 +70,7 @@ def build_launch_inputs(
         raise ValueError("RAW, DLL, or manifest root does not exist")
     if output_dir.exists():
         raise ValueError(f"output directory already exists: {output_dir}")
-    c2_paths: tuple[Path, Path, Path, Path, Path] | None = None
+    c2_paths: tuple[Path, Path, Path, Path, Path, Path] | None = None
     if stage == "c2":
         if any(
             value is None
@@ -76,22 +78,26 @@ def build_launch_inputs(
                 proposal_dir,
                 manual_review_path,
                 manual_review_replay_path,
+                review_transfer_receipt_path,
                 checked_manifest_path,
                 final_output_dir,
             )
         ):
             raise ValueError(
-                "Gate C C2 requires proposal, review, manifest, and final paths"
+                "Gate C C2 requires proposal, review, transfer, "
+                "manifest, and final paths"
             )
         assert proposal_dir is not None
         assert manual_review_path is not None
         assert manual_review_replay_path is not None
+        assert review_transfer_receipt_path is not None
         assert checked_manifest_path is not None
         assert final_output_dir is not None
         c2_paths = (
             proposal_dir.resolve(),
             manual_review_path.resolve(),
             manual_review_replay_path.resolve(),
+            review_transfer_receipt_path.resolve(),
             checked_manifest_path.resolve(),
             final_output_dir.resolve(),
         )
@@ -99,6 +105,7 @@ def build_launch_inputs(
             proposal_dir,
             manual_review_path,
             manual_review_replay_path,
+            review_transfer_receipt_path,
             checked_manifest_path,
             final_output_dir,
         ) = c2_paths
@@ -107,6 +114,7 @@ def build_launch_inputs(
             for path in (
                 manual_review_path,
                 manual_review_replay_path,
+                review_transfer_receipt_path,
                 checked_manifest_path,
             )
         ):
@@ -201,6 +209,7 @@ def build_launch_inputs(
         assert proposal_dir is not None
         assert manual_review_path is not None
         assert manual_review_replay_path is not None
+        assert review_transfer_receipt_path is not None
         assert checked_manifest_path is not None
         assert final_output_dir is not None
         argv.extend(
@@ -211,6 +220,8 @@ def build_launch_inputs(
                 str(manual_review_path),
                 "--manual-review-replay",
                 str(manual_review_replay_path),
+                "--review-transfer-receipt",
+                str(review_transfer_receipt_path),
                 "--checked-manifest",
                 str(checked_manifest_path),
                 "--final-output-dir",
@@ -232,6 +243,10 @@ def build_launch_inputs(
             "manual_review_replay": {
                 "path": str(manual_review_replay_path),
                 "sha256": _sha256(manual_review_replay_path),
+            },
+            "review_transfer_receipt": {
+                "path": str(review_transfer_receipt_path),
+                "sha256": _sha256(review_transfer_receipt_path),
             },
             "checked_manifest": {
                 "path": str(checked_manifest_path),
@@ -291,6 +306,7 @@ def build_launch_inputs(
         proposal_dir=proposal_dir,
         manual_review_path=manual_review_path,
         manual_review_replay_path=manual_review_replay_path,
+        review_transfer_receipt_path=review_transfer_receipt_path,
         checked_manifest_path=checked_manifest_path,
         final_output_dir=final_output_dir,
     )
@@ -347,6 +363,7 @@ def run_frozen_launch(
                 inputs.proposal_dir,
                 inputs.manual_review_path,
                 inputs.manual_review_replay_path,
+                inputs.review_transfer_receipt_path,
                 inputs.checked_manifest_path,
                 inputs.final_output_dir,
             )
@@ -355,6 +372,7 @@ def run_frozen_launch(
         assert inputs.proposal_dir is not None
         assert inputs.manual_review_path is not None
         assert inputs.manual_review_replay_path is not None
+        assert inputs.review_transfer_receipt_path is not None
         assert inputs.checked_manifest_path is not None
         assert inputs.final_output_dir is not None
         receipt = gate_c_fixture.run_gate_c_fresh_finalization(
@@ -367,6 +385,7 @@ def run_frozen_launch(
             proposal_dir=inputs.proposal_dir,
             manual_review_path=inputs.manual_review_path,
             manual_review_replay_path=inputs.manual_review_replay_path,
+            review_transfer_receipt_path=inputs.review_transfer_receipt_path,
             manifest_path=inputs.checked_manifest_path,
             code_sha=code_sha,
             metadata_sha256=inputs.metadata_sha256,
@@ -403,6 +422,7 @@ def _validate_frozen_c2_inputs(
     for name, path in (
         ("manual_review", inputs.manual_review_path),
         ("manual_review_replay", inputs.manual_review_replay_path),
+        ("review_transfer_receipt", inputs.review_transfer_receipt_path),
         ("checked_manifest", inputs.checked_manifest_path),
     ):
         binding = c2.get(name)
@@ -483,6 +503,7 @@ def main() -> int:
     parser.add_argument("--proposal-dir", type=Path)
     parser.add_argument("--manual-review", type=Path)
     parser.add_argument("--manual-review-replay", type=Path)
+    parser.add_argument("--review-transfer-receipt", type=Path)
     parser.add_argument("--checked-manifest", type=Path)
     parser.add_argument("--final-output-dir", type=Path)
     parser.add_argument("--preflight-only", action="store_true")
@@ -499,6 +520,7 @@ def main() -> int:
         proposal_dir=args.proposal_dir,
         manual_review_path=args.manual_review,
         manual_review_replay_path=args.manual_review_replay,
+        review_transfer_receipt_path=args.review_transfer_receipt,
         checked_manifest_path=args.checked_manifest,
         final_output_dir=args.final_output_dir,
     )

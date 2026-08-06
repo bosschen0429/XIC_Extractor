@@ -488,6 +488,52 @@ def test_retained_v1_gate_c_packet_has_no_fresh_owner_authority(
         )
 
 
+def test_gate_c_review_transfer_rebinds_exact_subjects_and_finalizes(
+    tmp_path: Path,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection)
+    replay_path = tmp_path / "manual_review_replay.json"
+    manifest_path = _checked_manifest(tmp_path, projection)
+    retained_review = review_path.replace(tmp_path / "manual_review_v1.json")
+    retained_replay = replay_path.replace(
+        tmp_path / "manual_review_observation_replay_v1.json"
+    )
+    retained_manifest = manifest_path.replace(tmp_path / "checked_manifest_v1.tsv")
+    _bind_review_replay(retained_review, retained_replay, tmp_path)
+
+    receipt_path = gate_c_fixture.transfer_gate_c_review(
+        reviewed_packet_dir=tmp_path,
+        proposal_dir=proposal_dir,
+        manifest_root=tmp_path,
+        output_dir=tmp_path / "transferred",
+        code_sha="synthetic-transfer",
+    )
+    receipt = json.loads(receipt_path.read_bytes())
+
+    assert receipt["review_subject_count"] == 2
+    assert receipt["product_authority"] == "none_review_input_only"
+    final = gate_c_fixture.finalize_gate_c_proposal(
+        proposal_dir=proposal_dir,
+        manual_review_path=tmp_path / "transferred/manual_review_v1.json",
+        manual_review_replay_path=(
+            tmp_path / "transferred/manual_review_observation_replay_v1.json"
+        ),
+        manifest_path=tmp_path / "transferred/checked_manifest_v1.tsv",
+        manifest_root=tmp_path,
+        output_dir=tmp_path / "final-after-transfer",
+        fresh_mode_track_facts=projection.mode_track_facts,
+    )
+    assert json.loads(final.read_bytes())["adopted_cell_count"] == 2
+    assert retained_manifest.is_file()
+
+
 def test_gate_c_proposal_binds_complete_mode_track_decision_census(
     tmp_path: Path,
 ) -> None:

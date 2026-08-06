@@ -67,7 +67,7 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
-from xic_extractor.tabular_io import numeric_equal
+from xic_extractor.tabular_io import numeric_equal, render_delimited_rows
 
 SAMPLE_STEM = "TumorBC2297_DNA"
 PRECURSOR_MZ = 349.215
@@ -234,6 +234,7 @@ def run_gate_c_fresh_finalization(
     proposal_dir: Path,
     manual_review_path: Path,
     manual_review_replay_path: Path,
+    review_transfer_receipt_path: Path,
     manifest_path: Path,
     code_sha: str,
     metadata_sha256: str,
@@ -281,6 +282,7 @@ def run_gate_c_fresh_finalization(
             "fresh_source_sha256": _sha256(source_path),
             "c1_proposal_sha256": _sha256(proposal_path),
             "c1_proposal_receipt_sha256": _sha256(proposal_receipt_path),
+            "review_transfer_receipt_sha256": _sha256(review_transfer_receipt_path),
             "eligibility_authority": "live_typed_m2_facts_same_process_only",
         },
     )
@@ -303,7 +305,8 @@ def run_gate_c_fresh_finalization(
             "metadata_sha256": metadata_sha256,
             "fresh_owner_receipt_sha256": _sha256(fresh_receipt_path),
             "final_receipt_sha256": _sha256(final_receipt_path),
-            "terminal_authority": "checked_c2_transaction",
+            "review_transfer_receipt_sha256": _sha256(review_transfer_receipt_path),
+            "product_authority": "checked_qmv_owner_only",
         },
     )
     _write_json(
@@ -708,6 +711,251 @@ def freeze_gate_c_proposal(
     _validate_proposal_payload(proposal, receipt, staged_source)
     _publish_json_marker(staging / "proposal_receipt.json", receipt)
     return output_dir / "proposal_receipt.json"
+
+
+def transfer_gate_c_review(
+    *,
+    reviewed_packet_dir: Path,
+    proposal_dir: Path,
+    manifest_root: Path,
+    output_dir: Path,
+    code_sha: str,
+) -> Path:
+    """Transfer a validated human review only across exact physical subjects."""
+
+    manifest_root = manifest_root.resolve()
+    reviewed_packet_dir = reviewed_packet_dir.resolve()
+    proposal_dir = proposal_dir.resolve()
+    output_dir = output_dir.resolve()
+    for source in (reviewed_packet_dir, proposal_dir):
+        if not source.is_relative_to(manifest_root):
+            raise ValueError("Gate C review-transfer input escapes manifest root")
+    if not output_dir.is_relative_to(manifest_root) or output_dir.exists():
+        raise ValueError("Gate C review-transfer output is invalid")
+
+    old_proposal_dir = reviewed_packet_dir / "proposal"
+    old_proposal_path = old_proposal_dir / "proposal.json"
+    old_receipt_path = old_proposal_dir / "proposal_receipt.json"
+    old_review_path = reviewed_packet_dir / "manual_review_v1.json"
+    old_replay_path = reviewed_packet_dir / "manual_review_observation_replay_v1.json"
+    old_manifest_path = reviewed_packet_dir / "checked_manifest_v1.tsv"
+    new_proposal_path = proposal_dir / "proposal.json"
+    new_receipt_path = proposal_dir / "proposal_receipt.json"
+    old_proposal = _read_json_object(old_proposal_path)
+    old_receipt = _read_json_object(old_receipt_path)
+    new_proposal = _read_json_object(new_proposal_path)
+    new_receipt = _read_json_object(new_receipt_path)
+    old_source = manifest_root / str(old_proposal.get("source_artifact_relpath", ""))
+    new_source = manifest_root / str(new_proposal.get("source_artifact_relpath", ""))
+    _validate_reviewed_packet_for_transfer(
+        proposal=old_proposal,
+        receipt=old_receipt,
+        proposal_path=old_proposal_path,
+        review_path=old_review_path,
+        replay_path=old_replay_path,
+        manifest_path=old_manifest_path,
+        source_path=old_source,
+        manifest_root=manifest_root,
+    )
+    if new_receipt.get("proposal_sha256") != _sha256(new_proposal_path):
+        raise ValueError("Gate C new proposal hash changed")
+    _validate_proposal_payload(new_proposal, new_receipt, new_source)
+
+    old_subjects = _review_subject_rows(old_proposal, old_source)
+    new_subjects = _review_subject_rows(new_proposal, new_source)
+    if old_subjects != new_subjects:
+        raise ValueError("Gate C review subjects differ; fresh review is required")
+
+    staging = output_dir.with_name(f"{output_dir.name}.staging")
+    if staging.exists():
+        raise ValueError("Gate C review-transfer staging output already exists")
+    staging.mkdir(parents=True)
+    old_replay = _read_json_object(old_replay_path)
+    transferred_replay = {
+        **old_replay,
+        "proposal_sha256": new_receipt["proposal_sha256"],
+        "source_artifact_sha256": new_proposal["source_artifact_sha256"],
+        "rows": _required_mapping_rows(old_replay, "rows"),
+    }
+    replay_path = staging / "manual_review_observation_replay_v1.json"
+    _write_json(replay_path, transferred_replay)
+
+    new_source_rows = _required_rows(_read_json_object(new_source), "rows")
+    candidate_hashes = {
+        (row["group_hypothesis_id"], row["sample_stem"]): _json_sha256(row)
+        for row in new_source_rows
+    }
+    new_context = cast(dict[str, object], new_receipt["run_context"])
+    old_review = _read_json_object(old_review_path)
+    transferred_review_rows = []
+    for row in _required_mapping_rows(old_review, "rows"):
+        key = (str(row.get("peak_hypothesis_id", "")), str(row.get("sample_stem", "")))
+        transferred_review_rows.append(
+            {
+                **row,
+                "proposal_sha256": new_receipt["proposal_sha256"],
+                "source_artifact_sha256": new_proposal["source_artifact_sha256"],
+                "processing_request_id": new_context["processing_request_id"],
+                "processing_attempt_id": new_context["processing_attempt_id"],
+                "candidate_key_sha256": candidate_hashes[key],
+            }
+        )
+    final_replay_path = output_dir / replay_path.name
+    final_replay_relpath = final_replay_path.relative_to(manifest_root).as_posix()
+    transferred_review: dict[str, object] = {
+        "schema_version": "issue180_m9_gate_c_manual_review_v1",
+        "observation_replay_relpath": final_replay_relpath,
+        "observation_replay_sha256": _sha256(replay_path),
+        "rows": transferred_review_rows,
+    }
+    review_path = staging / "manual_review_v1.json"
+    _write_json(review_path, transferred_review)
+
+    pending = _required_rows(new_proposal, "pending_acceptance_rows")
+    manifest_sha = quant_matrix.production_acceptance_manifest_sha256(pending)
+    checked_rows = [{**row, "manifest_sha256": manifest_sha} for row in pending]
+    manifest_path = staging / "checked_manifest_v1.tsv"
+    manifest_path.write_text(
+        render_delimited_rows(
+            checked_rows,
+            quant_matrix.PRODUCTION_ACCEPTANCE_COLUMNS,
+            delimiter="\t",
+            extrasaction="raise",
+            lineterminator="\n",
+        ),
+        encoding="utf-8",
+    )
+    _validate_manual_review_replay(
+        transferred_replay, new_proposal, new_receipt, pending, new_source
+    )
+    _validate_manual_review(
+        transferred_review,
+        new_proposal,
+        new_receipt,
+        pending,
+        new_source,
+        replay_relpath=final_replay_relpath,
+        replay_sha256=_sha256(replay_path),
+    )
+    checked = load_checked_production_acceptance_manifest(
+        manifest_path=manifest_path,
+        repo_root=manifest_root,
+    )
+    _validate_pending_manifest_equality(pending, checked.rows)
+    transfer_receipt = {
+        "schema_version": "issue180_m9_gate_c_review_transfer_receipt_v1",
+        "validation_status": VALIDATION_STATUS,
+        "code_sha": code_sha,
+        "review_subject_count": len(new_subjects),
+        "review_subjects_sha256": _json_sha256(new_subjects),
+        "reviewed_proposal_receipt_sha256": _sha256(old_receipt_path),
+        "reviewed_manual_review_sha256": _sha256(old_review_path),
+        "reviewed_replay_sha256": _sha256(old_replay_path),
+        "new_proposal_receipt_sha256": _sha256(new_receipt_path),
+        "transferred_manual_review_sha256": _sha256(review_path),
+        "transferred_replay_sha256": _sha256(replay_path),
+        "checked_manifest_sha256": _sha256(manifest_path),
+        "transfer_rule": "exact_group_sample_identity_observation_content_area",
+        "product_authority": "none_review_input_only",
+    }
+    _write_json(staging / "review_transfer_receipt.json", transfer_receipt)
+    staging.replace(output_dir)
+    return output_dir / "review_transfer_receipt.json"
+
+
+def _validate_reviewed_packet_for_transfer(
+    *,
+    proposal: Mapping[str, object],
+    receipt: Mapping[str, object],
+    proposal_path: Path,
+    review_path: Path,
+    replay_path: Path,
+    manifest_path: Path,
+    source_path: Path,
+    manifest_root: Path,
+) -> None:
+    proposal_schema = proposal.get("schema_version")
+    receipt_schema = receipt.get("schema_version")
+    if proposal_schema not in {
+        "issue180_m9_gate_c_proposal_v1",
+        "issue180_m9_gate_c_proposal_v2",
+    } or receipt_schema not in {
+        "issue180_m9_gate_c_proposal_receipt_v1",
+        "issue180_m9_gate_c_proposal_receipt_v2",
+    }:
+        raise ValueError("Gate C reviewed packet schema is unsupported")
+    if receipt.get("proposal_sha256") != _sha256(proposal_path) or receipt.get(
+        "source_file_sha256"
+    ) != _sha256(source_path):
+        raise ValueError("Gate C reviewed packet hash changed")
+    if proposal_schema == "issue180_m9_gate_c_proposal_v2":
+        _validate_proposal_payload(proposal, receipt, source_path)
+    elif (
+        str(proposal.get("source_artifact_sha256", "")).upper()
+        != hashlib.sha256(source_path.read_bytes()).hexdigest().upper()
+    ):
+        raise ValueError("Gate C reviewed source SHA changed")
+    pending = _required_rows(proposal, "pending_acceptance_rows")
+    review = _read_json_object(review_path)
+    replay = _read_json_object(replay_path)
+    _validate_manual_review_replay(replay, proposal, receipt, pending, source_path)
+    _validate_manual_review(
+        review,
+        proposal,
+        receipt,
+        pending,
+        source_path,
+        replay_relpath=replay_path.relative_to(manifest_root).as_posix(),
+        replay_sha256=_sha256(replay_path),
+    )
+    checked = load_checked_production_acceptance_manifest(
+        manifest_path=manifest_path,
+        repo_root=manifest_root,
+    )
+    _validate_pending_manifest_equality(pending, checked.rows)
+
+
+def _review_subject_rows(
+    proposal: Mapping[str, object],
+    source_path: Path,
+) -> list[dict[str, object]]:
+    pending_keys = {
+        (row["peak_hypothesis_id"], row["sample_stem"])
+        for row in _required_rows(proposal, "pending_acceptance_rows")
+    }
+    source_rows = _required_mapping_rows(_read_json_object(source_path), "rows")
+    subjects: list[dict[str, object]] = []
+    seen: set[tuple[object, object]] = set()
+    for row in source_rows:
+        key = (row.get("group_hypothesis_id"), row.get("sample_stem"))
+        if key not in pending_keys:
+            continue
+        physical_ids = row.get("physical_ids")
+        if (
+            key in seen
+            or not isinstance(physical_ids, list)
+            or len(physical_ids) < 3
+            or not row.get("sample_identity_id")
+            or not physical_ids[2]
+            or row.get("quant_value") is None
+        ):
+            raise ValueError("Gate C review subject is malformed")
+        seen.add(key)
+        subjects.append(
+            {
+                "group_hypothesis_id": key[0],
+                "sample_stem": key[1],
+                "sample_identity_id": row["sample_identity_id"],
+                "peak_observation_content_id": physical_ids[2],
+                "raw_area": row["quant_value"],
+            }
+        )
+    if seen != pending_keys:
+        raise ValueError("Gate C review subject census is incomplete")
+    return sorted(
+        subjects,
+        key=lambda row: (str(row["group_hypothesis_id"]), str(row["sample_stem"])),
+    )
 
 
 def finalize_gate_c_proposal(
