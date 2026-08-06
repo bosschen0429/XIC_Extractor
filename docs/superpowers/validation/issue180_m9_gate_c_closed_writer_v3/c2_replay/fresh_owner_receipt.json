@@ -1,0 +1,25 @@
+{
+  "audit_review_transfer_receipt_sha256": "54158b3a3761ca6fa39d6d3e8c8dd1f046d05da531fbe750b731b9b264293d61",
+  "c1_proposal_receipt_sha256": "43767d2cda2234adf2dedcd94ea59d11ceae39c11823ede6f0904eee79299ff6",
+  "c1_proposal_sha256": "9e8869f4be3c51047d362eb949afd516e597d5af2e20e665a1774821c65a68d3",
+  "call_cost": {
+    "discovery_raw_open_count": 85,
+    "m7_adapter_chromatogram_call_count": 86,
+    "m7_logical_xic_request_count": 86,
+    "m7_raw_open_count": 83,
+    "m7_trace_point_count": 1482,
+    "m7_xic_batch_count": 79,
+    "total_raw_open_count": 168
+  },
+  "call_cost_authority": "same_attempt_audit_only",
+  "code_sha": "975c5ab9afc9f9a29f82566c35ef765328d07b57",
+  "eligibility_authority": "live_typed_m2_facts_same_process_only",
+  "fresh_source_sha256": "5fa25aa68557ea2400922bb72625777007be27a936d30ec11240212dbbae11b8",
+  "metadata_sha256": "e2f98a6c59ac462030f9d0cda17d67d2e7676450292fc3659de57156fc28a21a",
+  "processing_attempt_id": "xic.processing-attempt.v1:466fb6b79b78ee1d8b93d6eb0aa12a55e99d1791a1cb4f79656086fc46eadbf6",
+  "processing_request_id": "xic.processing-request.v1:2a4d79cacd2d4d4d504ef068b0df6f01d03a41488e462d98954c80d2626579c6",
+  "schema_version": "issue180_m9_gate_c_fresh_owner_receipt_v1",
+  "scientific_projection_sha256": "89b572f807e8444cab72f51a9bb61f51a3c30d85bd97931c29e39510880208ad",
+  "validation_status": "diagnostic_only",
+  "writer_input_authority": "fresh_projection_only"
+}
