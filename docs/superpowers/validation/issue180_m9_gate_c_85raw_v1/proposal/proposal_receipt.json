@@ -2,11 +2,13 @@
   "proposal_sha256": "32b52bec7b3aebf7c6d5ffa19f4c3dcffe3a8a35b8f62eef4381e83d9d1f0722",
   "run_context": {
     "call_cost": {
-      "adapter_chromatogram_call_count": 86,
-      "logical_xic_request_count": 86,
-      "raw_open_count": 83,
-      "trace_point_count": 1482,
-      "xic_batch_count": 79
+      "discovery_raw_open_count": 85,
+      "m7_adapter_chromatogram_call_count": 86,
+      "m7_logical_xic_request_count": 86,
+      "m7_raw_open_count": 83,
+      "m7_trace_point_count": 1482,
+      "m7_xic_batch_count": 79,
+      "total_raw_open_count": 168
     },
     "candidate_census": {
       "candidate_decisions_sha256": "bbdb71c27c64b281e16474e3e5574488da980a2d0f20884499abdd9dad613307",

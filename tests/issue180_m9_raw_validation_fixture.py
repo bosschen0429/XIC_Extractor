@@ -89,13 +89,18 @@ class ModeTrackValidationRun:
 
 def gate_c_launch_contract() -> dict[str, object]:
     return {
-        "schema_version": "issue180_m9_gate_c_launch_contract_v1",
+        "schema_version": "issue180_m9_gate_c_launch_contract_v2",
         "validation_status": VALIDATION_STATUS,
         "precursor_mz": PRECURSOR_MZ,
         "neutral_loss_da": NEUTRAL_LOSS_DA,
         "alignment_config": {"anchor_min_seed_events": 1},
         "trajectory_policy": asdict(_mode_track_trajectory_policy()),
-        "call_budget": {"raw_open_count_max": 85, "xic_batch_count_max": 85},
+        "call_budget": {
+            "discovery_raw_open_count_max": 85,
+            "m7_raw_open_count_max": 85,
+            "total_raw_open_count_max": 170,
+            "m7_xic_batch_count_max": 85,
+        },
         "product_authority": "none_before_checked_c2",
     }
 
@@ -131,7 +136,9 @@ def run_gate_b(*, raw_file: Path, dll_dir: Path, output_dir: Path) -> Path:
     if (
         sum(f.direct_support_count_s for f in run.facts) != 1
         or sum(len(f.exact_owner_candidate_assignments) for f in run.facts) != 1
-        or run.call_cost["raw_open_count"] != 1
+        or run.call_cost["discovery_raw_open_count"] != 1
+        or run.call_cost["m7_raw_open_count"] != 1
+        or run.call_cost["total_raw_open_count"] != 2
         or run.projection.pending_acceptance_rows
         or run.projection.expected_diff_rows
     ):
@@ -186,7 +193,12 @@ def run_gate_c(
         source_relpath=source_relpath,
         identity_namespace="issue180-m9-gate-c",
     )
-    if run.call_cost["raw_open_count"] > 85 or run.call_cost["xic_batch_count"] > 85:
+    if (
+        run.call_cost["discovery_raw_open_count"] > 85
+        or run.call_cost["m7_raw_open_count"] > 85
+        or run.call_cost["total_raw_open_count"] > 170
+        or run.call_cost["m7_xic_batch_count"] > 85
+    ):
         raise RuntimeError("Gate C exceeded the sample-batched RAW call budget")
     context = {
         "code_sha": code_sha,
@@ -304,9 +316,13 @@ def _run_mode_track_batch(
     )
     if not runtime_result.succeeded or len(runtime_result.sample_results) != len(jobs):
         raise RuntimeError("M7 validation batch did not complete atomically")
-    call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
-    if call_cost["raw_open_count"] > len(raw_files):
+    m7_call_cost = untargeted_cid_nl_runtime_call_cost(runtime_result.finalization)
+    if m7_call_cost["raw_open_count"] > len(raw_files):
         raise RuntimeError("M7 validation batch exceeded one RAW open per sample")
+    call_cost = _gate_c_workload_call_cost(
+        discovery_raw_open_count=len(raw_files),
+        m7_call_cost=m7_call_cost,
+    )
     _write_json(heartbeat_path, _heartbeat("m7_complete", started))
     sample_assessments = tuple(
         (sample, result.adapter_result.assessment_input.assessment)
@@ -340,6 +356,29 @@ def _run_mode_track_batch(
         owners=context.processing_owners,
         started=started,
     )
+
+
+def _gate_c_workload_call_cost(
+    *,
+    discovery_raw_open_count: int,
+    m7_call_cost: Mapping[str, int],
+) -> dict[str, int]:
+    """Report Discovery and M7 costs without conflating their owners."""
+
+    m7_raw_open_count = m7_call_cost["raw_open_count"]
+    return {
+        "discovery_raw_open_count": discovery_raw_open_count,
+        "m7_raw_open_count": m7_raw_open_count,
+        "total_raw_open_count": discovery_raw_open_count + m7_raw_open_count,
+        "m7_xic_batch_count": m7_call_cost["xic_batch_count"],
+        "m7_logical_xic_request_count": m7_call_cost[
+            "logical_xic_request_count"
+        ],
+        "m7_adapter_chromatogram_call_count": m7_call_cost[
+            "adapter_chromatogram_call_count"
+        ],
+        "m7_trace_point_count": m7_call_cost["trace_point_count"],
+    }
 
 
 def _mode_track_trajectory_policy() -> ModeTrackTrajectoryPolicy:

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from tests import issue180_m9_gate_c_85raw_runner as runner
+from tests import issue180_m9_raw_validation_fixture as gate_c_fixture
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
 from xic_extractor.tabular_io import render_delimited_rows
 
@@ -42,6 +43,35 @@ def test_preflight_closes_85_inputs_without_opening_raw(
     assert raw_manifest["sample_count"] == 85
     assert launch_path.is_file()
     assert not output_dir.exists()
+
+
+def test_gate_c_budget_counts_discovery_and_m7_raw_opens_separately() -> None:
+    contract = gate_c_fixture.gate_c_launch_contract()
+    assert contract["schema_version"] == "issue180_m9_gate_c_launch_contract_v2"
+    assert contract["call_budget"] == {
+        "discovery_raw_open_count_max": 85,
+        "m7_raw_open_count_max": 85,
+        "total_raw_open_count_max": 170,
+        "m7_xic_batch_count_max": 85,
+    }
+    assert gate_c_fixture._gate_c_workload_call_cost(
+        discovery_raw_open_count=85,
+        m7_call_cost={
+            "raw_open_count": 83,
+            "xic_batch_count": 79,
+            "logical_xic_request_count": 86,
+            "adapter_chromatogram_call_count": 86,
+            "trace_point_count": 1482,
+        },
+    ) == {
+        "discovery_raw_open_count": 85,
+        "m7_raw_open_count": 83,
+        "total_raw_open_count": 168,
+        "m7_xic_batch_count": 79,
+        "m7_logical_xic_request_count": 86,
+        "m7_adapter_chromatogram_call_count": 86,
+        "m7_trace_point_count": 1482,
+    }
 
 
 def test_frozen_launch_calls_shared_core_once(

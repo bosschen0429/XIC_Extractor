@@ -3,7 +3,7 @@
   "baseline_qmv_sha256": "9bf5d6815ad4555d99489d22770e7b3eb2b35ab22b5f3002edc5b9a1006defe5",
   "checked_manifest_file_sha256": "9BC04CDB277F2C9C07D5A28AA1B43B2DA1A064A23ED5DE1286580C3FDEA9C3D8",
   "manual_review_sha256": "fe89bb0b0f96f0ce28fea57f8df598f08442a6a55fe03130ff4fb2b8a3ab41ed",
-  "proposal_receipt_sha256": "e96f64d981b1bb2c17d37d7a7c3a21879b826862fee7b3855faaca91d4b31b44",
+  "proposal_receipt_sha256": "1ddf0bafe0f1f017f838ad59b96758d06717b0781b0e2697ad9d014059e3fcba",
   "result_qmv_sha256": "7404f1fa8807a81cf8cfdae345112c16b5a52c9f5b6ecf0a2acf3179eb5f91eb",
   "rollback_status": "baseline_exact",
   "schema_version": "issue180_m9_gate_c_final_receipt_v1",

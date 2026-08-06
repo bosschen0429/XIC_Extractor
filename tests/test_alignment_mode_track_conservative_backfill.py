@@ -430,6 +430,12 @@ def test_retained_gate_c_packet_replays_from_clean_checkout(tmp_path: Path) -> N
     receipt = json.loads(receipt_path.read_bytes())
     assert receipt["adopted_cell_count"] == 26
     assert receipt["rollback_status"] == "baseline_exact"
+    assert receipt == json.loads(
+        (packet / "c2_final_v1/final_receipt.json").read_bytes()
+    )
+    assert json.loads(
+        (tmp_path / "replayed-final/result_qmv.json").read_bytes()
+    ) == json.loads((packet / "c2_final_v1/result_qmv.json").read_bytes())
 
 
 def test_gate_c_proposal_binds_complete_mode_track_decision_census(
@@ -761,7 +767,12 @@ def _gate_c_run_context(projection) -> dict[str, object]:
         "code_sha": "synthetic-no-raw",
         "processing_request_id": owner_ids[0],
         "processing_attempt_id": owner_ids[1],
-        "call_cost": {"raw_open_count": 0, "xic_batch_count": 0},
+        "call_cost": {
+            "discovery_raw_open_count": 0,
+            "m7_raw_open_count": 0,
+            "total_raw_open_count": 0,
+            "m7_xic_batch_count": 0,
+        },
         "candidate_census": {"pending": len(projection.pending_acceptance_rows)},
     }
 
