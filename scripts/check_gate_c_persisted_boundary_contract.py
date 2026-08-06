@@ -618,30 +618,46 @@ def _artifact_fields(spec: ArtifactSpec) -> dict[str, str]:
         return declared_launch_manifest_fields()
 
     source_path = ROOT / spec.enumeration_source
+    return artifact_fields_from_path(
+        spec,
+        source_path,
+        source_label=spec.enumeration_source,
+    )
+
+
+def artifact_fields_from_path(
+    spec: ArtifactSpec,
+    source_path: Path,
+    *,
+    source_label: str | None = None,
+) -> dict[str, str]:
+    """Enumerate one artifact while enforcing its declared live schema marker."""
+
+    source = source_label or source_path.as_posix()
     if spec.format == "tsv":
         with source_path.open(newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle, delimiter="\t")
             if reader.fieldnames is None:
-                raise ValueError(f"{spec.enumeration_source}: missing TSV header")
+                raise ValueError(f"{source}: missing TSV header")
             rows = list(reader)
         if not rows:
-            raise ValueError(f"{spec.enumeration_source}: TSV has no rows")
+            raise ValueError(f"{source}: TSV has no rows")
         if spec.expected_root_schema is not None and {
             row.get("schema_version", "") for row in rows
         } != {spec.expected_root_schema}:
-            raise ValueError(f"{spec.enumeration_source}: row schema changed")
+            raise ValueError(f"{source}: row schema changed")
         return {f"column:{column}": "string" for column in reader.fieldnames}
 
     payload = json.loads(source_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f"{spec.enumeration_source}: JSON root must be an object")
+        raise ValueError(f"{source}: JSON root must be an object")
     if (
         spec.expected_root_schema is not None
         and payload.get("schema_version") != spec.expected_root_schema
     ):
-        raise ValueError(f"{spec.enumeration_source}: root schema changed")
+        raise ValueError(f"{source}: root schema changed")
     if spec.artifact_id == "result_qmv":
-        _validate_result_qmv_components(payload, source=spec.enumeration_source)
+        _validate_result_qmv_components(payload, source=source)
     return canonical_json_fields(payload, artifact_id=spec.artifact_id)
 
 

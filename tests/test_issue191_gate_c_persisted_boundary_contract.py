@@ -3,12 +3,15 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
 
 from scripts import check_gate_c_persisted_boundary_contract as boundary
 from tests import issue180_m9_gate_c_85raw_runner as runner
+from tests import issue180_m9_raw_validation_fixture as gate_c_fixture
+from tests import test_alignment_mode_track_conservative_backfill as gate_c_test
 
 
 def test_current_gate_c_persisted_boundary_contract_is_complete() -> None:
@@ -112,6 +115,170 @@ def test_launch_manifest_declared_shape_matches_current_c1_and_c2_runner(
     }
 
     assert observed == boundary.declared_launch_manifest_fields()
+
+
+def test_all_other_artifact_shapes_match_current_no_raw_producers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with TemporaryDirectory(prefix="xic-gate-c-live-shape-") as temp_dir:
+        _assert_all_other_artifact_shapes(Path(temp_dir), monkeypatch)
+
+
+def _assert_all_other_artifact_shapes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    projection, proposal_dir = gate_c_test._gate_c_proposal(tmp_path)
+    initial_run_context = gate_c_test._gate_c_run_context(projection)
+    initial_call_cost = initial_run_context["call_cost"]
+    assert isinstance(initial_call_cost, dict)
+    initial_call_cost.update(
+        {
+            "m7_logical_xic_request_count": 0,
+            "m7_adapter_chromatogram_call_count": 0,
+            "m7_trace_point_count": 0,
+        }
+    )
+    initial_candidate_census = initial_run_context["candidate_census"]
+    assert isinstance(initial_candidate_census, dict)
+    initial_candidate_census.update(
+        {
+            "metadata_sha256": "synthetic-metadata",
+            "discovery_index_sha256": "synthetic-discovery-index",
+            "track_count": len(projection.mode_track_facts),
+        }
+    )
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=initial_run_context,
+    )
+    review_path = gate_c_test._gate_c_review(tmp_path, projection).replace(
+        tmp_path / "manual_review_v1.json"
+    )
+    replay_source_path = tmp_path / "manual_review_replay.json"
+    replay_payload = json.loads(replay_source_path.read_text(encoding="utf-8"))
+    replay_payload.update(
+        {
+            "discovery_index_sha256": "synthetic-discovery-index",
+            "raw_open_count": 0,
+        }
+    )
+    for row in replay_payload["rows"]:
+        row.update(
+            {
+                "assessment_artifact_id": "synthetic-assessment",
+                "eic_overlay_locator": "synthetic-overlay",
+                "source_candidate_ids": ["synthetic-candidate"],
+                "trace_data_locator": "synthetic-trace",
+            }
+        )
+    replay_source_path.write_text(
+        json.dumps(replay_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    replay_path = replay_source_path.replace(
+        tmp_path / "manual_review_observation_replay_v1.json"
+    )
+    gate_c_test._checked_manifest(tmp_path, projection).replace(
+        tmp_path / "checked_manifest_v1.tsv"
+    )
+    gate_c_test._bind_review_replay(review_path, replay_path, tmp_path)
+
+    transfer_dir = tmp_path / "review_transfer"
+    gate_c_fixture.transfer_gate_c_review(
+        reviewed_packet_dir=tmp_path,
+        proposal_dir=proposal_dir,
+        manifest_root=tmp_path,
+        output_dir=transfer_dir,
+        code_sha="synthetic-live-shape",
+    )
+
+    proposal_receipt = json.loads(
+        (proposal_dir / "proposal_receipt.json").read_text(encoding="utf-8")
+    )
+    run_context = proposal_receipt["run_context"]
+    fake_run = gate_c_fixture.ModeTrackValidationRun(
+        projection=projection,
+        facts=projection.mode_track_facts,
+        call_cost=run_context["call_cost"],
+        discovery_index=tmp_path / "synthetic-discovery-index.csv",
+        settings=SimpleNamespace(),
+        owners=SimpleNamespace(
+            request=SimpleNamespace(
+                processing_request_id=run_context["processing_request_id"]
+            ),
+            attempt=SimpleNamespace(
+                processing_attempt_id=run_context["processing_attempt_id"]
+            ),
+        ),
+        started=0.0,
+    )
+
+    def fake_run_mode_track_batch(
+        **kwargs: object,
+    ) -> gate_c_fixture.ModeTrackValidationRun:
+        output_dir = kwargs["output_dir"]
+        assert isinstance(output_dir, Path)
+        output_dir.mkdir()
+        return fake_run
+
+    monkeypatch.setattr(
+        gate_c_fixture,
+        "_run_mode_track_batch",
+        fake_run_mode_track_batch,
+    )
+    replay_dir = tmp_path / "c2_replay"
+    final_dir = tmp_path / "c2_final"
+    gate_c_fixture.run_gate_c_fresh_finalization(
+        raw_files=tuple(tmp_path / f"sample-{index}.raw" for index in range(85)),
+        sample_metadata=tuple(SimpleNamespace() for _ in range(85)),
+        dll_dir=tmp_path,
+        manifest_root=tmp_path,
+        replay_output_dir=replay_dir,
+        final_output_dir=final_dir,
+        proposal_dir=proposal_dir,
+        manual_review_path=transfer_dir / "manual_review_v1.json",
+        manual_review_replay_path=(
+            transfer_dir / "manual_review_observation_replay_v1.json"
+        ),
+        review_transfer_receipt_path=(transfer_dir / "review_transfer_receipt.json"),
+        manifest_path=transfer_dir / "checked_manifest_v1.tsv",
+        code_sha="synthetic-live-shape",
+        metadata_sha256="synthetic-metadata",
+    )
+
+    live_paths = {
+        "c1_mode_track_source": proposal_dir / "mode_track_source.json",
+        "c1_proposal": proposal_dir / "proposal.json",
+        "c1_proposal_receipt": proposal_dir / "proposal_receipt.json",
+        "timing_payload": replay_dir / "timing.live.json",
+        "manual_review": transfer_dir / "manual_review_v1.json",
+        "physical_replay": (transfer_dir / "manual_review_observation_replay_v1.json"),
+        "review_transfer_receipt": transfer_dir / "review_transfer_receipt.json",
+        "review_checked_manifest": transfer_dir / "checked_manifest_v1.tsv",
+        "fresh_mode_track_source": replay_dir / "fresh_mode_track_source.json",
+        "fresh_owner_receipt": replay_dir / "fresh_owner_receipt.json",
+        "terminal_checked_manifest": final_dir / "checked_manifest_v1.tsv",
+        "result_qmv": final_dir / "result_qmv.json",
+        "final_receipt": final_dir / "final_receipt.json",
+        "transaction_receipt": final_dir / "transaction_receipt.json",
+    }
+    specs = {
+        spec.artifact_id: spec
+        for spec in boundary.ARTIFACT_SPECS
+        if spec.artifact_id != "launch_manifest"
+    }
+
+    assert live_paths.keys() == specs.keys()
+    for artifact_id, spec in specs.items():
+        live_fields = boundary.artifact_fields_from_path(
+            spec,
+            live_paths[artifact_id],
+            source_label=f"live:{artifact_id}",
+        )
+        assert set(live_fields) == set(boundary._artifact_fields(spec)), artifact_id
 
 
 def test_source_numeric_values_and_identity_components_are_separate_claims() -> None:
