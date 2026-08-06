@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import cast
 
+from xic_extractor.alignment import quant_matrix_version as quant_matrix
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     ModeTrackConservativeBackfillGroupFacts,
@@ -28,7 +29,6 @@ from xic_extractor.alignment.production_acceptance import (
     build_quant_matrix_version_from_checked_manifest,
     load_checked_production_acceptance_manifest,
 )
-from xic_extractor.alignment.quant_matrix_version import QuantMatrixVersionRows
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     UntargetedCidNlModeTrackProjection,
     build_untargeted_cid_nl_mode_track_projection,
@@ -63,6 +63,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+from xic_extractor.tabular_io import numeric_equal
 
 SAMPLE_STEM = "TumorBC2297_DNA"
 PRECURSOR_MZ = 349.215
@@ -512,6 +513,7 @@ def finalize_gate_c_proposal(
     *,
     proposal_dir: Path,
     manual_review_path: Path,
+    manual_review_replay_path: Path,
     manifest_path: Path,
     manifest_root: Path,
     output_dir: Path,
@@ -528,7 +530,21 @@ def finalize_gate_c_proposal(
     _validate_proposal_payload(proposal, receipt, source_path)
     pending = _required_rows(proposal, "pending_acceptance_rows")
     review = _read_json_object(manual_review_path)
-    _validate_manual_review(review, proposal, receipt, pending, source_path)
+    replay_relpath = _manifest_relative_path(
+        manual_review_replay_path,
+        manifest_root=manifest_root,
+    )
+    replay = _read_json_object(manual_review_replay_path)
+    _validate_manual_review_replay(replay, proposal, receipt, pending, source_path)
+    _validate_manual_review(
+        review,
+        proposal,
+        receipt,
+        pending,
+        source_path,
+        replay_relpath=replay_relpath,
+        replay_sha256=_sha256(manual_review_replay_path),
+    )
     checked = load_checked_production_acceptance_manifest(
         manifest_path=manifest_path,
         repo_root=manifest_root,
@@ -543,7 +559,9 @@ def finalize_gate_c_proposal(
         checked_manifest=checked,
         expected_diff_rows=_required_rows(proposal, "expected_diff_rows"),
     )
-    _validate_gate_c_terminal(proposal, pending, result)
+    rollback_status, rollback_rows = _validate_gate_c_terminal(
+        proposal, pending, result
+    )
     result_payload = {
         key: list(map(dict, value)) for key, value in vars(result).items()
     }
@@ -552,13 +570,15 @@ def finalize_gate_c_proposal(
         "validation_status": VALIDATION_STATUS,
         "proposal_receipt_sha256": _sha256(receipt_path),
         "manual_review_sha256": _sha256(manual_review_path),
+        "manual_review_replay_sha256": _sha256(manual_review_replay_path),
         "checked_manifest_file_sha256": checked.manifest_file_sha256,
         "result_qmv_sha256": _json_sha256(result_payload),
         "baseline_qmv_sha256": _json_sha256(
             _required_rows(proposal, "input_quant_matrix_rows")
         ),
+        "rollback_qmv_sha256": _json_sha256(rollback_rows),
         "adopted_cell_count": len(pending),
-        "rollback_status": "baseline_exact",
+        "rollback_status": rollback_status,
     }
     staging = _new_output_dir(output_dir)
     _write_json(staging / "result_qmv.json", result_payload)
@@ -639,12 +659,20 @@ def _validate_manual_review(
     receipt: Mapping[str, object],
     pending: Sequence[Mapping[str, str]],
     source_path: Path,
+    *,
+    replay_relpath: str,
+    replay_sha256: str,
 ) -> None:
     if review.get("schema_version") != "issue180_m9_gate_c_manual_review_v1":
         raise ValueError("Gate C manual review schema changed")
     rows = review.get("rows")
     if not isinstance(rows, list):
         raise ValueError("Gate C manual review rows are missing")
+    if (
+        review.get("observation_replay_relpath") != replay_relpath
+        or review.get("observation_replay_sha256") != replay_sha256
+    ):
+        raise ValueError("Gate C manual review replay binding changed")
     source_rows = json.loads(source_path.read_bytes())["rows"]
     candidate_hashes = {
         (row["group_hypothesis_id"], row["sample_stem"]): _json_sha256(row)
@@ -677,6 +705,74 @@ def _validate_manual_review(
         raise ValueError("Gate C manual review does not cover every pending row")
 
 
+def _validate_manual_review_replay(
+    replay: Mapping[str, object],
+    proposal: Mapping[str, object],
+    receipt: Mapping[str, object],
+    pending: Sequence[Mapping[str, str]],
+    source_path: Path,
+) -> None:
+    if (
+        replay.get("schema_version")
+        != "issue180_m9_gate_c_observation_replay_v1"
+        or replay.get("validation_status") != VALIDATION_STATUS
+        or replay.get("proposal_sha256") != receipt["proposal_sha256"]
+        or str(replay.get("source_artifact_sha256", "")).upper()
+        != str(proposal["source_artifact_sha256"]).upper()
+    ):
+        raise ValueError("Gate C physical replay authority binding changed")
+    rows = replay.get("rows")
+    if not isinstance(rows, list) or replay.get("row_count") != len(rows):
+        raise ValueError("Gate C physical replay row census is malformed")
+    source_rows = _required_rows(_read_json_object(source_path), "rows")
+    source_by_key = {
+        (row["group_hypothesis_id"], row["sample_stem"]): row
+        for row in source_rows
+    }
+    pending_by_key = {
+        (row["peak_hypothesis_id"], row["sample_stem"]): row for row in pending
+    }
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("Gate C physical replay row is malformed")
+        key = (str(row.get("peak_hypothesis_id", "")), str(row.get("sample_stem", "")))
+        source = source_by_key.get(key)
+        accepted = pending_by_key.get(key)
+        if key in seen or source is None or accepted is None:
+            raise ValueError("Gate C physical replay key is duplicate or foreign")
+        seen.add(key)
+        observation = row.get("observation_content")
+        physical_ids = source.get("physical_ids")
+        if (
+            not isinstance(observation, dict)
+            or not isinstance(physical_ids, list)
+            or len(physical_ids) < 3
+            or row.get("feature_family_id") != accepted.get("feature_family_id")
+            or row.get("peak_observation_content_id") != physical_ids[2]
+            or observation.get("peak_observation_content_id") != physical_ids[2]
+            or observation.get("canonical_sample_identity_id")
+            != source.get("sample_identity_id")
+            or row.get("proposal_quant_value") != accepted.get("quant_value")
+            or source.get("quant_value") != accepted.get("quant_value")
+            or row.get("area_parity") != "pass"
+        ):
+            raise ValueError("Gate C physical replay candidate binding changed")
+        integration = observation.get("integration")
+        if not isinstance(integration, dict) or not numeric_equal(
+            integration.get("area_raw_counts_seconds"),
+            accepted.get("quant_value"),
+        ):
+            raise ValueError("Gate C physical replay raw-area parity changed")
+        source_observation = source.get("peak_observation")
+        if isinstance(source_observation, dict) and (
+            source_observation.get("content") != observation
+        ):
+            raise ValueError("Gate C physical replay observation payload changed")
+    if seen != set(pending_by_key):
+        raise ValueError("Gate C physical replay does not cover every pending row")
+
+
 def _validate_pending_manifest_equality(
     pending: Sequence[Mapping[str, str]],
     checked: Sequence[Mapping[str, str]],
@@ -696,8 +792,8 @@ def _validate_pending_manifest_equality(
 def _validate_gate_c_terminal(
     proposal: Mapping[str, object],
     pending: Sequence[Mapping[str, str]],
-    result: QuantMatrixVersionRows,
-) -> None:
+    result: quant_matrix.QuantMatrixVersionRows,
+) -> tuple[str, list[dict[str, str]]]:
     header = _required_strings(proposal, "matrix_header")
     baseline = _required_rows(proposal, "input_quant_matrix_rows")
     identities = _required_rows(proposal, "input_matrix_identity_rows")
@@ -707,6 +803,11 @@ def _validate_gate_c_terminal(
     for identity, before, after in zip(
         identities, baseline, result.quant_matrix_rows, strict=True
     ):
+        if any(
+            after.get(column, "") != before.get(column, "")
+            for column in ("Mz", "RT")
+        ):
+            raise ValueError("Gate C terminal Matrix row identity changed")
         group_id = identity["peak_hypothesis_id"]
         expected = {
             sample
@@ -716,6 +817,34 @@ def _validate_gate_c_terminal(
         actual = {sample for sample in header[2:] if after.get(sample, "")}
         if actual != expected:
             raise ValueError("Gate C terminal Matrix contains an unauthorized value")
+    detected_only_rows = quant_matrix.detected_only_matrix_rows_from_quant_version(
+        quant_matrix_rows=result.quant_matrix_rows,
+        cell_provenance_rows=result.cell_provenance_rows,
+        matrix_identity_rows=identities,
+    )
+    rollback_rows = [
+        {column: row.get(column, "") for column in header}
+        for row in detected_only_rows
+    ]
+    baseline_detected_rows = [
+        row
+        for row in baseline
+        if any(row.get(sample, "") for sample in header[2:])
+    ]
+    if rollback_rows != baseline_detected_rows:
+        raise ValueError("Gate C result-derived rollback differs from baseline")
+    return "baseline_exact", baseline
+
+
+def _manifest_relative_path(path: Path, *, manifest_root: Path) -> str:
+    try:
+        resolved = path.resolve(strict=True)
+        relative = resolved.relative_to(manifest_root.resolve(strict=True))
+    except (FileNotFoundError, ValueError) as exc:
+        raise ValueError("Gate C physical replay escapes manifest root") from exc
+    if not resolved.is_file():
+        raise ValueError("Gate C physical replay must be a file")
+    return relative.as_posix()
 
 
 def _read_json_object(path: Path) -> dict[str, object]:

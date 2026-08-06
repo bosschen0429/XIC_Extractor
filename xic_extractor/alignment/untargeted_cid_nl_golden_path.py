@@ -544,6 +544,27 @@ def build_untargeted_cid_nl_mode_track_projection(
     )
     if owner_key != (model_set.processing_request_id, model_set.processing_attempt_id):
         raise UntargetedCidNlGoldenPathError("ModeTrack facts crossed owners")
+    owner_population = tuple(
+        sorted(
+            processing_owners.sample_resolutions,
+            key=lambda sample: sample.identity.sample_identity_id,
+        )
+    )
+    if any(
+        len(fact.sample_population) != len(owner_population)
+        or any(
+            declared is not owned
+            for declared, owned in zip(
+                fact.sample_population,
+                owner_population,
+                strict=True,
+            )
+        )
+        for fact in mode_track_facts
+    ):
+        raise UntargetedCidNlGoldenPathError(
+            "ModeTrack facts crossed the processing-owner sample population"
+        )
     samples = _samples_in_injection_order(processing_owners)
     sample_by_id = {sample.identity.sample_identity_id: sample for sample in samples}
     matrix_header = ("Mz", "RT", *(sample.metadata.raw_stem for sample in samples))

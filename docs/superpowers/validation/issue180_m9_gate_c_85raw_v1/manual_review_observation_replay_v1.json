@@ -1,6 +1,6 @@
 {
   "discovery_index_sha256": "13e8f60633cdad83884a673ad7b268f6cb1fb30c8af8be930c33b25f055ff3be",
-  "proposal_sha256": "31edd1bd1e1078f9e8ae3d6b2090cc29963d1f76775061b0c4809bf9333fc707",
+  "proposal_sha256": "32b52bec7b3aebf7c6d5ffa19f4c3dcffe3a8a35b8f62eef4381e83d9d1f0722",
   "raw_open_count": 26,
   "row_count": 26,
   "rows": [
@@ -2676,5 +2676,6 @@
     }
   ],
   "schema_version": "issue180_m9_gate_c_observation_replay_v1",
+  "source_artifact_sha256": "D957DF92C96028F614AE5D6BFA6BF594040C41B363C8D2BA6CB0CD3C5ED16B5D",
   "validation_status": "diagnostic_only"
 }

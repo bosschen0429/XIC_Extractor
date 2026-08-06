@@ -242,16 +242,29 @@ def detected_only_matrix_rows_from_quant_version(
     *,
     quant_matrix_rows: Sequence[Mapping[str, str]],
     cell_provenance_rows: Sequence[Mapping[str, str]],
+    matrix_identity_rows: Sequence[Mapping[str, str]] | None = None,
 ) -> list[dict[str, str]]:
+    """Reconstruct detected cells, using owner row identities when supplied."""
+
     detected_keys = {
         (row.get("peak_hypothesis_id", ""), row.get("sample_stem", ""))
         for row in cell_provenance_rows
         if row.get("cell_status") == "detected"
     }
-    matrix_by_peak = _quant_matrix_by_peak_from_provenance(
-        quant_matrix_rows,
-        cell_provenance_rows,
-    )
+    if matrix_identity_rows is None:
+        matrix_by_peak = _quant_matrix_by_peak_from_provenance(
+            quant_matrix_rows,
+            cell_provenance_rows,
+        )
+    else:
+        identity_by_peak = _identity_by_peak(
+            matrix_identity_rows,
+            len(quant_matrix_rows),
+        )
+        matrix_by_peak = {
+            peak_hypothesis_id: quant_matrix_rows[matrix_row_index - 1]
+            for peak_hypothesis_id, matrix_row_index in identity_by_peak.items()
+        }
     rows: list[dict[str, str]] = []
     for peak_hypothesis_id, matrix_row in matrix_by_peak.items():
         detected_row = {

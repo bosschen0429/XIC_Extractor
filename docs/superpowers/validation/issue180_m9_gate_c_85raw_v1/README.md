@@ -24,11 +24,14 @@ activation, M1 change, chemical-identity claim, or new writer authority.
   finalization was `succeeded`.
 - Manual review passed all 26 proposed cells. The observation replay matched
   26/26 `peak_observation_content_id` values and 26/26 raw areas. Three family
-  overlays were visually reviewed. This establishes physical peak and lineage
-  placement only, not a new chemical identity.
+  overlays were visually reviewed. C2 now loads and hashes that replay, binds
+  it to the current proposal/source, and requires exact candidate closure.
+  This establishes physical peak and lineage placement only, not a new
+  chemical identity.
 - C2 consumed the exact checked manifest and wrote 26/26 expected Backfill
   cells, with 0 unused expected diffs and no unauthorized Matrix value.
-  Rollback reproduced the baseline exactly.
+  Rollback was reconstructed from the activated result plus cell provenance
+  and reproduced the baseline exactly.
 - A fresh independent acceptance review returned `APPROVE_GATE_C` with no
   blocker. Residual authority remains `diagnostic_only`.
 
@@ -44,7 +47,7 @@ serialization-only correction does not change this packet's frozen hashes.
 The physical source JSON remains byte-identical to the accepted task output.
 The three reviewed PNGs are externalized under the validation-retention policy;
 their exact hashes and review locators remain recorded here and in the manual
-review. The proposal, review, checked manifest, and terminal receipts were
+review. The proposal, review, physical replay, checked manifest, and terminal receipts were
 rebound to this committed directory so their machine-required paths resolve on
 a clean checkout; only those path-bearing bytes and dependent digests changed.
 The accepted 26-cell census, quant values, source-row identities, and rollback
@@ -62,11 +65,11 @@ result QMV; it changes the proposal-receipt and dependent final-receipt hashes.
 | `proposal/proposal_receipt.json` | `1DDF0BAFE0F1F017F838AD59B96758D06717B0781B0E2697AD9D014059E3FCBA` |
 | `proposal/proposal.json` | `32B52BEC7B3AEBF7C6D5FFA19F4C3DCFFE3A8A35B8F62EEF4381E83D9D1F0722` |
 | `proposal/mode_track_source.json` | `D957DF92C96028F614AE5D6BFA6BF594040C41B363C8D2BA6CB0CD3C5ED16B5D` |
-| `manual_review_v1.json` | `FE89BB0B0F96F0CE28FEA57F8DF598F08442A6A55FE03130FF4FB2B8A3AB41ED` |
-| `manual_review_observation_replay_v1.json` | `0E4E387DF99239151F807CB3C2D19B2DCDAAE3FD1DB5D6B6FD48305841923C5E` |
+| `manual_review_v1.json` | `30569546A56E4398283930F4CD0D5D802405CD9724B936AFC5A1529629C0030F` |
+| `manual_review_observation_replay_v1.json` | `52F8A927B7DF8BE55B87A0F165CA017BE6C8ABA9CE3CC219C818C0CAEB5C1476` |
 | `checked_manifest_v1.tsv` | `9BC04CDB277F2C9C07D5A28AA1B43B2DA1A064A23ED5DE1286580C3FDEA9C3D8` |
 | `c2_final_v1/result_qmv.json` | `28CC718FEB266AB1BF73A04E815A9CEACA4B63B75D180B17787B124A276E11D3` |
-| `c2_final_v1/final_receipt.json` | `61F5C6F7BD9157CF5C48FC117EAA0CBBC868396C31C286A441307C703236B1C0` |
+| `c2_final_v1/final_receipt.json` | `776D7F0667B17CA203E87FEF8C95F5B6582A291FB259B98CF55EB1CEB7534D50` |
 | FAM000004 hypothesis PNG | `2A8499E068098089B73F46125EAAFE1CBF7A2CC2652163B4249FD8F1661B2BEE` |
 | FAM000007 hypothesis PNG | `D0D574D465940DB8B7280C7847B3085B785FC9C65838EAC258D17F8B24371DD8` |
 | FAM000009 hypothesis PNG | `15299537BC71500704FF5FCCECC0D90DAED0E2080328D3C0CE4454F138DF8331` |
@@ -74,8 +77,8 @@ result QMV; it changes the proposal-receipt and dependent final-receipt hashes.
 ## Verification
 
 The accepted C1 artifacts were independently reloaded and checked against the
-manual review, manifest, QMV result, expected diff, terminal Matrix oracle, and
-baseline rollback hash. After the v2 evidence-retention correction, the focused
+manual review, physical replay, manifest, QMV result, expected diff, terminal
+Matrix oracle, and result-derived baseline rollback hash. After the v2 evidence-retention correction, the focused
 no-RAW suite reported `148 passed, 2 skipped`; Ruff and mypy passed for the
 changed source and tests. The 85RAW run was not repeated because the correction
 only serializes the immutable PeakObservation already present during C1.

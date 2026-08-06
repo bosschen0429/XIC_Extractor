@@ -1,4 +1,6 @@
 {
+  "observation_replay_relpath": "docs/superpowers/validation/issue180_m9_gate_c_85raw_v1/manual_review_observation_replay_v1.json",
+  "observation_replay_sha256": "52f8a927b7df8be55b87a0f165ca017be6c8aba9ce3cc219c818c0caeb5c1476",
   "rows": [
     {
       "candidate_key_sha256": "b34f66259b579778753fc20ed99925f6052aaf52a5f3d84fd5dd3ed1a4a66849",
