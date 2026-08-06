@@ -3,6 +3,39 @@
 This file carries the longer communication and review rules that used to live in
 root `AGENTS.md`. Keep the root file limited to high-frequency guardrails.
 
+## STE-like Engineering Language
+
+Use STE-like controlled language for issue bodies, specs, plans, agent
+contracts, review comments, PR bodies, handoffs, and operator instructions.
+This is a repository writing contract, not a claim of ASD-STE100 certification
+or use of its complete approved dictionary.
+
+- Put one decision, condition, or action in each sentence. Use a direct verb and
+  active voice. Use the imperative form for required actions.
+- Name the actor or semantic owner when responsibility affects the result. Name
+  the input, condition, threshold, and observable output when they affect
+  acceptance.
+- Replace words such as `best`, `appropriate`, `usually`, `intelligently`,
+  `robust`, or `as needed` with the named rule that decides the outcome. If no
+  rule exists, state the unresolved decision instead of making the sentence
+  sound complete.
+- Use the exact stable terms in
+  [`domain-glossary.md`](../product/domain-glossary.md). One term has one
+  meaning. One meaning has one canonical term. When a stable concept is absent,
+  define it at its product or architecture owner before using it as an
+  implementation requirement.
+- Keep code identifiers, schema fields, issue language, and review language
+  aligned with the canonical term when they refer to the same concept. State an
+  explicit mapping when a public or legacy name must remain different.
+- Make review findings executable. State the observed behavior, the violated
+  criterion or owner, the required outcome, and the evidence that will prove
+  closure. A label such as `confusing`, `fragile`, or `not clean` is not a
+  complete finding.
+
+The writing passes this contract when each instruction maps to one action or
+decision, each condition is testable or explicitly unresolved, and each domain
+term maps to one canonical meaning and owner.
+
 ## Verdict-First Communication
 
 - Open every non-trivial report with 2-4 sentences written for a reader who did

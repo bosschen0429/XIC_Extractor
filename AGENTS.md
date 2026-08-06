@@ -27,6 +27,12 @@ before proposing a plan or judging a diff.
   is actionable only when it identifies a defect against the active issue,
   inherited owner contract, public contract, or demonstrated behavior.
 
+Issue bodies, specs, plans, review comments, PR bodies, and handoffs are
+executable interfaces. Write and review them with the repo's
+[STE-like contract](docs/agent/communication-review.md#ste-like-engineering-language):
+one decision or action per sentence, explicit conditions, and canonical domain
+terms. Ambiguous prose does not authorize implementation or a product decision.
+
 If the issue, parent map, and durable owner conflict, stop and surface the exact
 conflict. Refreeze the issue or explicitly change the owner contract; do not
 encode a reviewer guess. For the current composable
