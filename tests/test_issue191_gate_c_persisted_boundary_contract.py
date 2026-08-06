@@ -441,6 +441,23 @@ def test_source_numeric_values_and_identity_components_are_separate_claims() -> 
     ]["semantic_class"] == "raw_owner_only"
 
 
+@pytest.mark.parametrize(
+    ("path", "observed_type"),
+    [
+        ("$.metadata.area_value_source", "string"),
+        ("$.metadata.status_id_path_sha256_count", "string"),
+        ("$.metadata.arbitrary_scalar", "number"),
+    ],
+)
+def test_unowned_scalar_semantics_do_not_come_from_names_or_json_type(
+    path: str,
+    observed_type: str,
+) -> None:
+    assert boundary._semantic_claims("unowned", path, observed_type) == (
+        "field_value",
+    )
+
+
 def test_matrix_coordinates_never_claim_observation_content_identity() -> None:
     rows = boundary.enumerate_gate_c_boundary()
     matrix_coordinates = [

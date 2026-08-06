@@ -1070,7 +1070,10 @@ def _semantic_claims(
             claims.insert(0, "container_shape_and_presence")
     elif lowered in {"mz", "rt"} and _is_matrix_row_path(artifact_id, path):
         claims = ["matrix_coordinate_numeric_value"]
-    elif lowered == "physical_ids":
+    elif (artifact_id, path) in {
+        ("c1_mode_track_source", "$.rows[].physical_ids"),
+        ("fresh_mode_track_source", "$.rows[].physical_ids"),
+    }:
         claims = [
             "container_shape_and_presence",
             "identity_collection",
@@ -1084,26 +1087,6 @@ def _semantic_claims(
         claims = ["container_shape_and_presence"]
     elif leaf == "{sample_column}":
         claims = ["matrix_cell_numeric_value", "matrix_sample_column_identity"]
-    elif "sha256" in lowered or lowered.endswith("_digest"):
-        claims = ["binding_digest"]
-    elif lowered.endswith("_count") or "count_" in lowered:
-        claims = ["count"]
-    elif any(token in lowered for token in ("path", "relpath", "directory", "root")):
-        claims = ["locator"]
-    elif lowered.endswith("_id") or lowered.endswith("_ids"):
-        claims = ["identity"]
-    elif any(
-        token in lowered
-        for token in ("status", "decision", "verdict", "authority", "rule")
-    ):
-        claims = ["status_or_decision"]
-    elif "number" in _split_json_type_union(observed_type) or any(
-        token in lowered
-        for token in ("value", "area", "height", "mz", "rt", "intensity")
-    ):
-        claims = ["numeric_value"]
-    elif lowered == "schema_version":
-        claims = ["contract_marker"]
     else:
         claims = ["field_value"]
     return tuple(claims)

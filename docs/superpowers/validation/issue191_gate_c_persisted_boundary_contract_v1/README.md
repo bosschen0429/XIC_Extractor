@@ -46,6 +46,14 @@ columns collapse to `{sample_column}`; fixed coordinates or metadata retain
 their names. Matrix `Mz` and `RT` are recorded as
 `matrix_coordinate_numeric_value`, never as peak-observation identity.
 
+Specialized semantic claims are owner-declared. Typed observation subtrees,
+Matrix roles, and the exact source `physical_ids` contract have named owners.
+Untyped scalar envelope fields emit the neutral `field_value` claim regardless
+of their spelling or JSON scalar type; their artifact policy still records the
+owner, verification source, failure, oracle, and resolution. The checker does
+not infer numeric, identity, locator, digest, count, or status semantics from a
+field name.
+
 ## Bounded universe
 
 The 15 roles cover the current runner's complete named-field boundary:
@@ -117,7 +125,7 @@ for all 15 roles and exercise both nullable-union and incompatible-type
 counterexamples.
 
 This closes only the enumerated ModeTrack Gate C slice of ledger Class A.
-Global Class A remains open until its full 35-instance census is rerun and
+Global Class A remains open until its full 36-instance census is rerun and
 satisfies its own closure rule.
 
 The live type witness closes only this bounded Gate C instance of ledger Class
