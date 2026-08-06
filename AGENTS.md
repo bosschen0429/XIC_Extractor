@@ -1,157 +1,249 @@
 # XIC Extractor Agent Contract
 
-Repo-local rules for communication, validation, domain evidence, and code
-boundaries. Global Codex rules still apply. Keep this root file small enough to
-influence every turn; nested docs carry the longer contracts.
+This file is the always-loaded execution contract for this repository. It keeps
+the product direction, task spec, and review boundary visible before validation
+or artifact mechanics. Longer branch-specific rules stay behind triggered
+pointers.
 
-## Task Routes
+## Start With The Spec
 
-These are routing targets, not a per-turn checklist. Read only the owner needed
-for the active task unless a hard gate below says otherwise.
+For non-trivial implementation or review, read the active GitHub issue body,
+its operator-confirmed decision comments, and its linked parent/programme issue
+before proposing a plan or judging a diff.
 
-- Python, Thermo RAW/DLL, validation tiers, and command shapes:
-  [`parameter-settings.md`](docs/agent/parameter-settings.md)
-- Product vocabulary and topic authority:
-  [`domain-glossary.md`](docs/product/domain-glossary.md) and
-  [`docs/product/README.md`](docs/product/README.md)
-- Evidence and validation policy:
-  [`product-validation-contract.md`](docs/agent/product-validation-contract.md)
-  and [`lc-msms-evidence-rules.md`](docs/lc-msms-evidence-rules.md)
-- Architecture and public contracts:
-  [`architecture-public-contracts.md`](docs/agent/architecture-public-contracts.md)
-  and [`architecture-contract.md`](docs/architecture-contract.md)
-- Execution, PR, planning, review, and handoff mechanics:
-  [`execution-gates.md`](docs/agent/execution-gates.md),
-  [`planning-workflows.md`](docs/agent/planning-workflows.md),
-  [`communication-review.md`](docs/agent/communication-review.md), and
-  [`obsidian-handoff-contract.md`](docs/agent/obsidian-handoff-contract.md)
-- Existing diagnostics and solved patterns:
-  [`diagnostic-ledger.md`](docs/diagnostic-ledger.md),
-  [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md), and
-  [`docs/solutions/README.md`](docs/solutions/README.md)
-- Productization capabilities, mutable state, writer authority, and promotion:
-  [`productization.md`](docs/product/productization.md),
-  [`productization_status_index_v1.tsv`](docs/superpowers/validation/productization_status_index_v1.tsv),
-  [`productization_authority_manifest.v1.json`](docs/superpowers/schemas/productization_authority_manifest.v1.json), and
-  [`product-validation-contract.md`](docs/agent/product-validation-contract.md)
-- Historical productization anchor lookup only:
-  [`2026-06-15-productization-control-plane.md`](docs/superpowers/plans/2026-06-15-productization-control-plane.md)
-- Repo layout, agent system, engineering conventions, and opt-in XIC skills:
-  [`project-layout.md`](docs/project-layout.md),
-  [`codex-operating-system.md`](docs/agent/codex-operating-system.md),
-  `docs/engineering-skills/`, and [`.codex/skills`](.codex/skills)
+- An activated child issue is the implementation spec for its bounded task:
+  outcome, observable loss, inherited decisions, write scope, non-goals,
+  acceptance, and stop rules.
+- The child inherits its parent map and established product/domain owners. It
+  may change them only when the issue explicitly names that contract change and
+  its public impact; silence is not authority.
+- A `planning_only`, inventory-only, research-only, or “does not authorize
+  implementation” issue cannot be implemented until the operator activates a
+  named implementation slice.
+- During development the issue controls what this task must deliver. After
+  delivery, stable decisions must be absorbed by the owning product doc, schema,
+  code owner, and tests; validation packets and issue chronology remain evidence.
+- Review comments are evidence leads, not product or design authority. A finding
+  is actionable only when it identifies a defect against the active issue,
+  inherited owner contract, public contract, or demonstrated behavior.
 
-## Agent skills
+If the issue, parent map, and durable owner conflict, stop and surface the exact
+conflict. Refreeze the issue or explicitly change the owner contract; do not
+encode a reviewer guess. For the current composable
+Discovery → Alignment → Backfill programme, #159 is the map and each activated
+child issue is its bounded PRD.
 
-### Issue tracker
+## Product Finish Line
 
-Issues and PRDs are tracked in this repository's GitHub Issues. See
-`docs/agents/issue-tracker.md`.
+The product path is:
 
-### Triage labels
+```text
+RAW + method constraints
+  → Discovery
+  → PeakHypothesis / evidence
+  → cross-sample Alignment
+  → evidence-based Backfill
+  → existing acceptance / writer owner
+  → table or workflow projection
+```
 
-Use the five default Matt Pocock triage labels. See
-`docs/agents/triage-labels.md`.
+Prefer the smallest complete vertical slice that makes this operator path run
+and yields an observable output. Infrastructure, diagnostics, schemas, review
+packets, and exhaustive inventories are supporting work; they do not replace a
+missing step in this path.
 
-### Domain docs
-
-Use the single-context domain documentation layout. See
-`docs/agents/domain.md`.
-
-## Hard Defaults
-
-- Before non-trivial edits, confirm intended worktree, branch, and dirty diff
-  scope. Do not stage, rewrite, or revert unrelated user changes.
-- In a newly created worktree, run the bootstrap command in
-  `docs/agent/parameter-settings.md` before the first project `uv run`. Before
-  PR verification, run its offline `--check`; do not infer missing packages
-  from a different worktree's ignored `.venv`.
-- Before Python, RAW, DLL, or validation commands, read
-  `docs/agent/parameter-settings.md` and use documented runners and paths.
-- Keep outputs under task-specific `output/` or `docs/superpowers/` paths. New
-  diagnostic output groups need a summary or index.
-- Keep active plans and handoffs as short, self-contained current-state stubs;
-  use the PR body for normal durable closeout. Detailed retention and Obsidian
-  routing live in the handoff owners above.
-- State validation status explicitly: `diagnostic_only`, `shadow_ready`,
-  `production_candidate`, `production_ready`, or `inconclusive`.
-- Tests passing is not production readiness. For extraction, alignment, scoring,
-  and matrix behavior changes, report which method-appropriate evidence was
-  used: synthetic tests, lane-specified 8RAW/85RAW, targeted benchmark,
-  method-specific real samples, or manual EIC/MS2 review.
-- Do not launch 85RAW or likely long RAW runs through background
-  `Start-Process` from the Codex shell. Use the foreground heartbeat/timing
-  command shapes in `docs/agent/parameter-settings.md`, or get explicit approval
-  for an external terminal or automation.
-- Search `tools/diagnostics/INDEX.md`, relevant notes, and existing validation
-  outputs before inventing a new diagnostic workflow. Search
-  `docs/diagnostic-ledger.md` before rerunning known targets or failure modes.
-- Treat `.codex/config.toml`, `.codex/hooks.json`, `.codex/rules/`, hook
-  scripts, execpolicy, and subagent TOML as execution-affecting config. Changes
-  follow the smoke and scan contract in `docs/agent/codex-operating-system.md`.
-
-## PR Gate
-
-Before opening a PR, changing its remote head, or marking it ready, follow the
-canonical [PR Verification Gate](docs/agent/execution-gates.md#pr-verification-gate).
-The root contract intentionally does not mirror its command list. Default CI
-must remain clean-checkout safe.
+- Every task states which step it advances and what user-visible or
+  operator-visible result proves it. Work that advances none is support or
+  cleanup and needs an exit rule.
+- Preserve hard safety/public-contract boundaries, then optimize for a runnable
+  thin slice before polishing non-writing diagnostics toward exhaustive
+  coverage.
+- A `diagnostic_only` or `audit_only` mechanism does not block the product path
+  unless the active issue makes it an acceptance prerequisite or it protects an
+  actual product/public write boundary.
+- Discovery, Alignment, Backfill, and publication are separate steps. Do not
+  omit Backfill from an end-to-end claim or use Matrix/write evidence to imply
+  the earlier steps ran.
 
 ## Product North Star
 
 - XIC Extractor is an LC-MS evidence and model-selection system, not a
-  single-dataset or CID-NL-only pipeline.
-- 8RAW and 85RAW are lane-specific validation fixtures and stress oracles, not
-  architecture boundaries or universal Discovery gates. Pt pattern and other
-  methods use the evidence named by their own lane.
-- CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 pattern, shape, standards, library
-  matches, and future learned models are evidence providers. They feed
-  `EvidenceVector`, `PeakHypothesis`, model selection, and `AuditTrail`; they
-  must not directly become permanent matrix-writing authority without an
-  explicit activation/export contract.
-- Product rules must be short, human-explainable, and domain-meaningful. If a
-  rule reads like nested dataset-specific qualifiers, treat it as a temporary
-  validation slice until it is collapsed into a simpler gate or killed.
+  single-dataset, single-batch, or CID-NL-only pipeline.
+- Untargeted is the general lifecycle. Targeted applies known
+  target/mz/RT/role/pairing constraints to the same evidence, peak, Alignment,
+  and Backfill core; separate projections do not justify duplicate scientific
+  cores.
+- 8RAW, 85RAW, and other named datasets are lane-specific fixtures and stress
+  oracles. They can validate the named method/lane but cannot define product
+  architecture, universal Discovery gates, schemas, or permanent rules.
+- CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 isotope/adduct pattern, shape,
+  standards, library matches, and learned models are replaceable evidence
+  providers. They feed `EvidenceVector`, `PeakHypothesis`, model selection, and
+  `AuditTrail` before any product projection.
+- Product rules are short, domain-meaningful, and explainable across datasets.
+  A rule expressed as batch names, fixture paths, column-name exceptions, or
+  nested dataset qualifiers is a bounded validation slice; collapse it to an
+  owner-driven rule, keep it fixture-local with an exit rule, or remove it.
 
-## Architecture Guardrails
+The target architecture and package ownership map live in
+[`architecture-contract.md`](docs/architecture-contract.md). Product vocabulary
+and topic owners live in [`docs/product/README.md`](docs/product/README.md) and
+[`domain-glossary.md`](docs/product/domain-glossary.md).
 
-- Preserve dependency direction. Domain logic must not import GUI, workbook
-  builders, CLI scripts, process backends, report renderers, or RAW/CSV
-  adapters.
-- Treat `tools/diagnostics/` as maintained product-adjacent code. CLIs
-  orchestrate; reusable loading, classification, models, summaries, plotting,
-  and writers belong in package modules.
-- Diagnostic writers render only. They must not recompute domain evidence or
-  re-scan RAW files.
-- Runtime consumers submit typed work/resource/artifact/acquisition receipts and
-  external telemetry samples to `execution_runtime_owner`; only that owner may
-  construct lifecycle, observability, or finalization projections. Adapters must
-  enter through its atomic execution/finalization API, not call partial lifecycle
-  primitives, accept caller-authored ledgers/counts, or expose settlement-only
-  public bypasses. See `docs/agent/architecture-public-contracts.md`.
-- Treat persisted JSON/TSV/maps as untrusted projections after deserialization.
-  Before a consumer claims domain or runtime semantics, route the complete content
-  through the original semantic owner to reconstruct the typed value and recompute
-  canonical identity and invariants. Embedded IDs, hashes, status, counts, and
-  locators are assertions, not proof, even when the outer envelope is re-sealed;
-  omitted content makes the corresponding claim unavailable. See
-  `docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration`.
+## Ownership Means Behavior, Not A File
 
-## Workflow Routing
+An owner is the existing module/type/spec that creates and validates a domain
+fact or product decision. A JSON/TSV file, retained fixture, field name, path,
+reviewer, diagnostic script, or report is not a semantic owner.
 
-- Before non-trivial diagnostics, RAW-backed evidence, matrix activation, or
-  evidence-provider work, use `xic-architecture-preflight` and name owner/helper
-  reuse, call-cost model, public contract risk, validation gate, and stop rule.
-- Before XIC preset/runtime performance work, use `xic-performance-diagnosis` to
-  inspect timing artifacts, rank bottlenecks, classify call cost and workload,
-  and define correctness gates; then use `xic-architecture-preflight` before code
-  edits. This does not replace `xic-raw-validation` before launching or accepting
-  RAW-backed validation.
-- Review comments are failure instances, not the fix scope. A second actionable
-  finding from the same class, or actionable findings on two delivered heads,
-  stops patch-by-patch push/reply/resolve work. Classify the root as a PRD/spec
-  gap, unbounded design, implementation regression, oracle gap, or unsupported
-  reviewer claim; search prior owner findings and tests before editing. If the
-  failure universe cannot be bounded, shrink, delete, replace, or redesign the
-  mechanism instead of adding another special case. If a product/domain choice
-  was never specified, refreeze the PRD rather than encoding a reviewer guess.
+- Reuse the established owner before adding a model, registry, resolver, or
+  parallel contract. A new or replacement owner requires explicit issue scope.
+- Types and invariants come from the typed owner. Dynamic roles such as Matrix
+  fixed/sample columns come from the owner-provided runtime context. Never infer
+  semantic role from key spelling, scalar type, one observed value, one dataset,
+  or a negative exception list.
+- A validator checks the contract its named owner declares. It must not grow
+  into a second domain model by classifying unrelated fields.
+- When no existing owner can support a claim, reduce the claim to structural or
+  `audit_only` evidence, or stop with a spec/owner gap. Do not manufacture an
+  owner inside the validator.
+- Persisted payloads are untrusted after deserialization when a consumer claims
+  current domain, runtime, identity, or writer semantics. Route the complete
+  persisted content through the original owner's existing parser, constructor,
+  or binding validator; reconstruct the typed value and recompute canonical
+  identity and invariants. Embedded IDs, hashes, status, counts, and locators
+  are assertions, not proof. If required content is absent, the claim is
+  unavailable. A renderer or structural diagnostic does not gain product
+  authority by inspecting the bytes.
+- Domain logic depends inward and never imports GUI, workbook, CLI, process,
+  report, or RAW/CSV adapter layers. Writers render accepted owner results; they
+  do not recompute science.
+
+Detailed public/persisted boundaries live in
+[`architecture-public-contracts.md#persisted-semantic-rehydration`](docs/agent/architecture-public-contracts.md#persisted-semantic-rehydration).
+Use them when a change actually crosses one of those boundaries, not as a reason
+to expand every diagnostic into a universal semantic registry.
+
+## Validation Proves Only Its Named Decision
+
+Choose evidence from the active issue's method, lane, behavior delta, and
+acceptance criteria. Tests passing proves the tested contract, not product
+readiness or cross-dataset generality.
+
+- Bind every validation run to one decision and predeclare pass, fail, and
+  inconclusive consequences. Do not expand a run when its result cannot change
+  the next action.
+- Prefer current code/owner reconstruction plus focused counterexamples over a
+  copied snapshot. Retained data is comparison evidence, never current schema or
+  semantic authority.
+- Derived censuses and inventories are disposable by default. Do not create a
+  tracked JSON/TSV registry for facts that can be rebuilt from current code.
+- Track a JSON/TSV validation artifact only when the active spec requires a
+  durable machine-readable decision surface and names its schema/owner,
+  consumer, retention or exit rule, and the decision it closes. Store ordinary
+  generated output under ignored task-specific `output/` paths.
+- A retained artifact may make an explicitly bounded lane-specific claim.
+  Values observed in 8RAW/85RAW or another batch may support that lane's
+  verdict, but universal product/owner claims must come from fixture-neutral
+  owner rules rather than observed field roles, thresholds, or batch behavior.
+- Human review surfaces summarize the decision and link machine evidence; they
+  do not duplicate exhaustive TSV/JSON rows into prose.
+- Product value, selected peak/area, counted detection, Matrix identity,
+  workbook/schema, CLI/config/default, or writer-authority changes require the
+  issue's expected-diff, method-appropriate evidence, rollback, and public
+  contract checks.
+
+Read [`product-validation-contract.md`](docs/agent/product-validation-contract.md)
+for readiness/promotion language and [`lc-msms-evidence-rules.md`](docs/lc-msms-evidence-rules.md)
+for LC-MS evidence semantics. Before Python, RAW, DLL, or validation commands,
+read [`parameter-settings.md`](docs/agent/parameter-settings.md) and use its
+documented runners and paths. Search [`diagnostic-ledger.md`](docs/diagnostic-ledger.md)
+and [`tools/diagnostics/INDEX.md`](tools/diagnostics/INDEX.md) before inventing or
+rerunning a diagnostic.
+
+## Execute The Bounded Contract
+
+Before the first non-trivial edit, restate the active contract in working form:
+outcome, observable loss, owner, write allowlist, protected public behavior,
+acceptance, and stop rules. Confirm branch/worktree and dirty scope; preserve
+unrelated user changes.
+
+Then follow this loop:
+
+```text
+read issue + parent + owner
+  → reproduce or characterize the stated loss
+  → make the smallest existing-owner change
+  → run focused behavior/oracle tests
+  → sweep the same mechanism inside the authorized scope
+  → run the relevant public/cross-consumer gate
+  → compare the result with issue acceptance and non-goals
+```
+
+- A broad validator, schema, registry, configuration surface, or abstraction is
+  justified only by the active spec and at least one real consumer. Do not add
+  future-proofing in place of the requested vertical slice.
+- If implementation reveals a missing product/domain decision, stop and
+  refreeze the issue. If it reveals a local implementation detail, decide it
+  inside the established owner without reopening the product direction.
+- Report readiness and gate verdict as separate axes. Readiness uses only the
+  canonical vocabulary owned by the product validation contract and structured
+  schema; evidence/gate verdict uses the vocabulary declared by the active
+  issue or gate owner. When evidence cannot decide that gate, report
+  `inconclusive` rather than collapsing it into pass/fail. Name the actual
+  synthetic, fixture, real-data, expected-diff, or manual-review evidence.
+- Keep active handoffs short; normal durable delivery truth belongs in the PR
+  body. Detailed planning/handoff rules live in
+  [`planning-workflows.md`](docs/agent/planning-workflows.md) and
+  [`communication-review.md`](docs/agent/communication-review.md).
+
+## Review Against The Spec, Then Close The Class
+
+Review the fixed diff against the active issue and inherited owners before
+applying generic architecture advice.
+
+1. For each finding, name the violated acceptance criterion, owner invariant,
+   public contract, or reproduced behavior. A hypothetical unsupported by one
+   of these is not automatically a defect.
+2. Classify the root as spec gap, owner/design gap, implementation regression,
+   oracle gap, or unsupported reviewer claim.
+3. Sweep only the same mechanism and sibling boundaries inside the authorized
+   issue scope. Do not turn one bounded fixture or diagnostic into a
+   repository-wide semantic contract.
+4. A second actionable finding from the same class, or the same class on two
+   delivered heads, stops patch-by-patch fixes. Refreeze the missing rule at its
+   owner, replace/shrink/delete the mechanism, or reject the reviewer premise.
+5. If the class universe cannot be bounded without adding key-name exceptions,
+   dataset rules, or a duplicate owner, the mechanism is the defect. Remove or
+   redesign it instead of adding another special case.
+
+Instance closure, recurring-class closure, and overall PR outcome are separate.
+Use [`.github/pr_comment_template.md`](.github/pr_comment_template.md) for
+non-trivial review responses. PR body and closeout requirements live in
+[`execution-gates.md`](docs/agent/execution-gates.md) and
+[`communication-review.md`](docs/agent/communication-review.md).
+
+## Task Routes
+
+- Productization status or writer scope: read
+  [`productization.md`](docs/product/productization.md), then its structured
+  status/schema/authority owners. Do not load those registries for unrelated
+  work.
+- File placement, documentation lifecycle, or a new durable artifact: read
+  [`project-layout.md`](docs/project-layout.md).
+- Reusing a solved implementation or diagnostic pattern: search
+  [`docs/solutions/README.md`](docs/solutions/README.md) before adding another
+  mechanism.
+- Non-trivial RAW-backed evidence, diagnostics, Matrix activation, or evidence
+  provider changes: use `xic-architecture-preflight`; use `xic-raw-validation`
+  before launching or accepting RAW-backed evidence.
+- XIC preset/runtime performance: use `xic-performance-diagnosis` before
+  optimization.
+- PR remote-head changes or ready-for-review transitions: run the canonical
+  [PR Verification Gate](docs/agent/execution-gates.md#pr-verification-gate).
+- `.codex` hooks, rules, config, or subagent changes: follow
+  [`codex-operating-system.md`](docs/agent/codex-operating-system.md).
+
+Default CI must work from a clean checkout. Do not start 85RAW or another likely
+long RAW run through background `Start-Process`; use the documented foreground
+heartbeat/timing command or obtain explicit approval for an external runner.
