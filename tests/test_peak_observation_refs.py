@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -18,7 +19,9 @@ from xic_extractor.peak_detection.models import (
 from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
     PeakObservationRef,
+    canonical_peak_observation_ref_bytes,
     mint_peak_observation_ref,
+    rehydrate_peak_observation_content,
     validate_peak_observation_binding,
 )
 from xic_extractor.peak_detection.traces import Trace
@@ -222,6 +225,48 @@ def test_selected_signal_mutation_changes_content_and_tampering_fails_closed(
             original.content,
             intensity=(50.0, 501.0, 50.0),
         )
+
+
+def test_persisted_content_rehydrates_through_owner_and_rejects_stale_id(
+    tmp_path: Path,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    reference = _mint_standard_reference(identity.owners, identity.sample)
+    payload = json.loads(
+        canonical_peak_observation_ref_bytes(
+            reference.content,
+            reference.generation_provenance,
+        )
+    )["content"]
+
+    assert rehydrate_peak_observation_content(payload) == reference.content
+
+    payload["intensity"][0] += 1.0
+    with pytest.raises(
+        PeakObservationContractError,
+        match="peak_observation_content_id mismatches physical content",
+    ):
+        rehydrate_peak_observation_content(payload)
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_persisted_content_rejects_undeclared_fields(
+    tmp_path: Path,
+    nested: bool,
+) -> None:
+    identity = _identity_fixture(tmp_path)
+    reference = _mint_standard_reference(identity.owners, identity.sample)
+    payload = json.loads(
+        canonical_peak_observation_ref_bytes(
+            reference.content,
+            reference.generation_provenance,
+        )
+    )["content"]
+    target = payload["integration"] if nested else payload
+    target["caller_assertion"] = "not-owner-content"
+
+    with pytest.raises(PeakObservationContractError, match="unexpected fields"):
+        rehydrate_peak_observation_content(payload)
 
 
 @pytest.mark.parametrize(

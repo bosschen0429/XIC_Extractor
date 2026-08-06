@@ -718,6 +718,67 @@ def test_gate_c_finalizer_rejects_stale_or_incomplete_physical_replay(
         )
 
 
+@pytest.mark.parametrize(
+    ("field_name", "index", "delta"),
+    [("rt", 1, 1e-6), ("intensity", 0, 1.0)],
+)
+def test_gate_c_v1_replay_rehydrates_owner_content_before_review(
+    tmp_path: Path,
+    field_name: str,
+    index: int,
+    delta: float,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    _gate_c_review(tmp_path, projection)
+    proposal = json.loads((proposal_dir / "proposal.json").read_bytes())
+    receipt = json.loads((proposal_dir / "proposal_receipt.json").read_bytes())
+    replay = json.loads((tmp_path / "manual_review_replay.json").read_bytes())
+    source = json.loads(projection.source_artifact_bytes)
+    for row in source["rows"]:
+        row.pop("peak_observation", None)
+    source_path = tmp_path / "retained-v1-mode-track-source.json"
+    source_path.write_text(
+        json.dumps(source, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    gate_c_fixture._validate_manual_review_replay(
+        replay,
+        proposal,
+        receipt,
+        projection.pending_acceptance_rows,
+        source_path,
+    )
+    content = replay["rows"][0]["observation_content"]
+    content[field_name][index] += delta
+
+    with pytest.raises(ValueError, match="observation content is owner-invalid"):
+        gate_c_fixture._validate_manual_review_replay(
+            replay,
+            proposal,
+            receipt,
+            projection.pending_acceptance_rows,
+            source_path,
+        )
+
+
+def test_gate_c_json_ingress_rejects_duplicate_nested_keys(tmp_path: Path) -> None:
+    replay_path = tmp_path / "duplicate-content-key.json"
+    replay_path.write_text(
+        '{"observation_content":{"mz":349.215,"mz":350.0}}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate key: mz"):
+        gate_c_fixture._read_json_object(replay_path)
+
+
 def test_gate_c_rollback_is_derived_from_result_provenance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

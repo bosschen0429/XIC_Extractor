@@ -60,6 +60,10 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
+from xic_extractor.peak_detection.observations import (
+    PeakObservationContractError,
+    rehydrate_peak_observation_content,
+)
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
@@ -597,7 +601,7 @@ def _validate_proposal_payload(
     source_sha = hashlib.sha256(source_bytes).hexdigest().upper()
     if proposal.get("source_artifact_sha256") != source_sha:
         raise ValueError("Gate C owner source SHA changed")
-    source = json.loads(source_bytes)
+    source = _read_json_object(source_path)
     pending = _required_rows(proposal, "pending_acceptance_rows")
     expected = _required_rows(proposal, "expected_diff_rows")
     fact_rows = _required_rows(proposal, "mode_track_fact_rows")
@@ -673,7 +677,7 @@ def _validate_manual_review(
         or review.get("observation_replay_sha256") != replay_sha256
     ):
         raise ValueError("Gate C manual review replay binding changed")
-    source_rows = json.loads(source_path.read_bytes())["rows"]
+    source_rows = _required_rows(_read_json_object(source_path), "rows")
     candidate_hashes = {
         (row["group_hypothesis_id"], row["sample_stem"]): _json_sha256(row)
         for row in source_rows
@@ -744,23 +748,29 @@ def _validate_manual_review_replay(
         seen.add(key)
         observation = row.get("observation_content")
         physical_ids = source.get("physical_ids")
+        if not isinstance(observation, dict):
+            raise ValueError("Gate C physical replay observation content is malformed")
+        try:
+            owner_observation = rehydrate_peak_observation_content(observation)
+        except PeakObservationContractError as exc:
+            raise ValueError(
+                "Gate C physical replay observation content is owner-invalid"
+            ) from exc
         if (
-            not isinstance(observation, dict)
-            or not isinstance(physical_ids, list)
+            not isinstance(physical_ids, list)
             or len(physical_ids) < 3
             or row.get("feature_family_id") != accepted.get("feature_family_id")
             or row.get("peak_observation_content_id") != physical_ids[2]
-            or observation.get("peak_observation_content_id") != physical_ids[2]
-            or observation.get("canonical_sample_identity_id")
+            or owner_observation.peak_observation_content_id != physical_ids[2]
+            or owner_observation.canonical_sample_identity_id
             != source.get("sample_identity_id")
             or row.get("proposal_quant_value") != accepted.get("quant_value")
             or source.get("quant_value") != accepted.get("quant_value")
             or row.get("area_parity") != "pass"
         ):
             raise ValueError("Gate C physical replay candidate binding changed")
-        integration = observation.get("integration")
-        if not isinstance(integration, dict) or not numeric_equal(
-            integration.get("area_raw_counts_seconds"),
+        if not numeric_equal(
+            owner_observation.integration.area_raw_counts_seconds,
             accepted.get("quant_value"),
         ):
             raise ValueError("Gate C physical replay raw-area parity changed")
@@ -848,10 +858,24 @@ def _manifest_relative_path(path: Path, *, manifest_root: Path) -> str:
 
 
 def _read_json_object(path: Path) -> dict[str, object]:
-    value = json.loads(path.read_text(encoding="utf-8"))
+    value = json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=_unique_json_mapping,
+    )
     if not isinstance(value, dict):
         raise ValueError(f"expected JSON object: {path}")
     return value
+
+
+def _unique_json_mapping(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Gate C JSON contains duplicate key: {key}")
+        result[key] = value
+    return result
 
 
 def _new_output_dir(output_dir: Path) -> Path:
