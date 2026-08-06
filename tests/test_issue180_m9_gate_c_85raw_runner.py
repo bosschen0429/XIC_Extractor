@@ -74,6 +74,18 @@ def test_gate_c_budget_counts_discovery_and_m7_raw_opens_separately() -> None:
     }
 
 
+def test_shared_validation_artifact_labels_are_gate_neutral() -> None:
+    heartbeat = gate_c_fixture._heartbeat("started", 0.0)
+
+    assert heartbeat["schema_version"] == "issue180_m9_validation_heartbeat_v1"
+    assert (
+        gate_c_fixture._RUNTIME_TELEMETRY_UNAVAILABLE_REASON
+        == "not_collected_by_issue180_m9_validation"
+    )
+    assert "gate_b" not in str(heartbeat)
+    assert "gate_b" not in gate_c_fixture._RUNTIME_TELEMETRY_UNAVAILABLE_REASON
+
+
 def test_frozen_launch_calls_shared_core_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

@@ -68,6 +68,8 @@ SAMPLE_STEM = "TumorBC2297_DNA"
 PRECURSOR_MZ = 349.215
 NEUTRAL_LOSS_DA = 116.0474
 VALIDATION_STATUS = "diagnostic_only"
+_HEARTBEAT_SCHEMA_VERSION = "issue180_m9_validation_heartbeat_v1"
+_RUNTIME_TELEMETRY_UNAVAILABLE_REASON = "not_collected_by_issue180_m9_validation"
 RUN_CONTEXT_FIELDS = frozenset(
     (
         "code_sha processing_request_id processing_attempt_id call_cost "
@@ -752,7 +754,7 @@ def _required_strings(value: Mapping[str, object], key: str) -> list[str]:
 
 def _heartbeat(event: str, started: float) -> dict[str, object]:
     return {
-        "schema_version": "issue180_m9_gate_b_heartbeat_v1",
+        "schema_version": _HEARTBEAT_SCHEMA_VERSION,
         "event": event,
         "elapsed_seconds": time.perf_counter() - started,
     }
@@ -785,7 +787,7 @@ def _coarse_runtime_telemetry(
 ) -> RuntimeTelemetrySamples:
     event_count = runtime_observation_event_count(coordinator)
     worker_keys = runtime_started_worker_keys(coordinator)
-    reason = "not_collected_by_issue180_gate_b"
+    reason = _RUNTIME_TELEMETRY_UNAVAILABLE_REASON
     return RuntimeTelemetrySamples(
         event_monotonic_offsets_ns=(0,) * event_count,
         artifact_io=RuntimeArtifactIoSample(
