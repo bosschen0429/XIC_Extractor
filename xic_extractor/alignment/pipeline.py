@@ -89,6 +89,7 @@ from xic_extractor.injection_rolling import (
     order_sample_columns_by_injection,
     read_injection_order,
 )
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import (
     is_sample_metadata_source,
     load_sample_metadata,
@@ -142,6 +143,32 @@ def run_alignment(
         raise ValueError("raw_xic_batch_size must be >= 1")
     if owner_backfill_superwindow_span_factor < 1:
         raise ValueError("owner_backfill_superwindow_span_factor must be >= 1")
+    if emit_provisional_matrix and not require_discovery_owner_closure:
+        raise ValueError(
+            "provisional matrix emission requires Discovery owner closure"
+        )
+    if emit_provisional_matrix and backfill_scope != "full-audit":
+        raise ValueError(
+            "provisional matrix emission requires full-audit Backfill"
+        )
+    if emit_provisional_matrix and (
+        selected_family_ids or selected_family_source.strip()
+    ):
+        raise ValueError(
+            "provisional matrix emission does not allow a family selection"
+        )
+    if require_discovery_owner_closure and raw_opener is not None:
+        raise ValueError(
+            "Discovery owner closure does not allow a custom RAW opener"
+        )
+    if (
+        require_discovery_owner_closure
+        and emit_identity_coherence_diagnostic
+        and raw_workers > 1
+    ):
+        raise ValueError(
+            "owner-closed identity coherence diagnostics require raw_workers=1"
+        )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     recorder.record(
         "alignment.run_config",
@@ -172,6 +199,11 @@ def run_alignment(
             discovery_batch_index,
             require_owner_closure=require_discovery_owner_closure,
         )
+    expected_acquisition_sources = (
+        _expected_acquisition_sources(batch)
+        if require_discovery_owner_closure
+        else None
+    )
     with recorder.stage("alignment.read_candidates") as stage:
         if require_discovery_owner_closure:
             candidates = tuple(
@@ -235,16 +267,38 @@ def run_alignment(
             raw_files=batch.raw_files,
             raw_dir=raw_dir,
         )
+        if require_discovery_owner_closure and set(raw_paths) != set(
+            batch.sample_order
+        ):
+            missing = sorted(set(batch.sample_order) - set(raw_paths))
+            raise ValueError(
+                "owner-closed Alignment requires RAW for every sample: "
+                + ", ".join(missing)
+            )
         with recorder.stage("alignment.open_raw_sources") as stage:
             if raw_workers > 1:
                 raw_sources = {}
                 stage.metrics["raw_count"] = len(raw_paths)
                 stage.metrics["mode"] = "process_workers"
             else:
-                raw_sources = {
-                    sample_stem: stack.enter_context(opener(raw_path, dll_dir))
-                    for sample_stem, raw_path in raw_paths.items()
-                }
+                if expected_acquisition_sources is None:
+                    raw_sources = {
+                        sample_stem: stack.enter_context(opener(raw_path, dll_dir))
+                        for sample_stem, raw_path in raw_paths.items()
+                    }
+                else:
+                    raw_sources = {
+                        sample_stem: stack.enter_context(
+                            _default_raw_opener(
+                                raw_path,
+                                dll_dir,
+                                expected_acquisition_source=(
+                                    expected_acquisition_sources[sample_stem]
+                                ),
+                            )
+                        )
+                        for sample_stem, raw_path in raw_paths.items()
+                    }
                 stage.metrics["raw_count"] = len(raw_sources)
         with recorder.stage("alignment.build_owners"):
             if raw_workers > 1:
@@ -258,6 +312,7 @@ def run_alignment(
                     max_workers=raw_workers,
                     raw_xic_batch_size=raw_xic_batch_size,
                     owner_build_xic_backend=owner_build_xic_backend,
+                    expected_acquisition_sources=expected_acquisition_sources,
                     emit_region_audit=emit_cell_region_audit,
                     region_audit_family_ids=region_audit_family_ids,
                     audit_evidence_mode=resolved_audit_evidence_mode,
@@ -413,6 +468,7 @@ def run_alignment(
                     max_workers=raw_workers,
                     raw_xic_batch_size=raw_xic_batch_size,
                     owner_backfill_xic_backend=owner_backfill_xic_backend,
+                    expected_acquisition_sources=expected_acquisition_sources,
                     owner_backfill_window_strategy=owner_backfill_window_strategy,
                     owner_backfill_superwindow_span_factor=(
                         owner_backfill_superwindow_span_factor
@@ -565,6 +621,9 @@ def run_alignment(
                         else ""
                     ),
                     skipped_evidence_predicate_version=PREDICATE_VERSION,
+                    require_discovery_owner_closure=(
+                        require_discovery_owner_closure
+                    ),
                 ),
                 ownership=ownership,
                 alignment_config=alignment_config,
@@ -599,6 +658,15 @@ def _required_candidate_receipt(
             f"{sample_stem}: owner-closed Alignment requires a candidate receipt"
         )
     return receipt
+
+
+def _expected_acquisition_sources(
+    batch: DiscoveryBatchInput,
+) -> dict[str, AcquisitionSourceIdentity]:
+    return {
+        sample_stem: _required_candidate_receipt(batch, sample_stem).acquisition_source
+        for sample_stem in batch.sample_order
+    }
 
 
 def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResult:
@@ -823,7 +891,13 @@ def _read_sample_column_injection_order(path: Path) -> tuple[dict[str, int], str
 def _default_raw_opener(
     raw_path: Path,
     dll_dir: Path,
+    *,
+    expected_acquisition_source: AcquisitionSourceIdentity | None = None,
 ) -> AbstractContextManager[AlignmentRawHandle]:
     from xic_extractor.raw_reader import open_raw
 
-    return open_raw(raw_path, dll_dir)
+    return open_raw(
+        raw_path,
+        dll_dir,
+        expected_acquisition_source=expected_acquisition_source,
+    )

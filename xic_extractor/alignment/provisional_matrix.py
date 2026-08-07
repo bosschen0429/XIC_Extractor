@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.tabular_io import write_tsv
+from xic_extractor.alignment.tsv_writer import write_safe_alignment_tsv
 
 PROVISIONAL_VALIDATION_STATUS = "diagnostic_only"
 PROVISIONAL_MATRIX_SCHEMA_VERSION = "untargeted_provisional_matrix_v1"
@@ -18,6 +18,23 @@ PROVISIONAL_PROVENANCE_SCHEMA_VERSION = (
     "untargeted_provisional_cell_provenance_v1"
 )
 PROVISIONAL_SUMMARY_SCHEMA_VERSION = "untargeted_provisional_matrix_summary_v1"
+
+_MATRIX_METADATA_COLUMNS = (
+    "group_hypothesis_id",
+    "public_family_id",
+    "Mz",
+    "RT",
+)
+_CELL_STATUS_VALUES = frozenset(
+    {
+        "detected",
+        "rescued",
+        "absent",
+        "unchecked",
+        "ambiguous_ms1_owner",
+        "duplicate_assigned",
+    }
+)
 
 PROVISIONAL_IDENTITY_COLUMNS = (
     "schema_version",
@@ -75,11 +92,27 @@ class ProvisionalMatrixProjection:
 
 def build_provisional_matrix_projection(
     matrix: AlignmentMatrix,
+    *,
+    backfill_scope: str,
+    discovery_owner_closure: bool,
+    selected_family_count: int,
 ) -> ProvisionalMatrixProjection:
     """Render reduced-claim rows without asserting final identity settlement."""
 
     if len(matrix.sample_order) != len(set(matrix.sample_order)):
         raise ValueError("provisional matrix sample_order contains duplicates")
+    reserved_samples = sorted(set(matrix.sample_order) & set(_MATRIX_METADATA_COLUMNS))
+    if reserved_samples:
+        raise ValueError(
+            "provisional matrix sample_order collides with metadata columns: "
+            + ", ".join(reserved_samples)
+        )
+    if backfill_scope != "full-audit":
+        raise ValueError("provisional matrix requires full-audit Backfill")
+    if discovery_owner_closure is not True:
+        raise ValueError("provisional matrix requires Discovery owner closure")
+    if selected_family_count != 0:
+        raise ValueError("provisional matrix requires an empty family selection")
     sample_set = frozenset(matrix.sample_order)
     clusters_by_public_id: dict[str, Any] = {}
     seen_group_ids: set[str] = set()
@@ -99,6 +132,8 @@ def build_provisional_matrix_projection(
 
     cells_by_key: dict[tuple[str, str], AlignedCell] = {}
     for cell in matrix.cells:
+        if cell.status not in _CELL_STATUS_VALUES:
+            raise ValueError(f"unsupported provisional cell status: {cell.status}")
         if cell.sample_stem not in sample_set:
             raise ValueError(
                 f"provisional cell sample is outside sample_order: {cell.sample_stem}"
@@ -118,10 +153,7 @@ def build_provisional_matrix_projection(
         cells_by_key[key] = cell
 
     matrix_header = (
-        "group_hypothesis_id",
-        "public_family_id",
-        "Mz",
-        "RT",
+        *_MATRIX_METADATA_COLUMNS,
         *matrix.sample_order,
     )
     matrix_rows: list[dict[str, str]] = []
@@ -204,6 +236,9 @@ def build_provisional_matrix_projection(
             "row_identity_status": "provisional",
             "identity_settlement_status": "not_run",
             "product_authority": False,
+            "discovery_owner_closure": True,
+            "backfill_scope": backfill_scope,
+            "selected_family_count": selected_family_count,
             "sample_count": len(matrix.sample_order),
             "row_count": row_count,
             "detected_cell_count": detected_cell_count,
@@ -219,11 +254,10 @@ def write_provisional_matrix_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
 ) -> Path:
-    write_tsv(
+    write_safe_alignment_tsv(
         path,
-        projection.matrix_rows,
         projection.matrix_header,
-        lineterminator="\n",
+        projection.matrix_rows,
     )
     return path
 
@@ -232,11 +266,10 @@ def write_provisional_identity_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
 ) -> Path:
-    write_tsv(
+    write_safe_alignment_tsv(
         path,
-        projection.identity_rows,
         PROVISIONAL_IDENTITY_COLUMNS,
-        lineterminator="\n",
+        projection.identity_rows,
     )
     return path
 
@@ -245,11 +278,10 @@ def write_provisional_provenance_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
 ) -> Path:
-    write_tsv(
+    write_safe_alignment_tsv(
         path,
-        projection.provenance_rows,
         PROVISIONAL_PROVENANCE_COLUMNS,
-        lineterminator="\n",
+        projection.provenance_rows,
     )
     return path
 

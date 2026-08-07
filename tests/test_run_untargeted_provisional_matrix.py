@@ -32,6 +32,13 @@ def test_runner_publishes_full_universe_outputs_atomically(
 
     monkeypatch.setattr(runner, "_resolve_inputs", lambda _args: inputs)
 
+    def fake_manifest(path, **kwargs):
+        captured["manifest"] = kwargs
+        path.write_text("{}\n", encoding="utf-8")
+        return path
+
+    monkeypatch.setattr(runner, "write_provisional_run_manifest", fake_manifest)
+
     def fake_workflow(**kwargs):
         captured.update(kwargs)
         workflow_dir = kwargs["output_dir"]
@@ -51,8 +58,11 @@ def test_runner_publishes_full_universe_outputs_atomically(
         }
         for path in paths.values():
             path.write_text("ok\n", encoding="utf-8")
+        discovery_index = workflow_dir / "discovery" / "discovery_batch_index.csv"
+        discovery_index.parent.mkdir()
+        discovery_index.write_text("ok\n", encoding="utf-8")
         return UntargetedProvisionalMatrixRun(
-            discovery_index=workflow_dir / "discovery" / "discovery_batch_index.csv",
+            discovery_index=discovery_index,
             alignment_outputs=AlignmentRunOutputs(**paths),
         )
 
@@ -72,6 +82,8 @@ def test_runner_publishes_full_universe_outputs_atomically(
             str(tmp_path / "samples.tsv"),
             "--preset",
             "dna_dr",
+            "--code-revision",
+            "a" * 40,
             "--output-dir",
             str(output_dir),
             "--manifest-root",
@@ -94,6 +106,12 @@ def test_runner_publishes_full_universe_outputs_atomically(
     assert captured["raw_files"] == inputs.raw_files
     assert captured["raw_workers"] == 3
     assert captured["raw_xic_batch_size"] == 16
+    assert captured["sample_column_injection_order"] == (
+        output_dir.with_name("final.attempt") / "inputs" / "sample_metadata.tsv"
+    )
+    manifest = captured["manifest"]
+    assert isinstance(manifest, dict)
+    assert manifest["code_revision"] == "a" * 40
 
 
 def test_runner_preflight_does_not_start_raw_workflow(
@@ -119,6 +137,8 @@ def test_runner_preflight_does_not_start_raw_workflow(
             str(tmp_path / "samples.tsv"),
             "--preset",
             "dna_dr",
+            "--code-revision",
+            "a" * 40,
             "--output-dir",
             str(output_dir),
             "--manifest-root",
@@ -134,6 +154,48 @@ def test_runner_preflight_does_not_start_raw_workflow(
     assert not output_dir.with_name("final.attempt").exists()
 
 
+def test_runner_preflight_rejects_invalid_thermo_runtime(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    dll_dir = tmp_path / "dll"
+    raw_dir.mkdir()
+    dll_dir.mkdir()
+    metadata = tmp_path / "samples.tsv"
+    metadata.write_text("raw_stem\n", encoding="utf-8")
+    output_dir = tmp_path / "final"
+    monkeypatch.setattr(
+        runner,
+        "preflight_raw_reader",
+        lambda _path: ["required Thermo DLL is missing"],
+    )
+
+    exit_code = runner.main(
+        [
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--sample-metadata",
+            str(metadata),
+            "--preset",
+            "dna_dr",
+            "--code-revision",
+            "a" * 40,
+            "--output-dir",
+            str(output_dir),
+            "--manifest-root",
+            str(tmp_path),
+            "--preflight-only",
+        ]
+    )
+
+    assert exit_code == 2
+    assert not output_dir.exists()
+    assert not output_dir.with_name("final.attempt").exists()
+
+
 def _inputs(tmp_path: Path) -> runner._OperatorInputs:
     raw_dir = tmp_path / "raw"
     dll_dir = tmp_path / "dll"
@@ -143,6 +205,10 @@ def _inputs(tmp_path: Path) -> runner._OperatorInputs:
     for path in raw_files:
         path.write_bytes(b"raw")
     (dll_dir / "reader.dll").write_bytes(b"dll")
+    (tmp_path / "samples.tsv").write_text(
+        "sample_stem\tinjection_order\nsample-a\t1\nsample-b\t2\n",
+        encoding="utf-8",
+    )
     return runner._OperatorInputs(
         raw_files=raw_files,
         dll_dir=dll_dir,

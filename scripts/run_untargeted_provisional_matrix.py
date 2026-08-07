@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import shutil
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -19,6 +21,9 @@ from xic_extractor.alignment.provisional_matrix import (
 )
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.extraction.provisional_run_manifest import (
+    write_provisional_run_manifest,
+)
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     run_untargeted_provisional_matrix_workflow,
 )
@@ -27,6 +32,8 @@ from xic_extractor.presets import (
     apply_to_discovery,
     load_preset,
 )
+from xic_extractor.processing_identity import fingerprint_file_content
+from xic_extractor.raw_reader import preflight_raw_reader
 from xic_extractor.sample_metadata import load_sample_metadata
 
 
@@ -74,6 +81,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         attempt_dir.mkdir(parents=True)
+        retained_inputs_dir = attempt_dir / "inputs"
+        retained_inputs_dir.mkdir()
+        retained_sample_metadata = retained_inputs_dir / "sample_metadata.tsv"
+        shutil.copyfile(inputs.sample_metadata_path, retained_sample_metadata)
+        if fingerprint_file_content(
+            inputs.sample_metadata_path
+        ) != fingerprint_file_content(retained_sample_metadata):
+            raise ValueError("retained sample metadata does not match its source")
         heartbeat = _Heartbeat(attempt_dir / "heartbeat.json", started=started)
         heartbeat.write_best_effort(
             event="started",
@@ -99,7 +114,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             owner_backfill_superwindow_span_factor=(
                 args.owner_backfill_superwindow_span_factor
             ),
-            sample_column_injection_order=inputs.sample_metadata_path,
+            sample_column_injection_order=retained_sample_metadata,
             timing_recorder=timing_recorder,
             progress_callback=heartbeat.progress,
         )
@@ -118,30 +133,46 @@ def main(argv: Sequence[str] | None = None) -> int:
         matrix_relative = matrix_path.relative_to(attempt_dir)
         identity_relative = identity_path.relative_to(attempt_dir)
         provenance_relative = provenance_path.relative_to(attempt_dir)
-        summary_relative = summary_path.relative_to(attempt_dir)
-        heartbeat.write_best_effort(
-            event="completed",
-            provisional_matrix=str(matrix_relative),
-        )
-        _write_json_atomic(
+        write_provisional_run_manifest(
             attempt_dir / "run_manifest.json",
-            {
-                "schema_version": "untargeted_provisional_matrix_run_v1",
-                "validation_status": PROVISIONAL_VALIDATION_STATUS,
-                "row_identity_status": "provisional",
-                "identity_settlement_status": "not_run",
-                "product_authority": False,
+            root=attempt_dir,
+            code_revision=args.code_revision,
+            preset_name=args.preset,
+            discovery_settings=inputs.discovery_settings,
+            alignment_config=inputs.alignment_config,
+            runtime={
+                "runner": "scripts.run_untargeted_provisional_matrix",
                 "sample_count": len(inputs.raw_files),
                 "precursor_filter": None,
                 "backfill_scope": "full-audit",
-                "discovery_index": str(
-                    run.discovery_index.relative_to(attempt_dir)
+                "selected_family_count": 0,
+                "require_discovery_owner_closure": True,
+                "emit_provisional_matrix": True,
+                "raw_workers": args.raw_workers,
+                "raw_xic_batch_size": args.raw_xic_batch_size,
+                "owner_build_xic_backend": inputs.owner_build_xic_backend,
+                "owner_backfill_xic_backend": _owner_backfill_backend(
+                    args.owner_backfill_xic_backend
                 ),
-                "provisional_matrix": str(matrix_relative),
-                "provisional_identity": str(identity_relative),
-                "provisional_cell_provenance": str(provenance_relative),
-                "provisional_summary": str(summary_relative),
+                "owner_backfill_window_strategy": (
+                    args.owner_backfill_window_strategy
+                ),
+                "owner_backfill_superwindow_span_factor": (
+                    args.owner_backfill_superwindow_span_factor
+                ),
             },
+            retained_sample_metadata=retained_sample_metadata,
+            discovery_batch_index=run.discovery_index,
+            artifacts={
+                "provisional_matrix": matrix_path,
+                "provisional_identity": identity_path,
+                "provisional_cell_provenance": provenance_path,
+                "provisional_summary": summary_path,
+            },
+        )
+        heartbeat.write_best_effort(
+            event="completed",
+            provisional_matrix=str(matrix_relative),
         )
         attempt_dir.replace(output_dir)
     except Exception as exc:
@@ -168,11 +199,11 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         raise ValueError("RAW directory does not exist")
     if not dll_dir.is_dir():
         raise ValueError("Thermo DLL directory does not exist")
-    if not any(
-        path.is_file() and path.suffix.lower() == ".dll"
-        for path in dll_dir.iterdir()
-    ):
-        raise ValueError("Thermo DLL directory contains no DLL files")
+    raw_reader_errors = preflight_raw_reader(dll_dir)
+    if raw_reader_errors:
+        raise ValueError(
+            "Thermo RAW reader preflight failed: " + " ".join(raw_reader_errors)
+        )
     if not sample_metadata_path.is_file():
         raise ValueError("sample metadata does not exist")
 
@@ -307,6 +338,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--dll-dir", type=Path, required=True)
     parser.add_argument("--sample-metadata", type=Path, required=True)
     parser.add_argument("--preset", required=True)
+    parser.add_argument("--code-revision", required=True, type=_code_revision)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--manifest-root", type=Path, default=Path.cwd())
     parser.add_argument("--expected-sample-count", type=_positive_int)
@@ -340,6 +372,14 @@ def _positive_int(value: str) -> int:
     if parsed < 1:
         raise argparse.ArgumentTypeError("value must be >= 1")
     return parsed
+
+
+def _code_revision(value: str) -> str:
+    if re.fullmatch(r"[0-9a-f]{40}", value) is None:
+        raise argparse.ArgumentTypeError(
+            "code revision must be a lowercase 40-character Git SHA"
+        )
+    return value
 
 
 if __name__ == "__main__":

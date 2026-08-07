@@ -873,6 +873,16 @@ def _write_tsv(
     return path
 
 
+def write_safe_alignment_tsv(
+    path: Path,
+    fieldnames: tuple[str, ...],
+    rows: Iterable[Mapping[str, object]],
+) -> Path:
+    """Write an Alignment-owned TSV with spreadsheet-safe headers and values."""
+
+    return _write_tsv(path, fieldnames, rows)
+
+
 def _write_tsv_sequences(
     path: Path,
     fieldnames: tuple[str, ...],

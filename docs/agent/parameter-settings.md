@@ -370,6 +370,7 @@ Full-universe provisional Matrix runner:
   --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
   --sample-metadata docs\superpowers\fixtures\issue180_m9_gate_c_sample_metadata_v1.tsv `
   --preset dna_dr `
+  --code-revision <current-40-character-commit-sha> `
   --output-dir output\issue159-full-universe-provisional-matrix `
   --manifest-root . `
   --expected-sample-count 85 `
@@ -392,6 +393,12 @@ Backfill values are diagnostic candidates, not ProductWriter authority. The
 runner does not modify or replace the default `alignment_matrix.tsv` contract.
 Duplicate or later-mergeable provisional rows are an accepted limitation of
 this 60-percent closure, not evidence that final chemical identity is settled.
+The final directory also retains `inputs/sample_metadata.tsv` and a verified
+`run_manifest.json`. The manifest records the declared code revision, preset,
+effective Discovery and Alignment settings, runtime/backends, Discovery receipt
+census, schema versions, and SHA-256/byte-size bindings for all four provisional
+artifacts. The runner validates those bindings before atomic publish; copied
+bundles must pass the same package-level manifest validator before comparison.
 
 Validation / downstream handoff alignment should use the minimal machine gate
 surface by default. For 85RAW validation, the current canonical shape is

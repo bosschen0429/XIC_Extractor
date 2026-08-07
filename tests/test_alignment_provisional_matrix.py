@@ -12,6 +12,9 @@ from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.provisional_matrix import (
     PROVISIONAL_VALIDATION_STATUS,
     build_provisional_matrix_projection,
+    write_provisional_identity_tsv,
+    write_provisional_matrix_tsv,
+    write_provisional_provenance_tsv,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
@@ -51,7 +54,7 @@ def test_projection_keeps_full_group_breadth_and_cell_provenance() -> None:
         sample_order=("sample-b", "sample-a"),
     )
 
-    projection = build_provisional_matrix_projection(matrix)
+    projection = _projection(matrix)
 
     assert projection.matrix_header == (
         "group_hypothesis_id",
@@ -101,6 +104,9 @@ def test_projection_keeps_full_group_breadth_and_cell_provenance() -> None:
         "row_identity_status": "provisional",
         "identity_settlement_status": "not_run",
         "product_authority": False,
+        "discovery_owner_closure": True,
+        "backfill_scope": "full-audit",
+        "selected_family_count": 0,
         "sample_count": 2,
         "row_count": 2,
         "detected_cell_count": 2,
@@ -128,7 +134,68 @@ def test_projection_rejects_cell_bound_to_a_different_group_owner() -> None:
     )
 
     with pytest.raises(ValueError, match="cell group_hypothesis_id"):
-        build_provisional_matrix_projection(matrix)
+        _projection(matrix)
+
+
+def test_projection_rejects_reserved_sample_column() -> None:
+    matrix = AlignmentMatrix(
+        clusters=(_group("GRP-A", "FAM000001", mz=100.0, rt=1.0),),
+        cells=(),
+        sample_order=("public_family_id",),
+    )
+
+    with pytest.raises(ValueError, match="collides with metadata columns"):
+        _projection(matrix)
+
+
+def test_projection_rejects_unknown_cell_status() -> None:
+    cell = _cell(
+        "sample-a",
+        "GRP-A",
+        "FAM000001",
+        status="detected",
+        area=10.0,
+    )
+    object.__setattr__(cell, "status", "future_status")
+    matrix = AlignmentMatrix(
+        clusters=(_group("GRP-A", "FAM000001", mz=100.0, rt=1.0),),
+        cells=(cell,),
+        sample_order=("sample-a",),
+    )
+
+    with pytest.raises(ValueError, match="unsupported provisional cell status"):
+        _projection(matrix)
+
+
+def test_provisional_tsvs_escape_formula_headers_and_values(tmp_path: Path) -> None:
+    matrix = AlignmentMatrix(
+        clusters=(_group("GRP-A", "FAM000001", mz=100.0, rt=1.0),),
+        cells=(
+            _cell(
+                "=sample",
+                "GRP-A",
+                "FAM000001",
+                status="detected",
+                area=10.0,
+                source_candidate_id="+candidate",
+            ),
+        ),
+        sample_order=("=sample",),
+    )
+    projection = _projection(matrix)
+    matrix_path = write_provisional_matrix_tsv(tmp_path / "matrix.tsv", projection)
+    identity_path = write_provisional_identity_tsv(
+        tmp_path / "identity.tsv",
+        projection,
+    )
+    provenance_path = write_provisional_provenance_tsv(
+        tmp_path / "provenance.tsv",
+        projection,
+    )
+
+    assert "\t'=sample\n" in matrix_path.read_text(encoding="utf-8")
+    assert "\t'+candidate\t" in provenance_path.read_text(encoding="utf-8")
+    assert identity_path.is_file()
 
 
 def test_provisional_outputs_publish_as_one_atomic_set(tmp_path: Path) -> None:
@@ -151,7 +218,7 @@ def test_provisional_outputs_publish_as_one_atomic_set(tmp_path: Path) -> None:
     pipeline_outputs.write_outputs_atomic(
         outputs,
         matrix,
-        metadata={},
+        metadata=_provisional_metadata(),
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=AlignmentConfig(),
     )
@@ -175,7 +242,7 @@ def test_provisional_outputs_reject_any_incomplete_bundle(tmp_path: Path) -> Non
         pipeline_outputs.write_outputs_atomic(
             outputs,
             AlignmentMatrix(clusters=(), cells=(), sample_order=()),
-            metadata={},
+            metadata=_provisional_metadata(),
             ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=AlignmentConfig(),
         )
@@ -214,7 +281,7 @@ def test_provisional_output_failure_leaves_no_partial_final_set(
         pipeline_outputs.write_outputs_atomic(
             outputs,
             matrix,
-            metadata={},
+            metadata=_provisional_metadata(),
             ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=AlignmentConfig(),
         )
@@ -315,3 +382,20 @@ def _output_paths(outputs: AlignmentRunOutputs) -> tuple[Path, ...]:
     )
     assert all(path is not None for path in paths)
     return tuple(path for path in paths if path is not None)
+
+
+def _projection(matrix: AlignmentMatrix):
+    return build_provisional_matrix_projection(
+        matrix,
+        backfill_scope="full-audit",
+        discovery_owner_closure=True,
+        selected_family_count=0,
+    )
+
+
+def _provisional_metadata() -> dict[str, str]:
+    return {
+        "backfill_scope": "full-audit",
+        "selected_family_count": "0",
+        "require_discovery_owner_closure": "TRUE",
+    }

@@ -221,6 +221,7 @@ def alignment_metadata(
     audit_evidence_mode_reason: str = "",
     scope_warning: str = "",
     skipped_evidence_predicate_version: str = "",
+    require_discovery_owner_closure: bool = False,
 ) -> dict[str, str]:
     return {
         "schema_version": "alignment-results-v3",
@@ -241,6 +242,9 @@ def alignment_metadata(
         "output_scope": output_scope,
         "selected_family_count": str(selected_family_count),
         "selected_family_source": selected_family_source,
+        "require_discovery_owner_closure": (
+            "TRUE" if require_discovery_owner_closure else "FALSE"
+        ),
         "request_plan_version": request_plan_version,
         "audit_evidence_mode": audit_evidence_mode,
         "requested_audit_evidence_mode": requested_audit_evidence_mode,
@@ -288,7 +292,17 @@ def write_outputs_atomic(
     if any(path is not None for path in provisional_output_paths):
         if any(path is None for path in provisional_output_paths):
             raise ValueError("provisional matrix outputs must be emitted atomically")
-        provisional_projection = build_provisional_matrix_projection(matrix)
+        provisional_projection = build_provisional_matrix_projection(
+            matrix,
+            backfill_scope=metadata.get("backfill_scope", ""),
+            discovery_owner_closure=(
+                metadata.get("require_discovery_owner_closure") == "TRUE"
+            ),
+            selected_family_count=_metadata_nonnegative_int(
+                metadata,
+                "selected_family_count",
+            ),
+        )
     production_decisions = None
     if (
         outputs.review_tsv is not None
@@ -520,6 +534,17 @@ def write_outputs_atomic(
         for backup_path in backup_paths:
             backup_path.unlink(missing_ok=True)
         raise
+
+
+def _metadata_nonnegative_int(metadata: dict[str, str], key: str) -> int:
+    value = metadata.get(key, "")
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"alignment metadata {key} must be an integer") from exc
+    if parsed < 0:
+        raise ValueError(f"alignment metadata {key} must be non-negative")
+    return parsed
 
 
 def _temp_path(final_path: Path) -> Path:
