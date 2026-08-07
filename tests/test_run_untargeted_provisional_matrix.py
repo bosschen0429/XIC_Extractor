@@ -24,11 +24,13 @@ def test_pyproject_registers_provisional_matrix_entrypoint() -> None:
     )
 
 
+@pytest.mark.parametrize("metadata_suffix", [".tsv", ".csv", ".txt"])
 def test_runner_publishes_full_universe_outputs_atomically(
     tmp_path: Path,
     monkeypatch,
+    metadata_suffix: str,
 ) -> None:
-    inputs = _inputs(tmp_path)
+    inputs = _inputs(tmp_path, metadata_suffix=metadata_suffix)
     output_dir = tmp_path / "final"
     captured: dict[str, object] = {}
 
@@ -81,7 +83,7 @@ def test_runner_publishes_full_universe_outputs_atomically(
             "--dll-dir",
             str(tmp_path / "dll"),
             "--sample-metadata",
-            str(tmp_path / "samples.tsv"),
+            str(inputs.sample_metadata_path),
             "--preset",
             "dna_dr",
             "--code-revision",
@@ -105,11 +107,17 @@ def test_runner_publishes_full_universe_outputs_atomically(
     assert (
         output_dir / "workflow" / "alignment" / "provisional_alignment_matrix.tsv"
     ).is_file()
+    retained_metadata = (
+        output_dir / "inputs" / f"sample_metadata{metadata_suffix}"
+    )
+    assert retained_metadata.read_bytes() == inputs.sample_metadata_path.read_bytes()
     assert captured["raw_files"] == inputs.raw_files
     assert captured["raw_workers"] == 3
     assert captured["raw_xic_batch_size"] == 16
     assert captured["sample_column_injection_order"] == (
-        output_dir.with_name("final.attempt") / "inputs" / "sample_metadata.tsv"
+        output_dir.with_name("final.attempt")
+        / "inputs"
+        / f"sample_metadata{metadata_suffix}"
     )
     manifest = captured["manifest"]
     assert isinstance(manifest, dict)
@@ -246,7 +254,16 @@ def test_runner_rejects_dirty_or_mismatched_executing_checkout(monkeypatch) -> N
         runner._executing_checkout_revision(None)
 
 
-def _inputs(tmp_path: Path) -> runner._OperatorInputs:
+def test_runner_rejects_unsupported_sample_metadata_suffix() -> None:
+    with pytest.raises(ValueError, match="must use .csv, .tsv, or .txt"):
+        runner._retained_sample_metadata_suffix(Path("samples.data"))
+
+
+def _inputs(
+    tmp_path: Path,
+    *,
+    metadata_suffix: str = ".tsv",
+) -> runner._OperatorInputs:
     raw_dir = tmp_path / "raw"
     dll_dir = tmp_path / "dll"
     raw_dir.mkdir(exist_ok=True)
@@ -255,8 +272,15 @@ def _inputs(tmp_path: Path) -> runner._OperatorInputs:
     for path in raw_files:
         path.write_bytes(b"raw")
     (dll_dir / "reader.dll").write_bytes(b"dll")
-    (tmp_path / "samples.tsv").write_text(
-        "sample_stem\tinjection_order\nsample-a\t1\nsample-b\t2\n",
+    delimiter = "," if metadata_suffix == ".csv" else "\t"
+    metadata_path = tmp_path / f"samples{metadata_suffix}"
+    metadata_path.write_text(
+        delimiter.join(("sample_stem", "injection_order"))
+        + "\n"
+        + delimiter.join(("sample-a", "1"))
+        + "\n"
+        + delimiter.join(("sample-b", "2"))
+        + "\n",
         encoding="utf-8",
     )
     return runner._OperatorInputs(
@@ -268,7 +292,7 @@ def _inputs(tmp_path: Path) -> runner._OperatorInputs:
             ),
         ),
         alignment_config=AlignmentConfig(),
-        sample_metadata_path=tmp_path / "samples.tsv",
+        sample_metadata_path=metadata_path,
         owner_build_xic_backend="raw",
         code_revision="a" * 40,
     )

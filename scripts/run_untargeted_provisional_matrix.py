@@ -99,7 +99,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         attempt_dir.mkdir(parents=True)
         retained_inputs_dir = attempt_dir / "inputs"
         retained_inputs_dir.mkdir()
-        retained_sample_metadata = retained_inputs_dir / "sample_metadata.tsv"
+        retained_sample_metadata = retained_inputs_dir / (
+            "sample_metadata"
+            + _retained_sample_metadata_suffix(inputs.sample_metadata_path)
+        )
         shutil.copyfile(inputs.sample_metadata_path, retained_sample_metadata)
         if fingerprint_file_content(
             inputs.sample_metadata_path
@@ -207,6 +210,7 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
     code_revision = _executing_checkout_revision(args.code_revision)
     if not sample_metadata_path.is_file():
         raise ValueError("sample metadata does not exist")
+    _retained_sample_metadata_suffix(sample_metadata_path)
 
     metadata = load_sample_metadata(sample_metadata_path)
     if not metadata or any(not row.raw_stem for row in metadata):
@@ -386,6 +390,13 @@ def _code_revision(value: str) -> str:
             "code revision must be a lowercase 40-character Git SHA"
         )
     return value
+
+
+def _retained_sample_metadata_suffix(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix not in {".csv", ".tsv", ".txt"}:
+        raise ValueError("sample metadata must use .csv, .tsv, or .txt")
+    return suffix
 
 
 def _executing_checkout_revision(asserted_revision: str | None) -> str:
