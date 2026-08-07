@@ -71,6 +71,8 @@ def test_pipeline_records_alignment_timing_stages(
         "backfill_scope": "full-audit",
         "requested_audit_evidence_mode": "auto",
         "selected_family_count": 0,
+        "require_discovery_owner_closure": False,
+        "emit_provisional_matrix": False,
         "drift_prior_source": "none",
     }
     assert records_by_stage["alignment.audit_evidence_mode"].metrics == {

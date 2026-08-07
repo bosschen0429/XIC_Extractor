@@ -18,8 +18,10 @@ from xic_extractor.alignment.backfill_scope import (
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
+    DiscoveryBatchInput,
     read_discovery_batch_index,
     read_discovery_candidates_csv,
+    read_owner_bound_discovery_candidates_csv,
 )
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
@@ -82,6 +84,7 @@ from xic_extractor.alignment.raw_sources import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
 from xic_extractor.injection_rolling import (
     order_sample_columns_by_injection,
     read_injection_order,
@@ -130,6 +133,8 @@ def run_alignment(
     audit_evidence_mode: str = "auto",
     selected_family_ids: frozenset[str] = frozenset(),
     selected_family_source: str = "",
+    require_discovery_owner_closure: bool = False,
+    emit_provisional_matrix: bool = False,
 ) -> AlignmentRunOutputs:
     if raw_workers < 1:
         raise ValueError("raw_workers must be >= 1")
@@ -155,21 +160,37 @@ def run_alignment(
             "backfill_scope": backfill_scope,
             "requested_audit_evidence_mode": audit_evidence_mode,
             "selected_family_count": len(selected_family_ids),
+            "require_discovery_owner_closure": require_discovery_owner_closure,
+            "emit_provisional_matrix": emit_provisional_matrix,
             "drift_prior_source": (
                 drift_lookup.source if drift_lookup is not None else "none"
             ),
         },
     )
     with recorder.stage("alignment.read_batch_index"):
-        batch = read_discovery_batch_index(discovery_batch_index)
-    with recorder.stage("alignment.read_candidates") as stage:
-        candidates = tuple(
-            candidate
-            for sample_stem in batch.sample_order
-            for candidate in read_discovery_candidates_csv(
-                batch.candidate_csvs[sample_stem]
-            )
+        batch = read_discovery_batch_index(
+            discovery_batch_index,
+            require_owner_closure=require_discovery_owner_closure,
         )
+    with recorder.stage("alignment.read_candidates") as stage:
+        if require_discovery_owner_closure:
+            candidates = tuple(
+                candidate
+                for sample_stem in batch.sample_order
+                for candidate in read_owner_bound_discovery_candidates_csv(
+                    batch.candidate_csvs[sample_stem],
+                    receipt=_required_candidate_receipt(batch, sample_stem),
+                    require_successor_columns=True,
+                )
+            )
+        else:
+            candidates = tuple(
+                candidate
+                for sample_stem in batch.sample_order
+                for candidate in read_discovery_candidates_csv(
+                    batch.candidate_csvs[sample_stem]
+                )
+            )
         stage.metrics["candidate_count"] = len(candidates)
     opener = raw_opener or _default_raw_opener
     outputs = _output_paths(
@@ -183,6 +204,7 @@ def run_alignment(
             emit_alignment_backfill_candidate_audit
         ),
         emit_skipped_evidence_ledger=backfill_scope != "full-audit",
+        emit_provisional_matrix=emit_provisional_matrix,
     )
     resolved_audit_evidence_mode, audit_evidence_mode_reason = (
         _resolve_audit_evidence_mode(
@@ -565,6 +587,18 @@ _existing_raw_paths = existing_raw_paths
 _output_paths = output_paths
 _write_outputs_atomic = write_outputs_atomic
 _DEFAULT_BUILD_OWNER_BACKFILL_CELLS = build_owner_backfill_cells
+
+
+def _required_candidate_receipt(
+    batch: DiscoveryBatchInput,
+    sample_stem: str,
+) -> DiscoveryCandidateUniverseReceipt:
+    receipt = batch.candidate_receipts[sample_stem]
+    if receipt is None:
+        raise ValueError(
+            f"{sample_stem}: owner-closed Alignment requires a candidate receipt"
+        )
+    return receipt
 
 
 def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResult:

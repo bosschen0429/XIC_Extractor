@@ -17,6 +17,21 @@ from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignmentMatrix
 
 
+def test_pipeline_owner_closure_rejects_legacy_batch_index(tmp_path: Path) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+
+    with pytest.raises(ValueError, match="owner closure is required"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            require_discovery_owner_closure=True,
+        )
+
+
 def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     tmp_path: Path,
     monkeypatch,

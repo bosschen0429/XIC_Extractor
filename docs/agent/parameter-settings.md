@@ -362,6 +362,37 @@ directory appears atomically only after both `alignment_matrix.tsv` and
 `alignment_matrix.xlsx` are complete. A failed stage leaves the requested final
 output directory absent.
 
+Full-universe provisional Matrix runner:
+
+```powershell
+.venv\Scripts\python.exe -m scripts.run_untargeted_provisional_matrix `
+  --raw-dir $env:XIC_RAW_ROOT `
+  --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
+  --sample-metadata docs\superpowers\fixtures\issue180_m9_gate_c_sample_metadata_v1.tsv `
+  --preset dna_dr `
+  --output-dir output\issue159-full-universe-provisional-matrix `
+  --manifest-root . `
+  --expected-sample-count 85 `
+  --raw-workers 11 `
+  --raw-xic-batch-size 64 `
+  --owner-build-xic-backend raw-super-window `
+  --owner-backfill-window-strategy super-window `
+  --owner-backfill-superwindow-span-factor 2
+```
+
+Append `--preflight-only` before the first RAW launch. This runner has no
+precursor, family allowlist, or reviewed-cell input. It sends the complete fresh
+Discovery batch through the existing cross-sample group and `full-audit`
+Backfill owner. Its primary outputs are
+`provisional_alignment_matrix.tsv`, `provisional_row_identity.tsv`,
+`provisional_cell_provenance.tsv`, and `provisional_matrix_summary.json` under
+the run's `workflow/alignment/` directory. Rows remain explicitly
+`row_identity_status=provisional` and `identity_settlement_status=not_run`;
+Backfill values are diagnostic candidates, not ProductWriter authority. The
+runner does not modify or replace the default `alignment_matrix.tsv` contract.
+Duplicate or later-mergeable provisional rows are an accepted limitation of
+this 60-percent closure, not evidence that final chemical identity is settled.
+
 Validation / downstream handoff alignment should use the minimal machine gate
 surface by default. For 85RAW validation, the current canonical shape is
 `validation-minimal + production-equivalent + validation-fast + super-window +
