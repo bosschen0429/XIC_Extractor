@@ -52,26 +52,6 @@ prefix_rule(
 )
 
 prefix_rule(
-    pattern = ["git", "push"],
-    decision = "prompt",
-    justification = "Push only after explicit user request and current branch verification.",
-    match = [
-        "git push",
-        "git push origin HEAD",
-    ],
-)
-
-prefix_rule(
-    pattern = ["gh", "pr", "merge"],
-    decision = "prompt",
-    justification = "Merge only after explicit user request, green checks, and PR closeout review.",
-    match = [
-        "gh pr merge 123 --merge",
-        "gh pr merge --squash",
-    ],
-)
-
-prefix_rule(
     pattern = ["Remove-Item"],
     decision = "prompt",
     justification = "Deletion needs path review on Windows. Prefer scoped Remove-Item -LiteralPath after checking targets.",

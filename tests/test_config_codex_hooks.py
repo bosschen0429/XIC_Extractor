@@ -433,7 +433,8 @@ def test_git_add_has_no_blanket_allow_rule() -> None:
 
     assert 'pattern = ["git", "add"]' not in rules
     assert 'decision = "prompt"' in _rule_block(("git", "-c"))
-    assert 'decision = "prompt"' in _rule_block(("git", "push"))
+    assert 'pattern = ["git", "push"]' not in rules
+    assert 'pattern = ["gh", "pr", "merge"]' not in rules
 
 
 @pytest.mark.parametrize(
@@ -627,12 +628,12 @@ def test_pre_hook_preserves_read_only_git_global_option_commands(
     assert completed.stdout == ""
 
 
-def test_pre_hook_leaves_direct_git_push_to_execpolicy_prompt() -> None:
+def test_pre_hook_leaves_direct_git_push_without_repo_prompt() -> None:
     completed = _run_pre_hook("git push origin HEAD")
 
     assert completed.returncode == 0
     assert completed.stdout == ""
-    assert 'decision = "prompt"' in _rule_block(("git", "push"))
+    assert 'pattern = ["git", "push"]' not in RULES_PATH.read_text(encoding="utf-8")
 
 
 def test_pre_hook_routes_invocation_scoped_git_config_to_prompt_rule() -> None:
