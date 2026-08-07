@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import shutil
 from pathlib import Path
 
@@ -74,6 +75,38 @@ def test_manifest_rejects_cross_run_artifact_substitution(tmp_path: Path) -> Non
         validate_provisional_run_manifest(
             first["manifest"],
             root=first["root"],
+        )
+
+
+def test_manifest_rejects_discovery_configuration_mutation(tmp_path: Path) -> None:
+    packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
+    payload = json.loads(packet["manifest"].read_text(encoding="utf-8"))
+    payload["effective_configuration"]["discovery"]["nl_tolerance_ppm"] = 25.0
+    packet["manifest"].write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="does not match the preset owner"):
+        validate_provisional_run_manifest(
+            packet["manifest"],
+            root=packet["root"],
+        )
+
+
+def test_manifest_rejects_alignment_configuration_mutation(tmp_path: Path) -> None:
+    packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
+    payload = json.loads(packet["manifest"].read_text(encoding="utf-8"))
+    payload["effective_configuration"]["alignment"]["preferred_ppm"] = 25.0
+    packet["manifest"].write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="does not match the preset owner"):
+        validate_provisional_run_manifest(
+            packet["manifest"],
+            root=packet["root"],
         )
 
 

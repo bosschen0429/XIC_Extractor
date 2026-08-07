@@ -25,6 +25,7 @@ from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
 )
 from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.presets import apply_to_alignment, apply_to_discovery, load_preset
 from xic_extractor.processing_identity import fingerprint_file_content
 
 PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION = "untargeted_provisional_matrix_run_v1"
@@ -177,8 +178,7 @@ def validate_provisional_run_manifest(
             root=root,
             expected_schema=expected_schema,
         )
-    if not isinstance(payload.get("effective_configuration"), dict):
-        raise ValueError("provisional run manifest effective configuration is missing")
+    _validate_effective_configuration(payload)
     runtime = payload.get("runtime")
     if not isinstance(runtime, dict):
         raise ValueError("provisional run manifest runtime is missing")
@@ -195,6 +195,28 @@ def validate_provisional_run_manifest(
     if runtime.get("emit_provisional_matrix") is not True:
         raise ValueError("provisional run manifest must emit the provisional bundle")
     return payload
+
+
+def _validate_effective_configuration(payload: Mapping[str, object]) -> None:
+    preset_name = payload.get("preset_name")
+    if not isinstance(preset_name, str) or not preset_name.strip():
+        raise ValueError("provisional run manifest preset_name is missing")
+    effective = _required_mapping(payload, "effective_configuration")
+    if set(effective) != {"discovery", "alignment"}:
+        raise ValueError("provisional run manifest effective configuration is invalid")
+
+    preset = load_preset(preset_name)
+    discovery_settings = apply_to_discovery(preset)
+    alignment_config, _runtime_options = apply_to_alignment(preset)
+    expected = {
+        "discovery": _json_value(asdict(discovery_settings)),
+        "alignment": _json_value(asdict(alignment_config)),
+    }
+    if effective != expected:
+        raise ValueError(
+            "provisional run manifest effective configuration does not match "
+            "the preset owner"
+        )
 
 
 def _artifact_binding(
