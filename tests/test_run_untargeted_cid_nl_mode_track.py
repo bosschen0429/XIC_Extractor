@@ -229,6 +229,57 @@ def test_preflight_closes_inputs_without_running_raw(
     assert not (tmp_path / "preflight-output.attempt").exists()
 
 
+def test_preflight_rejects_missing_injection_order_before_running_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    review_bundle = _review_bundle(tmp_path, projection)
+    raw_dir, dll_dir, metadata_path = _operator_inputs(
+        tmp_path,
+        missing_injection_order_stem="s2",
+    )
+
+    def reject_workflow(**_kwargs):
+        raise AssertionError("invalid preflight launched the RAW workflow")
+
+    monkeypatch.setattr(
+        runner,
+        "run_untargeted_cid_nl_mode_track_workflow",
+        reject_workflow,
+    )
+    output_dir = tmp_path / "missing-injection-order-output"
+    exit_code = runner.main(
+        [
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--sample-metadata",
+            str(metadata_path),
+            "--preset",
+            "dna_dr",
+            "--precursor-mz",
+            "349.215",
+            "--review-bundle-dir",
+            str(review_bundle),
+            "--output-dir",
+            str(output_dir),
+            "--manifest-root",
+            str(tmp_path),
+            "--sample-identity-namespace",
+            "synthetic-mode-track",
+            "--preflight-only",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "requires injection_order" in capsys.readouterr().err
+    assert not output_dir.exists()
+    assert not (tmp_path / "missing-injection-order-output.attempt").exists()
+
+
 def test_preflight_rejects_review_hash_drift_before_running_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -327,7 +378,11 @@ def test_preflight_rejects_wrong_reviewed_family_distribution(
     assert not (tmp_path / "wrong-family-output.attempt").exists()
 
 
-def _operator_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
+def _operator_inputs(
+    tmp_path: Path,
+    *,
+    missing_injection_order_stem: str | None = None,
+) -> tuple[Path, Path, Path]:
     raw_dir = tmp_path / "raw"
     dll_dir = tmp_path / "dll"
     raw_dir.mkdir()
@@ -341,7 +396,9 @@ def _operator_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
                 "schema_version": "sample_metadata_v1",
                 "sample_name": stem,
                 "raw_stem": stem,
-                "injection_order": str(index),
+                "injection_order": (
+                    "" if stem == missing_injection_order_stem else str(index)
+                ),
                 "sample_role": "study_sample",
                 "batch_id": "synthetic",
                 "prep_batch_id": "",

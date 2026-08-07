@@ -187,6 +187,14 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
     metadata = load_sample_metadata(metadata_path)
     if not metadata or any(not row.raw_stem for row in metadata):
         raise ValueError("sample metadata must contain non-empty raw_stem values")
+    missing_injection_order = tuple(
+        row.raw_stem for row in metadata if row.injection_order is None
+    )
+    if missing_injection_order:
+        raise ValueError(
+            "sample metadata requires injection_order for every ModeTrack sample: "
+            + ", ".join(missing_injection_order)
+        )
     if args.expected_sample_count is not None and len(metadata) != (
         args.expected_sample_count
     ):
