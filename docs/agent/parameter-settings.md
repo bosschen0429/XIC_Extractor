@@ -376,8 +376,13 @@ already-reviewed physical observations; its old checked manifest is not an
 input. Fresh typed values remain authoritative in memory. The attempt directory
 retains Discovery/runtime/source audit artifacts, while the requested output
 directory appears atomically only after both `alignment_matrix.tsv` and
-`alignment_matrix.xlsx` are complete. A failed stage leaves the requested final
-output directory absent.
+`alignment_matrix.xlsx` are complete. The published bundle also contains
+`publication_receipt.json`. This compact byte-bound receipt records the exact
+manual-review and observation-replay digests, its reduced
+`owner_validated_physical_subject_binding_only` claim, and byte bindings for the
+published tables. It does not grant authenticity or product authority after a
+caller re-seals edited bytes. A failed stage leaves the requested final output
+directory absent.
 
 Full-universe provisional Matrix runner:
 
@@ -387,7 +392,6 @@ Full-universe provisional Matrix runner:
   --dll-dir $env:THERMO_RAWFILE_READER_DLL_DIR `
   --sample-metadata docs\superpowers\fixtures\issue180_m9_gate_c_sample_metadata_v1.tsv `
   --preset dna_dr `
-  --code-revision <current-40-character-commit-sha> `
   --output-dir output\issue159-full-universe-provisional-matrix `
   --manifest-root . `
   --expected-sample-count 85 `
@@ -410,12 +414,22 @@ Backfill values are diagnostic candidates, not ProductWriter authority. The
 runner does not modify or replace the default `alignment_matrix.tsv` contract.
 Duplicate or later-mergeable provisional rows are an accepted limitation of
 this 60-percent closure, not evidence that final chemical identity is settled.
-The final directory also retains `inputs/sample_metadata.tsv` and a verified
-`run_manifest.json`. The manifest records the declared code revision, preset,
-effective Discovery and Alignment settings, runtime/backends, Discovery receipt
-census, schema versions, and SHA-256/byte-size bindings for all four provisional
-artifacts. The runner validates those bindings before atomic publish; copied
-bundles must pass the same package-level manifest validator before comparison.
+The final directory also retains `inputs/sample_metadata.tsv` and a
+byte-/structure-bound `run_manifest.json`. The runner derives the revision from
+its clean executing checkout. `--code-revision <sha>` is an optional equality
+assertion, not the source of the recorded revision. The manifest records the
+preset, creation-time owner-validated Discovery and Alignment settings, and the
+complete typed runner configuration. The runtime record includes the fixed
+`validation-minimal` output level, disabled audit-evidence mode, an empty
+selected-family source, and retained-metadata sample order. Publication-envelope
+schema v2 also records the Discovery receipt census and artifact schema versions.
+It binds all four provisional artifacts by SHA-256 and byte size. The persisted
+validator checks those bytes and structural invariants before atomic publish. It
+does not reload the current preset, replay the Discovery owner, or parse the four
+artifacts into domain owners, prove their cross-artifact semantics, or grant
+authenticity, semantic replay, or product authority after caller re-sealing. A
+copied bundle can support byte/structure comparison only; a stronger claim
+requires a separately activated owner consumer.
 
 Validation / downstream handoff alignment should use the minimal machine gate
 surface by default. For 85RAW validation, the current canonical shape is
