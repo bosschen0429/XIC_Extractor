@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -17,6 +18,8 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.provisional_run_manifest import (
+    PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
+    ProvisionalRunRuntimeConfiguration,
     validate_provisional_run_manifest,
     write_provisional_run_manifest,
 )
@@ -38,11 +41,25 @@ def test_manifest_binds_effective_configuration_receipts_and_artifact_bytes(
     )
 
     assert payload["code_revision"] == "a" * 40
+    assert payload["schema_version"] == PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION
     assert payload["preset_name"] == "dna_dr"
     assert payload["effective_configuration"]["discovery"][
         "neutral_loss_profiles"
     ][0]["tag"] == "DNA_dR"
     assert payload["runtime"]["owner_build_xic_backend"] == "raw_superwindow"
+    assert payload["runtime"]["selected_family_source"] == ""
+    assert payload["runtime"]["output_level"] == "validation-minimal"
+    assert payload["runtime"]["audit_evidence_mode"] == "none"
+    assert payload["runtime"]["sample_column_order_source"] == (
+        "retained_sample_metadata"
+    )
+    assert payload["claim_levels"] == {
+        "artifact_bytes": "byte_bound",
+        "configuration": "structure_bound",
+        "embedded_semantics": "unavailable",
+    }
+    assert payload["authenticity_authority"] is False
+    assert payload["semantic_replay_authority"] is False
     assert payload["inputs"]["discovery_batch_index"]["receipt_count"] == 1
     assert payload["artifacts"]["provisional_matrix"]["byte_size"] == packet[
         "artifacts"
@@ -63,7 +80,9 @@ def test_manifest_rejects_artifact_mutation(tmp_path: Path) -> None:
         )
 
 
-def test_manifest_rejects_cross_run_artifact_substitution(tmp_path: Path) -> None:
+def test_manifest_rejects_unresealed_cross_run_artifact_substitution(
+    tmp_path: Path,
+) -> None:
     first = _packet(tmp_path / "first", matrix_bytes="matrix-a\n")
     second = _packet(tmp_path / "second", matrix_bytes="matrix-b\n")
     shutil.copyfile(
@@ -78,39 +97,128 @@ def test_manifest_rejects_cross_run_artifact_substitution(tmp_path: Path) -> Non
         )
 
 
-def test_manifest_rejects_discovery_configuration_mutation(tmp_path: Path) -> None:
+def test_manifest_does_not_overclaim_resealed_artifact_semantics(
+    tmp_path: Path,
+) -> None:
     packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
+    matrix = packet["artifacts"]["provisional_matrix"]
+    matrix.write_text("internally-inconsistent-but-byte-bound\n", encoding="utf-8")
     payload = json.loads(packet["manifest"].read_text(encoding="utf-8"))
-    payload["effective_configuration"]["discovery"]["nl_tolerance_ppm"] = 25.0
+    binding = payload["artifacts"]["provisional_matrix"]
+    binding["sha256"] = hashlib.sha256(matrix.read_bytes()).hexdigest()
+    binding["byte_size"] = matrix.stat().st_size
     packet["manifest"].write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="does not match the preset owner"):
+    validated = validate_provisional_run_manifest(
+        packet["manifest"],
+        root=packet["root"],
+    )
+
+    assert validated["claim_levels"]["embedded_semantics"] == "unavailable"
+
+
+def test_manifest_rejects_incomplete_runtime_structure(tmp_path: Path) -> None:
+    packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
+    payload = json.loads(packet["manifest"].read_text(encoding="utf-8"))
+    del payload["runtime"]["raw_workers"]
+    packet["manifest"].write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="runtime field set is invalid"):
         validate_provisional_run_manifest(
             packet["manifest"],
             root=packet["root"],
         )
 
 
-def test_manifest_rejects_alignment_configuration_mutation(tmp_path: Path) -> None:
+def test_manifest_runtime_is_structure_bound_not_execution_replay(
+    tmp_path: Path,
+) -> None:
     packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
     payload = json.loads(packet["manifest"].read_text(encoding="utf-8"))
+    payload["runtime"]["raw_workers"] = 4
+    packet["manifest"].write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    validated = validate_provisional_run_manifest(
+        packet["manifest"],
+        root=packet["root"],
+    )
+
+    assert validated["runtime"]["raw_workers"] == 4
+    assert validated["claim_levels"]["configuration"] == "structure_bound"
+
+
+def test_manifest_configuration_values_are_structure_bound(tmp_path: Path) -> None:
+    packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
+    payload = json.loads(packet["manifest"].read_text(encoding="utf-8"))
+    payload["effective_configuration"]["discovery"]["nl_tolerance_ppm"] = 25.0
     payload["effective_configuration"]["alignment"]["preferred_ppm"] = 25.0
     packet["manifest"].write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="does not match the preset owner"):
+    validated = validate_provisional_run_manifest(
+        packet["manifest"],
+        root=packet["root"],
+    )
+
+    assert validated["effective_configuration"]["discovery"][
+        "nl_tolerance_ppm"
+    ] == 25.0
+    assert validated["effective_configuration"]["alignment"][
+        "preferred_ppm"
+    ] == 25.0
+
+
+def test_manifest_rejects_incomplete_configuration_structure(
+    tmp_path: Path,
+) -> None:
+    packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
+    payload = json.loads(packet["manifest"].read_text(encoding="utf-8"))
+    del payload["effective_configuration"]["discovery"]["nl_tolerance_ppm"]
+    packet["manifest"].write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="field set is invalid"):
         validate_provisional_run_manifest(
             packet["manifest"],
             root=packet["root"],
         )
 
 
-def _packet(root: Path, *, matrix_bytes: str) -> dict[str, object]:
+def test_manifest_creation_rejects_non_owner_effective_configuration(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="does not match the preset owner"):
+        _packet(
+            tmp_path / "run",
+            matrix_bytes="matrix-a\n",
+            discovery_settings=DiscoverySettings(
+                nl_tolerance_ppm=25.0,
+                neutral_loss_profiles=(
+                    NeutralLossProfile(tag="DNA_dR", neutral_loss_da=116.0474),
+                ),
+            ),
+        )
+
+
+def _packet(
+    root: Path,
+    *,
+    matrix_bytes: str,
+    discovery_settings: DiscoverySettings | None = None,
+) -> dict[str, object]:
     root.mkdir(parents=True)
     retained_metadata = root / "inputs" / "sample_metadata.tsv"
     retained_metadata.parent.mkdir()
@@ -138,21 +246,22 @@ def _packet(root: Path, *, matrix_bytes: str) -> dict[str, object]:
         root=root,
         code_revision="a" * 40,
         preset_name="dna_dr",
-        discovery_settings=DiscoverySettings(
+        discovery_settings=discovery_settings
+        or DiscoverySettings(
             neutral_loss_profiles=(
                 NeutralLossProfile(tag="DNA_dR", neutral_loss_da=116.0474),
             ),
         ),
         alignment_config=AlignmentConfig(),
-        runtime={
-            "sample_count": 1,
-            "precursor_filter": None,
-            "backfill_scope": "full-audit",
-            "selected_family_count": 0,
-            "require_discovery_owner_closure": True,
-            "emit_provisional_matrix": True,
-            "owner_build_xic_backend": "raw_superwindow",
-        },
+        runtime=ProvisionalRunRuntimeConfiguration(
+            sample_count=1,
+            raw_workers=3,
+            raw_xic_batch_size=16,
+            owner_build_xic_backend="raw_superwindow",
+            owner_backfill_xic_backend="raw",
+            owner_backfill_window_strategy="super-window",
+            owner_backfill_superwindow_span_factor=2,
+        ),
         retained_sample_metadata=retained_metadata,
         discovery_batch_index=discovery_index,
         artifacts=artifacts,

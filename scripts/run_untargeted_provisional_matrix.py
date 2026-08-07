@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import shutil
+import subprocess
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -22,6 +23,7 @@ from xic_extractor.alignment.provisional_matrix import (
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.extraction.provisional_run_manifest import (
+    ProvisionalRunRuntimeConfiguration,
     write_provisional_run_manifest,
 )
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
@@ -45,6 +47,7 @@ class _OperatorInputs:
     alignment_config: AlignmentConfig
     sample_metadata_path: Path
     owner_build_xic_backend: OwnerBuildXicBackend
+    code_revision: str
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -64,6 +67,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir.relative_to(manifest_root)
         except ValueError as exc:
             raise ValueError("output directory must stay under manifest root") from exc
+        runtime_configuration = ProvisionalRunRuntimeConfiguration(
+            sample_count=len(inputs.raw_files),
+            raw_workers=args.raw_workers,
+            raw_xic_batch_size=args.raw_xic_batch_size,
+            owner_build_xic_backend=inputs.owner_build_xic_backend,
+            owner_backfill_xic_backend=_owner_backfill_backend(
+                args.owner_backfill_xic_backend
+            ),
+            owner_backfill_window_strategy=args.owner_backfill_window_strategy,
+            owner_backfill_superwindow_span_factor=(
+                args.owner_backfill_superwindow_span_factor
+            ),
+        )
 
         if args.preflight_only:
             print("Preflight status: pass (no RAW opened)")
@@ -104,15 +120,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_dir=attempt_dir / "workflow",
             discovery_settings=inputs.discovery_settings,
             alignment_config=inputs.alignment_config,
-            raw_workers=args.raw_workers,
-            raw_xic_batch_size=args.raw_xic_batch_size,
-            owner_build_xic_backend=inputs.owner_build_xic_backend,
-            owner_backfill_xic_backend=_owner_backfill_backend(
-                args.owner_backfill_xic_backend
+            raw_workers=runtime_configuration.raw_workers,
+            raw_xic_batch_size=runtime_configuration.raw_xic_batch_size,
+            owner_build_xic_backend=(
+                runtime_configuration.owner_build_xic_backend
             ),
-            owner_backfill_window_strategy=args.owner_backfill_window_strategy,
+            owner_backfill_xic_backend=(
+                runtime_configuration.owner_backfill_xic_backend
+            ),
+            owner_backfill_window_strategy=(
+                runtime_configuration.owner_backfill_window_strategy
+            ),
             owner_backfill_superwindow_span_factor=(
-                args.owner_backfill_superwindow_span_factor
+                runtime_configuration.owner_backfill_superwindow_span_factor
             ),
             sample_column_injection_order=retained_sample_metadata,
             timing_recorder=timing_recorder,
@@ -136,31 +156,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         write_provisional_run_manifest(
             attempt_dir / "run_manifest.json",
             root=attempt_dir,
-            code_revision=args.code_revision,
+            code_revision=inputs.code_revision,
             preset_name=args.preset,
             discovery_settings=inputs.discovery_settings,
             alignment_config=inputs.alignment_config,
-            runtime={
-                "runner": "scripts.run_untargeted_provisional_matrix",
-                "sample_count": len(inputs.raw_files),
-                "precursor_filter": None,
-                "backfill_scope": "full-audit",
-                "selected_family_count": 0,
-                "require_discovery_owner_closure": True,
-                "emit_provisional_matrix": True,
-                "raw_workers": args.raw_workers,
-                "raw_xic_batch_size": args.raw_xic_batch_size,
-                "owner_build_xic_backend": inputs.owner_build_xic_backend,
-                "owner_backfill_xic_backend": _owner_backfill_backend(
-                    args.owner_backfill_xic_backend
-                ),
-                "owner_backfill_window_strategy": (
-                    args.owner_backfill_window_strategy
-                ),
-                "owner_backfill_superwindow_span_factor": (
-                    args.owner_backfill_superwindow_span_factor
-                ),
-            },
+            runtime=runtime_configuration,
             retained_sample_metadata=retained_sample_metadata,
             discovery_batch_index=run.discovery_index,
             artifacts={
@@ -204,6 +204,7 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         raise ValueError(
             "Thermo RAW reader preflight failed: " + " ".join(raw_reader_errors)
         )
+    code_revision = _executing_checkout_revision(args.code_revision)
     if not sample_metadata_path.is_file():
         raise ValueError("sample metadata does not exist")
 
@@ -252,6 +253,7 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         alignment_config=alignment_config,
         sample_metadata_path=sample_metadata_path,
         owner_build_xic_backend=_owner_build_backend(requested_owner_backend),
+        code_revision=code_revision,
     )
 
 
@@ -338,7 +340,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--dll-dir", type=Path, required=True)
     parser.add_argument("--sample-metadata", type=Path, required=True)
     parser.add_argument("--preset", required=True)
-    parser.add_argument("--code-revision", required=True, type=_code_revision)
+    parser.add_argument(
+        "--code-revision",
+        type=_code_revision,
+        help="Optional assertion; the clean executing checkout revision is recorded.",
+    )
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--manifest-root", type=Path, default=Path.cwd())
     parser.add_argument("--expected-sample-count", type=_positive_int)
@@ -380,6 +386,35 @@ def _code_revision(value: str) -> str:
             "code revision must be a lowercase 40-character Git SHA"
         )
     return value
+
+
+def _executing_checkout_revision(asserted_revision: str | None) -> str:
+    repo_root = Path(__file__).resolve().parents[1]
+    observed_root = Path(_git_output(repo_root, "rev-parse", "--show-toplevel"))
+    if observed_root.resolve() != repo_root:
+        raise ValueError("runner source is not bound to the executing Git checkout")
+    revision = _code_revision(_git_output(repo_root, "rev-parse", "HEAD"))
+    if _git_output(repo_root, "status", "--porcelain", "--untracked-files=all"):
+        raise ValueError("executing Git checkout must be clean")
+    if asserted_revision is not None and asserted_revision != revision:
+        raise ValueError("asserted code revision differs from executing checkout")
+    return revision
+
+
+def _git_output(repo_root: Path, *args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ("git", "-C", str(repo_root), *args),
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        raise ValueError("executing Git checkout is unavailable") from exc
+    if completed.returncode != 0:
+        raise ValueError("executing Git checkout is unavailable")
+    return completed.stdout.strip()
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+import pytest
+
 import scripts.run_untargeted_provisional_matrix as runner
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
@@ -112,6 +114,8 @@ def test_runner_publishes_full_universe_outputs_atomically(
     manifest = captured["manifest"]
     assert isinstance(manifest, dict)
     assert manifest["code_revision"] == "a" * 40
+    assert manifest["runtime"].raw_workers == 3
+    assert manifest["runtime"].raw_xic_batch_size == 16
 
 
 def test_runner_preflight_does_not_start_raw_workflow(
@@ -196,6 +200,52 @@ def test_runner_preflight_rejects_invalid_thermo_runtime(
     assert not output_dir.with_name("final.attempt").exists()
 
 
+def test_runner_derives_revision_from_clean_executing_checkout(monkeypatch) -> None:
+    repo_root = Path(runner.__file__).resolve().parents[1]
+
+    def fake_run(command, **_kwargs):
+        args = tuple(command)
+        if args[-2:] == ("rev-parse", "--show-toplevel"):
+            stdout = str(repo_root)
+        elif args[-2:] == ("rev-parse", "HEAD"):
+            stdout = "a" * 40
+        elif args[-3:] == ("status", "--porcelain", "--untracked-files=all"):
+            stdout = ""
+        else:
+            raise AssertionError(f"unexpected Git command: {args}")
+        return runner.subprocess.CompletedProcess(args, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    assert runner._executing_checkout_revision(None) == "a" * 40
+    assert runner._executing_checkout_revision("a" * 40) == "a" * 40
+
+
+def test_runner_rejects_dirty_or_mismatched_executing_checkout(monkeypatch) -> None:
+    repo_root = Path(runner.__file__).resolve().parents[1]
+    dirty = False
+
+    def fake_run(command, **_kwargs):
+        args = tuple(command)
+        if args[-2:] == ("rev-parse", "--show-toplevel"):
+            stdout = str(repo_root)
+        elif args[-2:] == ("rev-parse", "HEAD"):
+            stdout = "a" * 40
+        elif args[-3:] == ("status", "--porcelain", "--untracked-files=all"):
+            stdout = " M scripts/run_untargeted_provisional_matrix.py" if dirty else ""
+        else:
+            raise AssertionError(f"unexpected Git command: {args}")
+        return runner.subprocess.CompletedProcess(args, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+
+    with pytest.raises(ValueError, match="asserted code revision differs"):
+        runner._executing_checkout_revision("b" * 40)
+    dirty = True
+    with pytest.raises(ValueError, match="checkout must be clean"):
+        runner._executing_checkout_revision(None)
+
+
 def _inputs(tmp_path: Path) -> runner._OperatorInputs:
     raw_dir = tmp_path / "raw"
     dll_dir = tmp_path / "dll"
@@ -220,4 +270,5 @@ def _inputs(tmp_path: Path) -> runner._OperatorInputs:
         alignment_config=AlignmentConfig(),
         sample_metadata_path=tmp_path / "samples.tsv",
         owner_build_xic_backend="raw",
+        code_revision="a" * 40,
     )

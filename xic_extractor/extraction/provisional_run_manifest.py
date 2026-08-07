@@ -1,4 +1,4 @@
-"""Replayable manifest for one provisional full-universe Alignment run."""
+"""Byte- and structure-bound envelope for one provisional Alignment run."""
 
 from __future__ import annotations
 
@@ -7,14 +7,20 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
+from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
 )
+from xic_extractor.alignment.ms1_index_source import (
+    OwnerBackfillXicBackend,
+    OwnerBuildXicBackend,
+)
+from xic_extractor.alignment.owner_backfill import OwnerBackfillWindowStrategy
 from xic_extractor.alignment.provisional_matrix import (
     PROVISIONAL_IDENTITY_SCHEMA_VERSION,
     PROVISIONAL_MATRIX_SCHEMA_VERSION,
@@ -28,7 +34,9 @@ from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.presets import apply_to_alignment, apply_to_discovery, load_preset
 from xic_extractor.processing_identity import fingerprint_file_content
 
-PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION = "untargeted_provisional_matrix_run_v1"
+PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION = (
+    "untargeted_provisional_matrix_publication_envelope_v2"
+)
 
 _REVISION_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _ARTIFACT_SCHEMAS = {
@@ -37,6 +45,66 @@ _ARTIFACT_SCHEMAS = {
     "provisional_cell_provenance": PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
     "provisional_summary": PROVISIONAL_SUMMARY_SCHEMA_VERSION,
 }
+_CLAIM_LEVELS = {
+    "artifact_bytes": "byte_bound",
+    "configuration": "structure_bound",
+    "embedded_semantics": "unavailable",
+}
+
+_OWNER_BUILD_BACKENDS = frozenset({"raw", "raw_superwindow", "ms1_index"})
+_OWNER_BACKFILL_BACKENDS = frozenset(
+    {"raw", "ms1_index", "ms1_index_hybrid"}
+)
+_OWNER_BACKFILL_WINDOW_STRATEGIES = frozenset({"exact", "super-window"})
+
+
+@dataclass(frozen=True, slots=True)
+class ProvisionalRunRuntimeConfiguration:
+    """Complete typed launch configuration recorded by this diagnostic runner."""
+
+    sample_count: int
+    raw_workers: int
+    raw_xic_batch_size: int
+    owner_build_xic_backend: OwnerBuildXicBackend
+    owner_backfill_xic_backend: OwnerBackfillXicBackend
+    owner_backfill_window_strategy: OwnerBackfillWindowStrategy
+    owner_backfill_superwindow_span_factor: int
+    runner: str = field(
+        init=False,
+        default="scripts.run_untargeted_provisional_matrix",
+    )
+    precursor_filter: None = field(init=False, default=None)
+    backfill_scope: str = field(init=False, default="full-audit")
+    selected_family_count: int = field(init=False, default=0)
+    selected_family_source: str = field(init=False, default="")
+    require_discovery_owner_closure: bool = field(init=False, default=True)
+    emit_provisional_matrix: bool = field(init=False, default=True)
+    output_level: str = field(init=False, default="validation-minimal")
+    audit_evidence_mode: str = field(init=False, default="none")
+    sample_column_order_source: str = field(
+        init=False,
+        default="retained_sample_metadata",
+    )
+
+    def __post_init__(self) -> None:
+        for name in (
+            "sample_count",
+            "raw_workers",
+            "raw_xic_batch_size",
+            "owner_backfill_superwindow_span_factor",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.owner_build_xic_backend not in _OWNER_BUILD_BACKENDS:
+            raise ValueError("owner_build_xic_backend is unsupported")
+        if self.owner_backfill_xic_backend not in _OWNER_BACKFILL_BACKENDS:
+            raise ValueError("owner_backfill_xic_backend is unsupported")
+        if (
+            self.owner_backfill_window_strategy
+            not in _OWNER_BACKFILL_WINDOW_STRATEGIES
+        ):
+            raise ValueError("owner_backfill_window_strategy is unsupported")
 
 
 def write_provisional_run_manifest(
@@ -47,7 +115,7 @@ def write_provisional_run_manifest(
     preset_name: str,
     discovery_settings: DiscoverySettings,
     alignment_config: AlignmentConfig,
-    runtime: Mapping[str, object],
+    runtime: ProvisionalRunRuntimeConfiguration,
     retained_sample_metadata: Path,
     discovery_batch_index: Path,
     artifacts: Mapping[str, Path],
@@ -55,6 +123,10 @@ def write_provisional_run_manifest(
     """Write and immediately verify one portable, byte-bound run envelope."""
 
     code_revision = _validated_revision(code_revision)
+    if not isinstance(runtime, ProvisionalRunRuntimeConfiguration):
+        raise TypeError(
+            "provisional run manifest requires typed runtime configuration"
+        )
     preset_name = preset_name.strip()
     if not preset_name:
         raise ValueError("provisional run manifest requires preset_name")
@@ -66,6 +138,11 @@ def write_provisional_run_manifest(
         require_owner_closure=True,
     )
     receipt_census = _discovery_receipt_census(batch)
+    effective_configuration = _effective_configuration_from_owner(
+        preset_name=preset_name,
+        discovery_settings=discovery_settings,
+        alignment_config=alignment_config,
+    )
 
     payload: dict[str, object] = {
         "schema_version": PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
@@ -73,13 +150,13 @@ def write_provisional_run_manifest(
         "row_identity_status": "provisional",
         "identity_settlement_status": "not_run",
         "product_authority": False,
+        "authenticity_authority": False,
+        "semantic_replay_authority": False,
+        "claim_levels": dict(_CLAIM_LEVELS),
         "code_revision": code_revision,
         "preset_name": preset_name,
-        "effective_configuration": {
-            "discovery": _json_value(asdict(discovery_settings)),
-            "alignment": _json_value(asdict(alignment_config)),
-        },
-        "runtime": _json_value(dict(runtime)),
+        "effective_configuration": effective_configuration,
+        "runtime": _json_value(asdict(runtime)),
         "inputs": {
             "sample_metadata": _artifact_binding(
                 retained_sample_metadata,
@@ -117,7 +194,7 @@ def validate_provisional_run_manifest(
     *,
     root: Path,
 ) -> dict[str, object]:
-    """Reject manifest drift, path escape, mutation, or cross-run substitution."""
+    """Validate envelope structure and exact bytes without semantic replay."""
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -136,6 +213,12 @@ def validate_provisional_run_manifest(
         raise ValueError("provisional run manifest identity settlement is invalid")
     if payload.get("product_authority") is not False:
         raise ValueError("provisional run manifest cannot claim product authority")
+    if payload.get("authenticity_authority") is not False:
+        raise ValueError("provisional run manifest cannot claim authenticity")
+    if payload.get("semantic_replay_authority") is not False:
+        raise ValueError("provisional run manifest cannot claim semantic replay")
+    if payload.get("claim_levels") != _CLAIM_LEVELS:
+        raise ValueError("provisional run manifest claim levels are invalid")
 
     inputs = _required_mapping(payload, "inputs")
     _validate_binding(
@@ -144,7 +227,7 @@ def validate_provisional_run_manifest(
         expected_schema="sample_metadata_v1",
     )
     discovery_binding = _required_mapping(inputs, "discovery_batch_index")
-    discovery_index_path = _validate_binding(
+    _validate_binding(
         discovery_binding,
         root=root,
         expected_schema=DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -157,17 +240,7 @@ def validate_provisional_run_manifest(
     expected_census_sha = _validated_sha256(
         discovery_binding.get("receipt_census_sha256")
     )
-    batch = read_discovery_batch_index(
-        discovery_index_path,
-        require_owner_closure=True,
-    )
-    receipt_census = _discovery_receipt_census(batch)
-    if len(receipt_census) != receipt_count:
-        raise ValueError("Discovery receipt count does not match the bound index")
-    if sum(row[3] for row in receipt_census) != candidate_count:
-        raise ValueError("Discovery candidate count does not match the bound index")
-    if _canonical_sha256(receipt_census) != expected_census_sha:
-        raise ValueError("Discovery receipt census does not match the bound index")
+    del candidate_count, expected_census_sha
 
     artifacts = _required_mapping(payload, "artifacts")
     if set(artifacts) != set(_ARTIFACT_SCHEMAS):
@@ -179,22 +252,35 @@ def validate_provisional_run_manifest(
             expected_schema=expected_schema,
         )
     _validate_effective_configuration(payload)
-    runtime = payload.get("runtime")
-    if not isinstance(runtime, dict):
-        raise ValueError("provisional run manifest runtime is missing")
-    if runtime.get("sample_count") != sample_count:
-        raise ValueError("runtime sample count does not match Discovery receipts")
-    if runtime.get("precursor_filter") is not None:
-        raise ValueError("provisional run manifest cannot carry a precursor filter")
-    if runtime.get("backfill_scope") != "full-audit":
-        raise ValueError("provisional run manifest requires full-audit Backfill")
-    if runtime.get("selected_family_count") != 0:
-        raise ValueError("provisional run manifest requires full family scope")
-    if runtime.get("require_discovery_owner_closure") is not True:
-        raise ValueError("provisional run manifest requires Discovery owner closure")
-    if runtime.get("emit_provisional_matrix") is not True:
-        raise ValueError("provisional run manifest must emit the provisional bundle")
+    _validate_runtime_configuration(payload, sample_count=sample_count)
     return payload
+
+
+def _effective_configuration_from_owner(
+    *,
+    preset_name: str,
+    discovery_settings: DiscoverySettings,
+    alignment_config: AlignmentConfig,
+) -> dict[str, object]:
+    """Derive and verify effective settings while live owners are available."""
+
+    preset = load_preset(preset_name)
+    owned_discovery = apply_to_discovery(preset)
+    owned_alignment, _runtime_options = apply_to_alignment(preset)
+    expected = {
+        "discovery": _json_value(asdict(owned_discovery)),
+        "alignment": _json_value(asdict(owned_alignment)),
+    }
+    supplied = {
+        "discovery": _json_value(asdict(discovery_settings)),
+        "alignment": _json_value(asdict(alignment_config)),
+    }
+    if supplied != expected:
+        raise ValueError(
+            "provisional run effective configuration does not match "
+            "the preset owner"
+        )
+    return expected
 
 
 def _validate_effective_configuration(payload: Mapping[str, object]) -> None:
@@ -204,19 +290,55 @@ def _validate_effective_configuration(payload: Mapping[str, object]) -> None:
     effective = _required_mapping(payload, "effective_configuration")
     if set(effective) != {"discovery", "alignment"}:
         raise ValueError("provisional run manifest effective configuration is invalid")
+    for name, owner_type in (
+        ("discovery", DiscoverySettings),
+        ("alignment", AlignmentConfig),
+    ):
+        values = _required_mapping(effective, name)
+        expected_fields = {item.name for item in fields(owner_type)}
+        if set(values) != expected_fields:
+            raise ValueError(
+                "provisional run effective configuration field set is invalid"
+            )
+        _json_value(dict(values))
 
-    preset = load_preset(preset_name)
-    discovery_settings = apply_to_discovery(preset)
-    alignment_config, _runtime_options = apply_to_alignment(preset)
-    expected = {
-        "discovery": _json_value(asdict(discovery_settings)),
-        "alignment": _json_value(asdict(alignment_config)),
+
+def _validate_runtime_configuration(
+    payload: Mapping[str, object],
+    *,
+    sample_count: int,
+) -> None:
+    runtime = _required_mapping(payload, "runtime")
+    expected_fields = {
+        item.name for item in fields(ProvisionalRunRuntimeConfiguration)
     }
-    if effective != expected:
-        raise ValueError(
-            "provisional run manifest effective configuration does not match "
-            "the preset owner"
-        )
+    if set(runtime) != expected_fields:
+        raise ValueError("provisional run runtime field set is invalid")
+    configured = ProvisionalRunRuntimeConfiguration(
+        sample_count=_positive_int(runtime, "sample_count"),
+        raw_workers=_positive_int(runtime, "raw_workers"),
+        raw_xic_batch_size=_positive_int(runtime, "raw_xic_batch_size"),
+        owner_build_xic_backend=cast(
+            OwnerBuildXicBackend,
+            _required_text(runtime, "owner_build_xic_backend"),
+        ),
+        owner_backfill_xic_backend=cast(
+            OwnerBackfillXicBackend,
+            _required_text(runtime, "owner_backfill_xic_backend"),
+        ),
+        owner_backfill_window_strategy=cast(
+            OwnerBackfillWindowStrategy,
+            _required_text(runtime, "owner_backfill_window_strategy"),
+        ),
+        owner_backfill_superwindow_span_factor=_positive_int(
+            runtime,
+            "owner_backfill_superwindow_span_factor",
+        ),
+    )
+    if configured.sample_count != sample_count:
+        raise ValueError("runtime sample count does not match Discovery receipts")
+    if runtime != _json_value(asdict(configured)):
+        raise ValueError("provisional run runtime is not owner-normalized")
 
 
 def _artifact_binding(
@@ -298,6 +420,13 @@ def _required_mapping(
     return nested
 
 
+def _required_text(value: Mapping[str, object], key: str) -> str:
+    parsed = value.get(key)
+    if not isinstance(parsed, str) or not parsed or parsed != parsed.strip():
+        raise ValueError(f"provisional run manifest {key} is invalid")
+    return parsed
+
+
 def _validated_revision(value: object) -> str:
     if not isinstance(value, str) or _REVISION_PATTERN.fullmatch(value) is None:
         raise ValueError("code_revision must be a lowercase 40-character Git SHA")
@@ -365,6 +494,7 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
 
 __all__ = (
     "PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION",
+    "ProvisionalRunRuntimeConfiguration",
     "validate_provisional_run_manifest",
     "write_provisional_run_manifest",
 )
