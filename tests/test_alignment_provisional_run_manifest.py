@@ -136,6 +136,60 @@ def test_manifest_rejects_incomplete_runtime_structure(tmp_path: Path) -> None:
         )
 
 
+def test_manifest_rejects_duplicate_json_keys(tmp_path: Path) -> None:
+    packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
+    manifest_text = packet["manifest"].read_text(encoding="utf-8")
+    packet["manifest"].write_text(
+        manifest_text.replace(
+            '  "product_authority": false,',
+            '  "product_authority": true,\n  "product_authority": false,',
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate key: product_authority"):
+        validate_provisional_run_manifest(
+            packet["manifest"],
+            root=packet["root"],
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (
+            lambda payload: payload.__setitem__("unexpected", True),
+            "manifest field set is invalid",
+        ),
+        (
+            lambda payload: payload["artifacts"]["provisional_matrix"].__setitem__(
+                "unexpected", True
+            ),
+            "artifact binding field set is invalid",
+        ),
+    ],
+)
+def test_manifest_rejects_unknown_fields(
+    tmp_path: Path,
+    mutate,
+    message: str,
+) -> None:
+    packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
+    payload = json.loads(packet["manifest"].read_text(encoding="utf-8"))
+    mutate(payload)
+    packet["manifest"].write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        validate_provisional_run_manifest(
+            packet["manifest"],
+            root=packet["root"],
+        )
+
+
 def test_manifest_runtime_is_structure_bound_not_execution_replay(
     tmp_path: Path,
 ) -> None:

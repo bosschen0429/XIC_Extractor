@@ -416,8 +416,9 @@ Backfill values are diagnostic candidates, not ProductWriter authority. The
 runner does not modify or replace the default `alignment_matrix.tsv` contract.
 Duplicate or later-mergeable provisional rows are an accepted limitation of
 this 60-percent closure, not evidence that final chemical identity is settled.
-The final directory also retains `inputs/sample_metadata.tsv` and a
-byte-/structure-bound `run_manifest.json`. The runner derives the revision from
+The final directory also retains `inputs/sample_metadata.<source-suffix>` and a
+byte-/structure-bound `run_manifest.json`. The retained metadata preserves the
+source `.csv`, `.tsv`, or `.txt` suffix. The runner derives the revision from
 its clean executing checkout. `--code-revision <sha>` is an optional equality
 assertion, not the source of the recorded revision. The manifest records the
 preset, creation-time owner-validated Discovery and Alignment settings, and the

@@ -50,6 +50,31 @@ _CLAIM_LEVELS = {
     "configuration": "structure_bound",
     "embedded_semantics": "unavailable",
 }
+_MANIFEST_FIELDS = frozenset(
+    {
+        "schema_version",
+        "validation_status",
+        "row_identity_status",
+        "identity_settlement_status",
+        "product_authority",
+        "authenticity_authority",
+        "semantic_replay_authority",
+        "claim_levels",
+        "code_revision",
+        "preset_name",
+        "effective_configuration",
+        "runtime",
+        "inputs",
+        "artifacts",
+    }
+)
+_INPUT_FIELDS = frozenset({"sample_metadata", "discovery_batch_index"})
+_ARTIFACT_BINDING_FIELDS = frozenset(
+    {"path", "schema_version", "sha256", "byte_size"}
+)
+_DISCOVERY_CENSUS_FIELDS = frozenset(
+    {"sample_count", "receipt_count", "candidate_count", "receipt_census_sha256"}
+)
 
 _OWNER_BUILD_BACKENDS = frozenset({"raw", "raw_superwindow", "ms1_index"})
 _OWNER_BACKFILL_BACKENDS = frozenset(
@@ -197,11 +222,16 @@ def validate_provisional_run_manifest(
     """Validate envelope structure and exact bytes without semantic replay."""
 
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_mapping_without_duplicate_keys,
+        )
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("provisional run manifest is unreadable") from exc
     if not isinstance(payload, dict):
         raise ValueError("provisional run manifest must be an object")
+    if set(payload) != _MANIFEST_FIELDS:
+        raise ValueError("provisional run manifest field set is invalid")
     if payload.get("schema_version") != PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION:
         raise ValueError("unsupported provisional run manifest schema")
     _validated_revision(payload.get("code_revision"))
@@ -221,6 +251,8 @@ def validate_provisional_run_manifest(
         raise ValueError("provisional run manifest claim levels are invalid")
 
     inputs = _required_mapping(payload, "inputs")
+    if set(inputs) != _INPUT_FIELDS:
+        raise ValueError("provisional run manifest input field set is invalid")
     _validate_binding(
         _required_mapping(inputs, "sample_metadata"),
         root=root,
@@ -231,6 +263,7 @@ def validate_provisional_run_manifest(
         discovery_binding,
         root=root,
         expected_schema=DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+        extra_fields=_DISCOVERY_CENSUS_FIELDS,
     )
     sample_count = _positive_int(discovery_binding, "sample_count")
     receipt_count = _positive_int(discovery_binding, "receipt_count")
@@ -367,7 +400,12 @@ def _validate_binding(
     *,
     root: Path,
     expected_schema: str,
+    extra_fields: frozenset[str] = frozenset(),
 ) -> Path:
+    if set(binding) != _ARTIFACT_BINDING_FIELDS | extra_fields:
+        raise ValueError(
+            "provisional run manifest artifact binding field set is invalid"
+        )
     if binding.get("schema_version") != expected_schema:
         raise ValueError("manifest artifact schema does not match its owner")
     relative_text = binding.get("path")
@@ -387,6 +425,19 @@ def _validate_binding(
     if actual.content_sha256 != expected_sha or actual.byte_size != expected_size:
         raise ValueError("manifest artifact bytes do not match their binding")
     return artifact_path
+
+
+def _mapping_without_duplicate_keys(
+    pairs: list[tuple[str, object]],
+) -> dict[str, object]:
+    mapping: dict[str, object] = {}
+    for key, value in pairs:
+        if key in mapping:
+            raise ValueError(
+                f"provisional run manifest JSON contains duplicate key: {key}"
+            )
+        mapping[key] = value
+    return mapping
 
 
 def _discovery_receipt_census(

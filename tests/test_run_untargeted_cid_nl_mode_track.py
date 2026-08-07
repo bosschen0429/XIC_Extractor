@@ -17,6 +17,15 @@ from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
 from xic_extractor.tabular_io import render_delimited_rows
 
 
+@pytest.fixture(autouse=True)
+def _valid_raw_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        runner,
+        "preflight_raw_reader",
+        lambda _dll_dir: [],
+    )
+
+
 def test_one_command_publishes_reviewed_mode_track_table(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -228,6 +237,110 @@ def test_preflight_closes_inputs_without_running_raw(
     assert exit_code == 0
     assert not output_dir.exists()
     assert not (tmp_path / "preflight-output.attempt").exists()
+
+
+def test_preflight_rejects_invalid_thermo_runtime_before_running_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    review_bundle = _review_bundle(tmp_path, projection)
+    raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
+    monkeypatch.setattr(
+        runner,
+        "preflight_raw_reader",
+        lambda _dll_dir: ["required Thermo DLL is missing"],
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_untargeted_cid_nl_mode_track_workflow",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("invalid Thermo runtime launched RAW")
+        ),
+    )
+    output_dir = tmp_path / "invalid-thermo-output"
+
+    exit_code = runner.main(
+        [
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--sample-metadata",
+            str(metadata_path),
+            "--preset",
+            "dna_dr",
+            "--precursor-mz",
+            "349.215",
+            "--review-bundle-dir",
+            str(review_bundle),
+            "--output-dir",
+            str(output_dir),
+            "--manifest-root",
+            str(tmp_path),
+            "--sample-identity-namespace",
+            "synthetic-mode-track",
+            "--preflight-only",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "Thermo RAW reader preflight failed" in capsys.readouterr().err
+    assert not output_dir.exists()
+    assert not (tmp_path / "invalid-thermo-output.attempt").exists()
+
+
+def test_preflight_rejects_raw_stem_case_mismatch_before_running_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    review_bundle = _review_bundle(tmp_path, projection)
+    raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
+    metadata_text = metadata_path.read_text(encoding="utf-8")
+    metadata_path.write_text(
+        metadata_text.replace("s1\ts1\t", "s1\tS1\t", 1),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_untargeted_cid_nl_mode_track_workflow",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("case-mismatched sample launched RAW")
+        ),
+    )
+    output_dir = tmp_path / "case-mismatch-output"
+
+    exit_code = runner.main(
+        [
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--sample-metadata",
+            str(metadata_path),
+            "--preset",
+            "dna_dr",
+            "--precursor-mz",
+            "349.215",
+            "--review-bundle-dir",
+            str(review_bundle),
+            "--output-dir",
+            str(output_dir),
+            "--manifest-root",
+            str(tmp_path),
+            "--sample-identity-namespace",
+            "synthetic-mode-track",
+            "--preflight-only",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "RAW stem casing differs from sample metadata" in capsys.readouterr().err
+    assert not output_dir.exists()
+    assert not (tmp_path / "case-mismatch-output.attempt").exists()
 
 
 def test_preflight_rejects_missing_injection_order_before_running_raw(

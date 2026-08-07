@@ -21,6 +21,7 @@ from xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow import (
     run_untargeted_cid_nl_mode_track_workflow,
 )
 from xic_extractor.presets import apply_to_discovery, load_preset
+from xic_extractor.raw_reader import preflight_raw_reader
 from xic_extractor.sample_metadata import (
     SampleMetadata,
     load_sample_metadata,
@@ -151,11 +152,11 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         raise ValueError("RAW directory does not exist")
     if not dll_dir.is_dir():
         raise ValueError("Thermo DLL directory does not exist")
-    if not any(
-        path.is_file() and path.suffix.lower() == ".dll"
-        for path in dll_dir.iterdir()
-    ):
-        raise ValueError("Thermo DLL directory contains no DLL files")
+    raw_reader_errors = preflight_raw_reader(dll_dir)
+    if raw_reader_errors:
+        raise ValueError(
+            "Thermo RAW reader preflight failed: " + " ".join(raw_reader_errors)
+        )
     if not metadata_path.is_file():
         raise ValueError("sample metadata does not exist")
     if not review_bundle.is_dir():
@@ -217,6 +218,17 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         if key in raw_by_stem:
             raise ValueError(f"duplicate RAW stem: {path.stem}")
         raw_by_stem[key] = path.resolve()
+    casing_mismatches = tuple(
+        f"{row.raw_stem} != {raw_by_stem[key].stem}"
+        for row in metadata
+        if (key := row.raw_stem.casefold()) in raw_by_stem
+        and row.raw_stem != raw_by_stem[key].stem
+    )
+    if casing_mismatches:
+        raise ValueError(
+            "RAW stem casing differs from sample metadata: "
+            + ", ".join(casing_mismatches)
+        )
     metadata_keys = {row.raw_stem.casefold() for row in metadata}
     missing = tuple(
         row.raw_stem for row in metadata if row.raw_stem.casefold() not in raw_by_stem

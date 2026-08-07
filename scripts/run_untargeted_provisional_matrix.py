@@ -177,7 +177,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             event="completed",
             provisional_matrix=str(matrix_relative),
         )
-        attempt_dir.replace(output_dir)
+        _publish_directory_atomic(attempt_dir, output_dir)
     except Exception as exc:
         if heartbeat is not None:
             heartbeat.write_best_effort(
@@ -229,6 +229,17 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         if key in raw_by_stem:
             raise ValueError(f"duplicate RAW stem: {path.stem}")
         raw_by_stem[key] = path.resolve()
+    casing_mismatches = tuple(
+        f"{row.raw_stem} != {raw_by_stem[key].stem}"
+        for row in metadata
+        if (key := row.raw_stem.casefold()) in raw_by_stem
+        and row.raw_stem != raw_by_stem[key].stem
+    )
+    if casing_mismatches:
+        raise ValueError(
+            "RAW stem casing differs from sample metadata: "
+            + ", ".join(casing_mismatches)
+        )
     metadata_keys = {row.raw_stem.casefold() for row in metadata}
     missing = tuple(
         row.raw_stem for row in metadata if row.raw_stem.casefold() not in raw_by_stem
@@ -305,6 +316,17 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
             return
         except PermissionError:
             if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
+def _publish_directory_atomic(staging: Path, output_dir: Path) -> None:
+    for attempt in range(5):
+        try:
+            staging.replace(output_dir)
+            return
+        except PermissionError:
+            if output_dir.exists() or attempt == 4:
                 raise
             time.sleep(0.05 * (attempt + 1))
 

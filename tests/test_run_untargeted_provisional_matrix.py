@@ -12,6 +12,8 @@ from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     UntargetedProvisionalMatrixRun,
 )
+from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
+from xic_extractor.tabular_io import render_delimited_rows
 
 
 def test_pyproject_registers_provisional_matrix_entrypoint() -> None:
@@ -166,6 +168,35 @@ def test_runner_preflight_does_not_start_raw_workflow(
     assert not output_dir.with_name("final.attempt").exists()
 
 
+def test_atomic_directory_publication_retries_transient_windows_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staging = tmp_path / "staging"
+    output_dir = tmp_path / "published"
+    staging.mkdir()
+    (staging / "receipt.json").write_text("{}\n", encoding="utf-8")
+    original_replace = Path.replace
+    attempts = 0
+
+    def replace_after_transient_lock(path: Path, target: Path) -> Path:
+        nonlocal attempts
+        if path == staging:
+            attempts += 1
+            if attempts == 1:
+                raise PermissionError("transient Windows directory lock")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", replace_after_transient_lock)
+    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+
+    runner._publish_directory_atomic(staging, output_dir)
+
+    assert attempts == 2
+    assert not staging.exists()
+    assert (output_dir / "receipt.json").is_file()
+
+
 def test_runner_preflight_rejects_invalid_thermo_runtime(
     tmp_path: Path,
     monkeypatch,
@@ -204,6 +235,78 @@ def test_runner_preflight_rejects_invalid_thermo_runtime(
     )
 
     assert exit_code == 2
+    assert not output_dir.exists()
+    assert not output_dir.with_name("final.attempt").exists()
+
+
+def test_runner_preflight_rejects_raw_stem_case_mismatch(
+    tmp_path: Path,
+    monkeypatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    inputs = _inputs(tmp_path)
+    rows = []
+    for index, stem in enumerate(("Sample-A", "sample-b"), start=1):
+        rows.append(
+            {
+                "schema_version": "sample_metadata_v1",
+                "sample_name": stem,
+                "raw_stem": stem,
+                "injection_order": str(index),
+                "sample_role": "study_sample",
+                "batch_id": "synthetic",
+                "prep_batch_id": "",
+                "matrix_type": "synthetic",
+                "group": "study",
+                "excluded": "FALSE",
+                "exclusion_reason": "",
+            }
+        )
+    inputs.sample_metadata_path.write_text(
+        render_delimited_rows(
+            rows,
+            SAMPLE_METADATA_COLUMNS,
+            delimiter="\t",
+            extrasaction="raise",
+            lineterminator="\n",
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "final"
+    monkeypatch.setattr(runner, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(
+        runner,
+        "_executing_checkout_revision",
+        lambda _asserted: "a" * 40,
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_untargeted_provisional_matrix_workflow",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("case-mismatched sample launched RAW")
+        ),
+    )
+
+    exit_code = runner.main(
+        [
+            "--raw-dir",
+            str(inputs.raw_files[0].parent),
+            "--dll-dir",
+            str(inputs.dll_dir),
+            "--sample-metadata",
+            str(inputs.sample_metadata_path),
+            "--preset",
+            "dna_dr",
+            "--output-dir",
+            str(output_dir),
+            "--manifest-root",
+            str(tmp_path),
+            "--preflight-only",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "RAW stem casing differs from sample metadata" in capsys.readouterr().err
     assert not output_dir.exists()
     assert not output_dir.with_name("final.attempt").exists()
 
