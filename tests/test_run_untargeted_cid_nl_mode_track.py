@@ -129,8 +129,54 @@ def test_failed_stage_never_publishes_final_output(
     assert not output_dir.exists()
     assert (tmp_path / "failed-output.attempt/timing.live.json").is_file()
     stderr = capsys.readouterr().err
-    assert "warning: could not update failure heartbeat" in stderr
+    assert "warning: could not update heartbeat (failed)" in stderr
     assert "RuntimeError: synthetic Discovery failure" in stderr
+
+
+def test_heartbeat_retries_transient_windows_replace_denial(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "timing.live.json"
+    heartbeat = runner._Heartbeat(path, started=0.0)
+    original_replace = Path.replace
+    attempts = 0
+
+    def flaky_replace(source: Path, target: Path) -> Path:
+        nonlocal attempts
+        if source.name == "timing.live.tmp" and attempts == 0:
+            attempts += 1
+            raise PermissionError(5, "synthetic transient heartbeat denial")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_replace)
+
+    heartbeat.write(event="sample_complete", sample_stem="s1")
+
+    assert attempts == 1
+    assert json.loads(path.read_text(encoding="utf-8"))["event"] == (
+        "sample_complete"
+    )
+
+
+def test_heartbeat_io_failure_cannot_abort_workflow_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    heartbeat = runner._Heartbeat(tmp_path / "timing.live.json", started=0.0)
+
+    def fail_write(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError(5, "synthetic persistent heartbeat denial")
+
+    monkeypatch.setattr(runner, "_write_json_atomic", fail_write)
+
+    heartbeat.progress({"event": "m7_sample_complete", "sample_stem": "s1"})
+
+    assert not (tmp_path / "timing.live.json").exists()
+    assert "warning: could not update heartbeat (m7_sample_complete)" in (
+        capsys.readouterr().err
+    )
 
 
 def test_preflight_closes_inputs_without_running_raw(

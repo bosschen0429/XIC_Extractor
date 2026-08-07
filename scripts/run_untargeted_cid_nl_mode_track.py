@@ -65,7 +65,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         attempt_dir.mkdir(parents=True)
         heartbeat = _Heartbeat(attempt_dir / "timing.live.json", started=started)
-        heartbeat.write(event="started", sample_count=len(inputs.sample_metadata))
+        heartbeat.write_best_effort(
+            event="started",
+            sample_count=len(inputs.sample_metadata),
+        )
 
         source_path = attempt_dir / "mode_track_source.json"
         run = run_untargeted_cid_nl_mode_track_workflow(
@@ -92,7 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
         )
         source_path.write_bytes(run.projection.source_artifact_bytes)
-        heartbeat.write(
+        heartbeat.write_best_effort(
             event="projection_complete",
             pending_cell_count=len(run.projection.pending_acceptance_rows),
             call_cost=dict(run.call_cost),
@@ -103,28 +106,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             manual_review_replay_path=inputs.manual_review_replay_path,
             output_dir=output_dir,
         )
-        try:
-            heartbeat.write(
-                event="completed",
-                adopted_cell_count=final.adopted_cell_count,
-                rollback_status=final.rollback_status,
-                final_output=str(output_dir),
-            )
-        except OSError as exc:
-            print(
-                f"warning: could not update completion heartbeat: {exc}",
-                file=sys.stderr,
-            )
+        heartbeat.write_best_effort(
+            event="completed",
+            adopted_cell_count=final.adopted_cell_count,
+            rollback_status=final.rollback_status,
+            final_output=str(output_dir),
+        )
     except Exception as exc:
         if heartbeat is not None:
-            try:
-                heartbeat.write(event="failed", error=f"{type(exc).__name__}: {exc}")
-            except OSError as heartbeat_exc:
-                print(
-                    "warning: could not update failure heartbeat: "
-                    f"{heartbeat_exc}",
-                    file=sys.stderr,
-                )
+            heartbeat.write_best_effort(
+                event="failed",
+                error=f"{type(exc).__name__}: {exc}",
+            )
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
 
@@ -285,10 +278,19 @@ class _Heartbeat:
         event_name = event.get("event")
         if not isinstance(event_name, str):
             raise ValueError("heartbeat progress event requires an event name")
-        self.write(
+        self.write_best_effort(
             event=event_name,
             **{key: value for key, value in event.items() if key != "event"},
         )
+
+    def write_best_effort(self, *, event: str, **values: object) -> None:
+        try:
+            self.write(event=event, **values)
+        except OSError as exc:
+            print(
+                f"warning: could not update heartbeat ({event}): {exc}",
+                file=sys.stderr,
+            )
 
     def write(self, *, event: str, **values: object) -> None:
         _write_json_atomic(
@@ -309,7 +311,14 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    temporary.replace(path)
+    for attempt in range(5):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
