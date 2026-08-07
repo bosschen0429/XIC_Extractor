@@ -237,12 +237,14 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         for row in index_rows
     )
     assert [row["medium_count"] for row in index_rows] == ["1", "1"]
-    assert [
-        Path(row["candidate_csv"]).name for row in index_rows
-    ] == ["discovery_candidates.csv", "discovery_candidates.csv"]
-    assert [
-        Path(row["review_csv"]).name for row in index_rows
-    ] == ["discovery_review.csv", "discovery_review.csv"]
+    assert [row["candidate_csv"] for row in index_rows] == [
+        "TumorBC2312_DNA/discovery_candidates.csv",
+        "NormalBC2257_DNA/discovery_candidates.csv",
+    ]
+    assert [row["review_csv"] for row in index_rows] == [
+        "TumorBC2312_DNA/discovery_review.csv",
+        "NormalBC2257_DNA/discovery_review.csv",
+    ]
 
     first_rows = _read_csv(
         tmp_path / "out" / "TumorBC2312_DNA" / "discovery_candidates.csv"
@@ -276,6 +278,23 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         require_successor_columns=True,
     )
     assert tuple(candidate.candidate_id for candidate in rebound) == (
+        "TumorBC2312_DNA#101@mz258.1085_p142.0611",
+    )
+
+    published = tmp_path / "published"
+    (tmp_path / "out").replace(published)
+    relocated = read_discovery_batch_index(
+        published / "discovery_batch_index.csv",
+        require_owner_closure=True,
+    )
+    relocated_receipt = relocated.candidate_receipts["TumorBC2312_DNA"]
+    assert relocated_receipt is not None
+    relocated_candidates = read_owner_bound_discovery_candidates_csv(
+        relocated.candidate_csvs["TumorBC2312_DNA"],
+        receipt=relocated_receipt,
+        require_successor_columns=True,
+    )
+    assert tuple(candidate.candidate_id for candidate in relocated_candidates) == (
         "TumorBC2312_DNA#101@mz258.1085_p142.0611",
     )
 

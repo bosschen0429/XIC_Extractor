@@ -31,6 +31,13 @@ from xic_extractor.alignment.output_levels import (
 from xic_extractor.alignment.owner_backfill import OwnerBackfillCandidateAuditRow
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.alignment.provisional_matrix import (
+    build_provisional_matrix_projection,
+    write_provisional_identity_tsv,
+    write_provisional_matrix_tsv,
+    write_provisional_provenance_tsv,
+    write_provisional_summary_json,
+)
 from xic_extractor.alignment.tsv_writer import (
     write_alignment_backfill_cell_evidence_tsv,
     write_alignment_cell_integration_audit_tsv,
@@ -65,6 +72,10 @@ class AlignmentRunOutputs:
     skipped_evidence_ledger_tsv: Path | None = None
     run_metadata_json: Path | None = None
     identity_coherence_output_dir: Path | None = None
+    provisional_matrix_tsv: Path | None = None
+    provisional_identity_tsv: Path | None = None
+    provisional_cell_provenance_tsv: Path | None = None
+    provisional_summary_json: Path | None = None
 
 
 def output_paths(
@@ -77,6 +88,7 @@ def output_paths(
     emit_alignment_backfill_seed_audit: bool = False,
     emit_alignment_backfill_candidate_audit: bool = False,
     emit_skipped_evidence_ledger: bool = False,
+    emit_provisional_matrix: bool = False,
 ) -> AlignmentRunOutputs:
     artifacts = set(artifact_names_for_output_level(output_level))
     if emit_alignment_cells:
@@ -164,6 +176,26 @@ def output_paths(
             if emit_skipped_evidence_ledger
             else None
         ),
+        provisional_matrix_tsv=(
+            output_dir / "provisional_alignment_matrix.tsv"
+            if emit_provisional_matrix
+            else None
+        ),
+        provisional_identity_tsv=(
+            output_dir / "provisional_row_identity.tsv"
+            if emit_provisional_matrix
+            else None
+        ),
+        provisional_cell_provenance_tsv=(
+            output_dir / "provisional_cell_provenance.tsv"
+            if emit_provisional_matrix
+            else None
+        ),
+        provisional_summary_json=(
+            output_dir / "provisional_matrix_summary.json"
+            if emit_provisional_matrix
+            else None
+        ),
     )
 
 
@@ -189,6 +221,7 @@ def alignment_metadata(
     audit_evidence_mode_reason: str = "",
     scope_warning: str = "",
     skipped_evidence_predicate_version: str = "",
+    require_discovery_owner_closure: bool = False,
 ) -> dict[str, str]:
     return {
         "schema_version": "alignment-results-v3",
@@ -209,6 +242,9 @@ def alignment_metadata(
         "output_scope": output_scope,
         "selected_family_count": str(selected_family_count),
         "selected_family_source": selected_family_source,
+        "require_discovery_owner_closure": (
+            "TRUE" if require_discovery_owner_closure else "FALSE"
+        ),
         "request_plan_version": request_plan_version,
         "audit_evidence_mode": audit_evidence_mode,
         "requested_audit_evidence_mode": requested_audit_evidence_mode,
@@ -246,6 +282,27 @@ def write_outputs_atomic(
     baseline_audit_method: str = "",
 ) -> None:
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
+    provisional_projection = None
+    provisional_output_paths = (
+        outputs.provisional_matrix_tsv,
+        outputs.provisional_identity_tsv,
+        outputs.provisional_cell_provenance_tsv,
+        outputs.provisional_summary_json,
+    )
+    if any(path is not None for path in provisional_output_paths):
+        if any(path is None for path in provisional_output_paths):
+            raise ValueError("provisional matrix outputs must be emitted atomically")
+        provisional_projection = build_provisional_matrix_projection(
+            matrix,
+            backfill_scope=metadata.get("backfill_scope", ""),
+            discovery_owner_closure=(
+                metadata.get("require_discovery_owner_closure") == "TRUE"
+            ),
+            selected_family_count=_metadata_nonnegative_int(
+                metadata,
+                "selected_family_count",
+            ),
+        )
     production_decisions = None
     if (
         outputs.review_tsv is not None
@@ -402,6 +459,43 @@ def write_outputs_atomic(
                 lambda path: _write_metadata_json(path, metadata),
             ),
         )
+    if outputs.provisional_matrix_tsv is not None:
+        assert provisional_projection is not None
+        assert outputs.provisional_identity_tsv is not None
+        assert outputs.provisional_cell_provenance_tsv is not None
+        assert outputs.provisional_summary_json is not None
+        output_paths_and_writers.extend(
+            (
+                (
+                    outputs.provisional_matrix_tsv,
+                    lambda path: write_provisional_matrix_tsv(
+                        path,
+                        provisional_projection,
+                    ),
+                ),
+                (
+                    outputs.provisional_identity_tsv,
+                    lambda path: write_provisional_identity_tsv(
+                        path,
+                        provisional_projection,
+                    ),
+                ),
+                (
+                    outputs.provisional_cell_provenance_tsv,
+                    lambda path: write_provisional_provenance_tsv(
+                        path,
+                        provisional_projection,
+                    ),
+                ),
+                (
+                    outputs.provisional_summary_json,
+                    lambda path: write_provisional_summary_json(
+                        path,
+                        provisional_projection,
+                    ),
+                ),
+            )
+        )
 
     temp_paths = [
         _temp_path(final_path) for final_path, _writer in output_paths_and_writers
@@ -440,6 +534,17 @@ def write_outputs_atomic(
         for backup_path in backup_paths:
             backup_path.unlink(missing_ok=True)
         raise
+
+
+def _metadata_nonnegative_int(metadata: dict[str, str], key: str) -> int:
+    value = metadata.get(key, "")
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"alignment metadata {key} must be an integer") from exc
+    if parsed < 0:
+        raise ValueError(f"alignment metadata {key} must be non-negative")
+    return parsed
 
 
 def _temp_path(final_path: Path) -> Path:

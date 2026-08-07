@@ -33,6 +33,7 @@ POWERSHELL_ASSIGNMENT = re.compile(
 )
 EXEC_CONFIG_PATHS = [
     "AGENTS.md",
+    ".codex/config.toml",
     ".codex/hooks.json",
     ".codex/rules/",
     ".codex/hooks/",
@@ -87,6 +88,17 @@ def get_command(event: dict[str, object]) -> str:
         if isinstance(command, str):
             return command
     return ""
+
+
+def is_complete_apply_patch(event: dict[str, object], command: str) -> bool:
+    if str(event.get("tool_name", "")).casefold() != "apply_patch":
+        return False
+    lines = command.strip().splitlines()
+    return (
+        len(lines) >= 2
+        and lines[0] == "*** Begin Patch"
+        and lines[-1] == "*** End Patch"
+    )
 
 
 def text_from_value(value: object) -> str:
@@ -235,13 +247,14 @@ def main() -> int:
     if not command and not payload:
         return 0
 
-    command_analysis = analyze_command(command)
+    policy_command = "" if is_complete_apply_patch(event, command) else command
+    command_analysis = analyze_command(policy_command)
     if command_analysis.requires_rewrite:
         deny(command_analysis.rewrite_reason)
         return 0
 
-    effective_segments = shell_command_segments(command)
-    if not is_inert_text_only_command(command) and has_raw_background_launch(
+    effective_segments = shell_command_segments(policy_command)
+    if not is_inert_text_only_command(policy_command) and has_raw_background_launch(
         effective_segments
     ):
         deny(
@@ -277,7 +290,7 @@ def main() -> int:
                 )
                 return 0
     if (
-        is_shell_command_event(str(event.get("tool_name", "")), command)
+        is_shell_command_event(str(event.get("tool_name", "")), policy_command)
         and invocation is not None
         and invocation.subcommand == "commit"
     ):

@@ -9,6 +9,7 @@ default extraction behavior.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections import Counter
@@ -242,6 +243,55 @@ def build_quant_matrix_version_from_checked_manifest(
     )
 
 
+def build_quant_matrix_version_from_in_process_acceptance(
+    *,
+    matrix_header: Sequence[str],
+    input_quant_matrix_rows: Sequence[Mapping[str, str]],
+    input_matrix_identity_rows: Sequence[Mapping[str, str]],
+    production_acceptance_rows: Sequence[Mapping[str, str]],
+    source_artifacts: Mapping[str, bytes],
+    expected_diff_rows: Sequence[Mapping[str, str]],
+) -> QuantMatrixVersionRows:
+    """Validate fresh in-process acceptance content before Matrix projection.
+
+    This is the non-file-backed entry to the existing acceptance owner.  It
+    validates the same manifest rules and complete source bytes as the TSV
+    loader, but it does not persist and then re-read an authority artifact.
+    """
+
+    rows = tuple(dict(row) for row in production_acceptance_rows)
+    problems: list[str] = []
+    if not rows:
+        problems.append("production acceptance rows are empty")
+    for row_number, row in enumerate(rows, start=2):
+        missing = tuple(column for column in REQUIRED_COLUMNS if column not in row)
+        extra = tuple(column for column in row if column not in REQUIRED_COLUMNS)
+        if missing:
+            problems.append(
+                f"row {row_number}: missing columns: {', '.join(missing)}"
+            )
+        if extra:
+            problems.append(f"row {row_number}: extra columns: {', '.join(extra)}")
+    expected_manifest_sha = production_acceptance_manifest_sha256(rows)
+    _check_manifest_rows(
+        rows,
+        expected_manifest_sha,
+        None,
+        problems,
+        source_artifacts=source_artifacts,
+    )
+    if problems:
+        raise ProductionAcceptanceManifestError(problems)
+    checked_rows = tuple(MappingProxyType(row) for row in rows)
+    return build_quant_matrix_version_rows(
+        matrix_header=matrix_header,
+        input_quant_matrix_rows=input_quant_matrix_rows,
+        input_matrix_identity_rows=input_matrix_identity_rows,
+        production_acceptance_rows=checked_rows,
+        expected_diff_rows=expected_diff_rows,
+    )
+
+
 def _read_and_check_manifest_snapshot(
     *,
     manifest_path: Path,
@@ -294,8 +344,10 @@ def _check_schema_authority_rules(
 def _check_manifest_rows(
     rows: Sequence[Mapping[str, str]],
     expected_manifest_sha: str,
-    repo_root: Path,
+    repo_root: Path | None,
     problems: list[str],
+    *,
+    source_artifacts: Mapping[str, bytes] | None = None,
 ) -> None:
     primary_counts = Counter(
         (row.get("peak_hypothesis_id", ""), row.get("sample_stem", ""))
@@ -315,6 +367,7 @@ def _check_manifest_rows(
             expected_manifest_sha,
             repo_root,
             problems,
+            source_artifacts=source_artifacts,
         )
 
 
@@ -322,8 +375,10 @@ def _check_manifest_row(
     row: Mapping[str, str],
     row_number: int,
     expected_manifest_sha: str,
-    repo_root: Path,
+    repo_root: Path | None,
     problems: list[str],
+    *,
+    source_artifacts: Mapping[str, bytes] | None = None,
 ) -> None:
     if row.get("schema_version") != MANIFEST_SCHEMA_VERSION:
         problems.append(f"row {row_number}: schema_version mismatch")
@@ -384,6 +439,7 @@ def _check_manifest_row(
         expected_manifest_sha,
         repo_root,
         problems,
+        source_artifacts=source_artifacts,
     )
     _check_write_blockers(
         row,
@@ -493,8 +549,10 @@ def _check_hashes_and_paths(
     row: Mapping[str, str],
     row_number: int,
     expected_manifest_sha: str,
-    repo_root: Path,
+    repo_root: Path | None,
     problems: list[str],
+    *,
+    source_artifacts: Mapping[str, bytes] | None = None,
 ) -> dict[str, str]:
     resolved_source_paths: dict[str, str] = {}
     for field in (
@@ -514,27 +572,68 @@ def _check_hashes_and_paths(
         if not value:
             problems.append(f"row {row_number}: {field} is required")
             continue
-        path = _resolve_source_path(
-            repo_root=repo_root,
-            relative_path=value,
-            field=field,
-            row_number=row_number,
-            problems=problems,
-        )
-        if path is None:
-            continue
-        resolved_source_paths[field] = path.relative_to(
-            repo_root.resolve()
-        ).as_posix()
-        _check_source_artifact_hash(
-            path=path,
-            relative_path=value,
-            hash_field=field.replace("_relpath", "_sha256"),
-            row=row,
-            row_number=row_number,
-            problems=problems,
-        )
+        if source_artifacts is not None:
+            normalized = _normalize_source_relpath(
+                relative_path=value,
+                field=field,
+                row_number=row_number,
+                problems=problems,
+            )
+            if normalized is None:
+                continue
+            resolved_source_paths[field] = normalized
+            _check_in_process_source_artifact_hash(
+                source_artifacts=source_artifacts,
+                normalized_path=normalized,
+                relative_path=value,
+                hash_field=field.replace("_relpath", "_sha256"),
+                row=row,
+                row_number=row_number,
+                problems=problems,
+            )
+        else:
+            if repo_root is None:
+                raise TypeError("file-backed acceptance requires repo_root")
+            path = _resolve_source_path(
+                repo_root=repo_root,
+                relative_path=value,
+                field=field,
+                row_number=row_number,
+                problems=problems,
+            )
+            if path is None:
+                continue
+            resolved_source_paths[field] = path.relative_to(
+                repo_root.resolve()
+            ).as_posix()
+            _check_source_artifact_hash(
+                path=path,
+                relative_path=value,
+                hash_field=field.replace("_relpath", "_sha256"),
+                row=row,
+                row_number=row_number,
+                problems=problems,
+            )
     return resolved_source_paths
+
+
+def _normalize_source_relpath(
+    *,
+    relative_path: str,
+    field: str,
+    row_number: int,
+    problems: list[str],
+) -> str | None:
+    normalized_path = relative_path.replace("\\", "/")
+    path = Path(normalized_path)
+    windows_path = PureWindowsPath(relative_path)
+    if path.is_absolute() or windows_path.drive:
+        problems.append(f"row {row_number}: {field} must be relative")
+        return None
+    if ".." in PurePosixPath(normalized_path).parts:
+        problems.append(f"row {row_number}: {field} must stay within repo_root")
+        return None
+    return PurePosixPath(normalized_path).as_posix()
 
 
 def _resolve_source_path(
@@ -545,15 +644,15 @@ def _resolve_source_path(
     row_number: int,
     problems: list[str],
 ) -> Path | None:
-    normalized_path = relative_path.replace("\\", "/")
+    normalized_path = _normalize_source_relpath(
+        relative_path=relative_path,
+        field=field,
+        row_number=row_number,
+        problems=problems,
+    )
+    if normalized_path is None:
+        return None
     path = Path(normalized_path)
-    windows_path = PureWindowsPath(relative_path)
-    if path.is_absolute() or windows_path.drive:
-        problems.append(f"row {row_number}: {field} must be relative")
-        return None
-    if ".." in PurePosixPath(normalized_path).parts:
-        problems.append(f"row {row_number}: {field} must stay within repo_root")
-        return None
     root = repo_root.resolve()
     resolved = (root / path).resolve()
     try:
@@ -562,6 +661,31 @@ def _resolve_source_path(
         problems.append(f"row {row_number}: {field} must stay within repo_root")
         return None
     return resolved
+
+
+def _check_in_process_source_artifact_hash(
+    *,
+    source_artifacts: Mapping[str, bytes],
+    normalized_path: str,
+    relative_path: str,
+    hash_field: str,
+    row: Mapping[str, str],
+    row_number: int,
+    problems: list[str],
+) -> None:
+    artifact = source_artifacts.get(normalized_path)
+    if artifact is None:
+        problems.append(f"row {row_number}: {relative_path} source artifact missing")
+        return
+    if not isinstance(artifact, bytes):
+        problems.append(
+            f"row {row_number}: {relative_path} source artifact is not bytes"
+        )
+        return
+    expected_hash = row.get(hash_field, "")
+    actual_hash = hashlib.sha256(artifact).hexdigest().upper()
+    if _is_sha256(expected_hash) and actual_hash != expected_hash.upper():
+        problems.append(f"row {row_number}: {hash_field} mismatch")
 
 
 def _check_source_artifact_hash(

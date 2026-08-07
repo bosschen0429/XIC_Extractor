@@ -1,0 +1,180 @@
+"""Full-universe Untargeted Discovery-to-provisional-Matrix orchestration."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
+
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.ms1_index_source import (
+    OwnerBackfillXicBackend,
+    OwnerBuildXicBackend,
+)
+from xic_extractor.alignment.owner_backfill import OwnerBackfillWindowStrategy
+from xic_extractor.alignment.pipeline import run_alignment
+from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.pipeline import run_discovery_batch
+from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedProvisionalMatrixRun:
+    discovery_index: Path
+    alignment_outputs: AlignmentRunOutputs
+
+
+def run_untargeted_provisional_matrix_workflow(
+    *,
+    raw_files: tuple[Path, ...],
+    dll_dir: Path,
+    output_dir: Path,
+    discovery_settings: DiscoverySettings,
+    alignment_config: AlignmentConfig,
+    raw_workers: int = 1,
+    raw_xic_batch_size: int = 1,
+    owner_build_xic_backend: OwnerBuildXicBackend = "raw",
+    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
+    owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
+    owner_backfill_superwindow_span_factor: int = 2,
+    sample_column_injection_order: Path | None = None,
+    timing_recorder: TimingRecorder | None = None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+) -> UntargetedProvisionalMatrixRun:
+    """Run every fresh Discovery candidate through existing full Alignment."""
+
+    if not raw_files:
+        raise ValueError("full-universe workflow requires at least one RAW file")
+    if any(not path.is_file() for path in raw_files):
+        raise ValueError("full-universe workflow RAW input does not exist")
+    raw_dir = raw_files[0].parent
+    if any(path.parent != raw_dir for path in raw_files):
+        raise ValueError("full-universe workflow requires one RAW directory")
+    if not dll_dir.is_dir():
+        raise ValueError("full-universe workflow Thermo DLL directory does not exist")
+    if output_dir.exists():
+        raise ValueError("full-universe workflow output already exists")
+    if raw_workers < 1 or raw_xic_batch_size < 1:
+        raise ValueError("RAW worker and XIC batch counts must be positive")
+
+    output_dir.mkdir(parents=True)
+    discovery_dir = output_dir / "discovery"
+    alignment_dir = output_dir / "alignment"
+    peak_config = _peak_config(
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        output_dir=discovery_dir,
+        settings=discovery_settings,
+    )
+    discovery = run_discovery_batch(
+        raw_files,
+        output_dir=discovery_dir,
+        settings=discovery_settings,
+        peak_config=peak_config,
+        timing_recorder=timing_recorder,
+    )
+    _progress(progress_callback, "discovery_complete")
+
+    outputs = run_alignment(
+        discovery_batch_index=discovery.batch_index_csv,
+        raw_dir=raw_dir,
+        dll_dir=dll_dir,
+        output_dir=alignment_dir,
+        alignment_config=alignment_config,
+        peak_config=peak_config,
+        output_level="validation-minimal",
+        raw_workers=raw_workers,
+        raw_xic_batch_size=raw_xic_batch_size,
+        owner_build_xic_backend=owner_build_xic_backend,
+        owner_backfill_xic_backend=owner_backfill_xic_backend,
+        owner_backfill_window_strategy=owner_backfill_window_strategy,
+        owner_backfill_superwindow_span_factor=(
+            owner_backfill_superwindow_span_factor
+        ),
+        sample_column_injection_order=sample_column_injection_order,
+        timing_recorder=timing_recorder,
+        backfill_scope="full-audit",
+        audit_evidence_mode="none",
+        selected_family_ids=frozenset(),
+        selected_family_source="",
+        require_discovery_owner_closure=True,
+        emit_provisional_matrix=True,
+    )
+    if (
+        outputs.provisional_matrix_tsv is None
+        or outputs.provisional_identity_tsv is None
+        or outputs.provisional_cell_provenance_tsv is None
+        or outputs.provisional_summary_json is None
+    ):
+        raise RuntimeError("full-universe Alignment omitted provisional outputs")
+    _progress(
+        progress_callback,
+        "alignment_complete",
+        provisional_matrix=str(outputs.provisional_matrix_tsv),
+    )
+    return UntargetedProvisionalMatrixRun(
+        discovery_index=discovery.batch_index_csv,
+        alignment_outputs=outputs,
+    )
+
+
+def _peak_config(
+    *,
+    raw_dir: Path,
+    dll_dir: Path,
+    output_dir: Path,
+    settings: DiscoverySettings,
+) -> ExtractionConfig:
+    defaults = CANONICAL_SETTINGS_DEFAULTS
+    return ExtractionConfig(
+        data_dir=raw_dir,
+        dll_dir=dll_dir,
+        output_csv=output_dir / "unused_xic_results.csv",
+        diagnostics_csv=output_dir / "unused_xic_diagnostics.csv",
+        smooth_window=int(defaults["smooth_window"]),
+        smooth_polyorder=int(defaults["smooth_polyorder"]),
+        ms1_morphology_smoothing_window_points=int(
+            defaults["ms1_morphology_smoothing_window_points"]
+        ),
+        peak_rel_height=float(defaults["peak_rel_height"]),
+        peak_min_prominence_ratio=float(defaults["peak_min_prominence_ratio"]),
+        ms2_precursor_tol_da=settings.ms2_precursor_tol_da,
+        nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
+        resolver_mode=settings.resolver_mode,
+        resolver_chrom_threshold=float(defaults["resolver_chrom_threshold"]),
+        resolver_min_search_range_min=float(
+            defaults["resolver_min_search_range_min"]
+        ),
+        resolver_min_relative_height=float(
+            defaults["resolver_min_relative_height"]
+        ),
+        resolver_min_absolute_height=float(
+            defaults["resolver_min_absolute_height"]
+        ),
+        resolver_min_ratio_top_edge=float(defaults["resolver_min_ratio_top_edge"]),
+        resolver_peak_duration_min=float(
+            defaults["resolver_peak_duration_min"]
+        ),
+        resolver_peak_duration_max=float(
+            defaults["resolver_peak_duration_max"]
+        ),
+        resolver_min_scans=int(defaults["resolver_min_scans"]),
+    )
+
+
+def _progress(
+    callback: Callable[[Mapping[str, object]], None] | None,
+    event: str,
+    **values: object,
+) -> None:
+    if callback is not None:
+        callback({"event": event, **values})
+
+
+__all__ = (
+    "UntargetedProvisionalMatrixRun",
+    "run_untargeted_provisional_matrix_workflow",
+)

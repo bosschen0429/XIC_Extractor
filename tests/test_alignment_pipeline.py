@@ -1,4 +1,6 @@
+import csv
 import json
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +16,119 @@ from tests.alignment_pipeline_helpers import (
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.matrix import AlignmentMatrix
+from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+    DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    discovery_receipt_index_fields,
+    mint_discovery_candidate_universe_receipt,
+)
+from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    (
+        ({}, "requires Discovery owner closure"),
+        (
+            {
+                "require_discovery_owner_closure": True,
+                "backfill_scope": "selected-families",
+            },
+            "requires full-audit Backfill",
+        ),
+        (
+            {
+                "require_discovery_owner_closure": True,
+                "selected_family_ids": frozenset({"FAM000001"}),
+            },
+            "does not allow a family selection",
+        ),
+    ),
+)
+def test_pipeline_provisional_matrix_flags_fail_closed(
+    tmp_path: Path,
+    overrides: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        pipeline_module.run_alignment(
+            discovery_batch_index=tmp_path / "batch.csv",
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            emit_provisional_matrix=True,
+            **overrides,
+        )
+
+
+def test_pipeline_owner_closure_rejects_legacy_batch_index(tmp_path: Path) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+
+    with pytest.raises(ValueError, match="owner closure is required"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            require_discovery_owner_closure=True,
+        )
+
+
+def test_pipeline_owner_closure_rejects_raw_replaced_after_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    raw_path = raw_dir / "Sample_A.raw"
+    raw_path.write_bytes(b"discovery bytes")
+    batch_index = _write_owner_closed_batch(tmp_path, raw_path)
+    raw_path.write_bytes(b"replacement bytes")
+    owner_build_called = False
+
+    @contextmanager
+    def owner_bound_opener(path, _dll_dir, *, expected_acquisition_source=None):
+        actual = build_acquisition_source_identity(
+            path,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        )
+        if actual != expected_acquisition_source:
+            raise ValueError("RAW path content does not match expected acquisition")
+        yield SimpleNamespace()
+
+    def fail_owner_build(*_args, **_kwargs):
+        nonlocal owner_build_called
+        owner_build_called = True
+        raise AssertionError("owner build must not start")
+
+    monkeypatch.setattr(pipeline_module, "_default_raw_opener", owner_bound_opener)
+    monkeypatch.setattr(pipeline_module, "build_sample_local_owners", fail_owner_build)
+
+    with pytest.raises(ValueError, match="RAW path content does not match"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            require_discovery_owner_closure=True,
+            emit_provisional_matrix=True,
+        )
+
+    assert owner_build_called is False
+    assert not (tmp_path / "out").exists()
 
 
 def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
@@ -537,6 +651,56 @@ class _DriftLookup:
 
     def injection_order(self, sample_stem: str) -> int | None:
         return {"Sample_A": 1}.get(sample_stem)
+
+
+def _write_owner_closed_batch(tmp_path: Path, raw_path: Path) -> Path:
+    batch_index = _write_batch(
+        tmp_path,
+        ("Sample_A",),
+        raw_files={"Sample_A": str(raw_path)},
+    )
+    candidate_csv = batch_index.parent / "Sample_A" / "discovery_candidates.csv"
+    candidates = read_discovery_candidates_csv(candidate_csv)
+    acquisition_source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem="Sample_A",
+        acquisition_source=acquisition_source,
+        candidate_csv=candidate_csv,
+        candidates=candidates,
+    )
+    fieldnames = (
+        "schema_version",
+        "sample_stem",
+        "raw_file",
+        "candidate_csv",
+        "review_csv",
+        "candidate_count",
+        "high_count",
+        "medium_count",
+        "low_count",
+        *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    )
+    row = {
+        "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+        "sample_stem": "Sample_A",
+        "raw_file": str(raw_path),
+        "candidate_csv": "Sample_A/discovery_candidates.csv",
+        "review_csv": "",
+        "candidate_count": str(len(candidates)),
+        "high_count": "0",
+        "medium_count": str(len(candidates)),
+        "low_count": "0",
+        **discovery_receipt_index_fields(receipt),
+    }
+    with batch_index.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(row)
+    return batch_index
 
 
 def _scope_feature(

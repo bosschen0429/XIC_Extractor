@@ -508,9 +508,12 @@ Root `launch_gui.bat` 只服務本機開發雙擊啟動；release artifact 以
 - **用途**：保存可重用但不進 git 的 validation inputs，例如
   `discovery_batch_index.csv` 及其 per-sample `discovery_candidates.csv` /
   `discovery_review.csv`
-- **規則**：不要指向 `.worktrees/<branch>/output/` 作為長期輸入。搬入本目錄時
-  必須重寫 `discovery_batch_index.csv` 裡的 `candidate_csv` / `review_csv` 到
-  本目錄下的實際路徑，並跑 preflight 檢查 sample count、candidate CSV、RAW path
+- **規則**：不要指向 `.worktrees/<branch>/output/` 作為長期輸入。Current
+  Discovery outputs use index-relative `candidate_csv` / `review_csv` locators;
+  copy the complete Discovery directory without rewriting them. Historical
+  indexes with absolute worktree paths require one-time migration to
+  index-relative locators. Then run the preflight checks for sample count,
+  candidate CSV, and RAW path.
 - **何時可清**：只有在對應 validation note 已不再需要，或可從 RAW 重新產生時
 - **指令**：依 artifact set 手動刪除；不要一鍵清整個目錄
 

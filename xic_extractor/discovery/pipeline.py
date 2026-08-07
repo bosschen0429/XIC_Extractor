@@ -145,6 +145,7 @@ def run_discovery_batch(
                 outputs=outputs,
                 candidates=candidates,
                 receipt=receipt,
+                index_parent=output_dir,
             )
         )
 
@@ -203,6 +204,7 @@ def _batch_index_row(
     outputs: DiscoveryRunOutputs,
     candidates: tuple[DiscoveryCandidate, ...],
     receipt: DiscoveryCandidateUniverseReceipt,
+    index_parent: Path,
 ) -> dict[str, str]:
     counts = _priority_counts(candidates)
     return {
@@ -210,15 +212,27 @@ def _batch_index_row(
         "sample_stem": format_discovery_csv_value("sample_stem", raw_path.stem),
         "raw_file": format_discovery_csv_value("raw_file", raw_path),
         "candidate_csv": format_discovery_csv_value(
-            "candidate_csv", outputs.candidates_csv
+            "candidate_csv",
+            _relative_batch_artifact(outputs.candidates_csv, parent=index_parent),
         ),
-        "review_csv": format_discovery_csv_value("review_csv", outputs.review_csv),
+        "review_csv": format_discovery_csv_value(
+            "review_csv",
+            _relative_batch_artifact(outputs.review_csv, parent=index_parent),
+        ),
         "candidate_count": str(len(candidates)),
         "high_count": str(counts["HIGH"]),
         "medium_count": str(counts["MEDIUM"]),
         "low_count": str(counts["LOW"]),
         **discovery_receipt_index_fields(receipt),
     }
+
+
+def _relative_batch_artifact(path: Path, *, parent: Path) -> str:
+    try:
+        relative = path.resolve(strict=True).relative_to(parent.resolve(strict=True))
+    except ValueError as exc:
+        raise ValueError("Discovery batch artifact must stay under its index") from exc
+    return relative.as_posix()
 
 
 def _priority_counts(

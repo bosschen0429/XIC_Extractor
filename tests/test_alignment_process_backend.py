@@ -39,6 +39,11 @@ from xic_extractor.alignment.process_backend import (
     run_owner_build_process,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 
@@ -129,6 +134,58 @@ def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
     assert [stat.sample_stem for stat in output.timing_stats] == [
         "sample-a",
         "sample-b",
+    ]
+
+
+def test_process_jobs_carry_discovery_acquisition_source_to_raw_workers(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample-a.raw"
+    raw_path.write_bytes(b"owner-bound raw")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    captured_build_jobs = []
+    captured_backfill_jobs = []
+
+    def build_runner(jobs, *, max_workers):
+        captured_build_jobs.extend(jobs)
+        return []
+
+    def backfill_runner(jobs, *, max_workers):
+        captured_backfill_jobs.extend(jobs)
+        return []
+
+    run_owner_build_process(
+        (_candidate("sample-a"),),
+        sample_order=("sample-a",),
+        raw_paths={"sample-a": raw_path},
+        dll_dir=tmp_path / "dll",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+        max_workers=2,
+        expected_acquisition_sources={"sample-a": source},
+        runner=build_runner,
+    )
+    run_owner_backfill_process(
+        (_confirmable_feature_for_sample_a(),),
+        sample_order=("sample-a",),
+        raw_paths={"sample-a": raw_path},
+        dll_dir=tmp_path / "dll",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+        max_workers=2,
+        expected_acquisition_sources={"sample-a": source},
+        runner=backfill_runner,
+    )
+
+    assert [job.expected_acquisition_source for job in captured_build_jobs] == [
+        source
+    ]
+    assert [job.expected_acquisition_source for job in captured_backfill_jobs] == [
+        source
     ]
 
 

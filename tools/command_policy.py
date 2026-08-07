@@ -102,11 +102,17 @@ _INERT_TEXT_CONSUMERS = frozenset(
         "grep",
         "grep.exe",
         "printf",
+        "rg",
+        "rg.exe",
+        "ripgrep",
+        "ripgrep.exe",
         "select-string",
         "write-host",
         "write-output",
     }
 )
+_RIPGREP_TEXT_CONSUMERS = frozenset({"rg", "rg.exe", "ripgrep", "ripgrep.exe"})
+_RIPGREP_EXECUTING_OPTIONS = frozenset({"--hostname-bin", "--pre"})
 _GIT_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull", "push"})
 
 
@@ -198,6 +204,9 @@ def analyze_command(command: str) -> CommandAnalysis:
     if has_outer_wrapper or (facts.unterminated_quote and has_raw_wrapper_reference):
         return _rewrite(UNSUPPORTED_WRAPPER_CODE, UNSUPPORTED_WRAPPER_REASON)
 
+    if _is_bounded_policy_meta_command(words, facts, has_command_expansion):
+        return CommandAnalysis()
+
     git_executable_alias = first_word in _GIT_EXECUTABLE_ALIASES
     direct_git = git_executable_alias and _is_bare_executable(first_token)
 
@@ -228,13 +237,84 @@ def analyze_command(command: str) -> CommandAnalysis:
     # Only known inert consumers may treat a quoted Git phrase as data. This is
     # a positive boundary: arbitrary programs and prefixed wrappers do not gain
     # a silent path merely because their Git-bearing payload is quoted.
-    if first_word in _INERT_TEXT_CONSUMERS:
+    if _is_bounded_inert_text_consumer(first_word, words):
         return CommandAnalysis()
     return _rewrite(AMBIGUOUS_GIT_CODE, AMBIGUOUS_GIT_REASON)
 
 
 def _rewrite(code: str, reason: str) -> CommandAnalysis:
     return CommandAnalysis(rewrite_code=code, rewrite_reason=reason)
+
+
+def _is_bounded_inert_text_consumer(
+    first_word: str,
+    words: list[str] | None,
+) -> bool:
+    if first_word not in _INERT_TEXT_CONSUMERS or words is None:
+        return False
+    if first_word not in _RIPGREP_TEXT_CONSUMERS:
+        return True
+    return not any(
+        token == option or token.startswith(f"{option}=")
+        for token in words[1:]
+        for option in _RIPGREP_EXECUTING_OPTIONS
+    )
+
+
+def _is_bounded_policy_meta_command(
+    words: list[str] | None,
+    facts: _LexicalFacts,
+    has_command_expansion: bool,
+) -> bool:
+    if (
+        not words
+        or facts.unterminated_quote
+        or facts.has_unquoted_control
+        or has_command_expansion
+    ):
+        return False
+
+    cleaned = tuple(_clean_token(word) for word in words)
+    outer = cleaned[0].replace("\\", "/").lower()
+    tail = cleaned[1:]
+
+    if outer == ".venv/scripts/python.exe":
+        prefixes = (
+            (
+                "-m",
+                "scripts.agent_sandbox_doctor",
+                "--command-only",
+                "--command",
+            ),
+            (
+                "-m",
+                "scripts.agent_sandbox_doctor",
+                "--command-only",
+                "--strict",
+                "--command",
+            ),
+        )
+        return any(
+            len(tail) == len(prefix) + 1 and tail[: len(prefix)] == prefix
+            for prefix in prefixes
+        )
+
+    if outer in {"codex", "codex.exe"}:
+        prefix = (
+            "execpolicy",
+            "check",
+            "--pretty",
+            "--rules",
+            ".codex/rules/xic-safety.rules",
+            "--",
+        )
+        normalized_tail = tuple(item.replace("\\", "/") for item in tail)
+        return (
+            len(normalized_tail) > len(prefix)
+            and normalized_tail[: len(prefix)] == prefix
+        )
+
+    return False
 
 
 def _parse_direct_git(words: list[str]) -> CommandAnalysis:

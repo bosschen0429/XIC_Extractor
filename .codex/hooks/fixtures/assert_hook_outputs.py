@@ -261,6 +261,7 @@ def main() -> int:
         "Execution-affecting XIC agent config",
     )
 
+    search_vcs = "g" + "it"
     static_rule_search_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",
@@ -277,6 +278,35 @@ def main() -> int:
         },
     }
     assert_hook_silent("xic_pre_tool_guard.py", static_rule_search_payload)
+
+    ripgrep_rule_search_payload = {
+        **static_rule_search_payload,
+        "tool_input": {
+            "command": (
+                "rg -n -C 3 "
+                + json.dumps(
+                    "|".join(("execpolicy check", f"{search_vcs} -C C:\\repo"))
+                )
+                + " docs tests .codex tools"
+            ),
+        },
+    }
+    assert_hook_silent("xic_pre_tool_guard.py", ripgrep_rule_search_payload)
+
+    ripgrep_preprocessor_payload = {
+        **ripgrep_rule_search_payload,
+        "tool_input": {
+            "command": (
+                "rg --pre="
+                + json.dumps(" ".join((search_vcs, "reset", "--hard")))
+                + " needle ."
+            ),
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", ripgrep_preprocessor_payload),
+        "single direct " + "G" + "it command",
+    )
 
     wrapped_cleanup_payload = {
         **static_rule_search_payload,
@@ -521,6 +551,111 @@ def main() -> int:
     )
     if result.stdout.strip():
         raise AssertionError("non-product path emitted productization context")
+
+    vcs = "g" + "it"
+    patch_payload = {
+        **non_product_payload,
+        "tool_name": "apply_patch",
+        "tool_input": {
+            "command": (
+                "*** Begin Patch\n"
+                "*** Update File: .codex/config.toml\n"
+                f"+ policy sample: {vcs} reset --hard\n"
+                "*** End Patch"
+            ),
+        },
+    }
+    patch_output = run_hook("xic_pre_tool_guard.py", patch_payload)
+    assert_contains(patch_output, "Execution-affecting XIC agent config")
+    assert_absent(
+        json.dumps(patch_output, ensure_ascii=False),
+        '"permissionDecision"',
+    )
+
+    shell_patch_payload = {
+        **patch_payload,
+        "tool_name": "shell_command",
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", shell_patch_payload),
+        "single direct " + "G" + "it command",
+    )
+
+    incomplete_patch_payload = {
+        **patch_payload,
+        "tool_input": {
+            "command": patch_payload["tool_input"]["command"].removesuffix(
+                "\n*** End Patch"
+            ),
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", incomplete_patch_payload),
+        "single direct " + "G" + "it command",
+    )
+
+    doctor_meta_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "Bash",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {
+            "command": (
+                ".venv\\Scripts\\python.exe -m scripts.agent_sandbox_doctor "
+                f'--command-only --command "{vcs} -C C:\\repo push origin HEAD"'
+            ),
+        },
+    }
+    assert_hook_silent("xic_pre_tool_guard.py", doctor_meta_payload)
+
+    execpolicy_meta_payload = {
+        **doctor_meta_payload,
+        "tool_input": {
+            "command": (
+                "codex execpolicy check --pretty --rules "
+                f".codex\\rules\\xic-safety.rules -- {vcs} add -A"
+            ),
+        },
+    }
+    execpolicy_meta_output = run_hook(
+        "xic_pre_tool_guard.py",
+        execpolicy_meta_payload,
+    )
+    assert_contains(execpolicy_meta_output, "Execution-affecting XIC agent config")
+    assert_absent(
+        json.dumps(execpolicy_meta_output, ensure_ascii=False),
+        '"permissionDecision"',
+    )
+
+    wrong_doctor_runner_payload = {
+        **doctor_meta_payload,
+        "tool_input": {
+            "command": (
+                "C:\\other\\python.exe -m scripts.agent_sandbox_doctor "
+                f'--command-only --command "{vcs} -C C:\\repo push origin HEAD"'
+            ),
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrong_doctor_runner_payload),
+        "single direct " + "G" + "it command",
+    )
+
+    wrong_execpolicy_rules_payload = {
+        **execpolicy_meta_payload,
+        "tool_input": {
+            "command": (
+                "codex execpolicy check --pretty --rules "
+                f"other.rules -- {vcs} add -A"
+            ),
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrong_execpolicy_rules_payload),
+        "single direct " + "G" + "it command",
+    )
 
     git_commit_autostage_payload = {
         "hook_event_name": "PreToolUse",

@@ -87,6 +87,7 @@ from xic_extractor.alignment.process_execution import (
     run_process_jobs as _run_process_jobs,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,7 @@ class OwnerBuildSampleJob:
     candidates: tuple[Any, ...]
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
+    expected_acquisition_source: AcquisitionSourceIdentity | None = None
     raw_xic_batch_size: int = 1
     owner_build_xic_backend: OwnerBuildXicBackend = "raw"
     emit_region_audit: bool = False
@@ -148,6 +150,7 @@ class OwnerBackfillSampleJob:
     features: OwnerGroupDeliveryFeatures
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
+    expected_acquisition_source: AcquisitionSourceIdentity | None = None
     raw_xic_batch_size: int = 1
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw"
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact"
@@ -207,6 +210,38 @@ class OwnerBackfillWorkerError:
 
 OwnerBuildWorkerResult = OwnerBuildSampleResult | OwnerBuildWorkerError
 OwnerBackfillWorkerResult = OwnerBackfillSampleResult | OwnerBackfillWorkerError
+
+
+def _validate_expected_acquisition_sources(
+    *,
+    sample_order: tuple[str, ...],
+    raw_paths: Mapping[str, Path],
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None,
+) -> None:
+    if expected_acquisition_sources is None:
+        return
+    for sample_stem in sample_order:
+        if sample_stem not in raw_paths:
+            raise ValueError(
+                "owner-bound process execution requires RAW for every sample: "
+                f"{sample_stem}"
+            )
+        _expected_acquisition_source(expected_acquisition_sources, sample_stem)
+
+
+def _expected_acquisition_source(
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None,
+    sample_stem: str,
+) -> AcquisitionSourceIdentity | None:
+    if expected_acquisition_sources is None:
+        return None
+    source = expected_acquisition_sources.get(sample_stem)
+    if not isinstance(source, AcquisitionSourceIdentity):
+        raise ValueError(
+            "owner-bound process execution requires an acquisition source for "
+            f"{sample_stem}"
+        )
+    return source
 
 
 def run_identity_trace_process(
@@ -279,6 +314,11 @@ def run_owner_build_process(
     max_workers: int,
     raw_xic_batch_size: int = 1,
     owner_build_xic_backend: OwnerBuildXicBackend = "raw",
+    expected_acquisition_sources: Mapping[
+        str,
+        AcquisitionSourceIdentity,
+    ]
+    | None = None,
     emit_region_audit: bool = False,
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
@@ -289,6 +329,11 @@ def run_owner_build_process(
         raise ValueError("max_workers must be >= 1")
     if raw_xic_batch_size < 1:
         raise ValueError("raw_xic_batch_size must be >= 1")
+    _validate_expected_acquisition_sources(
+        sample_order=sample_order,
+        raw_paths=raw_paths,
+        expected_acquisition_sources=expected_acquisition_sources,
+    )
     candidates_by_sample: dict[str, list[Any]] = {}
     for candidate in candidates:
         candidates_by_sample.setdefault(
@@ -304,6 +349,11 @@ def run_owner_build_process(
             continue
         raw_path = raw_paths.get(sample_stem)
         if raw_path is None:
+            if expected_acquisition_sources is not None:
+                raise ValueError(
+                    "owner-bound owner build requires RAW for every sample: "
+                    f"{sample_stem}"
+                )
             ownership = build_sample_local_owners(
                 sample_candidates,
                 raw_sources={},
@@ -333,6 +383,10 @@ def run_owner_build_process(
                 candidates=sample_candidates,
                 alignment_config=alignment_config,
                 peak_config=peak_config,
+                expected_acquisition_source=_expected_acquisition_source(
+                    expected_acquisition_sources,
+                    sample_stem,
+                ),
                 raw_xic_batch_size=raw_xic_batch_size,
                 owner_build_xic_backend=owner_build_xic_backend,
                 emit_region_audit=emit_region_audit,
@@ -439,7 +493,11 @@ def extract_owner_build_sample_job(
     from xic_extractor.raw_reader import open_raw
 
     try:
-        with open_raw(job.raw_path, job.dll_dir) as raw:
+        with open_raw(
+            job.raw_path,
+            job.dll_dir,
+            expected_acquisition_source=job.expected_acquisition_source,
+        ) as raw:
             stats = _TimedProcessStats(sample_stem=job.sample_stem)
             owner_build_source = source_for_owner_build_backend(
                 raw,
@@ -493,6 +551,11 @@ def run_owner_backfill_process(
     max_workers: int,
     raw_xic_batch_size: int = 1,
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
+    expected_acquisition_sources: Mapping[
+        str,
+        AcquisitionSourceIdentity,
+    ]
+    | None = None,
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
     backfill_scope: str = "full-audit",
@@ -508,6 +571,11 @@ def run_owner_backfill_process(
         raise ValueError("raw_xic_batch_size must be >= 1")
     if owner_backfill_superwindow_span_factor < 1:
         raise ValueError("owner_backfill_superwindow_span_factor must be >= 1")
+    _validate_expected_acquisition_sources(
+        sample_order=sample_order,
+        raw_paths=raw_paths,
+        expected_acquisition_sources=expected_acquisition_sources,
+    )
     jobs: list[OwnerBackfillSampleJob] = []
     raw_sample_stems = frozenset(raw_paths)
     request_plan = build_owner_backfill_request_plan(
@@ -532,6 +600,10 @@ def run_owner_backfill_process(
                 features=sample_features,
                 alignment_config=alignment_config,
                 peak_config=peak_config,
+                expected_acquisition_source=_expected_acquisition_source(
+                    expected_acquisition_sources,
+                    sample_stem,
+                ),
                 raw_xic_batch_size=raw_xic_batch_size,
                 owner_backfill_xic_backend=owner_backfill_xic_backend,
                 owner_backfill_window_strategy=owner_backfill_window_strategy,
@@ -671,7 +743,11 @@ def extract_owner_backfill_sample_job(
     from xic_extractor.raw_reader import open_raw
 
     try:
-        with open_raw(job.raw_path, job.dll_dir) as raw:
+        with open_raw(
+            job.raw_path,
+            job.dll_dir,
+            expected_acquisition_source=job.expected_acquisition_source,
+        ) as raw:
             stats = _TimedProcessStats(sample_stem=job.sample_stem)
             source = source_for_owner_backfill_backend(
                 raw,

@@ -275,13 +275,37 @@ def test_existing_hook_behavior_fixture_runs_in_ordinary_pytest() -> None:
     )
 
 
-def test_project_config_isolates_git_from_unreadable_user_home() -> None:
+def test_project_config_defines_bounded_workspace_github_profile() -> None:
     config = tomllib.loads(PROJECT_CONFIG.read_text(encoding="utf-8"))
 
-    assert config == {
-        "shell_environment_policy": {
-            "set": {"GIT_CONFIG_GLOBAL": "NUL"},
-        }
+    assert config["default_permissions"] == "workspace-github"
+    assert "sandbox_mode" not in config
+    assert "sandbox_workspace_write" not in config
+    assert config["permissions"] == {
+        "workspace-github": {
+            "description": (
+                "XIC workspace writes, bounded Git metadata writes, "
+                "and narrow GitHub access."
+            ),
+            "extends": ":workspace",
+            "filesystem": {
+                ":workspace_roots": {
+                    ".git": "write",
+                    ".codex": "read",
+                    ".agents": "read",
+                },
+            },
+            "network": {
+                "enabled": True,
+                "domains": {
+                    "api.github.com": "allow",
+                    "github.com": "allow",
+                },
+            },
+        },
+    }
+    assert config["shell_environment_policy"] == {
+        "set": {"GIT_CONFIG_GLOBAL": "NUL"},
     }
 
 
@@ -289,6 +313,8 @@ def test_subagent_routing_uses_current_project_sandbox_contract() -> None:
     routing = SUBAGENT_ROUTING.read_text(encoding="utf-8")
 
     assert "permission profile `workspace-github`" in routing
+    assert 'default_permissions = "workspace-github"' in routing
+    assert "reopens only `.git`" in routing
     assert 'approval_policy = "on-request"' in routing
     assert "`GIT_CONFIG_GLOBAL=NUL`" in routing
     assert "intentionally not added" not in routing
