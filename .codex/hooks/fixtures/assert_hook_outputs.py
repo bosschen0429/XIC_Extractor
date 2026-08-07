@@ -522,6 +522,70 @@ def main() -> int:
     if result.stdout.strip():
         raise AssertionError("non-product path emitted productization context")
 
+    vcs = "g" + "it"
+    doctor_meta_payload = {
+        "hook_event_name": "PreToolUse",
+        "turn_id": "fixture",
+        "tool_name": "Bash",
+        "tool_use_id": "fixture",
+        "cwd": ".",
+        "permission_mode": "default",
+        "tool_input": {
+            "command": (
+                ".venv\\Scripts\\python.exe -m scripts.agent_sandbox_doctor "
+                f'--command-only --command "{vcs} -C C:\\repo push origin HEAD"'
+            ),
+        },
+    }
+    assert_hook_silent("xic_pre_tool_guard.py", doctor_meta_payload)
+
+    execpolicy_meta_payload = {
+        **doctor_meta_payload,
+        "tool_input": {
+            "command": (
+                "codex execpolicy check --pretty --rules "
+                f".codex\\rules\\xic-safety.rules -- {vcs} add -A"
+            ),
+        },
+    }
+    execpolicy_meta_output = run_hook(
+        "xic_pre_tool_guard.py",
+        execpolicy_meta_payload,
+    )
+    assert_contains(execpolicy_meta_output, "Execution-affecting XIC agent config")
+    assert_absent(
+        json.dumps(execpolicy_meta_output, ensure_ascii=False),
+        '"permissionDecision"',
+    )
+
+    wrong_doctor_runner_payload = {
+        **doctor_meta_payload,
+        "tool_input": {
+            "command": (
+                "C:\\other\\python.exe -m scripts.agent_sandbox_doctor "
+                f'--command-only --command "{vcs} -C C:\\repo push origin HEAD"'
+            ),
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrong_doctor_runner_payload),
+        "single direct " + "G" + "it command",
+    )
+
+    wrong_execpolicy_rules_payload = {
+        **execpolicy_meta_payload,
+        "tool_input": {
+            "command": (
+                "codex execpolicy check --pretty --rules "
+                f"other.rules -- {vcs} add -A"
+            ),
+        },
+    }
+    assert_contains(
+        run_hook("xic_pre_tool_guard.py", wrong_execpolicy_rules_payload),
+        "single direct " + "G" + "it command",
+    )
+
     git_commit_autostage_payload = {
         "hook_event_name": "PreToolUse",
         "turn_id": "fixture",

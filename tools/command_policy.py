@@ -198,6 +198,9 @@ def analyze_command(command: str) -> CommandAnalysis:
     if has_outer_wrapper or (facts.unterminated_quote and has_raw_wrapper_reference):
         return _rewrite(UNSUPPORTED_WRAPPER_CODE, UNSUPPORTED_WRAPPER_REASON)
 
+    if _is_bounded_policy_meta_command(words, facts, has_command_expansion):
+        return CommandAnalysis()
+
     git_executable_alias = first_word in _GIT_EXECUTABLE_ALIASES
     direct_git = git_executable_alias and _is_bare_executable(first_token)
 
@@ -235,6 +238,62 @@ def analyze_command(command: str) -> CommandAnalysis:
 
 def _rewrite(code: str, reason: str) -> CommandAnalysis:
     return CommandAnalysis(rewrite_code=code, rewrite_reason=reason)
+
+
+def _is_bounded_policy_meta_command(
+    words: list[str] | None,
+    facts: _LexicalFacts,
+    has_command_expansion: bool,
+) -> bool:
+    if (
+        not words
+        or facts.unterminated_quote
+        or facts.has_unquoted_control
+        or has_command_expansion
+    ):
+        return False
+
+    cleaned = tuple(_clean_token(word) for word in words)
+    outer = cleaned[0].replace("\\", "/").lower()
+    tail = cleaned[1:]
+
+    if outer == ".venv/scripts/python.exe":
+        prefixes = (
+            (
+                "-m",
+                "scripts.agent_sandbox_doctor",
+                "--command-only",
+                "--command",
+            ),
+            (
+                "-m",
+                "scripts.agent_sandbox_doctor",
+                "--command-only",
+                "--strict",
+                "--command",
+            ),
+        )
+        return any(
+            len(tail) == len(prefix) + 1 and tail[: len(prefix)] == prefix
+            for prefix in prefixes
+        )
+
+    if outer in {"codex", "codex.exe"}:
+        prefix = (
+            "execpolicy",
+            "check",
+            "--pretty",
+            "--rules",
+            ".codex/rules/xic-safety.rules",
+            "--",
+        )
+        normalized_tail = tuple(item.replace("\\", "/") for item in tail)
+        return (
+            len(normalized_tail) > len(prefix)
+            and normalized_tail[: len(prefix)] == prefix
+        )
+
+    return False
 
 
 def _parse_direct_git(words: list[str]) -> CommandAnalysis:
