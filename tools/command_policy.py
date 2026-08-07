@@ -102,11 +102,17 @@ _INERT_TEXT_CONSUMERS = frozenset(
         "grep",
         "grep.exe",
         "printf",
+        "rg",
+        "rg.exe",
+        "ripgrep",
+        "ripgrep.exe",
         "select-string",
         "write-host",
         "write-output",
     }
 )
+_RIPGREP_TEXT_CONSUMERS = frozenset({"rg", "rg.exe", "ripgrep", "ripgrep.exe"})
+_RIPGREP_EXECUTING_OPTIONS = frozenset({"--hostname-bin", "--pre"})
 _GIT_NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull", "push"})
 
 
@@ -231,13 +237,28 @@ def analyze_command(command: str) -> CommandAnalysis:
     # Only known inert consumers may treat a quoted Git phrase as data. This is
     # a positive boundary: arbitrary programs and prefixed wrappers do not gain
     # a silent path merely because their Git-bearing payload is quoted.
-    if first_word in _INERT_TEXT_CONSUMERS:
+    if _is_bounded_inert_text_consumer(first_word, words):
         return CommandAnalysis()
     return _rewrite(AMBIGUOUS_GIT_CODE, AMBIGUOUS_GIT_REASON)
 
 
 def _rewrite(code: str, reason: str) -> CommandAnalysis:
     return CommandAnalysis(rewrite_code=code, rewrite_reason=reason)
+
+
+def _is_bounded_inert_text_consumer(
+    first_word: str,
+    words: list[str] | None,
+) -> bool:
+    if first_word not in _INERT_TEXT_CONSUMERS or words is None:
+        return False
+    if first_word not in _RIPGREP_TEXT_CONSUMERS:
+        return True
+    return not any(
+        token == option or token.startswith(f"{option}=")
+        for token in words[1:]
+        for option in _RIPGREP_EXECUTING_OPTIONS
+    )
 
 
 def _is_bounded_policy_meta_command(

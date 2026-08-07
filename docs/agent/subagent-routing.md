@@ -406,8 +406,12 @@ task packets. The repo keeps only the rules those agents must honor here:
 Current recommended posture for this repo:
 
 - Main implementation sessions use the permission profile `workspace-github`
-  with `approval_policy = "on-request"` and `auto_review`. Do not combine it
-  with the legacy `sandbox_mode` / `[sandbox_workspace_write]` settings.
+  with `approval_policy = "on-request"` and `auto_review`. The trusted project
+  config selects it with `default_permissions = "workspace-github"`. It extends
+  `:workspace`, reopens only `.git` for workspace-root writes, keeps `.codex`
+  and `.agents` read-only, and allows only `api.github.com` and `github.com`.
+  Do not combine it with the legacy `sandbox_mode` /
+  `[sandbox_workspace_write]` settings.
 - The global `reviewer` uses `sandbox_mode = "read-only"`. A generic agent
   inherits the caller's runtime capabilities; a no-write prompt does not make
   it sandboxed. Snapshot `git status --short` before and after any generic
@@ -419,11 +423,12 @@ Current recommended posture for this repo:
 - `danger-full-access`, `approval_policy = "never"`, broad writable roots, and
   persistent execpolicy rules are not default development settings. Use them
   only for a reviewed, bounded operation with a named rollback or recovery path.
-- The tracked project `.codex/config.toml` owns only the repo-specific
-  `GIT_CONFIG_GLOBAL=NUL` shell environment needed to avoid unreadable Windows
-  user-home Git config. Global model, permission profile, MCP, and plugin policy
-  remain global. Project config changes require trust review, a Codex restart,
-  and the config/TOML smoke check.
+- The tracked project `.codex/config.toml` owns the repo-specific
+  `workspace-github` profile and `GIT_CONFIG_GLOBAL=NUL` shell environment
+  needed to avoid unreadable Windows user-home Git config. Global model, MCP,
+  plugin, and cross-repo policy remain global. Project config changes require
+  trust review, a Codex restart, the config/TOML smoke check, and the bounded
+  profile canary in `docs/agent/parameter-settings.md`.
 - Before changing sandbox posture for a command, prefer
   `.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "<command>"`.
   The doctor is diagnostic only; it does not execute the command or replace
