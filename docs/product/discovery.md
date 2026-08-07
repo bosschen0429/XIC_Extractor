@@ -52,9 +52,12 @@ workflow projection and Backfill/ProductWriter authority path.
   source into one `DiscoveryCandidateUniverseReceipt`. A downstream M7 replay
   must reject truncated/substituted candidate bytes and a same-stem RAW whose
   content identity differs. Candidate and RAW paths remain locators rather than
-  identity. Legacy batch indexes remain readable by legacy Alignment consumers
-  but cannot enter the owner-closed M7 path. Do not depend on old worktree-local
-  output directories as durable inputs.
+  identity. The current producer writes candidate/review locators relative to
+  the batch index so a complete Discovery directory remains readable after a
+  rename or copy. The external RAW locator is not rewritten. Legacy batch
+  indexes remain readable by legacy Alignment consumers but cannot enter the
+  owner-closed M7 path. Do not depend on old worktree-local output directories
+  as durable inputs.
 - Minimal output modes are for fast inspection; standard outputs are the public
   machine handoff surfaces.
 - Discovery UX and review surfaces are public handoffs when they define

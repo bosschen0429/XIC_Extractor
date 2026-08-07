@@ -21,9 +21,11 @@ artifact，例如某個 Phase 的 benchmark summary、一次性 gate output、pl
   command shape、preflight check、以及反覆踩雷的 anti-pattern。
 - 任務特定 output path、phase-specific discovery index、一次性 benchmark 結論
   留在 validation note；本檔只引用該 note 作為 evidence。
-- accepted reusable discovery inputs 若要跨分支使用，先複製到
-  `local_validation_artifacts/...` 並重寫
-  `discovery_batch_index.csv` 裡的 `candidate_csv` / `review_csv` 絕對路徑。
+- Current `discovery_batch_index_v2` producers write `candidate_csv` and
+  `review_csv` relative to the index. Copy the complete Discovery directory to
+  `local_validation_artifacts/...` without rewriting those locators. Historical
+  indexes that contain worktree-absolute paths require a one-time migration to
+  index-relative locators before reuse.
 - 成功 run 要記錄「可重用的參數形狀」與 evidence note；失敗 run 要記錄
   「不可再用的啟動方式」與替代做法。
 - 若後續 P-spec / C-spec 改變正式驗收形狀，先更新本檔再開長時間 RAW run。
