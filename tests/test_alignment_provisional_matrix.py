@@ -116,6 +116,49 @@ def test_projection_keeps_full_group_breadth_and_cell_provenance() -> None:
     }
 
 
+def test_projection_retains_unquantified_groups_and_counts_observations() -> None:
+    matrix = AlignmentMatrix(
+        clusters=(_group("GRP-A", "FAM000001", mz=100.0, rt=1.0),),
+        cells=(
+            _cell(
+                "sample-a",
+                "GRP-A",
+                "FAM000001",
+                status="detected",
+                area=0.0,
+                source_candidate_id="sample-a#candidate",
+            ),
+            _cell(
+                "sample-b",
+                "GRP-A",
+                "FAM000001",
+                status="rescued",
+                area=0.0,
+            ),
+        ),
+        sample_order=("sample-a", "sample-b"),
+    )
+
+    projection = _projection(matrix)
+
+    assert len(projection.matrix_rows) == 1
+    assert projection.matrix_rows[0]["sample-a"] == ""
+    assert projection.matrix_rows[0]["sample-b"] == ""
+    assert projection.identity_rows[0]["detected_cell_count"] == "1"
+    assert projection.identity_rows[0]["backfill_candidate_cell_count"] == "1"
+    assert projection.identity_rows[0]["quant_available_cell_count"] == "0"
+    assert projection.identity_rows[0]["matrix_blank_cell_count"] == "2"
+    assert [row["cell_state"] for row in projection.provenance_rows] == [
+        "observed_unquantified",
+        "backfill_unquantified",
+    ]
+    assert projection.summary["row_count"] == 1
+    assert projection.summary["detected_cell_count"] == 1
+    assert projection.summary["backfill_candidate_cell_count"] == 1
+    assert projection.summary["quant_available_cell_count"] == 0
+    assert projection.summary["matrix_blank_cell_count"] == 2
+
+
 def test_projection_rejects_cell_bound_to_a_different_group_owner() -> None:
     matrix = AlignmentMatrix(
         clusters=(_group("GRP-A", "FAM000001", mz=100.0, rt=1.0),),

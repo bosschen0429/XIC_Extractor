@@ -171,20 +171,23 @@ def build_provisional_matrix_projection(
             for sample_stem in matrix.sample_order
         )
         row_values = tuple(_matrix_value(cell) for cell in row_cells)
-        if not any(row_values):
-            continue
-
         detected_count = sum(
             1
-            for cell, value in zip(row_cells, row_values, strict=True)
-            if cell is not None and cell.status == "detected" and value
+            for cell in row_cells
+            if cell is not None and cell.status == "detected"
         )
         backfill_count = sum(
             1
-            for cell, value in zip(row_cells, row_values, strict=True)
-            if cell is not None and cell.status == "rescued" and value
+            for cell in row_cells
+            if cell is not None and cell.status == "rescued"
         )
-        quant_count = detected_count + backfill_count
+        quant_count = sum(
+            1
+            for cell, value in zip(row_cells, row_values, strict=True)
+            if cell is not None
+            and cell.status in {"detected", "rescued"}
+            and value
+        )
         missing_count = len(matrix.sample_order) - quant_count
         detected_cell_count += detected_count
         backfill_candidate_cell_count += backfill_count
