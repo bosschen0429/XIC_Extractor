@@ -27,6 +27,7 @@ from xic_extractor.processing_identity import (
     IdentityContractError,
     build_acquisition_source_identity,
     build_processing_request_identity,
+    fingerprint_file_content,
     issue_processing_attempt,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
@@ -121,6 +122,29 @@ def test_acquisition_source_identity_changes_on_substitution_or_namespace(
     assert mutated.acquisition_source_id != first.acquisition_source_id
     assert mutated.content_sha256 != first.content_sha256
     assert other_namespace.acquisition_source_id != mutated.acquisition_source_id
+
+
+def test_fingerprint_observer_reports_measured_calls_bytes_and_time(
+    tmp_path: Path,
+) -> None:
+    path = _raw(tmp_path / "sample.raw", b"measured-content")
+    observations: list[dict[str, object]] = []
+
+    fingerprint = fingerprint_file_content(path, observation=observations.append)
+
+    assert fingerprint.byte_size == len(b"measured-content")
+    assert observations == [
+        {
+            "metric": "fingerprint",
+            "scope": str(path),
+            "calls": 1,
+            "bytes": len(b"measured-content"),
+            "elapsed_sec": observations[0]["elapsed_sec"],
+            "availability": "measured",
+            "reason": "",
+        }
+    ]
+    assert isinstance(observations[0]["elapsed_sec"], float)
 
 
 def test_source_path_replacement_during_hash_fails_closed(

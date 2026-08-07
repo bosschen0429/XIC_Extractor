@@ -120,7 +120,8 @@ def test_timing_recorder_live_output_updates_on_each_record(tmp_path: Path) -> N
 
     recorder.record("alignment.run_config", elapsed_sec=0.0)
     payload = json.loads(live_path.read_text(encoding="utf-8"))
-    assert [record["stage"] for record in payload["records"]] == [
+    assert payload["schema_version"] == "timing.live.v2"
+    assert [record["stage"] for record in payload["recent_records"]] == [
         "alignment.run_config"
     ]
 
@@ -128,11 +129,11 @@ def test_timing_recorder_live_output_updates_on_each_record(tmp_path: Path) -> N
         pass
 
     payload = json.loads(live_path.read_text(encoding="utf-8"))
-    assert [record["stage"] for record in payload["records"]] == [
+    assert [record["stage"] for record in payload["recent_records"]] == [
         "alignment.run_config",
         "alignment.read_batch_index",
     ]
-    assert payload["records"][1]["elapsed_sec"] == pytest.approx(0.5)
+    assert payload["recent_records"][1]["elapsed_sec"] == pytest.approx(0.5)
 
 
 def test_timing_recorder_disabled_mode_records_nothing() -> None:
@@ -162,6 +163,192 @@ def test_timing_recorder_nested_stages_keep_completion_order() -> None:
     assert [record.elapsed_sec for record in recorder.records] == [
         pytest.approx(1.0),
         pytest.approx(4.0),
+    ]
+
+
+def test_timing_recorder_separates_nested_and_exclusive_wall() -> None:
+    recorder = TimingRecorder(
+        "alignment",
+        run_id="run-exclusive",
+        timer=_Timer([0.0, 1.0, 2.0, 4.0]),
+    )
+
+    with recorder.stage("outer"):
+        with recorder.stage("inner"):
+            pass
+
+    summaries = recorder.to_json_dict()["summaries"]
+    assert summaries["nested_stage_summary"] == [
+        {
+            "stage": "outer",
+            "record_count": 1,
+            "total_exclusive_elapsed_sec": pytest.approx(3.0),
+            "max_exclusive_elapsed_sec": pytest.approx(3.0),
+        }
+    ]
+    assert summaries["non_overlapping_stage_summary"] == [
+        {
+            "stage": "inner",
+            "record_count": 1,
+            "total_exclusive_elapsed_sec": pytest.approx(1.0),
+            "max_exclusive_elapsed_sec": pytest.approx(1.0),
+        }
+    ]
+
+
+def test_timing_recorder_caller_elapsed_is_not_exclusive_wall() -> None:
+    recorder = TimingRecorder("worker")
+    recorder.record("worker.local_elapsed", elapsed_sec=12.0)
+
+    summaries = recorder.to_json_dict()["summaries"]
+    assert summaries["nested_stage_summary"] == []
+    assert summaries["non_overlapping_stage_summary"] == []
+    semantics = recorder.to_json_dict()["span_semantics"]
+    assert semantics == [
+        {"span_kind": "caller", "aggregation": "sum", "overlap": "unknown"}
+    ]
+
+
+def test_timing_stage_freezes_elapsed_before_live_serialization(tmp_path: Path) -> None:
+    recorder = TimingRecorder(
+        "writer",
+        live_output_path=tmp_path / "timing.live.json",
+        timer=_Timer([10.0, 11.0]),
+    )
+
+    with recorder.stage("writer.render") as stage:
+        stage.metrics["bytes"] = 5
+
+    assert stage.elapsed_sec == pytest.approx(1.0)
+    assert recorder.records[0].elapsed_sec == pytest.approx(stage.elapsed_sec)
+
+
+def test_timing_recorder_live_history_is_bounded_and_heartbeat_is_latest(
+    tmp_path: Path,
+) -> None:
+    live_path = tmp_path / "timing.live.json"
+    recorder = TimingRecorder(
+        "discovery",
+        live_output_path=live_path,
+        live_history_limit=2,
+    )
+    for index in range(4):
+        recorder.record(f"stage-{index}", elapsed_sec=1.0)
+    recorder.heartbeat(stage="sample", sample_stem="S4", completed=4, total=4)
+
+    payload = json.loads(live_path.read_text(encoding="utf-8"))
+    assert [row["stage"] for row in payload["recent_records"]] == [
+        "stage-2",
+        "stage-3",
+    ]
+    assert payload["record_count"] == 4
+    assert payload["dropped_record_count"] == 2
+    assert payload["heartbeat"] == {
+        "stage": "sample",
+        "sample_stem": "S4",
+        "completed": 4,
+        "total": 4,
+    }
+
+
+def test_timing_recorder_measurement_contract_and_unavailable_observation() -> None:
+    recorder = TimingRecorder("workflow")
+    recorder.set_measurement_contract(
+        cache_state="unavailable",
+        repetition_noise_design={"minimum_repetitions": 2},
+        numeric_budget={"next_milestone_seconds": 1800},
+    )
+    recorder.observe(
+        "process_tree_peak_rss_bytes",
+        availability="unavailable",
+        reason="no reliable process sampler",
+    )
+
+    payload = recorder.to_json_dict()
+    assert payload["measurement_contract"]["cache_state"] == "unavailable"
+    assert payload["measurement_observations"][0]["value"] is None
+    assert payload["measurement_observations"][0]["availability"] == "unavailable"
+
+
+def test_timing_recorder_live_observations_are_bounded(tmp_path: Path) -> None:
+    live_path = tmp_path / "timing.live.json"
+    recorder = TimingRecorder(
+        "workflow",
+        live_output_path=live_path,
+        live_observation_limit=2,
+    )
+    for index in range(4):
+        recorder.observe("metric", value=index)
+
+    payload = json.loads(live_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "timing.live.v2"
+    assert "records" not in payload
+    assert payload["observation_count"] == 4
+    assert payload["dropped_observation_count"] == 2
+    assert [row["value"] for row in payload["recent_measurement_observations"]] == [
+        2,
+        3,
+    ]
+
+
+def test_measurement_summary_merges_observations_without_alias_inference() -> None:
+    recorder = TimingRecorder("discovery")
+    recorder.record(
+        "alignment.extract",
+        elapsed_sec=1.0,
+        metrics={"extract_xic_count": 99},
+    )
+    recorder.observe(
+        "logical_xic_request_count",
+        value=3,
+        scope="S1",
+        unit="requests",
+    )
+    recorder.observe(
+        "logical_xic_request_count",
+        value=None,
+        scope="S1",
+        unit="requests",
+        availability="unavailable",
+        reason="owner gap",
+    )
+
+    summary = recorder.to_json_dict()["summaries"]["measurement_summary"]
+    rows = [row for row in summary if row["metric"] == "logical_xic_request_count"]
+    assert rows == [
+        {
+            "metric": "logical_xic_request_count",
+            "scope": "S1",
+            "value": 3.0,
+            "unit": "requests",
+            "availability": "partial",
+            "reason": "owner gap",
+        }
+    ]
+    assert all(row["metric"] != "extract_xic_count" for row in summary)
+
+
+def test_measurement_summary_preserves_direct_partial_value_and_reason() -> None:
+    recorder = TimingRecorder("discovery")
+    recorder.observe(
+        "trace_point_count",
+        value=12,
+        scope="S1",
+        unit="points",
+        availability="partial",
+        reason="one adapter path lacks point count",
+    )
+
+    rows = recorder.to_json_dict()["summaries"]["measurement_summary"]
+    assert [row for row in rows if row["metric"] == "trace_point_count"] == [
+        {
+            "metric": "trace_point_count",
+            "scope": "S1",
+            "value": 12.0,
+            "unit": "points",
+            "availability": "partial",
+            "reason": "one adapter path lacks point count",
+        }
     ]
 
 

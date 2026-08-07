@@ -299,7 +299,61 @@ def _discover_raw_file(
                 peak_config=peak_config,
             )
             stage.metrics["candidate_count"] = len(candidates)
+        _record_raw_measurements(timing_recorder, raw, sample_stem)
         return candidates
+
+
+def _record_raw_measurements(
+    timing_recorder: TimingRecorder,
+    raw: object,
+    sample_stem: str,
+) -> None:
+    """Project Discovery owner facts without inventing unavailable counters."""
+
+    raw_calls = getattr(raw, "raw_chromatogram_call_count", None)
+    timing_recorder.observe(
+        "raw_open_count",
+        value=1,
+        scope=sample_stem,
+        unit="opens",
+        source="discovery.raw_opener",
+    )
+    timing_recorder.observe(
+        "logical_xic_request_count",
+        value=None,
+        scope=sample_stem,
+        unit="requests",
+        source="discovery.raw_handle",
+        availability="unavailable",
+        reason="Discovery raw adapter exposes no logical request counter",
+    )
+    timing_recorder.observe(
+        "xic_batch_count",
+        value=None,
+        scope=sample_stem,
+        unit="batches",
+        source="discovery.raw_handle",
+        availability="unavailable",
+        reason="Discovery raw adapter exposes no batch counter",
+    )
+    timing_recorder.observe(
+        "adapter_chromatogram_call_count",
+        value=raw_calls,
+        scope=sample_stem,
+        unit="calls",
+        source="discovery.raw_handle.raw_chromatogram_call_count",
+        availability="measured" if isinstance(raw_calls, int) else "unavailable",
+        reason="" if isinstance(raw_calls, int) else "raw handle has no call counter",
+    )
+    timing_recorder.observe(
+        "trace_point_count",
+        value=None,
+        scope=sample_stem,
+        unit="points",
+        source="discovery.raw_handle",
+        availability="unavailable",
+        reason="Discovery raw adapter does not expose returned point count",
+    )
 
 
 def _default_raw_opener(

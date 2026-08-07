@@ -9,6 +9,7 @@ from pathlib import Path
 from time import perf_counter
 
 JsonMetric = str | int | float | bool | None
+TimingObserver = Callable[[Mapping[str, object]], None]
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class TimingRecord:
 @dataclass
 class TimingStage:
     metrics: dict[str, JsonMetric] = field(default_factory=dict)
+    elapsed_sec: float | None = None
 
 
 class TimingRecorder:
@@ -40,14 +42,29 @@ class TimingRecorder:
         run_id: str | None = None,
         enabled: bool = True,
         live_output_path: Path | None = None,
+        live_history_limit: int = 32,
+        live_observation_limit: int = 64,
+        instrument_writers: bool = False,
         timer: Callable[[], float] = perf_counter,
     ) -> None:
+        if live_history_limit < 1 or live_observation_limit < 1:
+            raise ValueError("live_history_limit must be positive")
         self.pipeline = pipeline
         self.run_id = run_id or _default_run_id()
         self.enabled = enabled
         self.live_output_path = live_output_path
+        self.live_history_limit = live_history_limit
+        self.live_observation_limit = live_observation_limit
+        self.instrument_writers = instrument_writers
         self._timer = timer
         self._records: list[TimingRecord] = []
+        self._exclusive_elapsed: list[float | None] = []
+        self._span_semantics: list[dict[str, str]] = []
+        self._nested_records: set[int] = set()
+        self._span_stack: list[list[float | int]] = []
+        self._heartbeat: dict[str, object] = {}
+        self._measurement_observations: list[dict[str, object]] = []
+        self._measurement_contract: dict[str, object] = {}
 
     @classmethod
     def disabled(
@@ -78,8 +95,98 @@ class TimingRecorder:
                 elapsed_sec=max(0.0, elapsed_sec),
                 sample_stem=sample_stem,
                 metrics=_clean_metrics(metrics or {}),
-            )
+            ),
+            span_kind="caller",
+            aggregation="sum",
+            overlap="unknown",
         )
+
+    def heartbeat(
+        self,
+        *,
+        stage: str,
+        sample_stem: str = "",
+        completed: int | None = None,
+        total: int | None = None,
+        **values: object,
+    ) -> None:
+        """Publish bounded progress without replacing the final timing history."""
+
+        progress: dict[str, object] = {"stage": stage}
+        if sample_stem:
+            progress["sample_stem"] = sample_stem
+        if completed is not None:
+            progress["completed"] = completed
+        if total is not None:
+            progress["total"] = total
+        progress.update(values)
+        self._heartbeat = progress
+        self._write_live()
+
+    def heartbeat_event(self, event: Mapping[str, object]) -> None:
+        """Accept a workflow progress mapping while keeping kwargs typed."""
+
+        event_name = event.get("event")
+        if not isinstance(event_name, str):
+            return
+        sample = event.get("sample_stem", "")
+        completed = event.get("completed")
+        total = event.get("total")
+        extras = {
+            str(key): value
+            for key, value in event.items()
+            if key not in {"event", "sample_stem", "completed", "total"}
+        }
+        self.heartbeat(
+            stage=event_name,
+            sample_stem=sample if isinstance(sample, str) else "",
+            completed=completed if isinstance(completed, int) else None,
+            total=total if isinstance(total, int) else None,
+            **extras,
+        )
+
+    def observe(
+        self,
+        metric: str,
+        *,
+        value: object = None,
+        scope: str = "run",
+        unit: str = "",
+        aggregation: str = "sum",
+        source: str = "",
+        availability: str = "measured",
+        reason: str = "",
+    ) -> None:
+        """Append one mechanical observation to the diagnostic projection."""
+
+        row: dict[str, object] = {
+            "metric": metric,
+            "scope": scope,
+            "unit": unit,
+            "aggregation": aggregation,
+            "source": source,
+            "availability": availability,
+            "value": _clean_metric(value),
+            "reason": reason,
+        }
+        self._measurement_observations.append(row)
+        self._write_live()
+
+    def set_measurement_contract(
+        self,
+        *,
+        cache_state: str = "unavailable",
+        aggregation: Mapping[str, object] | None = None,
+        repetition_noise_design: Mapping[str, object] | None = None,
+        numeric_budget: Mapping[str, object] | None = None,
+    ) -> None:
+        self._measurement_contract = {
+            "cache_state": cache_state,
+            "aggregation": dict(aggregation or {}),
+            "repetition_noise_design": dict(repetition_noise_design or {}),
+            "numeric_budget": dict(numeric_budget or {}),
+        }
+        self._write_live()
 
     @contextmanager
     def stage(
@@ -95,23 +202,42 @@ class TimingRecorder:
             return
 
         start = self._timer()
+        parent_start = self._span_stack[-1][1] if self._span_stack else None
+        if parent_start is not None:
+            self._nested_records.add(len(self._records))
+        record_index = len(self._records)
+        self._span_stack.append([record_index, start, 0.0])
         try:
             yield scope
         finally:
             elapsed = self._timer() - start
+            scope.elapsed_sec = max(0.0, elapsed)
+            entry = self._span_stack.pop()
+            exclusive = max(0.0, elapsed - float(entry[2]))
+            if self._span_stack:
+                # Charge nested wall time to the active parent. The parent is
+                # not recorded until its scope closes, so retain the child
+                # duration on the stack rather than summing completed records.
+                self._span_stack[-1][2] += max(0.0, elapsed)
             self._append_record(
                 TimingRecord(
                     stage=stage,
                     elapsed_sec=max(0.0, elapsed),
                     sample_stem=sample_stem,
                     metrics=_clean_metrics(scope.metrics),
-                )
+                ),
+                span_kind="wall",
+                aggregation="last",
+                overlap="nested" if parent_start is not None else "none",
             )
+            self._exclusive_elapsed[-1] = exclusive
 
     def write_json(self, path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
+        payload = self.to_json_dict()
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            json.dumps(self.to_json_dict(), indent=2, sort_keys=True),
+            json.dumps(payload, indent=2, sort_keys=True),
             encoding="utf-8",
         )
         return path
@@ -120,16 +246,68 @@ class TimingRecorder:
         from xic_extractor.diagnostics.timing_summary import summarize_timing_records
 
         return {
+            "schema_version": "timing.v1",
             "run_id": self.run_id,
             "pipeline": self.pipeline,
             "records": [record.to_json_dict() for record in self._records],
-            "summaries": summarize_timing_records(self._records),
+            "summaries": summarize_timing_records(
+                self._records,
+                exclusive_elapsed=self._exclusive_elapsed,
+                measurement_observations=self._measurement_observations,
+            ),
+            "measurement_contract": dict(self._measurement_contract),
+            "measurement_observations": list(self._measurement_observations),
+            "span_semantics": list(self._span_semantics),
         }
 
-    def _append_record(self, record: TimingRecord) -> None:
+    def _append_record(
+        self,
+        record: TimingRecord,
+        *,
+        span_kind: str,
+        aggregation: str,
+        overlap: str,
+    ) -> None:
         self._records.append(record)
-        if self.live_output_path is not None:
-            self.write_json(self.live_output_path)
+        self._exclusive_elapsed.append(None)
+        self._span_semantics.append(
+            {
+                "span_kind": span_kind,
+                "aggregation": aggregation,
+                "overlap": overlap,
+            }
+        )
+        self._write_live()
+
+    def _write_live(self) -> None:
+        if self.live_output_path is None:
+            return
+        self.live_output_path.parent.mkdir(parents=True, exist_ok=True)
+        start = max(0, len(self._records) - self.live_history_limit)
+        records = [record.to_json_dict() for record in self._records[start:]]
+        observation_start = max(
+            0,
+            len(self._measurement_observations) - self.live_observation_limit,
+        )
+        observations = self._measurement_observations[observation_start:]
+        payload = {
+            "schema_version": "timing.live.v2",
+            "run_id": self.run_id,
+            "pipeline": self.pipeline,
+            "heartbeat": dict(self._heartbeat),
+            "recent_records": records,
+            "record_count": len(self._records),
+            "dropped_record_count": start,
+            "measurement_contract": dict(self._measurement_contract),
+            "measurement_observations": observations,
+            "recent_measurement_observations": observations,
+            "observation_count": len(self._measurement_observations),
+            "dropped_observation_count": observation_start,
+            "span_semantics": self._span_semantics[start:],
+        }
+        self.live_output_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        )
 
 
 def _clean_metrics(metrics: Mapping[str, object]) -> dict[str, JsonMetric]:

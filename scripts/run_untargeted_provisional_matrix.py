@@ -103,20 +103,86 @@ def main(argv: Sequence[str] | None = None) -> int:
             "sample_metadata"
             + _retained_sample_metadata_suffix(inputs.sample_metadata_path)
         )
+        timing_recorder = TimingRecorder(
+            "untargeted-provisional-matrix",
+            live_output_path=attempt_dir / "timing.live.json",
+            instrument_writers=True,
+        )
+        timing_recorder.set_measurement_contract(
+            cache_state="unavailable",
+            aggregation={
+                "nested_wall": "separate",
+                "exclusive_wall": "non_overlapping",
+            },
+            repetition_noise_design={
+                "paired_comparable_observations": True,
+                "no_raw_synthetic": "repeated observations with observed noise",
+                "8raw": "paired per-sample/interleaved where practical",
+                "85raw": "one comparable pair with 85-sample/stage observations",
+                "effect_rule": (
+                    "effect must clear observed noise; small-sample p95 is descriptive"
+                ),
+            },
+            numeric_budget={
+                "scope": "W0 programme decision, not XIC-wide rule",
+                "first_85raw_milestone_seconds": 2700,
+                "minimum_comparable_improvement_fraction": 0.25,
+                "next_milestone_seconds": 1800,
+            },
+        )
+        for metric, reason in (
+            ("ipc_bytes", "No reliable IPC byte owner is available in W0a"),
+            (
+                "process_tree_peak_rss_bytes",
+                "No reliable process-tree RSS owner is available in W0a",
+            ),
+            (
+                "worker_peak_rss_bytes",
+                "No reliable worker RSS owner is available in W0a",
+            ),
+        ):
+            timing_recorder.observe(
+                metric,
+                value=None,
+                unit="bytes",
+                availability="unavailable",
+                source="untargeted_provisional_matrix.runner",
+                reason=reason,
+            )
+        timing_recorder.observe(
+            "fingerprint_coverage",
+            value=None,
+            scope="acquisition_sources",
+            unit="calls",
+            availability="unavailable",
+            source="untargeted_provisional_matrix.runner",
+            reason=(
+                "acquisition fingerprint calls occur inside Discovery/runtime "
+                "owners and are not wired to this recorder"
+            ),
+        )
         shutil.copyfile(inputs.sample_metadata_path, retained_sample_metadata)
         if fingerprint_file_content(
-            inputs.sample_metadata_path
-        ) != fingerprint_file_content(retained_sample_metadata):
+            inputs.sample_metadata_path,
+            observation=lambda event: _record_fingerprint_observation(
+                timing_recorder, event
+            ),
+        ) != fingerprint_file_content(
+            retained_sample_metadata,
+            observation=lambda event: _record_fingerprint_observation(
+                timing_recorder, event
+            ),
+        ):
             raise ValueError("retained sample metadata does not match its source")
         heartbeat = _Heartbeat(attempt_dir / "heartbeat.json", started=started)
         heartbeat.write_best_effort(
             event="started",
             sample_count=len(inputs.raw_files),
         )
-        timing_recorder = TimingRecorder(
-            "untargeted-provisional-matrix",
-            live_output_path=attempt_dir / "timing.live.json",
-        )
+        def progress(event: Mapping[str, object]) -> None:
+            timing_recorder.heartbeat_event(event)
+            heartbeat.progress(event)
+
         run = run_untargeted_provisional_matrix_workflow(
             raw_files=inputs.raw_files,
             dll_dir=inputs.dll_dir,
@@ -139,7 +205,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             sample_column_injection_order=retained_sample_metadata,
             timing_recorder=timing_recorder,
-            progress_callback=heartbeat.progress,
+            progress_callback=progress,
         )
         timing_recorder.write_json(attempt_dir / "timing.json")
         matrix_path = run.alignment_outputs.provisional_matrix_tsv
@@ -318,6 +384,42 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
             if attempt == 4:
                 raise
             time.sleep(0.05 * (attempt + 1))
+
+
+def _record_fingerprint_observation(
+    recorder: TimingRecorder,
+    event: Mapping[str, object],
+) -> None:
+    availability = str(event.get("availability", "unavailable"))
+    reason = str(event.get("reason", ""))
+    scope = str(event.get("scope", "run"))
+    recorder.observe(
+        "fingerprint_calls",
+        value=event.get("calls"),
+        scope=scope,
+        unit="calls",
+        source="processing_identity.fingerprint_file_content",
+        availability=availability,
+        reason=reason,
+    )
+    recorder.observe(
+        "fingerprint_bytes",
+        value=event.get("bytes"),
+        scope=scope,
+        unit="bytes",
+        source="processing_identity.fingerprint_file_content",
+        availability=availability,
+        reason=reason,
+    )
+    recorder.observe(
+        "fingerprint_time_sec",
+        value=event.get("elapsed_sec"),
+        scope=scope,
+        unit="seconds",
+        source="processing_identity.fingerprint_file_content",
+        availability=availability,
+        reason=reason,
+    )
 
 
 def _publish_directory_atomic(staging: Path, output_dir: Path) -> None:

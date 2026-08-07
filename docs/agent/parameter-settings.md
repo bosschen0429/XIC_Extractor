@@ -661,9 +661,21 @@ Long RAW alignment runs should be observable while they are running:
 ```
 
 `--timing-live-output` is the heartbeat artifact for timeout-prone 85RAW runs.
-It is overwritten after each timing record, including per-sample process-worker
-completion records. If the process is killed by an external timeout, use this
-file to identify the last completed stage/sample before rerunning anything.
+The versioned `timing.live.v2` artifact contains bounded `recent_records` and
+`recent_measurement_observations`, plus total/dropped counters and the latest
+stage/sample heartbeat. It does not expose a truncated legacy `records` field or
+rewrite the complete timing history for every event. `timing.json` retains the
+complete final history. If the process is killed by an external timeout, use the
+live file to identify the last completed stage/sample before rerunning anything.
+
+W0a diagnostic timing is additive and remains `diagnostic_only`. The final timing
+payload records `measurement_contract` (cache state, aggregation, task-specific
+repetition/noise design, and programme budgets) and mechanical
+`measurement_observations`. Missing IPC or RSS owners must be emitted as
+`unavailable` with a reason, never as measured zero. Nested spans are reported
+separately from non-overlapping/exclusive wall time. The current programme
+decision uses a first 85RAW milestone of 2700 seconds with at least 25% paired
+comparable improvement, followed by 1800 seconds; these are not XIC-wide rules.
 
 Do not launch 85RAW from the Codex shell with `Start-Process` / background mode
 and then let the shell command return. In this environment, background launch

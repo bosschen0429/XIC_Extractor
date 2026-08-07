@@ -15,6 +15,7 @@ from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.pipeline_outputs import alignment_metadata, output_paths
+from xic_extractor.diagnostics.timing import TimingRecorder
 
 
 def test_alignment_metadata_records_baseline_audit_method() -> None:
@@ -212,6 +213,65 @@ def test_write_outputs_reuses_production_decisions(
         outputs.backfill_cell_evidence_tsv is not None
         and outputs.backfill_cell_evidence_tsv.exists()
     )
+
+
+def test_writer_timing_observations_are_truthful_with_live_output(
+    tmp_path: Path,
+) -> None:
+    outputs = output_paths(
+        tmp_path / "out",
+        output_level="validation-minimal",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+    live_path = tmp_path / "timing.live.json"
+    recorder = TimingRecorder(
+        "alignment",
+        live_output_path=live_path,
+        instrument_writers=True,
+        timer=_Timer([0.0, 1.0] * 200),
+    )
+
+    pipeline_outputs_module.write_outputs_atomic(
+        outputs,
+        _matrix(("Sample_A", "Sample_B")),
+        metadata={},
+        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
+        alignment_config=AlignmentConfig(),
+        timing_recorder=recorder,
+    )
+
+    observations = recorder.to_json_dict()["measurement_observations"]
+    by_metric = {}
+    for row in observations:
+        by_metric.setdefault(row["metric"], []).append(row)
+    assert all(
+        row["value"] is not None and row["availability"] == "partial"
+        for row in by_metric["writer_render_time_sec"]
+    )
+    assert all(
+        row["value"] is None and row["availability"] == "unavailable"
+        for row in by_metric["writer_temp_write_time_sec"]
+    )
+    assert all(
+        row["value"] is not None and row["availability"] == "measured"
+        for row in by_metric["writer_rename_time_sec"]
+    )
+    assert all(
+        row["value"] is not None and row["availability"] == "measured"
+        for row in by_metric["writer_hash_time_sec"]
+    )
+
+
+class _Timer:
+    def __init__(self, values: list[float]) -> None:
+        self._values = values
+        self._index = 0
+
+    def __call__(self) -> float:
+        value = self._values[self._index]
+        self._index += 1
+        return value
 
 
 def test_pipeline_debug_flags_write_optional_outputs(
