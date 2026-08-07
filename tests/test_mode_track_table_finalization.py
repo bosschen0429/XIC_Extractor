@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -71,6 +72,22 @@ def test_reviewed_mode_track_projection_writes_atomic_tsv_and_workbook(
     assert result.matrix_tsv.is_file()
     assert result.matrix_xlsx.is_file()
     assert result.checked_manifest_tsv.is_file()
+    assert result.publication_receipt_json.is_file()
+    receipt = finalization.validate_mode_track_table_publication_receipt(
+        output_dir=result.matrix_tsv.parent,
+    )
+    assert receipt["claim_level"] == "byte_bound"
+    assert receipt["authenticity_authority"] is False
+    assert receipt["review_claim"] == (
+        "owner_validated_physical_subject_binding_only"
+    )
+    assert receipt["review_evidence"] == {
+        "manual_review_sha256": hashlib.sha256(review_path.read_bytes()).hexdigest(),
+        "manual_review_replay_sha256": hashlib.sha256(
+            replay_path.read_bytes()
+        ).hexdigest(),
+        "reviewed_cell_count": 2,
+    }
     assert result.matrix_tsv.read_text(encoding="utf-8").splitlines()[0].split(
         "\t"
     ) == list(projection.matrix_header)
@@ -81,6 +98,41 @@ def test_reviewed_mode_track_projection_writes_atomic_tsv_and_workbook(
         *projection.matrix_header,
     )
     assert matrix.max_row == len(projection.input_quant_matrix_rows) + 1
+
+
+def test_mode_track_publication_receipt_survives_copy_and_rejects_mutation(
+    tmp_path: Path,
+) -> None:
+    projection, proposal_dir = _gate_c_proposal(tmp_path)
+    gate_c_fixture.freeze_gate_c_proposal(
+        projection=projection,
+        manifest_root=tmp_path,
+        output_dir=proposal_dir,
+        run_context=_gate_c_run_context(projection),
+    )
+    review_path = _gate_c_review(tmp_path, projection)
+    replay_path = tmp_path / "manual_review_replay.json"
+    result = finalization.finalize_reviewed_mode_track_projection(
+        projection=projection,
+        manual_review_path=review_path,
+        manual_review_replay_path=replay_path,
+        output_dir=tmp_path / "final",
+    )
+    copied = tmp_path / "copied"
+    shutil.copytree(result.matrix_tsv.parent, copied)
+
+    receipt = finalization.validate_mode_track_table_publication_receipt(
+        output_dir=copied,
+    )
+
+    assert receipt["review_evidence"]["manual_review_sha256"] == hashlib.sha256(
+        review_path.read_bytes()
+    ).hexdigest()
+    (copied / "alignment_matrix.tsv").write_bytes(b"mutated\n")
+    with pytest.raises(ValueError, match="output bytes changed"):
+        finalization.validate_mode_track_table_publication_receipt(
+            output_dir=copied,
+        )
 
 
 def test_reviewed_mode_track_projection_rejects_changed_physical_area(

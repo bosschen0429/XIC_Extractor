@@ -21,7 +21,11 @@ from xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow import (
     run_untargeted_cid_nl_mode_track_workflow,
 )
 from xic_extractor.presets import apply_to_discovery, load_preset
-from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
+from xic_extractor.sample_metadata import (
+    SampleMetadata,
+    load_sample_metadata,
+    mint_sample_metadata_snapshot,
+)
 
 _MANUAL_REVIEW_FILENAME = "manual_review_v1.json"
 _REVIEW_REPLAY_FILENAME = "manual_review_observation_replay_v1.json"
@@ -187,6 +191,10 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
     metadata = load_sample_metadata(metadata_path)
     if not metadata or any(not row.raw_stem for row in metadata):
         raise ValueError("sample metadata must contain non-empty raw_stem values")
+    mint_sample_metadata_snapshot(
+        metadata,
+        identity_namespace=args.sample_identity_namespace,
+    )
     missing_injection_order = tuple(
         row.raw_stem for row in metadata if row.injection_order is None
     )

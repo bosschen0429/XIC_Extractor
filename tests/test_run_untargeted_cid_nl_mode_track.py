@@ -72,6 +72,7 @@ def test_one_command_publishes_reviewed_mode_track_table(
     assert len(calls) == 1
     assert (output_dir / "alignment_matrix.tsv").is_file()
     assert (output_dir / "alignment_matrix.xlsx").is_file()
+    assert (output_dir / "publication_receipt.json").is_file()
     assert (tmp_path / "operator-output.attempt/mode_track_source.json").is_file()
 
 
@@ -278,6 +279,58 @@ def test_preflight_rejects_missing_injection_order_before_running_raw(
     assert "requires injection_order" in capsys.readouterr().err
     assert not output_dir.exists()
     assert not (tmp_path / "missing-injection-order-output.attempt").exists()
+
+
+@pytest.mark.parametrize("namespace", ["", "   "])
+def test_preflight_rejects_empty_sample_identity_namespace_before_running_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    namespace: str,
+) -> None:
+    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    review_bundle = _review_bundle(tmp_path, projection)
+    raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
+
+    def reject_workflow(**_kwargs):
+        raise AssertionError("invalid namespace launched the RAW workflow")
+
+    monkeypatch.setattr(
+        runner,
+        "run_untargeted_cid_nl_mode_track_workflow",
+        reject_workflow,
+    )
+    output_dir = tmp_path / "invalid-namespace-output"
+    exit_code = runner.main(
+        [
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--sample-metadata",
+            str(metadata_path),
+            "--preset",
+            "dna_dr",
+            "--precursor-mz",
+            "349.215",
+            "--review-bundle-dir",
+            str(review_bundle),
+            "--output-dir",
+            str(output_dir),
+            "--manifest-root",
+            str(tmp_path),
+            "--sample-identity-namespace",
+            namespace,
+            "--preflight-only",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "identity_namespace must be non-empty owner-normalized text" in (
+        capsys.readouterr().err
+    )
+    assert not output_dir.exists()
+    assert not (tmp_path / "invalid-namespace-output.attempt").exists()
 
 
 def test_preflight_rejects_review_hash_drift_before_running_raw(

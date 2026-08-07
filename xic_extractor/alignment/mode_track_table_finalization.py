@@ -24,9 +24,23 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationContractError,
     verify_persisted_peak_observation_claims,
 )
+from xic_extractor.processing_identity import fingerprint_file_content
 from xic_extractor.tabular_io import numeric_equal, render_delimited_rows
 
 VALIDATION_STATUS = "diagnostic_only"
+MODE_TRACK_TABLE_PUBLICATION_RECEIPT_SCHEMA_VERSION = (
+    "mode_track_table_publication_receipt_v1"
+)
+_REVIEW_CLAIM = "owner_validated_physical_subject_binding_only"
+_WRITER_AUTHORITY = "fresh_projection_plus_owner_validated_review_subjects"
+_PUBLISHED_OUTPUTS = {
+    "checked_manifest": "checked_manifest_v1.tsv",
+    "alignment_matrix_tsv": "alignment_matrix.tsv",
+    "alignment_matrix_xlsx": "alignment_matrix.xlsx",
+    "cell_provenance": "cell_provenance.tsv",
+    "row_summary": "row_summary.tsv",
+    "expected_diff_summary": "expected_diff_summary.tsv",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +51,7 @@ class ModeTrackTableFinalizationResult:
     matrix_tsv: Path
     matrix_xlsx: Path
     checked_manifest_tsv: Path
+    publication_receipt_json: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +114,93 @@ def inspect_mode_track_review_bundle(
         manual_review_path=manual_review_path,
         manual_review_replay_path=manual_review_replay_path,
     ).summary
+
+
+def validate_mode_track_table_publication_receipt(
+    *,
+    output_dir: Path,
+) -> dict[str, object]:
+    """Validate published bytes and the deliberately reduced review claim."""
+
+    root = output_dir.resolve(strict=True)
+    receipt_path = root / "publication_receipt.json"
+    payload = _read_json_bytes(receipt_path.read_bytes())
+    expected_fields = {
+        "schema_version",
+        "validation_status",
+        "product_authority",
+        "authenticity_authority",
+        "claim_level",
+        "review_claim",
+        "writer_authority",
+        "adopted_cell_count",
+        "rollback_status",
+        "review_evidence",
+        "outputs",
+    }
+    if set(payload) != expected_fields:
+        raise ValueError("ModeTrack publication receipt field set is invalid")
+    if (
+        payload.get("schema_version")
+        != MODE_TRACK_TABLE_PUBLICATION_RECEIPT_SCHEMA_VERSION
+        or payload.get("validation_status") != VALIDATION_STATUS
+        or payload.get("product_authority") is not False
+        or payload.get("authenticity_authority") is not False
+        or payload.get("claim_level") != "byte_bound"
+        or payload.get("review_claim") != _REVIEW_CLAIM
+        or payload.get("writer_authority") != _WRITER_AUTHORITY
+        or payload.get("rollback_status") != "baseline_exact"
+    ):
+        raise ValueError("ModeTrack publication receipt claim is invalid")
+    adopted_cell_count = payload.get("adopted_cell_count")
+    if (
+        isinstance(adopted_cell_count, bool)
+        or not isinstance(adopted_cell_count, int)
+        or adopted_cell_count < 1
+    ):
+        raise ValueError("ModeTrack publication receipt cell count is invalid")
+    review = payload.get("review_evidence")
+    if not isinstance(review, dict) or set(review) != {
+        "manual_review_sha256",
+        "manual_review_replay_sha256",
+        "reviewed_cell_count",
+    }:
+        raise ValueError("ModeTrack publication review binding is invalid")
+    if (
+        not _is_sha256(str(review.get("manual_review_sha256", "")))
+        or not _is_sha256(str(review.get("manual_review_replay_sha256", "")))
+        or review.get("reviewed_cell_count") != adopted_cell_count
+    ):
+        raise ValueError("ModeTrack publication review binding is invalid")
+    outputs = payload.get("outputs")
+    if not isinstance(outputs, dict) or set(outputs) != set(_PUBLISHED_OUTPUTS):
+        raise ValueError("ModeTrack publication output binding is invalid")
+    for role, filename in _PUBLISHED_OUTPUTS.items():
+        binding = outputs.get(role)
+        if not isinstance(binding, dict) or set(binding) != {
+            "path",
+            "sha256",
+            "byte_size",
+        }:
+            raise ValueError("ModeTrack publication output binding is invalid")
+        if binding.get("path") != filename:
+            raise ValueError("ModeTrack publication output path is invalid")
+        expected_sha = str(binding.get("sha256", ""))
+        expected_size = binding.get("byte_size")
+        if (
+            not _is_sha256(expected_sha)
+            or isinstance(expected_size, bool)
+            or not isinstance(expected_size, int)
+            or expected_size < 0
+        ):
+            raise ValueError("ModeTrack publication output binding is invalid")
+        observed = fingerprint_file_content(root / filename)
+        if (
+            observed.content_sha256 != expected_sha.lower()
+            or observed.byte_size != expected_size
+        ):
+            raise ValueError("ModeTrack publication output bytes changed")
+    return payload
 
 
 def finalize_reviewed_mode_track_projection(
@@ -170,7 +272,9 @@ def _finalize_mode_track_projection(
             checked_rows=checked_rows,
             result=result,
             rollback_status=rollback_status,
+            validated_review=validated_review,
         )
+        validate_mode_track_table_publication_receipt(output_dir=staging)
         _publish_directory_atomic(staging, output_dir)
     except Exception:
         if staging.exists():
@@ -184,6 +288,7 @@ def _finalize_mode_track_projection(
         matrix_tsv=output_dir / "alignment_matrix.tsv",
         matrix_xlsx=output_dir / "alignment_matrix.xlsx",
         checked_manifest_tsv=output_dir / "checked_manifest_v1.tsv",
+        publication_receipt_json=output_dir / "publication_receipt.json",
     )
 
 
@@ -465,6 +570,7 @@ def _write_outputs(
     checked_rows: Sequence[Mapping[str, str]],
     result: quant_matrix.QuantMatrixVersionRows,
     rollback_status: str,
+    validated_review: _ValidatedModeTrackReviewSet,
 ) -> None:
     (output_dir / "checked_manifest_v1.tsv").write_text(
         render_delimited_rows(
@@ -521,8 +627,60 @@ def _write_outputs(
             "validation_status": VALIDATION_STATUS,
             "adopted_cell_count": str(len(checked_rows)),
             "rollback_status": rollback_status,
-            "writer_authority": "fresh_projection_plus_reviewed_physical_subjects",
+            "writer_authority": _WRITER_AUTHORITY,
+            "review_claim": _REVIEW_CLAIM,
+            "manual_review_sha256": validated_review.manual_review_sha256,
+            "manual_review_replay_sha256": (
+                validated_review.manual_review_replay_sha256
+            ),
         },
+    )
+    _write_publication_receipt(
+        output_dir=output_dir,
+        validated_review=validated_review,
+        adopted_cell_count=len(checked_rows),
+        rollback_status=rollback_status,
+    )
+
+
+def _write_publication_receipt(
+    *,
+    output_dir: Path,
+    validated_review: _ValidatedModeTrackReviewSet,
+    adopted_cell_count: int,
+    rollback_status: str,
+) -> None:
+    outputs = {}
+    for role, filename in _PUBLISHED_OUTPUTS.items():
+        path = output_dir / filename
+        fingerprint = fingerprint_file_content(path)
+        outputs[role] = {
+            "path": filename,
+            "sha256": fingerprint.content_sha256,
+            "byte_size": fingerprint.byte_size,
+        }
+    payload = {
+        "schema_version": MODE_TRACK_TABLE_PUBLICATION_RECEIPT_SCHEMA_VERSION,
+        "validation_status": VALIDATION_STATUS,
+        "product_authority": False,
+        "authenticity_authority": False,
+        "claim_level": "byte_bound",
+        "review_claim": _REVIEW_CLAIM,
+        "writer_authority": _WRITER_AUTHORITY,
+        "adopted_cell_count": adopted_cell_count,
+        "rollback_status": rollback_status,
+        "review_evidence": {
+            "manual_review_sha256": validated_review.manual_review_sha256,
+            "manual_review_replay_sha256": (
+                validated_review.manual_review_replay_sha256
+            ),
+            "reviewed_cell_count": validated_review.summary.reviewed_cell_count,
+        },
+        "outputs": outputs,
+    }
+    (output_dir / "publication_receipt.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
 
