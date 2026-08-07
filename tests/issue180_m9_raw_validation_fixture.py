@@ -408,7 +408,7 @@ def _finalize_gate_c_transaction(
             "product_authority": "checked_qmv_owner_only",
         },
     )
-    transaction_staging_dir.replace(final_output_dir)
+    _publish_directory_atomic(transaction_staging_dir, final_output_dir)
     return final_output_dir / "transaction_receipt.json"
 
 
@@ -806,7 +806,7 @@ def freeze_gate_c_proposal(
     }
     _validate_proposal_payload(proposal, receipt, staged_source)
     _publish_json_marker(staging / "proposal_receipt.json", receipt)
-    staging.replace(output_dir)
+    _publish_directory_atomic(staging, output_dir)
     return output_dir / "proposal_receipt.json"
 
 
@@ -956,7 +956,7 @@ def transfer_gate_c_review(
         "product_authority": "none_review_input_only",
     }
     _write_json(staging / "review_transfer_receipt.json", transfer_receipt)
-    staging.replace(output_dir)
+    _publish_directory_atomic(staging, output_dir)
     return output_dir / "review_transfer_receipt.json"
 
 
@@ -1323,7 +1323,7 @@ def finalize_gate_c_fresh_projection(
     }
     _write_json(staging / "result_qmv.json", result_payload)
     _publish_json_marker(staging / "final_receipt.json", final_receipt)
-    staging.replace(output_dir)
+    _publish_directory_atomic(staging, output_dir)
     return output_dir / "final_receipt.json"
 
 
@@ -1640,6 +1640,17 @@ def _publish_json_marker(path: Path, payload: object) -> None:
     temporary = path.with_suffix(".tmp")
     _write_json(temporary, payload)
     temporary.replace(path)
+
+
+def _publish_directory_atomic(staging: Path, output_dir: Path) -> None:
+    for attempt in range(5):
+        try:
+            staging.replace(output_dir)
+            return
+        except PermissionError:
+            if output_dir.exists() or attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def _required_rows(value: Mapping[str, object], key: str) -> list[dict[str, str]]:

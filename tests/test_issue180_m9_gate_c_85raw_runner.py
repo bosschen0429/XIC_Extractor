@@ -86,6 +86,35 @@ def test_shared_validation_artifact_labels_are_gate_neutral() -> None:
     assert "gate_b" not in gate_c_fixture._RUNTIME_TELEMETRY_UNAVAILABLE_REASON
 
 
+def test_atomic_directory_publication_retries_transient_windows_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    staging = tmp_path / "staging"
+    output_dir = tmp_path / "published"
+    staging.mkdir()
+    (staging / "receipt.json").write_text("{}\n", encoding="utf-8")
+    original_replace = Path.replace
+    attempts = 0
+
+    def replace_after_transient_lock(path: Path, target: Path) -> Path:
+        nonlocal attempts
+        if path == staging:
+            attempts += 1
+            if attempts == 1:
+                raise PermissionError("transient Windows directory lock")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", replace_after_transient_lock)
+    monkeypatch.setattr(gate_c_fixture.time, "sleep", lambda _seconds: None)
+
+    gate_c_fixture._publish_directory_atomic(staging, output_dir)
+
+    assert attempts == 2
+    assert not staging.exists()
+    assert (output_dir / "receipt.json").is_file()
+
+
 def test_frozen_launch_calls_shared_core_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
