@@ -157,6 +157,7 @@ class _ManifestEvidence:
 class _CandidateCensus:
     summary: Mapping[str, int | float]
     candidate_ids: frozenset[str]
+    sample_stems: tuple[str, ...]
 
 
 def build_backfill_decision_ledger(
@@ -190,7 +191,7 @@ def build_backfill_decision_ledger(
     )
     timing = _read_timing(
         _required_file(artifact_root / "timing.json"),
-        expected_sample_count=int(candidate_census.summary["sample_count"]),
+        expected_sample_stems=candidate_census.sample_stems,
     )
     unknown_candidate_ids = sorted(
         set(backfill.candidate_group_ids) - candidate_census.candidate_ids
@@ -316,6 +317,7 @@ def _read_candidate_census(
             "display_family_multi_best_scan_group_count": (multi_scan_display_families),
         },
         candidate_ids=frozenset(candidate_ids),
+        sample_stems=batch.sample_order,
     )
 
 
@@ -639,7 +641,11 @@ def _request_proxy_key(sample_stem: str, mz: str, rt: str) -> bytes:
     return hashlib.blake2b(payload, digest_size=16).digest()
 
 
-def _read_timing(path: Path, *, expected_sample_count: int) -> _TimingCensus:
+def _read_timing(
+    path: Path,
+    *,
+    expected_sample_stems: tuple[str, ...],
+) -> _TimingCensus:
     payload = _read_json_object(path)
     schema_version = payload.get("schema_version")
     if schema_version is None:
@@ -653,7 +659,7 @@ def _read_timing(path: Path, *, expected_sample_count: int) -> _TimingCensus:
         raise ValueError(f"{path}: records must be a list")
     assignment_count = 0
     owner_count = 0
-    owner_sample_record_count = 0
+    owner_sample_stems: set[str] = set()
     backfill_scope_metrics: Mapping[str, Any] | None = None
     backfill_metrics: Mapping[str, Any] | None = None
     backfill_elapsed_sec = 0.0
@@ -666,7 +672,17 @@ def _read_timing(path: Path, *, expected_sample_count: int) -> _TimingCensus:
         if not isinstance(metrics, dict):
             raise ValueError(f"{path}: record {index} metrics must be an object")
         if stage == "alignment.build_owners.sample_complete":
-            owner_sample_record_count += 1
+            sample_stem = record.get("sample_stem")
+            if not isinstance(sample_stem, str) or not sample_stem:
+                raise ValueError(
+                    f"{path}: record {index}: sample_complete sample_stem is required"
+                )
+            if sample_stem in owner_sample_stems:
+                raise ValueError(
+                    f"{path}: record {index}: duplicate sample_complete sample_stem "
+                    f"{sample_stem!r}"
+                )
+            owner_sample_stems.add(sample_stem)
             assignment_count += _metric_nonnegative_int(
                 path,
                 index,
@@ -697,10 +713,13 @@ def _read_timing(path: Path, *, expected_sample_count: int) -> _TimingCensus:
             pre_backfill_consolidation_observed = True
     if backfill_scope_metrics is None or backfill_metrics is None:
         raise ValueError(f"{path}: required Backfill timing records are missing")
-    if owner_sample_record_count != expected_sample_count:
+    expected_samples = set(expected_sample_stems)
+    if owner_sample_stems != expected_samples:
+        missing = sorted(expected_samples - owner_sample_stems)
+        unexpected = sorted(owner_sample_stems - expected_samples)
         raise ValueError(
-            f"{path}: alignment.build_owners.sample_complete record count must be "
-            f"{expected_sample_count}, got {owner_sample_record_count}"
+            f"{path}: alignment.build_owners.sample_complete sample universe does "
+            f"not match Discovery; missing={missing!r}; unexpected={unexpected!r}"
         )
     return _TimingCensus(
         schema_status=schema_status,

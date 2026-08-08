@@ -171,7 +171,7 @@ def test_decision_ledger_rejects_missing_owner_timing_and_wrong_schema(
         if record["stage"] != "alignment.build_owners.sample_complete"
     ]
     timing_path.write_text(json.dumps(timing), encoding="utf-8")
-    with pytest.raises(ValueError, match="sample_complete record count must be 1"):
+    with pytest.raises(ValueError, match="sample universe does not match Discovery"):
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "missing-owner-output",
@@ -181,9 +181,21 @@ def test_decision_ledger_rejects_missing_owner_timing_and_wrong_schema(
     partial = _artifact(tmp_path / "partial-owner") / "timing.json"
     with pytest.raises(
         ValueError,
-        match="sample_complete record count must be 2, got 1",
+        match=r"missing=\['Sample_B'\]",
     ):
-        _read_timing(partial, expected_sample_count=2)
+        _read_timing(
+            partial,
+            expected_sample_stems=("Sample_A", "Sample_B"),
+        )
+
+    duplicate_payload = json.loads(partial.read_text(encoding="utf-8"))
+    duplicate_payload["records"].insert(1, duplicate_payload["records"][0].copy())
+    partial.write_text(json.dumps(duplicate_payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate sample_complete sample_stem"):
+        _read_timing(
+            partial,
+            expected_sample_stems=("Sample_A", "Sample_B"),
+        )
 
     artifact = _artifact(tmp_path / "wrong-schema")
     evidence = (
@@ -342,6 +354,7 @@ def _artifact(root: Path) -> Path:
                 "records": [
                     {
                         "stage": "alignment.build_owners.sample_complete",
+                        "sample_stem": "Sample_A",
                         "metrics": {"assignment_count": 1, "owner_count": 1},
                     },
                     {
