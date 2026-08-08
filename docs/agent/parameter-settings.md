@@ -157,13 +157,11 @@ Doctor 的 top-level status 直接決定下一步：
 | `HUMAN_DECISION_REQUIRED` | 等待 credentials、destructive action 或風險取捨的人工決定 |
 | `INCONCLUSIVE` | 只取得 finding 指定的下一個證據，不猜測 |
 
-只想分類命令、不做 runtime acceptance 時才加 `--command-only`。目前
-`workspace-github` profile 只對 active workspace root 的 `.git` 明確開放 write；
-`.codex` 與 `.agents` 仍是 read-only。`--probe-git-write` 是 profile activation
-canary，不是一般 preflight。一般 `git status` 已包含在 doctor；staging 前仍先核對
-dirty scope。精確 `git add <task-files...>`、commit 與普通 local ref mutation 可在 profile
-內執行；`-A`、`--all`、`.`、destructive history rewrite 與 network mutation仍由
-hook、execpolicy 與 approval policy 控制，不設 blanket allow。
+只想分類命令、不做 runtime acceptance 時才加 `--command-only`。
+`--probe-git-write` 是 Git metadata write canary，不是一般 preflight。一般
+`git status` 已包含在 doctor；staging 前仍先核對 dirty scope。Repo 不定義 permission
+profile，也不覆寫 host sandbox。任何需要額外 filesystem、Git 或 network 權限的命令，
+都對同一個精確命令使用 **Approve for me**。
 
 ```powershell
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --strict --command ".venv\Scripts\python.exe -m scripts.run_alignment --expected-sample-count 85 ..."
@@ -171,19 +169,9 @@ hook、execpolicy 與 approval policy 控制，不設 blanket allow。
 
 ## Sandbox Friction Playbook
 
-目前建議姿態是 repo-scoped `workspace-github` permission profile + `on-request`；
-不要再同時設定舊 `sandbox_mode` / `[sandbox_workspace_write]`。
-`.codex/config.toml` 選取並定義這個 profile：它 extends `:workspace`，只把 active
-workspace root 的 `.git` 覆寫成 write，明確保留 `.codex` / `.agents` read-only，
-並只允許 `api.github.com` 與 `github.com`。同一檔案也將
-`GIT_CONFIG_GLOBAL` 設為 `NUL`；必要 identity/long-path settings 放 shared local
-Git config，避免 Windows elevated sandbox 讀 user-home `.gitconfig`。
-Doctor 在 Codex Windows thread 會先驗證這個 project shell environment 是否
-真的載入；若回報 `host_config_not_activated`，review/trust project `.codex` layer
-後重啟 Codex 並開新 thread。不要用目前 shell 的臨時環境覆寫掩蓋 host activation
-失敗，也不要再次修改已正確的 project config。Windows sandbox 會在 thread 啟動時
-建立 ACL；不要從仍使用舊 profile 的 thread 再巢狀啟動新 sandbox 來測 `.git`，因為
-舊 deny ACL 會優先於新 allow。profile 變更後，重啟 Codex 並開新 thread，再跑：
+Repo 不擁有 permission profile、sandbox mode、GitHub allowlist 或 shell-environment
+permission workaround。Host 的 **Approve for me** 是唯一 permission escalation path。
+Doctor 只分類 exact failure 並指出同一個必要命令；它不要求修改 project config。
 
 ```powershell
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --strict --probe-write --probe-git-write --probe-github
@@ -191,9 +179,8 @@ gh api rate_limit
 ```
 
 第一個命令驗證 workspace、Git metadata 與 GitHub origin。第二個命令直接驗證
-`api.github.com`；兩者都是 read-only network canary。若只能從外部 PowerShell 驗證，
-可在沒有既有 Codex sandbox ACL 的新 shell 使用 `codex sandbox
---permission-profile workspace-github --cd . <command>` 包住同一個 command。
+`api.github.com`；兩者都是 read-only network canary。若 sandbox 阻擋必要命令，
+直接對同一個精確命令使用 **Approve for me**。
 
 ### Approval-First Commands
 
@@ -227,15 +214,14 @@ gh api rate_limit
 | RAW / DLL 讀不到 | 先跑本檔 Preflight 的 `Test-Path` 與 Python runner check；RAW 命令用 `.venv\Scripts\python.exe` | 不要用 bare `python` 重試 RAW，也不要掃 sibling directory 猜路徑 |
 | PowerShell 語法錯誤 | 改成 PowerShell 語法；多行命令用 backtick；inline Python 用 `python -c` 或 PowerShell here-string pipe；不確定時先跑 `scripts.agent_sandbox_doctor` | 不要貼 Bash heredoc、`export`、`&&` |
 | 長時間 85RAW 卡住 | 用 foreground command + `--timing-live-output`；先看 heartbeat / timing artifact 再重跑 | 不要背景 `Start-Process` 後回來輪詢 |
-| `git add` / `git commit` / `git stash` / `git worktree add` 出現 `.git\index.lock`、ref-lock、或 permission denied | 先跑 doctor 並確認 worktree；若 `workspace-github` 尚未 active，review/trust project config 後重啟並跑 profile canary；在 activation 前只對同一個精確命令走 narrow approval | 不要用 `git add -A`、`git add --all` 或 `git add .` 擴大 staging scope；不要用 `GIT_CONFIG_GLOBAL=NUL` 作臨時 shell workaround（project config 已擁有它）；不要把 host activation failure 誤判成程式碼問題 |
+| `git add` / `git commit` / `git stash` / `git worktree add` 出現 `.git\index.lock`、ref-lock、`.gitconfig` unreadable 或 permission denied | 先跑 doctor 並確認 worktree；對同一個精確 Git 命令使用 **Approve for me** | 不要用 `git add -A`、`git add --all` 或 `git add .` 擴大 staging scope；不要新增 repo-local permission profile、sandbox override 或 shell-environment workaround；不要把 host permission failure 誤判成程式碼問題 |
 | 要續接舊 worktree / 舊 artifact | 先 `git worktree list` 與 `Test-Path` exact artifact；若 worktree/output 不存在，改用 `local_validation_artifacts/` 或明確重建 smoke path | 不要假設上一輪 worktree 還存在；不要把 `.worktrees/<branch>/output/...` 當長期可重用 input |
 | 遞迴掃描太慢、掃到 access denied、或 output/build/.worktrees 噪音 | 優先用 `git ls-files`、`rg --files`、targeted `rg`，再讀特定 range | 不要用 blanket `Get-ChildItem -Recurse` 掃整個 repo、`output/`、`.worktrees/`、或 build/cache 目錄 |
 | output / workbook overwrite `Permission denied` | 先假設檔案可能被 Excel/browser/previewer 鎖住；改寫到 timestamped 或 suffixed output，並回報原檔可能被鎖 | 不要強刪或反覆覆蓋；不要把 permission denied 當成 pipeline 邏輯失敗 |
 
 已獲准的 Git metadata mutation 若在 elevated Windows user 下回報 `dubious
-ownership`，原因通常是 `.git` 由 sandbox identity 建立，而 project
-`GIT_CONFIG_GLOBAL=NUL` 不讀 user-global `safe.directory`。先確認目前目錄就是
-目標 worktree，再只對這次 Git invocation 加 exact exception：
+ownership`，先確認目前目錄就是目標 worktree，再只對這次 Git invocation 加
+exact exception：
 
 ```powershell
 $xicRepoRoot = (Resolve-Path .).Path.Replace('\', '/')
@@ -282,11 +268,9 @@ authority 管理。
 3. 它是否比把 output 改到 worktree、固定 runner、或更新本檔更好？
 4. 它是否有 smoke check，且不會把使用者真正該審的決策藏起來？
 
-目前 `.codex/config.toml` 擁有 XIC `workspace-github` permission profile 與 Git
-global-config isolation；`.codex/rules/xic-safety.rules` 不 blanket allow staging，
-只保留 destructive／external action 的 block 或 prompt。profile 的 `.git` write
-不等於允許任意 Python/shell、broad Git pathspec、history rewrite、未審 push、
-delete 或未列名的 network destination。
+Repo 不以 `.codex/config.toml` 定義 permission profile 或 Git global-config
+isolation。`.codex/rules/xic-safety.rules` 只保留 destructive／external action 的
+block 或 prompt；所有額外 permission 由 host **Approve for me** 處理。
 
 ## Validation Tiers
 

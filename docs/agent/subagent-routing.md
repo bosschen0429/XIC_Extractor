@@ -405,13 +405,10 @@ task packets. The repo keeps only the rules those agents must honor here:
 
 Current recommended posture for this repo:
 
-- Main implementation sessions use the permission profile `workspace-github`
-  with `approval_policy = "on-request"` and `auto_review`. The trusted project
-  config selects it with `default_permissions = "workspace-github"`. It extends
-  `:workspace`, reopens only `.git` for workspace-root writes, keeps `.codex`
-  and `.agents` read-only, and allows only `api.github.com` and `github.com`.
-  Do not combine it with the legacy `sandbox_mode` /
-  `[sandbox_workspace_write]` settings.
+- The repo does not define or select a permission profile. Filesystem, Git,
+  network, and sandbox permission decisions use the host's **Approve for me**
+  flow. Do not add repo-local permission or shell-environment overrides to
+  bypass that flow.
 - The global `reviewer` uses `sandbox_mode = "read-only"`. A generic agent
   inherits the caller's runtime capabilities; a no-write prompt does not make
   it sandboxed. Snapshot `git status --short` before and after any generic
@@ -423,12 +420,10 @@ Current recommended posture for this repo:
 - `danger-full-access`, `approval_policy = "never"`, broad writable roots, and
   persistent execpolicy rules are not default development settings. Use them
   only for a reviewed, bounded operation with a named rollback or recovery path.
-- The tracked project `.codex/config.toml` owns the repo-specific
-  `workspace-github` profile and `GIT_CONFIG_GLOBAL=NUL` shell environment
-  needed to avoid unreadable Windows user-home Git config. Global model, MCP,
-  plugin, and cross-repo policy remain global. Project config changes require
-  trust review, a Codex restart, the config/TOML smoke check, and the bounded
-  profile canary in `docs/agent/parameter-settings.md`.
+- Global model, MCP, plugin, permission, and cross-repo policy remain host-owned.
+  An unreadable Windows user-home Git config is an approval/runtime boundary;
+  request **Approve for me** for the exact Git command instead of adding a
+  project permission profile.
 - Before changing sandbox posture for a command, prefer
   `.venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "<command>"`.
   The doctor is diagnostic only; it does not execute the command or replace

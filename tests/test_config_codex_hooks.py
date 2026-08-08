@@ -7,19 +7,16 @@ import re
 import shutil
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOKS_CONFIG = ROOT / ".codex" / "hooks.json"
-PROJECT_CONFIG = ROOT / ".codex" / "config.toml"
 HOOKS_DIR = ROOT / ".codex" / "hooks"
 RULES_PATH = ROOT / ".codex" / "rules" / "xic-safety.rules"
 OPERATING_SYSTEM = ROOT / "docs" / "agent" / "codex-operating-system.md"
 PARAMETER_SETTINGS = ROOT / "docs" / "agent" / "parameter-settings.md"
-SUBAGENT_ROUTING = ROOT / "docs" / "agent" / "subagent-routing.md"
 HOOK_COMMAND_PATTERNS = {
     "command": re.compile(
         r'^python3 "\$\(git rev-parse --show-toplevel\)/\.codex/hooks/'
@@ -59,10 +56,12 @@ def _load_hooks_config() -> dict[str, object]:
     return json.loads(HOOKS_CONFIG.read_text(encoding="utf-8"))
 
 
-def _project_shell_environment() -> dict[str, str]:
-    config = tomllib.loads(PROJECT_CONFIG.read_text(encoding="utf-8"))
+def _test_shell_environment() -> dict[str, str]:
     environment = os.environ.copy()
-    environment.update(config["shell_environment_policy"]["set"])
+    environment["GIT_CONFIG_GLOBAL"] = os.devnull
+    environment["GIT_CONFIG_COUNT"] = "1"
+    environment["GIT_CONFIG_KEY_0"] = "safe.directory"
+    environment["GIT_CONFIG_VALUE_0"] = str(ROOT)
     return environment
 
 
@@ -166,7 +165,7 @@ def _run_configured_hook(
         argv,
         input=json.dumps(_minimal_payload(event_name)),
         cwd=ROOT,
-        env=_project_shell_environment(),
+        env=_test_shell_environment(),
         check=False,
         capture_output=True,
         text=True,
@@ -273,55 +272,6 @@ def test_existing_hook_behavior_fixture_runs_in_ordinary_pytest() -> None:
         text=True,
         timeout=30,
     )
-
-
-def test_project_config_defines_bounded_workspace_github_profile() -> None:
-    config = tomllib.loads(PROJECT_CONFIG.read_text(encoding="utf-8"))
-
-    assert config["default_permissions"] == "workspace-github"
-    assert "sandbox_mode" not in config
-    assert "sandbox_workspace_write" not in config
-    assert config["permissions"] == {
-        "workspace-github": {
-            "description": (
-                "XIC workspace writes, bounded Git metadata writes, "
-                "and narrow GitHub access."
-            ),
-            "extends": ":workspace",
-            "filesystem": {
-                ":workspace_roots": {
-                    ".git": "write",
-                    ".codex": "read",
-                    ".agents": "read",
-                },
-            },
-            "network": {
-                "enabled": True,
-                "domains": {
-                    "api.github.com": "allow",
-                    "github.com": "allow",
-                },
-            },
-        },
-    }
-    assert config["shell_environment_policy"] == {
-        "set": {"GIT_CONFIG_GLOBAL": "NUL"},
-    }
-
-
-def test_subagent_routing_uses_current_project_sandbox_contract() -> None:
-    routing = SUBAGENT_ROUTING.read_text(encoding="utf-8")
-
-    assert "permission profile `workspace-github`" in routing
-    assert 'default_permissions = "workspace-github"' in routing
-    assert "reopens only `.git`" in routing
-    assert 'approval_policy = "on-request"' in routing
-    assert "`GIT_CONFIG_GLOBAL=NUL`" in routing
-    assert "intentionally not added" not in routing
-    assert (
-        ".venv\\Scripts\\python.exe -m scripts.agent_sandbox_doctor "
-        '--command-only --command "<command>"'
-    ) in routing
 
 
 def test_elevated_git_ownership_recovery_stays_invocation_scoped() -> None:
