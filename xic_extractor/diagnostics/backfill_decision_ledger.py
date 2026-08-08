@@ -183,11 +183,14 @@ def build_backfill_decision_ledger(
         _required_file(alignment_dir / "provisional_cell_provenance.tsv"),
         known_group_ids=frozenset(review.groups),
     )
-    timing = _read_timing(_required_file(artifact_root / "timing.json"))
     heartbeat = _read_json_object(_required_file(artifact_root / "heartbeat.json"))
 
     candidate_census = _read_candidate_census(
         artifact_root=artifact_root,
+    )
+    timing = _read_timing(
+        _required_file(artifact_root / "timing.json"),
+        expected_sample_count=int(candidate_census.summary["sample_count"]),
     )
     unknown_candidate_ids = sorted(
         set(backfill.candidate_group_ids) - candidate_census.candidate_ids
@@ -636,7 +639,7 @@ def _request_proxy_key(sample_stem: str, mz: str, rt: str) -> bytes:
     return hashlib.blake2b(payload, digest_size=16).digest()
 
 
-def _read_timing(path: Path) -> _TimingCensus:
+def _read_timing(path: Path, *, expected_sample_count: int) -> _TimingCensus:
     payload = _read_json_object(path)
     schema_version = payload.get("schema_version")
     if schema_version is None:
@@ -694,9 +697,10 @@ def _read_timing(path: Path) -> _TimingCensus:
             pre_backfill_consolidation_observed = True
     if backfill_scope_metrics is None or backfill_metrics is None:
         raise ValueError(f"{path}: required Backfill timing records are missing")
-    if owner_sample_record_count == 0:
+    if owner_sample_record_count != expected_sample_count:
         raise ValueError(
-            f"{path}: alignment.build_owners.sample_complete records are missing"
+            f"{path}: alignment.build_owners.sample_complete record count must be "
+            f"{expected_sample_count}, got {owner_sample_record_count}"
         )
     return _TimingCensus(
         schema_status=schema_status,

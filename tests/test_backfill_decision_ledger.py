@@ -18,6 +18,7 @@ from xic_extractor.diagnostics.backfill_decision_ledger import (
     _BACKFILL_COLUMNS,
     _PROVENANCE_COLUMNS,
     _REVIEW_COLUMNS,
+    _read_timing,
     build_backfill_decision_ledger,
 )
 from xic_extractor.discovery.batch_contract import (
@@ -170,12 +171,19 @@ def test_decision_ledger_rejects_missing_owner_timing_and_wrong_schema(
         if record["stage"] != "alignment.build_owners.sample_complete"
     ]
     timing_path.write_text(json.dumps(timing), encoding="utf-8")
-    with pytest.raises(ValueError, match="sample_complete records are missing"):
+    with pytest.raises(ValueError, match="sample_complete record count must be 1"):
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "missing-owner-output",
             expected_code_revision=_REVISION,
         )
+
+    partial = _artifact(tmp_path / "partial-owner") / "timing.json"
+    with pytest.raises(
+        ValueError,
+        match="sample_complete record count must be 2, got 1",
+    ):
+        _read_timing(partial, expected_sample_count=2)
 
     artifact = _artifact(tmp_path / "wrong-schema")
     evidence = (
