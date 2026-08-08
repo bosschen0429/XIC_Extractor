@@ -23,6 +23,12 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_candidates_csv,
     read_owner_bound_discovery_candidates_csv,
 )
+from xic_extractor.alignment.early_loser_shadow import (
+    EarlyLoserShadowProposal,
+    EarlyLoserShadowReport,
+    build_early_loser_shadow_proposal,
+    compare_early_loser_shadow_with_final_authority,
+)
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     OwnerEdgeEvidence,
@@ -136,6 +142,7 @@ def run_alignment(
     selected_family_source: str = "",
     require_discovery_owner_closure: bool = False,
     emit_provisional_matrix: bool = False,
+    emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
     if raw_workers < 1:
         raise ValueError("raw_workers must be >= 1")
@@ -189,6 +196,7 @@ def run_alignment(
             "selected_family_count": len(selected_family_ids),
             "require_discovery_owner_closure": require_discovery_owner_closure,
             "emit_provisional_matrix": emit_provisional_matrix,
+            "emit_early_loser_shadow": emit_early_loser_shadow,
             "drift_prior_source": (
                 drift_lookup.source if drift_lookup is not None else "none"
             ),
@@ -237,6 +245,7 @@ def run_alignment(
         ),
         emit_skipped_evidence_ledger=backfill_scope != "full-audit",
         emit_provisional_matrix=emit_provisional_matrix,
+        emit_early_loser_shadow=emit_early_loser_shadow,
     )
     resolved_audit_evidence_mode, audit_evidence_mode_reason = (
         _resolve_audit_evidence_mode(
@@ -417,6 +426,30 @@ def run_alignment(
                 outputs,
                 identity_coherence_output_dir=identity_output_dir,
             )
+        early_loser_shadow_proposal: EarlyLoserShadowProposal | None = None
+        if emit_early_loser_shadow:
+            with recorder.stage("alignment.early_loser_shadow.proposal") as stage:
+                early_loser_shadow_proposal = build_early_loser_shadow_proposal(
+                    owner_features,
+                    sample_order=batch.sample_order,
+                    raw_sample_stems=frozenset(raw_paths),
+                    alignment_config=alignment_config,
+                )
+                stage.metrics.update(
+                    {
+                        "source_feature_count": len(
+                            early_loser_shadow_proposal.rows
+                        ),
+                        "proposed_loser_count": sum(
+                            row.proposal_status == "loser"
+                            for row in early_loser_shadow_proposal.rows
+                        ),
+                        "proposed_unresolved_count": sum(
+                            row.proposal_status == "unresolved"
+                            for row in early_loser_shadow_proposal.rows
+                        ),
+                    }
+                )
         if preconsolidate_owner_families:
             with recorder.stage("alignment.pre_backfill_consolidation"):
                 owner_features = consolidate_pre_backfill_identity_families(
@@ -582,6 +615,36 @@ def run_alignment(
             matrix = consolidate_primary_family_rows(matrix, alignment_config)
         with recorder.stage("alignment.pre_backfill_recenter"):
             matrix = recenter_pre_backfill_identity_families(matrix)
+        early_loser_shadow_report: EarlyLoserShadowReport | None = None
+        if early_loser_shadow_proposal is not None:
+            with recorder.stage("alignment.early_loser_shadow.compare") as stage:
+                early_loser_shadow_report = (
+                    compare_early_loser_shadow_with_final_authority(
+                        early_loser_shadow_proposal,
+                        matrix,
+                    )
+                )
+                stage.metrics.update(
+                    {
+                        "verdict": early_loser_shadow_report.verdict,
+                        "proposed_loser_count": (
+                            early_loser_shadow_report.proposed_loser_count
+                        ),
+                        "confirmed_loser_count": (
+                            early_loser_shadow_report.confirmed_loser_count
+                        ),
+                        "false_loser_count": (
+                            early_loser_shadow_report.false_loser_count
+                        ),
+                        "winner_mismatch_count": (
+                            early_loser_shadow_report.winner_mismatch_count
+                        ),
+                        "late_loser_count": (
+                            early_loser_shadow_report.late_loser_count
+                        ),
+                        "activation_allowed": False,
+                    }
+                )
         with recorder.stage("alignment.write_outputs"):
             _write_outputs_atomic(
                 outputs,
@@ -639,6 +702,7 @@ def run_alignment(
                 ),
                 baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
                 timing_recorder=recorder,
+                early_loser_shadow=early_loser_shadow_report,
             )
         return outputs
 

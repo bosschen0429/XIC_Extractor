@@ -492,6 +492,23 @@ selection, Backfill eligibility, Matrix, writer, or activation behavior.
 
 ---
 
+### `run_alignment.py --emit-early-loser-shadow`
+
+**Purpose**: Emit the opt-in, owner-only pre-Backfill redundancy-candidate
+proposal and compare it with typed final claim/consolidation authority.
+**Topic group**: `xic_extractor/alignment/early_loser_shadow.py` +
+`early_loser_shadow_writer.py` (in-process Alignment diagnostic; no standalone
+RAW or persisted-projection reader).
+**Originating issues**: [#195](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/195)
+and [#208](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/208).
+**Status note**: `diagnostic_only`. The shadow does not feed Backfill, Pass B,
+Matrix, writers, or activation. It accepts legal transitive loser chains and
+fails closed on missing/cyclic/non-winner lineage. Projected feature/cell/XIC
+counts come from the existing owner request plan and are not actual savings.
+Counterfactual cell/value/output fields remain named activation gaps.
+
+---
+
 ## Backfill Reviews
 
 Three overlapping review axes (seed-level / family-level /

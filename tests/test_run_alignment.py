@@ -1640,6 +1640,40 @@ def test_run_alignment_cli_passes_preconsolidate_owner_families(
     assert captured["preconsolidate_owner_families"] is True
 
 
+def test_run_alignment_cli_passes_early_loser_shadow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    captured = {}
+
+    def fake_run_alignment(**kwargs):
+        captured.update(kwargs)
+        return AlignmentRunOutputs()
+
+    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+
+    code = run_alignment.main(
+        [
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--emit-early-loser-shadow",
+        ],
+    )
+
+    assert code == 0
+    assert captured["emit_early_loser_shadow"] is True
+
+
 def test_run_alignment_cli_validation_fast_profile_sets_raw_execution(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

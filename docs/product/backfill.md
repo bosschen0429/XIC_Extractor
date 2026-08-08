@@ -123,6 +123,33 @@ The seed-aware review packet remains a shadow-gate support surface. Its current
 signal is useful for review triage, but it does not change matrix authority or
 write scope.
 
+## Early-loser settlement shadow
+
+`run_alignment --emit-early-loser-shadow` is an opt-in `diagnostic_only`
+comparison surface for Issue #195 / #208. It runs the existing typed
+pre-Backfill identity consolidation as a proposal, but the original owner
+features still enter the existing Backfill request plan and execution path.
+After the claim registry and primary consolidation finish, the shadow compares
+every proposal row with the typed final Matrix authority and writes
+`alignment_early_loser_shadow.json`.
+
+The packet preserves the proposal source stage, direct and terminal winners,
+complete transitive lineage, unresolved states, and final-authority comparison.
+Legal two-stage `primary_loser → primary_loser → primary_winner` chains are
+retained; missing references, cycles, non-winner terminals, and winner
+mismatches fail closed. The report also includes owner request-plan feature,
+sample-cell, and logical XIC-request counts for the baseline and proposal. Those
+are workload counts, not elapsed-time, RAW-call, chromatogram-call, point-count,
+or cost savings.
+
+The sidecar reports hard-zero observed Matrix/output diff because it never
+constructs or routes an alternate Matrix. Counterfactual selected observations,
+missing/extra cells, status/reason, areas, Matrix identity/value, and review
+population remain explicit activation gaps until an owner-valid survivor-only
+execution can supply them under a separate authorization. `GO` means only that
+the shadow instrumentation and typed lineage close; it never grants early skip,
+Backfill eligibility, Matrix, ProductWriter, or activation authority.
+
 ## Surfaces
 
 | Surface | Role |
@@ -133,6 +160,7 @@ write scope.
 | Mechanical adjudication schema/index | Structured review evidence for candidate promotion |
 | Backfill validation packets | Evidence availability, replay, and expected-diff artifacts |
 | `alignment_backfill_cell_evidence.tsv` | Compact alignment-side evidence sidecar |
+| `alignment_early_loser_shadow.json` | Opt-in owner-valid proposal/final comparison; no-write and non-activating |
 
 ## Boundaries
 

@@ -261,6 +261,118 @@ def test_pipeline_preconsolidates_owner_families_when_enabled(
     assert calls["backfill_features"] == ("consolidated",)
 
 
+def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
+    calls: dict[str, object] = {}
+    source_features = ("source-feature",)
+    proposal = SimpleNamespace(
+        rows=(SimpleNamespace(proposal_status="loser"),),
+    )
+    report = SimpleNamespace(
+        verdict="GO",
+        proposed_loser_count=1,
+        confirmed_loser_count=1,
+        false_loser_count=0,
+        winner_mismatch_count=0,
+        late_loser_count=0,
+    )
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        lambda candidates, **kwargs: SimpleNamespace(
+            owners=("owner",),
+            assignments=(),
+            ambiguous_records=(),
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "cluster_sample_local_owners",
+        lambda owners, *, config, drift_lookup=None, edge_evidence_sink=None: (
+            source_features
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "review_only_features_from_ambiguous_records",
+        lambda records, *, start_index: (),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "_backfill_request_summary",
+        lambda *args, **kwargs: {},
+    )
+
+    def fake_shadow(features, **kwargs):
+        calls["shadow_features"] = features
+        return proposal
+
+    def fake_owner_backfill(features, **kwargs):
+        calls["backfill_features"] = features
+        return ()
+
+    final_matrix = _matrix(("Sample_A",))
+
+    def fake_compare(received_proposal, matrix):
+        calls["comparison_proposal"] = received_proposal
+        calls["comparison_matrix"] = matrix
+        return report
+
+    def fake_write(outputs, matrix, **kwargs):
+        calls["written_matrix"] = matrix
+        calls["written_shadow"] = kwargs["early_loser_shadow"]
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_early_loser_shadow_proposal",
+        fake_shadow,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_owner_backfill_cells",
+        fake_owner_backfill,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_owner_alignment_matrix",
+        lambda features, *, sample_order, **kwargs: final_matrix,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "compare_early_loser_shadow_with_final_authority",
+        fake_compare,
+    )
+    monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", fake_write)
+
+    outputs = pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=raw_dir,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        raw_opener=FakeRawOpener(),
+        emit_early_loser_shadow=True,
+    )
+
+    assert calls["shadow_features"] == source_features
+    assert calls["shadow_features"] is calls["backfill_features"]
+    assert calls["comparison_proposal"] is proposal
+    assert calls["comparison_matrix"] is final_matrix
+    assert calls["written_matrix"] is final_matrix
+    assert calls["written_shadow"] is report
+    assert outputs.early_loser_shadow_json == (
+        tmp_path / "out" / "alignment_early_loser_shadow.json"
+    )
+
+
 def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
