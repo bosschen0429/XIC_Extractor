@@ -3,6 +3,8 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import xic_extractor.alignment.pipeline as pipeline_module
 import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_module
 from tests.alignment_pipeline_helpers import FakeRawOpener
@@ -261,6 +263,43 @@ def test_writer_timing_observations_are_truthful_with_live_output(
         row["value"] is not None and row["availability"] == "measured"
         for row in by_metric["writer_hash_time_sec"]
     )
+
+
+@pytest.mark.parametrize(
+    "timing_recorder",
+    [None, TimingRecorder("alignment")],
+)
+def test_writer_hashing_requires_instrumentation_opt_in(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    timing_recorder: TimingRecorder | None,
+) -> None:
+    outputs = output_paths(
+        tmp_path / "out",
+        output_level="validation-minimal",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+
+    def reject_fingerprint(*_args, **_kwargs):
+        raise AssertionError("writer fingerprinting must remain opt-in")
+
+    monkeypatch.setattr(
+        pipeline_outputs_module,
+        "fingerprint_file_content",
+        reject_fingerprint,
+    )
+
+    pipeline_outputs_module.write_outputs_atomic(
+        outputs,
+        _matrix(("Sample_A", "Sample_B")),
+        metadata={},
+        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
+        alignment_config=AlignmentConfig(),
+        timing_recorder=timing_recorder,
+    )
+
+    assert outputs.matrix_tsv is not None and outputs.matrix_tsv.exists()
 
 
 class _Timer:

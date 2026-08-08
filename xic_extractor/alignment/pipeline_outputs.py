@@ -636,16 +636,17 @@ def write_outputs_atomic(
                 source="alignment.pipeline_outputs",
             )
             replaced_paths.append(final_path)
-        for final_path, _writer in output_paths_and_writers:
-            artifact = _writer_artifact_name(final_path)
-            with recorder.stage(f"writer.{artifact}.hash") as stage:
-                fingerprint = fingerprint_file_content(
-                    final_path,
-                    observation=lambda event: _record_fingerprint_observation(
-                        recorder, event, scope=artifact
-                    ),
-                )
-                stage.metrics["bytes"] = fingerprint.byte_size
+        if recorder.instrument_writers:
+            for final_path, _writer in output_paths_and_writers:
+                artifact = _writer_artifact_name(final_path)
+                with recorder.stage(f"writer.{artifact}.hash") as stage:
+                    fingerprint = fingerprint_file_content(
+                        final_path,
+                        observation=lambda event: _record_fingerprint_observation(
+                            recorder, event, scope=artifact
+                        ),
+                    )
+                    stage.metrics["bytes"] = fingerprint.byte_size
         for _final_path, backup_path in backups:
             with suppress(OSError):
                 backup_path.unlink(missing_ok=True)
