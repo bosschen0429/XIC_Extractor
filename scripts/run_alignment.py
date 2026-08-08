@@ -311,6 +311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.owner_backfill_superwindow_span_factor
             ),
             "preconsolidate_owner_families": args.preconsolidate_owner_families,
+            "emit_early_loser_shadow": args.emit_early_loser_shadow,
             "emit_identity_coherence_diagnostic": (
                 args.emit_identity_coherence_diagnostic
             ),
@@ -458,6 +459,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Skipped evidence ledger TSV: {outputs.skipped_evidence_ledger_tsv}")
     if outputs.run_metadata_json is not None:
         print(f"Alignment run metadata JSON: {outputs.run_metadata_json}")
+    if outputs.early_loser_shadow_json is not None:
+        print(f"Alignment early-loser shadow JSON: {outputs.early_loser_shadow_json}")
     if outputs.identity_coherence_output_dir is not None:
         print(
             "Identity coherence diagnostic: "
@@ -698,6 +701,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Experimental algorithm mode: merge identity-compatible "
             "single-sample owner families before owner-centered backfill."
+        ),
+    )
+    parser.add_argument(
+        "--emit-early-loser-shadow",
+        action="store_true",
+        help=(
+            "Emit an owner-only pre-Backfill loser/survivor shadow and compare "
+            "it with final claim/consolidation authority. The shadow never "
+            "feeds Backfill, Matrix, or writers; it requires full-audit scope "
+            "and cannot be combined with activated preconsolidation."
         ),
     )
     parser.add_argument(
