@@ -41,6 +41,7 @@ _REWRITE_COMMAND_CODES = frozenset(
 )
 _APPROVAL_REQUIRED_CODES = frozenset(
     {
+        "git_global_config_unreadable",
         "github_network_approval_required",
         "network_or_github_approval_needed",
     }
@@ -538,11 +539,6 @@ def _collect_runtime_findings(
 ) -> tuple[Finding, ...]:
     findings: list[Finding] = []
     findings.extend(_inspect_runtime_owner(os_name=os.name, environ=os.environ))
-    host_findings = _inspect_codex_host_activation(
-        os_name=os.name,
-        environ=os.environ,
-    )
-    findings.extend(host_findings)
     findings.extend(
         _inspect_python_runtime(
             workspace_root=workspace_root,
@@ -553,16 +549,13 @@ def _collect_runtime_findings(
     )
     findings.extend(_inspect_bootstrap_state(workspace_root))
     git_findings: tuple[Finding, ...] = ()
-    if not host_findings:
-        git_findings = _inspect_git_runtime(
-            workspace_root=workspace_root,
-            probe_write=probe_git_write,
-        )
-        findings.extend(git_findings)
+    git_findings = _inspect_git_runtime(
+        workspace_root=workspace_root,
+        probe_write=probe_git_write,
+    )
+    findings.extend(git_findings)
     if probe_github and (
-        not host_findings
-        and not git_findings
-        or _codex_sandbox_network_disabled(os.environ)
+        not git_findings or _codex_sandbox_network_disabled(os.environ)
     ):
         findings.extend(
             _inspect_github_runtime(
@@ -571,32 +564,6 @@ def _collect_runtime_findings(
             )
         )
     return tuple(findings)
-
-
-def _inspect_codex_host_activation(
-    *,
-    os_name: str,
-    environ: Mapping[str, str],
-) -> tuple[Finding, ...]:
-    if os_name != "nt" or "CODEX_THREAD_ID" not in environ:
-        return ()
-    if environ.get("GIT_CONFIG_GLOBAL", "").upper() == "NUL":
-        return ()
-    return (
-        Finding(
-            severity="blocker",
-            code="host_config_not_activated",
-            message=(
-                "This Codex thread did not load the trusted project shell "
-                "environment; GIT_CONFIG_GLOBAL is not NUL."
-            ),
-            next_action=(
-                "Review/trust the project .codex layer if needed, then restart "
-                "Codex and open a new thread. Do not retry Git, expose the user "
-                "home, or rewrite the already-correct project config."
-            ),
-        ),
-    )
 
 
 def _codex_sandbox_network_disabled(environ: Mapping[str, str]) -> bool:
@@ -762,9 +729,9 @@ def _inspect_git_runtime(
         ):
             code = "git_global_config_unreadable"
             next_action = (
-                "Use this trusted repo's .codex/config.toml to set "
-                "GIT_CONFIG_GLOBAL=NUL and keep required identity/settings in "
-                "the shared local Git config. Do not expose the whole user home."
+                "Request Approve for me for the same exact Git command. "
+                "Do not add a repo-local permission profile or shell-environment "
+                "override."
             )
         else:
             code = "git_canary_failed"

@@ -276,7 +276,9 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
         ):
             pass
         live_payload = json.loads(timing_path.read_text(encoding="utf-8"))
-        assert live_payload["records"][0]["stage"] == "discover.write_batch_index"
+        assert live_payload["recent_records"][0]["stage"] == (
+            "discover.write_batch_index"
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "discovery_batch_index.csv"
         output_path.write_text("sample_stem\n", encoding="utf-8")

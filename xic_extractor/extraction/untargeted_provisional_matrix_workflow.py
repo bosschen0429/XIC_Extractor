@@ -75,6 +75,14 @@ def run_untargeted_provisional_matrix_workflow(
         settings=discovery_settings,
         peak_config=peak_config,
         timing_recorder=timing_recorder,
+        max_workers=raw_workers,
+        progress_callback=lambda completed, total, sample_stem: _progress(
+            progress_callback,
+            "discovery_sample_complete",
+            completed=completed,
+            total=total,
+            sample_stem=sample_stem,
+        ),
     )
     _progress(progress_callback, "discovery_complete")
 

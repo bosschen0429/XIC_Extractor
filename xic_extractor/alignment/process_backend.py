@@ -484,6 +484,7 @@ def run_owner_build_jobs(
         max_workers=max_workers,
         executor_factory=executor_factory,
         progress_callback=progress_callback,
+        is_terminal_failure=lambda result: isinstance(result, OwnerBuildWorkerError),
     )
 
 
@@ -710,6 +711,9 @@ def run_owner_backfill_jobs(
         max_workers=max_workers,
         executor_factory=executor_factory,
         progress_callback=progress_callback,
+        is_terminal_failure=lambda result: isinstance(
+            result, OwnerBackfillWorkerError
+        ),
     )
 
 

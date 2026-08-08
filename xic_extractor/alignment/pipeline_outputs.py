@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +51,8 @@ from xic_extractor.alignment.tsv_writer import (
 )
 from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.processing_identity import fingerprint_file_content
 
 
 @dataclass(frozen=True)
@@ -280,6 +282,7 @@ def write_outputs_atomic(
     ] = (),
     baseline_integration_method: str = "asls",
     baseline_audit_method: str = "",
+    timing_recorder: TimingRecorder | None = None,
 ) -> None:
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
     provisional_projection = None
@@ -292,16 +295,54 @@ def write_outputs_atomic(
     if any(path is not None for path in provisional_output_paths):
         if any(path is None for path in provisional_output_paths):
             raise ValueError("provisional matrix outputs must be emitted atomically")
-        provisional_projection = build_provisional_matrix_projection(
-            matrix,
-            backfill_scope=metadata.get("backfill_scope", ""),
-            discovery_owner_closure=(
-                metadata.get("require_discovery_owner_closure") == "TRUE"
-            ),
-            selected_family_count=_metadata_nonnegative_int(
-                metadata,
-                "selected_family_count",
-            ),
+        recorder = (
+            timing_recorder
+            if timing_recorder is not None and timing_recorder.instrument_writers
+            else TimingRecorder.disabled("writer")
+        )
+        with recorder.stage("writer.provisional_matrix.projection"):
+            provisional_projection = build_provisional_matrix_projection(
+                matrix,
+                backfill_scope=metadata.get("backfill_scope", ""),
+                discovery_owner_closure=(
+                    metadata.get("require_discovery_owner_closure") == "TRUE"
+                ),
+                selected_family_count=_metadata_nonnegative_int(
+                    metadata,
+                    "selected_family_count",
+                ),
+            )
+        for path in provisional_output_paths:
+            assert path is not None
+            recorder.observe(
+                "writer_projection_time_sec",
+                value=None,
+                scope=_writer_artifact_name(path),
+                unit="seconds",
+                source="alignment.pipeline_outputs",
+                availability="partial",
+                reason=(
+                    "one shared provisional projection feeds this artifact; "
+                    "per-artifact projection attribution is unavailable"
+                ),
+            )
+            recorder.observe(
+                "writer_projection_bytes",
+                value=None,
+                scope=_writer_artifact_name(path),
+                unit="bytes",
+                source="alignment.pipeline_outputs",
+                availability="unavailable",
+                reason=(
+                    "one shared in-memory projection feeds this artifact; "
+                    "projection bytes cannot be attributed per artifact"
+                ),
+            )
+    else:
+        recorder = (
+            timing_recorder
+            if timing_recorder is not None and timing_recorder.instrument_writers
+            else TimingRecorder.disabled("writer")
         )
     production_decisions = None
     if (
@@ -508,7 +549,63 @@ def write_outputs_atomic(
     try:
         for final_path, writer in output_paths_and_writers:
             temp_path = _temp_path(final_path)
-            writer(temp_path)
+            artifact = _writer_artifact_name(final_path)
+            with recorder.stage(f"writer.{artifact}.render") as stage:
+                writer(temp_path)
+                rendered_bytes = (
+                    temp_path.stat().st_size if temp_path.exists() else None
+                )
+                stage.metrics["bytes"] = rendered_bytes
+                stage.metrics["availability"] = "partial"
+                stage.metrics["reason"] = (
+                    "renderer combines serialization and temp-file write"
+                )
+            recorder.observe(
+                "writer_render_time_sec",
+                value=stage.elapsed_sec,
+                scope=artifact,
+                unit="seconds",
+                source="alignment.pipeline_outputs",
+                availability="partial",
+                reason=(
+                    "render timing includes the renderer's temp-file write"
+                ),
+            )
+            recorder.observe(
+                "writer_render_bytes",
+                value=rendered_bytes,
+                scope=artifact,
+                unit="bytes",
+                source="alignment.pipeline_outputs",
+                availability="partial",
+                reason=(
+                    "render bytes include the renderer's temp-file write"
+                ),
+            )
+            recorder.observe(
+                "writer_temp_write_time_sec",
+                value=None,
+                scope=artifact,
+                unit="seconds",
+                source="alignment.pipeline_outputs",
+                availability="unavailable",
+                reason=(
+                    "renderer combines serialization and temp-file write; "
+                    "phase cannot be separated without changing writer behavior"
+                ),
+            )
+            recorder.observe(
+                "writer_temp_write_bytes",
+                value=None,
+                scope=artifact,
+                unit="bytes",
+                source="alignment.pipeline_outputs",
+                availability="unavailable",
+                reason=(
+                    "renderer combines serialization and temp-file write; "
+                    "phase cannot be separated without changing writer behavior"
+                ),
+            )
         for final_path, _writer in output_paths_and_writers:
             backup_path = _backup_path(final_path)
             backup_path.unlink(missing_ok=True)
@@ -517,8 +614,39 @@ def write_outputs_atomic(
                 backups.append((final_path, backup_path))
         for final_path, _writer in output_paths_and_writers:
             temp_path = _temp_path(final_path)
-            temp_path.replace(final_path)
+            artifact = _writer_artifact_name(final_path)
+            with recorder.stage(f"writer.{artifact}.rename") as stage:
+                temp_path.replace(final_path)
+                renamed_bytes = (
+                    final_path.stat().st_size if final_path.exists() else None
+                )
+                stage.metrics["bytes"] = renamed_bytes
+            recorder.observe(
+                "writer_rename_time_sec",
+                value=stage.elapsed_sec,
+                scope=artifact,
+                unit="seconds",
+                source="alignment.pipeline_outputs",
+            )
+            recorder.observe(
+                "writer_rename_bytes",
+                value=renamed_bytes,
+                scope=artifact,
+                unit="bytes",
+                source="alignment.pipeline_outputs",
+            )
             replaced_paths.append(final_path)
+        if recorder.instrument_writers:
+            for final_path, _writer in output_paths_and_writers:
+                artifact = _writer_artifact_name(final_path)
+                with recorder.stage(f"writer.{artifact}.hash") as stage:
+                    fingerprint = fingerprint_file_content(
+                        final_path,
+                        observation=lambda event: _record_fingerprint_observation(
+                            recorder, event, scope=artifact
+                        ),
+                    )
+                    stage.metrics["bytes"] = fingerprint.byte_size
         for _final_path, backup_path in backups:
             with suppress(OSError):
                 backup_path.unlink(missing_ok=True)
@@ -562,3 +690,61 @@ def _write_metadata_json(path: Path, metadata: dict[str, str]) -> Path:
 
 def _backup_path(final_path: Path) -> Path:
     return final_path.with_name(f"{final_path.name}.bak")
+
+
+def _writer_artifact_name(path: Path) -> str:
+    """Return a stable diagnostic name without exposing absolute paths."""
+
+    name = path.name
+    if name.endswith(".tsv"):
+        name = name[:-4]
+    elif name.endswith(".json"):
+        name = name[:-5]
+    elif name.endswith(".xlsx"):
+        name = name[:-5]
+    elif name.endswith(".html"):
+        name = name[:-5]
+    return name.replace(".", "_").replace("-", "_")
+
+
+def _record_fingerprint_observation(
+    recorder: TimingRecorder,
+    event: Mapping[str, object],
+    *,
+    scope: str,
+) -> None:
+    availability = str(event.get("availability", "unavailable"))
+    reason = str(event.get("reason", ""))
+    source = "processing_identity.fingerprint_file_content"
+    for metric, value, unit in (
+        ("fingerprint_calls", event.get("calls"), "calls"),
+        ("fingerprint_bytes", event.get("bytes"), "bytes"),
+        ("fingerprint_time_sec", event.get("elapsed_sec"), "seconds"),
+    ):
+        recorder.observe(
+            metric,
+            value=value,
+            scope=scope,
+            unit=unit,
+            source=source,
+            availability=availability,
+            reason=reason,
+        )
+    recorder.observe(
+        "writer_hash_time_sec",
+        value=event.get("elapsed_sec"),
+        scope=scope,
+        unit="seconds",
+        source="processing_identity.fingerprint_file_content",
+        availability=availability,
+        reason=reason,
+    )
+    recorder.observe(
+        "writer_hash_bytes",
+        value=event.get("bytes"),
+        scope=scope,
+        unit="bytes",
+        source="processing_identity.fingerprint_file_content",
+        availability=availability,
+        reason=reason,
+    )

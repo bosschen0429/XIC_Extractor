@@ -8,9 +8,10 @@ import os
 import re
 import stat
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from xic_extractor.artifact_lineage import (
@@ -680,13 +681,28 @@ def build_acquisition_source_identity(
     )
 
 
-def fingerprint_file_content(path: str | Path) -> FileContentFingerprint:
+def fingerprint_file_content(
+    path: str | Path,
+    *,
+    observation: Callable[[Mapping[str, object]], None] | None = None,
+) -> FileContentFingerprint:
     """Hash one stable regular-file handle and reject path replacement."""
 
+    started = perf_counter() if observation is not None else None
     try:
         source_path = Path(path)
     except (TypeError, ValueError) as exc:
-        raise IdentityContractError("acquisition source path is invalid") from exc
+        error = IdentityContractError("acquisition source path is invalid")
+        _notify_fingerprint_observation(
+            observation,
+            path=path,
+            elapsed_sec=0.0 if started is None else perf_counter() - started,
+            byte_size=None,
+            availability="failed",
+            reason=str(error),
+        )
+        raise error from exc
+    byte_size = 0
     try:
         with source_path.open("rb") as handle:
             before = os.fstat(handle.fileno())
@@ -701,28 +717,83 @@ def fingerprint_file_content(path: str | Path) -> FileContentFingerprint:
                 byte_size += len(chunk)
             after = os.fstat(handle.fileno())
         path_after = source_path.stat()
-    except IdentityContractError:
+        stat_fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        if any(
+            getattr(before, field) != getattr(after, field) for field in stat_fields
+        ):
+            raise IdentityContractError("source content mutated during hashing")
+        # Windows may publish timestamp metadata from a path lookup at a different
+        # moment than from the already-open handle.  Replacement is an object-
+        # identity question; content mutation is already guarded by the two handle
+        # snapshots above.
+        if not os.path.samestat(after, path_after):
+            raise IdentityContractError("source path was replaced during hashing")
+        if byte_size != after.st_size:
+            raise IdentityContractError("source byte size changed during hashing")
+    except IdentityContractError as exc:
+        _notify_fingerprint_observation(
+            observation,
+            path=path,
+            elapsed_sec=0.0 if started is None else perf_counter() - started,
+            byte_size=byte_size,
+            availability="failed",
+            reason=str(exc),
+        )
         raise
     except (OSError, ValueError) as exc:
+        _notify_fingerprint_observation(
+            observation,
+            path=path,
+            elapsed_sec=0.0 if started is None else perf_counter() - started,
+            byte_size=byte_size,
+            availability="failed",
+            reason=str(exc),
+        )
         raise IdentityContractError(
             f"unable to hash acquisition source {source_path}"
         ) from exc
 
-    stat_fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
-    if any(getattr(before, field) != getattr(after, field) for field in stat_fields):
-        raise IdentityContractError("source content mutated during hashing")
-    # Windows may publish timestamp metadata from a path lookup at a different
-    # moment than from the already-open handle.  Replacement is an object-
-    # identity question; content mutation is already guarded by the two handle
-    # snapshots above.
-    if not os.path.samestat(after, path_after):
-        raise IdentityContractError("source path was replaced during hashing")
-    if byte_size != after.st_size:
-        raise IdentityContractError("source byte size changed during hashing")
-    return FileContentFingerprint(
+    result = FileContentFingerprint(
         content_sha256=digest.hexdigest(),
         byte_size=byte_size,
     )
+    _notify_fingerprint_observation(
+        observation,
+        path=path,
+        elapsed_sec=0.0 if started is None else perf_counter() - started,
+        byte_size=byte_size,
+        availability="measured",
+        reason="",
+    )
+    return result
+
+
+def _notify_fingerprint_observation(
+    observation: Callable[[Mapping[str, object]], None] | None,
+    *,
+    path: str | Path,
+    elapsed_sec: float,
+    byte_size: int | None,
+    availability: str,
+    reason: str,
+) -> None:
+    if observation is None:
+        return
+    try:
+        observation(
+            {
+                "metric": "fingerprint",
+                "scope": str(path),
+                "calls": 1,
+                "bytes": byte_size,
+                "elapsed_sec": max(0.0, elapsed_sec),
+                "availability": availability,
+                "reason": reason,
+            }
+        )
+    except Exception:
+        # Diagnostic callbacks must not alter identity semantics.
+        return
 
 
 def _build_acquisition_source_identity(

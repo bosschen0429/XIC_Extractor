@@ -143,6 +143,9 @@ def run_identity_trace_jobs(
         error_factory=_identity_trace_worker_error,
         max_workers=max_workers,
         executor_factory=executor_factory,
+        is_terminal_failure=lambda result: isinstance(
+            result, IdentityTraceWorkerError
+        ),
     )
 
 

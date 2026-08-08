@@ -349,32 +349,6 @@ def test_runtime_owner_rejects_wsl_for_windows_owned_checkout() -> None:
     assert findings[0].severity == "blocker"
 
 
-def test_codex_host_activation_requires_project_git_environment() -> None:
-    findings = agent_sandbox_doctor._inspect_codex_host_activation(
-        os_name="nt",
-        environ={
-            "CODEX_THREAD_ID": "thread-123",
-            "CODEX_PERMISSION_PROFILE": ":workspace",
-        },
-    )
-
-    assert [finding.code for finding in findings] == ["host_config_not_activated"]
-    assert findings[0].disposition == "ENVIRONMENT_REPAIR_REQUIRED"
-    assert "restart" in findings[0].next_action.lower()
-
-
-def test_codex_host_activation_accepts_project_git_environment() -> None:
-    findings = agent_sandbox_doctor._inspect_codex_host_activation(
-        os_name="nt",
-        environ={
-            "CODEX_THREAD_ID": "thread-123",
-            "GIT_CONFIG_GLOBAL": "NUL",
-        },
-    )
-
-    assert findings == ()
-
-
 def test_python_runtime_requires_supported_worktree_interpreter(
     tmp_path: Path,
 ) -> None:
@@ -422,7 +396,9 @@ def test_git_runtime_classifies_global_config_acl_failure(
 
     assert [finding.code for finding in findings] == ["git_global_config_unreadable"]
     assert findings[0].severity == "blocker"
-    assert findings[0].disposition == "ENVIRONMENT_REPAIR_REQUIRED"
+    assert findings[0].disposition == "APPROVAL_REQUIRED"
+    assert "approve for me" in findings[0].next_action.lower()
+    assert "repo-local permission profile" in findings[0].next_action.lower()
 
 
 def test_github_probe_skips_fail_first_when_sandbox_network_is_disabled(
@@ -570,11 +546,6 @@ def test_runtime_report_blocks_when_bootstrap_is_not_ready(
     monkeypatch.setattr(
         agent_sandbox_doctor,
         "_inspect_runtime_owner",
-        lambda **kwargs: (),
-    )
-    monkeypatch.setattr(
-        agent_sandbox_doctor,
-        "_inspect_codex_host_activation",
         lambda **kwargs: (),
     )
     monkeypatch.setattr(

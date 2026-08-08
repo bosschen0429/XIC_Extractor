@@ -638,6 +638,7 @@ def run_alignment(
                     "asls",
                 ),
                 baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
+                timing_recorder=recorder,
             )
         return outputs
 

@@ -3,14 +3,13 @@ from __future__ import annotations
 import io
 import pickle
 from collections.abc import Callable, Iterable
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from dataclasses import dataclass, fields, is_dataclass
-from multiprocessing import get_context
 from pathlib import Path
 from time import perf_counter
 from types import ModuleType
 from typing import Any
 
+from xic_extractor.process_job_execution import execute_process_jobs
 from xic_extractor.xic_models import XICTrace
 
 ProcessProgressCallback = Callable[[Any], None]
@@ -28,58 +27,32 @@ def run_process_jobs(
     max_workers: int,
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: ProcessProgressCallback | None = None,
+    is_terminal_failure: Callable[[Any], bool] | None = None,
 ) -> list[Any]:
     pending_jobs = list(jobs)
     for job in pending_jobs:
         validate_process_job_payload(job)
-    if not pending_jobs:
-        return []
-    context = get_context("spawn")
-    factory = executor_factory or ProcessPoolExecutor
-    results: list[Any] = []
-    next_job_index = 0
-    worker_count = min(max_workers, len(pending_jobs))
-
-    with factory(max_workers=worker_count, mp_context=context) as executor:
-        future_to_job: dict[Any, Any] = {}
-
-        def _submit_until_capacity() -> None:
-            nonlocal next_job_index
-            while len(future_to_job) < worker_count and next_job_index < len(
-                pending_jobs
-            ):
-                job = pending_jobs[next_job_index]
-                next_job_index += 1
-                try:
-                    future = executor.submit(worker, job)
-                except Exception as exc:
-                    result = error_factory(job, exc)
-                    results.append(result)
-                    if progress_callback is not None:
-                        progress_callback(result)
-                    continue
-                future_to_job[future] = job
-
-        _submit_until_capacity()
-        while future_to_job:
-            done, _not_done = wait(
-                future_to_job,
-                timeout=0.1,
-                return_when=FIRST_COMPLETED,
-            )
-            if not done:
-                continue
-            for future in done:
-                job = future_to_job.pop(future)
-                _submit_until_capacity()
-                try:
-                    result = future.result()
-                except Exception as exc:
-                    result = error_factory(job, exc)
-                results.append(result)
-                if progress_callback is not None:
-                    progress_callback(result)
-    return results
+    report = execute_process_jobs(
+        pending_jobs,
+        worker=worker,
+        error_factory=error_factory,
+        is_terminal_failure=is_terminal_failure or (lambda _result: False),
+        max_workers=max_workers,
+        executor_factory=executor_factory,
+        progress_callback=progress_callback,
+    )
+    if report.first_failure is None and (
+        report.cancelled_job_ordinals
+        or report.in_flight_job_ordinals
+        or report.unsubmitted_job_ordinals
+    ):
+        raise AlignmentProcessExecutionError(
+            "process execution ended with an incomplete mechanical census: "
+            f"cancelled={report.cancelled_job_ordinals}, "
+            f"in_flight={report.in_flight_job_ordinals}, "
+            f"unsubmitted={report.unsubmitted_job_ordinals}"
+        )
+    return list(report.observed_results)
 
 
 def validate_process_job_payload(job: Any) -> None:

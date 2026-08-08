@@ -2,10 +2,12 @@ import ast
 import json
 from dataclasses import fields, replace
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 
+import xic_extractor.processing_identity as processing_identity_module
 from xic_extractor.config import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
@@ -27,6 +29,7 @@ from xic_extractor.processing_identity import (
     IdentityContractError,
     build_acquisition_source_identity,
     build_processing_request_identity,
+    fingerprint_file_content,
     issue_processing_attempt,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
@@ -123,6 +126,83 @@ def test_acquisition_source_identity_changes_on_substitution_or_namespace(
     assert other_namespace.acquisition_source_id != mutated.acquisition_source_id
 
 
+def test_fingerprint_observer_reports_measured_calls_bytes_and_time(
+    tmp_path: Path,
+) -> None:
+    path = _raw(tmp_path / "sample.raw", b"measured-content")
+    observations: list[dict[str, object]] = []
+
+    fingerprint = fingerprint_file_content(path, observation=observations.append)
+
+    assert fingerprint.byte_size == len(b"measured-content")
+    assert observations == [
+        {
+            "metric": "fingerprint",
+            "scope": str(path),
+            "calls": 1,
+            "bytes": len(b"measured-content"),
+            "elapsed_sec": observations[0]["elapsed_sec"],
+            "availability": "measured",
+            "reason": "",
+        }
+    ]
+    assert isinstance(observations[0]["elapsed_sec"], float)
+
+
+def test_fingerprint_without_observer_skips_diagnostic_timer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = _raw(tmp_path / "sample.raw", b"content")
+    monkeypatch.setattr(
+        "xic_extractor.processing_identity.perf_counter",
+        lambda: (_ for _ in ()).throw(AssertionError("timer must stay opt-in")),
+    )
+
+    fingerprint = fingerprint_file_content(path)
+
+    assert fingerprint.byte_size == len(b"content")
+
+
+@pytest.mark.parametrize("path_kind", ["invalid", "missing", "directory"])
+def test_fingerprint_observer_reports_each_pre_read_failure_once(
+    tmp_path: Path,
+    path_kind: str,
+) -> None:
+    if path_kind == "invalid":
+        path = None
+    elif path_kind == "missing":
+        path = tmp_path / "missing.raw"
+    else:
+        path = tmp_path / "directory.raw"
+        path.mkdir()
+    observations: list[dict[str, object]] = []
+
+    with pytest.raises(IdentityContractError):
+        fingerprint_file_content(  # type: ignore[arg-type]
+            path,
+            observation=observations.append,
+        )
+
+    assert len(observations) == 1
+    assert observations[0]["availability"] == "failed"
+    assert observations[0]["calls"] == 1
+    assert observations[0]["bytes"] in {None, 0}
+
+
+def test_fingerprint_observer_failure_does_not_change_identity_semantics(
+    tmp_path: Path,
+) -> None:
+    path = _raw(tmp_path / "sample.raw", b"stable-content")
+
+    fingerprint = fingerprint_file_content(
+        path,
+        observation=lambda _event: (_ for _ in ()).throw(RuntimeError("diagnostic")),
+    )
+
+    assert fingerprint.byte_size == len(b"stable-content")
+
+
 def test_source_path_replacement_during_hash_fails_closed(
     tmp_path: Path,
     monkeypatch,
@@ -142,9 +222,85 @@ def test_source_path_replacement_during_hash_fails_closed(
         return observed
 
     monkeypatch.setattr(Path, "stat", replaced_path_stat)
+    observations: list[dict[str, object]] = []
 
     with pytest.raises(IdentityContractError, match="replaced"):
-        _source_identity(path)
+        fingerprint_file_content(path, observation=observations.append)
+
+    assert len(observations) == 1
+    assert observations[0]["availability"] == "failed"
+    assert observations[0]["bytes"] == len(b"original-content")
+    assert "replaced" in str(observations[0]["reason"])
+
+
+def test_source_handle_mutation_reports_failed_fingerprint_observation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = _raw(tmp_path / "sample.raw", b"original-content")
+    original_fstat = processing_identity_module.os.fstat
+    calls = 0
+
+    def changed_fstat(fd):
+        nonlocal calls
+        observed = original_fstat(fd)
+        calls += 1
+        if calls == 1:
+            return observed
+        values = {
+            field: getattr(observed, field)
+            for field in (
+                "st_mode",
+                "st_dev",
+                "st_ino",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+            )
+        }
+        values["st_mtime_ns"] += 1
+        return SimpleNamespace(**values)
+
+    monkeypatch.setattr(processing_identity_module.os, "fstat", changed_fstat)
+    observations: list[dict[str, object]] = []
+
+    with pytest.raises(IdentityContractError, match="mutated"):
+        fingerprint_file_content(path, observation=observations.append)
+
+    assert len(observations) == 1
+    assert observations[0]["availability"] == "failed"
+    assert observations[0]["bytes"] == len(b"original-content")
+    assert "mutated" in str(observations[0]["reason"])
+
+
+def test_source_size_drift_reports_failed_fingerprint_observation(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = _raw(tmp_path / "sample.raw", b"original-content")
+    original_fstat = processing_identity_module.os.fstat
+
+    def wrong_size_fstat(fd):
+        observed = original_fstat(fd)
+        return SimpleNamespace(
+            st_mode=observed.st_mode,
+            st_dev=observed.st_dev,
+            st_ino=observed.st_ino,
+            st_size=observed.st_size + 1,
+            st_mtime_ns=observed.st_mtime_ns,
+            st_ctime_ns=observed.st_ctime_ns,
+        )
+
+    monkeypatch.setattr(processing_identity_module.os, "fstat", wrong_size_fstat)
+    observations: list[dict[str, object]] = []
+
+    with pytest.raises(IdentityContractError, match="byte size changed"):
+        fingerprint_file_content(path, observation=observations.append)
+
+    assert len(observations) == 1
+    assert observations[0]["availability"] == "failed"
+    assert observations[0]["bytes"] == len(b"original-content")
+    assert "byte size changed" in str(observations[0]["reason"])
 
 
 def test_source_identity_allows_path_stat_metadata_lag_for_same_file(

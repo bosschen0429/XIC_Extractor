@@ -89,8 +89,13 @@ the global skill later only as an environment-maintenance follow-up.
 Rules cover command prefixes where the desired behavior is stable:
 
 - forbid known destructive git rollback commands;
-- prompt before untracked-file cleanup, recursive deletion, external/background
-  launch, `git push`, and `gh pr merge`.
+- prompt before untracked-file cleanup, recursive deletion, and
+  external/background launch.
+
+A user's explicit request authorizes in-scope push or merge work. Repo-local
+execpolicy does not add a second prompt for direct `git push` or `gh pr merge`.
+The Git and PR contracts still require the named request, branch verification,
+checks, and closeout evidence before those actions run.
 
 Rules apply to Codex approval policy and are evaluated from `.codex/rules/` when
 the project `.codex/` layer is trusted. Restart Codex after editing rules.
@@ -187,8 +192,8 @@ codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git -c 
 codex execpolicy check --pretty --rules .codex\rules\xic-safety.rules -- git push
 ```
 
-All `git add` checks must remain unmatched by an `allow` rule; direct `git push`
-and the invocation-scoped `git -c ... push` recovery must remain `prompt`. The
+All `git add` checks and direct `git push` must remain unmatched by repo-local
+rules; the invocation-scoped `git -c ... push` recovery remains `prompt`. The
 two direct doctor checks with `-C` and `--git-dir` must report
 `REWRITE_COMMAND`, matching the hook's inability to route them to an exact
 prompt prefix. The nested `cmd /c` check must also report `REWRITE_COMMAND`.

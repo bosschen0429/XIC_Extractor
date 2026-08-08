@@ -2079,7 +2079,9 @@ def test_run_alignment_cli_writes_live_timing_json(
 
     assert code == 0
     payload = json.loads(live_path.read_text(encoding="utf-8"))
-    assert payload["records"][0]["stage"] == "alignment.run_config"
+    assert payload["schema_version"] == "timing.live.v2"
+    assert payload["recent_records"][0]["stage"] == "alignment.run_config"
+    assert "records" not in payload
     assert "Timing live JSON:" in capsys.readouterr().out
 
 
