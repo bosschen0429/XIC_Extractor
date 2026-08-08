@@ -67,6 +67,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     discovery = captured["discovery"]
     assert isinstance(discovery, dict)
     assert discovery["timing_recorder"] is timing_recorder
+    assert discovery["max_workers"] == 3
     alignment = captured["alignment"]
     assert isinstance(alignment, dict)
     assert alignment["discovery_batch_index"] == discovery_index

@@ -418,6 +418,17 @@ authenticity, semantic replay, or product authority after caller re-sealing. A
 copied bundle can support byte/structure comparison only; a stronger claim
 requires a separately activated owner consumer.
 
+`--raw-workers` is one shared machine budget for process-parallel Discovery and
+the existing Alignment process stages. Discovery workers receive only pickleable
+paths/settings/identity values, open and dispose one RAW handle inside the spawned
+process, and write one sample-owned artifact directory. The parent writes the
+batch index in retained sample-metadata order, independent of worker completion
+order. A terminal worker failure stops new submission, cancels pending futures,
+and reports the first owner failure plus completed-work census; cancellation does
+not become a scientific missing state. Set `--raw-workers 1` to use the serial
+rollback path. Fused Discovery + owner construction is not enabled by this
+contract.
+
 Validation / downstream handoff alignment should use the minimal machine gate
 surface by default. For 85RAW validation, the current canonical shape is
 `validation-minimal + production-equivalent + validation-fast + super-window +
@@ -652,12 +663,13 @@ rewrite the complete timing history for every event. `timing.json` retains the
 complete final history. If the process is killed by an external timeout, use the
 live file to identify the last completed stage/sample before rerunning anything.
 
-W0a diagnostic timing is additive and remains `diagnostic_only`. The final timing
+W0 diagnostic timing is additive and remains `diagnostic_only`. The final timing
 payload records `measurement_contract` (cache state, aggregation, task-specific
 repetition/noise design, and programme budgets) and mechanical
-`measurement_observations`. Missing IPC or RSS owners must be emitted as
-`unavailable` with a reason, never as measured zero. Nested spans are reported
-separately from non-overlapping/exclusive wall time. The current programme
+`measurement_observations`. Parallel Discovery measures serialized request/result
+IPC bytes; other workflow IPC and RSS without a reliable owner remain
+`unavailable` or `partial` with a reason, never measured zero. Nested spans are
+reported separately from non-overlapping/exclusive wall time. The current programme
 decision uses a first 85RAW milestone of 2700 seconds with at least 25% paired
 comparable improvement, followed by 1800 seconds; these are not XIC-wide rules.
 

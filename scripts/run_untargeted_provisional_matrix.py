@@ -131,7 +131,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             },
         )
         for metric, reason in (
-            ("ipc_bytes", "No reliable IPC byte owner is available in W0a"),
+            (
+                "ipc_bytes",
+                "Discovery process job/result IPC is measured when parallel; "
+                "other workflow IPC remains unavailable",
+            ),
             (
                 "process_tree_peak_rss_bytes",
                 "No reliable process-tree RSS owner is available in W0a",

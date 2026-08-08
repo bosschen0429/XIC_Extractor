@@ -79,6 +79,10 @@ class TimingRecorder:
     def records(self) -> tuple[TimingRecord, ...]:
         return tuple(self._records)
 
+    @property
+    def measurement_observations(self) -> tuple[dict[str, object], ...]:
+        return tuple(dict(row) for row in self._measurement_observations)
+
     def record(
         self,
         stage: str,

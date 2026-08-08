@@ -658,13 +658,7 @@ def test_owner_build_jobs_wrap_submit_exceptions_as_build_errors(
             sample_stem="sample-a",
             raw_name="sample-a.raw",
             message="RuntimeError: submit boom",
-        ),
-        OwnerBuildWorkerError(
-            sample_index=2,
-            sample_stem="sample-b",
-            raw_name="sample-b.raw",
-            message="RuntimeError: submit boom",
-        ),
+        )
     ]
     assert progress == results
 

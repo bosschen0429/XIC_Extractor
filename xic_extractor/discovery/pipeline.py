@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import pickle
 from collections.abc import Callable
 from contextlib import AbstractContextManager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from xic_extractor.config import ExtractionConfig
-from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.diagnostics.timing import TimingRecord, TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
@@ -30,6 +32,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.ms1_backfill import MS1XicSource, backfill_ms1_candidates
 from xic_extractor.discovery.ms2_seeds import MS2ScanSource, collect_strict_nl_seeds
 from xic_extractor.discovery.peak_anchor import assign_peak_anchors
+from xic_extractor.process_job_execution import execute_process_jobs
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -59,6 +62,55 @@ class DiscoveryRawHandle(MS1XicSource, MS2ScanSource, Protocol):
 
 
 RawOpener = Callable[[Path, Path], AbstractContextManager[DiscoveryRawHandle]]
+
+
+@dataclass(frozen=True)
+class DiscoverySampleProcessJob:
+    sample_index: int
+    raw_path: Path
+    output_dir: Path
+    settings: DiscoverySettings
+    peak_config: ExtractionConfig
+    acquisition_source: AcquisitionSourceIdentity
+
+
+@dataclass(frozen=True)
+class DiscoverySampleProcessResult:
+    sample_index: int
+    sample_stem: str
+    outputs: DiscoveryRunOutputs
+    receipt: DiscoveryCandidateUniverseReceipt
+    index_row: dict[str, str]
+    timing_records: tuple[TimingRecord, ...]
+    measurement_observations: tuple[dict[str, object], ...]
+
+
+@dataclass(frozen=True)
+class DiscoverySampleProcessError:
+    sample_index: int
+    sample_stem: str
+    raw_name: str
+    message: str
+
+
+class DiscoveryProcessExecutionError(RuntimeError):
+    """Terminal execution failure with completed-work census."""
+
+    def __init__(
+        self,
+        first_failure: DiscoverySampleProcessError,
+        *,
+        completed_sample_stems: tuple[str, ...],
+        cancelled_job_count: int,
+        in_flight_job_count: int,
+        unsubmitted_job_count: int,
+    ) -> None:
+        self.first_failure = first_failure
+        self.completed_sample_stems = completed_sample_stems
+        self.cancelled_job_count = cancelled_job_count
+        self.in_flight_job_count = in_flight_job_count
+        self.unsubmitted_job_count = unsubmitted_job_count
+        super().__init__(f"{first_failure.raw_name}: {first_failure.message}")
 
 
 def run_discovery(
@@ -103,11 +155,33 @@ def run_discovery_batch(
     peak_config: ExtractionConfig,
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
+    max_workers: int = 1,
+    executor_factory: Callable[..., Any] | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> DiscoveryBatchOutputs:
+    if max_workers < 1:
+        raise ValueError("max_workers must be >= 1")
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
+    if max_workers > 1:
+        if raw_opener is not None:
+            raise ValueError(
+                "parallel Discovery owns RAW handles inside spawned workers; "
+                "raw_opener injection requires max_workers=1"
+            )
+        return _run_discovery_batch_process(
+            raw_paths,
+            output_dir=output_dir,
+            settings=settings,
+            peak_config=peak_config,
+            timing_recorder=recorder,
+            max_workers=max_workers,
+            executor_factory=executor_factory,
+            progress_callback=progress_callback,
+        )
+
     index_rows: list[dict[str, str]] = []
     per_sample: list[DiscoveryRunOutputs] = []
-    for raw_path in raw_paths:
+    for sample_index, raw_path in enumerate(raw_paths):
         sample_stem = raw_path.stem
         acquisition_source = _acquisition_source(raw_path)
         opener = raw_opener or _owner_bound_raw_opener(acquisition_source)
@@ -148,6 +222,8 @@ def run_discovery_batch(
                 index_parent=output_dir,
             )
         )
+        if progress_callback is not None:
+            progress_callback(sample_index + 1, len(raw_paths), sample_stem)
 
     return DiscoveryBatchOutputs(
         batch_index_csv=_write_batch_index(
@@ -156,6 +232,191 @@ def run_discovery_batch(
             timing_recorder=recorder,
         ),
         per_sample=tuple(per_sample),
+    )
+
+
+def _run_discovery_batch_process(
+    raw_paths: tuple[Path, ...],
+    *,
+    output_dir: Path,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    timing_recorder: TimingRecorder,
+    max_workers: int,
+    executor_factory: Callable[..., Any] | None,
+    progress_callback: Callable[[int, int, str], None] | None,
+) -> DiscoveryBatchOutputs:
+    jobs = tuple(
+        DiscoverySampleProcessJob(
+            sample_index=sample_index,
+            raw_path=raw_path,
+            output_dir=output_dir,
+            settings=settings,
+            peak_config=peak_config,
+            acquisition_source=_acquisition_source(raw_path),
+        )
+        for sample_index, raw_path in enumerate(raw_paths)
+    )
+    for job in jobs:
+        timing_recorder.observe(
+            "ipc_bytes",
+            value=len(pickle.dumps(job)),
+            scope=job.raw_path.stem,
+            unit="bytes",
+            source="discovery.process_job.request",
+        )
+
+    completed = 0
+
+    def _progress(result: object) -> None:
+        nonlocal completed
+        if not isinstance(result, DiscoverySampleProcessResult):
+            return
+        completed += 1
+        if progress_callback is not None:
+            progress_callback(completed, len(jobs), result.sample_stem)
+
+    report = execute_process_jobs(
+        jobs,
+        worker=_run_discovery_sample_process_job,
+        error_factory=_discovery_process_error,
+        is_terminal_failure=lambda result: isinstance(
+            result, DiscoverySampleProcessError
+        ),
+        max_workers=max_workers,
+        executor_factory=executor_factory,
+        progress_callback=_progress,
+    )
+    if report.first_failure is not None:
+        failure = cast(DiscoverySampleProcessError, report.first_failure)
+        completed_samples = tuple(
+            result.sample_stem
+            for result in report.completed_results
+            if isinstance(result, DiscoverySampleProcessResult)
+        )
+        raise DiscoveryProcessExecutionError(
+            failure,
+            completed_sample_stems=completed_samples,
+            cancelled_job_count=len(report.cancelled_job_ordinals),
+            in_flight_job_count=len(report.in_flight_job_ordinals),
+            unsubmitted_job_count=len(report.unsubmitted_job_ordinals),
+        )
+
+    results = tuple(
+        cast(DiscoverySampleProcessResult, result)
+        for result in report.completed_results
+    )
+    if len(results) != len(jobs):
+        raise DiscoveryProcessExecutionError(
+            DiscoverySampleProcessError(
+                sample_index=-1,
+                sample_stem="",
+                raw_name="",
+                message="parallel Discovery result census is incomplete",
+            ),
+            completed_sample_stems=tuple(result.sample_stem for result in results),
+            cancelled_job_count=len(report.cancelled_job_ordinals),
+            in_flight_job_count=len(report.in_flight_job_ordinals),
+            unsubmitted_job_count=len(report.unsubmitted_job_ordinals),
+        )
+
+    for result in results:
+        timing_recorder.observe(
+            "ipc_bytes",
+            value=len(pickle.dumps(result)),
+            scope=result.sample_stem,
+            unit="bytes",
+            source="discovery.process_job.result",
+        )
+        for record in result.timing_records:
+            timing_recorder.record(
+                record.stage,
+                elapsed_sec=record.elapsed_sec,
+                sample_stem=record.sample_stem,
+                metrics=record.metrics,
+            )
+        for observation in result.measurement_observations:
+            timing_recorder.observe(
+                str(observation["metric"]),
+                value=observation.get("value"),
+                scope=str(observation.get("scope", "run")),
+                unit=str(observation.get("unit", "")),
+                aggregation=str(observation.get("aggregation", "sum")),
+                source=str(observation.get("source", "")),
+                availability=str(observation.get("availability", "measured")),
+                reason=str(observation.get("reason", "")),
+            )
+
+    return DiscoveryBatchOutputs(
+        batch_index_csv=_write_batch_index(
+            output_dir / "discovery_batch_index.csv",
+            [result.index_row for result in results],
+            timing_recorder=timing_recorder,
+        ),
+        per_sample=tuple(result.outputs for result in results),
+    )
+
+
+def _run_discovery_sample_process_job(
+    job: DiscoverySampleProcessJob,
+) -> DiscoverySampleProcessResult | DiscoverySampleProcessError:
+    recorder = TimingRecorder("discovery-worker")
+    try:
+        discovered = _discover_raw_file(
+            job.raw_path,
+            settings=job.settings,
+            peak_config=job.peak_config,
+            raw_opener=_owner_bound_raw_opener(job.acquisition_source),
+            timing_recorder=recorder,
+        )
+        sample_stem = job.raw_path.stem
+        with recorder.stage(
+            "discover.peak_anchor",
+            sample_stem=sample_stem,
+            metrics={"input_count": len(discovered)},
+        ) as stage:
+            candidates = assign_peak_anchors(discovered, settings=job.settings)
+            stage.metrics["candidate_count"] = len(candidates)
+        outputs = _write_dual_csvs(
+            job.output_dir / sample_stem,
+            candidates,
+            timing_recorder=recorder,
+            sample_stem=sample_stem,
+        )
+        receipt = mint_discovery_candidate_universe_receipt(
+            sample_stem=sample_stem,
+            acquisition_source=job.acquisition_source,
+            candidate_csv=outputs.candidates_csv,
+            candidates=candidates,
+        )
+        return DiscoverySampleProcessResult(
+            sample_index=job.sample_index,
+            sample_stem=sample_stem,
+            outputs=outputs,
+            receipt=receipt,
+            index_row=_batch_index_row(
+                raw_path=job.raw_path,
+                outputs=outputs,
+                candidates=candidates,
+                receipt=receipt,
+                index_parent=job.output_dir,
+            ),
+            timing_records=recorder.records,
+            measurement_observations=recorder.measurement_observations,
+        )
+    except Exception as exc:
+        return _discovery_process_error(job, exc)
+
+
+def _discovery_process_error(
+    job: DiscoverySampleProcessJob,
+    exc: Exception,
+) -> DiscoverySampleProcessError:
+    return DiscoverySampleProcessError(
+        sample_index=job.sample_index,
+        sample_stem=job.raw_path.stem,
+        raw_name=job.raw_path.name,
+        message=f"{type(exc).__name__}: {exc}",
     )
 
 

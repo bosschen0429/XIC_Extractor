@@ -1,6 +1,7 @@
 import ast
 import csv
 from collections.abc import Iterator
+from concurrent.futures import Future
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
@@ -26,6 +27,8 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.pipeline import (
     _BATCH_INDEX_COLUMNS,
+    DiscoveryProcessExecutionError,
+    DiscoverySampleProcessError,
     _write_batch_index,
     run_discovery,
     run_discovery_batch,
@@ -297,6 +300,153 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     assert tuple(candidate.candidate_id for candidate in relocated_candidates) == (
         "TumorBC2312_DNA#101@mz258.1085_p142.0611",
     )
+
+
+def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_paths = (tmp_path / "sample-b.raw", tmp_path / "sample-a.raw")
+    for raw_path in raw_paths:
+        raw_path.write_bytes(raw_path.stem.encode())
+
+    def _handles():
+        return {
+            path: _FakeRawHandle(
+                [_scan_event(scan_number=index + 1, rt=8.0 + index)],
+                rt=np.array([7.9 + index, 8.0 + index, 8.1 + index]),
+                intensity=np.array([1.0, 100.0, 1.0]),
+            )
+            for index, path in enumerate(raw_paths)
+        }
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda rt, intensity, peak_config, **kwargs: _ok_peak(
+            rt=float(rt[1]),
+            intensity=float(intensity[1]),
+            area=10.0,
+            start=float(rt[0]),
+            end=float(rt[-1]),
+        ),
+    )
+    serial_handles = _handles()
+    serial = run_discovery_batch(
+        raw_paths,
+        output_dir=tmp_path / "serial",
+        settings=_settings(),
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda path, dll_dir: serial_handles[path],
+    )
+
+    parallel_handles = _handles()
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
+        lambda acquisition_source: (
+            lambda path, dll_dir: parallel_handles[path]
+        ),
+    )
+
+    class _SynchronousExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            future.set_result(worker(job))
+            return future
+
+        def shutdown(self, *, wait, cancel_futures=False) -> None:
+            pass
+
+    progress = []
+    parallel = run_discovery_batch(
+        raw_paths,
+        output_dir=tmp_path / "parallel",
+        settings=_settings(),
+        peak_config=_peak_config(tmp_path),
+        max_workers=2,
+        executor_factory=_SynchronousExecutor,
+        progress_callback=lambda completed, total, sample: progress.append(
+            (completed, total, sample)
+        ),
+    )
+
+    assert [output.candidates_csv.parent.name for output in parallel.per_sample] == [
+        "sample-b",
+        "sample-a",
+    ]
+    assert _read_csv(serial.batch_index_csv) == _read_csv(parallel.batch_index_csv)
+    for serial_output, parallel_output in zip(
+        serial.per_sample, parallel.per_sample, strict=True
+    ):
+        assert serial_output.candidates_csv.read_bytes() == (
+            parallel_output.candidates_csv.read_bytes()
+        )
+        assert serial_output.review_csv.read_bytes() == (
+            parallel_output.review_csv.read_bytes()
+        )
+    assert all(raw.entered and raw.closed for raw in parallel_handles.values())
+    assert progress == [(1, 2, "sample-b"), (2, 2, "sample-a")]
+
+
+def test_parallel_batch_rejects_parent_raw_opener(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="RAW handles inside spawned workers"):
+        run_discovery_batch(
+            (tmp_path / "sample.raw",),
+            output_dir=tmp_path / "out",
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=lambda path, dll_dir: _FakeRawHandle(events=[]),
+            max_workers=2,
+        )
+
+
+def test_parallel_batch_preserves_first_failure_and_completed_census(
+    tmp_path: Path,
+) -> None:
+    raw_paths = tuple(tmp_path / f"sample-{index}.raw" for index in range(4))
+    for raw_path in raw_paths:
+        raw_path.write_bytes(raw_path.stem.encode())
+
+    class _FailFirstExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            self.submitted = 0
+
+        def submit(self, worker, job):
+            future = Future()
+            if self.submitted == 0:
+                future.set_result(
+                    DiscoverySampleProcessError(
+                        sample_index=job.sample_index,
+                        sample_stem=job.raw_path.stem,
+                        raw_name=job.raw_path.name,
+                        message="RuntimeError: owner boom",
+                    )
+                )
+            self.submitted += 1
+            return future
+
+        def shutdown(self, *, wait, cancel_futures=False) -> None:
+            pass
+
+    with pytest.raises(DiscoveryProcessExecutionError) as caught:
+        run_discovery_batch(
+            raw_paths,
+            output_dir=tmp_path / "out",
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            max_workers=2,
+            executor_factory=_FailFirstExecutor,
+        )
+
+    error = caught.value
+    assert error.first_failure.raw_name == "sample-0.raw"
+    assert error.completed_sample_stems == ()
+    assert error.cancelled_job_count == 1
+    assert error.in_flight_job_count == 0
+    assert error.unsubmitted_job_count == 2
+    assert not (tmp_path / "out" / "discovery_batch_index.csv").exists()
 
 
 def test_batch_pipeline_escapes_excel_formula_strings_in_index(
