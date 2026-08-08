@@ -120,6 +120,40 @@ def test_shadow_rejects_missing_final_winner_reference() -> None:
         compare_early_loser_shadow_with_final_authority(proposal, final)
 
 
+def test_shadow_rejects_final_loser_terminating_at_non_winner() -> None:
+    loser, middle, winner = _proposal_features()
+    proposal = _proposal((loser, middle, winner))
+    final = _matrix(
+        (
+            _loser(loser, winner="GROUP-MIDDLE"),
+            middle,
+            _winner(winner),
+        )
+    )
+
+    with pytest.raises(ValueError, match="terminates at non-winner"):
+        compare_early_loser_shadow_with_final_authority(proposal, final)
+
+
+def test_shadow_rejects_final_winner_without_self_reference() -> None:
+    loser, middle, winner = _proposal_features()
+    proposal = _proposal((loser, middle, winner))
+    malformed_winner = replace(
+        _winner(middle),
+        consolidation_winner_group_hypothesis_id="GROUP-WINNER",
+    )
+    final = _matrix(
+        (
+            _loser(loser, winner="GROUP-MIDDLE"),
+            malformed_winner,
+            _winner(winner),
+        )
+    )
+
+    with pytest.raises(ValueError, match="must self-reference its winner"):
+        compare_early_loser_shadow_with_final_authority(proposal, final)
+
+
 def test_shadow_kills_false_loser_proposal() -> None:
     loser, middle, winner = _proposal_features()
     proposal = _proposal((loser, middle, winner))
