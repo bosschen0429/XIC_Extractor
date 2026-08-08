@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 
@@ -185,6 +186,18 @@ def test_shadow_kills_insufficient_projected_decision_value(
     assert "insufficient positive" in report.verdict_reason
 
 
+def test_shadow_kills_all_survivor_zero_decision_value() -> None:
+    survivor = _feature("SURVIVOR", ("sample-a",), mz=800.0)
+
+    report = compare_early_loser_shadow_with_final_authority(
+        _proposal((survivor,)),
+        _matrix((survivor,)),
+    )
+
+    assert report.verdict == "KILL"
+    assert "all-survivor" in report.verdict_reason
+
+
 def test_shadow_preserves_owner_unresolved_state() -> None:
     unresolved = replace(
         _feature("UNRESOLVED", ("sample-u",), mz=800.0),
@@ -234,6 +247,16 @@ def test_shadow_is_no_write_and_renders_complete_expected_diff(tmp_path) -> None
     assert "does_not_bind_matrix_cells_or_values" in rendered[
         "durable_binding_scope"
     ]
+    canonical_rows = json.dumps(
+        rendered["rows"],
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    assert rendered["final_authority_projection_sha256"] == hashlib.sha256(
+        (canonical_rows + "\n").encode("utf-8")
+    ).hexdigest()
     assert {item["surface"] for item in rendered["expected_diff_surfaces"]} == {
         "survivors_losers",
         "winner_identity",
@@ -246,6 +269,69 @@ def test_shadow_is_no_write_and_renders_complete_expected_diff(tmp_path) -> None
         "review_population",
         "rollback",
     }
+
+
+def test_shadow_bindings_change_with_each_bound_input() -> None:
+    loser, middle, winner = _proposal_features()
+    features = (loser, middle, winner)
+    baseline = _proposal(features)
+    source_mutation = _proposal(
+        (replace(loser, evidence="mutated-owner-evidence"), middle, winner)
+    )
+    sample_order = ("sample-a", "sample-b", "sample-c", "sample-d")
+    config_mutation = build_early_loser_shadow_proposal(
+        features,
+        run_id="test-early-loser-shadow",
+        sample_order=sample_order,
+        raw_sample_stems=frozenset(sample_order),
+        alignment_config=AlignmentConfig(
+            owner_backfill_min_detected_samples=1,
+            preferred_ppm=19.0,
+        ),
+    )
+    extended_order = (*sample_order, "sample-extra")
+    request_mutation = build_early_loser_shadow_proposal(
+        features,
+        run_id="test-early-loser-shadow",
+        sample_order=extended_order,
+        raw_sample_stems=frozenset(extended_order),
+        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
+    )
+
+    assert (
+        source_mutation.source_owner_snapshot_sha256
+        != baseline.source_owner_snapshot_sha256
+    )
+    assert config_mutation.alignment_config_sha256 != baseline.alignment_config_sha256
+    assert request_mutation.request_universe_sha256 != baseline.request_universe_sha256
+
+    first_final = _matrix(
+        (
+            _loser(loser, winner="GROUP-MIDDLE"),
+            _loser(middle, winner="GROUP-WINNER"),
+            _winner(winner),
+        )
+    )
+    changed_final = _matrix(
+        (
+            _loser(loser, winner="GROUP-WINNER"),
+            _loser(middle, winner="GROUP-WINNER"),
+            _winner(winner),
+        )
+    )
+    first_report = compare_early_loser_shadow_with_final_authority(
+        baseline,
+        first_final,
+    )
+    changed_report = compare_early_loser_shadow_with_final_authority(
+        baseline,
+        changed_final,
+    )
+
+    assert (
+        first_report.final_authority_projection_sha256
+        != changed_report.final_authority_projection_sha256
+    )
 
 
 def _proposal(

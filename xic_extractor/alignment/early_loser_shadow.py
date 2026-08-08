@@ -531,9 +531,15 @@ def _verdict(
             "at least one proposed loser disagrees with final owner authority",
         )
     if counts["loser"] == 0:
+        if counts["unresolved"] == 0:
+            return (
+                "KILL",
+                "the all-survivor owner proposal has no workload decision value",
+            )
         return (
             "REDESIGN",
-            "the existing owner proposal found no loser decision value",
+            "the existing owner proposal cannot close loser decision value "
+            "while owner-unresolved groups remain",
         )
     if (
         projected_feature_reduction <= 0
