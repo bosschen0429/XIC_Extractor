@@ -24,7 +24,10 @@ from xic_extractor.alignment.tsv_writer import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
     ALIGNMENT_REVIEW_COLUMNS,
 )
-from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.models import (
+    MS1_FEATURE_BACKED_STATES,
+    DiscoveryCandidate,
+)
 from xic_extractor.extraction.provisional_run_manifest import (
     PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
     validate_provisional_run_manifest,
@@ -162,7 +165,7 @@ class _ManifestEvidence:
 
 @dataclass(frozen=True, slots=True)
 class _CandidateCensus:
-    summary: Mapping[str, int | float]
+    summary: Mapping[str, int | float | str]
     candidate_samples: Mapping[str, str]
     sample_stems: tuple[str, ...]
 
@@ -324,10 +327,9 @@ def _read_candidate_census(
     batch_index: Path,
     batch: DiscoveryBatchInput,
 ) -> _CandidateCensus:
-    physical_feature_ids: set[tuple[str, str, str]] = set()
-    duplicate_physical_feature_count = 0
     candidate_count = 0
     populated_physical_feature_count = 0
+    excluded_non_feature_backed_populated_identity_count = 0
     multi_seed_candidate_count = 0
     display_family_counts: Counter[tuple[str, str]] = Counter()
     display_family_best_scans: dict[tuple[str, str], set[int]] = defaultdict(set)
@@ -354,16 +356,13 @@ def _read_candidate_census(
         display_family_best_scans[family_key].add(candidate.best_ms2_scan_id)
 
         physical_id = candidate.ms1_feature_row_id
-        if physical_id:
+        if (
+            physical_id
+            and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
+        ):
             populated_physical_feature_count += 1
-            feature_key = (
-                candidate.sample_stem,
-                candidate.neutral_loss_tag,
-                physical_id,
-            )
-            if feature_key in physical_feature_ids:
-                duplicate_physical_feature_count += 1
-            physical_feature_ids.add(feature_key)
+        elif physical_id:
+            excluded_non_feature_backed_populated_identity_count += 1
 
     multi_display_families = sum(count > 1 for count in display_family_counts.values())
     display_family_excess_candidate_count = sum(
@@ -377,8 +376,16 @@ def _read_candidate_census(
             "sample_count": len(batch.sample_order),
             "candidate_count": candidate_count,
             "populated_physical_feature_count": populated_physical_feature_count,
-            "unique_physical_feature_count": len(physical_feature_ids),
-            "duplicate_physical_feature_count": duplicate_physical_feature_count,
+            "physical_feature_identity_scope": "owner_feature_backed_states_only",
+            "excluded_non_feature_backed_populated_identity_count": (
+                excluded_non_feature_backed_populated_identity_count
+            ),
+            # The owner parser rejects duplicate sample/tag/feature identities
+            # for feature-backed states before yielding candidates. Reaching
+            # this summary proves that accepted invariant domain is unique;
+            # this is not a second, independently variable diagnostic counter.
+            "unique_physical_feature_count": populated_physical_feature_count,
+            "duplicate_physical_feature_count": 0,
             "multi_seed_candidate_count": multi_seed_candidate_count,
             "display_family_multi_candidate_group_count": multi_display_families,
             "display_family_excess_candidate_count": (
@@ -952,7 +959,7 @@ def _summary(
     expected_code_revision: str,
     manifest_evidence: _ManifestEvidence,
     heartbeat: Mapping[str, Any],
-    candidate_census: Mapping[str, int | float],
+    candidate_census: Mapping[str, int | float | str],
     review: _ReviewCensus,
     backfill: _BackfillCensus,
     request_proxy: _RequestProxyCensus,
@@ -960,11 +967,7 @@ def _summary(
 ) -> dict[str, Any]:
     group_count = len(review.groups)
     loser_count = review.consolidation_counts.get("primary_loser", 0)
-    candidate_pairing_defect_reproduced = (
-        candidate_census["duplicate_physical_feature_count"] > 0
-    )
     decision = _decision(
-        candidate_pairing_defect_reproduced=candidate_pairing_defect_reproduced,
         loser_count=loser_count,
         group_count=group_count,
     )
@@ -984,10 +987,16 @@ def _summary(
         },
         "candidate_layer": {
             **candidate_census,
+            "physical_feature_identity_uniqueness_status": (
+                "owner_parser_invariant_accepted_feature_backed_states"
+            ),
+            "duplicate_physical_feature_count_basis": (
+                "owner_parser_rejects_duplicate_sample_tag_feature_identity_"
+                "in_feature_backed_states"
+            ),
             "pairing_verdict": (
-                "candidate_layer_dedupe_defect_reproduced"
-                if candidate_pairing_defect_reproduced
-                else "candidate_layer_dedupe_defect_not_reproduced"
+                "candidate_layer_dedupe_defect_not_reproduced_"
+                "feature_backed_owner_invariant_accepted"
             ),
             "claim_ceiling": (
                 "owner_bound_candidate_fields; strict scan content not replayed"
@@ -1050,9 +1059,7 @@ def _summary(
         },
         "diagnostic_layers": {
             "A_same_candidate_other_ms2_evidence": (
-                "reproduced_duplicate_owner_bound_feature_ids"
-                if candidate_pairing_defect_reproduced
-                else "not_reproduced_zero_duplicate_owner_bound_feature_ids"
+                "not_reproduced_feature_backed_owner_uniqueness_invariant_accepted"
             ),
             "B_same_peak_distinct_scientific_hypotheses": (
                 "inconclusive_missing_owner_physical_peak_payload"
@@ -1069,18 +1076,13 @@ def _summary(
         },
         "hypothesis_verdict": {
             "candidate_layer": (
-                "defect_reproduced"
-                if candidate_pairing_defect_reproduced
-                else "defect_not_reproduced"
+                "defect_not_reproduced_feature_backed_owner_uniqueness_"
+                "invariant_accepted"
             ),
             "downstream_owner_and_request_layer": (
                 "inconclusive_missing_owner_and_exact_request_lineage"
             ),
-            "overall": (
-                "candidate_layer_not_reproduced_downstream_inconclusive"
-                if not candidate_pairing_defect_reproduced
-                else "candidate_layer_defect_requires_owner_fix"
-            ),
+            "overall": ("candidate_layer_not_reproduced_downstream_inconclusive"),
         },
         "decision": {
             **decision,
@@ -1129,19 +1131,9 @@ def _summary(
 
 def _decision(
     *,
-    candidate_pairing_defect_reproduced: bool,
     loser_count: int,
     group_count: int,
 ) -> dict[str, str]:
-    if candidate_pairing_defect_reproduced:
-        return {
-            "status": "inconclusive_candidate_layer_defect_requires_owner_fix",
-            "value_priority": "candidate_layer_dedupe_fix_before_optimization",
-            "reason": (
-                "Owner-bound candidate identities contain duplicates, so neither "
-                "downstream optimization is ready for prioritization."
-            ),
-        }
     if loser_count > 0:
         return {
             "status": "observed_evidence_supports_priority",

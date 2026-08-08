@@ -483,7 +483,11 @@ request equivalence or optimization savings. Ranking requires a complete
 `full-audit` Backfill scope with zero skipped features, closed feature counts,
 and exact equality with the review-group universe. Candidate/group projection
 links bind both sample and candidate identity; request-proxy rendering is
-row-order neutral. The tool neither accepts RAW paths nor changes scientific
+row-order neutral. Candidate-layer uniqueness is limited to feature-backed
+states and reported as acceptance of the Discovery owner's parser invariant,
+not as an independently variable post-owner duplicate counter. Populated IDs
+outside that invariant domain are counted separately. The tool neither accepts
+RAW paths nor changes scientific
 selection, Backfill eligibility, Matrix, writer, or activation behavior.
 
 ---

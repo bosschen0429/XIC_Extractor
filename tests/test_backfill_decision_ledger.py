@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from tests.alignment_pipeline_helpers import candidate_row, write_csv
-from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+from xic_extractor.alignment.csv_io import (
+    read_discovery_batch_index,
+    read_discovery_candidates_csv,
+)
 from xic_extractor.alignment.provisional_matrix import (
     PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
 )
@@ -18,7 +21,6 @@ from xic_extractor.diagnostics.backfill_decision_ledger import (
     _BACKFILL_COLUMNS,
     _PROVENANCE_COLUMNS,
     _REVIEW_COLUMNS,
-    _decision,
     _read_backfill_evidence,
     _read_request_proxy,
     _read_timing,
@@ -59,13 +61,25 @@ def test_decision_ledger_is_deterministic_and_preserves_authority_ceiling(
         "sample_count": 1,
         "candidate_count": 1,
         "populated_physical_feature_count": 1,
+        "physical_feature_identity_scope": "owner_feature_backed_states_only",
+        "excluded_non_feature_backed_populated_identity_count": 0,
         "unique_physical_feature_count": 1,
         "duplicate_physical_feature_count": 0,
         "multi_seed_candidate_count": 1,
         "display_family_multi_candidate_group_count": 0,
         "display_family_excess_candidate_count": 0,
         "display_family_multi_best_scan_group_count": 0,
-        "pairing_verdict": "candidate_layer_dedupe_defect_not_reproduced",
+        "physical_feature_identity_uniqueness_status": (
+            "owner_parser_invariant_accepted_feature_backed_states"
+        ),
+        "duplicate_physical_feature_count_basis": (
+            "owner_parser_rejects_duplicate_sample_tag_feature_identity_"
+            "in_feature_backed_states"
+        ),
+        "pairing_verdict": (
+            "candidate_layer_dedupe_defect_not_reproduced_"
+            "feature_backed_owner_invariant_accepted"
+        ),
         "claim_ceiling": (
             "owner_bound_candidate_fields; strict scan content not replayed"
         ),
@@ -125,6 +139,107 @@ def test_decision_ledger_rejects_candidate_artifact_mutation(
             output_dir=tmp_path / "output",
             expected_code_revision=_REVISION,
         )
+
+
+def test_decision_ledger_rejects_owner_resealed_duplicate_physical_feature_id(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    candidate_csv = (
+        artifact / "workflow" / "discovery" / "Sample_A" / "discovery_candidates.csv"
+    )
+    original_candidate = read_discovery_candidates_csv(
+        candidate_csv,
+        require_successor_columns=True,
+    )[0]
+    duplicate_row = candidate_row("Sample_A")
+    duplicate_row.update(
+        {
+            "candidate_id": "Sample_A#3@mz500_p384",
+            "feature_family_id": "Sample_A@F0002",
+            "best_ms2_scan_id": "3",
+            "seed_scan_ids": "3;4",
+        }
+    )
+    duplicate_only_csv = tmp_path / "duplicate_only.csv"
+    write_csv(duplicate_only_csv, DISCOVERY_CANDIDATE_COLUMNS, [duplicate_row])
+    duplicate_candidate = read_discovery_candidates_csv(
+        duplicate_only_csv,
+        require_successor_columns=True,
+    )[0]
+    write_csv(
+        candidate_csv,
+        DISCOVERY_CANDIDATE_COLUMNS,
+        [candidate_row("Sample_A"), duplicate_row],
+    )
+
+    batch_index = artifact / "workflow" / "discovery" / "discovery_batch_index.csv"
+    batch = read_discovery_batch_index(batch_index)
+    original_receipt = batch.candidate_receipts["Sample_A"]
+    assert original_receipt is not None
+    resealed_receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem="Sample_A",
+        acquisition_source=original_receipt.acquisition_source,
+        candidate_csv=candidate_csv,
+        candidates=(original_candidate, duplicate_candidate),
+    )
+    _rewrite_batch_receipt(batch_index, resealed_receipt)
+
+    with pytest.raises(ValueError, match="duplicate ms1_feature_row_id"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_excludes_non_feature_backed_ids_from_uniqueness_claim(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    candidate_csv = (
+        artifact / "workflow" / "discovery" / "Sample_A" / "discovery_candidates.csv"
+    )
+    first_row = candidate_row("Sample_A")
+    first_row["discovery_candidate_state"] = "review_only_ambiguous_coisolation"
+    second_row = dict(first_row)
+    second_row.update(
+        {
+            "candidate_id": "Sample_A#3@mz500_p384",
+            "feature_family_id": "Sample_A@F0002",
+            "best_ms2_scan_id": "3",
+            "seed_scan_ids": "3;4",
+        }
+    )
+    write_csv(candidate_csv, DISCOVERY_CANDIDATE_COLUMNS, [first_row, second_row])
+    candidates = read_discovery_candidates_csv(
+        candidate_csv,
+        require_successor_columns=True,
+    )
+
+    batch_index = artifact / "workflow" / "discovery" / "discovery_batch_index.csv"
+    batch = read_discovery_batch_index(batch_index)
+    original_receipt = batch.candidate_receipts["Sample_A"]
+    assert original_receipt is not None
+    resealed_receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem="Sample_A",
+        acquisition_source=original_receipt.acquisition_source,
+        candidate_csv=candidate_csv,
+        candidates=candidates,
+    )
+    _rewrite_batch_receipt(batch_index, resealed_receipt)
+
+    outputs = build_backfill_decision_ledger(
+        artifact_root=artifact,
+        output_dir=tmp_path / "output",
+        expected_code_revision=_REVISION,
+    )
+
+    candidate_layer = outputs.summary["candidate_layer"]
+    assert candidate_layer["populated_physical_feature_count"] == 0
+    assert candidate_layer["unique_physical_feature_count"] == 0
+    assert candidate_layer["duplicate_physical_feature_count"] == 0
+    assert candidate_layer["excluded_non_feature_backed_populated_identity_count"] == 2
 
 
 def test_decision_ledger_honors_declared_candidate_locator_and_relocates_only_attempt(
@@ -412,21 +527,6 @@ def test_decision_ledger_accepts_loser_chain_to_terminal_winner(
     assert result.summary["cross_sample_and_settlement"]["consolidation_counts"] == {
         "primary_loser": 2,
         "primary_winner": 1,
-    }
-
-
-def test_decision_ledger_prioritizes_candidate_fix_when_duplicates_exist() -> None:
-    assert _decision(
-        candidate_pairing_defect_reproduced=True,
-        loser_count=10,
-        group_count=20,
-    ) == {
-        "status": "inconclusive_candidate_layer_defect_requires_owner_fix",
-        "value_priority": "candidate_layer_dedupe_fix_before_optimization",
-        "reason": (
-            "Owner-bound candidate identities contain duplicates, so neither "
-            "downstream optimization is ready for prioritization."
-        ),
     }
 
 
@@ -843,6 +943,28 @@ def _rewrite_batch_candidate_locator(path: Path, candidate_csv: str) -> None:
         rows = list(reader)
     assert len(rows) == 1
     rows[0]["candidate_csv"] = candidate_csv
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _rewrite_batch_receipt(
+    path: Path,
+    receipt: DiscoveryCandidateUniverseReceipt,
+) -> None:
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = tuple(reader.fieldnames or ())
+        rows = list(reader)
+    assert len(rows) == 1
+    rows[0].update(
+        {
+            "candidate_count": "2",
+            "high_count": "2",
+            **discovery_receipt_index_fields(receipt),
+        }
+    )
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()

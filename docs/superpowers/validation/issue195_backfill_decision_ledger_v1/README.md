@@ -23,7 +23,7 @@ The verified run emitted `365,176` ledger lines (header plus `317,036`
 candidate rows and `48,139` group-settlement rows). SHA-256 values were
 `F54F447EEEFA0CC826B7815B5AD454A7D2B44F87C8847146CA3AEA35CA6E6CE2` for
 the ledger and
-`1A5C992CC57691E193CBCEF93A27FB1BB1B4DA85B063959515446DF8F5BE7D88` for
+`5BEB2C9C73E9B238D7938B922E4404C54E61C115D5D4DC9930CA72A9B1B1CF49` for
 the JSON summary.
 
 ## Observed evidence
@@ -31,8 +31,9 @@ the JSON summary.
 | Evidence | Result | Authority ceiling |
 | --- | ---: | --- |
 | Discovery candidates | 317,036 | Owner-rehydrated candidate fields |
-| Populated / unique physical feature IDs | 79,443 / 79,443 | Owner-rehydrated `ms1_feature_row_id` |
-| Duplicate physical feature IDs | 0 | Candidate-layer defect not reproduced |
+| Feature-backed populated / unique physical feature IDs | 79,443 / 79,443 | Complete owner parser invariant accepted |
+| Non-feature-backed populated IDs | 0 | Excluded from the owner uniqueness claim |
+| Duplicate feature-backed physical feature IDs | 0 | Owner-enforced absence; not an independent post-owner counter |
 | Multi-seed candidates | 59,214 | Declared scan IDs; RAW scan content not replayed |
 | Final `primary_loser` rows | 36,608 / 48,139 (76.0464%) | Persisted projection only |
 | Display request proxy duplicates | 133,547 / 3,083,400 (4.331%) | Not exact request equivalence |
@@ -52,6 +53,15 @@ that exact mechanical relocation to the final bundle path, then validates the
 bytes and typed candidate payload through the Discovery owner receipt. Other
 missing or substituted locators fail closed. Declared samples remain valid even
 when their owner-bound candidate universe is empty.
+
+Candidate-layer uniqueness is fail-closed at the Discovery owner parser for
+feature-backed states: a duplicate
+`sample + neutral_loss_tag + ms1_feature_row_id` aborts rehydration, including
+when the enclosing artifact receipt is recomputed. Successful complete
+rehydration therefore supports “not reproduced” within that invariant domain
+for this retained artifact, but the summary does not present zero as a
+separately variable diagnostic measurement. Populated IDs in any non-feature-
+backed state are outside that uniqueness claim and reported separately.
 
 The downstream owner-assignment/group/request portion of the pairing hypothesis
 is inconclusive because the retained artifact omits complete owner payloads,

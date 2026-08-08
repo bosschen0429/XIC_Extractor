@@ -613,11 +613,15 @@ The bounded output is reproducible with:
   --expected-code-revision 7eef01e273ee62b91bd6c07e4a455994f76ca37b
 ```
 
-Observed candidate facts were `317,036` rows, `79,443` populated and unique
-`ms1_feature_row_id` values, zero duplicate owner-rehydrated physical feature
-IDs, and `59,214` candidates with multiple seed scans. Therefore the proposed
-candidate-layer defect—retaining other MS2 scans creates duplicate candidates
-for the same physical MS1 feature—was not reproduced. The display grouping
+The complete owner rehydration accepted `317,036` rows. Its parser requires a
+unique `sample + neutral_loss_tag + ms1_feature_row_id` for every feature-backed
+candidate; all `79,443` feature-backed populated identities passed that
+invariant, no non-feature-backed row carried a populated identity, and
+`59,214` accepted candidates retained multiple seed scans. The reported zero is
+therefore an owner-invariant acceptance result, not a second post-owner counter
+that could independently reproduce duplicates. The proposed candidate-layer
+defect—retaining other MS2 scans creates duplicate candidates for the same
+physical MS1 feature—was not reproduced within that owner invariant domain. The display grouping
 still contains `14,133` multi-candidate groups and `13,852` multi-best-scan
 groups, but those fields do not prove one physical peak.
 
