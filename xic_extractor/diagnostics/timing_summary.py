@@ -20,6 +20,7 @@ def summarize_timing_records(
     *,
     exclusive_elapsed: Iterable[float | None] | None = None,
     measurement_observations: Iterable[Mapping[str, object]] = (),
+    span_semantics: Iterable[Mapping[str, object]] = (),
 ) -> dict[str, object]:
     """Build no-RAW timing and XIC locality summaries from recorded spans."""
 
@@ -42,10 +43,10 @@ def summarize_timing_records(
             None if value is None else float(value) for value in exclusive_elapsed
         )
         payload["non_overlapping_stage_summary"] = _exclusive_stage_summary(
-            views, exclusive, nested=False
+            views, exclusive
         )
-        payload["nested_stage_summary"] = _exclusive_stage_summary(
-            views, exclusive, nested=True
+        payload["nested_stage_summary"] = _nested_stage_summary(
+            views, tuple(span_semantics)
         )
     return payload
 
@@ -97,6 +98,19 @@ def _measurement_summary(
                 )
     rows: list[dict[str, object]] = []
     for (metric, scope), items in grouped.items():
+        units = {text_value(item.get("unit")) for item in items}
+        aggregations = {
+            text_value(item.get("aggregation")) or "sum" for item in items
+        }
+        if len(units) != 1 or len(aggregations) != 1:
+            raise ValueError(
+                f"measurement contract mismatch for {metric!r} in scope {scope!r}"
+            )
+        aggregation = next(iter(aggregations))
+        if aggregation not in {"sum", "max", "last"}:
+            raise ValueError(
+                f"unsupported measurement aggregation {aggregation!r}"
+            )
         measured = [
             item
             for item in items
@@ -110,7 +124,8 @@ def _measurement_summary(
         partial = [item for item in items if item.get("availability") == "partial"]
         numeric_values = [
             float(value)
-            for item in measured
+            for item in items
+            if item.get("availability") in {"measured", "partial", "failed"}
             for value in (item.get("value"),)
             if isinstance(value, (int, float)) and not isinstance(value, bool)
         ]
@@ -122,17 +137,29 @@ def _measurement_summary(
             availability = "failed"
         else:
             availability = "unavailable"
-        reason_items = [item for item in items if text_value(item.get("reason"))]
+        reasons = tuple(
+            dict.fromkeys(
+                text_value(item.get("reason"))
+                for item in items
+                if text_value(item.get("reason"))
+            )
+        )
+        aggregate_value: float | None = None
+        if numeric_values:
+            if aggregation == "sum":
+                aggregate_value = sum(numeric_values)
+            elif aggregation == "max":
+                aggregate_value = max(numeric_values)
+            else:
+                aggregate_value = numeric_values[-1]
         rows.append(
             {
                 "metric": metric,
                 "scope": scope,
-                "value": sum(numeric_values) if numeric_values else None,
-                "unit": text_value(items[0].get("unit")),
+                "value": aggregate_value,
+                "unit": next(iter(units)),
                 "availability": availability,
-                "reason": text_value(reason_items[0].get("reason"))
-                if reason_items
-                else "",
+                "reason": "; ".join(reasons),
             }
         )
     return sorted(
@@ -148,10 +175,8 @@ def _is_number(value: object) -> bool:
 def _exclusive_stage_summary(
     records: tuple[TimingRecordView, ...],
     exclusive_elapsed: tuple[float | None, ...],
-    *,
-    nested: bool,
 ) -> list[dict[str, object]]:
-    """Summarize exclusive wall separately from nested span wall time."""
+    """Attribute every wall span once after subtracting nested child wall."""
 
     by_stage: dict[str, list[tuple[TimingRecordView, float]]] = defaultdict(list)
     for index, record in enumerate(records):
@@ -162,9 +187,7 @@ def _exclusive_stage_summary(
         )
         if elapsed is None:
             continue
-        is_nested = elapsed < record.elapsed_sec
-        if is_nested == nested:
-            by_stage[record.stage].append((record, max(0.0, elapsed)))
+        by_stage[record.stage].append((record, max(0.0, elapsed)))
     rows: list[dict[str, object]] = []
     for stage, stage_records in by_stage.items():
         values = [value for _record, value in stage_records]
@@ -177,6 +200,30 @@ def _exclusive_stage_summary(
             }
         )
     return sorted(rows, key=_summary_sort_key_exclusive)
+
+
+def _nested_stage_summary(
+    records: tuple[TimingRecordView, ...],
+    span_semantics: tuple[Mapping[str, object], ...],
+) -> list[dict[str, object]]:
+    """Report inclusive wall for spans explicitly nested under another span."""
+
+    by_stage: dict[str, list[float]] = defaultdict(list)
+    for index, record in enumerate(records):
+        semantics = span_semantics[index] if index < len(span_semantics) else {}
+        if semantics.get("span_kind") != "wall" or semantics.get("overlap") != "nested":
+            continue
+        by_stage[record.stage].append(max(0.0, record.elapsed_sec))
+    rows: list[dict[str, object]] = [
+        {
+            "stage": stage,
+            "record_count": len(values),
+            "total_elapsed_sec": sum(values),
+            "max_elapsed_sec": max(values, default=0.0),
+        }
+        for stage, values in by_stage.items()
+    ]
+    return sorted(rows, key=_summary_sort_key)
 
 
 def _summary_sort_key_exclusive(row: Mapping[str, object]) -> tuple[float, str]:

@@ -72,6 +72,7 @@ class DiscoverySampleProcessJob:
     settings: DiscoverySettings
     peak_config: ExtractionConfig
     acquisition_source: AcquisitionSourceIdentity
+    instrument_diagnostics: bool = False
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,8 @@ class DiscoverySampleProcessError:
     sample_stem: str
     raw_name: str
     message: str
+    timing_records: tuple[TimingRecord, ...] = ()
+    measurement_observations: tuple[dict[str, object], ...] = ()
 
 
 class DiscoveryProcessExecutionError(RuntimeError):
@@ -257,17 +260,10 @@ def _run_discovery_batch_process(
             settings=settings,
             peak_config=peak_config,
             acquisition_source=_acquisition_source(raw_path),
+            instrument_diagnostics=timing_recorder.enabled,
         )
         for sample_index, raw_path in enumerate(raw_paths)
     )
-    for job in jobs:
-        timing_recorder.observe(
-            "ipc_bytes",
-            value=len(pickle.dumps(job)),
-            scope=job.raw_path.stem,
-            unit="bytes",
-            source="discovery.process_job.request",
-        )
 
     completed = 0
 
@@ -290,6 +286,39 @@ def _run_discovery_batch_process(
         executor_factory=executor_factory,
         progress_callback=_progress,
     )
+    for ordinal in report.submitted_job_ordinals:
+        job = jobs[ordinal]
+        _observe_pickle_payload_bytes(
+            timing_recorder,
+            job,
+            scope=job.raw_path.stem,
+            source="discovery.process_job.request",
+        )
+    for observed in report.observed_results:
+        _observe_pickle_payload_bytes(
+            timing_recorder,
+            observed,
+            scope=observed.sample_stem,
+            source="discovery.process_job.result",
+        )
+        for record in observed.timing_records:
+            timing_recorder.record(
+                record.stage,
+                elapsed_sec=record.elapsed_sec,
+                sample_stem=record.sample_stem,
+                metrics=record.metrics,
+            )
+        for observation in observed.measurement_observations:
+            timing_recorder.observe(
+                str(observation["metric"]),
+                value=observation.get("value"),
+                scope=str(observation.get("scope", "run")),
+                unit=str(observation.get("unit", "")),
+                aggregation=str(observation.get("aggregation", "sum")),
+                source=str(observation.get("source", "")),
+                availability=str(observation.get("availability", "measured")),
+                reason=str(observation.get("reason", "")),
+            )
     if report.first_failure is not None:
         failure = cast(DiscoverySampleProcessError, report.first_failure)
         completed_samples = tuple(
@@ -330,33 +359,6 @@ def _run_discovery_batch_process(
             unsubmitted_job_count=len(report.unsubmitted_job_ordinals),
         )
 
-    for result in results:
-        timing_recorder.observe(
-            "ipc_bytes",
-            value=len(pickle.dumps(result)),
-            scope=result.sample_stem,
-            unit="bytes",
-            source="discovery.process_job.result",
-        )
-        for record in result.timing_records:
-            timing_recorder.record(
-                record.stage,
-                elapsed_sec=record.elapsed_sec,
-                sample_stem=record.sample_stem,
-                metrics=record.metrics,
-            )
-        for observation in result.measurement_observations:
-            timing_recorder.observe(
-                str(observation["metric"]),
-                value=observation.get("value"),
-                scope=str(observation.get("scope", "run")),
-                unit=str(observation.get("unit", "")),
-                aggregation=str(observation.get("aggregation", "sum")),
-                source=str(observation.get("source", "")),
-                availability=str(observation.get("availability", "measured")),
-                reason=str(observation.get("reason", "")),
-            )
-
     return DiscoveryBatchOutputs(
         batch_index_csv=_write_batch_index(
             output_dir / "discovery_batch_index.csv",
@@ -367,10 +369,49 @@ def _run_discovery_batch_process(
     )
 
 
+def _observe_pickle_payload_bytes(
+    recorder: TimingRecorder,
+    payload: object,
+    *,
+    scope: str,
+    source: str,
+) -> None:
+    if not recorder.enabled:
+        return
+    try:
+        byte_size = len(pickle.dumps(payload))
+    except Exception as exc:
+        recorder.observe(
+            "ipc_bytes",
+            value=None,
+            scope=scope,
+            unit="bytes",
+            source=source,
+            availability="failed",
+            reason=f"pickle payload measurement failed: {type(exc).__name__}: {exc}",
+        )
+        return
+    recorder.observe(
+        "ipc_bytes",
+        value=byte_size,
+        scope=scope,
+        unit="bytes",
+        source=source,
+        availability="partial",
+        reason=(
+            "pickle payload bytes exclude executor framing and transport confirmation"
+        ),
+    )
+
+
 def _run_discovery_sample_process_job(
     job: DiscoverySampleProcessJob,
 ) -> DiscoverySampleProcessResult | DiscoverySampleProcessError:
-    recorder = TimingRecorder("discovery-worker")
+    recorder = (
+        TimingRecorder("discovery-worker")
+        if job.instrument_diagnostics
+        else TimingRecorder.disabled("discovery-worker")
+    )
     try:
         discovered = _discover_raw_file(
             job.raw_path,
@@ -415,18 +456,28 @@ def _run_discovery_sample_process_job(
             measurement_observations=recorder.measurement_observations,
         )
     except Exception as exc:
-        return _discovery_process_error(job, exc)
+        return _discovery_process_error(
+            job,
+            exc,
+            timing_records=recorder.records,
+            measurement_observations=recorder.measurement_observations,
+        )
 
 
 def _discovery_process_error(
     job: DiscoverySampleProcessJob,
     exc: Exception,
+    *,
+    timing_records: tuple[TimingRecord, ...] = (),
+    measurement_observations: tuple[dict[str, object], ...] = (),
 ) -> DiscoverySampleProcessError:
     return DiscoverySampleProcessError(
         sample_index=job.sample_index,
         sample_stem=job.raw_path.stem,
         raw_name=job.raw_path.name,
         message=f"{type(exc).__name__}: {exc}",
+        timing_records=timing_records,
+        measurement_observations=measurement_observations,
     )
 
 
@@ -547,31 +598,42 @@ def _discover_raw_file(
 ) -> tuple[DiscoveryCandidate, ...]:
     sample_stem = raw_path.stem
     with raw_opener(raw_path, peak_config.dll_dir) as raw:
-        with timing_recorder.stage(
-            "discover.ms2_seeds",
-            sample_stem=sample_stem,
-        ) as stage:
-            seeds = collect_strict_nl_seeds(raw, raw_file=raw_path, settings=settings)
-            stage.metrics["seed_count"] = len(seeds)
-        with timing_recorder.stage(
-            "discover.group_seeds",
-            sample_stem=sample_stem,
-        ) as stage:
-            groups = group_discovery_seeds(seeds, settings=settings)
-            stage.metrics["group_count"] = len(groups)
-        with timing_recorder.stage(
-            "discover.ms1_backfill",
-            sample_stem=sample_stem,
-        ) as stage:
-            candidates = backfill_ms1_candidates(
-                raw,
-                groups,
-                settings=settings,
-                peak_config=peak_config,
-            )
-            stage.metrics["candidate_count"] = len(candidates)
-        _record_raw_measurements(timing_recorder, raw, sample_stem)
-        return candidates
+        timing_recorder.observe(
+            "raw_open_count",
+            value=1,
+            scope=sample_stem,
+            unit="opens",
+            source="discovery.raw_opener",
+        )
+        try:
+            with timing_recorder.stage(
+                "discover.ms2_seeds",
+                sample_stem=sample_stem,
+            ) as stage:
+                seeds = collect_strict_nl_seeds(
+                    raw, raw_file=raw_path, settings=settings
+                )
+                stage.metrics["seed_count"] = len(seeds)
+            with timing_recorder.stage(
+                "discover.group_seeds",
+                sample_stem=sample_stem,
+            ) as stage:
+                groups = group_discovery_seeds(seeds, settings=settings)
+                stage.metrics["group_count"] = len(groups)
+            with timing_recorder.stage(
+                "discover.ms1_backfill",
+                sample_stem=sample_stem,
+            ) as stage:
+                candidates = backfill_ms1_candidates(
+                    raw,
+                    groups,
+                    settings=settings,
+                    peak_config=peak_config,
+                )
+                stage.metrics["candidate_count"] = len(candidates)
+            return candidates
+        finally:
+            _record_raw_measurements(timing_recorder, raw, sample_stem)
 
 
 def _record_raw_measurements(
@@ -581,14 +643,17 @@ def _record_raw_measurements(
 ) -> None:
     """Project Discovery owner facts without inventing unavailable counters."""
 
-    raw_calls = getattr(raw, "raw_chromatogram_call_count", None)
-    timing_recorder.observe(
-        "raw_open_count",
-        value=1,
-        scope=sample_stem,
-        unit="opens",
-        source="discovery.raw_opener",
-    )
+    try:
+        raw_calls = getattr(raw, "raw_chromatogram_call_count", None)
+        raw_calls_reason = (
+            "" if isinstance(raw_calls, int) else "raw handle has no call counter"
+        )
+    except Exception as exc:
+        raw_calls = None
+        raw_calls_reason = (
+            "raw handle call counter read failed: "
+            f"{type(exc).__name__}: {exc}"
+        )
     timing_recorder.observe(
         "logical_xic_request_count",
         value=None,
@@ -614,7 +679,7 @@ def _record_raw_measurements(
         unit="calls",
         source="discovery.raw_handle.raw_chromatogram_call_count",
         availability="measured" if isinstance(raw_calls, int) else "unavailable",
-        reason="" if isinstance(raw_calls, int) else "raw handle has no call counter",
+        reason=raw_calls_reason,
     )
     timing_recorder.observe(
         "trace_point_count",

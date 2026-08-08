@@ -663,6 +663,25 @@ def test_owner_build_jobs_wrap_submit_exceptions_as_build_errors(
     assert progress == results
 
 
+def test_owner_build_jobs_reject_unexpected_cancelled_census(tmp_path: Path) -> None:
+    job = OwnerBuildSampleJob(
+        sample_index=1,
+        sample_stem="sample-a",
+        raw_path=tmp_path / "sample-a.raw",
+        dll_dir=tmp_path / "dll",
+        candidates=(_candidate("sample-a"),),
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+    )
+
+    with pytest.raises(AlignmentProcessExecutionError, match=r"cancelled=\(0,\)"):
+        run_owner_build_jobs(
+            (job,),
+            max_workers=1,
+            executor_factory=_CancelledExecutor,
+        )
+
+
 def test_timed_process_raw_source_records_batch_calls() -> None:
     import xic_extractor.alignment.process_backend as process_module
     from xic_extractor.xic_models import XICRequest, XICTrace
@@ -856,6 +875,20 @@ class _SubmitFailingExecutor:
 
     def submit(self, worker, job):
         raise RuntimeError("submit boom")
+
+
+class _CancelledExecutor:
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def submit(self, worker, job):
+        future = Future()
+        future.cancel()
+        future.set_running_or_notify_cancel()
+        return future
+
+    def shutdown(self, *, wait: bool, cancel_futures: bool = False) -> None:
+        pass
 
 
 def _peak_config(

@@ -664,14 +664,25 @@ stage/sample heartbeat. It does not expose a truncated legacy `records` field or
 rewrite the complete timing history for every event. `timing.json` retains the
 complete final history. If the process is killed by an external timeout, use the
 live file to identify the last completed stage/sample before rerunning anything.
+Each live update uses a temporary sibling and atomic replacement, so a failed
+requested update raises without corrupting the last-good heartbeat artifact.
 
 W0 diagnostic timing is additive and remains `diagnostic_only`. The final timing
 payload records `measurement_contract` (cache state, aggregation, task-specific
 repetition/noise design, and programme budgets) and mechanical
-`measurement_observations`. Parallel Discovery measures serialized request/result
-IPC bytes; other workflow IPC and RSS without a reliable owner remain
+`measurement_observations`. A disabled recorder performs no implicit heartbeat,
+observation, contract, or live-sidecar work. Parallel Discovery reports partial
+pickle payload-size estimates only for successfully submitted requests and
+observed results; executor framing and confirmed transport bytes remain outside
+the current owner. Other workflow IPC and RSS without a reliable owner remain
 `unavailable` or `partial` with a reason, never measured zero. Nested spans are
-reported separately from non-overlapping/exclusive wall time. The runner records
+reported as inclusive nested locality separately from the exclusive wall
+attribution that counts every wall span once. Measurement summaries execute the
+declared `sum`, `max`, or `last` aggregation and reject mixed unit/aggregation
+contracts for one metric scope. Instrumented fingerprint attempts emit exactly
+one measured or failed observation; failed stable-file checks retain bytes read
+when known.
+The runner records
 cache state as `uncontrolled_os_cache_no_eviction`: it never claims cold-cache
 evidence because the validation contract does not flush the host OS cache. Paired
 repetitions should reverse baseline/candidate order when practical. The current programme

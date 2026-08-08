@@ -52,6 +52,7 @@ def test_terminal_failure_cancels_pending_and_preserves_census() -> None:
     )
 
     assert report.first_failure == _Failure(index=0, message="owner boom")
+    assert report.submitted_job_ordinals == (0, 1, 2)
     assert report.completed_results == ()
     assert report.completed_job_ordinals == ()
     assert report.failed_job_ordinals == (0,)
@@ -86,6 +87,7 @@ def test_success_results_are_returned_in_input_order() -> None:
     )
 
     assert report.first_failure is None
+    assert report.submitted_job_ordinals == (0, 1, 2)
     assert report.completed_results == (0, 10, 20)
     assert report.completed_job_ordinals == (0, 1, 2)
     assert report.failed_job_ordinals == ()
@@ -119,6 +121,7 @@ def test_completed_work_is_preserved_when_failure_arrives_in_same_wait_batch() -
     )
 
     assert report.first_failure == _Failure(0, "owner boom")
+    assert report.submitted_job_ordinals == (0, 1, 2)
     assert report.completed_results == (10, 20)
     assert report.completed_job_ordinals == (1, 2)
     assert report.failed_job_ordinals == (0,)
@@ -153,6 +156,7 @@ def test_same_batch_terminal_failures_are_all_preserved() -> None:
     )
 
     assert report.first_failure == _Failure(0, "owner boom 0")
+    assert report.submitted_job_ordinals == (0, 1, 2)
     assert report.observed_results == (
         _Failure(0, "owner boom 0"),
         _Failure(1, "owner boom 1"),
@@ -197,6 +201,7 @@ def test_future_finishing_during_cancellation_is_observed() -> None:
     )
 
     assert report.first_failure == _Failure(0, "owner boom")
+    assert report.submitted_job_ordinals == (0, 1)
     assert report.observed_results == (_Failure(0, "owner boom"), 10)
     assert report.completed_results == (10,)
     assert report.completed_job_ordinals == (1,)
@@ -218,6 +223,7 @@ def test_spawn_failure_does_not_drain_slow_unsubmitted_jobs() -> None:
     elapsed = perf_counter() - started
 
     assert report.first_failure == _Failure(0, "owner boom")
+    assert report.submitted_job_ordinals == (0,)
     assert report.failed_job_ordinals == (0,)
     assert report.unsubmitted_job_ordinals == (1, 2)
     assert elapsed < 2.0

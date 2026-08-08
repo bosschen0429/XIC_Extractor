@@ -60,7 +60,6 @@ class TimingRecorder:
         self._records: list[TimingRecord] = []
         self._exclusive_elapsed: list[float | None] = []
         self._span_semantics: list[dict[str, str]] = []
-        self._nested_records: set[int] = set()
         self._span_stack: list[list[float | int]] = []
         self._heartbeat: dict[str, object] = {}
         self._measurement_observations: list[dict[str, object]] = []
@@ -116,6 +115,9 @@ class TimingRecorder:
     ) -> None:
         """Publish bounded progress without replacing the final timing history."""
 
+        if not self.enabled:
+            return
+
         progress: dict[str, object] = {"stage": stage}
         if sample_stem:
             progress["sample_stem"] = sample_stem
@@ -129,6 +131,9 @@ class TimingRecorder:
 
     def heartbeat_event(self, event: Mapping[str, object]) -> None:
         """Accept a workflow progress mapping while keeping kwargs typed."""
+
+        if not self.enabled:
+            return
 
         event_name = event.get("event")
         if not isinstance(event_name, str):
@@ -163,6 +168,13 @@ class TimingRecorder:
     ) -> None:
         """Append one mechanical observation to the diagnostic projection."""
 
+        if not self.enabled:
+            return
+        if aggregation not in {"sum", "max", "last"}:
+            raise ValueError(f"unsupported measurement aggregation {aggregation!r}")
+        if availability not in {"measured", "partial", "unavailable", "failed"}:
+            raise ValueError(f"unsupported measurement availability {availability!r}")
+
         row: dict[str, object] = {
             "metric": metric,
             "scope": scope,
@@ -184,6 +196,8 @@ class TimingRecorder:
         repetition_noise_design: Mapping[str, object] | None = None,
         numeric_budget: Mapping[str, object] | None = None,
     ) -> None:
+        if not self.enabled:
+            return
         self._measurement_contract = {
             "cache_state": cache_state,
             "aggregation": dict(aggregation or {}),
@@ -207,8 +221,6 @@ class TimingRecorder:
 
         start = self._timer()
         parent_start = self._span_stack[-1][1] if self._span_stack else None
-        if parent_start is not None:
-            self._nested_records.add(len(self._records))
         record_index = len(self._records)
         self._span_stack.append([record_index, start, 0.0])
         try:
@@ -258,6 +270,7 @@ class TimingRecorder:
                 self._records,
                 exclusive_elapsed=self._exclusive_elapsed,
                 measurement_observations=self._measurement_observations,
+                span_semantics=self._span_semantics,
             ),
             "measurement_contract": dict(self._measurement_contract),
             "measurement_observations": list(self._measurement_observations),
@@ -309,9 +322,12 @@ class TimingRecorder:
             "dropped_observation_count": observation_start,
             "span_semantics": self._span_semantics[start:],
         }
-        self.live_output_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        serialized = json.dumps(payload, indent=2, sort_keys=True)
+        temporary_path = self.live_output_path.with_name(
+            f"{self.live_output_path.name}.tmp"
         )
+        temporary_path.write_text(serialized, encoding="utf-8")
+        temporary_path.replace(self.live_output_path)
 
 
 def _clean_metrics(metrics: Mapping[str, object]) -> dict[str, JsonMetric]:

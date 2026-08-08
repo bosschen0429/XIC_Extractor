@@ -136,13 +136,51 @@ def test_timing_recorder_live_output_updates_on_each_record(tmp_path: Path) -> N
     assert payload["recent_records"][1]["elapsed_sec"] == pytest.approx(0.5)
 
 
-def test_timing_recorder_disabled_mode_records_nothing() -> None:
-    recorder = TimingRecorder.disabled("discovery", timer=_Timer([1.0, 2.0]))
+def test_live_output_replace_failure_preserves_last_good_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live_path = tmp_path / "timing.live.json"
+    live_path.write_text('{"last_good": true}', encoding="utf-8")
+    original_replace = Path.replace
+
+    def _fail_live_replace(path: Path, target: Path) -> Path:
+        if path == live_path.with_name(f"{live_path.name}.tmp"):
+            raise PermissionError("replace blocked")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", _fail_live_replace)
+    recorder = TimingRecorder("alignment", live_output_path=live_path)
+
+    with pytest.raises(PermissionError, match="replace blocked"):
+        recorder.record("alignment.run_config", elapsed_sec=0.0)
+
+    assert json.loads(live_path.read_text(encoding="utf-8")) == {
+        "last_good": True
+    }
+
+
+def test_timing_recorder_disabled_mode_is_a_complete_noop(tmp_path: Path) -> None:
+    live_path = tmp_path / "timing.live.json"
+    recorder = TimingRecorder(
+        "discovery",
+        enabled=False,
+        live_output_path=live_path,
+        timer=_Timer([]),
+    )
 
     with recorder.stage("discover.group_seeds") as stage:
         stage.metrics["group_count"] = 7
+    recorder.record("discover.record", elapsed_sec=1.0)
+    recorder.heartbeat(stage="discover.sample", completed=1, total=1)
+    recorder.heartbeat_event({"event": "discover.sample", "completed": 1})
+    recorder.observe("raw_open_count", value=1)
+    recorder.set_measurement_contract(cache_state="warm")
 
     assert recorder.records == ()
+    assert recorder.measurement_observations == ()
+    assert recorder.to_json_dict()["measurement_contract"] == {}
+    assert not live_path.exists()
 
 
 def test_timing_recorder_nested_stages_keep_completion_order() -> None:
@@ -180,13 +218,19 @@ def test_timing_recorder_separates_nested_and_exclusive_wall() -> None:
     summaries = recorder.to_json_dict()["summaries"]
     assert summaries["nested_stage_summary"] == [
         {
+            "stage": "inner",
+            "record_count": 1,
+            "total_elapsed_sec": pytest.approx(1.0),
+            "max_elapsed_sec": pytest.approx(1.0),
+        }
+    ]
+    assert summaries["non_overlapping_stage_summary"] == [
+        {
             "stage": "outer",
             "record_count": 1,
             "total_exclusive_elapsed_sec": pytest.approx(3.0),
             "max_exclusive_elapsed_sec": pytest.approx(3.0),
-        }
-    ]
-    assert summaries["non_overlapping_stage_summary"] == [
+        },
         {
             "stage": "inner",
             "record_count": 1,
@@ -350,6 +394,118 @@ def test_measurement_summary_preserves_direct_partial_value_and_reason() -> None
             "reason": "one adapter path lacks point count",
         }
     ]
+
+
+def test_measurement_summary_preserves_known_value_from_failed_observation() -> None:
+    recorder = TimingRecorder("workflow")
+    recorder.observe(
+        "fingerprint_bytes",
+        value=17,
+        unit="bytes",
+        availability="failed",
+        reason="source path was replaced during hashing",
+    )
+
+    rows = recorder.to_json_dict()["summaries"]["measurement_summary"]
+    assert rows == [
+        {
+            "metric": "fingerprint_bytes",
+            "scope": "run",
+            "value": 17.0,
+            "unit": "bytes",
+            "availability": "failed",
+            "reason": "source path was replaced during hashing",
+        }
+    ]
+
+
+def test_measurement_summary_preserves_all_distinct_partial_failure_reasons() -> None:
+    recorder = TimingRecorder("workflow")
+    recorder.observe(
+        "ipc_bytes",
+        value=11,
+        scope="S1",
+        unit="bytes",
+        availability="partial",
+        reason="executor framing excluded",
+    )
+    recorder.observe(
+        "ipc_bytes",
+        value=None,
+        scope="S1",
+        unit="bytes",
+        availability="failed",
+        reason="result pickle failed",
+    )
+
+    rows = recorder.to_json_dict()["summaries"]["measurement_summary"]
+    assert rows == [
+        {
+            "metric": "ipc_bytes",
+            "scope": "S1",
+            "value": 11.0,
+            "unit": "bytes",
+            "availability": "partial",
+            "reason": "executor framing excluded; result pickle failed",
+        }
+    ]
+
+
+def test_measurement_summary_honors_sum_max_and_last_aggregation() -> None:
+    recorder = TimingRecorder("workflow")
+    for metric, aggregation, values in (
+        ("bytes", "sum", (2, 5)),
+        ("rss", "max", (7, 3)),
+        ("heartbeat_offset", "last", (11, 13)),
+    ):
+        for value in values:
+            recorder.observe(
+                metric,
+                value=value,
+                unit="count",
+                aggregation=aggregation,
+            )
+
+    rows = {
+        row["metric"]: row
+        for row in recorder.to_json_dict()["summaries"]["measurement_summary"]
+    }
+    assert rows["bytes"]["value"] == 7
+    assert rows["rss"]["value"] == 7
+    assert rows["heartbeat_offset"]["value"] == 13
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ({"unit": "bytes"}, {"unit": "calls"}),
+        ({"aggregation": "sum"}, {"aggregation": "max"}),
+    ],
+)
+def test_measurement_summary_rejects_mixed_contracts(
+    first: dict[str, str],
+    second: dict[str, str],
+) -> None:
+    recorder = TimingRecorder("workflow")
+    recorder.observe("metric", value=1, **first)
+    recorder.observe("metric", value=2, **second)
+
+    with pytest.raises(ValueError, match="measurement contract mismatch"):
+        recorder.to_json_dict()
+
+
+def test_measurement_summary_rejects_unknown_aggregation() -> None:
+    recorder = TimingRecorder("workflow")
+
+    with pytest.raises(ValueError, match="unsupported measurement aggregation"):
+        recorder.observe("metric", value=1, aggregation="median")
+
+
+def test_measurement_observation_rejects_unknown_availability() -> None:
+    recorder = TimingRecorder("workflow")
+
+    with pytest.raises(ValueError, match="unsupported measurement availability"):
+        recorder.observe("metric", value=1, availability="unknown")
 
 
 class _Timer:

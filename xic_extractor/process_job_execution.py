@@ -14,6 +14,7 @@ class ProcessJobExecutionReport:
     observed_results: tuple[Any, ...]
     completed_results: tuple[Any, ...]
     first_failure: Any | None
+    submitted_job_ordinals: tuple[int, ...]
     completed_job_ordinals: tuple[int, ...]
     failed_job_ordinals: tuple[int, ...]
     cancelled_job_ordinals: tuple[int, ...]
@@ -37,7 +38,7 @@ def execute_process_jobs(
     if max_workers < 1:
         raise ValueError("max_workers must be >= 1")
     if not pending_jobs:
-        return ProcessJobExecutionReport((), (), None, (), (), (), (), ())
+        return ProcessJobExecutionReport((), (), None, (), (), (), (), (), ())
 
     worker_count = min(max_workers, len(pending_jobs))
     factory = executor_factory or ProcessPoolExecutor
@@ -47,6 +48,7 @@ def execute_process_jobs(
     )
     future_to_ordinal: dict[Any, int] = {}
     results_by_ordinal: dict[int, Any] = {}
+    submitted_ordinals: set[int] = set()
     completed_ordinals: set[int] = set()
     failed_ordinals: set[int] = set()
     first_failure: Any | None = None
@@ -89,6 +91,7 @@ def execute_process_jobs(
                 _record_result(ordinal, error_factory(job, exc))
                 return
             future_to_ordinal[future] = ordinal
+            submitted_ordinals.add(ordinal)
 
     cancelled_ordinals: set[int] = set()
     in_flight_ordinals: set[int] = set()
@@ -136,6 +139,7 @@ def execute_process_jobs(
         observed_results=ordered_observed,
         completed_results=ordered_completed,
         first_failure=first_failure,
+        submitted_job_ordinals=tuple(sorted(submitted_ordinals)),
         completed_job_ordinals=tuple(sorted(completed_ordinals)),
         failed_job_ordinals=tuple(sorted(failed_ordinals)),
         cancelled_job_ordinals=tuple(sorted(cancelled_ordinals)),

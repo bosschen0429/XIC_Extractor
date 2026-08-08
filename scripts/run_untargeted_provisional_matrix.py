@@ -133,8 +133,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         for metric, reason in (
             (
                 "ipc_bytes",
-                "Discovery process job/result IPC is measured when parallel; "
-                "other workflow IPC remains unavailable",
+                "Discovery reports partial pickle payload-size estimates for "
+                "submitted process jobs/results; executor framing and other "
+                "workflow IPC remain unavailable",
             ),
             (
                 "process_tree_peak_rss_bytes",

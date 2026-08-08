@@ -41,6 +41,17 @@ def run_process_jobs(
         executor_factory=executor_factory,
         progress_callback=progress_callback,
     )
+    if report.first_failure is None and (
+        report.cancelled_job_ordinals
+        or report.in_flight_job_ordinals
+        or report.unsubmitted_job_ordinals
+    ):
+        raise AlignmentProcessExecutionError(
+            "process execution ended with an incomplete mechanical census: "
+            f"cancelled={report.cancelled_job_ordinals}, "
+            f"in_flight={report.in_flight_job_ordinals}, "
+            f"unsubmitted={report.unsubmitted_job_ordinals}"
+        )
     return list(report.observed_results)
 
 
