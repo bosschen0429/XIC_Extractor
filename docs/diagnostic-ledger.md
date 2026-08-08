@@ -690,8 +690,19 @@ counterfactual activated skip has unavailable selected-observation,
 missing/extra-cell, status/reason, area, Matrix identity/value, and review-
 population evidence; these are explicit activation blockers.
 
+The shadow requires `full-audit` and rejects simultaneous activated
+preconsolidation so the measured baseline remains the execution baseline. Its
+persisted projection binds the run, canonical typed source-owner snapshot,
+`AlignmentConfig`, and final comparison rows with SHA-256 digests. It
+also binds the sample order and available RAW sample-stem request universe. It
+explicitly does not bind Matrix cells/values and cannot be rehydrated as
+scientific authority. A proposal with any non-positive requested-feature,
+cell, or logical XIC-request reduction is insufficient decision value and
+returns `KILL`.
+
 Decision: `GO` for retaining the owner-valid shadow instrumentation only.
 Activation remains `REDESIGN / blocked` until a separately authorized,
 owner-valid survivor-only execution closes the counterfactual expected diff.
-Any false loser, terminal-winner mismatch, missing/cyclic lineage, or nonzero
-scientific/output diff is `KILL`. Status remains `diagnostic_only`.
+Any false loser, terminal-winner mismatch, missing/cyclic lineage,
+non-positive projected workload reduction, or nonzero scientific/output diff
+is `KILL`. Status remains `diagnostic_only`.

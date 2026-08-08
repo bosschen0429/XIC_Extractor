@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import asdict, dataclass
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -21,6 +23,7 @@ from xic_extractor.alignment.pre_backfill_consolidation import (
 )
 
 EARLY_LOSER_SHADOW_SCHEMA_VERSION = "alignment_early_loser_shadow_v1"
+EARLY_LOSER_SHADOW_BINDING_VERSION = "alignment_early_loser_shadow_binding_v1"
 _SOURCE_STAGE = "pre_backfill_identity_consolidation"
 
 ShadowProposalStatus = Literal["survivor", "loser", "unresolved"]
@@ -58,6 +61,10 @@ class EarlyLoserShadowProposalRow:
 
 @dataclass(frozen=True)
 class EarlyLoserShadowProposal:
+    run_id: str
+    source_owner_snapshot_sha256: str
+    alignment_config_sha256: str
+    request_universe_sha256: str
     rows: tuple[EarlyLoserShadowProposalRow, ...]
     baseline_workload: EarlyLoserShadowWorkload
     proposed_workload: EarlyLoserShadowWorkload
@@ -94,6 +101,14 @@ class EarlyLoserExpectedDiffSurface:
 @dataclass(frozen=True)
 class EarlyLoserShadowReport:
     schema_version: str
+    binding_schema_version: str
+    run_id: str
+    source_owner_snapshot_sha256: str
+    alignment_config_sha256: str
+    request_universe_sha256: str
+    final_authority_projection_sha256: str
+    durable_binding_scope: str
+    backfill_scope: str
     validation_status: str
     authority: str
     verdict: ShadowVerdict
@@ -122,10 +137,13 @@ class EarlyLoserShadowReport:
 def build_early_loser_shadow_proposal(
     features: tuple[OwnerAlignedFeature, ...],
     *,
+    run_id: str,
     sample_order: tuple[str, ...],
     raw_sample_stems: frozenset[str],
     alignment_config: AlignmentConfig,
 ) -> EarlyLoserShadowProposal:
+    if not run_id.strip():
+        raise ValueError("early-loser shadow run_id must be non-empty")
     source_by_group = _features_by_group(features, label="source")
     shadow_features = consolidate_pre_backfill_identity_families(
         features,
@@ -176,6 +194,23 @@ def build_early_loser_shadow_proposal(
             )
         )
     return EarlyLoserShadowProposal(
+        run_id=run_id,
+        source_owner_snapshot_sha256=_canonical_sha256(
+            [
+                asdict(feature)
+                for feature in sorted(
+                    features,
+                    key=delivery_group_hypothesis_id,
+                )
+            ]
+        ),
+        alignment_config_sha256=_canonical_sha256(asdict(alignment_config)),
+        request_universe_sha256=_canonical_sha256(
+            {
+                "sample_order": sample_order,
+                "raw_sample_stems": sorted(raw_sample_stems),
+            }
+        ),
         rows=tuple(rows),
         baseline_workload=_workload(
             features,
@@ -245,29 +280,57 @@ def compare_early_loser_shadow_with_final_authority(
 
     ordered_rows = tuple(sorted(rows, key=lambda item: item.source_group_hypothesis_id))
     counts = _comparison_counts(ordered_rows)
-    verdict, verdict_reason = _verdict(counts)
-    activation_gaps = _activation_gap_reasons(counts)
     baseline = proposal.baseline_workload
     proposed = proposal.proposed_workload
+    projected_feature_reduction = (
+        baseline.requested_feature_count - proposed.requested_feature_count
+    )
+    projected_cell_reduction = (
+        baseline.requested_cell_count - proposed.requested_cell_count
+    )
+    projected_logical_xic_request_reduction = (
+        baseline.logical_xic_request_count - proposed.logical_xic_request_count
+    )
+    verdict, verdict_reason = _verdict(
+        counts,
+        projected_feature_reduction=projected_feature_reduction,
+        projected_cell_reduction=projected_cell_reduction,
+        projected_logical_xic_request_reduction=(
+            projected_logical_xic_request_reduction
+        ),
+    )
+    activation_gaps = _activation_gap_reasons(counts)
     return EarlyLoserShadowReport(
         schema_version=EARLY_LOSER_SHADOW_SCHEMA_VERSION,
+        binding_schema_version=EARLY_LOSER_SHADOW_BINDING_VERSION,
+        run_id=proposal.run_id,
+        source_owner_snapshot_sha256=proposal.source_owner_snapshot_sha256,
+        alignment_config_sha256=proposal.alignment_config_sha256,
+        request_universe_sha256=proposal.request_universe_sha256,
+        final_authority_projection_sha256=_canonical_sha256(
+            [asdict(row) for row in ordered_rows]
+        ),
+        durable_binding_scope=(
+            "run+typed_source_owner_snapshot+alignment_config+request_universe+"
+            "final_consolidation_comparison_projection;"
+            "does_not_bind_matrix_cells_or_values"
+        ),
+        backfill_scope="full-audit",
         validation_status="diagnostic_only",
-        authority="shadow_only_final_claim_and_primary_consolidation_authoritative",
+        authority=(
+            "diagnostic_projection_only_final_claim_and_primary_consolidation_"
+            "remain_authoritative"
+        ),
         verdict=verdict,
         verdict_reason=verdict_reason,
         activation_allowed=False,
         activation_gap_reasons=activation_gaps,
         baseline_workload=baseline,
         proposed_workload=proposed,
-        projected_feature_reduction=(
-            baseline.requested_feature_count - proposed.requested_feature_count
-        ),
-        projected_cell_reduction=(
-            baseline.requested_cell_count - proposed.requested_cell_count
-        ),
+        projected_feature_reduction=projected_feature_reduction,
+        projected_cell_reduction=projected_cell_reduction,
         projected_logical_xic_request_reduction=(
-            baseline.logical_xic_request_count
-            - proposed.logical_xic_request_count
+            projected_logical_xic_request_reduction
         ),
         actual_savings_claim=(
             "unavailable: projected owner workload counts are not elapsed-time, "
@@ -455,7 +518,13 @@ def _comparison_counts(
     return counts
 
 
-def _verdict(counts: dict[str, int]) -> tuple[ShadowVerdict, str]:
+def _verdict(
+    counts: dict[str, int],
+    *,
+    projected_feature_reduction: int,
+    projected_cell_reduction: int,
+    projected_logical_xic_request_reduction: int,
+) -> tuple[ShadowVerdict, str]:
     if counts["false_loser"] or counts["winner_mismatch"]:
         return (
             "KILL",
@@ -465,6 +534,16 @@ def _verdict(counts: dict[str, int]) -> tuple[ShadowVerdict, str]:
         return (
             "REDESIGN",
             "the existing owner proposal found no loser decision value",
+        )
+    if (
+        projected_feature_reduction <= 0
+        or projected_cell_reduction <= 0
+        or projected_logical_xic_request_reduction <= 0
+    ):
+        return (
+            "KILL",
+            "the owner proposal has insufficient positive feature, cell, or "
+            "logical XIC request decision value",
         )
     return (
         "GO",
@@ -544,3 +623,14 @@ def _expected_diff_surfaces() -> tuple[EarlyLoserExpectedDiffSurface, ...]:
             )
         )
     return tuple(surfaces)
+
+
+def _canonical_sha256(value: object) -> str:
+    payload = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    return hashlib.sha256((payload + "\n").encode("utf-8")).hexdigest()

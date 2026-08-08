@@ -149,6 +149,42 @@ def test_shadow_kills_terminal_winner_mismatch() -> None:
     assert report.winner_mismatch_count == 1
 
 
+@pytest.mark.parametrize("projected_reduction", (0, -1))
+def test_shadow_kills_insufficient_projected_decision_value(
+    projected_reduction: int,
+) -> None:
+    loser, middle, winner = _proposal_features()
+    proposal = _proposal((loser, middle, winner))
+    baseline = proposal.baseline_workload
+    proposal = replace(
+        proposal,
+        proposed_workload=replace(
+            baseline,
+            requested_feature_count=(
+                baseline.requested_feature_count - projected_reduction
+            ),
+            requested_cell_count=(
+                baseline.requested_cell_count - projected_reduction
+            ),
+            logical_xic_request_count=(
+                baseline.logical_xic_request_count - projected_reduction
+            ),
+        ),
+    )
+    final = _matrix(
+        (
+            _loser(loser, winner="GROUP-MIDDLE"),
+            _winner(middle),
+            _winner(winner),
+        )
+    )
+
+    report = compare_early_loser_shadow_with_final_authority(proposal, final)
+
+    assert report.verdict == "KILL"
+    assert "insufficient positive" in report.verdict_reason
+
+
 def test_shadow_preserves_owner_unresolved_state() -> None:
     unresolved = replace(
         _feature("UNRESOLVED", ("sample-u",), mz=800.0),
@@ -187,8 +223,17 @@ def test_shadow_is_no_write_and_renders_complete_expected_diff(tmp_path) -> None
     assert source == source_snapshot
     assert final == final_snapshot
     assert rendered["schema_version"] == EARLY_LOSER_SHADOW_SCHEMA_VERSION
-    assert rendered["authority"].startswith("shadow_only")
+    assert rendered["authority"].startswith("diagnostic_projection_only")
     assert rendered["activation_allowed"] is False
+    assert rendered["run_id"] == "test-early-loser-shadow"
+    assert rendered["backfill_scope"] == "full-audit"
+    assert len(rendered["source_owner_snapshot_sha256"]) == 64
+    assert len(rendered["alignment_config_sha256"]) == 64
+    assert len(rendered["request_universe_sha256"]) == 64
+    assert len(rendered["final_authority_projection_sha256"]) == 64
+    assert "does_not_bind_matrix_cells_or_values" in rendered[
+        "durable_binding_scope"
+    ]
     assert {item["surface"] for item in rendered["expected_diff_surfaces"]} == {
         "survivors_losers",
         "winner_identity",
@@ -211,6 +256,7 @@ def _proposal(
     )
     return build_early_loser_shadow_proposal(
         features,
+        run_id="test-early-loser-shadow",
         sample_order=sample_order,
         raw_sample_stems=frozenset(sample_order),
         alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),

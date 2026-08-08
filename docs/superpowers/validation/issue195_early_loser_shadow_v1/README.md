@@ -20,6 +20,8 @@ Schema: `alignment_early_loser_shadow_v1`.
 
 The report is not accepted as input by Backfill, Pass B, Matrix, ProductWriter,
 activation, or any scientific selector.
+It requires `full-audit` scope and rejects simultaneous activated
+preconsolidation.
 
 ## Expected-diff packet
 
@@ -35,6 +37,13 @@ Every report contains:
   observations, missing/extra cells, status/reason, areas, Matrix identity,
   Matrix value, review population, and rollback; and
 - explicit counterfactual availability and activation-gap reasons.
+
+The sidecar also binds its timing `run_id`, canonical typed source-owner
+snapshot, `AlignmentConfig`, and complete final comparison projection with
+SHA-256 digests. It separately binds the sample order and available RAW
+sample-stem request universe. The binding deliberately excludes Matrix
+cells/values; the JSON is a diagnostic projection, not a rehydratable
+scientific authority.
 
 Observed product/Matrix diff is hard-zero by control flow: no alternate Matrix
 is created, and the same final Matrix object reaches the existing writer path.
@@ -87,12 +96,14 @@ SHA belong in the PR closeout.
 
 - Implementation/shadow verdict: `GO` — typed proposal, workload projection,
   full transitive lineage, final-authority comparison, and no-write oracle are
-  coherent.
+  coherent, with positive projected requested-feature, cell, and logical-XIC
+  reductions.
 - Activation verdict: `REDESIGN / blocked` — the counterfactual selected-cell,
   area, Matrix, and review-population evidence is unavailable without a
   separately authorized execution path.
 - Automatic `KILL`: any false loser, winner mismatch, missing/cyclic lineage,
-  non-winner terminal, or nonzero scientific/output diff.
+  non-winner terminal, non-positive projected workload reduction, or nonzero
+  scientific/output diff.
 
 Rollback is removal or disabling of the opt-in sidecar. The normal Backfill,
 final settlement, Matrix, and writer paths remain unchanged.

@@ -709,7 +709,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help=(
             "Emit an owner-only pre-Backfill loser/survivor shadow and compare "
             "it with final claim/consolidation authority. The shadow never "
-            "feeds Backfill, Matrix, or writers."
+            "feeds Backfill, Matrix, or writers; it requires full-audit scope "
+            "and cannot be combined with activated preconsolidation."
         ),
     )
     parser.add_argument(

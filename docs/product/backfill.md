@@ -129,6 +129,8 @@ write scope.
 comparison surface for Issue #195 / #208. It runs the existing typed
 pre-Backfill identity consolidation as a proposal, but the original owner
 features still enter the existing Backfill request plan and execution path.
+The flag requires `--backfill-scope full-audit` and fails closed when combined
+with the activated `--preconsolidate-owner-families` path.
 After the claim registry and primary consolidation finish, the shadow compares
 every proposal row with the typed final Matrix authority and writes
 `alignment_early_loser_shadow.json`.
@@ -142,12 +144,21 @@ sample-cell, and logical XIC-request counts for the baseline and proposal. Those
 are workload counts, not elapsed-time, RAW-call, chromatogram-call, point-count,
 or cost savings.
 
+The durable packet binds the timing `run_id`, a canonical typed source-owner
+snapshot digest, the `AlignmentConfig` digest, and the complete final
+consolidation-comparison projection digest. A separate request-universe digest
+binds sample order and available RAW sample stems. The packet deliberately does
+not bind or certify Matrix cells/values; those facts remain unavailable gaps,
+and the persisted JSON remains an untrusted diagnostic projection after
+deserialization.
+
 The sidecar reports hard-zero observed Matrix/output diff because it never
 constructs or routes an alternate Matrix. Counterfactual selected observations,
 missing/extra cells, status/reason, areas, Matrix identity/value, and review
 population remain explicit activation gaps until an owner-valid survivor-only
 execution can supply them under a separate authorization. `GO` means only that
-the shadow instrumentation and typed lineage close; it never grants early skip,
+the shadow instrumentation and typed lineage close and all three projected
+owner workload reductions are positive; it never grants early skip,
 Backfill eligibility, Matrix, ProductWriter, or activation authority.
 
 ## Surfaces

@@ -505,7 +505,10 @@ and [#208](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/208).
 Matrix, writers, or activation. It accepts legal transitive loser chains and
 fails closed on missing/cyclic/non-winner lineage. Projected feature/cell/XIC
 counts come from the existing owner request plan and are not actual savings.
-Counterfactual cell/value/output fields remain named activation gaps.
+Counterfactual cell/value/output fields remain named activation gaps. The flag
+requires `full-audit`, rejects activated preconsolidation, and binds its run,
+typed source/config/request universe, and final comparison projection with
+SHA-256 digests; it does not certify Matrix cells or values.
 
 ---
 

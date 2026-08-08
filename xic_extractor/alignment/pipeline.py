@@ -150,6 +150,13 @@ def run_alignment(
         raise ValueError("raw_xic_batch_size must be >= 1")
     if owner_backfill_superwindow_span_factor < 1:
         raise ValueError("owner_backfill_superwindow_span_factor must be >= 1")
+    if emit_early_loser_shadow and preconsolidate_owner_families:
+        raise ValueError(
+            "early-loser shadow cannot run with activated pre-Backfill "
+            "consolidation"
+        )
+    if emit_early_loser_shadow and backfill_scope != "full-audit":
+        raise ValueError("early-loser shadow requires full-audit Backfill scope")
     if emit_provisional_matrix and not require_discovery_owner_closure:
         raise ValueError(
             "provisional matrix emission requires Discovery owner closure"
@@ -431,6 +438,7 @@ def run_alignment(
             with recorder.stage("alignment.early_loser_shadow.proposal") as stage:
                 early_loser_shadow_proposal = build_early_loser_shadow_proposal(
                     owner_features,
+                    run_id=recorder.run_id,
                     sample_order=batch.sample_order,
                     raw_sample_stems=frozenset(raw_paths),
                     alignment_config=alignment_config,

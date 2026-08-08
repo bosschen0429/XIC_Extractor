@@ -312,6 +312,7 @@ def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
 
     def fake_shadow(features, **kwargs):
         calls["shadow_features"] = features
+        calls["shadow_kwargs"] = kwargs
         return proposal
 
     def fake_owner_backfill(features, **kwargs):
@@ -364,6 +365,7 @@ def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
 
     assert calls["shadow_features"] == source_features
     assert calls["shadow_features"] is calls["backfill_features"]
+    assert calls["shadow_kwargs"]["run_id"]
     assert calls["comparison_proposal"] is proposal
     assert calls["comparison_matrix"] is final_matrix
     assert calls["written_matrix"] is final_matrix
@@ -371,6 +373,41 @@ def test_pipeline_early_loser_shadow_does_not_feed_backfill_or_matrix(
     assert outputs.early_loser_shadow_json == (
         tmp_path / "out" / "alignment_early_loser_shadow.json"
     )
+
+
+def test_pipeline_rejects_shadow_with_activated_preconsolidation(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="cannot run with activated pre-Backfill consolidation",
+    ):
+        pipeline_module.run_alignment(
+            discovery_batch_index=tmp_path / "unused.csv",
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            emit_early_loser_shadow=True,
+            preconsolidate_owner_families=True,
+        )
+
+
+def test_pipeline_rejects_shadow_outside_full_audit_scope(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="requires full-audit Backfill scope"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=tmp_path / "unused.csv",
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            emit_early_loser_shadow=True,
+            backfill_scope="production-equivalent",
+        )
 
 
 def test_pipeline_uses_process_owner_backfill_when_raw_workers_requested(
