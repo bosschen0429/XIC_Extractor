@@ -64,6 +64,14 @@ def execute_process_jobs(
         if progress_callback is not None:
             progress_callback(result)
 
+    def _record_finished_future(future: Any, ordinal: int) -> None:
+        job = pending_jobs[ordinal]
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = error_factory(job, exc)
+        _record_result(ordinal, result)
+
     def _submit_until_capacity() -> None:
         nonlocal next_job_ordinal
         nonlocal first_failure
@@ -96,15 +104,10 @@ def execute_process_jobs(
                 continue
             for future in sorted(done, key=future_to_ordinal.__getitem__):
                 ordinal = future_to_ordinal.pop(future)
-                job = pending_jobs[ordinal]
                 if future.cancelled():
                     cancelled_ordinals.add(ordinal)
                     continue
-                try:
-                    result = future.result()
-                except Exception as exc:
-                    result = error_factory(job, exc)
-                _record_result(ordinal, result)
+                _record_finished_future(future, ordinal)
             if first_failure is None:
                 _submit_until_capacity()
 
@@ -112,6 +115,8 @@ def execute_process_jobs(
             for future, ordinal in future_to_ordinal.items():
                 if future.cancel():
                     cancelled_ordinals.add(ordinal)
+                elif future.done():
+                    _record_finished_future(future, ordinal)
                 else:
                     in_flight_ordinals.add(ordinal)
     finally:

@@ -167,6 +167,45 @@ def test_same_batch_terminal_failures_are_all_preserved() -> None:
     assert progress == list(report.observed_results)
 
 
+def test_future_finishing_during_cancellation_is_observed() -> None:
+    class _FinishesBeforeCancellationFuture(Future):
+        def cancel(self) -> bool:
+            self.set_result(10)
+            return False
+
+    class _CancellationRaceExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            if job.index == 0:
+                future = Future()
+                future.set_result(_Failure(0, "owner boom"))
+                return future
+            return _FinishesBeforeCancellationFuture()
+
+        def shutdown(self, *, wait: bool, cancel_futures: bool = False) -> None:
+            pass
+
+    report = execute_process_jobs(
+        (_Job(0), _Job(1), _Job(2)),
+        worker=lambda job: job.index * 10,
+        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        is_terminal_failure=lambda result: isinstance(result, _Failure),
+        max_workers=2,
+        executor_factory=_CancellationRaceExecutor,
+    )
+
+    assert report.first_failure == _Failure(0, "owner boom")
+    assert report.observed_results == (_Failure(0, "owner boom"), 10)
+    assert report.completed_results == (10,)
+    assert report.completed_job_ordinals == (1,)
+    assert report.failed_job_ordinals == (0,)
+    assert report.cancelled_job_ordinals == ()
+    assert report.in_flight_job_ordinals == ()
+    assert report.unsubmitted_job_ordinals == (2,)
+
+
 def test_spawn_failure_does_not_drain_slow_unsubmitted_jobs() -> None:
     started = perf_counter()
     report = execute_process_jobs(
