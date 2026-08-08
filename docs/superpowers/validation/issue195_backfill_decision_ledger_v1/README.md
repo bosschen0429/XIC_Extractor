@@ -2,10 +2,11 @@
 
 Validation status: `diagnostic_only`.
 
-Source artifact: `issue159_full_universe_provisional_matrix_20260807_7eef01e2`,
-produced at `7eef01e273ee62b91bd6c07e4a455994f76ca37b`. The command opened no RAW
-files. The artifact is stale-revision diagnostic cost evidence and does not
-claim current-head parity.
+Source artifact: `issue159_full_universe_provisional_matrix_20260807_7eef01e2`.
+Its legacy manifest asserts `7eef01e273ee62b91bd6c07e4a455994f76ca37b`;
+the current manifest owner cannot validate that assertion. The command opened
+no RAW files. The artifact is stale-revision diagnostic cost evidence and does
+not claim current-head parity or a validated producing revision.
 
 ## Reproduction
 
@@ -22,7 +23,7 @@ The verified run emitted `365,176` ledger lines (header plus `317,036`
 candidate rows and `48,139` group-settlement rows). SHA-256 values were
 `F54F447EEEFA0CC826B7815B5AD454A7D2B44F87C8847146CA3AEA35CA6E6CE2` for
 the ledger and
-`89C9FB2592C5DC824007ECD0568C80912C3BA60836761BFAFA3918633A06C643` for
+`4EBC06B5A3611F034455A0FD166569AF9EC069CA67829CE0FAA10F4332E26BEF` for
 the JSON summary.
 
 ## Observed evidence
@@ -45,7 +46,8 @@ point lineage.
 The retained manifest uses legacy schema
 `untargeted_provisional_matrix_run_v1`; the current manifest owner rejects that
 schema. The summary therefore records manifest rehydration as unavailable. It
-does not promote the legacy manifest's embedded assertions. Candidate fields
+does not promote the legacy manifest's embedded assertions, including the
+asserted producer revision. Candidate fields
 remain separately owner-rehydrated through their Discovery receipts; alignment
 and cost inputs remain labeled as projections/aggregates.
 

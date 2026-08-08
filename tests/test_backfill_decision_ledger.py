@@ -8,6 +8,12 @@ import pytest
 
 from tests.alignment_pipeline_helpers import candidate_row, write_csv
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+from xic_extractor.alignment.provisional_matrix import (
+    PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
+)
+from xic_extractor.alignment.tsv_writer import (
+    ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+)
 from xic_extractor.diagnostics.backfill_decision_ledger import (
     _BACKFILL_COLUMNS,
     _PROVENANCE_COLUMNS,
@@ -70,6 +76,9 @@ def test_decision_ledger_is_deterministic_and_preserves_authority_ceiling(
         ]
         == 1
     )
+    assert first.summary["request_identity_and_cost"]["timing_schema_status"] == (
+        "unavailable_legacy_unversioned_timing_projection"
+    )
     assert first.summary["hypothesis_verdict"]["overall"] == (
         "candidate_layer_not_reproduced_downstream_inconclusive"
     )
@@ -116,6 +125,7 @@ def test_decision_ledger_rejects_unknown_projection_group(tmp_path: Path) -> Non
         _BACKFILL_COLUMNS,
         [
             {
+                "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
                 "group_hypothesis_id": "unknown",
                 "sample_stem": "Sample_A",
                 "source_candidate_id": "Sample_A#1@mz500_p384",
@@ -144,6 +154,45 @@ def test_decision_ledger_rejects_negative_cost_metric(tmp_path: Path) -> None:
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_rejects_missing_owner_timing_and_wrong_schema(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "missing-owner")
+    timing_path = artifact / "timing.json"
+    timing = json.loads(timing_path.read_text(encoding="utf-8"))
+    timing["records"] = [
+        record
+        for record in timing["records"]
+        if record["stage"] != "alignment.build_owners.sample_complete"
+    ]
+    timing_path.write_text(json.dumps(timing), encoding="utf-8")
+    with pytest.raises(ValueError, match="sample_complete records are missing"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "missing-owner-output",
+            expected_code_revision=_REVISION,
+        )
+
+    artifact = _artifact(tmp_path / "wrong-schema")
+    evidence = (
+        artifact / "workflow" / "alignment" / "alignment_backfill_cell_evidence.tsv"
+    )
+    evidence.write_text(
+        evidence.read_text(encoding="utf-8").replace(
+            ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+            "unknown_backfill_schema",
+            1,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="schema_version must be"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "wrong-schema-output",
             expected_code_revision=_REVISION,
         )
 
@@ -233,6 +282,7 @@ def _artifact(root: Path) -> Path:
         _BACKFILL_COLUMNS,
         [
             {
+                "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
                 "group_hypothesis_id": "group-1",
                 "sample_stem": "Sample_A",
                 "source_candidate_id": "Sample_A#1@mz500_p384",
@@ -244,12 +294,14 @@ def _artifact(root: Path) -> Path:
         _PROVENANCE_COLUMNS,
         [
             {
+                "schema_version": PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
                 "group_hypothesis_id": "group-1",
                 "sample_stem": "Sample_A",
                 "backfill_seed_mz": "500.0000",
                 "backfill_seed_rt": "8.5000",
             },
             {
+                "schema_version": PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
                 "group_hypothesis_id": "group-1",
                 "sample_stem": "Sample_A",
                 "backfill_seed_mz": "500.0000",

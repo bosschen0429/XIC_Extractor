@@ -13,6 +13,15 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
+from xic_extractor.alignment.provisional_matrix import (
+    PROVISIONAL_PROVENANCE_COLUMNS,
+    PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
+)
+from xic_extractor.alignment.tsv_writer import (
+    ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+    ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+    ALIGNMENT_REVIEW_COLUMNS,
+)
 from xic_extractor.extraction.provisional_run_manifest import (
     PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
     validate_provisional_run_manifest,
@@ -75,106 +84,9 @@ _CONSOLIDATION_STATES: Final = frozenset(
     {"not_consolidated", "primary_loser", "primary_winner"}
 )
 
-_REVIEW_COLUMNS: Final = (
-    "feature_family_id",
-    "group_hypothesis_id",
-    "public_family_id",
-    "group_construction_role",
-    "group_delivery_role",
-    "group_membership_source",
-    "consolidation_state",
-    "consolidation_winner_group_hypothesis_id",
-    "consolidation_source_group_hypothesis_id",
-    "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "family_product_mz",
-    "family_observed_neutral_loss_da",
-    "has_anchor",
-    "event_cluster_count",
-    "event_cluster_ids",
-    "event_member_count",
-    "detected_count",
-    "absent_count",
-    "unchecked_count",
-    "duplicate_assigned_count",
-    "ambiguous_ms1_owner_count",
-    "present_rate",
-    "identity_decision",
-    "identity_confidence",
-    "primary_evidence",
-    "identity_reason",
-    "quantifiable_detected_count",
-    "quantifiable_rescue_count",
-    "accepted_cell_count",
-    "accepted_rescue_count",
-    "review_rescue_count",
-    "include_in_primary_matrix",
-    "row_flags",
-    "artificial_adduct_role",
-    "artificial_adduct_name",
-    "artificial_adduct_related_family_id",
-    "artificial_adduct_mz_delta_error_ppm",
-    "artificial_adduct_rt_delta_min",
-    "representative_samples",
-    "family_evidence",
-    "warning",
-    "reason",
-)
-_BACKFILL_COLUMNS: Final = (
-    "schema_version",
-    "feature_family_id",
-    "group_hypothesis_id",
-    "public_family_id",
-    "sample_stem",
-    "status",
-    "production_cell_status",
-    "rescue_tier",
-    "write_matrix_value",
-    "include_in_primary_matrix",
-    "identity_decision",
-    "row_flags",
-    "area",
-    "primary_matrix_area",
-    "primary_matrix_area_source",
-    "primary_matrix_area_reason",
-    "apex_rt",
-    "height",
-    "peak_start_rt",
-    "peak_end_rt",
-    "rt_delta_sec",
-    "trace_quality",
-    "scan_support_score",
-    "gap_fill_state",
-    "gap_fill_reason",
-    "backfill_evidence_reason",
-    "source_candidate_id",
-    "source_raw_file",
-    "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "region_shadow_verdict",
-    "reason",
-)
-_PROVENANCE_COLUMNS: Final = (
-    "schema_version",
-    "group_hypothesis_id",
-    "public_family_id",
-    "sample_stem",
-    "cell_state",
-    "alignment_status",
-    "matrix_value",
-    "matrix_value_basis",
-    "source_candidate_id",
-    "trace_quality",
-    "reason",
-    "backfill_seed_mz",
-    "backfill_seed_rt",
-    "group_construction_role",
-    "group_membership_source",
-    "validation_status",
-    "product_authority",
-)
+_REVIEW_COLUMNS: Final = ALIGNMENT_REVIEW_COLUMNS
+_BACKFILL_COLUMNS: Final = ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS
+_PROVENANCE_COLUMNS: Final = PROVISIONAL_PROVENANCE_COLUMNS
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,6 +134,7 @@ class _RequestProxyCensus:
 
 @dataclass(frozen=True, slots=True)
 class _TimingCensus:
+    schema_status: str
     assignment_count: int
     owner_count: int
     backfill_request_target_count: int
@@ -641,6 +554,12 @@ def _read_backfill_evidence(
         required_columns=_BACKFILL_COLUMNS,
     ):
         row_count += 1
+        _require_schema_version(
+            path,
+            row_number,
+            row,
+            ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+        )
         group_id = _required_text(path, row_number, row, "group_hypothesis_id")
         if group_id not in known_group_ids:
             raise ValueError(
@@ -675,6 +594,12 @@ def _read_request_proxy(
         required_columns=_PROVENANCE_COLUMNS,
     ):
         row_count += 1
+        _require_schema_version(
+            path,
+            row_number,
+            row,
+            PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
+        )
         group_id = _required_text(path, row_number, row, "group_hypothesis_id")
         if group_id not in known_group_ids:
             raise ValueError(
@@ -713,11 +638,19 @@ def _request_proxy_key(sample_stem: str, mz: str, rt: str) -> bytes:
 
 def _read_timing(path: Path) -> _TimingCensus:
     payload = _read_json_object(path)
+    schema_version = payload.get("schema_version")
+    if schema_version is None:
+        schema_status = "unavailable_legacy_unversioned_timing_projection"
+    elif schema_version == "timing.v1":
+        schema_status = "current_timing_v1_projection"
+    else:
+        raise ValueError(f"{path}: unsupported timing schema {schema_version!r}")
     records = payload.get("records")
     if not isinstance(records, list):
         raise ValueError(f"{path}: records must be a list")
     assignment_count = 0
     owner_count = 0
+    owner_sample_record_count = 0
     backfill_scope_metrics: Mapping[str, Any] | None = None
     backfill_metrics: Mapping[str, Any] | None = None
     backfill_elapsed_sec = 0.0
@@ -730,6 +663,7 @@ def _read_timing(path: Path) -> _TimingCensus:
         if not isinstance(metrics, dict):
             raise ValueError(f"{path}: record {index} metrics must be an object")
         if stage == "alignment.build_owners.sample_complete":
+            owner_sample_record_count += 1
             assignment_count += _metric_nonnegative_int(
                 path,
                 index,
@@ -760,7 +694,12 @@ def _read_timing(path: Path) -> _TimingCensus:
             pre_backfill_consolidation_observed = True
     if backfill_scope_metrics is None or backfill_metrics is None:
         raise ValueError(f"{path}: required Backfill timing records are missing")
+    if owner_sample_record_count == 0:
+        raise ValueError(
+            f"{path}: alignment.build_owners.sample_complete records are missing"
+        )
     return _TimingCensus(
+        schema_status=schema_status,
         assignment_count=assignment_count,
         owner_count=owner_count,
         backfill_request_target_count=_metric_nonnegative_int(
@@ -827,7 +766,8 @@ def _summary(
         "validation_status": VALIDATION_STATUS,
         "artifact": {
             "artifact_name": artifact_root.name,
-            "producing_code_revision": expected_code_revision,
+            "legacy_manifest_asserted_code_revision": expected_code_revision,
+            "caller_expected_code_revision": expected_code_revision,
             "manifest_schema_version": manifest_evidence.schema_version,
             "manifest_rehydration_status": (manifest_evidence.rehydration_status),
             "freshness": "stale_revision_diagnostic_cost_evidence_only",
@@ -868,6 +808,7 @@ def _summary(
             "status": "persisted_projection_not_owner_rehydrated",
         },
         "request_identity_and_cost": {
+            "timing_schema_status": timing.schema_status,
             "exact_logical_request_identity": "unavailable",
             "exact_equivalence_class": "unavailable",
             "request_to_batch_call_point_correlation": "unavailable",
@@ -965,8 +906,8 @@ def _summary(
         ],
         "residual_risks": [
             (
-                "The producer revision is stale relative to current HEAD and is "
-                "not current-head parity evidence."
+                "The legacy manifest's asserted revision is not owner-validated "
+                "and is not current-head parity evidence."
             ),
             (
                 "Final consolidation rows do not prove winner/loser knowability "
@@ -1189,6 +1130,20 @@ def _required_text(
     if not value:
         raise ValueError(f"{path}: row {row_number}: {field} is required")
     return value
+
+
+def _require_schema_version(
+    path: Path,
+    row_number: int,
+    row: Mapping[str, str],
+    expected: str,
+) -> None:
+    observed = _required_text(path, row_number, row, "schema_version")
+    if observed != expected:
+        raise ValueError(
+            f"{path}: row {row_number}: schema_version must be {expected!r}, "
+            f"got {observed!r}"
+        )
 
 
 def _nonnegative_int(

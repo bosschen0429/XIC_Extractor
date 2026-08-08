@@ -600,7 +600,7 @@ benchmark mismatches stay in the quantitative follow-up lane.
 
 ## Issue #195 no-RAW Backfill decision ledger
 
-The retained 85RAW artifact produced at revision
+The retained 85RAW artifact whose legacy manifest asserts revision
 `7eef01e273ee62b91bd6c07e4a455994f76ca37b` was read without opening RAW files.
 `tools/diagnostics/backfill_decision_ledger.py` rehydrated every Discovery CSV
 through its owner receipt and streamed each large alignment projection once.
@@ -631,7 +631,8 @@ made.
 
 The retained manifest is legacy `untargeted_provisional_matrix_run_v1` and is
 rejected by the current manifest owner. The diagnostic records that
-rehydration gap explicitly instead of promoting legacy embedded assertions.
+rehydration gap explicitly instead of promoting legacy embedded assertions,
+including the asserted producer revision.
 Its A–E layer verdicts are: A not reproduced at the owner-bound candidate
 identity layer; B inconclusive without the physical-peak owner payload; C
 aggregate-only/partial; D final-projection-only with pre-Backfill knowability
