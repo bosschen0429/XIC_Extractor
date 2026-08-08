@@ -597,3 +597,41 @@ This coverage is enough to stop treating `d3-N6-medA` as a qualitative blocker.
 The remaining risk is explicit watch surface, not a GO/NO-GO blocker: five
 85RAW primary rows carry `rescue_heavy;weak_seed_tolerated`, and strict area
 benchmark mismatches stay in the quantitative follow-up lane.
+
+## Issue #195 no-RAW Backfill decision ledger
+
+The retained 85RAW artifact produced at revision
+`7eef01e273ee62b91bd6c07e4a455994f76ca37b` was read without opening RAW files.
+`tools/diagnostics/backfill_decision_ledger.py` rehydrated every Discovery CSV
+through its owner receipt and streamed each large alignment projection once.
+The bounded output is reproducible with:
+
+```powershell
+.venv\Scripts\python.exe -m tools.diagnostics.backfill_decision_ledger `
+  --artifact-root <retained-artifact-root> `
+  --output-dir output/issue195_backfill_decision_ledger `
+  --expected-code-revision 7eef01e273ee62b91bd6c07e4a455994f76ca37b
+```
+
+Observed candidate facts were `317,036` rows, `79,443` populated and unique
+`ms1_feature_row_id` values, zero duplicate owner-rehydrated physical feature
+IDs, and `59,214` candidates with multiple seed scans. Therefore the proposed
+candidate-layer defect—retaining other MS2 scans creates duplicate candidates
+for the same physical MS1 feature—was not reproduced. The display grouping
+still contains `14,133` multi-candidate groups and `13,852` multi-best-scan
+groups, but those fields do not prove one physical peak.
+
+The retained final projection has `36,608 / 48,139` `primary_loser` rows
+(`76.0464%`). Owner Backfill cost was `909.689 s`, `1,843,631` XIC extractions,
+`761` RAW calls, and `878,879,685` points. The displayed-coordinate request
+proxy reproduced `133,547 / 3,083,400` duplicates (`4.331%`), but exact logical
+request identity, equivalence classes, and request-to-batch/call/point lineage
+are absent. Those claims remain explicitly unavailable; no savings estimate is
+made.
+
+Decision: value priority is an owner-valid early-loser-settlement shadow before
+exact request coalescing. Dependency order is decision ledger, owner-valid
+early-settlement shadow, owner-minted exact request identity/coalescing,
+artifact-format work, then recovery/resumability. This is `diagnostic_only`,
+uses stale-revision cost evidence rather than current-head parity, and grants no
+product or scientific authority.

@@ -1,0 +1,309 @@
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+
+import pytest
+
+from tests.alignment_pipeline_helpers import candidate_row, write_csv
+from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
+from xic_extractor.diagnostics.backfill_decision_ledger import (
+    build_backfill_decision_ledger,
+)
+from xic_extractor.discovery.batch_contract import (
+    DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+    DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    DiscoveryCandidateUniverseReceipt,
+    discovery_receipt_index_fields,
+    mint_discovery_candidate_universe_receipt,
+)
+from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+from xic_extractor.processing_identity import build_acquisition_source_identity
+
+_REVISION = "a" * 40
+
+
+def test_decision_ledger_is_deterministic_and_preserves_authority_ceiling(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+
+    first = build_backfill_decision_ledger(
+        artifact_root=artifact,
+        output_dir=tmp_path / "first",
+        expected_code_revision=_REVISION,
+    )
+    second = build_backfill_decision_ledger(
+        artifact_root=artifact,
+        output_dir=tmp_path / "second",
+        expected_code_revision=_REVISION,
+    )
+
+    assert first.ledger_tsv.read_bytes() == second.ledger_tsv.read_bytes()
+    assert first.summary_json.read_bytes() == second.summary_json.read_bytes()
+    assert first.summary["candidate_layer"] == {
+        "sample_count": 1,
+        "candidate_count": 1,
+        "populated_physical_feature_count": 1,
+        "unique_physical_feature_count": 1,
+        "duplicate_physical_feature_count": 0,
+        "multi_seed_candidate_count": 1,
+        "display_family_multi_candidate_group_count": 0,
+        "display_family_excess_candidate_count": 0,
+        "display_family_multi_best_scan_group_count": 0,
+        "pairing_verdict": "candidate_layer_dedupe_defect_not_reproduced",
+        "claim_ceiling": (
+            "owner_bound_candidate_fields; strict scan content not replayed"
+        ),
+    }
+    assert (
+        first.summary["request_identity_and_cost"]["exact_logical_request_identity"]
+        == "unavailable"
+    )
+    assert (
+        first.summary["request_identity_and_cost"][
+            "display_request_proxy_duplicate_count"
+        ]
+        == 1
+    )
+    assert first.summary["hypothesis_verdict"]["overall"] == (
+        "candidate_layer_not_reproduced_downstream_inconclusive"
+    )
+    ledger_text = first.ledger_tsv.read_text(encoding="utf-8")
+    assert "unavailable_missing_owner_assignment_payload" in ledger_text
+    assert "unavailable_no_owner_request_identity" in ledger_text
+
+
+def test_decision_ledger_rejects_candidate_artifact_mutation(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    candidate_csv = (
+        artifact / "workflow" / "discovery" / "Sample_A" / "discovery_candidates.csv"
+    )
+    original = candidate_csv.read_text(encoding="utf-8")
+    candidate_csv.write_text(original.replace("1;2", "1;2;3"), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="owner-bound candidate artifact"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_rejects_unknown_projection_group(tmp_path: Path) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    evidence = (
+        artifact / "workflow" / "alignment" / "alignment_backfill_cell_evidence.tsv"
+    )
+    evidence.write_text(
+        "group_hypothesis_id\tsample_stem\tsource_candidate_id\n"
+        "unknown\tSample_A\tSample_A#1@mz500_p384\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown group_hypothesis_id"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_rejects_negative_cost_metric(tmp_path: Path) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    timing = json.loads((artifact / "timing.json").read_text(encoding="utf-8"))
+    timing["records"][-1]["metrics"]["point_count"] = -1
+    (artifact / "timing.json").write_text(
+        json.dumps(timing),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="point_count must be a nonnegative integer"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def _artifact(root: Path) -> Path:
+    discovery = root / "workflow" / "discovery"
+    sample_dir = discovery / "Sample_A"
+    sample_dir.mkdir(parents=True)
+    candidate_csv = sample_dir / "discovery_candidates.csv"
+    write_csv(
+        candidate_csv,
+        DISCOVERY_CANDIDATE_COLUMNS,
+        [candidate_row("Sample_A")],
+    )
+    candidates = read_discovery_candidates_csv(
+        candidate_csv,
+        require_successor_columns=True,
+    )
+    source_path = root / "inputs" / "Sample_A.synthetic"
+    source_path.parent.mkdir()
+    source_path.write_bytes(b"no-raw-synthetic-source")
+    source = build_acquisition_source_identity(
+        source_path,
+        acquisition_format="synthetic_no_raw",
+        observation_namespace="test:backfill-decision-ledger",
+    )
+    receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem="Sample_A",
+        acquisition_source=source,
+        candidate_csv=candidate_csv,
+        candidates=candidates,
+    )
+    _write_batch_index(discovery / "discovery_batch_index.csv", receipt)
+
+    alignment = root / "workflow" / "alignment"
+    alignment.mkdir(parents=True)
+    _write_tsv(
+        alignment / "alignment_review.tsv",
+        (
+            "group_hypothesis_id",
+            "consolidation_state",
+            "consolidation_winner_group_hypothesis_id",
+            "event_cluster_ids",
+            "event_member_count",
+            "quantifiable_rescue_count",
+            "review_rescue_count",
+        ),
+        [
+            {
+                "group_hypothesis_id": "group-1",
+                "consolidation_state": "primary_loser",
+                "consolidation_winner_group_hypothesis_id": "group-2",
+                "event_cluster_ids": "owner-projection-1",
+                "event_member_count": "1",
+                "quantifiable_rescue_count": "2",
+                "review_rescue_count": "3",
+            }
+        ],
+    )
+    _write_tsv(
+        alignment / "alignment_backfill_cell_evidence.tsv",
+        ("group_hypothesis_id", "sample_stem", "source_candidate_id"),
+        [
+            {
+                "group_hypothesis_id": "group-1",
+                "sample_stem": "Sample_A",
+                "source_candidate_id": "Sample_A#1@mz500_p384",
+            }
+        ],
+    )
+    _write_tsv(
+        alignment / "provisional_cell_provenance.tsv",
+        (
+            "group_hypothesis_id",
+            "sample_stem",
+            "backfill_seed_mz",
+            "backfill_seed_rt",
+        ),
+        [
+            {
+                "group_hypothesis_id": "group-1",
+                "sample_stem": "Sample_A",
+                "backfill_seed_mz": "500.0000",
+                "backfill_seed_rt": "8.5000",
+            },
+            {
+                "group_hypothesis_id": "group-1",
+                "sample_stem": "Sample_A",
+                "backfill_seed_mz": "500.0000",
+                "backfill_seed_rt": "8.5000",
+            },
+        ],
+    )
+    (root / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "code_revision": _REVISION,
+                "validation_status": "diagnostic_only",
+                "product_authority": False,
+                "row_identity_status": "provisional",
+                "identity_settlement_status": "not_run",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "heartbeat.json").write_text("{}", encoding="utf-8")
+    (root / "timing.json").write_text(
+        json.dumps(
+            {
+                "records": [
+                    {
+                        "stage": "alignment.build_owners.sample_complete",
+                        "metrics": {"assignment_count": 1, "owner_count": 1},
+                    },
+                    {
+                        "stage": "alignment.backfill_scope",
+                        "metrics": {
+                            "request_target_count": 2,
+                            "extract_request_count": 2,
+                        },
+                    },
+                    {
+                        "stage": "alignment.owner_backfill",
+                        "elapsed_sec": 1.25,
+                        "metrics": {
+                            "extract_xic_count": 2,
+                            "extract_xic_batch_count": 1,
+                            "raw_chromatogram_call_count": 1,
+                            "point_count": 20,
+                        },
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _write_batch_index(
+    path: Path,
+    receipt: DiscoveryCandidateUniverseReceipt,
+) -> None:
+    fieldnames = (
+        "schema_version",
+        "sample_stem",
+        "raw_file",
+        "candidate_csv",
+        "review_csv",
+        "candidate_count",
+        "high_count",
+        "medium_count",
+        "low_count",
+        *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+    )
+    row = {
+        "schema_version": DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+        "sample_stem": "Sample_A",
+        "raw_file": "inputs/Sample_A.synthetic",
+        "candidate_csv": "Sample_A/discovery_candidates.csv",
+        "review_csv": "",
+        "candidate_count": "1",
+        "high_count": "1",
+        "medium_count": "0",
+        "low_count": "0",
+        **discovery_receipt_index_fields(receipt),
+    }
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(row)
+
+
+def _write_tsv(
+    path: Path,
+    fieldnames: tuple[str, ...],
+    rows: list[dict[str, str]],
+) -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
