@@ -23,7 +23,7 @@ The verified run emitted `365,176` ledger lines (header plus `317,036`
 candidate rows and `48,139` group-settlement rows). SHA-256 values were
 `F54F447EEEFA0CC826B7815B5AD454A7D2B44F87C8847146CA3AEA35CA6E6CE2` for
 the ledger and
-`26F08228798E071244E6BEF106CD9163BC4F1D8750D17006C8C378233196F61D` for
+`1A5C992CC57691E193CBCEF93A27FB1BB1B4DA85B063959515446DF8F5BE7D88` for
 the JSON summary.
 
 ## Observed evidence
@@ -37,6 +37,21 @@ the JSON summary.
 | Final `primary_loser` rows | 36,608 / 48,139 (76.0464%) | Persisted projection only |
 | Display request proxy duplicates | 133,547 / 3,083,400 (4.331%) | Not exact request equivalence |
 | Owner Backfill | 909.689 s; 1,843,631 XIC; 761 RAW calls; 878,879,685 points | Aggregate cost only |
+
+The retained timing projection reports `backfill_scope=full-audit`, `48,139`
+input features, `48,139` Backfill features, and zero skipped features. The
+reader requires those counts to close and the Backfill feature count to equal
+the complete review-group universe before it ranks the optimization paths.
+Partial-scope or cross-sample substituted projections fail closed. Per-group
+display-proxy duplicate attribution is stable under row reordering.
+
+Candidate loading honors each batch-index locator. The retained bundle is the
+one legacy exception: its locator names the exact sibling `.attempt` staging
+root from which the bundle was atomically finalized. The reader permits only
+that exact mechanical relocation to the final bundle path, then validates the
+bytes and typed candidate payload through the Discovery owner receipt. Other
+missing or substituted locators fail closed. Declared samples remain valid even
+when their owner-bound candidate universe is empty.
 
 The downstream owner-assignment/group/request portion of the pairing hypothesis
 is inconclusive because the retained artifact omits complete owner payloads,

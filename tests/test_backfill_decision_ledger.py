@@ -19,6 +19,8 @@ from xic_extractor.diagnostics.backfill_decision_ledger import (
     _PROVENANCE_COLUMNS,
     _REVIEW_COLUMNS,
     _decision,
+    _read_backfill_evidence,
+    _read_request_proxy,
     _read_timing,
     build_backfill_decision_ledger,
 )
@@ -81,6 +83,8 @@ def test_decision_ledger_is_deterministic_and_preserves_authority_ceiling(
     assert first.summary["request_identity_and_cost"]["timing_schema_status"] == (
         "unavailable_legacy_unversioned_timing_projection"
     )
+    assert first.summary["request_identity_and_cost"]["backfill_scope"] == "full-audit"
+    assert first.summary["request_identity_and_cost"]["skipped_feature_count"] == 0
     assert first.summary["hypothesis_verdict"]["overall"] == (
         "candidate_layer_not_reproduced_downstream_inconclusive"
     )
@@ -119,6 +123,52 @@ def test_decision_ledger_rejects_candidate_artifact_mutation(
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_honors_declared_candidate_locator_and_relocates_only_attempt(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    default_path = (
+        artifact / "workflow" / "discovery" / "Sample_A" / "discovery_candidates.csv"
+    )
+    declared_path = artifact / "owner-located" / "candidates.csv"
+    declared_path.parent.mkdir()
+    default_path.replace(declared_path)
+    batch_index = artifact / "workflow" / "discovery" / "discovery_batch_index.csv"
+    _rewrite_batch_candidate_locator(
+        batch_index,
+        "../../owner-located/candidates.csv",
+    )
+
+    build_backfill_decision_ledger(
+        artifact_root=artifact,
+        output_dir=tmp_path / "declared-output",
+        expected_code_revision=_REVISION,
+    )
+
+    declared_path.replace(default_path)
+    attempt_path = (
+        artifact.with_name(f"{artifact.name}.attempt")
+        / "workflow"
+        / "discovery"
+        / "Sample_A"
+        / "discovery_candidates.csv"
+    )
+    _rewrite_batch_candidate_locator(batch_index, str(attempt_path))
+    build_backfill_decision_ledger(
+        artifact_root=artifact,
+        output_dir=tmp_path / "attempt-output",
+        expected_code_revision=_REVISION,
+    )
+
+    _rewrite_batch_candidate_locator(batch_index, "missing/candidates.csv")
+    with pytest.raises(ValueError, match="required artifact file is missing"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "missing-output",
             expected_code_revision=_REVISION,
         )
 
@@ -330,12 +380,7 @@ def test_decision_ledger_accepts_loser_chain_to_terminal_winner(
     rows = _read_tsv_rows(review)
     rows[1]["consolidation_state"] = "primary_loser"
     rows[1]["consolidation_winner_group_hypothesis_id"] = "group-3"
-    rows.append(
-        {
-            column: ""
-            for column in _REVIEW_COLUMNS
-        }
-    )
+    rows.append({column: "" for column in _REVIEW_COLUMNS})
     rows[2].update(
         {
             "group_hypothesis_id": "group-3",
@@ -348,6 +393,15 @@ def test_decision_ledger_accepts_loser_chain_to_terminal_winner(
         }
     )
     _write_tsv(review, _REVIEW_COLUMNS, rows)
+    timing_path = artifact / "timing.json"
+    timing = json.loads(timing_path.read_text(encoding="utf-8"))
+    timing["records"][1]["metrics"].update(
+        {
+            "input_feature_count": 3,
+            "backfill_feature_count": 3,
+        }
+    )
+    timing_path.write_text(json.dumps(timing), encoding="utf-8")
 
     result = build_backfill_decision_ledger(
         artifact_root=artifact,
@@ -404,6 +458,192 @@ def test_decision_ledger_rejects_nonfinite_elapsed_values(
             output_dir=tmp_path / "heartbeat-output",
             expected_code_revision=_REVISION,
         )
+
+
+@pytest.mark.parametrize(
+    ("scope", "input_count", "backfill_count", "skipped_count", "expected"),
+    [
+        ("selected-families", 2, 1, 1, "requires a complete full-audit"),
+        ("full-audit", 2, 1, 1, "requires a complete full-audit"),
+        ("full-audit", 2, 1, 0, "feature counts do not close"),
+    ],
+)
+def test_decision_ledger_rejects_partial_or_incomplete_backfill_scope(
+    tmp_path: Path,
+    scope: str,
+    input_count: int,
+    backfill_count: int,
+    skipped_count: int,
+    expected: str,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    timing_path = artifact / "timing.json"
+    timing = json.loads(timing_path.read_text(encoding="utf-8"))
+    scope_metrics = timing["records"][1]["metrics"]
+    scope_metrics.update(
+        {
+            "backfill_scope": scope,
+            "input_feature_count": input_count,
+            "backfill_feature_count": backfill_count,
+            "skipped_feature_count": skipped_count,
+        }
+    )
+    timing_path.write_text(json.dumps(timing), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=expected):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_rejects_missing_backfill_scope_metric(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    timing_path = artifact / "timing.json"
+    timing = json.loads(timing_path.read_text(encoding="utf-8"))
+    del timing["records"][1]["metrics"]["skipped_feature_count"]
+    timing_path.write_text(json.dumps(timing), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="skipped_feature_count"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_rejects_backfill_scope_review_universe_mismatch(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    timing_path = artifact / "timing.json"
+    timing = json.loads(timing_path.read_text(encoding="utf-8"))
+    scope_metrics = timing["records"][1]["metrics"]
+    scope_metrics.update(
+        {
+            "input_feature_count": 3,
+            "backfill_feature_count": 3,
+        }
+    )
+    timing_path.write_text(json.dumps(timing), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="does not match alignment review"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_backfill_projection_rejects_cross_sample_candidate_substitution(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "backfill.tsv"
+    _write_tsv(
+        path,
+        _BACKFILL_COLUMNS,
+        [
+            {
+                "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+                "group_hypothesis_id": "group-1",
+                "sample_stem": "Sample_B",
+                "source_candidate_id": "candidate-a",
+            }
+        ],
+    )
+
+    with pytest.raises(ValueError, match="belongs to sample 'Sample_A'"):
+        _read_backfill_evidence(
+            path,
+            known_group_ids=frozenset({"group-1"}),
+            candidate_samples={
+                "candidate-a": "Sample_A",
+                "candidate-b": "Sample_B",
+            },
+            known_sample_stems=frozenset({"Sample_A", "Sample_B"}),
+        )
+
+
+def test_backfill_projection_accepts_declared_zero_candidate_sample(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "backfill.tsv"
+    _write_tsv(
+        path,
+        _BACKFILL_COLUMNS,
+        [
+            {
+                "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+                "group_hypothesis_id": "group-1",
+                "sample_stem": "Sample_B",
+                "source_candidate_id": "",
+            }
+        ],
+    )
+
+    census = _read_backfill_evidence(
+        path,
+        known_group_ids=frozenset({"group-1"}),
+        candidate_samples={"candidate-a": "Sample_A"},
+        known_sample_stems=frozenset({"Sample_A", "Sample_B"}),
+    )
+
+    assert census.row_count == 1
+    assert census.candidate_group_ids == {}
+
+
+def test_request_proxy_rejects_unknown_sample_and_is_order_neutral(
+    tmp_path: Path,
+) -> None:
+    unknown_path = tmp_path / "unknown.tsv"
+    _write_tsv(
+        unknown_path,
+        _PROVENANCE_COLUMNS,
+        [
+            {
+                "schema_version": PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
+                "group_hypothesis_id": "group-1",
+                "sample_stem": "unknown",
+                "backfill_seed_mz": "500.0000",
+                "backfill_seed_rt": "8.5000",
+            }
+        ],
+    )
+    with pytest.raises(ValueError, match="unknown sample_stem"):
+        _read_request_proxy(
+            unknown_path,
+            known_group_ids=frozenset({"group-1"}),
+            known_sample_stems=frozenset({"Sample_A"}),
+        )
+
+    rows = [
+        {
+            "schema_version": PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
+            "group_hypothesis_id": group_id,
+            "sample_stem": "Sample_A",
+            "backfill_seed_mz": "500.0000",
+            "backfill_seed_rt": "8.5000",
+        }
+        for group_id in ("group-2", "group-2", "group-1")
+    ]
+    first_path = tmp_path / "first.tsv"
+    second_path = tmp_path / "second.tsv"
+    _write_tsv(first_path, _PROVENANCE_COLUMNS, rows)
+    _write_tsv(second_path, _PROVENANCE_COLUMNS, list(reversed(rows)))
+    kwargs = {
+        "known_group_ids": frozenset({"group-1", "group-2"}),
+        "known_sample_stems": frozenset({"Sample_A"}),
+    }
+
+    first = _read_request_proxy(first_path, **kwargs)
+    second = _read_request_proxy(second_path, **kwargs)
+
+    assert first == second
+    assert first.projected_duplicate_count == 2
+    assert first.per_group_duplicate_count == {"group-2": 2}
 
 
 def _artifact(root: Path) -> Path:
@@ -525,6 +765,10 @@ def _artifact(root: Path) -> Path:
                     {
                         "stage": "alignment.backfill_scope",
                         "metrics": {
+                            "backfill_scope": "full-audit",
+                            "input_feature_count": 2,
+                            "backfill_feature_count": 2,
+                            "skipped_feature_count": 0,
                             "request_target_count": 2,
                             "extract_request_count": 2,
                         },
@@ -588,6 +832,19 @@ def _write_tsv(
 ) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _rewrite_batch_candidate_locator(path: Path, candidate_csv: str) -> None:
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = tuple(reader.fieldnames or ())
+        rows = list(reader)
+    assert len(rows) == 1
+    rows[0]["candidate_csv"] = candidate_csv
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
 

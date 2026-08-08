@@ -479,9 +479,12 @@ reported as unavailable instead of being promoted to semantic proof.
 **Originating issue**: [#195](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/195)
 **Status note**: The output remains `diagnostic_only`. Displayed seed m/z/RT
 duplicates are labeled as a projection-only request proxy, never as exact
-request equivalence or optimization savings. The tool neither accepts RAW paths
-nor changes scientific selection, Backfill eligibility, Matrix, writer, or
-activation behavior.
+request equivalence or optimization savings. Ranking requires a complete
+`full-audit` Backfill scope with zero skipped features, closed feature counts,
+and exact equality with the review-group universe. Candidate/group projection
+links bind both sample and candidate identity; request-proxy rendering is
+row-order neutral. The tool neither accepts RAW paths nor changes scientific
+selection, Backfill eligibility, Matrix, writer, or activation behavior.
 
 ---
 

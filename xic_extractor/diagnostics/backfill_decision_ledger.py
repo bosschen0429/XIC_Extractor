@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from xic_extractor.alignment.csv_io import (
+    DiscoveryBatchInput,
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
@@ -23,6 +24,7 @@ from xic_extractor.alignment.tsv_writer import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
     ALIGNMENT_REVIEW_COLUMNS,
 )
+from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.extraction.provisional_run_manifest import (
     PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
     validate_provisional_run_manifest,
@@ -121,7 +123,7 @@ class _ReviewCensus:
 @dataclass(frozen=True, slots=True)
 class _BackfillCensus:
     row_count: int
-    candidate_group_ids: Mapping[str, frozenset[str]]
+    candidate_group_ids: Mapping[tuple[str, str], frozenset[str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +140,10 @@ class _TimingCensus:
     schema_status: str
     assignment_count: int
     owner_count: int
+    backfill_scope: str
+    input_feature_count: int
+    backfill_feature_count: int
+    skipped_feature_count: int
     backfill_request_target_count: int
     backfill_extract_request_count: int
     backfill_extract_xic_count: int
@@ -157,7 +163,7 @@ class _ManifestEvidence:
 @dataclass(frozen=True, slots=True)
 class _CandidateCensus:
     summary: Mapping[str, int | float]
-    candidate_ids: frozenset[str]
+    candidate_samples: Mapping[str, str]
     sample_stems: tuple[str, ...]
 
 
@@ -175,33 +181,36 @@ def build_backfill_decision_ledger(
         expected_code_revision=expected_code_revision,
     )
 
+    batch_index, batch = _read_discovery_batch(artifact_root)
+    candidate_census = _read_candidate_census(
+        artifact_root=artifact_root,
+        batch_index=batch_index,
+        batch=batch,
+    )
+
     alignment_dir = artifact_root / "workflow" / "alignment"
     review = _read_review_groups(_required_file(alignment_dir / "alignment_review.tsv"))
     backfill = _read_backfill_evidence(
         _required_file(alignment_dir / "alignment_backfill_cell_evidence.tsv"),
         known_group_ids=frozenset(review.groups),
+        candidate_samples=candidate_census.candidate_samples,
+        known_sample_stems=frozenset(candidate_census.sample_stems),
     )
     request_proxy = _read_request_proxy(
         _required_file(alignment_dir / "provisional_cell_provenance.tsv"),
         known_group_ids=frozenset(review.groups),
+        known_sample_stems=frozenset(candidate_census.sample_stems),
     )
     heartbeat = _read_json_object(_required_file(artifact_root / "heartbeat.json"))
-
-    candidate_census = _read_candidate_census(
-        artifact_root=artifact_root,
-    )
     timing = _read_timing(
         _required_file(artifact_root / "timing.json"),
         expected_sample_stems=candidate_census.sample_stems,
     )
-    unknown_candidate_ids = sorted(
-        set(backfill.candidate_group_ids) - candidate_census.candidate_ids
-    )
-    if unknown_candidate_ids:
-        preview = ", ".join(repr(value) for value in unknown_candidate_ids[:3])
+    if timing.backfill_feature_count != len(review.groups):
         raise ValueError(
-            "Backfill projection references unknown source_candidate_id values: "
-            f"{preview}"
+            "Backfill full-audit feature count does not match alignment review "
+            f"group universe: timing={timing.backfill_feature_count}; "
+            f"review={len(review.groups)}"
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -209,6 +218,8 @@ def build_backfill_decision_ledger(
     _write_ledger(
         ledger_tsv,
         artifact_root=artifact_root,
+        batch_index=batch_index,
+        batch=batch,
         review=review,
         backfill=backfill,
         request_proxy=request_proxy,
@@ -240,14 +251,79 @@ def build_backfill_decision_ledger(
     )
 
 
-def _read_candidate_census(
-    *,
+def _read_discovery_batch(
     artifact_root: Path,
-) -> _CandidateCensus:
+) -> tuple[Path, DiscoveryBatchInput]:
     batch_index = _required_file(
         artifact_root / "workflow" / "discovery" / "discovery_batch_index.csv"
     )
-    batch = read_discovery_batch_index(batch_index)
+    return batch_index, read_discovery_batch_index(batch_index)
+
+
+def _iter_owner_bound_candidates(
+    *,
+    artifact_root: Path,
+    batch_index: Path,
+    batch: DiscoveryBatchInput,
+) -> Iterator[DiscoveryCandidate]:
+    for sample_stem in batch.sample_order:
+        receipt = batch.candidate_receipts.get(sample_stem)
+        if receipt is None:
+            raise ValueError(
+                f"{batch_index}: sample {sample_stem!r} has no owner receipt"
+            )
+        candidate_path = _candidate_artifact_path(
+            artifact_root=artifact_root,
+            batch=batch,
+            sample_stem=sample_stem,
+        )
+        yield from read_owner_bound_discovery_candidates_csv(
+            candidate_path,
+            receipt=receipt,
+            require_successor_columns=True,
+        )
+
+
+def _candidate_artifact_path(
+    *,
+    artifact_root: Path,
+    batch: DiscoveryBatchInput,
+    sample_stem: str,
+) -> Path:
+    declared_path = batch.candidate_csvs[sample_stem]
+    if declared_path.is_file():
+        return declared_path
+
+    # The retained Issue #195 bundle was atomically renamed from its exact
+    # ``<artifact>.attempt`` staging directory after the batch index was
+    # written. Relocate only that mechanically exact stale locator; the
+    # Discovery receipt still closes the candidate bytes and typed payload.
+    attempt_root = artifact_root.with_name(f"{artifact_root.name}.attempt")
+    attempt_path = (
+        attempt_root
+        / "workflow"
+        / "discovery"
+        / sample_stem
+        / "discovery_candidates.csv"
+    )
+    relocated_path = (
+        artifact_root
+        / "workflow"
+        / "discovery"
+        / sample_stem
+        / "discovery_candidates.csv"
+    )
+    if declared_path.resolve() == attempt_path.resolve() and relocated_path.is_file():
+        return relocated_path
+    return _required_file(declared_path)
+
+
+def _read_candidate_census(
+    *,
+    artifact_root: Path,
+    batch_index: Path,
+    batch: DiscoveryBatchInput,
+) -> _CandidateCensus:
     physical_feature_ids: set[tuple[str, str, str]] = set()
     duplicate_physical_feature_count = 0
     candidate_count = 0
@@ -255,46 +331,39 @@ def _read_candidate_census(
     multi_seed_candidate_count = 0
     display_family_counts: Counter[tuple[str, str]] = Counter()
     display_family_best_scans: dict[tuple[str, str], set[int]] = defaultdict(set)
-    candidate_ids: set[str] = set()
+    candidate_samples: dict[str, str] = {}
 
-    for sample_stem in batch.sample_order:
-        receipt = batch.candidate_receipts.get(sample_stem)
-        if receipt is None:
+    for candidate in _iter_owner_bound_candidates(
+        artifact_root=artifact_root,
+        batch_index=batch_index,
+        batch=batch,
+    ):
+        previous_sample = candidate_samples.get(candidate.candidate_id)
+        if previous_sample is not None:
             raise ValueError(
-                f"{batch_index}: sample {sample_stem!r} has no owner receipt"
+                f"{batch_index}: duplicate candidate_id {candidate.candidate_id!r} "
+                f"across samples {previous_sample!r} and "
+                f"{candidate.sample_stem!r}"
             )
-        candidate_path = _required_file(
-            artifact_root
-            / "workflow"
-            / "discovery"
-            / sample_stem
-            / "discovery_candidates.csv"
-        )
-        candidates = read_owner_bound_discovery_candidates_csv(
-            candidate_path,
-            receipt=receipt,
-            require_successor_columns=True,
-        )
-        for candidate in candidates:
-            candidate_count += 1
-            candidate_ids.add(candidate.candidate_id)
-            if len(candidate.seed_scan_ids) > 1:
-                multi_seed_candidate_count += 1
-            family_key = (candidate.sample_stem, candidate.feature_family_id)
-            display_family_counts[family_key] += 1
-            display_family_best_scans[family_key].add(candidate.best_ms2_scan_id)
+        candidate_count += 1
+        candidate_samples[candidate.candidate_id] = candidate.sample_stem
+        if len(candidate.seed_scan_ids) > 1:
+            multi_seed_candidate_count += 1
+        family_key = (candidate.sample_stem, candidate.feature_family_id)
+        display_family_counts[family_key] += 1
+        display_family_best_scans[family_key].add(candidate.best_ms2_scan_id)
 
-            physical_id = candidate.ms1_feature_row_id
-            if physical_id:
-                populated_physical_feature_count += 1
-                feature_key = (
-                    candidate.sample_stem,
-                    candidate.neutral_loss_tag,
-                    physical_id,
-                )
-                if feature_key in physical_feature_ids:
-                    duplicate_physical_feature_count += 1
-                physical_feature_ids.add(feature_key)
+        physical_id = candidate.ms1_feature_row_id
+        if physical_id:
+            populated_physical_feature_count += 1
+            feature_key = (
+                candidate.sample_stem,
+                candidate.neutral_loss_tag,
+                physical_id,
+            )
+            if feature_key in physical_feature_ids:
+                duplicate_physical_feature_count += 1
+            physical_feature_ids.add(feature_key)
 
     multi_display_families = sum(count > 1 for count in display_family_counts.values())
     display_family_excess_candidate_count = sum(
@@ -317,7 +386,7 @@ def _read_candidate_census(
             ),
             "display_family_multi_best_scan_group_count": (multi_scan_display_families),
         },
-        candidate_ids=frozenset(candidate_ids),
+        candidate_samples=candidate_samples,
         sample_stems=batch.sample_order,
     )
 
@@ -326,6 +395,8 @@ def _write_ledger(
     path: Path,
     *,
     artifact_root: Path,
+    batch_index: Path,
+    batch: DiscoveryBatchInput,
     review: _ReviewCensus,
     backfill: _BackfillCensus,
     request_proxy: _RequestProxyCensus,
@@ -336,6 +407,8 @@ def _write_ledger(
         temporary_path,
         _iter_ledger_rows(
             artifact_root=artifact_root,
+            batch_index=batch_index,
+            batch=batch,
             review=review,
             backfill=backfill,
             request_proxy=request_proxy,
@@ -351,88 +424,68 @@ def _write_ledger(
 def _iter_ledger_rows(
     *,
     artifact_root: Path,
+    batch_index: Path,
+    batch: DiscoveryBatchInput,
     review: _ReviewCensus,
     backfill: _BackfillCensus,
     request_proxy: _RequestProxyCensus,
     timing: _TimingCensus,
 ) -> Iterator[Mapping[str, object]]:
-    batch_index = _required_file(
-        artifact_root / "workflow" / "discovery" / "discovery_batch_index.csv"
-    )
-    batch = read_discovery_batch_index(batch_index)
-    for sample_stem in batch.sample_order:
-        receipt = batch.candidate_receipts.get(sample_stem)
-        if receipt is None:
-            raise ValueError(
-                f"{batch_index}: sample {sample_stem!r} has no owner receipt"
-            )
-        candidate_path = _required_file(
-            artifact_root
-            / "workflow"
-            / "discovery"
-            / sample_stem
-            / "discovery_candidates.csv"
+    for candidate in _iter_owner_bound_candidates(
+        artifact_root=artifact_root,
+        batch_index=batch_index,
+        batch=batch,
+    ):
+        projected_groups = backfill.candidate_group_ids.get(
+            (candidate.sample_stem, candidate.candidate_id),
+            frozenset(),
         )
-        candidates = read_owner_bound_discovery_candidates_csv(
-            candidate_path,
-            receipt=receipt,
-            require_successor_columns=True,
+        group_ids = ";".join(sorted(projected_groups))
+        group_status = (
+            "unavailable_missing_owner_assignment_payload"
+            if not projected_groups
+            else "projection_only_source_candidate_link"
+            if len(projected_groups) == 1
+            else "projection_only_ambiguous_multiple_groups"
         )
-        for candidate in candidates:
-            projected_groups = backfill.candidate_group_ids.get(
-                candidate.candidate_id,
-                frozenset(),
-            )
-            group_ids = ";".join(sorted(projected_groups))
-            group_status = (
-                "unavailable_missing_owner_assignment_payload"
-                if not projected_groups
-                else "projection_only_source_candidate_link"
-                if len(projected_groups) == 1
-                else "projection_only_ambiguous_multiple_groups"
-            )
-            physical_id = candidate.ms1_feature_row_id
-            yield {
-                "schema_version": LEDGER_SCHEMA_VERSION,
-                "record_type": "candidate",
-                "diagnostic_layers": "A;B",
-                "claim_status": "discovery_owner_bound_candidate",
-                "sample_stem": candidate.sample_stem,
-                "physical_ms1_feature_id": physical_id,
-                "physical_ms1_identity_status": (
-                    "discovery_owner_rehydrated_declared_feature_identity"
-                    if physical_id
-                    else "unavailable_review_only_orphan"
-                ),
-                "candidate_id": candidate.candidate_id,
-                "best_ms2_scan_id": candidate.best_ms2_scan_id,
-                "seed_scan_ids": ";".join(
-                    str(value) for value in candidate.seed_scan_ids
-                ),
-                "scientific_hypothesis_status": (
-                    "candidate_declared_precursor_product_hypothesis"
-                ),
-                "owner_ids": "",
-                "owner_projection_refs": "",
-                "assignment_role": "",
-                "owner_assignment_status": (
-                    "unavailable_missing_owner_assignment_payload"
-                ),
-                "group_hypothesis_id": group_ids,
-                "group_status": group_status,
-                "consolidation_state": "",
-                "consolidation_winner_group_hypothesis_id": "",
-                "earliest_settlement_stage": "",
-                "logical_backfill_request_id": "",
-                "request_equivalence_class_id": "",
-                "request_identity_status": "unavailable_no_owner_request_identity",
-                "display_request_proxy_count": "",
-                "display_request_proxy_duplicate_count": "",
-                "batch_cost": "",
-                "raw_call_cost": "",
-                "point_cost": "",
-                "cost_status": "aggregate_only_no_request_correlation",
-            }
+        physical_id = candidate.ms1_feature_row_id
+        yield {
+            "schema_version": LEDGER_SCHEMA_VERSION,
+            "record_type": "candidate",
+            "diagnostic_layers": "A;B",
+            "claim_status": "discovery_owner_bound_candidate",
+            "sample_stem": candidate.sample_stem,
+            "physical_ms1_feature_id": physical_id,
+            "physical_ms1_identity_status": (
+                "discovery_owner_rehydrated_declared_feature_identity"
+                if physical_id
+                else "unavailable_review_only_orphan"
+            ),
+            "candidate_id": candidate.candidate_id,
+            "best_ms2_scan_id": candidate.best_ms2_scan_id,
+            "seed_scan_ids": ";".join(str(value) for value in candidate.seed_scan_ids),
+            "scientific_hypothesis_status": (
+                "candidate_declared_precursor_product_hypothesis"
+            ),
+            "owner_ids": "",
+            "owner_projection_refs": "",
+            "assignment_role": "",
+            "owner_assignment_status": ("unavailable_missing_owner_assignment_payload"),
+            "group_hypothesis_id": group_ids,
+            "group_status": group_status,
+            "consolidation_state": "",
+            "consolidation_winner_group_hypothesis_id": "",
+            "earliest_settlement_stage": "",
+            "logical_backfill_request_id": "",
+            "request_equivalence_class_id": "",
+            "request_identity_status": "unavailable_no_owner_request_identity",
+            "display_request_proxy_count": "",
+            "display_request_proxy_duplicate_count": "",
+            "batch_cost": "",
+            "raw_call_cost": "",
+            "point_cost": "",
+            "cost_status": "aggregate_only_no_request_correlation",
+        }
 
     for group_id in sorted(review.groups):
         group = review.groups[group_id]
@@ -595,9 +648,11 @@ def _read_backfill_evidence(
     path: Path,
     *,
     known_group_ids: frozenset[str],
+    candidate_samples: Mapping[str, str],
+    known_sample_stems: frozenset[str],
 ) -> _BackfillCensus:
     row_count = 0
-    candidate_groups: dict[str, set[str]] = defaultdict(set)
+    candidate_groups: dict[tuple[str, str], set[str]] = defaultdict(set)
     for row_number, row in _iter_delimited_rows(
         path,
         delimiter="\t",
@@ -615,14 +670,30 @@ def _read_backfill_evidence(
             raise ValueError(
                 f"{path}: row {row_number}: unknown group_hypothesis_id {group_id!r}"
             )
+        sample_stem = _required_text(path, row_number, row, "sample_stem")
+        if sample_stem not in known_sample_stems:
+            raise ValueError(
+                f"{path}: row {row_number}: unknown sample_stem {sample_stem!r}"
+            )
         candidate_id = row.get("source_candidate_id", "")
         if candidate_id:
-            candidate_groups[candidate_id].add(group_id)
+            candidate_sample = candidate_samples.get(candidate_id)
+            if candidate_sample is None:
+                raise ValueError(
+                    f"{path}: row {row_number}: unknown source_candidate_id "
+                    f"{candidate_id!r}"
+                )
+            if candidate_sample != sample_stem:
+                raise ValueError(
+                    f"{path}: row {row_number}: source_candidate_id {candidate_id!r} "
+                    f"belongs to sample {candidate_sample!r}, not {sample_stem!r}"
+                )
+            candidate_groups[(sample_stem, candidate_id)].add(group_id)
     return _BackfillCensus(
         row_count=row_count,
         candidate_group_ids={
-            candidate_id: frozenset(group_ids)
-            for candidate_id, group_ids in candidate_groups.items()
+            candidate_key: frozenset(group_ids)
+            for candidate_key, group_ids in candidate_groups.items()
         },
     )
 
@@ -631,11 +702,12 @@ def _read_request_proxy(
     path: Path,
     *,
     known_group_ids: frozenset[str],
+    known_sample_stems: frozenset[str],
 ) -> _RequestProxyCensus:
     row_count = 0
     projected_request_count = 0
     duplicate_count = 0
-    seen: set[bytes] = set()
+    canonical_group_by_key: dict[bytes, str] = {}
     per_group: Counter[str] = Counter()
     per_group_duplicates: Counter[str] = Counter()
     for row_number, row in _iter_delimited_rows(
@@ -664,14 +736,23 @@ def _read_request_proxy(
                 f"{path}: row {row_number}: partial displayed backfill seed"
             )
         sample_stem = _required_text(path, row_number, row, "sample_stem")
+        if sample_stem not in known_sample_stems:
+            raise ValueError(
+                f"{path}: row {row_number}: unknown sample_stem {sample_stem!r}"
+            )
         projected_request_count += 1
         per_group[group_id] += 1
         key = _request_proxy_key(sample_stem, mz, rt)
-        if key in seen:
+        canonical_group = canonical_group_by_key.get(key)
+        if canonical_group is not None:
             duplicate_count += 1
-            per_group_duplicates[group_id] += 1
+            if group_id < canonical_group:
+                per_group_duplicates[canonical_group] += 1
+                canonical_group_by_key[key] = group_id
+            else:
+                per_group_duplicates[group_id] += 1
         else:
-            seen.add(key)
+            canonical_group_by_key[key] = group_id
     return _RequestProxyCensus(
         row_count=row_count,
         projected_request_count=projected_request_count,
@@ -706,7 +787,9 @@ def _read_timing(
     owner_count = 0
     owner_sample_stems: set[str] = set()
     backfill_scope_metrics: Mapping[str, Any] | None = None
+    backfill_scope_record_number: int | None = None
     backfill_metrics: Mapping[str, Any] | None = None
+    backfill_record_number: int | None = None
     backfill_elapsed_sec = 0.0
     pre_backfill_consolidation_observed = False
     for index, record in enumerate(records, start=1):
@@ -744,10 +827,12 @@ def _read_timing(
             if backfill_scope_metrics is not None:
                 raise ValueError(f"{path}: duplicate alignment.backfill_scope record")
             backfill_scope_metrics = metrics
+            backfill_scope_record_number = index
         elif stage == "alignment.owner_backfill":
             if backfill_metrics is not None:
                 raise ValueError(f"{path}: duplicate alignment.owner_backfill record")
             backfill_metrics = metrics
+            backfill_record_number = index
             backfill_elapsed_sec = _record_nonnegative_float(
                 path,
                 index,
@@ -756,7 +841,12 @@ def _read_timing(
             )
         elif stage == "alignment.pre_backfill_consolidation":
             pre_backfill_consolidation_observed = True
-    if backfill_scope_metrics is None or backfill_metrics is None:
+    if (
+        backfill_scope_metrics is None
+        or backfill_scope_record_number is None
+        or backfill_metrics is None
+        or backfill_record_number is None
+    ):
         raise ValueError(f"{path}: required Backfill timing records are missing")
     expected_samples = set(expected_sample_stems)
     if owner_sample_stems != expected_samples:
@@ -766,43 +856,88 @@ def _read_timing(
             f"{path}: alignment.build_owners.sample_complete sample universe does "
             f"not match Discovery; missing={missing!r}; unexpected={unexpected!r}"
         )
+    backfill_scope = _metric_required_text(
+        path,
+        backfill_scope_record_number,
+        backfill_scope_metrics,
+        "backfill_scope",
+    )
+    input_feature_count = _metric_nonnegative_int(
+        path,
+        backfill_scope_record_number,
+        backfill_scope_metrics,
+        "input_feature_count",
+    )
+    backfill_feature_count = _metric_nonnegative_int(
+        path,
+        backfill_scope_record_number,
+        backfill_scope_metrics,
+        "backfill_feature_count",
+    )
+    skipped_feature_count = _metric_nonnegative_int(
+        path,
+        backfill_scope_record_number,
+        backfill_scope_metrics,
+        "skipped_feature_count",
+    )
+    if input_feature_count != backfill_feature_count + skipped_feature_count:
+        raise ValueError(
+            f"{path}: timing record {backfill_scope_record_number}: Backfill "
+            "feature counts do not close: "
+            f"input={input_feature_count}; backfill={backfill_feature_count}; "
+            f"skipped={skipped_feature_count}"
+        )
+    if (
+        backfill_scope != "full-audit"
+        or skipped_feature_count != 0
+        or input_feature_count != backfill_feature_count
+    ):
+        raise ValueError(
+            f"{path}: decision ranking requires a complete full-audit Backfill "
+            f"scope; scope={backfill_scope!r}; input={input_feature_count}; "
+            f"backfill={backfill_feature_count}; skipped={skipped_feature_count}"
+        )
     return _TimingCensus(
         schema_status=schema_status,
         assignment_count=assignment_count,
         owner_count=owner_count,
+        backfill_scope=backfill_scope,
+        input_feature_count=input_feature_count,
+        backfill_feature_count=backfill_feature_count,
+        skipped_feature_count=skipped_feature_count,
         backfill_request_target_count=_metric_nonnegative_int(
             path,
-            0,
+            backfill_scope_record_number,
             backfill_scope_metrics,
             "request_target_count",
         ),
         backfill_extract_request_count=_metric_nonnegative_int(
             path,
-            0,
+            backfill_scope_record_number,
             backfill_scope_metrics,
             "extract_request_count",
         ),
         backfill_extract_xic_count=_metric_nonnegative_int(
             path,
-            0,
+            backfill_record_number,
             backfill_metrics,
             "extract_xic_count",
         ),
         backfill_batch_count=_metric_nonnegative_int(
             path,
-            0,
+            backfill_record_number,
             backfill_metrics,
             "extract_xic_batch_count",
         ),
         backfill_raw_call_count=_metric_nonnegative_int(
             path,
-            0,
+            backfill_record_number,
             backfill_metrics,
             "raw_chromatogram_call_count",
         ),
         backfill_point_count=_metric_nonnegative_int(
             path,
-            0,
+            backfill_record_number,
             backfill_metrics,
             "point_count",
         ),
@@ -882,6 +1017,10 @@ def _summary(
         },
         "request_identity_and_cost": {
             "timing_schema_status": timing.schema_status,
+            "backfill_scope": timing.backfill_scope,
+            "input_feature_count": timing.input_feature_count,
+            "backfill_feature_count": timing.backfill_feature_count,
+            "skipped_feature_count": timing.skipped_feature_count,
             "exact_logical_request_identity": "unavailable",
             "exact_equivalence_class": "unavailable",
             "request_to_batch_call_point_correlation": "unavailable",
@@ -1285,6 +1424,20 @@ def _metric_nonnegative_int(
     return value
 
 
+def _metric_required_text(
+    path: Path,
+    record_number: int,
+    metrics: Mapping[str, Any],
+    field: str,
+) -> str:
+    value = metrics.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"{path}: timing record {record_number}: {field} must be nonblank text"
+        )
+    return value.strip()
+
+
 def _record_nonnegative_float(
     path: Path,
     record_number: int,
@@ -1319,9 +1472,7 @@ def _heartbeat_elapsed(heartbeat: Mapping[str, Any]) -> float | None:
         or not math.isfinite(value)
         or value < 0
     ):
-        raise ValueError(
-            "heartbeat elapsed_sec must be a finite nonnegative number"
-        )
+        raise ValueError("heartbeat elapsed_sec must be a finite nonnegative number")
     return float(value)
 
 

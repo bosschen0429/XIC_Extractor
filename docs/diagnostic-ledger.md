@@ -629,6 +629,14 @@ request identity, equivalence classes, and request-to-batch/call/point lineage
 are absent. Those claims remain explicitly unavailable; no savings estimate is
 made.
 
+Decision ranking is accepted only when the timing projection declares
+`backfill_scope=full-audit`, its input/backfill/skipped feature counts close with
+zero skipped features, and its Backfill feature count exactly matches the
+review-group universe. Candidate projection links additionally bind
+`sample_stem + source_candidate_id`, and request-proxy per-group counts use a
+stable group representative so equivalent row reordering cannot change the
+ledger.
+
 The retained manifest is legacy `untargeted_provisional_matrix_run_v1` and is
 rejected by the current manifest owner. The diagnostic records that
 rehydration gap explicitly instead of promoting legacy embedded assertions,
