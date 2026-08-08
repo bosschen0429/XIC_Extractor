@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tomllib
 from pathlib import Path
 
@@ -126,6 +127,10 @@ def test_runner_publishes_full_universe_outputs_atomically(
     assert manifest["code_revision"] == "a" * 40
     assert manifest["runtime"].raw_workers == 3
     assert manifest["runtime"].raw_xic_batch_size == 16
+    timing = json.loads((output_dir / "timing.json").read_text(encoding="utf-8"))
+    assert timing["measurement_contract"]["cache_state"] == (
+        "uncontrolled_os_cache_no_eviction"
+    )
 
 
 def test_runner_preflight_does_not_start_raw_workflow(

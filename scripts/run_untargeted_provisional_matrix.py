@@ -109,7 +109,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             instrument_writers=True,
         )
         timing_recorder.set_measurement_contract(
-            cache_state="unavailable",
+            cache_state="uncontrolled_os_cache_no_eviction",
             aggregation={
                 "nested_wall": "separate",
                 "exclusive_wall": "non_overlapping",

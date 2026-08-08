@@ -669,7 +669,10 @@ repetition/noise design, and programme budgets) and mechanical
 `measurement_observations`. Parallel Discovery measures serialized request/result
 IPC bytes; other workflow IPC and RSS without a reliable owner remain
 `unavailable` or `partial` with a reason, never measured zero. Nested spans are
-reported separately from non-overlapping/exclusive wall time. The current programme
+reported separately from non-overlapping/exclusive wall time. The runner records
+cache state as `uncontrolled_os_cache_no_eviction`: it never claims cold-cache
+evidence because the validation contract does not flush the host OS cache. Paired
+repetitions should reverse baseline/candidate order when practical. The current programme
 decision uses a first 85RAW milestone of 2700 seconds with at least 25% paired
 comparable improvement, followed by 1800 seconds; these are not XIC-wide rules.
 
