@@ -18,6 +18,7 @@ from xic_extractor.diagnostics.backfill_decision_ledger import (
     _BACKFILL_COLUMNS,
     _PROVENANCE_COLUMNS,
     _REVIEW_COLUMNS,
+    _decision,
     _read_timing,
     build_backfill_decision_ledger,
 )
@@ -82,6 +83,12 @@ def test_decision_ledger_is_deterministic_and_preserves_authority_ceiling(
     )
     assert first.summary["hypothesis_verdict"]["overall"] == (
         "candidate_layer_not_reproduced_downstream_inconclusive"
+    )
+    assert first.summary["decision"]["status"] == (
+        "observed_evidence_supports_priority"
+    )
+    assert first.summary["decision"]["value_priority"] == (
+        "early_loser_settlement_shadow_before_exact_request_coalescing"
     )
     assert first.summary["artifact"]["manifest_rehydration_status"] == (
         "unavailable_legacy_schema_rejected_by_current_manifest_owner"
@@ -250,6 +257,155 @@ def test_decision_ledger_rejects_duplicate_header_and_unknown_enum(
         )
 
 
+def test_decision_ledger_derives_inconclusive_priority_without_losers(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    review = artifact / "workflow" / "alignment" / "alignment_review.tsv"
+    rows = _read_tsv_rows(review)
+    rows[0]["consolidation_state"] = "not_consolidated"
+    rows[0]["consolidation_winner_group_hypothesis_id"] = ""
+    _write_tsv(review, _REVIEW_COLUMNS, rows)
+
+    result = build_backfill_decision_ledger(
+        artifact_root=artifact,
+        output_dir=tmp_path / "output",
+        expected_code_revision=_REVISION,
+    )
+
+    assert result.summary["decision"]["status"] == (
+        "inconclusive_no_observed_losers_or_exact_request_identity"
+    )
+    assert result.summary["decision"]["value_priority"] == (
+        "inconclusive_no_optimization_priority"
+    )
+    assert result.summary["decision"]["reason"] == (
+        "The artifact contains no primary_loser rows, and exact request "
+        "equivalence is unavailable; it cannot prioritize either optimization."
+    )
+
+
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("missing", "references missing winner"),
+        ("non_winner", "references non-winner group"),
+        ("winner_not_self", "must reference itself"),
+        ("cycle", "cyclic winner chain"),
+    ],
+)
+def test_decision_ledger_rejects_invalid_consolidation_relationships(
+    tmp_path: Path,
+    case: str,
+    expected: str,
+) -> None:
+    artifact = _artifact(tmp_path / case)
+    review = artifact / "workflow" / "alignment" / "alignment_review.tsv"
+    rows = _read_tsv_rows(review)
+    if case == "missing":
+        rows[0]["consolidation_winner_group_hypothesis_id"] = "missing"
+    elif case == "non_winner":
+        rows[1]["consolidation_state"] = "not_consolidated"
+        rows[1]["consolidation_winner_group_hypothesis_id"] = ""
+    elif case == "winner_not_self":
+        rows[1]["consolidation_winner_group_hypothesis_id"] = "group-1"
+    else:
+        rows[1]["consolidation_state"] = "primary_loser"
+        rows[1]["consolidation_winner_group_hypothesis_id"] = "group-1"
+    _write_tsv(review, _REVIEW_COLUMNS, rows)
+
+    with pytest.raises(ValueError, match=expected):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_accepts_loser_chain_to_terminal_winner(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    review = artifact / "workflow" / "alignment" / "alignment_review.tsv"
+    rows = _read_tsv_rows(review)
+    rows[1]["consolidation_state"] = "primary_loser"
+    rows[1]["consolidation_winner_group_hypothesis_id"] = "group-3"
+    rows.append(
+        {
+            column: ""
+            for column in _REVIEW_COLUMNS
+        }
+    )
+    rows[2].update(
+        {
+            "group_hypothesis_id": "group-3",
+            "consolidation_state": "primary_winner",
+            "consolidation_winner_group_hypothesis_id": "group-3",
+            "event_cluster_ids": "owner-projection-3",
+            "event_member_count": "1",
+            "quantifiable_rescue_count": "0",
+            "review_rescue_count": "0",
+        }
+    )
+    _write_tsv(review, _REVIEW_COLUMNS, rows)
+
+    result = build_backfill_decision_ledger(
+        artifact_root=artifact,
+        output_dir=tmp_path / "output",
+        expected_code_revision=_REVISION,
+    )
+
+    assert result.summary["cross_sample_and_settlement"]["consolidation_counts"] == {
+        "primary_loser": 2,
+        "primary_winner": 1,
+    }
+
+
+def test_decision_ledger_prioritizes_candidate_fix_when_duplicates_exist() -> None:
+    assert _decision(
+        candidate_pairing_defect_reproduced=True,
+        loser_count=10,
+        group_count=20,
+    ) == {
+        "status": "inconclusive_candidate_layer_defect_requires_owner_fix",
+        "value_priority": "candidate_layer_dedupe_fix_before_optimization",
+        "reason": (
+            "Owner-bound candidate identities contain duplicates, so neither "
+            "downstream optimization is ready for prioritization."
+        ),
+    }
+
+
+@pytest.mark.parametrize("nonfinite", [float("nan"), float("inf")])
+def test_decision_ledger_rejects_nonfinite_elapsed_values(
+    tmp_path: Path,
+    nonfinite: float,
+) -> None:
+    artifact = _artifact(tmp_path / "timing")
+    timing_path = artifact / "timing.json"
+    timing = json.loads(timing_path.read_text(encoding="utf-8"))
+    timing["records"][-1]["elapsed_sec"] = nonfinite
+    timing_path.write_text(json.dumps(timing), encoding="utf-8")
+    with pytest.raises(ValueError, match="finite nonnegative number"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "timing-output",
+            expected_code_revision=_REVISION,
+        )
+
+    artifact = _artifact(tmp_path / "heartbeat")
+    (artifact / "heartbeat.json").write_text(
+        json.dumps({"elapsed_sec": nonfinite}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="heartbeat elapsed_sec"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "heartbeat-output",
+            expected_code_revision=_REVISION,
+        )
+
+
 def _artifact(root: Path) -> Path:
     discovery = root / "workflow" / "discovery"
     sample_dir = discovery / "Sample_A"
@@ -294,7 +450,16 @@ def _artifact(root: Path) -> Path:
                 "event_member_count": "1",
                 "quantifiable_rescue_count": "2",
                 "review_rescue_count": "3",
-            }
+            },
+            {
+                "group_hypothesis_id": "group-2",
+                "consolidation_state": "primary_winner",
+                "consolidation_winner_group_hypothesis_id": "group-2",
+                "event_cluster_ids": "owner-projection-2",
+                "event_member_count": "1",
+                "quantifiable_rescue_count": "0",
+                "review_rescue_count": "0",
+            },
         ],
     )
     _write_tsv(
@@ -425,3 +590,8 @@ def _write_tsv(
         writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _read_tsv_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))

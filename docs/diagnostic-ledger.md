@@ -639,8 +639,10 @@ aggregate-only/partial; D final-projection-only with pre-Backfill knowability
 unavailable; and E unavailable without exact request and batch lineage.
 
 Decision: value priority is an owner-valid early-loser-settlement shadow before
-exact request coalescing. Dependency order is decision ledger, owner-valid
-early-settlement shadow, owner-minted exact request identity/coalescing,
-artifact-format work, then recovery/resumability. This is `diagnostic_only`,
-uses stale-revision cost evidence rather than current-head parity, and grants no
-product or scientific authority.
+exact request coalescing, derived from the observed `36,608` loser rows while
+exact request equivalence remains unavailable. A compatible artifact with zero
+loser rows reports an inconclusive priority. Dependency order is decision
+ledger, owner-valid early-settlement shadow, owner-minted exact request
+identity/coalescing, artifact-format work, then recovery/resumability. This is
+`diagnostic_only`, uses stale-revision cost evidence rather than current-head
+parity, and grants no product or scientific authority.

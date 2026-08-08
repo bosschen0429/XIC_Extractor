@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
@@ -227,7 +228,7 @@ def build_backfill_decision_ledger(
     summary_json = output_dir / "backfill_decision_summary.json"
     _write_text_atomic(
         summary_json,
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        json.dumps(summary, allow_nan=False, indent=2, sort_keys=True) + "\n",
     )
     summary_markdown = output_dir / "backfill_decision_summary.md"
     _write_text_atomic(summary_markdown, _summary_markdown(summary))
@@ -525,9 +526,8 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
             ),
             consolidation_state=state,
             consolidation_winner_group_hypothesis_id=row.get(
-                "consolidation_winner_group_hypothesis_id",
-                "",
-            ),
+                "consolidation_winner_group_hypothesis_id", ""
+            ).strip(),
             quantifiable_rescue_count=quantifiable_rescue_count,
             review_rescue_count=review_rescue_count,
         )
@@ -537,6 +537,7 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
             loser_review_rescue_count += review_rescue_count
             if quantifiable_rescue_count > 0 or review_rescue_count > 0:
                 loser_row_with_rescue_count += 1
+    _validate_consolidation_relationships(path, groups)
     return _ReviewCensus(
         groups=groups,
         consolidation_counts=dict(sorted(states.items())),
@@ -544,6 +545,50 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
         loser_quantifiable_rescue_count=loser_quantifiable_rescue_count,
         loser_review_rescue_count=loser_review_rescue_count,
     )
+
+
+def _validate_consolidation_relationships(
+    path: Path,
+    groups: Mapping[str, _ReviewGroup],
+) -> None:
+    for group_id, group in groups.items():
+        winner_id = group.consolidation_winner_group_hypothesis_id
+        if group.consolidation_state == "primary_winner":
+            if winner_id != group_id:
+                raise ValueError(
+                    f"{path}: primary_winner {group_id!r} must reference itself"
+                )
+        elif group.consolidation_state == "not_consolidated" and winner_id:
+            raise ValueError(
+                f"{path}: not_consolidated group {group_id!r} must not reference "
+                "a consolidation winner"
+            )
+
+    for group_id, group in groups.items():
+        if group.consolidation_state != "primary_loser":
+            continue
+        seen = {group_id}
+        winner_id = group.consolidation_winner_group_hypothesis_id
+        while True:
+            if winner_id in seen:
+                raise ValueError(
+                    f"{path}: primary_loser {group_id!r} has a cyclic winner chain"
+                )
+            seen.add(winner_id)
+            winner = groups.get(winner_id)
+            if winner is None:
+                raise ValueError(
+                    f"{path}: primary_loser {group_id!r} references missing "
+                    f"winner {winner_id!r}"
+                )
+            if winner.consolidation_state == "primary_winner":
+                break
+            if winner.consolidation_state != "primary_loser":
+                raise ValueError(
+                    f"{path}: primary_loser {group_id!r} references non-winner "
+                    f"group {winner_id!r}"
+                )
+            winner_id = winner.consolidation_winner_group_hypothesis_id
 
 
 def _read_backfill_evidence(
@@ -783,6 +828,11 @@ def _summary(
     candidate_pairing_defect_reproduced = (
         candidate_census["duplicate_physical_feature_count"] > 0
     )
+    decision = _decision(
+        candidate_pairing_defect_reproduced=candidate_pairing_defect_reproduced,
+        loser_count=loser_count,
+        group_count=group_count,
+    )
     return {
         "schema_version": SUMMARY_SCHEMA_VERSION,
         "status": "complete",
@@ -894,18 +944,11 @@ def _summary(
             ),
         },
         "decision": {
-            "value_priority": (
-                "early_loser_settlement_shadow_before_exact_request_coalescing"
-            ),
+            **decision,
             "dependency_order": (
                 "decision_ledger_then_owner_valid_early_settlement_shadow_then_"
                 "exact_request_identity_and_coalescing_then_artifact_format_then_"
                 "recovery"
-            ),
-            "reason": (
-                "The retained run shows a large post-Backfill loser population, "
-                "while the smaller request-reuse number is a display proxy and "
-                "exact request equivalence is unavailable."
             ),
             "falsifiers": [
                 (
@@ -945,6 +988,44 @@ def _summary(
     }
 
 
+def _decision(
+    *,
+    candidate_pairing_defect_reproduced: bool,
+    loser_count: int,
+    group_count: int,
+) -> dict[str, str]:
+    if candidate_pairing_defect_reproduced:
+        return {
+            "status": "inconclusive_candidate_layer_defect_requires_owner_fix",
+            "value_priority": "candidate_layer_dedupe_fix_before_optimization",
+            "reason": (
+                "Owner-bound candidate identities contain duplicates, so neither "
+                "downstream optimization is ready for prioritization."
+            ),
+        }
+    if loser_count > 0:
+        return {
+            "status": "observed_evidence_supports_priority",
+            "value_priority": (
+                "early_loser_settlement_shadow_before_exact_request_coalescing"
+            ),
+            "reason": (
+                f"The artifact contains {loser_count} primary_loser rows among "
+                f"{group_count} settlement rows, while exact request equivalence "
+                "is unavailable and the request-reuse count is only a display "
+                "proxy."
+            ),
+        }
+    return {
+        "status": "inconclusive_no_observed_losers_or_exact_request_identity",
+        "value_priority": "inconclusive_no_optimization_priority",
+        "reason": (
+            "The artifact contains no primary_loser rows, and exact request "
+            "equivalence is unavailable; it cannot prioritize either optimization."
+        ),
+    }
+
+
 def _summary_markdown(summary: Mapping[str, Any]) -> str:
     candidate = _mapping(summary, "candidate_layer")
     settlement = _mapping(summary, "cross_sample_and_settlement")
@@ -957,7 +1038,9 @@ def _summary_markdown(summary: Mapping[str, Any]) -> str:
             "",
             f"- Validation status: `{summary['validation_status']}`",
             f"- Pairing verdict: `{verdict['overall']}`",
+            f"- Decision status: `{decision['status']}`",
             f"- Value priority: `{decision['value_priority']}`",
+            f"- Decision reason: {decision['reason']}",
             "",
             "## Observed evidence",
             "",
@@ -1209,9 +1292,15 @@ def _record_nonnegative_float(
     field: str,
 ) -> float:
     value = record.get(field)
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
         raise ValueError(
-            f"{path}: timing record {record_number}: {field} must be nonnegative"
+            f"{path}: timing record {record_number}: {field} must be a finite "
+            "nonnegative number"
         )
     return float(value)
 
@@ -1222,8 +1311,17 @@ def _safe_ratio(numerator: int, denominator: int) -> float | None:
 
 def _heartbeat_elapsed(heartbeat: Mapping[str, Any]) -> float | None:
     value = heartbeat.get("elapsed_sec")
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if value is None:
         return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise ValueError(
+            "heartbeat elapsed_sec must be a finite nonnegative number"
+        )
     return float(value)
 
 

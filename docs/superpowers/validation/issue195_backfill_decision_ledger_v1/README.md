@@ -23,7 +23,7 @@ The verified run emitted `365,176` ledger lines (header plus `317,036`
 candidate rows and `48,139` group-settlement rows). SHA-256 values were
 `F54F447EEEFA0CC826B7815B5AD454A7D2B44F87C8847146CA3AEA35CA6E6CE2` for
 the ledger and
-`4EBC06B5A3611F034455A0FD166569AF9EC069CA67829CE0FAA10F4332E26BEF` for
+`26F08228798E071244E6BEF106CD9163BC4F1D8750D17006C8C378233196F61D` for
 the JSON summary.
 
 ## Observed evidence
@@ -61,8 +61,11 @@ is unavailable.
 ## Decision and order
 
 Value priority: owner-valid early-loser-settlement shadow before exact request
-coalescing. A large post-Backfill loser population is observed, while the
-smaller request-reuse number is only a display proxy.
+coalescing. This recommendation is derived from the observed 36,608
+post-Backfill loser rows while exact request equivalence remains unavailable;
+the request-reuse number is only a display proxy. A compatible artifact with
+zero loser rows now reports an inconclusive priority instead of repeating this
+artifact-specific recommendation.
 
 Dependency order:
 
