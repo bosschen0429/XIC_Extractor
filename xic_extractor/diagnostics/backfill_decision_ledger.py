@@ -4,7 +4,7 @@ import csv
 import hashlib
 import json
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
@@ -13,6 +13,11 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
 )
+from xic_extractor.extraction.provisional_run_manifest import (
+    PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
+    validate_provisional_run_manifest,
+)
+from xic_extractor.tabular_io import validate_delimited_header, write_tsv
 
 LEDGER_SCHEMA_VERSION: Final = "backfill_decision_ledger_v1"
 SUMMARY_SCHEMA_VERSION: Final = "backfill_decision_summary_v1"
@@ -21,6 +26,7 @@ VALIDATION_STATUS: Final = "diagnostic_only"
 _LEDGER_COLUMNS: Final = (
     "schema_version",
     "record_type",
+    "diagnostic_layers",
     "claim_status",
     "sample_stem",
     "physical_ms1_feature_id",
@@ -30,6 +36,7 @@ _LEDGER_COLUMNS: Final = (
     "seed_scan_ids",
     "scientific_hypothesis_status",
     "owner_ids",
+    "owner_projection_refs",
     "assignment_role",
     "owner_assignment_status",
     "group_hypothesis_id",
@@ -48,31 +55,125 @@ _LEDGER_COLUMNS: Final = (
     "cost_status",
 )
 
-_REVIEW_COLUMNS: Final = frozenset(
+_LEGACY_MANIFEST_SCHEMA_VERSION: Final = "untargeted_provisional_matrix_run_v1"
+_LEGACY_MANIFEST_FIELDS: Final = frozenset(
     {
-        "group_hypothesis_id",
-        "consolidation_state",
-        "consolidation_winner_group_hypothesis_id",
-        "event_cluster_ids",
-        "event_member_count",
-        "quantifiable_rescue_count",
-        "review_rescue_count",
+        "schema_version",
+        "code_revision",
+        "preset_name",
+        "effective_configuration",
+        "runtime",
+        "inputs",
+        "artifacts",
+        "validation_status",
+        "row_identity_status",
+        "identity_settlement_status",
+        "product_authority",
     }
 )
-_BACKFILL_COLUMNS: Final = frozenset(
-    {
-        "group_hypothesis_id",
-        "sample_stem",
-        "source_candidate_id",
-    }
+_CONSOLIDATION_STATES: Final = frozenset(
+    {"not_consolidated", "primary_loser", "primary_winner"}
 )
-_PROVENANCE_COLUMNS: Final = frozenset(
-    {
-        "group_hypothesis_id",
-        "sample_stem",
-        "backfill_seed_mz",
-        "backfill_seed_rt",
-    }
+
+_REVIEW_COLUMNS: Final = (
+    "feature_family_id",
+    "group_hypothesis_id",
+    "public_family_id",
+    "group_construction_role",
+    "group_delivery_role",
+    "group_membership_source",
+    "consolidation_state",
+    "consolidation_winner_group_hypothesis_id",
+    "consolidation_source_group_hypothesis_id",
+    "neutral_loss_tag",
+    "family_center_mz",
+    "family_center_rt",
+    "family_product_mz",
+    "family_observed_neutral_loss_da",
+    "has_anchor",
+    "event_cluster_count",
+    "event_cluster_ids",
+    "event_member_count",
+    "detected_count",
+    "absent_count",
+    "unchecked_count",
+    "duplicate_assigned_count",
+    "ambiguous_ms1_owner_count",
+    "present_rate",
+    "identity_decision",
+    "identity_confidence",
+    "primary_evidence",
+    "identity_reason",
+    "quantifiable_detected_count",
+    "quantifiable_rescue_count",
+    "accepted_cell_count",
+    "accepted_rescue_count",
+    "review_rescue_count",
+    "include_in_primary_matrix",
+    "row_flags",
+    "artificial_adduct_role",
+    "artificial_adduct_name",
+    "artificial_adduct_related_family_id",
+    "artificial_adduct_mz_delta_error_ppm",
+    "artificial_adduct_rt_delta_min",
+    "representative_samples",
+    "family_evidence",
+    "warning",
+    "reason",
+)
+_BACKFILL_COLUMNS: Final = (
+    "schema_version",
+    "feature_family_id",
+    "group_hypothesis_id",
+    "public_family_id",
+    "sample_stem",
+    "status",
+    "production_cell_status",
+    "rescue_tier",
+    "write_matrix_value",
+    "include_in_primary_matrix",
+    "identity_decision",
+    "row_flags",
+    "area",
+    "primary_matrix_area",
+    "primary_matrix_area_source",
+    "primary_matrix_area_reason",
+    "apex_rt",
+    "height",
+    "peak_start_rt",
+    "peak_end_rt",
+    "rt_delta_sec",
+    "trace_quality",
+    "scan_support_score",
+    "gap_fill_state",
+    "gap_fill_reason",
+    "backfill_evidence_reason",
+    "source_candidate_id",
+    "source_raw_file",
+    "neutral_loss_tag",
+    "family_center_mz",
+    "family_center_rt",
+    "region_shadow_verdict",
+    "reason",
+)
+_PROVENANCE_COLUMNS: Final = (
+    "schema_version",
+    "group_hypothesis_id",
+    "public_family_id",
+    "sample_stem",
+    "cell_state",
+    "alignment_status",
+    "matrix_value",
+    "matrix_value_basis",
+    "source_candidate_id",
+    "trace_quality",
+    "reason",
+    "backfill_seed_mz",
+    "backfill_seed_rt",
+    "group_construction_role",
+    "group_membership_source",
+    "validation_status",
+    "product_authority",
 )
 
 
@@ -87,7 +188,7 @@ class BackfillDecisionLedgerOutputs:
 @dataclass(frozen=True, slots=True)
 class _ReviewGroup:
     group_hypothesis_id: str
-    owner_ids: str
+    owner_projection_refs: str
     event_member_count: int
     consolidation_state: str
     consolidation_winner_group_hypothesis_id: str
@@ -133,6 +234,18 @@ class _TimingCensus:
     pre_backfill_consolidation_observed: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _ManifestEvidence:
+    schema_version: str
+    rehydration_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateCensus:
+    summary: Mapping[str, int | float]
+    candidate_ids: frozenset[str]
+
+
 def build_backfill_decision_ledger(
     *,
     artifact_root: Path,
@@ -141,9 +254,8 @@ def build_backfill_decision_ledger(
 ) -> BackfillDecisionLedgerOutputs:
     artifact_root = artifact_root.resolve()
     output_dir = output_dir.resolve()
-    manifest = _read_json_object(_required_file(artifact_root / "run_manifest.json"))
-    _validate_manifest(
-        manifest,
+    manifest_evidence = _read_manifest_evidence(
+        _required_file(artifact_root / "run_manifest.json"),
         artifact_root=artifact_root,
         expected_code_revision=expected_code_revision,
     )
@@ -161,9 +273,22 @@ def build_backfill_decision_ledger(
     timing = _read_timing(_required_file(artifact_root / "timing.json"))
     heartbeat = _read_json_object(_required_file(artifact_root / "heartbeat.json"))
 
+    candidate_census = _read_candidate_census(
+        artifact_root=artifact_root,
+    )
+    unknown_candidate_ids = sorted(
+        set(backfill.candidate_group_ids) - candidate_census.candidate_ids
+    )
+    if unknown_candidate_ids:
+        preview = ", ".join(repr(value) for value in unknown_candidate_ids[:3])
+        raise ValueError(
+            "Backfill projection references unknown source_candidate_id values: "
+            f"{preview}"
+        )
+
     output_dir.mkdir(parents=True, exist_ok=True)
     ledger_tsv = output_dir / "backfill_decision_ledger.tsv"
-    candidate_census = _write_ledger(
+    _write_ledger(
         ledger_tsv,
         artifact_root=artifact_root,
         review=review,
@@ -174,20 +299,21 @@ def build_backfill_decision_ledger(
     summary = _summary(
         artifact_root=artifact_root,
         expected_code_revision=expected_code_revision,
+        manifest_evidence=manifest_evidence,
         heartbeat=heartbeat,
-        candidate_census=candidate_census,
+        candidate_census=candidate_census.summary,
         review=review,
         backfill=backfill,
         request_proxy=request_proxy,
         timing=timing,
     )
     summary_json = output_dir / "backfill_decision_summary.json"
-    summary_json.write_text(
+    _write_text_atomic(
+        summary_json,
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
     )
     summary_markdown = output_dir / "backfill_decision_summary.md"
-    summary_markdown.write_text(_summary_markdown(summary), encoding="utf-8")
+    _write_text_atomic(summary_markdown, _summary_markdown(summary))
     return BackfillDecisionLedgerOutputs(
         ledger_tsv=ledger_tsv,
         summary_json=summary_json,
@@ -196,15 +322,10 @@ def build_backfill_decision_ledger(
     )
 
 
-def _write_ledger(
-    path: Path,
+def _read_candidate_census(
     *,
     artifact_root: Path,
-    review: _ReviewCensus,
-    backfill: _BackfillCensus,
-    request_proxy: _RequestProxyCensus,
-    timing: _TimingCensus,
-) -> dict[str, int | float]:
+) -> _CandidateCensus:
     batch_index = _required_file(
         artifact_root / "workflow" / "discovery" / "discovery_batch_index.csv"
     )
@@ -218,171 +339,44 @@ def _write_ledger(
     display_family_best_scans: dict[tuple[str, str], set[int]] = defaultdict(set)
     candidate_ids: set[str] = set()
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=_LEDGER_COLUMNS,
-            delimiter="\t",
-            lineterminator="\n",
-            extrasaction="raise",
-        )
-        writer.writeheader()
-        for sample_stem in batch.sample_order:
-            receipt = batch.candidate_receipts.get(sample_stem)
-            if receipt is None:
-                raise ValueError(
-                    f"{batch_index}: sample {sample_stem!r} has no owner receipt"
-                )
-            candidate_path = _required_file(
-                artifact_root
-                / "workflow"
-                / "discovery"
-                / sample_stem
-                / "discovery_candidates.csv"
-            )
-            candidates = read_owner_bound_discovery_candidates_csv(
-                candidate_path,
-                receipt=receipt,
-                require_successor_columns=True,
-            )
-            for candidate in candidates:
-                candidate_count += 1
-                candidate_ids.add(candidate.candidate_id)
-                if len(candidate.seed_scan_ids) > 1:
-                    multi_seed_candidate_count += 1
-                family_key = (candidate.sample_stem, candidate.feature_family_id)
-                display_family_counts[family_key] += 1
-                display_family_best_scans[family_key].add(candidate.best_ms2_scan_id)
-
-                physical_id = candidate.ms1_feature_row_id
-                if physical_id:
-                    populated_physical_feature_count += 1
-                    feature_key = (
-                        candidate.sample_stem,
-                        candidate.neutral_loss_tag,
-                        physical_id,
-                    )
-                    if feature_key in physical_feature_ids:
-                        duplicate_physical_feature_count += 1
-                    physical_feature_ids.add(feature_key)
-
-                projected_groups = backfill.candidate_group_ids.get(
-                    candidate.candidate_id,
-                    frozenset(),
-                )
-                group_ids = ";".join(sorted(projected_groups))
-                group_status = (
-                    "unavailable_missing_owner_assignment_payload"
-                    if not projected_groups
-                    else "projection_only_source_candidate_link"
-                    if len(projected_groups) == 1
-                    else "projection_only_ambiguous_multiple_groups"
-                )
-                writer.writerow(
-                    {
-                        "schema_version": LEDGER_SCHEMA_VERSION,
-                        "record_type": "candidate",
-                        "claim_status": "discovery_owner_bound_candidate",
-                        "sample_stem": candidate.sample_stem,
-                        "physical_ms1_feature_id": physical_id,
-                        "physical_ms1_identity_status": (
-                            "discovery_owner_rehydrated_declared_feature_identity"
-                            if physical_id
-                            else "unavailable_review_only_orphan"
-                        ),
-                        "candidate_id": candidate.candidate_id,
-                        "best_ms2_scan_id": candidate.best_ms2_scan_id,
-                        "seed_scan_ids": ";".join(
-                            str(value) for value in candidate.seed_scan_ids
-                        ),
-                        "scientific_hypothesis_status": (
-                            "candidate_declared_precursor_product_hypothesis"
-                        ),
-                        "owner_ids": "",
-                        "assignment_role": "",
-                        "owner_assignment_status": (
-                            "unavailable_missing_owner_assignment_payload"
-                        ),
-                        "group_hypothesis_id": group_ids,
-                        "group_status": group_status,
-                        "consolidation_state": "",
-                        "consolidation_winner_group_hypothesis_id": "",
-                        "earliest_settlement_stage": "",
-                        "logical_backfill_request_id": "",
-                        "request_equivalence_class_id": "",
-                        "request_identity_status": (
-                            "unavailable_no_owner_request_identity"
-                        ),
-                        "display_request_proxy_count": "",
-                        "display_request_proxy_duplicate_count": "",
-                        "batch_cost": "",
-                        "raw_call_cost": "",
-                        "point_cost": "",
-                        "cost_status": "aggregate_only_no_request_correlation",
-                    }
-                )
-
-        unknown_candidate_ids = sorted(
-            set(backfill.candidate_group_ids) - candidate_ids
-        )
-        if unknown_candidate_ids:
-            preview = ", ".join(repr(value) for value in unknown_candidate_ids[:3])
+    for sample_stem in batch.sample_order:
+        receipt = batch.candidate_receipts.get(sample_stem)
+        if receipt is None:
             raise ValueError(
-                "Backfill projection references unknown source_candidate_id values: "
-                f"{preview}"
+                f"{batch_index}: sample {sample_stem!r} has no owner receipt"
             )
+        candidate_path = _required_file(
+            artifact_root
+            / "workflow"
+            / "discovery"
+            / sample_stem
+            / "discovery_candidates.csv"
+        )
+        candidates = read_owner_bound_discovery_candidates_csv(
+            candidate_path,
+            receipt=receipt,
+            require_successor_columns=True,
+        )
+        for candidate in candidates:
+            candidate_count += 1
+            candidate_ids.add(candidate.candidate_id)
+            if len(candidate.seed_scan_ids) > 1:
+                multi_seed_candidate_count += 1
+            family_key = (candidate.sample_stem, candidate.feature_family_id)
+            display_family_counts[family_key] += 1
+            display_family_best_scans[family_key].add(candidate.best_ms2_scan_id)
 
-        for group_id in sorted(review.groups):
-            group = review.groups[group_id]
-            writer.writerow(
-                {
-                    "schema_version": LEDGER_SCHEMA_VERSION,
-                    "record_type": "group_settlement",
-                    "claim_status": "persisted_projection_only",
-                    "sample_stem": "",
-                    "physical_ms1_feature_id": "",
-                    "physical_ms1_identity_status": (
-                        "unavailable_missing_complete_owner_payload"
-                    ),
-                    "candidate_id": "",
-                    "best_ms2_scan_id": "",
-                    "seed_scan_ids": "",
-                    "scientific_hypothesis_status": (
-                        "cross_sample_group_projection_not_rehydrated"
-                    ),
-                    "owner_ids": group.owner_ids,
-                    "assignment_role": "",
-                    "owner_assignment_status": (
-                        "projection_only_owner_ids_without_assignments"
-                    ),
-                    "group_hypothesis_id": group_id,
-                    "group_status": "projection_only_not_owner_rehydrated",
-                    "consolidation_state": group.consolidation_state,
-                    "consolidation_winner_group_hypothesis_id": (
-                        group.consolidation_winner_group_hypothesis_id
-                    ),
-                    "earliest_settlement_stage": _earliest_settlement_stage(
-                        group.consolidation_state,
-                        timing=timing,
-                    ),
-                    "logical_backfill_request_id": "",
-                    "request_equivalence_class_id": "",
-                    "request_identity_status": (
-                        "unavailable_no_owner_request_identity"
-                    ),
-                    "display_request_proxy_count": (
-                        request_proxy.per_group_count.get(group_id, 0)
-                    ),
-                    "display_request_proxy_duplicate_count": (
-                        request_proxy.per_group_duplicate_count.get(group_id, 0)
-                    ),
-                    "batch_cost": "",
-                    "raw_call_cost": "",
-                    "point_cost": "",
-                    "cost_status": "aggregate_only_no_request_correlation",
-                }
-            )
+            physical_id = candidate.ms1_feature_row_id
+            if physical_id:
+                populated_physical_feature_count += 1
+                feature_key = (
+                    candidate.sample_stem,
+                    candidate.neutral_loss_tag,
+                    physical_id,
+                )
+                if feature_key in physical_feature_ids:
+                    duplicate_physical_feature_count += 1
+                physical_feature_ids.add(feature_key)
 
     multi_display_families = sum(count > 1 for count in display_family_counts.values())
     display_family_excess_candidate_count = sum(
@@ -391,19 +385,184 @@ def _write_ledger(
     multi_scan_display_families = sum(
         len(scans) > 1 for scans in display_family_best_scans.values()
     )
-    return {
-        "sample_count": len(batch.sample_order),
-        "candidate_count": candidate_count,
-        "populated_physical_feature_count": populated_physical_feature_count,
-        "unique_physical_feature_count": len(physical_feature_ids),
-        "duplicate_physical_feature_count": duplicate_physical_feature_count,
-        "multi_seed_candidate_count": multi_seed_candidate_count,
-        "display_family_multi_candidate_group_count": multi_display_families,
-        "display_family_excess_candidate_count": (
-            display_family_excess_candidate_count
+    return _CandidateCensus(
+        summary={
+            "sample_count": len(batch.sample_order),
+            "candidate_count": candidate_count,
+            "populated_physical_feature_count": populated_physical_feature_count,
+            "unique_physical_feature_count": len(physical_feature_ids),
+            "duplicate_physical_feature_count": duplicate_physical_feature_count,
+            "multi_seed_candidate_count": multi_seed_candidate_count,
+            "display_family_multi_candidate_group_count": multi_display_families,
+            "display_family_excess_candidate_count": (
+                display_family_excess_candidate_count
+            ),
+            "display_family_multi_best_scan_group_count": (multi_scan_display_families),
+        },
+        candidate_ids=frozenset(candidate_ids),
+    )
+
+
+def _write_ledger(
+    path: Path,
+    *,
+    artifact_root: Path,
+    review: _ReviewCensus,
+    backfill: _BackfillCensus,
+    request_proxy: _RequestProxyCensus,
+    timing: _TimingCensus,
+) -> None:
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    write_tsv(
+        temporary_path,
+        _iter_ledger_rows(
+            artifact_root=artifact_root,
+            review=review,
+            backfill=backfill,
+            request_proxy=request_proxy,
+            timing=timing,
         ),
-        "display_family_multi_best_scan_group_count": multi_scan_display_families,
-    }
+        _LEDGER_COLUMNS,
+        extrasaction="raise",
+        lineterminator="\n",
+    )
+    temporary_path.replace(path)
+
+
+def _iter_ledger_rows(
+    *,
+    artifact_root: Path,
+    review: _ReviewCensus,
+    backfill: _BackfillCensus,
+    request_proxy: _RequestProxyCensus,
+    timing: _TimingCensus,
+) -> Iterator[Mapping[str, object]]:
+    batch_index = _required_file(
+        artifact_root / "workflow" / "discovery" / "discovery_batch_index.csv"
+    )
+    batch = read_discovery_batch_index(batch_index)
+    for sample_stem in batch.sample_order:
+        receipt = batch.candidate_receipts.get(sample_stem)
+        if receipt is None:
+            raise ValueError(
+                f"{batch_index}: sample {sample_stem!r} has no owner receipt"
+            )
+        candidate_path = _required_file(
+            artifact_root
+            / "workflow"
+            / "discovery"
+            / sample_stem
+            / "discovery_candidates.csv"
+        )
+        candidates = read_owner_bound_discovery_candidates_csv(
+            candidate_path,
+            receipt=receipt,
+            require_successor_columns=True,
+        )
+        for candidate in candidates:
+            projected_groups = backfill.candidate_group_ids.get(
+                candidate.candidate_id,
+                frozenset(),
+            )
+            group_ids = ";".join(sorted(projected_groups))
+            group_status = (
+                "unavailable_missing_owner_assignment_payload"
+                if not projected_groups
+                else "projection_only_source_candidate_link"
+                if len(projected_groups) == 1
+                else "projection_only_ambiguous_multiple_groups"
+            )
+            physical_id = candidate.ms1_feature_row_id
+            yield {
+                "schema_version": LEDGER_SCHEMA_VERSION,
+                "record_type": "candidate",
+                "diagnostic_layers": "A;B",
+                "claim_status": "discovery_owner_bound_candidate",
+                "sample_stem": candidate.sample_stem,
+                "physical_ms1_feature_id": physical_id,
+                "physical_ms1_identity_status": (
+                    "discovery_owner_rehydrated_declared_feature_identity"
+                    if physical_id
+                    else "unavailable_review_only_orphan"
+                ),
+                "candidate_id": candidate.candidate_id,
+                "best_ms2_scan_id": candidate.best_ms2_scan_id,
+                "seed_scan_ids": ";".join(
+                    str(value) for value in candidate.seed_scan_ids
+                ),
+                "scientific_hypothesis_status": (
+                    "candidate_declared_precursor_product_hypothesis"
+                ),
+                "owner_ids": "",
+                "owner_projection_refs": "",
+                "assignment_role": "",
+                "owner_assignment_status": (
+                    "unavailable_missing_owner_assignment_payload"
+                ),
+                "group_hypothesis_id": group_ids,
+                "group_status": group_status,
+                "consolidation_state": "",
+                "consolidation_winner_group_hypothesis_id": "",
+                "earliest_settlement_stage": "",
+                "logical_backfill_request_id": "",
+                "request_equivalence_class_id": "",
+                "request_identity_status": "unavailable_no_owner_request_identity",
+                "display_request_proxy_count": "",
+                "display_request_proxy_duplicate_count": "",
+                "batch_cost": "",
+                "raw_call_cost": "",
+                "point_cost": "",
+                "cost_status": "aggregate_only_no_request_correlation",
+            }
+
+    for group_id in sorted(review.groups):
+        group = review.groups[group_id]
+        yield {
+            "schema_version": LEDGER_SCHEMA_VERSION,
+            "record_type": "group_settlement",
+            "diagnostic_layers": "C;D;E",
+            "claim_status": "persisted_projection_only",
+            "sample_stem": "",
+            "physical_ms1_feature_id": "",
+            "physical_ms1_identity_status": (
+                "unavailable_missing_complete_owner_payload"
+            ),
+            "candidate_id": "",
+            "best_ms2_scan_id": "",
+            "seed_scan_ids": "",
+            "scientific_hypothesis_status": (
+                "cross_sample_group_projection_not_rehydrated"
+            ),
+            "owner_ids": "",
+            "owner_projection_refs": group.owner_projection_refs,
+            "assignment_role": "",
+            "owner_assignment_status": (
+                "projection_only_refs_without_owner_assignments"
+            ),
+            "group_hypothesis_id": group_id,
+            "group_status": "projection_only_not_owner_rehydrated",
+            "consolidation_state": group.consolidation_state,
+            "consolidation_winner_group_hypothesis_id": (
+                group.consolidation_winner_group_hypothesis_id
+            ),
+            "earliest_settlement_stage": _earliest_settlement_stage(
+                group.consolidation_state,
+                timing=timing,
+            ),
+            "logical_backfill_request_id": "",
+            "request_equivalence_class_id": "",
+            "request_identity_status": "unavailable_no_owner_request_identity",
+            "display_request_proxy_count": request_proxy.per_group_count.get(
+                group_id, 0
+            ),
+            "display_request_proxy_duplicate_count": (
+                request_proxy.per_group_duplicate_count.get(group_id, 0)
+            ),
+            "batch_cost": "",
+            "raw_call_cost": "",
+            "point_cost": "",
+            "cost_status": "aggregate_only_no_request_correlation",
+        }
 
 
 def _read_review_groups(path: Path) -> _ReviewCensus:
@@ -421,6 +580,10 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
         if group_id in groups:
             raise ValueError(f"{path}: row {row_number}: duplicate group {group_id!r}")
         state = _required_text(path, row_number, row, "consolidation_state")
+        if state not in _CONSOLIDATION_STATES:
+            raise ValueError(
+                f"{path}: row {row_number}: unsupported consolidation_state {state!r}"
+            )
         quantifiable_rescue_count = _nonnegative_int(
             path,
             row_number,
@@ -435,7 +598,7 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
         )
         groups[group_id] = _ReviewGroup(
             group_hypothesis_id=group_id,
-            owner_ids=row.get("event_cluster_ids", ""),
+            owner_projection_refs=row.get("event_cluster_ids", ""),
             event_member_count=_nonnegative_int(
                 path,
                 row_number,
@@ -645,6 +808,7 @@ def _summary(
     *,
     artifact_root: Path,
     expected_code_revision: str,
+    manifest_evidence: _ManifestEvidence,
     heartbeat: Mapping[str, Any],
     candidate_census: Mapping[str, int | float],
     review: _ReviewCensus,
@@ -664,6 +828,8 @@ def _summary(
         "artifact": {
             "artifact_name": artifact_root.name,
             "producing_code_revision": expected_code_revision,
+            "manifest_schema_version": manifest_evidence.schema_version,
+            "manifest_rehydration_status": (manifest_evidence.rehydration_status),
             "freshness": "stale_revision_diagnostic_cost_evidence_only",
             "current_head_parity_claimed": False,
             "raw_opened": False,
@@ -728,6 +894,25 @@ def _summary(
         "artifact_row_counts": {
             "backfill_cell_evidence_rows": backfill.row_count,
             "provisional_cell_provenance_rows": request_proxy.row_count,
+        },
+        "diagnostic_layers": {
+            "A_same_candidate_other_ms2_evidence": (
+                "reproduced_duplicate_owner_bound_feature_ids"
+                if candidate_pairing_defect_reproduced
+                else "not_reproduced_zero_duplicate_owner_bound_feature_ids"
+            ),
+            "B_same_peak_distinct_scientific_hypotheses": (
+                "inconclusive_missing_owner_physical_peak_payload"
+            ),
+            "C_alignment_owner_consolidation": (
+                "partial_aggregate_counts_only_assignment_lineage_unavailable"
+            ),
+            "D_cross_sample_winner_loser_settlement": (
+                "partial_final_projection_pre_backfill_knowability_unavailable"
+            ),
+            "E_exact_request_and_batch_reuse": (
+                "inconclusive_exact_identity_and_request_cost_lineage_unavailable"
+            ),
         },
         "hypothesis_verdict": {
             "candidate_layer": (
@@ -848,12 +1033,45 @@ def _summary_markdown(summary: Mapping[str, Any]) -> str:
     )
 
 
-def _validate_manifest(
-    manifest: Mapping[str, Any],
+def _read_manifest_evidence(
+    path: Path,
     *,
     artifact_root: Path,
     expected_code_revision: str,
-) -> None:
+) -> _ManifestEvidence:
+    manifest = _read_json_object(path)
+    schema_version = manifest.get("schema_version")
+    if schema_version == PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION:
+        validated = validate_provisional_run_manifest(path, root=artifact_root)
+        if validated.get("code_revision") != expected_code_revision:
+            raise ValueError(
+                f"{artifact_root}: owner-validated code_revision does not match "
+                f"expected {expected_code_revision!r}"
+            )
+        return _ManifestEvidence(
+            schema_version=PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
+            rehydration_status="current_owner_rehydrated",
+        )
+    if schema_version != _LEGACY_MANIFEST_SCHEMA_VERSION:
+        raise ValueError(
+            f"{artifact_root}: unsupported manifest schema {schema_version!r}"
+        )
+    if set(manifest) != _LEGACY_MANIFEST_FIELDS:
+        raise ValueError(
+            f"{artifact_root}: legacy manifest field set is invalid; current owner "
+            "rehydration is unavailable"
+        )
+
+    try:
+        validate_provisional_run_manifest(path, root=artifact_root)
+    except ValueError:
+        rehydration_status = (
+            "unavailable_legacy_schema_rejected_by_current_manifest_owner"
+        )
+    else:
+        raise ValueError(
+            f"{artifact_root}: legacy schema unexpectedly passed the current owner"
+        )
     observed_revision = manifest.get("code_revision")
     if observed_revision != expected_code_revision:
         raise ValueError(
@@ -872,6 +1090,10 @@ def _validate_manifest(
                 f"{artifact_root}: manifest {field} must be {expected!r}, got "
                 f"{manifest.get(field)!r}"
             )
+    return _ManifestEvidence(
+        schema_version=_LEGACY_MANIFEST_SCHEMA_VERSION,
+        rehydration_status=rehydration_status,
+    )
 
 
 def _earliest_settlement_stage(
@@ -893,31 +1115,62 @@ def _iter_delimited_rows(
     path: Path,
     *,
     delimiter: str,
-    required_columns: frozenset[str],
+    required_columns: tuple[str, ...],
 ) -> Iterable[tuple[int, dict[str, str]]]:
     try:
         with path.open(newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle, delimiter=delimiter)
-            fieldnames = frozenset(reader.fieldnames or ())
-            missing = sorted(required_columns - fieldnames)
-            if missing:
-                raise ValueError(
-                    f"{path}: missing required columns: {', '.join(missing)}"
-                )
+            validate_delimited_header(
+                reader.fieldnames,
+                path=path,
+                required_columns=required_columns,
+                exact_columns=required_columns,
+            )
             for row_number, row in enumerate(reader, start=2):
+                if None in row:
+                    raise ValueError(
+                        f"{path}: row {row_number}: more cells than header"
+                    )
+                truncated = [column for column, value in row.items() if value is None]
+                if truncated:
+                    joined = ", ".join(truncated)
+                    raise ValueError(
+                        f"{path}: row {row_number}: fewer cells than header; "
+                        f"missing {joined}"
+                    )
                 yield row_number, row
     except OSError as exc:
         raise ValueError(f"{path}: file could not be read: {exc}") from exc
 
 
+def _mapping_without_duplicate_keys(
+    pairs: list[tuple[str, Any]],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
 def _read_json_object(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_mapping_without_duplicate_keys,
+        )
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"{path}: invalid JSON: {exc}") from exc
     if not isinstance(payload, dict):
         raise ValueError(f"{path}: JSON root must be an object")
     return payload
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    temporary_path = path.with_suffix(path.suffix + ".tmp")
+    temporary_path.write_text(text, encoding="utf-8")
+    temporary_path.replace(path)
 
 
 def _required_file(path: Path) -> Path:

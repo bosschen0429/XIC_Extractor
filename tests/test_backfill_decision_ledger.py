@@ -9,6 +9,9 @@ import pytest
 from tests.alignment_pipeline_helpers import candidate_row, write_csv
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.diagnostics.backfill_decision_ledger import (
+    _BACKFILL_COLUMNS,
+    _PROVENANCE_COLUMNS,
+    _REVIEW_COLUMNS,
     build_backfill_decision_ledger,
 )
 from xic_extractor.discovery.batch_contract import (
@@ -70,6 +73,16 @@ def test_decision_ledger_is_deterministic_and_preserves_authority_ceiling(
     assert first.summary["hypothesis_verdict"]["overall"] == (
         "candidate_layer_not_reproduced_downstream_inconclusive"
     )
+    assert first.summary["artifact"]["manifest_rehydration_status"] == (
+        "unavailable_legacy_schema_rejected_by_current_manifest_owner"
+    )
+    assert set(first.summary["diagnostic_layers"]) == {
+        "A_same_candidate_other_ms2_evidence",
+        "B_same_peak_distinct_scientific_hypotheses",
+        "C_alignment_owner_consolidation",
+        "D_cross_sample_winner_loser_settlement",
+        "E_exact_request_and_batch_reuse",
+    }
     ledger_text = first.ledger_tsv.read_text(encoding="utf-8")
     assert "unavailable_missing_owner_assignment_payload" in ledger_text
     assert "unavailable_no_owner_request_identity" in ledger_text
@@ -98,10 +111,16 @@ def test_decision_ledger_rejects_unknown_projection_group(tmp_path: Path) -> Non
     evidence = (
         artifact / "workflow" / "alignment" / "alignment_backfill_cell_evidence.tsv"
     )
-    evidence.write_text(
-        "group_hypothesis_id\tsample_stem\tsource_candidate_id\n"
-        "unknown\tSample_A\tSample_A#1@mz500_p384\n",
-        encoding="utf-8",
+    _write_tsv(
+        evidence,
+        _BACKFILL_COLUMNS,
+        [
+            {
+                "group_hypothesis_id": "unknown",
+                "sample_stem": "Sample_A",
+                "source_candidate_id": "Sample_A#1@mz500_p384",
+            }
+        ],
     )
 
     with pytest.raises(ValueError, match="unknown group_hypothesis_id"):
@@ -125,6 +144,39 @@ def test_decision_ledger_rejects_negative_cost_metric(tmp_path: Path) -> None:
         build_backfill_decision_ledger(
             artifact_root=artifact,
             output_dir=tmp_path / "output",
+            expected_code_revision=_REVISION,
+        )
+
+
+def test_decision_ledger_rejects_duplicate_header_and_unknown_enum(
+    tmp_path: Path,
+) -> None:
+    artifact = _artifact(tmp_path / "artifact")
+    review = artifact / "workflow" / "alignment" / "alignment_review.tsv"
+    text = review.read_text(encoding="utf-8")
+    review.write_text(
+        text.replace(
+            "feature_family_id\t", "feature_family_id\tfeature_family_id\t", 1
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="duplicate columns"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "duplicate",
+            expected_code_revision=_REVISION,
+        )
+
+    artifact = _artifact(tmp_path / "enum-artifact")
+    review = artifact / "workflow" / "alignment" / "alignment_review.tsv"
+    review.write_text(
+        review.read_text(encoding="utf-8").replace("primary_loser", "primary_lsoer", 1),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unsupported consolidation_state"):
+        build_backfill_decision_ledger(
+            artifact_root=artifact,
+            output_dir=tmp_path / "enum",
             expected_code_revision=_REVISION,
         )
 
@@ -163,15 +215,7 @@ def _artifact(root: Path) -> Path:
     alignment.mkdir(parents=True)
     _write_tsv(
         alignment / "alignment_review.tsv",
-        (
-            "group_hypothesis_id",
-            "consolidation_state",
-            "consolidation_winner_group_hypothesis_id",
-            "event_cluster_ids",
-            "event_member_count",
-            "quantifiable_rescue_count",
-            "review_rescue_count",
-        ),
+        _REVIEW_COLUMNS,
         [
             {
                 "group_hypothesis_id": "group-1",
@@ -186,7 +230,7 @@ def _artifact(root: Path) -> Path:
     )
     _write_tsv(
         alignment / "alignment_backfill_cell_evidence.tsv",
-        ("group_hypothesis_id", "sample_stem", "source_candidate_id"),
+        _BACKFILL_COLUMNS,
         [
             {
                 "group_hypothesis_id": "group-1",
@@ -197,12 +241,7 @@ def _artifact(root: Path) -> Path:
     )
     _write_tsv(
         alignment / "provisional_cell_provenance.tsv",
-        (
-            "group_hypothesis_id",
-            "sample_stem",
-            "backfill_seed_mz",
-            "backfill_seed_rt",
-        ),
+        _PROVENANCE_COLUMNS,
         [
             {
                 "group_hypothesis_id": "group-1",
@@ -221,7 +260,13 @@ def _artifact(root: Path) -> Path:
     (root / "run_manifest.json").write_text(
         json.dumps(
             {
+                "schema_version": "untargeted_provisional_matrix_run_v1",
                 "code_revision": _REVISION,
+                "preset_name": "synthetic",
+                "effective_configuration": {},
+                "runtime": {},
+                "inputs": {},
+                "artifacts": {},
                 "validation_status": "diagnostic_only",
                 "product_authority": False,
                 "row_identity_status": "provisional",

@@ -629,6 +629,14 @@ request identity, equivalence classes, and request-to-batch/call/point lineage
 are absent. Those claims remain explicitly unavailable; no savings estimate is
 made.
 
+The retained manifest is legacy `untargeted_provisional_matrix_run_v1` and is
+rejected by the current manifest owner. The diagnostic records that
+rehydration gap explicitly instead of promoting legacy embedded assertions.
+Its A–E layer verdicts are: A not reproduced at the owner-bound candidate
+identity layer; B inconclusive without the physical-peak owner payload; C
+aggregate-only/partial; D final-projection-only with pre-Backfill knowability
+unavailable; and E unavailable without exact request and batch lineage.
+
 Decision: value priority is an owner-valid early-loser-settlement shadow before
 exact request coalescing. Dependency order is decision ledger, owner-valid
 early-settlement shadow, owner-minted exact request identity/coalescing,

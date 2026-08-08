@@ -20,9 +20,9 @@ The ignored output contains `backfill_decision_ledger.tsv`,
 `backfill_decision_summary.json`, and `backfill_decision_summary.md`.
 The verified run emitted `365,176` ledger lines (header plus `317,036`
 candidate rows and `48,139` group-settlement rows). SHA-256 values were
-`C202F8EAAC9F00E954C4EDD1EA576C3E6C77AC68AEC81CCF7E5CD73A6F21AB69` for
+`F54F447EEEFA0CC826B7815B5AD454A7D2B44F87C8847146CA3AEA35CA6E6CE2` for
 the ledger and
-`AD6AE097C3DE7BE09F9B04506EC490643E95A14F0EF0C51D85CAC5B28ACFB0F8` for
+`89C9FB2592C5DC824007ECD0568C80912C3BA60836761BFAFA3918633A06C643` for
 the JSON summary.
 
 ## Observed evidence
@@ -41,6 +41,20 @@ The downstream owner-assignment/group/request portion of the pairing hypothesis
 is inconclusive because the retained artifact omits complete owner payloads,
 owner-minted logical request IDs/equivalence classes, and request-to-batch/call/
 point lineage.
+
+The retained manifest uses legacy schema
+`untargeted_provisional_matrix_run_v1`; the current manifest owner rejects that
+schema. The summary therefore records manifest rehydration as unavailable. It
+does not promote the legacy manifest's embedded assertions. Candidate fields
+remain separately owner-rehydrated through their Discovery receipts; alignment
+and cost inputs remain labeled as projections/aggregates.
+
+The machine summary distinguishes all five diagnosis layers: A (same candidate,
+other MS2 evidence) was not reproduced; B (same physical peak, distinct
+scientific hypotheses) is inconclusive; C (Alignment owner consolidation) is
+aggregate-only/partial; D (winner/loser settlement) has only a final projection
+and no pre-Backfill knowability proof; E (exact request/super-window/batch reuse)
+is unavailable.
 
 ## Decision and order
 
