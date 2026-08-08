@@ -54,6 +54,7 @@ def test_terminal_failure_cancels_pending_and_preserves_census() -> None:
     assert report.first_failure == _Failure(index=0, message="owner boom")
     assert report.completed_results == ()
     assert report.completed_job_ordinals == ()
+    assert report.failed_job_ordinals == (0,)
     assert report.cancelled_job_ordinals == (1, 2)
     assert report.in_flight_job_ordinals == ()
     assert report.unsubmitted_job_ordinals == (3, 4)
@@ -87,6 +88,7 @@ def test_success_results_are_returned_in_input_order() -> None:
     assert report.first_failure is None
     assert report.completed_results == (0, 10, 20)
     assert report.completed_job_ordinals == (0, 1, 2)
+    assert report.failed_job_ordinals == ()
     assert report.observed_results == (0, 10, 20)
     assert executor.shutdown_calls == [(True, False)]
 
@@ -119,7 +121,50 @@ def test_completed_work_is_preserved_when_failure_arrives_in_same_wait_batch() -
     assert report.first_failure == _Failure(0, "owner boom")
     assert report.completed_results == (10, 20)
     assert report.completed_job_ordinals == (1, 2)
+    assert report.failed_job_ordinals == (0,)
     assert report.observed_results == (_Failure(0, "owner boom"), 10, 20)
+
+
+def test_same_batch_terminal_failures_are_all_preserved() -> None:
+    class _MultipleFailureExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            if job.index < 2:
+                future.set_result(_Failure(job.index, f"owner boom {job.index}"))
+            else:
+                future.set_result(job.index * 10)
+            return future
+
+        def shutdown(self, *, wait: bool, cancel_futures: bool = False) -> None:
+            pass
+
+    progress: list[object] = []
+    report = execute_process_jobs(
+        (_Job(0), _Job(1), _Job(2)),
+        worker=lambda job: job.index * 10,
+        error_factory=lambda job, exc: _Failure(job.index, str(exc)),
+        is_terminal_failure=lambda result: isinstance(result, _Failure),
+        max_workers=3,
+        executor_factory=_MultipleFailureExecutor,
+        progress_callback=progress.append,
+    )
+
+    assert report.first_failure == _Failure(0, "owner boom 0")
+    assert report.observed_results == (
+        _Failure(0, "owner boom 0"),
+        _Failure(1, "owner boom 1"),
+        20,
+    )
+    assert report.completed_results == (20,)
+    assert report.completed_job_ordinals == (2,)
+    assert report.failed_job_ordinals == (0, 1)
+    assert report.cancelled_job_ordinals == ()
+    assert report.in_flight_job_ordinals == ()
+    assert report.unsubmitted_job_ordinals == ()
+    assert progress == list(report.observed_results)
 
 
 def test_spawn_failure_does_not_drain_slow_unsubmitted_jobs() -> None:
@@ -134,5 +179,6 @@ def test_spawn_failure_does_not_drain_slow_unsubmitted_jobs() -> None:
     elapsed = perf_counter() - started
 
     assert report.first_failure == _Failure(0, "owner boom")
+    assert report.failed_job_ordinals == (0,)
     assert report.unsubmitted_job_ordinals == (1, 2)
     assert elapsed < 2.0

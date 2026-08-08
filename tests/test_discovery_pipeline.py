@@ -442,8 +442,57 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
 
     error = caught.value
     assert error.first_failure.raw_name == "sample-0.raw"
+    assert error.failed_sample_stems == ("sample-0",)
+    assert error.failed_job_count == 1
     assert error.completed_sample_stems == ()
     assert error.cancelled_job_count == 1
+    assert error.in_flight_job_count == 0
+    assert error.unsubmitted_job_count == 2
+    assert not (tmp_path / "out" / "discovery_batch_index.csv").exists()
+
+
+def test_parallel_batch_preserves_every_same_batch_failure(
+    tmp_path: Path,
+) -> None:
+    raw_paths = tuple(tmp_path / f"sample-{index}.raw" for index in range(4))
+    for raw_path in raw_paths:
+        raw_path.write_bytes(raw_path.stem.encode())
+
+    class _MultipleFailureExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            future.set_result(
+                DiscoverySampleProcessError(
+                    sample_index=job.sample_index,
+                    sample_stem=job.raw_path.stem,
+                    raw_name=job.raw_path.name,
+                    message=f"RuntimeError: owner boom {job.sample_index}",
+                )
+            )
+            return future
+
+        def shutdown(self, *, wait, cancel_futures=False) -> None:
+            pass
+
+    with pytest.raises(DiscoveryProcessExecutionError) as caught:
+        run_discovery_batch(
+            raw_paths,
+            output_dir=tmp_path / "out",
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            max_workers=2,
+            executor_factory=_MultipleFailureExecutor,
+        )
+
+    error = caught.value
+    assert error.first_failure.raw_name == "sample-0.raw"
+    assert error.failed_sample_stems == ("sample-0", "sample-1")
+    assert error.failed_job_count == 2
+    assert error.completed_sample_stems == ()
+    assert error.cancelled_job_count == 0
     assert error.in_flight_job_count == 0
     assert error.unsubmitted_job_count == 2
     assert not (tmp_path / "out" / "discovery_batch_index.csv").exists()

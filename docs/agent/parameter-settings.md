@@ -424,8 +424,10 @@ paths/settings/identity values, open and dispose one RAW handle inside the spawn
 process, and write one sample-owned artifact directory. The parent writes the
 batch index in retained sample-metadata order, independent of worker completion
 order. A terminal worker failure stops new submission, cancels pending futures,
-and reports the first owner failure plus completed-work census; cancellation does
-not become a scientific missing state. Set `--raw-workers 1` to use the serial
+and reports the first owner failure plus every observed failed/completed job.
+The mechanical census partitions completed, failed, cancelled, in-flight, and
+unsubmitted ordinals. Cancellation does not become a scientific missing state.
+Set `--raw-workers 1` to use the serial
 rollback path. Fused Discovery + owner construction is not enabled by this
 contract.
 

@@ -101,12 +101,15 @@ class DiscoveryProcessExecutionError(RuntimeError):
         first_failure: DiscoverySampleProcessError,
         *,
         completed_sample_stems: tuple[str, ...],
+        failed_sample_stems: tuple[str, ...],
         cancelled_job_count: int,
         in_flight_job_count: int,
         unsubmitted_job_count: int,
     ) -> None:
         self.first_failure = first_failure
         self.completed_sample_stems = completed_sample_stems
+        self.failed_sample_stems = failed_sample_stems
+        self.failed_job_count = len(failed_sample_stems)
         self.cancelled_job_count = cancelled_job_count
         self.in_flight_job_count = in_flight_job_count
         self.unsubmitted_job_count = unsubmitted_job_count
@@ -294,9 +297,15 @@ def _run_discovery_batch_process(
             for result in report.completed_results
             if isinstance(result, DiscoverySampleProcessResult)
         )
+        failed_samples = tuple(
+            result.sample_stem
+            for result in report.observed_results
+            if isinstance(result, DiscoverySampleProcessError)
+        )
         raise DiscoveryProcessExecutionError(
             failure,
             completed_sample_stems=completed_samples,
+            failed_sample_stems=failed_samples,
             cancelled_job_count=len(report.cancelled_job_ordinals),
             in_flight_job_count=len(report.in_flight_job_ordinals),
             unsubmitted_job_count=len(report.unsubmitted_job_ordinals),
@@ -315,6 +324,7 @@ def _run_discovery_batch_process(
                 message="parallel Discovery result census is incomplete",
             ),
             completed_sample_stems=tuple(result.sample_stem for result in results),
+            failed_sample_stems=(),
             cancelled_job_count=len(report.cancelled_job_ordinals),
             in_flight_job_count=len(report.in_flight_job_ordinals),
             unsubmitted_job_count=len(report.unsubmitted_job_ordinals),

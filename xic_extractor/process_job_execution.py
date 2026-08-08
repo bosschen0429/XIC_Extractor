@@ -15,6 +15,7 @@ class ProcessJobExecutionReport:
     completed_results: tuple[Any, ...]
     first_failure: Any | None
     completed_job_ordinals: tuple[int, ...]
+    failed_job_ordinals: tuple[int, ...]
     cancelled_job_ordinals: tuple[int, ...]
     in_flight_job_ordinals: tuple[int, ...]
     unsubmitted_job_ordinals: tuple[int, ...]
@@ -36,7 +37,7 @@ def execute_process_jobs(
     if max_workers < 1:
         raise ValueError("max_workers must be >= 1")
     if not pending_jobs:
-        return ProcessJobExecutionReport((), (), None, (), (), (), ())
+        return ProcessJobExecutionReport((), (), None, (), (), (), (), ())
 
     worker_count = min(max_workers, len(pending_jobs))
     factory = executor_factory or ProcessPoolExecutor
@@ -47,20 +48,19 @@ def execute_process_jobs(
     future_to_ordinal: dict[Any, int] = {}
     results_by_ordinal: dict[int, Any] = {}
     completed_ordinals: set[int] = set()
+    failed_ordinals: set[int] = set()
     first_failure: Any | None = None
     next_job_ordinal = 0
 
     def _record_result(ordinal: int, result: Any) -> None:
         nonlocal first_failure
+        results_by_ordinal[ordinal] = result
         if is_terminal_failure(result):
+            failed_ordinals.add(ordinal)
             if first_failure is None:
                 first_failure = result
-                results_by_ordinal[ordinal] = result
-                if progress_callback is not None:
-                    progress_callback(result)
-            return
-        results_by_ordinal[ordinal] = result
-        completed_ordinals.add(ordinal)
+        else:
+            completed_ordinals.add(ordinal)
         if progress_callback is not None:
             progress_callback(result)
 
@@ -132,6 +132,7 @@ def execute_process_jobs(
         completed_results=ordered_completed,
         first_failure=first_failure,
         completed_job_ordinals=tuple(sorted(completed_ordinals)),
+        failed_job_ordinals=tuple(sorted(failed_ordinals)),
         cancelled_job_ordinals=tuple(sorted(cancelled_ordinals)),
         in_flight_job_ordinals=tuple(sorted(in_flight_ordinals)),
         unsubmitted_job_ordinals=tuple(range(next_job_ordinal, len(pending_jobs))),
