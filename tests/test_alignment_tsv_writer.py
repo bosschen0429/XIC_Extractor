@@ -443,27 +443,7 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
         write_alignment_matrix_tsv,
     )
 
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                cluster_id="ALN000001",
-                center_mz=500.123441,
-                fold_evidence="owner_complete_link;owner_count=2",
-            ),
-            _cluster(
-                cluster_id="ALN000002",
-                center_mz=500.123449,
-                fold_evidence="owner_complete_link;owner_count=2",
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", cluster_id="ALN000001", area=100.0),
-            _cell("sample-b", "detected", cluster_id="ALN000001", area=110.0),
-            _cell("sample-a", "detected", cluster_id="ALN000002", area=120.0),
-            _cell("sample-b", "detected", cluster_id="ALN000002", area=130.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-    )
+    matrix = _display_collision_matrix()
 
     matrix_rows = _read_tsv(
         write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
@@ -484,6 +464,119 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
         "ALN000001",
         "ALN000002",
     ]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("duplicate", "missing", "extra", "reordered", "matrix_swap", "cross_bound"),
+)
+def test_alignment_matrix_v2_identity_binding_rejects_every_row_substitution(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    from xic_extractor.alignment.matrix_output_contract import (
+        validate_matrix_identity_rows,
+    )
+    from xic_extractor.alignment.tsv_writer import (
+        write_alignment_matrix_identity_tsv,
+        write_alignment_matrix_tsv,
+    )
+
+    matrix = _display_collision_matrix()
+    matrix_rows = _read_tsv(
+        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+    )
+    identity_rows = _read_tsv(
+        write_alignment_matrix_identity_tsv(
+            tmp_path / "alignment_matrix_identity.tsv",
+            matrix,
+        )
+    )
+    matrix_header = tuple(matrix_rows[0])
+    identity_columns = tuple(identity_rows[0])
+
+    validate_matrix_identity_rows(
+        matrix_header=matrix_header,
+        matrix_rows=matrix_rows,
+        identity_columns=identity_columns,
+        identity_rows=identity_rows,
+    )
+
+    if mutation == "duplicate":
+        identity_rows[1] = dict(identity_rows[0])
+    elif mutation == "missing":
+        identity_rows.pop()
+    elif mutation == "extra":
+        identity_rows.append(dict(identity_rows[-1]))
+    elif mutation == "reordered":
+        identity_rows.reverse()
+    elif mutation == "matrix_swap":
+        matrix_rows.reverse()
+    else:
+        first_id = identity_rows[0]["peak_hypothesis_id"]
+        identity_rows[0]["peak_hypothesis_id"] = identity_rows[1][
+            "peak_hypothesis_id"
+        ]
+        identity_rows[1]["peak_hypothesis_id"] = first_id
+
+    with pytest.raises(ValueError, match="identity"):
+        validate_matrix_identity_rows(
+            matrix_header=matrix_header,
+            matrix_rows=matrix_rows,
+            identity_columns=identity_columns,
+            identity_rows=identity_rows,
+        )
+
+
+def test_alignment_matrix_identity_schema_dispatch_is_explicit() -> None:
+    from xic_extractor.alignment.matrix_output_contract import (
+        LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION,
+        validate_matrix_identity_rows,
+    )
+
+    matrix_header = ("Mz", "RT", "sample-a")
+    legacy_matrix = ({"Mz": "500.123", "RT": "8.49", "sample-a": "100"},)
+    legacy_identity = (
+        {
+            "identity_schema_version": LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION,
+            "matrix_row_index": "1",
+            "Mz": "500.123",
+            "RT": "8.49",
+            "peak_hypothesis_id": "ALN000001",
+            "source_feature_family_ids": "ALN000001",
+        },
+    )
+    identity_columns = tuple(legacy_identity[0])
+
+    validate_matrix_identity_rows(
+        matrix_header=matrix_header,
+        matrix_rows=legacy_matrix,
+        identity_columns=identity_columns,
+        identity_rows=legacy_identity,
+    )
+
+    for schema_version in ("", "unknown_identity_schema"):
+        invalid_identity = (
+            {
+                **legacy_identity[0],
+                "identity_schema_version": schema_version,
+            },
+        )
+        with pytest.raises(ValueError, match="identity schema"):
+            validate_matrix_identity_rows(
+                matrix_header=matrix_header,
+                matrix_rows=legacy_matrix,
+                identity_columns=identity_columns,
+                identity_rows=invalid_identity,
+            )
+
+    with pytest.raises(ValueError, match="legacy identity"):
+        validate_matrix_identity_rows(
+            matrix_header=matrix_header,
+            matrix_rows=({**legacy_matrix[0], "Mz": "500.1230"},),
+            identity_columns=identity_columns,
+            identity_rows=legacy_identity,
+        )
 
 
 def test_alignment_matrix_mz_binding_accepts_current_and_exact_legacy_text() -> None:
@@ -677,8 +770,15 @@ def test_write_alignment_matrix_identity_tsv_maps_product_rows(
 
     assert list(identity_rows[0]) == list(ALIGNMENT_MATRIX_IDENTITY_COLUMNS)
     assert len(identity_rows) == len(matrix_rows) == 1
-    assert identity_rows[0] == {
-        "identity_schema_version": "untargeted_peak_hypothesis_matrix_identity_v1",
+    row_binding = identity_rows[0]["matrix_row_binding_sha256"]
+    assert len(row_binding) == 64
+    assert set(row_binding) <= set("0123456789abcdef")
+    assert {
+        key: value
+        for key, value in identity_rows[0].items()
+        if key != "matrix_row_binding_sha256"
+    } == {
+        "identity_schema_version": "untargeted_peak_hypothesis_matrix_identity_v2",
         "matrix_row_index": "1",
         "Mz": "500.123",
         "RT": matrix_rows[0]["RT"],
@@ -1698,6 +1798,30 @@ def _cluster(
         folded_member_count=folded_member_count,
         folded_sample_fill_count=folded_sample_fill_count,
         fold_evidence=fold_evidence,
+    )
+
+
+def _display_collision_matrix() -> AlignmentMatrix:
+    return AlignmentMatrix(
+        clusters=(
+            _cluster(
+                cluster_id="ALN000001",
+                center_mz=500.123441,
+                fold_evidence="owner_complete_link;owner_count=2",
+            ),
+            _cluster(
+                cluster_id="ALN000002",
+                center_mz=500.123449,
+                fold_evidence="owner_complete_link;owner_count=2",
+            ),
+        ),
+        cells=(
+            _cell("sample-a", "detected", cluster_id="ALN000001", area=100.0),
+            _cell("sample-b", "detected", cluster_id="ALN000001", area=110.0),
+            _cell("sample-a", "detected", cluster_id="ALN000002", area=120.0),
+            _cell("sample-b", "detected", cluster_id="ALN000002", area=130.0),
+        ),
+        sample_order=("sample-a", "sample-b"),
     )
 
 

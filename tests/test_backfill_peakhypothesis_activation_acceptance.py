@@ -401,8 +401,14 @@ def _promotion_row(*, family_id: str, sample: str, value: str) -> dict[str, str]
 
 
 def _identity_row(index: int, family_id: str) -> dict[str, str]:
+    family_number = int(family_id.removeprefix("FAM"))
     return {
+        "identity_schema_version": (
+            "untargeted_peak_hypothesis_matrix_identity_v1"
+        ),
         "matrix_row_index": str(index),
+        "Mz": str(family_number * 101),
+        "RT": str(family_number),
         "peak_hypothesis_id": family_id,
         "source_feature_family_ids": family_id,
     }

@@ -858,6 +858,7 @@ def _write_fixture(tmp_path: Path) -> dict[str, Path]:
             _identity_row("2", "301.1", "10.2", "FAM_B"),
         ],
         (
+            "identity_schema_version",
             "matrix_row_index",
             "Mz",
             "RT",
@@ -958,6 +959,9 @@ def _write_chunk(
 
 def _identity_row(index: str, mz: str, rt: str, family: str) -> dict[str, str]:
     return {
+        "identity_schema_version": (
+            "untargeted_peak_hypothesis_matrix_identity_v1"
+        ),
         "matrix_row_index": index,
         "Mz": mz,
         "RT": rt,

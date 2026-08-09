@@ -910,6 +910,9 @@ def _write_matrix_only_fixture(tmp_path: Path) -> dict[str, Path]:
         identity,
         [
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "1",
                 "Mz": "300.3",
                 "RT": "9.3",
@@ -919,6 +922,7 @@ def _write_matrix_only_fixture(tmp_path: Path) -> dict[str, Path]:
             },
         ],
         (
+            "identity_schema_version",
             "matrix_row_index",
             "Mz",
             "RT",

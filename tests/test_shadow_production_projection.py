@@ -997,18 +997,35 @@ def test_current_matrix_values_limits_materialization_to_requested_keys(
     _write_tsv(
         identity_tsv,
         [
-            {
-                "matrix_row_index": "1",
-                "peak_hypothesis_id": "FAM_KEEP::mode_1",
+                {
+                    "identity_schema_version": (
+                        "untargeted_peak_hypothesis_matrix_identity_v1"
+                    ),
+                    "matrix_row_index": "1",
+                    "Mz": "300.3",
+                    "RT": "10.0",
+                    "peak_hypothesis_id": "FAM_KEEP::mode_1",
                 "source_feature_family_ids": "FAM_KEEP",
             },
-            {
-                "matrix_row_index": "2",
-                "peak_hypothesis_id": "FAM_UNUSED",
+                {
+                    "identity_schema_version": (
+                        "untargeted_peak_hypothesis_matrix_identity_v1"
+                    ),
+                    "matrix_row_index": "2",
+                    "Mz": "400.4",
+                    "RT": "11.0",
+                    "peak_hypothesis_id": "FAM_UNUSED",
                 "source_feature_family_ids": "FAM_UNUSED",
             },
         ],
-        ("matrix_row_index", "peak_hypothesis_id", "source_feature_family_ids"),
+            (
+                "identity_schema_version",
+                "matrix_row_index",
+                "Mz",
+                "RT",
+                "peak_hypothesis_id",
+                "source_feature_family_ids",
+            ),
     )
 
     values = _current_matrix_values_by_family_sample(
@@ -1221,16 +1238,20 @@ def test_cli_current_written_uses_actual_matrix_cell_when_identity_supplied(
     _write_tsv(
         alignment_dir / "alignment_matrix_identity.tsv",
         [
-            {
-                "matrix_row_index": "1",
+                {
+                    "identity_schema_version": (
+                        "untargeted_peak_hypothesis_matrix_identity_v1"
+                    ),
+                    "matrix_row_index": "1",
                 "Mz": "300.3",
                 "RT": "10.0",
                 "peak_hypothesis_id": "FAM_STALE",
                 "source_feature_family_ids": "FAM_STALE",
             },
         ],
-        (
-            "matrix_row_index",
+            (
+                "identity_schema_version",
+                "matrix_row_index",
             "Mz",
             "RT",
             "peak_hypothesis_id",

@@ -1109,6 +1109,7 @@ def test_activation_application_cli_matrix_only_uses_activation_values_without_c
     identity_input_rows = _read_tsv(identity)
     identity_input_rows[0]["Mz"] = "100.123456"
     _write_tsv(identity, _header(identity), identity_input_rows)
+    _bind_public_matrix_identity_v2(public_matrix, identity)
     review_rows = _read_tsv(fixture["review"])
     next(
         row for row in review_rows if row["feature_family_id"] == "FAM_ADD"
@@ -1908,6 +1909,7 @@ def _write_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
     _write_tsv(
         identity,
         (
+            "identity_schema_version",
             "matrix_row_index",
             "Mz",
             "RT",
@@ -1918,6 +1920,9 @@ def _write_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
         ),
         [
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "1",
                 "Mz": "100.1",
                 "RT": "7.15",
@@ -1927,6 +1932,9 @@ def _write_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
                 "source_feature_family_count": "1",
             },
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "2",
                 "Mz": "300.3",
                 "RT": "9.35",
@@ -1936,6 +1944,9 @@ def _write_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
                 "source_feature_family_count": "1",
             },
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "3",
                 "Mz": "400.4",
                 "RT": "10.45",
@@ -1949,11 +1960,38 @@ def _write_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
     return identity
 
 
+def _bind_public_matrix_identity_v2(matrix: Path, identity: Path) -> None:
+    from xic_extractor.alignment.matrix_output_contract import (
+        bind_matrix_identity_rows,
+        project_public_matrix_rows,
+    )
+    from xic_extractor.alignment.product_matrix import (
+        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    )
+
+    matrix_header = _header(matrix)
+    matrix_rows = tuple(
+        project_public_matrix_rows(
+            _read_tsv(matrix),
+            sample_columns=matrix_header[2:],
+        )
+    )
+    _write_tsv(matrix, matrix_header, matrix_rows)
+    bound_rows = bind_matrix_identity_rows(
+        matrix_header=matrix_header,
+        matrix_rows=matrix_rows,
+        identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        identity_rows=_read_tsv(identity),
+    )
+    _write_tsv(identity, ALIGNMENT_MATRIX_IDENTITY_COLUMNS, bound_rows)
+
+
 def _write_split_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
     identity = tmp_path / "split_alignment_matrix_identity.tsv"
     _write_tsv(
         identity,
         (
+            "identity_schema_version",
             "matrix_row_index",
             "Mz",
             "RT",
@@ -1964,6 +2002,9 @@ def _write_split_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
         ),
         [
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "1",
                 "Mz": "100.1",
                 "RT": "7.15",
@@ -1973,6 +2014,9 @@ def _write_split_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
                 "source_feature_family_count": "1",
             },
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "2",
                 "Mz": "300.3",
                 "RT": "9.35",
@@ -1982,6 +2026,9 @@ def _write_split_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
                 "source_feature_family_count": "1",
             },
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "3",
                 "Mz": "400.4",
                 "RT": "10.45",
@@ -1991,6 +2038,9 @@ def _write_split_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
                 "source_feature_family_count": "1",
             },
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "4",
                 "Mz": "400.4",
                 "RT": "10.95",

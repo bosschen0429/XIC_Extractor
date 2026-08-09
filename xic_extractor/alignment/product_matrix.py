@@ -7,7 +7,13 @@ from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.matrix_output_contract import canonical_mz_text
+from xic_extractor.alignment.matrix_output_contract import (
+    MATRIX_IDENTITY_SCHEMA_VERSION,
+    MATRIX_ROW_BINDING_COLUMN,
+    bind_matrix_identity_rows,
+    canonical_mz_text,
+    project_public_matrix_rows,
+)
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
     format_value,
@@ -19,8 +25,6 @@ from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
     build_production_decisions,
 )
-
-MATRIX_IDENTITY_SCHEMA_VERSION = "untargeted_peak_hypothesis_matrix_identity_v1"
 
 ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
     "identity_schema_version",
@@ -41,6 +45,7 @@ ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
     "evidence_status",
     "parent_peak_hypothesis_id",
     "child_peak_hypothesis_ids",
+    MATRIX_ROW_BINDING_COLUMN,
 )
 
 _ALLOWED_ROW_IDENTITY_BASIS = {
@@ -283,6 +288,7 @@ def _identity_row(
             getattr(cluster, "parent_peak_hypothesis_id", "")
         ),
         "child_peak_hypothesis_ids": child_peak_hypothesis_ids,
+        MATRIX_ROW_BINDING_COLUMN: "",
     }
 
 
@@ -656,13 +662,13 @@ def formatted_identity_rows(
     *,
     alignment_config: AlignmentConfig | None = None,
     production_decisions: ProductionDecisionSet | None = None,
-) -> list[dict[str, object]]:
-    rows = product_matrix_identity_rows(
+) -> list[dict[str, str]]:
+    product_rows = build_product_matrix_rows(
         matrix,
         alignment_config=alignment_config,
         production_decisions=production_decisions,
     )
-    return [
+    formatted_rows = [
         {
             column: (
                 canonical_mz_text(row.get(column, ""))
@@ -671,5 +677,26 @@ def formatted_identity_rows(
             )
             for column in ALIGNMENT_MATRIX_IDENTITY_COLUMNS
         }
-        for row in rows
+        for row in (product_row.identity for product_row in product_rows)
     ]
+    public_rows = tuple(
+        project_public_matrix_rows(
+            (
+                {
+                    "Mz": row.mz,
+                    "RT": row.rt,
+                    **row.sample_values,
+                }
+                for row in product_rows
+            ),
+            sample_columns=matrix.sample_order,
+        )
+    )
+    return list(
+        bind_matrix_identity_rows(
+            matrix_header=("Mz", "RT", *matrix.sample_order),
+            matrix_rows=public_rows,
+            identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+            identity_rows=formatted_rows,
+        )
+    )

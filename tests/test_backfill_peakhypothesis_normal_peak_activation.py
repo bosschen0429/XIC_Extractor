@@ -93,6 +93,9 @@ def test_normal_peak_activation_cli_runs_end_to_end_matrix_acceptance(
         identity_tsv,
         [
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "1",
                 "Mz": "301.1",
                 "RT": "16.1",
@@ -248,6 +251,9 @@ def test_normal_peak_activation_cli_fails_closed_on_standard_blocker(
         identity_tsv,
         [
             {
+                "identity_schema_version": (
+                    "untargeted_peak_hypothesis_matrix_identity_v1"
+                ),
                 "matrix_row_index": "1",
                 "Mz": "301.1",
                 "RT": "16.1",

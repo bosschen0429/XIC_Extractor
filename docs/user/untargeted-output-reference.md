@@ -166,14 +166,22 @@ Machine consumers that need the unrounded m/z must bind each Matrix row to
 `alignment_review.tsv.family_center_mz` also carries round-trip-safe text for
 activation of rows that are not yet present in the Matrix. Activation never
 reconstructs machine m/z from the four-decimal Matrix display. Two distinct
-identity rows may therefore show the same four-decimal `Mz`; row identity and
-ordering remain separate.
+identity rows may therefore show the same four-decimal `Mz`.
+
+New identity sidecars declare
+`untargeted_peak_hypothesis_matrix_identity_v2`. Each row contains
+`matrix_row_binding_sha256`, which seals the complete ordered public Matrix row
+to the complete identity row. A missing, duplicated, reordered, cross-bound, or
+substituted row is rejected even when two rows have the same displayed `Mz` and
+`RT`. This digest is an integrity and association check; it does not grant
+scientific authenticity or activation authority.
 
 This display formatting does not change row inclusion, row or sample ordering,
 blank placement, RT, scientific selection, or activation authority. Legacy
 Matrix/identity pairs using the earlier compact `.6g` m/z text remain accepted
-as input, but precision already absent from a legacy sidecar cannot be
-recovered.
+only when the sidecar explicitly declares the v1 schema and the Matrix and
+identity m/z texts match exactly. Precision already absent from a legacy
+sidecar cannot be recovered.
 
 ---
 

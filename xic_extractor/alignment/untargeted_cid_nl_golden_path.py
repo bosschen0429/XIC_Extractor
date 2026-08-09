@@ -34,6 +34,7 @@ from xic_extractor.alignment.conservative_backfill import (
 from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
     ModeTrackAssignment,
 )
+from xic_extractor.alignment.matrix_output_contract import canonical_mz_text
 from xic_extractor.alignment.production_acceptance import (
     CheckedProductionAcceptanceManifest,
     ProductionAcceptanceManifestError,
@@ -377,7 +378,7 @@ def build_untargeted_cid_nl_golden_path(
         matrix_row[sample.metadata.raw_stem] = _direct_support_area(cell)
     identity_row = {
         "matrix_row_index": "1",
-        "Mz": matrix_row["Mz"],
+        "Mz": canonical_mz_text(group.group_center_mz),
         "RT": matrix_row["RT"],
         "peak_hypothesis_id": peak_hypothesis_id,
         "row_identity_basis": "cid_nl_method_subject_group",
@@ -598,7 +599,7 @@ def build_untargeted_cid_nl_mode_track_projection(
         identity_rows.append(
             {
                 "matrix_row_index": str(row_index),
-                "Mz": row["Mz"],
+                "Mz": canonical_mz_text(fact.group.group_center_mz),
                 "RT": row["RT"],
                 "peak_hypothesis_id": group_id,
                 "row_identity_basis": "cid_nl_mode_track_group",

@@ -831,6 +831,7 @@ def test_standard_peak_productization_generates_broad_policy_and_writes_ready_ro
             for index, (family, mz, rt, _) in enumerate(families, start=1)
         ],
         (
+            "identity_schema_version",
             "matrix_row_index",
             "Mz",
             "RT",
@@ -2542,6 +2543,7 @@ def _write_fixture(tmp_path: Path) -> dict[str, Path]:
             _identity_row("2", "301.3", "9.4", "FAM_NON"),
         ],
         (
+            "identity_schema_version",
             "matrix_row_index",
             "Mz",
             "RT",
@@ -2612,6 +2614,9 @@ def _identity_row(
     family: str,
 ) -> dict[str, str]:
     return {
+        "identity_schema_version": (
+            "untargeted_peak_hypothesis_matrix_identity_v1"
+        ),
         "matrix_row_index": index,
         "Mz": mz,
         "RT": rt,

@@ -1,7 +1,11 @@
+import pytest
+
 from xic_extractor.diagnostics.matrix_identity_projection import (
     matrix_value_diffs,
     matrix_values_by_identity,
 )
+
+_LEGACY_IDENTITY_SCHEMA = "untargeted_peak_hypothesis_matrix_identity_v1"
 
 
 def test_matrix_values_by_identity_limits_family_alias_requested_keys() -> None:
@@ -11,12 +15,18 @@ def test_matrix_values_by_identity_limits_family_alias_requested_keys() -> None:
     )
     identity_rows = (
         {
+            "identity_schema_version": _LEGACY_IDENTITY_SCHEMA,
             "matrix_row_index": "1",
+            "Mz": "300.3",
+            "RT": "10.0",
             "peak_hypothesis_id": "FAM_KEEP::mode_1",
             "source_feature_family_ids": "FAM_KEEP",
         },
         {
+            "identity_schema_version": _LEGACY_IDENTITY_SCHEMA,
             "matrix_row_index": "2",
+            "Mz": "400.4",
+            "RT": "11.0",
             "peak_hypothesis_id": "FAM_UNUSED",
             "source_feature_family_ids": "FAM_UNUSED",
         },
@@ -45,14 +55,49 @@ def test_matrix_values_by_identity_can_return_written_public_values_only() -> No
         ),
         matrix_identity_rows=(
             {
+                "identity_schema_version": _LEGACY_IDENTITY_SCHEMA,
                 "matrix_row_index": "1",
+                "Mz": "200.2",
+                "RT": "8.2",
                 "peak_hypothesis_id": "FAM_ADD::mode_1",
+                "source_feature_family_ids": "FAM_ADD",
             },
         ),
         include_blank=False,
     )
 
     assert values == {("FAM_ADD::mode_1", "S2"): "321.5"}
+
+
+def test_matrix_values_by_identity_rejects_duplicate_identity_indices() -> None:
+    matrix_rows = (
+        {"Mz": "300.3", "RT": "10.0", "S1": "111"},
+        {"Mz": "400.4", "RT": "11.0", "S1": "222"},
+    )
+    identity_rows = (
+        {
+            "identity_schema_version": _LEGACY_IDENTITY_SCHEMA,
+            "matrix_row_index": "1",
+            "Mz": "300.3",
+            "RT": "10.0",
+            "peak_hypothesis_id": "FAM001",
+            "source_feature_family_ids": "FAM001",
+        },
+        {
+            "identity_schema_version": _LEGACY_IDENTITY_SCHEMA,
+            "matrix_row_index": "1",
+            "Mz": "400.4",
+            "RT": "11.0",
+            "peak_hypothesis_id": "FAM002",
+            "source_feature_family_ids": "FAM002",
+        },
+    )
+
+    with pytest.raises(ValueError, match="identity"):
+        matrix_values_by_identity(
+            matrix_rows=matrix_rows,
+            matrix_identity_rows=identity_rows,
+        )
 
 
 def test_matrix_value_diffs_reports_changed_cells() -> None:
@@ -71,3 +116,14 @@ def test_matrix_value_diffs_ignores_public_numeric_text_formatting() -> None:
     )
 
     assert diffs == ()
+
+
+def test_matrix_value_diffs_preserves_exact_adjacent_public_values() -> None:
+    diffs = matrix_value_diffs(
+        {("FAM001", "S1"): "9.99999e+07"},
+        {("FAM001", "S1"): "1.00000e+08"},
+    )
+
+    assert diffs == (
+        (("FAM001", "S1"), "9.99999e+07", "1.00000e+08"),
+    )
