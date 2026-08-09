@@ -468,7 +468,16 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
 
 @pytest.mark.parametrize(
     "mutation",
-    ("duplicate", "missing", "extra", "reordered", "matrix_swap", "cross_bound"),
+    (
+        "duplicate",
+        "missing",
+        "extra",
+        "reordered",
+        "matrix_swap",
+        "cross_bound",
+        "missing_column",
+        "unknown_column",
+    ),
 )
 def test_alignment_matrix_v2_identity_binding_rejects_every_row_substitution(
     tmp_path: Path,
@@ -512,6 +521,12 @@ def test_alignment_matrix_v2_identity_binding_rejects_every_row_substitution(
         identity_rows.reverse()
     elif mutation == "matrix_swap":
         matrix_rows.reverse()
+    elif mutation == "missing_column":
+        identity_columns = tuple(
+            column for column in identity_columns if column != "evidence_status"
+        )
+    elif mutation == "unknown_column":
+        identity_columns = (*identity_columns, "unknown_identity_field")
     else:
         first_id = identity_rows[0]["peak_hypothesis_id"]
         identity_rows[0]["peak_hypothesis_id"] = identity_rows[1][
@@ -529,24 +544,23 @@ def test_alignment_matrix_v2_identity_binding_rejects_every_row_substitution(
 
 
 def test_alignment_matrix_identity_schema_dispatch_is_explicit() -> None:
+    from tests.matrix_identity_fixtures import legacy_matrix_identity_row
     from xic_extractor.alignment.matrix_output_contract import (
-        LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION,
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         validate_matrix_identity_rows,
     )
 
     matrix_header = ("Mz", "RT", "sample-a")
     legacy_matrix = ({"Mz": "500.123", "RT": "8.49", "sample-a": "100"},)
     legacy_identity = (
-        {
-            "identity_schema_version": LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION,
-            "matrix_row_index": "1",
-            "Mz": "500.123",
-            "RT": "8.49",
-            "peak_hypothesis_id": "ALN000001",
-            "source_feature_family_ids": "ALN000001",
-        },
+        legacy_matrix_identity_row(
+            index=1,
+            mz="500.123",
+            rt="8.49",
+            peak_hypothesis_id="ALN000001",
+        ),
     )
-    identity_columns = tuple(legacy_identity[0])
+    identity_columns = LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS
 
     validate_matrix_identity_rows(
         matrix_header=matrix_header,
@@ -577,6 +591,67 @@ def test_alignment_matrix_identity_schema_dispatch_is_explicit() -> None:
             identity_columns=identity_columns,
             identity_rows=legacy_identity,
         )
+
+    for invalid_columns in (
+        identity_columns[:-1],
+        (*identity_columns, "unknown_identity_field"),
+    ):
+        with pytest.raises(ValueError, match="identity columns"):
+            validate_matrix_identity_rows(
+                matrix_header=matrix_header,
+                matrix_rows=legacy_matrix,
+                identity_columns=invalid_columns,
+                identity_rows=legacy_identity,
+            )
+
+
+def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.matrix_output_contract import (
+        validate_matrix_identity_rows,
+    )
+    from xic_extractor.alignment.tsv_writer import (
+        write_alignment_matrix_identity_tsv,
+        write_alignment_matrix_tsv,
+    )
+
+    matrix = AlignmentMatrix(
+        clusters=(
+            _cluster(
+                center_rt=8.49123456,
+                fold_evidence="owner_complete_link;owner_count=2",
+            ),
+        ),
+        cells=(
+            _cell("+sample", "detected", area=100.0, apex_rt=8.49123456),
+            _cell("safe", "detected", area=110.0, apex_rt=8.49123456),
+        ),
+        sample_order=("+sample", "safe"),
+    )
+    matrix_path = write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+    identity_path = write_alignment_matrix_identity_tsv(
+        tmp_path / "identity.tsv",
+        matrix,
+    )
+
+    with matrix_path.open(encoding="utf-8", newline="") as handle:
+        matrix_reader = csv.DictReader(handle, delimiter="\t")
+        matrix_header = tuple(matrix_reader.fieldnames or ())
+        matrix_rows = list(matrix_reader)
+    with identity_path.open(encoding="utf-8", newline="") as handle:
+        identity_reader = csv.DictReader(handle, delimiter="\t")
+        identity_header = tuple(identity_reader.fieldnames or ())
+        identity_rows = list(identity_reader)
+
+    assert matrix_header == ("Mz", "RT", "'+sample", "safe")
+    assert matrix_rows[0]["RT"] == identity_rows[0]["RT"] == "8.49123"
+    validate_matrix_identity_rows(
+        matrix_header=matrix_header,
+        matrix_rows=matrix_rows,
+        identity_columns=identity_header,
+        identity_rows=identity_rows,
+    )
 
 
 def test_alignment_matrix_mz_binding_accepts_current_and_exact_legacy_text() -> None:
@@ -1773,6 +1848,7 @@ def _cluster(
     *,
     cluster_id: str = "ALN000001",
     center_mz: float = 500.123,
+    center_rt: float = 8.49,
     neutral_loss_tag: str = "DNA_dR",
     has_anchor: bool = True,
     member_count: int = 0,
@@ -1785,7 +1861,7 @@ def _cluster(
         cluster_id=cluster_id,
         neutral_loss_tag=neutral_loss_tag,
         cluster_center_mz=center_mz,
-        cluster_center_rt=8.49,
+        cluster_center_rt=center_rt,
         cluster_product_mz=384.076,
         cluster_observed_neutral_loss_da=116.047,
         has_anchor=has_anchor,
@@ -1882,6 +1958,7 @@ def _cell(
     cluster_id: str = "ALN000001",
     area: float | None = None,
     candidate_id: str | None = None,
+    apex_rt: float = 8.49,
     trace_quality: str | None = None,
     region: bool = False,
     integration: bool = False,
@@ -1903,7 +1980,7 @@ def _cell(
         cluster_id=cluster_id,
         status=status,
         area=area,
-        apex_rt=8.49 if area is not None else None,
+        apex_rt=apex_rt if area is not None else None,
         height=100.0 if area is not None else None,
         peak_start_rt=8.4 if area is not None else None,
         peak_end_rt=8.6 if area is not None else None,

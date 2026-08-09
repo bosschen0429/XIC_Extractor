@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from xic_extractor.diagnostics import (
     backfill_peakhypothesis_85raw_activation_trial as trial,
 )
@@ -204,22 +205,18 @@ def _write_artifact_dir(tmp_path: Path) -> Path:
     artifact_dir.mkdir()
     _write_tsv(
         artifact_dir / "alignment_matrix.tsv",
-        [{"Mz": "100.0", "RT": "10.0", "QC1": "", "QC2": "1234"}],
+        [{"Mz": "100", "RT": "10.0", "QC1": "", "QC2": "1234"}],
     )
     _write_tsv(
         artifact_dir / "alignment_matrix_identity.tsv",
         [
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "1",
-                "Mz": "100.0",
-                "RT": "10.0",
-                "peak_hypothesis_id": "RAW85_WINNER",
-                "row_identity_basis": "peak_hypothesis",
-                "source_feature_family_ids": "RAW85_WINNER",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="100",
+                rt="10.0",
+                peak_hypothesis_id="RAW85_WINNER",
+                row_identity_basis="peak_hypothesis",
+            ),
         ],
     )
     (artifact_dir / "alignment_run_metadata.json").write_text(

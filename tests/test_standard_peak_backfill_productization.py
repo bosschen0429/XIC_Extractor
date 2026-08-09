@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from tools.diagnostics import standard_peak_backfill_productization as cli
+from xic_extractor.alignment.matrix_output_contract import (
+    LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+)
 from xic_extractor.alignment.tsv_writer import (
     ALIGNMENT_CELLS_COLUMNS,
     ALIGNMENT_OWNER_BACKFILL_SEED_AUDIT_COLUMNS,
@@ -830,15 +834,7 @@ def test_standard_peak_productization_generates_broad_policy_and_writes_ready_ro
             _identity_row(str(index), mz, rt, family)
             for index, (family, mz, rt, _) in enumerate(families, start=1)
         ],
-        (
-            "identity_schema_version",
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
     _write_tsv(
         fixture["review"],
@@ -2542,15 +2538,7 @@ def _write_fixture(tmp_path: Path) -> dict[str, Path]:
             _identity_row("1", "300.3", "9.3", "FAM_STD"),
             _identity_row("2", "301.3", "9.4", "FAM_NON"),
         ],
-        (
-            "identity_schema_version",
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
     _write_tsv(
         review,
@@ -2613,17 +2601,12 @@ def _identity_row(
     rt: str,
     family: str,
 ) -> dict[str, str]:
-    return {
-        "identity_schema_version": (
-            "untargeted_peak_hypothesis_matrix_identity_v1"
-        ),
-        "matrix_row_index": index,
-        "Mz": mz,
-        "RT": rt,
-        "peak_hypothesis_id": family,
-        "row_identity_basis": "no_split_peak_hypothesis",
-        "source_feature_family_ids": family,
-    }
+    return legacy_matrix_identity_row(
+        index=index,
+        mz=mz,
+        rt=rt,
+        peak_hypothesis_id=family,
+    )
 
 
 def _review_row(family: str, mz: str, rt: str) -> dict[str, str]:

@@ -367,7 +367,7 @@ def build_untargeted_cid_nl_golden_path(
         *(sample.metadata.raw_stem for sample in ordered_samples),
     )
     matrix_row = {
-        "Mz": _format_number(group.group_center_mz),
+        "Mz": canonical_mz_text(group.group_center_mz),
         "RT": _format_number(group.group_center_rt),
     }
     cell_by_sample_id = {
@@ -587,7 +587,7 @@ def build_untargeted_cid_nl_mode_track_projection(
         ).intersection(candidates):
             raise UntargetedCidNlGoldenPathError("conflicting ModeTrack observations")
         row = {
-            "Mz": _format_number(fact.group.group_center_mz),
+            "Mz": canonical_mz_text(fact.group.group_center_mz),
             "RT": _format_number(fact.group.group_center_rt),
         }
         for sample_id, sample in sample_by_id.items():

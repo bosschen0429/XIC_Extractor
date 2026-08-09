@@ -6,6 +6,12 @@ import hashlib
 import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+
+from xic_extractor.alignment.output_rows import (
+    escape_excel_formula,
+    format_value,
+)
 
 LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION = (
     "untargeted_peak_hypothesis_matrix_identity_v1"
@@ -13,14 +19,38 @@ LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION = (
 MATRIX_IDENTITY_SCHEMA_VERSION = "untargeted_peak_hypothesis_matrix_identity_v2"
 MATRIX_ROW_BINDING_COLUMN = "matrix_row_binding_sha256"
 _MATRIX_ROW_BINDING_SCHEMA_VERSION = "alignment_matrix_row_binding_v1"
-_IDENTITY_BINDING_REQUIRED_COLUMNS = (
+LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
     "identity_schema_version",
     "matrix_row_index",
     "Mz",
     "RT",
     "peak_hypothesis_id",
+    "row_identity_basis",
+    "split_evaluation_status",
+    "projection_status",
     "source_feature_family_ids",
+    "source_feature_family_count",
+    "center_mz_basis",
+    "center_rt_basis",
+    "center_weight_basis",
+    "accepted_cell_count",
+    "accepted_sample_count",
+    "evidence_status",
+    "parent_peak_hypothesis_id",
+    "child_peak_hypothesis_ids",
 )
+ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
+    *LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    MATRIX_ROW_BINDING_COLUMN,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SerializedPublicMatrixTable:
+    """Exact header and row tokens that a public Matrix writer must persist."""
+
+    header: tuple[str, ...]
+    rows: tuple[dict[str, str], ...]
 
 
 def canonical_mz_text(value: object) -> str:
@@ -62,6 +92,37 @@ def project_public_matrix_rows(
         }
 
 
+def serialize_public_matrix_table(
+    rows: Iterable[Mapping[str, object]],
+    *,
+    sample_columns: Sequence[str],
+) -> SerializedPublicMatrixTable:
+    """Canonicalize the exact durable tokens used by every Matrix publisher."""
+
+    source_header = ("Mz", "RT", *sample_columns)
+    persisted_header = tuple(escape_excel_formula(column) for column in source_header)
+    if len(set(persisted_header)) != len(persisted_header):
+        raise ValueError("serialized alignment matrix header must be unique")
+    serialized_rows = tuple(
+        {
+            persisted_column: format_value(projected.get(source_column, ""))
+            for source_column, persisted_column in zip(
+                source_header,
+                persisted_header,
+                strict=True,
+            )
+        }
+        for projected in project_public_matrix_rows(
+            rows,
+            sample_columns=sample_columns,
+        )
+    )
+    return SerializedPublicMatrixTable(
+        header=persisted_header,
+        rows=serialized_rows,
+    )
+
+
 def matrix_mz_binding_matches(display_mz: object, canonical_mz: object) -> bool:
     """Report whether text could be a current projection or legacy pair.
 
@@ -101,7 +162,7 @@ def bind_matrix_identity_rows(
         start=1,
     ):
         identity = {
-            column: str(source_identity.get(column, ""))
+            column: format_value(source_identity.get(column, ""))
             for column in identity_columns
         }
         identity["identity_schema_version"] = MATRIX_IDENTITY_SCHEMA_VERSION
@@ -133,7 +194,11 @@ def validate_matrix_identity_rows(
 ) -> None:
     """Validate an exact ordered Matrix/identity census and every row binding."""
 
-    _validate_binding_headers(matrix_header, identity_columns, allow_legacy=True)
+    header_schema = _validate_binding_headers(
+        matrix_header,
+        identity_columns,
+        allow_legacy=True,
+    )
     if len(matrix_rows) != len(identity_rows):
         raise ValueError("alignment matrix identity row census mismatch")
     peak_hypothesis_ids: set[str] = set()
@@ -143,6 +208,10 @@ def validate_matrix_identity_rows(
         start=1,
     ):
         schema = _declared_identity_schema(identity_row)
+        if schema != header_schema:
+            raise ValueError(
+                "alignment matrix identity schema does not match its columns"
+            )
         if not declared_schema:
             declared_schema = schema
         elif schema != declared_schema:
@@ -174,8 +243,14 @@ def validate_matrix_identity_row(
 ) -> None:
     """Validate one row when a caller already owns the complete census."""
 
-    _validate_binding_headers(matrix_header, identity_columns, allow_legacy=True)
+    header_schema = _validate_binding_headers(
+        matrix_header,
+        identity_columns,
+        allow_legacy=True,
+    )
     schema = _declared_identity_schema(identity_row)
+    if schema != header_schema:
+        raise ValueError("alignment matrix identity schema does not match its columns")
     if str(identity_row.get("matrix_row_index", "")).strip() != str(
         expected_index
     ):
@@ -227,27 +302,35 @@ def _validate_binding_headers(
     identity_columns: Sequence[str],
     *,
     allow_legacy: bool = False,
-) -> None:
+) -> str:
     if tuple(matrix_header[:2]) != ("Mz", "RT"):
         raise ValueError("alignment matrix identity requires an Mz/RT Matrix")
     if len(set(matrix_header)) != len(matrix_header):
         raise ValueError("alignment matrix header must be unique")
     if len(set(identity_columns)) != len(identity_columns):
         raise ValueError("alignment matrix identity columns must be unique")
-    missing = [
-        column
-        for column in _IDENTITY_BINDING_REQUIRED_COLUMNS
-        if column not in identity_columns
-    ]
-    if missing:
-        raise ValueError(
-            "alignment matrix identity columns are incomplete: " + ",".join(missing)
-        )
-    if (
-        MATRIX_ROW_BINDING_COLUMN not in identity_columns
-        and not allow_legacy
-    ):
+    identity_column_set = set(identity_columns)
+    if identity_column_set == set(ALIGNMENT_MATRIX_IDENTITY_COLUMNS):
+        return MATRIX_IDENTITY_SCHEMA_VERSION
+    if identity_column_set == set(LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS):
+        if allow_legacy:
+            return LEGACY_MATRIX_IDENTITY_SCHEMA_VERSION
         raise ValueError("alignment matrix identity binding column is missing")
+    expected = set(ALIGNMENT_MATRIX_IDENTITY_COLUMNS)
+    legacy_expected = set(LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS)
+    missing = sorted(legacy_expected - identity_column_set)
+    unexpected = sorted(identity_column_set - expected)
+    details = []
+    if missing:
+        details.append("missing=" + ",".join(missing))
+    if unexpected:
+        details.append("unexpected=" + ",".join(unexpected))
+    if not details:
+        details.append("schema columns are incomplete")
+    raise ValueError(
+        "alignment matrix identity columns do not match v1 or v2 schema: "
+        + "; ".join(details)
+    )
 
 
 def _validate_matrix_identity_row(

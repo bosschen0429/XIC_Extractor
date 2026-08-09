@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from tools.diagnostics import standard_peak_shadow_activation_inputs as cli
+from xic_extractor.alignment.matrix_output_contract import (
+    LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+)
 from xic_extractor.diagnostics import standard_peak_shadow_activation_inputs
 from xic_extractor.diagnostics.standard_peak_shadow_activation_inputs import (
     build_standard_peak_activation_inputs,
@@ -909,27 +913,14 @@ def _write_matrix_only_fixture(tmp_path: Path) -> dict[str, Path]:
     _write_tsv(
         identity,
         [
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "1",
-                "Mz": "300.3",
-                "RT": "9.3",
-                "peak_hypothesis_id": "FAM_STD",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_STD",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="300.3",
+                rt="9.3",
+                peak_hypothesis_id="FAM_STD",
+            ),
         ],
-        (
-            "identity_schema_version",
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
     _write_tsv(
         review,

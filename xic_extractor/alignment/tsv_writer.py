@@ -9,7 +9,7 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_output_contract import (
     canonical_mz_text,
-    project_public_matrix_rows,
+    serialize_public_matrix_table,
 )
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
@@ -294,20 +294,16 @@ def write_alignment_matrix_tsv(
     alignment_config: AlignmentConfig | None = None,
     production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
-    columns = ("Mz", "RT", *matrix.sample_order)
     rows = product_matrix_tsv_rows(
         matrix,
         alignment_config=alignment_config,
         production_decisions=production_decisions,
     )
-    return _write_tsv(
-        path,
-        columns,
-        project_public_matrix_rows(
-            rows,
-            sample_columns=matrix.sample_order,
-        ),
+    table = serialize_public_matrix_table(
+        rows,
+        sample_columns=matrix.sample_order,
     )
+    return _write_tsv(path, table.header, table.rows)
 
 
 def _format_alignment_review_rows(

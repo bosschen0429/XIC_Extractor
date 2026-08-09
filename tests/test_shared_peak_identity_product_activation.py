@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from tools.diagnostics.apply_shared_peak_identity_activation import main
 from xic_extractor.alignment.backfill_evidence_projection import (
     PRODUCT_AUTHORITY_SCOPE_FIELD,
@@ -11,6 +12,9 @@ from xic_extractor.alignment.backfill_evidence_projection import (
     PRODUCT_AUTHORITY_STATUS_FIELD,
     PRODUCT_AUTHORIZED_SCOPE,
     PRODUCT_AUTHORIZED_STATUS,
+)
+from xic_extractor.alignment.matrix_output_contract import (
+    LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
 )
 from xic_extractor.alignment.promotion_policy import (
     ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
@@ -1908,53 +1912,17 @@ def _write_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
     identity = tmp_path / "alignment_matrix_identity.tsv"
     _write_tsv(
         identity,
-        (
-            "identity_schema_version",
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-            "source_feature_family_count",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         [
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "1",
-                "Mz": "100.1",
-                "RT": "7.15",
-                "peak_hypothesis_id": "FAM_BLOCK",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_BLOCK",
-                "source_feature_family_count": "1",
-            },
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "2",
-                "Mz": "300.3",
-                "RT": "9.35",
-                "peak_hypothesis_id": "FAM_KEEP",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_KEEP",
-                "source_feature_family_count": "1",
-            },
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "3",
-                "Mz": "400.4",
-                "RT": "10.45",
-                "peak_hypothesis_id": "FAM_SPLIT",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_SPLIT",
-                "source_feature_family_count": "1",
-            },
+            legacy_matrix_identity_row(
+                index=1, mz="100.1", rt="7.15", peak_hypothesis_id="FAM_BLOCK"
+            ),
+            legacy_matrix_identity_row(
+                index=2, mz="300.3", rt="9.35", peak_hypothesis_id="FAM_KEEP"
+            ),
+            legacy_matrix_identity_row(
+                index=3, mz="400.4", rt="10.45", peak_hypothesis_id="FAM_SPLIT"
+            ),
         ],
     )
     return identity
@@ -1990,65 +1958,30 @@ def _write_split_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
     identity = tmp_path / "split_alignment_matrix_identity.tsv"
     _write_tsv(
         identity,
-        (
-            "identity_schema_version",
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-            "source_feature_family_count",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         [
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "1",
-                "Mz": "100.1",
-                "RT": "7.15",
-                "peak_hypothesis_id": "FAM_BLOCK",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_BLOCK",
-                "source_feature_family_count": "1",
-            },
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "2",
-                "Mz": "300.3",
-                "RT": "9.35",
-                "peak_hypothesis_id": "FAM_KEEP",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_KEEP",
-                "source_feature_family_count": "1",
-            },
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "3",
-                "Mz": "400.4",
-                "RT": "10.45",
-                "peak_hypothesis_id": "FAM_SPLIT::blue",
-                "row_identity_basis": "split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_SPLIT",
-                "source_feature_family_count": "1",
-            },
-            {
-                "identity_schema_version": (
-                    "untargeted_peak_hypothesis_matrix_identity_v1"
-                ),
-                "matrix_row_index": "4",
-                "Mz": "400.4",
-                "RT": "10.95",
-                "peak_hypothesis_id": "FAM_SPLIT::green",
-                "row_identity_basis": "split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_SPLIT",
-                "source_feature_family_count": "1",
-            },
+            legacy_matrix_identity_row(
+                index=1, mz="100.1", rt="7.15", peak_hypothesis_id="FAM_BLOCK"
+            ),
+            legacy_matrix_identity_row(
+                index=2, mz="300.3", rt="9.35", peak_hypothesis_id="FAM_KEEP"
+            ),
+            legacy_matrix_identity_row(
+                index=3,
+                mz="400.4",
+                rt="10.45",
+                peak_hypothesis_id="FAM_SPLIT::blue",
+                source_feature_family_ids="FAM_SPLIT",
+                row_identity_basis="split_peak_hypothesis",
+            ),
+            legacy_matrix_identity_row(
+                index=4,
+                mz="400.4",
+                rt="10.95",
+                peak_hypothesis_id="FAM_SPLIT::green",
+                source_feature_family_ids="FAM_SPLIT",
+                row_identity_basis="split_peak_hypothesis",
+            ),
         ],
     )
     return identity

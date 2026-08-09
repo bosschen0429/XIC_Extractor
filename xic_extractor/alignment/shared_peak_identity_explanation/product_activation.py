@@ -16,6 +16,7 @@ from xic_extractor.alignment.matrix_output_contract import (
     bind_matrix_identity_rows,
     canonical_mz_text,
     project_public_matrix_rows,
+    serialize_public_matrix_table,
     validate_matrix_identity_row,
     validate_matrix_identity_rows,
 )
@@ -355,6 +356,14 @@ def apply_activation_to_alignment_outputs(
             f"readiness; blockers={summary_row['canonical_row_identity_blockers']}"
         )
 
+    if tuple(output_matrix_header[:2]) == ("Mz", "RT"):
+        public_table = serialize_public_matrix_table(
+            output_matrix_rows,
+            sample_columns=sample_columns,
+        )
+        output_matrix_header = public_table.header
+        output_matrix_rows = list(public_table.rows)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     matrix_path, review_path, cells_path = _activated_output_paths(
         output_dir,
@@ -399,6 +408,7 @@ def apply_activation_to_alignment_outputs(
             _alignment_matrix_identity_rows(
                 hypothesis_identity_rows,
                 sample_columns,
+                output_matrix_header,
                 output_matrix_rows,
             ),
         )
@@ -599,6 +609,11 @@ def apply_activation_to_alignment_matrix_outputs(
         families_removed=original_matrix_families
         - _matrix_source_family_ids(matrix_by_family),
     )
+    public_table = serialize_public_matrix_table(
+        output_matrix_rows,
+        sample_columns=sample_columns,
+    )
+    output_matrix_rows = list(public_table.rows)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     matrix_path = output_dir / "alignment_matrix.tsv"
@@ -622,7 +637,7 @@ def apply_activation_to_alignment_matrix_outputs(
                 activation_values_tsv,
             ),
         )
-    _write_tsv(matrix_path, _product_matrix_header(sample_columns), output_matrix_rows)
+    _write_tsv(matrix_path, public_table.header, output_matrix_rows)
     _write_tsv(
         hypothesis_identity_path,
         _formal_matrix_header(sample_columns),
@@ -634,6 +649,7 @@ def apply_activation_to_alignment_matrix_outputs(
         _alignment_matrix_identity_rows(
             hypothesis_identity_rows,
             sample_columns,
+            public_table.header,
             output_matrix_rows,
         ),
     )
@@ -1089,6 +1105,7 @@ def _product_matrix_rows_from_hypotheses(
 def _alignment_matrix_identity_rows(
     hypothesis_rows: Sequence[Mapping[str, str]],
     sample_columns: Sequence[str],
+    matrix_header: Sequence[str],
     matrix_rows: Sequence[Mapping[str, str]],
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
@@ -1146,7 +1163,7 @@ def _alignment_matrix_identity_rows(
         )
     return list(
         bind_matrix_identity_rows(
-            matrix_header=_product_matrix_header(sample_columns),
+            matrix_header=matrix_header,
             matrix_rows=matrix_rows,
             identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
             identity_rows=rows,

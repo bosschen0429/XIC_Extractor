@@ -14,11 +14,9 @@ from typing import final
 
 from xic_extractor.alignment import quant_matrix_version as quant_matrix
 from xic_extractor.alignment.matrix_output_contract import (
-    bind_matrix_identity_rows,
-    project_public_matrix_rows,
-)
-from xic_extractor.alignment.product_matrix import (
     ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    bind_matrix_identity_rows,
+    serialize_public_matrix_table,
 )
 from xic_extractor.alignment.production_acceptance import (
     build_quant_matrix_version_from_in_process_acceptance,
@@ -582,15 +580,13 @@ def _write_outputs(
     rollback_status: str,
     validated_review: _ValidatedModeTrackReviewSet,
 ) -> None:
-    public_matrix_rows = tuple(
-        project_public_matrix_rows(
-            result.quant_matrix_rows,
-            sample_columns=projection.matrix_header[2:],
-        )
+    public_table = serialize_public_matrix_table(
+        result.quant_matrix_rows,
+        sample_columns=projection.matrix_header[2:],
     )
     identity_rows = bind_matrix_identity_rows(
-        matrix_header=projection.matrix_header,
-        matrix_rows=public_matrix_rows,
+        matrix_header=public_table.header,
+        matrix_rows=public_table.rows,
         identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         identity_rows=projection.input_matrix_identity_rows,
     )
@@ -606,8 +602,8 @@ def _write_outputs(
     )
     (output_dir / "alignment_matrix.tsv").write_text(
         render_delimited_rows(
-            public_matrix_rows,
-            projection.matrix_header,
+            public_table.rows,
+            public_table.header,
             delimiter="\t",
             extrasaction="raise",
             lineterminator="\n",
