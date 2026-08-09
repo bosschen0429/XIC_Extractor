@@ -811,6 +811,14 @@ mutation fail before the final directory exists. The public
 `validate_provisional_run_manifest` path is unchanged and still reads and hashes
 the visible bytes independently.
 
+The PR-family finding census classified the two hosted P2 findings plus the
+follow-up cross-role substitution finding as trust-boundary re-derivation. The
+bounded Alignment ingress is four manifest roles: publication now requires the
+exact owner-minted writer path census and the canonical writer filename for
+each role before assigning schema or SHA/size facts. The class oracle enumerates
+all 23 non-identity role permutations plus a duplicate-path census and rejects
+each before manifest write or final visibility.
+
 Manifest schema, claim levels, relative paths, artifact SHA/size rows, and exact
 manifest plus bound-artifact bytes are hard-zero against the legacy write path.
 The private transaction identity, writer batch, and metadata receipt are not
@@ -833,7 +841,7 @@ byte, and function-time evidence only; it is not physical disk I/O, end-to-end
 elapsed, RAW-call, chromatogram-call, point-count, monetary, or real-population
 savings evidence.
 
-Focused no-RAW manifest/runner/projection/atomic regressions passed 86 tests.
+Focused no-RAW manifest/runner/projection/atomic regressions passed 87 tests.
 The principal census/parity oracle is
 `tests/test_alignment_provisional_run_manifest.py::test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff`;
 the exact-manifest substitution, same-size restored-mtime mutation, retry-time

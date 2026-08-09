@@ -54,6 +54,12 @@ _ARTIFACT_SCHEMAS = {
     "provisional_cell_provenance": PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
     "provisional_summary": PROVISIONAL_SUMMARY_SCHEMA_VERSION,
 }
+_ALIGNMENT_ARTIFACT_FILENAMES = {
+    "provisional_matrix": "provisional_alignment_matrix.tsv",
+    "provisional_identity": "provisional_row_identity.tsv",
+    "provisional_cell_provenance": "provisional_cell_provenance.tsv",
+    "provisional_summary": "provisional_matrix_summary.json",
+}
 _CLAIM_LEVELS = {
     "artifact_bytes": "byte_bound",
     "configuration": "structure_bound",
@@ -736,6 +742,22 @@ def _publication_fingerprint_reuse(
     ):
         raise ValueError("retained sample metadata fingerprint was substituted")
 
+    resolved_artifacts = {
+        artifact_role: artifact_path.resolve(strict=True)
+        for artifact_role, artifact_path in artifacts.items()
+    }
+    if set(resolved_artifacts.values()) != set(
+        alignment_artifact_fingerprints.artifact_paths
+    ):
+        raise ValueError(
+            "Alignment fingerprint batch does not match the artifact path census"
+        )
+    for artifact_role, resolved_path in resolved_artifacts.items():
+        if resolved_path.name != _ALIGNMENT_ARTIFACT_FILENAMES[artifact_role]:
+            raise ValueError(
+                "Alignment artifact role mapping does not match its owner"
+            )
+
     receipts_by_path = {
         receipt.artifact_path: receipt.fingerprint
         for receipt in alignment_artifact_fingerprints.receipts
@@ -745,8 +767,7 @@ def _publication_fingerprint_reuse(
             retained_sample_metadata_fingerprint.fingerprint
         )
     }
-    for artifact_name, artifact_path in artifacts.items():
-        resolved_path = artifact_path.resolve(strict=True)
+    for artifact_name, resolved_path in resolved_artifacts.items():
         fingerprint = receipts_by_path.get(resolved_path)
         if fingerprint is None:
             raise ValueError(

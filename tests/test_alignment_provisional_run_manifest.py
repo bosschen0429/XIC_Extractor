@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import csv
 import hashlib
+import itertools
 import json
 import os
 import shutil
@@ -626,11 +627,55 @@ def test_publication_rejects_foreign_owner_fingerprint_reuse(
     candidate_arguments["alignment_artifact_fingerprints"] = (
         baseline_arguments["alignment_artifact_fingerprints"]
     )
-    with pytest.raises(ValueError, match="Alignment fingerprint batch is missing"):
+    with pytest.raises(ValueError, match="artifact path census"):
         publish_provisional_run_bundle_atomic(
             staging,
             output_dir,
             **candidate_arguments,
+        )
+
+    assert staging.is_dir()
+    assert not output_dir.exists()
+
+
+def test_publication_rejects_every_cross_role_artifact_mapping(
+    tmp_path: Path,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    output_dir = tmp_path / "candidate"
+    artifact_roles = tuple(_publication_arguments(staging)["artifacts"])
+
+    for permutation in itertools.permutations(artifact_roles):
+        if permutation == artifact_roles:
+            continue
+        arguments = _publication_arguments(staging)
+        original_artifacts = dict(arguments["artifacts"])
+        arguments["artifacts"] = {
+            role: original_artifacts[source_role]
+            for role, source_role in zip(
+                artifact_roles,
+                permutation,
+                strict=True,
+            )
+        }
+        with pytest.raises(ValueError, match="artifact role mapping"):
+            publish_provisional_run_bundle_atomic(
+                staging,
+                output_dir,
+                **arguments,
+            )
+
+    arguments = _publication_arguments(staging)
+    original_artifacts = dict(arguments["artifacts"])
+    first_role, second_role = artifact_roles[:2]
+    original_artifacts[second_role] = original_artifacts[first_role]
+    arguments["artifacts"] = original_artifacts
+    with pytest.raises(ValueError, match="path census"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **arguments,
         )
 
     assert staging.is_dir()
