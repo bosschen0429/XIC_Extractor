@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import csv
-import math
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.matrix_output_contract import (
+    canonical_mz_text,
+    project_public_matrix_rows,
+)
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
     count_status,
@@ -274,10 +277,12 @@ def write_alignment_review_tsv(
     return _write_tsv(
         path,
         ALIGNMENT_REVIEW_COLUMNS,
-        _review_rows(
-            matrix,
-            alignment_config=config,
-            production_decisions=production_decisions,
+        _format_alignment_review_rows(
+            _review_rows(
+                matrix,
+                alignment_config=config,
+                production_decisions=production_decisions,
+            )
         ),
     )
 
@@ -298,49 +303,22 @@ def write_alignment_matrix_tsv(
     return _write_tsv(
         path,
         columns,
-        _format_alignment_matrix_rows(
+        project_public_matrix_rows(
             rows,
-            sample_order=matrix.sample_order,
+            sample_columns=matrix.sample_order,
         ),
     )
 
 
-def _format_alignment_matrix_rows(
+def _format_alignment_review_rows(
     rows: Iterable[Mapping[str, object]],
-    *,
-    sample_order: tuple[str, ...],
 ) -> Iterable[Mapping[str, object]]:
     for row in rows:
-        yield {
-            "Mz": _format_alignment_matrix_mz(row["Mz"]),
-            "RT": row["RT"],
-            **{
-                sample_id: _format_alignment_matrix_area(row.get(sample_id, ""))
-                for sample_id in sample_order
-            },
-        }
-
-
-def _format_alignment_matrix_mz(value: object) -> str:
-    canonical_text = format_value(value)
-    if canonical_text == "":
-        return ""
-    canonical_value = float(canonical_text)
-    if not math.isfinite(canonical_value):
-        return ""
-    formatted_value = f"{canonical_value:.4f}"
-    if float(formatted_value) != canonical_value:
-        raise ValueError(
-            "Mz cannot be rendered with four decimal places without changing "
-            "its canonical public value"
+        formatted = dict(row)
+        formatted["family_center_mz"] = canonical_mz_text(
+            row.get("family_center_mz", "")
         )
-    return formatted_value
-
-
-def _format_alignment_matrix_area(value: object) -> str:
-    if value is None or value == "":
-        return ""
-    return f"{float(str(value)):.5e}"
+        yield formatted
 
 
 def write_alignment_matrix_identity_tsv(

@@ -152,19 +152,28 @@ the primary cross-sample quantitative output.
 Sample columns follow the order determined by `matrix.sample_order` (typically
 injection order when an injection-order source is provided).
 
-The TSV uses stable numeric text for machine and spreadsheet consumers:
+The TSV uses stable display text for people and spreadsheet consumers:
 
-- `Mz` is written with exactly four digits after the decimal point.
-- If four decimal places cannot preserve the existing canonical parsed `Mz`
-  value, the writer rejects the output instead of silently rounding it.
+- `Mz` is intentionally rounded to exactly four digits after the decimal
+  point. It is a display coordinate, not machine identity.
 - Nonblank sample areas use lowercase scientific notation with five digits
   after the decimal point (for example, `1.23457e+03`).
 - `RT` keeps its existing compact numeric rendering, and absent or unchecked
   sample cells remain blank.
 
-This formatting contract applies only to `alignment_matrix.tsv`; it does not
-change numeric values, row or sample ordering, identity sidecars, review or
-evidence TSVs, or workbook numeric cells.
+Machine consumers that need the unrounded m/z must bind each Matrix row to
+`alignment_matrix_identity.tsv`; its `Mz` field uses round-trip-safe text.
+`alignment_review.tsv.family_center_mz` also carries round-trip-safe text for
+activation of rows that are not yet present in the Matrix. Activation never
+reconstructs machine m/z from the four-decimal Matrix display. Two distinct
+identity rows may therefore show the same four-decimal `Mz`; row identity and
+ordering remain separate.
+
+This display formatting does not change row inclusion, row or sample ordering,
+blank placement, RT, scientific selection, or activation authority. Legacy
+Matrix/identity pairs using the earlier compact `.6g` m/z text remain accepted
+as input, but precision already absent from a legacy sidecar cannot be
+recovered.
 
 ---
 

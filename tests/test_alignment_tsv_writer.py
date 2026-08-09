@@ -363,6 +363,7 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     from xic_extractor.alignment.tsv_writer import (
         write_alignment_matrix_identity_tsv,
         write_alignment_matrix_tsv,
+        write_alignment_review_tsv,
     )
 
     matrix = AlignmentMatrix(
@@ -388,17 +389,23 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
             matrix,
         )
     )[0]
+    review_row = _read_tsv(
+        write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
+    )[0]
 
-    assert matrix_row["Mz"] == "500.1230"
-    assert identity_row["Mz"] == "500.123"
-    assert float(matrix_row["Mz"]) == float(identity_row["Mz"])
+    assert matrix_row["Mz"] == "500.1235"
+    assert identity_row["Mz"] == "500.123456"
+    assert review_row["family_center_mz"] == "500.123456"
     product_activation._validate_identity_coordinate(1, matrix_row, identity_row)
 
 
-def test_alignment_matrix_mz_format_rejects_canonical_value_drift(
+def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.alignment.tsv_writer import (
+        write_alignment_matrix_identity_tsv,
+        write_alignment_matrix_tsv,
+    )
 
     matrix = AlignmentMatrix(
         clusters=(
@@ -414,11 +421,81 @@ def test_alignment_matrix_mz_format_rejects_canonical_value_drift(
         sample_order=("sample-a", "sample-b"),
     )
 
-    with pytest.raises(
-        ValueError,
-        match="without changing its canonical public value",
-    ):
+    matrix_row = _read_tsv(
         write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+    )[0]
+    identity_row = _read_tsv(
+        write_alignment_matrix_identity_tsv(
+            tmp_path / "alignment_matrix_identity.tsv",
+            matrix,
+        )
+    )[0]
+
+    assert matrix_row["Mz"] == "5.1235"
+    assert identity_row["Mz"] == "5.123456"
+
+
+def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.tsv_writer import (
+        write_alignment_matrix_identity_tsv,
+        write_alignment_matrix_tsv,
+    )
+
+    matrix = AlignmentMatrix(
+        clusters=(
+            _cluster(
+                cluster_id="ALN000001",
+                center_mz=500.123441,
+                fold_evidence="owner_complete_link;owner_count=2",
+            ),
+            _cluster(
+                cluster_id="ALN000002",
+                center_mz=500.123449,
+                fold_evidence="owner_complete_link;owner_count=2",
+            ),
+        ),
+        cells=(
+            _cell("sample-a", "detected", cluster_id="ALN000001", area=100.0),
+            _cell("sample-b", "detected", cluster_id="ALN000001", area=110.0),
+            _cell("sample-a", "detected", cluster_id="ALN000002", area=120.0),
+            _cell("sample-b", "detected", cluster_id="ALN000002", area=130.0),
+        ),
+        sample_order=("sample-a", "sample-b"),
+    )
+
+    matrix_rows = _read_tsv(
+        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+    )
+    identity_rows = _read_tsv(
+        write_alignment_matrix_identity_tsv(
+            tmp_path / "alignment_matrix_identity.tsv",
+            matrix,
+        )
+    )
+
+    assert [row["Mz"] for row in matrix_rows] == ["500.1234", "500.1234"]
+    assert [row["Mz"] for row in identity_rows] == [
+        "500.123441",
+        "500.123449",
+    ]
+    assert [row["peak_hypothesis_id"] for row in identity_rows] == [
+        "ALN000001",
+        "ALN000002",
+    ]
+
+
+def test_alignment_matrix_mz_binding_accepts_current_and_exact_legacy_text() -> None:
+    from xic_extractor.alignment.matrix_output_contract import (
+        matrix_mz_binding_matches,
+    )
+
+    assert matrix_mz_binding_matches("500.1235", "500.123456")
+    assert matrix_mz_binding_matches("500.123", "500.123")
+    assert not matrix_mz_binding_matches("500.1234", "500.123456")
+    assert not matrix_mz_binding_matches("not-an-mz", "500.123456")
+    assert not matrix_mz_binding_matches("500.1235", "not-an-mz")
 
 
 @pytest.mark.parametrize("center_mz", [math.nan, math.inf, -math.inf])

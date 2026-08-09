@@ -846,7 +846,7 @@ def test_standard_peak_shadow_activation_inputs_cli_can_apply_matrix_only(
         for index, row in enumerate(identity_rows)
         if row["peak_hypothesis_id"] == "FAM_STD"
     )
-    assert matrix_rows[row_index]["S2"] == "100"
+    assert matrix_rows[row_index]["S2"] == "1.00000e+02"
     assert delta[0]["matrix_value_effect"] == "written"
     assert delta[0]["matrix_value_source"] == "activation_values_tsv"
 

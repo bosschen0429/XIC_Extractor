@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import shutil
@@ -91,6 +92,15 @@ def test_reviewed_mode_track_projection_writes_atomic_tsv_and_workbook(
     assert result.matrix_tsv.read_text(encoding="utf-8").splitlines()[0].split(
         "\t"
     ) == list(projection.matrix_header)
+    with result.matrix_tsv.open(encoding="utf-8", newline="") as handle:
+        matrix_rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert all(row["Mz"] == f"{float(row['Mz']):.4f}" for row in matrix_rows)
+    assert all(
+        value == f"{float(value):.5e}"
+        for row in matrix_rows
+        for sample in projection.matrix_header[2:]
+        if (value := row[sample])
+    )
 
     workbook = load_workbook(result.matrix_xlsx, read_only=True, data_only=True)
     matrix = workbook["Matrix"]

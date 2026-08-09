@@ -6,6 +6,7 @@ from typing import Literal
 
 from xic_extractor.tabular_io import (
     identity_family_keys,
+    numeric_equal,
     positive_int,
     read_tsv_required,
     read_tsv_with_header,
@@ -91,7 +92,7 @@ def matrix_value_diffs(
     return tuple(
         (key, before.get(key, ""), after.get(key, ""))
         for key in keys
-        if before.get(key, "") != after.get(key, "")
+        if not numeric_equal(before.get(key, ""), after.get(key, ""))
     )
 
 

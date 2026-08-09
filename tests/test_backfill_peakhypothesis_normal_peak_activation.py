@@ -156,7 +156,7 @@ def test_normal_peak_activation_cli_runs_end_to_end_matrix_acceptance(
     ]
 
     matrix_rows = _read_tsv(output_dir / "activated_matrix" / "alignment_matrix.tsv")
-    assert matrix_rows[0]["S2"] == "450"
+    assert matrix_rows[0]["S2"] == "4.50000e+02"
 
     acceptance = _read_tsv(
         output_dir

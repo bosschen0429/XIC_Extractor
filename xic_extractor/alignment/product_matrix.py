@@ -7,6 +7,7 @@ from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.matrix_output_contract import canonical_mz_text
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
     format_value,
@@ -663,7 +664,11 @@ def formatted_identity_rows(
     )
     return [
         {
-            column: format_value(row.get(column, ""))
+            column: (
+                canonical_mz_text(row.get(column, ""))
+                if column == "Mz"
+                else format_value(row.get(column, ""))
+            )
             for column in ALIGNMENT_MATRIX_IDENTITY_COLUMNS
         }
         for row in rows

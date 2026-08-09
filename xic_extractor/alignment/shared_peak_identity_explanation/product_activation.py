@@ -11,6 +11,11 @@ from xic_extractor.alignment.backfill_evidence_projection import (
     BACKFILL_PROJECTION_COLUMNS,
     project_backfill_evidence_to_cells,
 )
+from xic_extractor.alignment.matrix_output_contract import (
+    canonical_mz_text,
+    matrix_mz_binding_matches,
+    project_public_matrix_rows,
+)
 from xic_extractor.alignment.primary_matrix_area import (
     MISSING_ASLS_PRIMARY_AREA,
     MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE,
@@ -766,7 +771,7 @@ def _public_matrix_rows_by_family(
         row = {
             "feature_family_id": family_id,
             "neutral_loss_tag": review_row.get("neutral_loss_tag", ""),
-            "family_center_mz": matrix_row.get("Mz", ""),
+            "family_center_mz": canonical_mz_text(identity.get("Mz", "")),
             "family_center_rt": matrix_row.get("RT", ""),
             _INPUT_PEAK_HYPOTHESIS_ID: identity.get("peak_hypothesis_id", ""),
             _INPUT_ROW_IDENTITY_BASIS: identity.get("row_identity_basis", ""),
@@ -831,7 +836,13 @@ def _validate_identity_coordinate(
             "alignment matrix identity coordinates must be numeric for "
             f"matrix_row_index {index}"
         )
-    if abs(matrix_mz - identity_mz) > 1e-6 or abs(matrix_rt - identity_rt) > 1e-6:
+    if (
+        not matrix_mz_binding_matches(
+            matrix_row.get("Mz", ""),
+            identity_row.get("Mz", ""),
+        )
+        or abs(matrix_rt - identity_rt) > 1e-6
+    ):
         raise ValueError(
             "alignment_matrix_identity.tsv coordinate mismatch for "
             f"matrix_row_index {index}"
@@ -1082,7 +1093,7 @@ def _product_matrix_rows_from_hypotheses(
     hypothesis_rows: Sequence[Mapping[str, str]],
     sample_columns: Sequence[str],
 ) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
+    machine_rows: list[dict[str, str]] = []
     for hypothesis_row in hypothesis_rows:
         row = {
             "Mz": hypothesis_row.get("family_center_mz", ""),
@@ -1094,8 +1105,14 @@ def _product_matrix_rows_from_hypotheses(
                 for sample in sample_columns
             }
         )
-        rows.append(row)
-    return rows
+        machine_rows.append(row)
+    return [
+        {column: str(value) for column, value in row.items()}
+        for row in project_public_matrix_rows(
+            machine_rows,
+            sample_columns=sample_columns,
+        )
+    ]
 
 
 def _alignment_matrix_identity_rows(
@@ -1126,7 +1143,9 @@ def _alignment_matrix_identity_rows(
             {
                 "identity_schema_version": _ALIGNMENT_MATRIX_IDENTITY_SCHEMA_VERSION,
                 "matrix_row_index": str(index),
-                "Mz": hypothesis_row.get("family_center_mz", ""),
+                "Mz": canonical_mz_text(
+                    hypothesis_row.get("family_center_mz", "")
+                ),
                 "RT": _matrix_center_rt(hypothesis_row),
                 "peak_hypothesis_id": hypothesis_row.get("peak_hypothesis_id", ""),
                 "row_identity_basis": row_identity_basis,
@@ -1428,15 +1447,25 @@ def _identity_metadata_row(
     family_row: Mapping[str, str],
     review_row: Mapping[str, str],
 ) -> dict[str, str]:
+    # Public Matrix input is rehydrated from its identity sidecar. Legacy
+    # feature-family input has no such binding, so its review row is the most
+    # precise available machine coordinate.
+    if family_row.get(_INPUT_PEAK_HYPOTHESIS_ID):
+        family_center_mz = (
+            family_row.get("family_center_mz")
+            or review_row.get("family_center_mz", "")
+        )
+    else:
+        family_center_mz = (
+            review_row.get("family_center_mz")
+            or family_row.get("family_center_mz", "")
+        )
     return {
         "neutral_loss_tag": (
             family_row.get("neutral_loss_tag")
             or review_row.get("neutral_loss_tag", "")
         ),
-        "family_center_mz": (
-            family_row.get("family_center_mz")
-            or review_row.get("family_center_mz", "")
-        ),
+        "family_center_mz": canonical_mz_text(family_center_mz),
         "family_center_rt": (
             family_row.get("family_center_rt")
             or review_row.get("family_center_rt", "")
@@ -1562,7 +1591,9 @@ def _new_peak_hypothesis_matrix_row(
         "row_identity_basis": row_identity_basis,
         "legacy_rt_row_context_id": legacy_rt_row_context_id,
         "neutral_loss_tag": review_row.get("neutral_loss_tag", ""),
-        "family_center_mz": review_row.get("family_center_mz", ""),
+        "family_center_mz": canonical_mz_text(
+            review_row.get("family_center_mz", "")
+        ),
         "family_center_rt": review_row.get("family_center_rt", ""),
     }
     row.update({sample: "" for sample in sample_columns})
@@ -2053,7 +2084,9 @@ def _new_matrix_row(
     row = {
         "feature_family_id": family_id,
         "neutral_loss_tag": review_row.get("neutral_loss_tag", ""),
-        "family_center_mz": review_row.get("family_center_mz", ""),
+        "family_center_mz": canonical_mz_text(
+            review_row.get("family_center_mz", "")
+        ),
         "family_center_rt": review_row.get("family_center_rt", ""),
     }
     row.update({sample: "" for sample in sample_columns})

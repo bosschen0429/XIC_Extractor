@@ -13,6 +13,9 @@ from pathlib import Path, PurePosixPath
 from typing import final
 
 from xic_extractor.alignment import quant_matrix_version as quant_matrix
+from xic_extractor.alignment.matrix_output_contract import (
+    project_public_matrix_rows,
+)
 from xic_extractor.alignment.production_acceptance import (
     build_quant_matrix_version_from_in_process_acceptance,
 )
@@ -584,7 +587,12 @@ def _write_outputs(
     )
     (output_dir / "alignment_matrix.tsv").write_text(
         render_delimited_rows(
-            result.quant_matrix_rows,
+            tuple(
+                project_public_matrix_rows(
+                    result.quant_matrix_rows,
+                    sample_columns=projection.matrix_header[2:],
+                )
+            ),
             projection.matrix_header,
             delimiter="\t",
             extrasaction="raise",

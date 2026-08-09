@@ -62,3 +62,12 @@ def test_matrix_value_diffs_reports_changed_cells() -> None:
     )
 
     assert diffs == ((("FAM001", "S1"), "", "101"),)
+
+
+def test_matrix_value_diffs_ignores_public_numeric_text_formatting() -> None:
+    diffs = matrix_value_diffs(
+        {("FAM001", "S1"): "100"},
+        {("FAM001", "S1"): "1.00000e+02"},
+    )
+
+    assert diffs == ()

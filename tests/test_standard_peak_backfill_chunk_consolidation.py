@@ -81,8 +81,8 @@ def test_chunk_consolidation_applies_one_matrix_from_two_chunks(
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[row_by_hypothesis["FAM_A"]]["S2"] == "111"
-    assert matrix_rows[row_by_hypothesis["FAM_B"]]["S2"] == "222"
+    assert matrix_rows[row_by_hypothesis["FAM_A"]]["S2"] == "1.11000e+02"
+    assert matrix_rows[row_by_hypothesis["FAM_B"]]["S2"] == "2.22000e+02"
     formal_matrix_rows = _read_tsv(
         out / "formal_product_output" / "alignment_matrix.tsv",
     )
@@ -750,7 +750,7 @@ def test_chunk_consolidation_formal_output_keeps_unauthorized_rows_blank(
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert formal_rows[row_by_hypothesis["FAM_A"]]["S2"] == "111"
+    assert formal_rows[row_by_hypothesis["FAM_A"]]["S2"] == "1.11000e+02"
     assert formal_rows[row_by_hypothesis["FAM_B"]]["S2"] == ""
     delta_rows = _read_tsv(
         out / "formal_product_output" / "activation_value_delta.tsv",
