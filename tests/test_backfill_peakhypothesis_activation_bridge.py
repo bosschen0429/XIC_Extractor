@@ -2,6 +2,7 @@ import csv
 import json
 from pathlib import Path
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
     ACTIVATION_ACCEPTANCE_SCHEMA_VERSION,
     ACTIVATION_DECISION_SCHEMA_VERSION,
@@ -261,11 +262,13 @@ def test_bridge_suppresses_rows_already_written_in_public_matrix() -> None:
             },
         ),
         matrix_identity_rows=(
-            {
-                "matrix_row_index": "1",
-                "peak_hypothesis_id": "FAM_ADD::mode_1",
-                "source_feature_family_ids": "FAM_ADD",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="200.2",
+                rt="8.2",
+                peak_hypothesis_id="FAM_ADD::mode_1",
+                source_feature_family_ids="FAM_ADD",
+            ),
         ),
     )
 
@@ -306,11 +309,13 @@ def test_bridge_reports_public_matrix_projection_conflicts(tmp_path: Path) -> No
             },
         ),
         matrix_identity_rows=(
-            {
-                "matrix_row_index": "1",
-                "peak_hypothesis_id": "FAM_ADD::mode_1",
-                "source_feature_family_ids": "FAM_ADD",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="200.2",
+                rt="8.2",
+                peak_hypothesis_id="FAM_ADD::mode_1",
+                source_feature_family_ids="FAM_ADD",
+            ),
         ),
     )
     outputs = bridge.write_activation_bridge_outputs(tmp_path / "bridge", index)
@@ -370,11 +375,13 @@ def test_bridge_reports_public_matrix_value_mismatch_for_already_written_row(
             },
         ),
         matrix_identity_rows=(
-            {
-                "matrix_row_index": "1",
-                "peak_hypothesis_id": "FAM_ADD::mode_1",
-                "source_feature_family_ids": "FAM_ADD",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="200.2",
+                rt="8.2",
+                peak_hypothesis_id="FAM_ADD::mode_1",
+                source_feature_family_ids="FAM_ADD",
+            ),
         ),
     )
     outputs = bridge.write_activation_bridge_outputs(tmp_path / "bridge", index)

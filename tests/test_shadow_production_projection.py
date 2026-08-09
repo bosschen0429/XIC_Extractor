@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from tools.diagnostics import shadow_production_projection as projection_cli
+from xic_extractor.alignment.matrix_output_contract import (
+    LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+)
 from xic_extractor.alignment.production_decisions import (
     ProductionCellDecision,
     ProductionDecisionSet,
@@ -997,18 +1001,21 @@ def test_current_matrix_values_limits_materialization_to_requested_keys(
     _write_tsv(
         identity_tsv,
         [
-            {
-                "matrix_row_index": "1",
-                "peak_hypothesis_id": "FAM_KEEP::mode_1",
-                "source_feature_family_ids": "FAM_KEEP",
-            },
-            {
-                "matrix_row_index": "2",
-                "peak_hypothesis_id": "FAM_UNUSED",
-                "source_feature_family_ids": "FAM_UNUSED",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="300.3",
+                rt="10.0",
+                peak_hypothesis_id="FAM_KEEP::mode_1",
+                source_feature_family_ids="FAM_KEEP",
+            ),
+            legacy_matrix_identity_row(
+                index=2,
+                mz="400.4",
+                rt="11.0",
+                peak_hypothesis_id="FAM_UNUSED",
+            ),
         ],
-        ("matrix_row_index", "peak_hypothesis_id", "source_feature_family_ids"),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
 
     values = _current_matrix_values_by_family_sample(
@@ -1221,21 +1228,14 @@ def test_cli_current_written_uses_actual_matrix_cell_when_identity_supplied(
     _write_tsv(
         alignment_dir / "alignment_matrix_identity.tsv",
         [
-            {
-                "matrix_row_index": "1",
-                "Mz": "300.3",
-                "RT": "10.0",
-                "peak_hypothesis_id": "FAM_STALE",
-                "source_feature_family_ids": "FAM_STALE",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="300.3",
+                rt="10.0",
+                peak_hypothesis_id="FAM_STALE",
+            ),
         ],
-        (
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "source_feature_family_ids",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
     _write_tsv(
         alignment_dir / "retained_gate.tsv",

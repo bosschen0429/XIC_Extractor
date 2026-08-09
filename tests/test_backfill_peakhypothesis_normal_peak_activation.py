@@ -2,6 +2,7 @@ import csv
 import json
 from pathlib import Path
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from xic_extractor.diagnostics import (
     backfill_peakhypothesis_85raw_activation_trial as trial,
 )
@@ -92,15 +93,12 @@ def test_normal_peak_activation_cli_runs_end_to_end_matrix_acceptance(
     _write_tsv(
         identity_tsv,
         [
-            {
-                "matrix_row_index": "1",
-                "Mz": "301.1",
-                "RT": "16.1",
-                "peak_hypothesis_id": "HYP_RAW85_NORMAL",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "HYP_RAW85_NORMAL",
-                "source_feature_family_count": "1",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="301.1",
+                rt="16.1",
+                peak_hypothesis_id="HYP_RAW85_NORMAL",
+            ),
         ],
     )
     _write_tsv(
@@ -156,7 +154,7 @@ def test_normal_peak_activation_cli_runs_end_to_end_matrix_acceptance(
     ]
 
     matrix_rows = _read_tsv(output_dir / "activated_matrix" / "alignment_matrix.tsv")
-    assert matrix_rows[0]["S2"] == "450"
+    assert matrix_rows[0]["S2"] == "4.50000e+02"
 
     acceptance = _read_tsv(
         output_dir
@@ -247,15 +245,12 @@ def test_normal_peak_activation_cli_fails_closed_on_standard_blocker(
     _write_tsv(
         identity_tsv,
         [
-            {
-                "matrix_row_index": "1",
-                "Mz": "301.1",
-                "RT": "16.1",
-                "peak_hypothesis_id": "HYP_RAW85_NORMAL",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "HYP_RAW85_NORMAL",
-                "source_feature_family_count": "1",
-            },
+            legacy_matrix_identity_row(
+                index=1,
+                mz="301.1",
+                rt="16.1",
+                peak_hypothesis_id="HYP_RAW85_NORMAL",
+            ),
         ],
     )
     _write_tsv(

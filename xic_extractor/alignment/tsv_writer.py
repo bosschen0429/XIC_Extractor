@@ -7,6 +7,10 @@ from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.matrix_output_contract import (
+    canonical_mz_text,
+    serialize_public_matrix_table,
+)
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
     count_status,
@@ -273,10 +277,12 @@ def write_alignment_review_tsv(
     return _write_tsv(
         path,
         ALIGNMENT_REVIEW_COLUMNS,
-        _review_rows(
-            matrix,
-            alignment_config=config,
-            production_decisions=production_decisions,
+        _format_alignment_review_rows(
+            _review_rows(
+                matrix,
+                alignment_config=config,
+                production_decisions=production_decisions,
+            )
         ),
     )
 
@@ -288,16 +294,27 @@ def write_alignment_matrix_tsv(
     alignment_config: AlignmentConfig | None = None,
     production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
-    columns = ("Mz", "RT", *matrix.sample_order)
-    return _write_tsv(
-        path,
-        columns,
-        product_matrix_tsv_rows(
-            matrix,
-            alignment_config=alignment_config,
-            production_decisions=production_decisions,
-        ),
+    rows = product_matrix_tsv_rows(
+        matrix,
+        alignment_config=alignment_config,
+        production_decisions=production_decisions,
     )
+    table = serialize_public_matrix_table(
+        rows,
+        sample_columns=matrix.sample_order,
+    )
+    return _write_tsv(path, table.header, table.rows)
+
+
+def _format_alignment_review_rows(
+    rows: Iterable[Mapping[str, object]],
+) -> Iterable[Mapping[str, object]]:
+    for row in rows:
+        formatted = dict(row)
+        formatted["family_center_mz"] = canonical_mz_text(
+            row.get("family_center_mz", "")
+        )
+        yield formatted
 
 
 def write_alignment_matrix_identity_tsv(

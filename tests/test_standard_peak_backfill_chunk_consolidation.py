@@ -4,7 +4,11 @@ import csv
 import json
 from pathlib import Path
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from tools.diagnostics import standard_peak_backfill_chunk_consolidation as cli
+from xic_extractor.alignment.matrix_output_contract import (
+    LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+)
 from xic_extractor.alignment.tsv_writer import ALIGNMENT_REVIEW_COLUMNS
 from xic_extractor.diagnostics.shadow_production_projection import (
     SHADOW_PRODUCTION_PROJECTION_COLUMNS,
@@ -81,8 +85,8 @@ def test_chunk_consolidation_applies_one_matrix_from_two_chunks(
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[row_by_hypothesis["FAM_A"]]["S2"] == "111"
-    assert matrix_rows[row_by_hypothesis["FAM_B"]]["S2"] == "222"
+    assert matrix_rows[row_by_hypothesis["FAM_A"]]["S2"] == "1.11000e+02"
+    assert matrix_rows[row_by_hypothesis["FAM_B"]]["S2"] == "2.22000e+02"
     formal_matrix_rows = _read_tsv(
         out / "formal_product_output" / "alignment_matrix.tsv",
     )
@@ -750,7 +754,7 @@ def test_chunk_consolidation_formal_output_keeps_unauthorized_rows_blank(
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert formal_rows[row_by_hypothesis["FAM_A"]]["S2"] == "111"
+    assert formal_rows[row_by_hypothesis["FAM_A"]]["S2"] == "1.11000e+02"
     assert formal_rows[row_by_hypothesis["FAM_B"]]["S2"] == ""
     delta_rows = _read_tsv(
         out / "formal_product_output" / "activation_value_delta.tsv",
@@ -857,14 +861,7 @@ def _write_fixture(tmp_path: Path) -> dict[str, Path]:
             _identity_row("1", "300.1", "10.1", "FAM_A"),
             _identity_row("2", "301.1", "10.2", "FAM_B"),
         ],
-        (
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
     _write_tsv(
         review,
@@ -957,14 +954,12 @@ def _write_chunk(
 
 
 def _identity_row(index: str, mz: str, rt: str, family: str) -> dict[str, str]:
-    return {
-        "matrix_row_index": index,
-        "Mz": mz,
-        "RT": rt,
-        "peak_hypothesis_id": family,
-        "row_identity_basis": "no_split_peak_hypothesis",
-        "source_feature_family_ids": family,
-    }
+    return legacy_matrix_identity_row(
+        index=index,
+        mz=mz,
+        rt=rt,
+        peak_hypothesis_id=family,
+    )
 
 
 def _review_row(family: str, mz: str, rt: str) -> dict[str, str]:

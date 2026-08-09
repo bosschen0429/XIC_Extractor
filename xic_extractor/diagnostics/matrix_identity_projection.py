@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Literal
 
+from xic_extractor.alignment.matrix_output_contract import (
+    validate_matrix_identity_rows,
+)
 from xic_extractor.tabular_io import (
     identity_family_keys,
     positive_int,
-    read_tsv_required,
     read_tsv_with_header,
     text_value,
 )
@@ -28,14 +31,14 @@ def matrix_values_from_tsv(
     duplicate_policy: DuplicatePolicy = "error",
 ) -> dict[tuple[str, str], str]:
     matrix_header, matrix_rows = read_tsv_with_header(alignment_matrix_tsv)
-    identity_rows = read_tsv_required(
-        alignment_matrix_identity_tsv,
-        ("matrix_row_index", "peak_hypothesis_id"),
+    identity_header, identity_rows = read_tsv_with_header(
+        alignment_matrix_identity_tsv
     )
     return matrix_values_by_identity(
         matrix_rows=matrix_rows,
         matrix_identity_rows=identity_rows,
         matrix_header=matrix_header,
+        matrix_identity_header=identity_header,
         key_mode=key_mode,
         include_blank=include_blank,
         requested_keys=requested_keys,
@@ -48,15 +51,31 @@ def matrix_values_by_identity(
     matrix_rows: Sequence[Mapping[str, object]],
     matrix_identity_rows: Sequence[Mapping[str, object]],
     matrix_header: Sequence[str] | None = None,
+    matrix_identity_header: Sequence[str] | None = None,
     key_mode: MatrixIdentityKeyMode = "peak_hypothesis",
     include_blank: bool = True,
     requested_keys: set[tuple[str, str]] | None = None,
     duplicate_policy: DuplicatePolicy = "error",
 ) -> dict[tuple[str, str], str]:
+    resolved_matrix_header = tuple(
+        matrix_header or (tuple(matrix_rows[0]) if matrix_rows else ())
+    )
+    matrix_has_family_id = "feature_family_id" in resolved_matrix_header
+    is_public_matrix = resolved_matrix_header[:2] == ("Mz", "RT")
+    if is_public_matrix and not matrix_has_family_id:
+        if matrix_rows and not matrix_identity_rows:
+            raise ValueError("matrix identity rows are required for Mz/RT matrices")
+        resolved_identity_header = tuple(
+            matrix_identity_header
+            or (tuple(matrix_identity_rows[0]) if matrix_identity_rows else ())
+        )
+        validate_matrix_identity_rows(
+            matrix_header=resolved_matrix_header,
+            matrix_rows=matrix_rows,
+            identity_columns=resolved_identity_header,
+            identity_rows=matrix_identity_rows,
+        )
     identity_by_index = _identity_by_matrix_index(matrix_identity_rows)
-    matrix_has_family_id = matrix_rows and "feature_family_id" in matrix_rows[0]
-    if matrix_rows and not identity_by_index and not matrix_has_family_id:
-        raise ValueError("matrix identity rows are required for Mz/RT matrices")
 
     sample_columns = _sample_columns(matrix_rows, matrix_header)
     values: dict[tuple[str, str], str] = {}
@@ -91,18 +110,39 @@ def matrix_value_diffs(
     return tuple(
         (key, before.get(key, ""), after.get(key, ""))
         for key in keys
-        if before.get(key, "") != after.get(key, "")
+        if not _exact_decimal_equal(before.get(key, ""), after.get(key, ""))
     )
 
 
 def _identity_by_matrix_index(
     rows: Sequence[Mapping[str, object]],
 ) -> dict[int, Mapping[str, object]]:
-    return {
-        row_index: row
-        for row in rows
-        if (row_index := positive_int(row.get("matrix_row_index"))) is not None
-    }
+    result: dict[int, Mapping[str, object]] = {}
+    for row in rows:
+        row_index = positive_int(row.get("matrix_row_index"))
+        if row_index is None:
+            raise ValueError("matrix identity row index must be a positive integer")
+        if row_index in result:
+            raise ValueError("matrix identity row index must be unique")
+        result[row_index] = row
+    return result
+
+
+def _exact_decimal_equal(left: object, right: object) -> bool:
+    left_text = text_value(left)
+    right_text = text_value(right)
+    if not left_text or not right_text:
+        return left_text == right_text
+    try:
+        left_value = Decimal(left_text)
+        right_value = Decimal(right_text)
+    except InvalidOperation:
+        return False
+    return (
+        left_value.is_finite()
+        and right_value.is_finite()
+        and left_value == right_value
+    )
 
 
 def _row_keys(

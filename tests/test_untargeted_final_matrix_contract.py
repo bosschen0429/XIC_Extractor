@@ -71,10 +71,10 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
 
     tsv_rows = _read_tsv(matrix_tsv)
     assert list(tsv_rows[0]) == ["Mz", "RT", "s1", "s2", "s3"]
-    assert [(row["Mz"], row["RT"]) for row in tsv_rows] == [("500.123", "8.49")]
-    assert tsv_rows[0]["s1"] == "100"
-    assert tsv_rows[0]["s2"] == "90"
-    assert tsv_rows[0]["s3"] == "115"
+    assert [(row["Mz"], row["RT"]) for row in tsv_rows] == [("500.1230", "8.49")]
+    assert tsv_rows[0]["s1"] == "1.00000e+02"
+    assert tsv_rows[0]["s2"] == "9.00000e+01"
+    assert tsv_rows[0]["s3"] == "1.15000e+02"
     assert FORBIDDEN_PRIMARY_STATUSES.isdisjoint(
         value for row in tsv_rows for value in row.values()
     )

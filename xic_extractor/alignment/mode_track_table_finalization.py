@@ -13,6 +13,11 @@ from pathlib import Path, PurePosixPath
 from typing import final
 
 from xic_extractor.alignment import quant_matrix_version as quant_matrix
+from xic_extractor.alignment.matrix_output_contract import (
+    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    bind_matrix_identity_rows,
+    serialize_public_matrix_table,
+)
 from xic_extractor.alignment.production_acceptance import (
     build_quant_matrix_version_from_in_process_acceptance,
 )
@@ -36,6 +41,7 @@ _WRITER_AUTHORITY = "fresh_projection_plus_owner_validated_review_subjects"
 _PUBLISHED_OUTPUTS = {
     "checked_manifest": "checked_manifest_v1.tsv",
     "alignment_matrix_tsv": "alignment_matrix.tsv",
+    "alignment_matrix_identity_tsv": "alignment_matrix_identity.tsv",
     "alignment_matrix_xlsx": "alignment_matrix.xlsx",
     "cell_provenance": "cell_provenance.tsv",
     "row_summary": "row_summary.tsv",
@@ -49,6 +55,7 @@ class ModeTrackTableFinalizationResult:
     adopted_cell_count: int
     rollback_status: str
     matrix_tsv: Path
+    matrix_identity_tsv: Path
     matrix_xlsx: Path
     checked_manifest_tsv: Path
     publication_receipt_json: Path
@@ -286,6 +293,7 @@ def _finalize_mode_track_projection(
         adopted_cell_count=len(pending),
         rollback_status=rollback_status,
         matrix_tsv=output_dir / "alignment_matrix.tsv",
+        matrix_identity_tsv=output_dir / "alignment_matrix_identity.tsv",
         matrix_xlsx=output_dir / "alignment_matrix.xlsx",
         checked_manifest_tsv=output_dir / "checked_manifest_v1.tsv",
         publication_receipt_json=output_dir / "publication_receipt.json",
@@ -572,6 +580,16 @@ def _write_outputs(
     rollback_status: str,
     validated_review: _ValidatedModeTrackReviewSet,
 ) -> None:
+    public_table = serialize_public_matrix_table(
+        result.quant_matrix_rows,
+        sample_columns=projection.matrix_header[2:],
+    )
+    identity_rows = bind_matrix_identity_rows(
+        matrix_header=public_table.header,
+        matrix_rows=public_table.rows,
+        identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        identity_rows=projection.input_matrix_identity_rows,
+    )
     (output_dir / "checked_manifest_v1.tsv").write_text(
         render_delimited_rows(
             checked_rows,
@@ -584,8 +602,18 @@ def _write_outputs(
     )
     (output_dir / "alignment_matrix.tsv").write_text(
         render_delimited_rows(
-            result.quant_matrix_rows,
-            projection.matrix_header,
+            public_table.rows,
+            public_table.header,
+            delimiter="\t",
+            extrasaction="raise",
+            lineterminator="\n",
+        ),
+        encoding="utf-8",
+    )
+    (output_dir / "alignment_matrix_identity.tsv").write_text(
+        render_delimited_rows(
+            identity_rows,
+            ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
             delimiter="\t",
             extrasaction="raise",
             lineterminator="\n",

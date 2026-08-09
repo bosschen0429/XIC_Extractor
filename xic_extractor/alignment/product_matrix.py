@@ -7,6 +7,14 @@ from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.matrix_output_contract import (
+    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    MATRIX_IDENTITY_SCHEMA_VERSION,
+    MATRIX_ROW_BINDING_COLUMN,
+    bind_matrix_identity_rows,
+    canonical_mz_text,
+    serialize_public_matrix_table,
+)
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
     format_value,
@@ -17,29 +25,6 @@ from xic_extractor.alignment.production_decisions import (
     ProductionCellDecision,
     ProductionDecisionSet,
     build_production_decisions,
-)
-
-MATRIX_IDENTITY_SCHEMA_VERSION = "untargeted_peak_hypothesis_matrix_identity_v1"
-
-ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
-    "identity_schema_version",
-    "matrix_row_index",
-    "Mz",
-    "RT",
-    "peak_hypothesis_id",
-    "row_identity_basis",
-    "split_evaluation_status",
-    "projection_status",
-    "source_feature_family_ids",
-    "source_feature_family_count",
-    "center_mz_basis",
-    "center_rt_basis",
-    "center_weight_basis",
-    "accepted_cell_count",
-    "accepted_sample_count",
-    "evidence_status",
-    "parent_peak_hypothesis_id",
-    "child_peak_hypothesis_ids",
 )
 
 _ALLOWED_ROW_IDENTITY_BASIS = {
@@ -282,6 +267,7 @@ def _identity_row(
             getattr(cluster, "parent_peak_hypothesis_id", "")
         ),
         "child_peak_hypothesis_ids": child_peak_hypothesis_ids,
+        MATRIX_ROW_BINDING_COLUMN: "",
     }
 
 
@@ -655,16 +641,39 @@ def formatted_identity_rows(
     *,
     alignment_config: AlignmentConfig | None = None,
     production_decisions: ProductionDecisionSet | None = None,
-) -> list[dict[str, object]]:
-    rows = product_matrix_identity_rows(
+) -> list[dict[str, str]]:
+    product_rows = build_product_matrix_rows(
         matrix,
         alignment_config=alignment_config,
         production_decisions=production_decisions,
     )
-    return [
+    formatted_rows = [
         {
-            column: format_value(row.get(column, ""))
+            column: (
+                canonical_mz_text(row.get(column, ""))
+                if column == "Mz"
+                else format_value(row.get(column, ""))
+            )
             for column in ALIGNMENT_MATRIX_IDENTITY_COLUMNS
         }
-        for row in rows
+        for row in (product_row.identity for product_row in product_rows)
     ]
+    public_table = serialize_public_matrix_table(
+        (
+            {
+                "Mz": row.mz,
+                "RT": row.rt,
+                **row.sample_values,
+            }
+            for row in product_rows
+        ),
+        sample_columns=matrix.sample_order,
+    )
+    return list(
+        bind_matrix_identity_rows(
+            matrix_header=public_table.header,
+            matrix_rows=public_table.rows,
+            identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+            identity_rows=formatted_rows,
+        )
+    )

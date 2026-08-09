@@ -609,7 +609,7 @@ def test_compact_owner_family_tsv_triad_keeps_primary_and_full_delivery_rows(
             "sample-b",
             "sample-c",
         ],
-        ["500", "8.5", "900", "900", ""],
+        ["500.0000", "8.5", "9.00000e+02", "9.00000e+02", ""],
     ]
     cell_rows = _tsv_rows(cells_path)
     assert cell_rows[0] == list(ALIGNMENT_CELLS_COLUMNS)

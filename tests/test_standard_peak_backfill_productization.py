@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from tools.diagnostics import standard_peak_backfill_productization as cli
+from xic_extractor.alignment.matrix_output_contract import (
+    LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+)
 from xic_extractor.alignment.tsv_writer import (
     ALIGNMENT_CELLS_COLUMNS,
     ALIGNMENT_OWNER_BACKFILL_SEED_AUDIT_COLUMNS,
@@ -77,7 +81,9 @@ def test_standard_peak_productization_applies_matrix_and_synced_gallery(
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == "100"
+    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == (
+        "1.00000e+02"
+    )
     assert matrix_rows[matrix_index_by_hypothesis["FAM_NON"]]["S2"] == ""
 
     delta = _read_tsv(output_dir / "activated_matrix" / "activation_value_delta.tsv")
@@ -241,7 +247,9 @@ def test_standard_peak_productization_can_limit_writer_to_high_signal_clean_scop
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == "100"
+    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == (
+        "1.00000e+02"
+    )
     assert matrix_rows[matrix_index_by_hypothesis["FAM_NON"]]["S2"] == ""
 
 
@@ -684,7 +692,9 @@ def test_standard_peak_productization_can_limit_writer_to_low_height_stability_s
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == "100"
+    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == (
+        "1.00000e+02"
+    )
     assert matrix_rows[matrix_index_by_hypothesis["FAM_NON"]]["S2"] == ""
 
 
@@ -797,7 +807,9 @@ def test_low_height_stability_scope_filters_rows_not_whole_family(
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == "100"
+    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == (
+        "1.00000e+02"
+    )
     assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S3"] == ""
 
 
@@ -822,14 +834,7 @@ def test_standard_peak_productization_generates_broad_policy_and_writes_ready_ro
             _identity_row(str(index), mz, rt, family)
             for index, (family, mz, rt, _) in enumerate(families, start=1)
         ],
-        (
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
     _write_tsv(
         fixture["review"],
@@ -1041,8 +1046,12 @@ def test_standard_peak_productization_generates_broad_policy_and_writes_ready_ro
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[matrix_index_by_hypothesis["FAM_READY"]]["S2"] == "100"
-    assert matrix_rows[matrix_index_by_hypothesis["FAM_STABLE"]]["S2"] == "150"
+    assert matrix_rows[matrix_index_by_hypothesis["FAM_READY"]]["S2"] == (
+        "1.00000e+02"
+    )
+    assert matrix_rows[matrix_index_by_hypothesis["FAM_STABLE"]]["S2"] == (
+        "1.50000e+02"
+    )
     assert matrix_rows[matrix_index_by_hypothesis["FAM_FLAG"]]["S2"] == ""
     assert matrix_rows[matrix_index_by_hypothesis["FAM_BLOCK"]]["S2"] == ""
 
@@ -1545,7 +1554,9 @@ def test_generated_backfill_policy_uses_policy_observed_oracle_for_write_ready(
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == "100"
+    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == (
+        "1.00000e+02"
+    )
 
 
 def test_generated_backfill_policy_rejects_failed_policy_observed_oracle(
@@ -2431,7 +2442,9 @@ def test_standard_peak_productization_writes_duplicate_warning_rescue(
         row["peak_hypothesis_id"]: int(row["matrix_row_index"]) - 1
         for row in identity_rows
     }
-    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == "100"
+    assert matrix_rows[matrix_index_by_hypothesis["FAM_STD"]]["S2"] == (
+        "1.00000e+02"
+    )
 
     decisions = _read_tsv(
         output_dir
@@ -2525,14 +2538,7 @@ def _write_fixture(tmp_path: Path) -> dict[str, Path]:
             _identity_row("1", "300.3", "9.3", "FAM_STD"),
             _identity_row("2", "301.3", "9.4", "FAM_NON"),
         ],
-        (
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
     )
     _write_tsv(
         review,
@@ -2595,14 +2601,12 @@ def _identity_row(
     rt: str,
     family: str,
 ) -> dict[str, str]:
-    return {
-        "matrix_row_index": index,
-        "Mz": mz,
-        "RT": rt,
-        "peak_hypothesis_id": family,
-        "row_identity_basis": "no_split_peak_hypothesis",
-        "source_feature_family_ids": family,
-    }
+    return legacy_matrix_identity_row(
+        index=index,
+        mz=mz,
+        rt=rt,
+        peak_hypothesis_id=family,
+    )
 
 
 def _review_row(family: str, mz: str, rt: str) -> dict[str, str]:

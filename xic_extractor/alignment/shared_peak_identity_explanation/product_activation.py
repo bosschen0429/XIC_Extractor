@@ -11,9 +11,21 @@ from xic_extractor.alignment.backfill_evidence_projection import (
     BACKFILL_PROJECTION_COLUMNS,
     project_backfill_evidence_to_cells,
 )
+from xic_extractor.alignment.matrix_output_contract import (
+    MATRIX_IDENTITY_SCHEMA_VERSION,
+    bind_matrix_identity_rows,
+    canonical_mz_text,
+    project_public_matrix_rows,
+    serialize_public_matrix_table,
+    validate_matrix_identity_row,
+    validate_matrix_identity_rows,
+)
 from xic_extractor.alignment.primary_matrix_area import (
     MISSING_ASLS_PRIMARY_AREA,
     MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE,
+)
+from xic_extractor.alignment.product_matrix import (
+    ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
 )
 from xic_extractor.tabular_io import write_tsv
 
@@ -344,6 +356,14 @@ def apply_activation_to_alignment_outputs(
             f"readiness; blockers={summary_row['canonical_row_identity_blockers']}"
         )
 
+    if tuple(output_matrix_header[:2]) == ("Mz", "RT"):
+        public_table = serialize_public_matrix_table(
+            output_matrix_rows,
+            sample_columns=sample_columns,
+        )
+        output_matrix_header = public_table.header
+        output_matrix_rows = list(public_table.rows)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     matrix_path, review_path, cells_path = _activated_output_paths(
         output_dir,
@@ -384,8 +404,13 @@ def apply_activation_to_alignment_outputs(
     if matrix_identity_path is not None:
         _write_tsv(
             matrix_identity_path,
-            _ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-            _alignment_matrix_identity_rows(hypothesis_identity_rows, sample_columns),
+            ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+            _alignment_matrix_identity_rows(
+                hypothesis_identity_rows,
+                sample_columns,
+                output_matrix_header,
+                output_matrix_rows,
+            ),
         )
     review_output_header = (
         tuple(review_header)
@@ -584,6 +609,11 @@ def apply_activation_to_alignment_matrix_outputs(
         families_removed=original_matrix_families
         - _matrix_source_family_ids(matrix_by_family),
     )
+    public_table = serialize_public_matrix_table(
+        output_matrix_rows,
+        sample_columns=sample_columns,
+    )
+    output_matrix_rows = list(public_table.rows)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     matrix_path = output_dir / "alignment_matrix.tsv"
@@ -607,7 +637,7 @@ def apply_activation_to_alignment_matrix_outputs(
                 activation_values_tsv,
             ),
         )
-    _write_tsv(matrix_path, _product_matrix_header(sample_columns), output_matrix_rows)
+    _write_tsv(matrix_path, public_table.header, output_matrix_rows)
     _write_tsv(
         hypothesis_identity_path,
         _formal_matrix_header(sample_columns),
@@ -615,8 +645,13 @@ def apply_activation_to_alignment_matrix_outputs(
     )
     _write_tsv(
         matrix_identity_path,
-        _ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
-        _alignment_matrix_identity_rows(hypothesis_identity_rows, sample_columns),
+        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        _alignment_matrix_identity_rows(
+            hypothesis_identity_rows,
+            sample_columns,
+            public_table.header,
+            output_matrix_rows,
+        ),
     )
     _write_tsv(summary_path, ACTIVATION_APPLICATION_SUMMARY_COLUMNS, [summary_row])
     _write_tsv(value_delta_path, ACTIVATION_VALUE_DELTA_COLUMNS, value_delta_rows)
@@ -662,30 +697,6 @@ _FORMAL_MATRIX_META = (
     "family_center_mz",
     "family_center_rt",
 )
-_ALIGNMENT_MATRIX_IDENTITY_SCHEMA_VERSION = (
-    "untargeted_peak_hypothesis_matrix_identity_v1"
-)
-_ALIGNMENT_MATRIX_IDENTITY_COLUMNS = (
-    "identity_schema_version",
-    "matrix_row_index",
-    "Mz",
-    "RT",
-    "peak_hypothesis_id",
-    "row_identity_basis",
-    "split_evaluation_status",
-    "projection_status",
-    "source_feature_family_ids",
-    "source_feature_family_count",
-    "center_mz_basis",
-    "center_rt_basis",
-    "center_weight_basis",
-    "accepted_cell_count",
-    "accepted_sample_count",
-    "evidence_status",
-    "parent_peak_hypothesis_id",
-    "child_peak_hypothesis_ids",
-)
-
 _OUTPUT_MODES = frozenset({"activated-copy", "formal"})
 
 
@@ -741,19 +752,18 @@ def _public_matrix_rows_by_family(
         alignment_matrix_identity_tsv
     )
     _require_columns(identity_header, _MATRIX_IDENTITY_REQUIRED_COLUMNS)
-    identity_by_index = {
-        _positive_row_index(row.get("matrix_row_index", "")): row
-        for row in identity_rows
-    }
+    matrix_header = ("Mz", "RT", *sample_columns)
+    validate_matrix_identity_rows(
+        matrix_header=matrix_header,
+        matrix_rows=matrix_rows,
+        identity_columns=identity_header,
+        identity_rows=identity_rows,
+    )
     rows_by_key: dict[str, dict[str, str]] = {}
-    for index, matrix_row in enumerate(matrix_rows, start=1):
-        identity = identity_by_index.get(index)
-        if identity is None:
-            raise ValueError(
-                "alignment_matrix_identity.tsv is missing matrix_row_index "
-                f"{index}"
-            )
-        _validate_identity_coordinate(index, matrix_row, identity)
+    for index, (matrix_row, identity) in enumerate(
+        zip(matrix_rows, identity_rows, strict=True),
+        start=1,
+    ):
         _validate_public_identity_basis(identity, index)
         family_id = _single_source_family_id(identity, index)
         row_key = _public_matrix_row_key(identity, index)
@@ -766,7 +776,7 @@ def _public_matrix_rows_by_family(
         row = {
             "feature_family_id": family_id,
             "neutral_loss_tag": review_row.get("neutral_loss_tag", ""),
-            "family_center_mz": matrix_row.get("Mz", ""),
+            "family_center_mz": canonical_mz_text(identity.get("Mz", "")),
             "family_center_rt": matrix_row.get("RT", ""),
             _INPUT_PEAK_HYPOTHESIS_ID: identity.get("peak_hypothesis_id", ""),
             _INPUT_ROW_IDENTITY_BASIS: identity.get("row_identity_basis", ""),
@@ -817,25 +827,13 @@ def _validate_identity_coordinate(
     matrix_row: Mapping[str, str],
     identity_row: Mapping[str, str],
 ) -> None:
-    matrix_mz = _to_float(matrix_row.get("Mz"))
-    matrix_rt = _to_float(matrix_row.get("RT"))
-    identity_mz = _to_float(identity_row.get("Mz"))
-    identity_rt = _to_float(identity_row.get("RT"))
-    if (
-        matrix_mz is None
-        or matrix_rt is None
-        or identity_mz is None
-        or identity_rt is None
-    ):
-        raise ValueError(
-            "alignment matrix identity coordinates must be numeric for "
-            f"matrix_row_index {index}"
-        )
-    if abs(matrix_mz - identity_mz) > 1e-6 or abs(matrix_rt - identity_rt) > 1e-6:
-        raise ValueError(
-            "alignment_matrix_identity.tsv coordinate mismatch for "
-            f"matrix_row_index {index}"
-        )
+    validate_matrix_identity_row(
+        matrix_header=tuple(matrix_row),
+        matrix_row=matrix_row,
+        identity_columns=tuple(identity_row),
+        identity_row=identity_row,
+        expected_index=index,
+    )
 
 
 def _single_source_family_id(identity_row: Mapping[str, str], index: int) -> str:
@@ -1082,7 +1080,7 @@ def _product_matrix_rows_from_hypotheses(
     hypothesis_rows: Sequence[Mapping[str, str]],
     sample_columns: Sequence[str],
 ) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
+    machine_rows: list[dict[str, str]] = []
     for hypothesis_row in hypothesis_rows:
         row = {
             "Mz": hypothesis_row.get("family_center_mz", ""),
@@ -1094,13 +1092,21 @@ def _product_matrix_rows_from_hypotheses(
                 for sample in sample_columns
             }
         )
-        rows.append(row)
-    return rows
+        machine_rows.append(row)
+    return [
+        {column: str(value) for column, value in row.items()}
+        for row in project_public_matrix_rows(
+            machine_rows,
+            sample_columns=sample_columns,
+        )
+    ]
 
 
 def _alignment_matrix_identity_rows(
     hypothesis_rows: Sequence[Mapping[str, str]],
     sample_columns: Sequence[str],
+    matrix_header: Sequence[str],
+    matrix_rows: Sequence[Mapping[str, str]],
 ) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for index, hypothesis_row in enumerate(hypothesis_rows, start=1):
@@ -1124,9 +1130,11 @@ def _alignment_matrix_identity_rows(
         split_evaluation_status = _split_evaluation_status(row_identity_basis)
         rows.append(
             {
-                "identity_schema_version": _ALIGNMENT_MATRIX_IDENTITY_SCHEMA_VERSION,
+                "identity_schema_version": MATRIX_IDENTITY_SCHEMA_VERSION,
                 "matrix_row_index": str(index),
-                "Mz": hypothesis_row.get("family_center_mz", ""),
+                "Mz": canonical_mz_text(
+                    hypothesis_row.get("family_center_mz", "")
+                ),
                 "RT": _matrix_center_rt(hypothesis_row),
                 "peak_hypothesis_id": hypothesis_row.get("peak_hypothesis_id", ""),
                 "row_identity_basis": row_identity_basis,
@@ -1150,9 +1158,17 @@ def _alignment_matrix_identity_rows(
                     _parent_peak_hypothesis_id(hypothesis_row, source_family_ids)
                 ),
                 "child_peak_hypothesis_ids": "",
+                "matrix_row_binding_sha256": "",
             }
         )
-    return rows
+    return list(
+        bind_matrix_identity_rows(
+            matrix_header=matrix_header,
+            matrix_rows=matrix_rows,
+            identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+            identity_rows=rows,
+        )
+    )
 
 
 def _matrix_center_rt(hypothesis_row: Mapping[str, str]) -> str:
@@ -1428,15 +1444,25 @@ def _identity_metadata_row(
     family_row: Mapping[str, str],
     review_row: Mapping[str, str],
 ) -> dict[str, str]:
+    # Public Matrix input is rehydrated from its identity sidecar. Legacy
+    # feature-family input has no such binding, so its review row is the most
+    # precise available machine coordinate.
+    if family_row.get(_INPUT_PEAK_HYPOTHESIS_ID):
+        family_center_mz = (
+            family_row.get("family_center_mz")
+            or review_row.get("family_center_mz", "")
+        )
+    else:
+        family_center_mz = (
+            review_row.get("family_center_mz")
+            or family_row.get("family_center_mz", "")
+        )
     return {
         "neutral_loss_tag": (
             family_row.get("neutral_loss_tag")
             or review_row.get("neutral_loss_tag", "")
         ),
-        "family_center_mz": (
-            family_row.get("family_center_mz")
-            or review_row.get("family_center_mz", "")
-        ),
+        "family_center_mz": canonical_mz_text(family_center_mz),
         "family_center_rt": (
             family_row.get("family_center_rt")
             or review_row.get("family_center_rt", "")
@@ -1562,7 +1588,9 @@ def _new_peak_hypothesis_matrix_row(
         "row_identity_basis": row_identity_basis,
         "legacy_rt_row_context_id": legacy_rt_row_context_id,
         "neutral_loss_tag": review_row.get("neutral_loss_tag", ""),
-        "family_center_mz": review_row.get("family_center_mz", ""),
+        "family_center_mz": canonical_mz_text(
+            review_row.get("family_center_mz", "")
+        ),
         "family_center_rt": review_row.get("family_center_rt", ""),
     }
     row.update({sample: "" for sample in sample_columns})
@@ -2053,7 +2081,9 @@ def _new_matrix_row(
     row = {
         "feature_family_id": family_id,
         "neutral_loss_tag": review_row.get("neutral_loss_tag", ""),
-        "family_center_mz": review_row.get("family_center_mz", ""),
+        "family_center_mz": canonical_mz_text(
+            review_row.get("family_center_mz", "")
+        ),
         "family_center_rt": review_row.get("family_center_rt", ""),
     }
     row.update({sample: "" for sample in sample_columns})

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from tools.diagnostics.apply_shared_peak_identity_activation import main
 from xic_extractor.alignment.backfill_evidence_projection import (
     PRODUCT_AUTHORITY_SCOPE_FIELD,
@@ -11,6 +12,9 @@ from xic_extractor.alignment.backfill_evidence_projection import (
     PRODUCT_AUTHORITY_STATUS_FIELD,
     PRODUCT_AUTHORIZED_SCOPE,
     PRODUCT_AUTHORIZED_STATUS,
+)
+from xic_extractor.alignment.matrix_output_contract import (
+    LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
 )
 from xic_extractor.alignment.promotion_policy import (
     ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
@@ -307,6 +311,11 @@ def test_activation_application_formal_mode_writes_product_contract_names(
     tmp_path: Path,
 ) -> None:
     fixture = _write_fixture(tmp_path, acceptance_status="pass")
+    review_rows = _read_tsv(fixture["review"])
+    next(
+        row for row in review_rows if row["feature_family_id"] == "FAM_KEEP"
+    )["family_center_mz"] = "300.300004"
+    _write_tsv(fixture["review"], _header(fixture["review"]), review_rows)
 
     outputs = product_activation.apply_activation_to_alignment_outputs(
         activation_decisions_tsv=fixture["decisions"],
@@ -353,6 +362,7 @@ def test_activation_application_formal_mode_writes_product_contract_names(
         "split_peak_hypothesis"
     )
     assert identity_rows["FAM_KEEP::mode_1"]["S2"] == "777"
+    assert identity_rows["FAM_KEEP::mode_1"]["family_center_mz"] == "300.300004"
     assert identity_rows["FAM_KEEP::mode_1"]["row_identity_basis"] == (
         "split_peak_hypothesis"
     )
@@ -367,6 +377,12 @@ def test_activation_application_formal_mode_writes_product_contract_names(
         "split_peak_hypothesis"
     )
     assert "FAM_BLOCK::family_projection" not in identity_rows
+    assert outputs.matrix_identity_tsv is not None
+    matrix_identity_rows = {
+        row["peak_hypothesis_id"]: row
+        for row in _read_tsv(outputs.matrix_identity_tsv)
+    }
+    assert matrix_identity_rows["FAM_KEEP::mode_1"]["Mz"] == "300.300004"
     summary = _read_tsv(outputs.summary_tsv)[0]
     assert summary["activation_output_mode"] == "formal"
     assert summary["matrix_row_identity"] == "mz_rt_sample_columns"
@@ -410,11 +426,11 @@ def test_activation_formal_accepts_public_mz_rt_matrix_with_identity_sidecar(
         (row["Mz"], row["RT"], row["S1"], row["S2"])
         for row in matrix_rows
     } == {
-        ("100.1", "7.15", "100", ""),
-        ("200.2", "8.2", "", "300"),
-        ("300.3", "9.35", "", "777"),
-        ("400.4", "10.45", "111", ""),
-        ("400.4", "10.45", "", "222"),
+        ("100.1000", "7.15", "1.00000e+02", ""),
+        ("200.2000", "8.2", "", "3.00000e+02"),
+        ("300.3000", "9.35", "", "7.77000e+02"),
+        ("400.4000", "10.45", "1.11000e+02", ""),
+        ("400.4000", "10.45", "", "2.22000e+02"),
     }
 
     assert outputs.hypothesis_identity_tsv is not None
@@ -457,13 +473,15 @@ def test_activation_formal_accepts_public_mz_rt_matrix_with_identity_sidecar(
         "4",
         "5",
     ]
-    assert [
-        (row["Mz"], row["RT"])
-        for row in matrix_identity_rows
-    ] == [
-        (row["Mz"], row["RT"])
-        for row in matrix_rows
-    ]
+    for index, (matrix_row, identity_row) in enumerate(
+        zip(matrix_rows, matrix_identity_rows, strict=True),
+        start=1,
+    ):
+        product_activation._validate_identity_coordinate(
+            index,
+            matrix_row,
+            identity_row,
+        )
     matrix_identity_by_peak = {
         row["peak_hypothesis_id"]: row for row in matrix_identity_rows
     }
@@ -688,10 +706,10 @@ def test_activation_formal_uses_rt_mode_evidence_for_split_hypothesis_rt(
     assert {
         (row["RT"], row["S1"], row["S2"])
         for row in matrix_rows
-        if row["Mz"] == "400.4"
+        if row["Mz"] == "400.4000"
     } == {
-        ("10.1", "111", ""),
-        ("10.9", "", "222"),
+        ("10.1", "1.11000e+02", ""),
+        ("10.9", "", "2.22000e+02"),
     }
 
     assert outputs.matrix_identity_tsv is not None
@@ -1089,6 +1107,18 @@ def test_activation_application_cli_matrix_only_uses_activation_values_without_c
     fixture = _write_fixture(tmp_path, acceptance_status="pass")
     public_matrix = _write_public_mz_rt_matrix_fixture(tmp_path, fixture)
     identity = _write_alignment_matrix_identity_fixture(tmp_path)
+    matrix_rows = _read_tsv(public_matrix)
+    matrix_rows[0]["Mz"] = "100.1235"
+    _write_tsv(public_matrix, _header(public_matrix), matrix_rows)
+    identity_input_rows = _read_tsv(identity)
+    identity_input_rows[0]["Mz"] = "100.123456"
+    _write_tsv(identity, _header(identity), identity_input_rows)
+    _bind_public_matrix_identity_v2(public_matrix, identity)
+    review_rows = _read_tsv(fixture["review"])
+    next(
+        row for row in review_rows if row["feature_family_id"] == "FAM_ADD"
+    )["family_center_mz"] = "200.234567"
+    _write_tsv(fixture["review"], _header(fixture["review"]), review_rows)
     decisions = tmp_path / "matrix_only_activation_decisions.tsv"
     activation_values = tmp_path / "activation_values.tsv"
     _write_tsv(
@@ -1186,7 +1216,16 @@ def test_activation_application_cli_matrix_only_uses_activation_values_without_c
         for index, row in enumerate(identity_rows)
         if row["peak_hypothesis_id"] == "FAM_ADD::mode_1"
     )
-    assert matrix_rows[add_index]["S2"] == "300"
+    block_index = next(
+        index
+        for index, row in enumerate(identity_rows)
+        if row["peak_hypothesis_id"] == "FAM_BLOCK"
+    )
+    assert matrix_rows[block_index]["Mz"] == "100.1235"
+    assert identity_rows[block_index]["Mz"] == "100.123456"
+    assert matrix_rows[add_index]["Mz"] == "200.2346"
+    assert identity_rows[add_index]["Mz"] == "200.234567"
+    assert matrix_rows[add_index]["S2"] == "3.00000e+02"
     assert (tmp_path / "matrix_only" / "activation_value_delta.tsv").exists()
     assert (
         tmp_path / "matrix_only" / "activation_hypothesis_identity.tsv"
@@ -1315,10 +1354,10 @@ def test_activation_application_cli_formal_mode_uses_rt_mode_evidence(
     assert {
         (row["RT"], row["S1"], row["S2"])
         for row in rows
-        if row["Mz"] == "400.4"
+        if row["Mz"] == "400.4000"
     } == {
-        ("10.1", "111", ""),
-        ("10.9", "", "222"),
+        ("10.1", "1.11000e+02", ""),
+        ("10.9", "", "2.22000e+02"),
     }
 
 
@@ -1873,98 +1912,76 @@ def _write_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
     identity = tmp_path / "alignment_matrix_identity.tsv"
     _write_tsv(
         identity,
-        (
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-            "source_feature_family_count",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         [
-            {
-                "matrix_row_index": "1",
-                "Mz": "100.1",
-                "RT": "7.15",
-                "peak_hypothesis_id": "FAM_BLOCK",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_BLOCK",
-                "source_feature_family_count": "1",
-            },
-            {
-                "matrix_row_index": "2",
-                "Mz": "300.3",
-                "RT": "9.35",
-                "peak_hypothesis_id": "FAM_KEEP",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_KEEP",
-                "source_feature_family_count": "1",
-            },
-            {
-                "matrix_row_index": "3",
-                "Mz": "400.4",
-                "RT": "10.45",
-                "peak_hypothesis_id": "FAM_SPLIT",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_SPLIT",
-                "source_feature_family_count": "1",
-            },
+            legacy_matrix_identity_row(
+                index=1, mz="100.1", rt="7.15", peak_hypothesis_id="FAM_BLOCK"
+            ),
+            legacy_matrix_identity_row(
+                index=2, mz="300.3", rt="9.35", peak_hypothesis_id="FAM_KEEP"
+            ),
+            legacy_matrix_identity_row(
+                index=3, mz="400.4", rt="10.45", peak_hypothesis_id="FAM_SPLIT"
+            ),
         ],
     )
     return identity
+
+
+def _bind_public_matrix_identity_v2(matrix: Path, identity: Path) -> None:
+    from xic_extractor.alignment.matrix_output_contract import (
+        bind_matrix_identity_rows,
+        project_public_matrix_rows,
+    )
+    from xic_extractor.alignment.product_matrix import (
+        ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+    )
+
+    matrix_header = _header(matrix)
+    matrix_rows = tuple(
+        project_public_matrix_rows(
+            _read_tsv(matrix),
+            sample_columns=matrix_header[2:],
+        )
+    )
+    _write_tsv(matrix, matrix_header, matrix_rows)
+    bound_rows = bind_matrix_identity_rows(
+        matrix_header=matrix_header,
+        matrix_rows=matrix_rows,
+        identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        identity_rows=_read_tsv(identity),
+    )
+    _write_tsv(identity, ALIGNMENT_MATRIX_IDENTITY_COLUMNS, bound_rows)
 
 
 def _write_split_alignment_matrix_identity_fixture(tmp_path: Path) -> Path:
     identity = tmp_path / "split_alignment_matrix_identity.tsv"
     _write_tsv(
         identity,
-        (
-            "matrix_row_index",
-            "Mz",
-            "RT",
-            "peak_hypothesis_id",
-            "row_identity_basis",
-            "source_feature_family_ids",
-            "source_feature_family_count",
-        ),
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         [
-            {
-                "matrix_row_index": "1",
-                "Mz": "100.1",
-                "RT": "7.15",
-                "peak_hypothesis_id": "FAM_BLOCK",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_BLOCK",
-                "source_feature_family_count": "1",
-            },
-            {
-                "matrix_row_index": "2",
-                "Mz": "300.3",
-                "RT": "9.35",
-                "peak_hypothesis_id": "FAM_KEEP",
-                "row_identity_basis": "no_split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_KEEP",
-                "source_feature_family_count": "1",
-            },
-            {
-                "matrix_row_index": "3",
-                "Mz": "400.4",
-                "RT": "10.45",
-                "peak_hypothesis_id": "FAM_SPLIT::blue",
-                "row_identity_basis": "split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_SPLIT",
-                "source_feature_family_count": "1",
-            },
-            {
-                "matrix_row_index": "4",
-                "Mz": "400.4",
-                "RT": "10.95",
-                "peak_hypothesis_id": "FAM_SPLIT::green",
-                "row_identity_basis": "split_peak_hypothesis",
-                "source_feature_family_ids": "FAM_SPLIT",
-                "source_feature_family_count": "1",
-            },
+            legacy_matrix_identity_row(
+                index=1, mz="100.1", rt="7.15", peak_hypothesis_id="FAM_BLOCK"
+            ),
+            legacy_matrix_identity_row(
+                index=2, mz="300.3", rt="9.35", peak_hypothesis_id="FAM_KEEP"
+            ),
+            legacy_matrix_identity_row(
+                index=3,
+                mz="400.4",
+                rt="10.45",
+                peak_hypothesis_id="FAM_SPLIT::blue",
+                source_feature_family_ids="FAM_SPLIT",
+                row_identity_basis="split_peak_hypothesis",
+            ),
+            legacy_matrix_identity_row(
+                index=4,
+                mz="400.4",
+                rt="10.95",
+                peak_hypothesis_id="FAM_SPLIT::green",
+                source_feature_family_ids="FAM_SPLIT",
+                row_identity_basis="split_peak_hypothesis",
+            ),
         ],
     )
     return identity

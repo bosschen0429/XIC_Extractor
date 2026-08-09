@@ -428,10 +428,10 @@ def test_owner_family_construction_is_writer_visible(tmp_path: Path) -> None:
 
     assert len(matrix_rows) == 1
     assert list(matrix_rows[0]) == ["Mz", "RT", "sample-a", "sample-b", "sample-c"]
-    assert matrix_rows[0]["Mz"] == "500"
+    assert matrix_rows[0]["Mz"] == "500.0000"
     assert matrix_rows[0]["RT"] == "8.5"
-    assert matrix_rows[0]["sample-a"] == "900"
-    assert matrix_rows[0]["sample-b"] == "900"
+    assert matrix_rows[0]["sample-a"] == "9.00000e+02"
+    assert matrix_rows[0]["sample-b"] == "9.00000e+02"
     assert matrix_rows[0]["sample-c"] == ""
 
     assert len(cell_rows) == 3

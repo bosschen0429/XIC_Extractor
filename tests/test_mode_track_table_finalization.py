@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import shutil
@@ -15,6 +16,10 @@ from tests.test_alignment_mode_track_conservative_backfill import (
     _gate_c_run_context,
 )
 from xic_extractor.alignment import mode_track_table_finalization as finalization
+from xic_extractor.alignment.matrix_output_contract import (
+    serialize_public_matrix_table,
+    validate_matrix_identity_rows,
+)
 
 
 def test_committed_review_bundle_preserves_hash_and_reviewed_census() -> None:
@@ -70,6 +75,7 @@ def test_reviewed_mode_track_projection_writes_atomic_tsv_and_workbook(
     assert result.adopted_cell_count == 2
     assert result.rollback_status == "baseline_exact"
     assert result.matrix_tsv.is_file()
+    assert result.matrix_identity_tsv.is_file()
     assert result.matrix_xlsx.is_file()
     assert result.checked_manifest_tsv.is_file()
     assert result.publication_receipt_json.is_file()
@@ -91,6 +97,23 @@ def test_reviewed_mode_track_projection_writes_atomic_tsv_and_workbook(
     assert result.matrix_tsv.read_text(encoding="utf-8").splitlines()[0].split(
         "\t"
     ) == list(projection.matrix_header)
+    with result.matrix_tsv.open(encoding="utf-8", newline="") as handle:
+        matrix_rows = list(csv.DictReader(handle, delimiter="\t"))
+    with result.matrix_identity_tsv.open(encoding="utf-8", newline="") as handle:
+        identity_rows = list(csv.DictReader(handle, delimiter="\t"))
+    assert all(row["Mz"] == f"{float(row['Mz']):.4f}" for row in matrix_rows)
+    assert all(
+        value == f"{float(value):.5e}"
+        for row in matrix_rows
+        for sample in projection.matrix_header[2:]
+        if (value := row[sample])
+    )
+    validate_matrix_identity_rows(
+        matrix_header=projection.matrix_header,
+        matrix_rows=matrix_rows,
+        identity_columns=tuple(identity_rows[0]),
+        identity_rows=identity_rows,
+    )
 
     workbook = load_workbook(result.matrix_xlsx, read_only=True, data_only=True)
     matrix = workbook["Matrix"]
@@ -98,6 +121,27 @@ def test_reviewed_mode_track_projection_writes_atomic_tsv_and_workbook(
         *projection.matrix_header,
     )
     assert matrix.max_row == len(projection.input_quant_matrix_rows) + 1
+
+
+def test_mode_track_projection_preserves_mz_across_a_rounding_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.alignment import untargeted_cid_nl_golden_path as golden_path
+
+    exact_mz = "260.8915500004078"
+    monkeypatch.setattr(golden_path, "canonical_mz_text", lambda _value: exact_mz)
+
+    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+
+    assert {row["Mz"] for row in projection.input_quant_matrix_rows} == {exact_mz}
+    assert {row["Mz"] for row in projection.input_matrix_identity_rows} == {exact_mz}
+    public_table = serialize_public_matrix_table(
+        projection.input_quant_matrix_rows,
+        sample_columns=projection.matrix_header[2:],
+    )
+    assert {row["Mz"] for row in public_table.rows} == {"260.8916"}
+    assert f"{float(f'{float(exact_mz):.12g}'):.4f}" == "260.8915"
 
 
 def test_mode_track_publication_receipt_survives_copy_and_rejects_mutation(

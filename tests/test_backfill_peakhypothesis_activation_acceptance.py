@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from xic_extractor.alignment.shared_peak_identity_explanation.schema import (
     ACTIVATION_APPLICATION_SCHEMA_VERSION,
     ACTIVATION_DECISION_SCHEMA_VERSION,
@@ -401,11 +402,13 @@ def _promotion_row(*, family_id: str, sample: str, value: str) -> dict[str, str]
 
 
 def _identity_row(index: int, family_id: str) -> dict[str, str]:
-    return {
-        "matrix_row_index": str(index),
-        "peak_hypothesis_id": family_id,
-        "source_feature_family_ids": family_id,
-    }
+    family_number = int(family_id.removeprefix("FAM"))
+    return legacy_matrix_identity_row(
+        index=index,
+        mz=str(family_number * 101),
+        rt=str(family_number),
+        peak_hypothesis_id=family_id,
+    )
 
 
 def _matrix_rows(
