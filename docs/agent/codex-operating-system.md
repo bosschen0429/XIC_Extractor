@@ -107,6 +107,40 @@ owner defines the rule; the mechanism and representative case below describe
 what the current repo actually enforces. A missing owner/locator, mechanism
 mismatch, or behavior change fails the #160 governance read-back.
 
+Index admission is deliberately narrower than contract authorship. Apply this
+two-stage predicate whenever a new or changed contract rule is reviewed:
+
+1. Treat the rule as a candidate only when at least one risk signal exists: it
+   is independently restated across authoritative surfaces or has drifted
+   between them; violation fails open across a destructive or materially
+   expensive operation; or the rule protects a public or validation contract.
+2. Admit the family only when all proof requirements already exist: one
+   canonical owner, one bounded current repo-controlled mechanism with an
+   executable locator, and one representative read-back that can distinguish
+   behavior drift. A candidate without that mechanism stays in its owner and
+   gets a follow-up issue; do not add an aspirational row.
+
+Choose the mechanism from what the repo can actually decide. Use `hard_guard`
+for a bounded destructive or expensive action that can be identified before it
+runs; `ci_checker` for deterministic tracked state; `advisory_context` when the
+repo can surface required context but cannot safely decide the action; and
+`human_decision` for an owner decision that cannot be reduced to a deterministic
+check. `Residual gap` is scoped to the named row and mechanism. `none` means no
+known repo-side gap inside that scope; it does not claim complete contract-layer
+coverage, host activation, or prevention beyond an advisory mechanism.
+
+Worked example: the worktree no-RAW test runner was reviewed after its wording
+drifted. It remains outside this index: the runner is now owned by
+`parameter-settings.md`, while other occurrences are examples or pointers, and
+there is no distinct bounded enforcement/read-back family to index. Reconsider
+it only if a new risk signal and a current mechanism satisfy both stages above.
+
+The five current rows satisfy the predicate for bounded reasons: docs
+retirement and PR validation protect tracked contract state; destructive Git
+and RAW launch guard irreversible or expensive actions; and execution-config
+changes need a repo-visible advisory/read-back path even when host trust cannot
+be enforced from CI.
+
 | Rule family | Canonical owner | Mechanism | Executable locator | Representative read-back case | Residual gap |
 | --- | --- | --- | --- | --- | --- |
 | `docs_lifecycle_retirement` | `docs/agent/obsidian-handoff-contract.md#retirement-evidence-gate` | `ci_checker` | `tools/diagnostics/docs_placement_guard.py` | `tests/test_docs_placement_guard.py` | `none` |
@@ -144,9 +178,42 @@ A repo-local skill must own a distinct recurring XIC decision or workflow that
 canonical docs and global skills do not already cover. It needs explicit
 trigger/exclusion cases and observable outcome evidence; trigger accuracy alone
 does not prove that the skill improves delivery. Retire the skill when it only
-restates another owner, has no repeated-use evidence, or adds ceremony without
-reducing failures or review loops. Retirement removes routes and stale refs;
-move any still-valid invariant to its canonical rule or contract owner.
+restates another owner, emits an ignored packet without a gate, duplicates a
+global route without a distinct XIC stop rule, or an explicit effect
+adjudication shows ceremony without a decision benefit. Retirement removes
+routes and stale refs; move any still-valid invariant to its canonical rule or
+contract owner.
+
+Structural retirement is the cheap first pass. The current five repo-local
+skills were adjudicated against the three structural grounds as follows; this
+is a structural retention decision, not an effectiveness claim:
+
+| Skill | Only restates an owner | Ignored packet without a gate | Global duplicate without an XIC stop rule | Structural verdict |
+| --- | --- | --- | --- | --- |
+| `xic-architecture-preflight` | no; it binds one XIC semantic owner and boundary map | no; its pre-edit contract can stop mutation | no; XIC evidence-spine and authority stops are distinct | retain |
+| `xic-docs-compression` | no; it composes the repo audit, absorption, referrer, and retirement gates | no; retirement requires the existing evidence/checker path | no; XIC validation and lifecycle placement are distinct | retain |
+| `xic-performance-diagnosis` | no; it adjudicates XIC timing comparability and RAW/XIC call cost | no; only `optimization_ready` opens implementation | no; XIC parity, locality, and authority ceilings are distinct | retain |
+| `xic-pr-stack-repair` | no; it owns the XIC stack map and clean-checkout boundary decision | no; stale or cross-ledger stacks stop for rebuild | no; XIC ledgers, retained artifacts, and validation gates are distinct | retain |
+| `xic-raw-validation` | no; it binds lane-specific launch or existing-artifact acceptance | no; launch and acceptance have explicit stop gates | no; Thermo DLL, 8RAW/85RAW, and product-authority limits are distinct | retain |
+
+Effect evidence is produced on demand, not by a standing telemetry harness. An
+adjudication opens only when a structural ground appears, the same delivery or
+review failure recurs after the route was eligible, or the operator opens an
+explicit keep/retire decision. The reviewer inspects the relevant existing
+issue/PR closeouts and records the eligible task, route used or bypassed,
+decision changed or failure prevented, evidence locator, and observed friction.
+No evidence defaults to `retain / no effect claim`; it neither validates nor
+automatically retires the component, and it does not block unrelated skills.
+
+The first bounded experiment is #224's proposed CodeGraph route inside
+`xic-architecture-preflight`, not the whole skill. For the next three eligible
+owner/helper questions, record CodeGraph state, its source-verified answer, the
+fallback answer, and decision impact. Keep the route if at least one result
+changes the selected owner/helper set or closes an explicit structural unknown;
+retire the route after three eligible opportunities with no decision delta;
+redesign on a false ownership edge; and report `inconclusive` if fewer than
+three eligible opportunities exist. Hooks, contract files, and other skills are
+outside that experiment.
 
 ## Self-Improvement Rule
 

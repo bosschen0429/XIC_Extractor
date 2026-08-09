@@ -259,6 +259,10 @@ PERMANENT_ROOT_METADATA_FIELDS_WAIVED = frozenset(
     {DOC_LIFECYCLE_MARKER.rstrip(":"), DOC_EXIT_RULE_MARKER.rstrip(":")}
 )
 
+# Membership follows the two-stage admission predicate in
+# docs/agent/codex-operating-system.md#governance-enforcement-index. This dict
+# mirrors admitted current mechanisms; it is not the policy owner or a backlog
+# for aspirational enforcement.
 GOVERNANCE_RULE_FAMILY_CONTRACTS = {
     "docs_lifecycle_retirement": {
         "owner": "docs/agent/obsidian-handoff-contract.md#retirement-evidence-gate",
