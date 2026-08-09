@@ -16,9 +16,9 @@
 預設開發節奏：
 
 ```powershell
-uv run pytest tests\path_to_relevant_test.py -v
-uv run pytest tests\related_group_a.py tests\related_group_b.py -q
-uv run pytest --tb=short -q
+.venv\Scripts\python.exe -m pytest tests\path_to_relevant_test.py -v
+.venv\Scripts\python.exe -m pytest tests\related_group_a.py tests\related_group_b.py -q
+.venv\Scripts\python.exe -m pytest --tb=short -q
 ```
 
 真實資料驗證優先使用 validation harness，`parallel_workers=4` 作為預設人工驗收設定。不要在一般 unit/contract tests 直接依賴本機 RAW 路徑。
@@ -216,31 +216,31 @@ Process mode 的 tests 要分三層：
 小改動：
 
 ```powershell
-uv run pytest tests\relevant_test.py -v
+.venv\Scripts\python.exe -m pytest tests\relevant_test.py -v
 ```
 
 Output / workbook / report 變更：
 
 ```powershell
-uv run pytest tests\test_csv_to_excel.py tests\test_excel_pipeline.py tests\test_excel_sheets_contract.py tests\test_review_metrics.py tests\test_review_report.py -q
+.venv\Scripts\python.exe -m pytest tests\test_csv_to_excel.py tests\test_excel_pipeline.py tests\test_excel_sheets_contract.py tests\test_review_metrics.py tests\test_review_report.py -q
 ```
 
 Config / GUI setting 變更：
 
 ```powershell
-uv run pytest tests\test_config.py tests\test_config_io.py tests\test_settings_new_fields.py tests\test_settings_section.py tests\test_settings_section_advanced.py -q
+.venv\Scripts\python.exe -m pytest tests\test_config.py tests\test_config_io.py tests\test_settings_new_fields.py tests\test_settings_section.py tests\test_settings_section_advanced.py -q
 ```
 
 Extraction / scoring / signal processing 變更：
 
 ```powershell
-uv run pytest tests\test_signal_processing.py tests\test_signal_processing_selection.py tests\test_peak_scoring.py tests\test_scoring_context.py tests\test_scoring_factory.py tests\test_extractor.py -q
+.venv\Scripts\python.exe -m pytest tests\test_signal_processing.py tests\test_signal_processing_selection.py tests\test_peak_scoring.py tests\test_scoring_context.py tests\test_scoring_factory.py tests\test_extractor.py -q
 ```
 
 Parallel / validation harness 變更：
 
 ```powershell
-uv run pytest tests\test_parallel_execution.py tests\test_parallel_progress_cancellation.py tests\test_multiprocessing_entrypoints.py tests\test_validation_harness.py -q
+.venv\Scripts\python.exe -m pytest tests\test_parallel_execution.py tests\test_parallel_progress_cancellation.py tests\test_multiprocessing_entrypoints.py tests\test_validation_harness.py -q
 ```
 
 收尾：
@@ -248,7 +248,7 @@ uv run pytest tests\test_parallel_execution.py tests\test_parallel_progress_canc
 ```powershell
 uv run ruff check xic_extractor tests scripts
 uv run mypy xic_extractor
-uv run pytest --tb=short -q
+.venv\Scripts\python.exe -m pytest --tb=short -q
 ```
 
 如果 full suite 太慢或外部環境不可用，必須在回報中寫明：已跑哪些 focused tests、沒跑什麼、剩餘風險是什麼。

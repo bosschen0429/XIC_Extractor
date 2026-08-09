@@ -84,9 +84,13 @@ If a topic file conflicts with an owner listed below, the owner wins.
 
 These apply to all topic pages and do not need to be restated in each file:
 
-- **Evidence labels** (`diagnostic_only`, `shadow_ready`,
-  `production_candidate`, `production_ready`) describe what a branch or
-  validation run verified. They are not inherent properties of a topic page.
+- **Validation evidence status** uses the Evidence labels `diagnostic_only`,
+  `shadow_ready`, `production_candidate`, `production_ready`, and
+  `inconclusive` to describe what a source-qualified branch, run, or evidence
+  packet verified. `inconclusive` means the required evidence did not establish
+  a stronger claim; it grants no authority. Evidence labels are not inherent
+  properties of a topic page and are not persisted lane state in the
+  productization status index.
 - **ProductWriter authority** is the only path that writes product matrices.
   Sidecars, review surfaces, galleries, and diagnostics can explain or gate a
   decision, but they do not write product values unless the authority manifest

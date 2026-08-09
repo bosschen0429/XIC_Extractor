@@ -30,8 +30,8 @@ disabled sandbox networking must not first launch a predictably failing canary.
 
 - Keep outputs under task-specific `output/` or `docs/superpowers/` paths. New
   diagnostic output groups need a summary or index.
-- State validation status explicitly: `diagnostic_only`, `shadow_ready`,
-  `production_candidate`, `production_ready`, or `inconclusive`.
+- State validation evidence status explicitly using the canonical Evidence
+  labels in `docs/product/README.md`.
 - Tests passing is not the same as production readiness. For extraction,
   alignment, scoring, and matrix behavior changes, report which
   method-appropriate evidence was used: synthetic tests, lane-specified

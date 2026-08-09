@@ -483,7 +483,7 @@ Minimum same-path stub format for a moved historical note:
 # <public title>
 
 Status: `repo_stub_plus_obsidian`
-Validation status: `<diagnostic_only | shadow_ready | production_candidate | production_ready | inconclusive>`
+Validation evidence status: `<Evidence label from docs/product/README.md>`
 
 This file is a sanitized repo stub. After approved migration, the long private
 development history lives in Obsidian. This stub preserves the public decision

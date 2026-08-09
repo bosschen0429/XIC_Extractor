@@ -152,10 +152,20 @@ concerns explain ambiguity and review priority, not the detected call itself.
 - `authority`: the permission boundary for matrix/workbook/value writes.
 - `authority manifest`: machine-checkable record of the exact ProductWriter
   scopes and cells currently authorized to write.
-- `maturity tier`: validation-readiness vocabulary:
-  `diagnostic_only`, `shadow_ready`, `production_candidate`, or
-  `production_ready`. Current assignments live in the status index, not in this
-  glossary.
+- `maturity tier` (preferred term: `lane readiness status`): persisted current
+  state for a structured product lane. The seven-value vocabulary is owned by
+  `docs/agent/product-validation-contract.md` and enforced by the productization
+  control-plane schema; current assignments live in the status index.
+- `validation evidence status`: source-qualified claim about what a branch,
+  run, or evidence packet verified. Its Evidence labels are owned by
+  `docs/product/README.md` and are not persisted in the productization status
+  index.
+- `artifact contract validation ceiling`: owner-scoped invariant limiting what
+  a typed artifact can claim. A fixed value such as `shadow_ready` paired with
+  no product authority is not lane state or a promotion transition.
+- `owner-specific gate verdict`: a gate-local or compound token such as
+  `contract_ready_science_inconclusive`. It is interpreted only by its owner;
+  it is not a member of either shared status vocabulary.
 - `activation contract`: explicit evidence, tests, authority, and expected-diff
   conditions required before diagnostic or shadow behavior may affect product
   values.

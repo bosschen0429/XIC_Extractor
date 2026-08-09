@@ -488,13 +488,13 @@ Validation summaries must report two separate axes:
 
 - **Run/gate outcome**: `run_ok` means the command completed and emitted the
   expected artifacts; `gate_ok` means those artifacts satisfy the stated gate.
-- **Validation status**: `diagnostic_only`, `shadow_ready`,
-  `production_candidate`, `production_ready`, or `inconclusive`.
+- **Validation evidence status**: use the canonical Evidence labels in
+  `docs/product/README.md`.
 
 A result may be both `run_ok` and `gate_ok` while remaining `diagnostic_only`.
 Neither axis grants counted-detection, selected-value, matrix, workbook,
 activation, or export authority; that requires the relevant explicit contract.
-For `inconclusive`, name the missing evidence or exit rule.
+For an `inconclusive` evidence status, name the missing evidence or exit rule.
 
 ## Outside Research
 
