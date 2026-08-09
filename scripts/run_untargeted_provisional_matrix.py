@@ -24,7 +24,7 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.extraction.provisional_run_manifest import (
     ProvisionalRunRuntimeConfiguration,
-    write_provisional_run_manifest,
+    publish_provisional_run_bundle_atomic,
 )
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     run_untargeted_provisional_matrix_workflow,
@@ -227,9 +227,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         matrix_relative = matrix_path.relative_to(attempt_dir)
         identity_relative = identity_path.relative_to(attempt_dir)
         provenance_relative = provenance_path.relative_to(attempt_dir)
-        write_provisional_run_manifest(
-            attempt_dir / "run_manifest.json",
-            root=attempt_dir,
+        heartbeat.write_best_effort(
+            event="completed",
+            provisional_matrix=str(matrix_relative),
+        )
+        publish_provisional_run_bundle_atomic(
+            attempt_dir,
+            output_dir,
             code_revision=inputs.code_revision,
             preset_name=args.preset,
             discovery_settings=inputs.discovery_settings,
@@ -244,11 +248,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "provisional_summary": summary_path,
             },
         )
-        heartbeat.write_best_effort(
-            event="completed",
-            provisional_matrix=str(matrix_relative),
-        )
-        _publish_directory_atomic(attempt_dir, output_dir)
     except Exception as exc:
         if heartbeat is not None:
             heartbeat.write_best_effort(
@@ -425,17 +424,6 @@ def _record_fingerprint_observation(
         availability=availability,
         reason=reason,
     )
-
-
-def _publish_directory_atomic(staging: Path, output_dir: Path) -> None:
-    for attempt in range(5):
-        try:
-            staging.replace(output_dir)
-            return
-        except PermissionError:
-            if output_dir.exists() or attempt == 4:
-                raise
-            time.sleep(0.05 * (attempt + 1))
 
 
 def _owner_build_backend(value: str) -> OwnerBuildXicBackend:

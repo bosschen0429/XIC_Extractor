@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import csv
 import hashlib
 import json
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import xic_extractor.extraction.provisional_run_manifest as manifest_owner
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -20,6 +22,7 @@ from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.provisional_run_manifest import (
     PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
     ProvisionalRunRuntimeConfiguration,
+    publish_provisional_run_bundle_atomic,
     validate_provisional_run_manifest,
     write_provisional_run_manifest,
 )
@@ -267,6 +270,228 @@ def test_manifest_creation_rejects_non_owner_effective_configuration(
         )
 
 
+def test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+    original_fingerprint = manifest_owner.fingerprint_file_content
+
+    def counted_fingerprint(path, **kwargs):
+        fingerprint = original_fingerprint(path, **kwargs)
+        calls.append((Path(path).name, fingerprint.byte_size))
+        return fingerprint
+
+    monkeypatch.setattr(
+        manifest_owner,
+        "fingerprint_file_content",
+        counted_fingerprint,
+    )
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    baseline_calls = tuple(calls)
+    assert len(baseline_calls) == 12
+
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    calls.clear()
+    published_manifest = publish_provisional_run_bundle_atomic(
+        staging,
+        tmp_path / "candidate",
+        **_publication_arguments(staging),
+    )
+    candidate_calls = tuple(calls)
+
+    assert len(candidate_calls) == 6
+    assert sum(size for _name, size in baseline_calls) == 2 * sum(
+        size for _name, size in candidate_calls
+    )
+    assert not staging.exists()
+    assert published_manifest == tmp_path / "candidate" / "run_manifest.json"
+    assert published_manifest.read_bytes() == baseline["manifest"].read_bytes()
+    for relative_path in _publication_relative_paths():
+        assert (tmp_path / "candidate" / relative_path).read_bytes() == (
+            baseline["root"] / relative_path
+        ).read_bytes()
+
+    calls.clear()
+    validate_provisional_run_manifest(
+        published_manifest,
+        root=tmp_path / "candidate",
+    )
+    assert len(calls) == 6
+
+
+def test_manifest_bound_atomic_publish_rejects_post_fingerprint_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    output_dir = tmp_path / "candidate"
+    original_write = manifest_owner._write_json_atomic
+
+    def mutate_after_manifest_write(path, payload):
+        original_write(path, payload)
+        (staging / _publication_relative_paths()[0]).write_text(
+            "mutated-after-fingerprint\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        manifest_owner,
+        "_write_json_atomic",
+        mutate_after_manifest_write,
+    )
+
+    with pytest.raises(ValueError, match="changed after fingerprint minting"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **_publication_arguments(staging),
+        )
+
+    assert staging.is_dir()
+    assert not output_dir.exists()
+
+
+def test_manifest_bound_atomic_publish_failure_never_exposes_final_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    output_dir = tmp_path / "candidate"
+
+    monkeypatch.setattr(
+        manifest_owner,
+        "_write_json_atomic",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("injected manifest write failure")
+        ),
+    )
+    with pytest.raises(OSError, match="manifest write failure"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **_publication_arguments(staging),
+        )
+    assert staging.is_dir()
+    assert not output_dir.exists()
+
+    monkeypatch.undo()
+    original_replace = Path.replace
+
+    def fail_directory_replace(path: Path, target: Path) -> Path:
+        if path == staging:
+            raise PermissionError("injected directory replace failure")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", fail_directory_replace)
+    monkeypatch.setattr(manifest_owner.time, "sleep", lambda _seconds: None)
+    with pytest.raises(PermissionError, match="directory replace failure"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **_publication_arguments(staging),
+        )
+    assert staging.is_dir()
+    assert not output_dir.exists()
+
+
+def test_manifest_fingerprint_registry_rejects_foreign_duplicate_and_missing(
+    tmp_path: Path,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    transaction_id = "a" * 32
+    build = manifest_owner._build_manifest(
+        root=staging,
+        transaction_id=transaction_id,
+        **_publication_arguments(staging),
+    )
+
+    foreign = (
+        _remint_fingerprint(
+            build.fingerprints[0],
+            transaction_id="b" * 32,
+        ),
+        *build.fingerprints[1:],
+    )
+    with pytest.raises(ValueError, match="foreign transaction"):
+        manifest_owner._OwnerFingerprintRegistry(
+            foreign,
+            transaction_id=transaction_id,
+        )
+    with pytest.raises(ValueError, match="role is duplicated"):
+        manifest_owner._OwnerFingerprintRegistry(
+            (*build.fingerprints, build.fingerprints[0]),
+            transaction_id=transaction_id,
+        )
+    with pytest.raises(ValueError, match="set is incomplete"):
+        manifest_owner._OwnerFingerprintRegistry(
+            build.fingerprints[:-1],
+            transaction_id=transaction_id,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement", "message"),
+    [
+        (
+            "path",
+            "workflow/alignment/provisional_row_identity.tsv",
+            "path was substituted",
+        ),
+        ("schema_version", "foreign_schema_v1", "schema does not match"),
+    ],
+)
+def test_manifest_fingerprint_registry_rejects_path_or_schema_substitution(
+    tmp_path: Path,
+    field: str,
+    replacement: str,
+    message: str,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    transaction_id = "a" * 32
+    build = manifest_owner._build_manifest(
+        root=staging,
+        transaction_id=transaction_id,
+        **_publication_arguments(staging),
+    )
+    payload = copy.deepcopy(build.payload)
+    payload["artifacts"]["provisional_matrix"][field] = replacement
+    registry = manifest_owner._OwnerFingerprintRegistry(
+        build.fingerprints,
+        transaction_id=transaction_id,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        manifest_owner._validate_manifest_payload(
+            payload,
+            root=staging,
+            fingerprint_registry=registry,
+        )
+
+
+def test_manifest_fingerprint_cannot_be_caller_minted(tmp_path: Path) -> None:
+    path = tmp_path / "artifact.tsv"
+    path.write_text("artifact\n", encoding="utf-8")
+    fingerprint = manifest_owner.fingerprint_file_content(path)
+
+    with pytest.raises(TypeError, match="must be minted by their owner"):
+        manifest_owner._ImmutableManifestFingerprint(
+            transaction_id="a" * 32,
+            binding_role="artifact:provisional_matrix",
+            root=tmp_path.resolve(),
+            resolved_path=path.resolve(),
+            relative_path=path.name,
+            schema_version="schema_v1",
+            fingerprint=fingerprint,
+            stat_witness=None,
+            _mint_capability=object(),
+        )
+
+
 def _packet(
     root: Path,
     *,
@@ -325,6 +550,77 @@ def _packet(
         "manifest": manifest,
         "artifacts": artifacts,
     }
+
+
+def _copy_packet_for_publication(packet: dict[str, object], staging: Path) -> Path:
+    shutil.copytree(packet["root"], staging)
+    (staging / "run_manifest.json").unlink()
+    return staging
+
+
+def _publication_arguments(root: Path) -> dict[str, object]:
+    return {
+        "code_revision": "a" * 40,
+        "preset_name": "dna_dr",
+        "discovery_settings": DiscoverySettings(
+            neutral_loss_profiles=(
+                NeutralLossProfile(tag="DNA_dR", neutral_loss_da=116.0474),
+            ),
+        ),
+        "alignment_config": AlignmentConfig(),
+        "runtime": ProvisionalRunRuntimeConfiguration(
+            sample_count=1,
+            raw_workers=3,
+            raw_xic_batch_size=16,
+            owner_build_xic_backend="raw_superwindow",
+            owner_backfill_xic_backend="raw",
+            owner_backfill_window_strategy="super-window",
+            owner_backfill_superwindow_span_factor=2,
+        ),
+        "retained_sample_metadata": root / "inputs" / "sample_metadata.tsv",
+        "discovery_batch_index": (
+            root / "workflow" / "discovery" / "discovery_batch_index.csv"
+        ),
+        "artifacts": {
+            "provisional_matrix": root / _publication_relative_paths()[0],
+            "provisional_identity": root / _publication_relative_paths()[1],
+            "provisional_cell_provenance": root / _publication_relative_paths()[2],
+            "provisional_summary": root / _publication_relative_paths()[3],
+        },
+    }
+
+
+def _publication_relative_paths() -> tuple[Path, ...]:
+    artifact_root = Path("workflow") / "alignment"
+    return (
+        artifact_root / "provisional_alignment_matrix.tsv",
+        artifact_root / "provisional_row_identity.tsv",
+        artifact_root / "provisional_cell_provenance.tsv",
+        artifact_root / "provisional_matrix_summary.json",
+        Path("inputs") / "sample_metadata.tsv",
+        Path("workflow") / "discovery" / "discovery_batch_index.csv",
+    )
+
+
+def _remint_fingerprint(
+    fingerprint: manifest_owner._ImmutableManifestFingerprint,
+    **changes: object,
+) -> manifest_owner._ImmutableManifestFingerprint:
+    values = {
+        "transaction_id": fingerprint.transaction_id,
+        "binding_role": fingerprint.binding_role,
+        "root": fingerprint.root,
+        "resolved_path": fingerprint.resolved_path,
+        "relative_path": fingerprint.relative_path,
+        "schema_version": fingerprint.schema_version,
+        "fingerprint": fingerprint.fingerprint,
+        "stat_witness": fingerprint.stat_witness,
+        **changes,
+    }
+    return manifest_owner._ImmutableManifestFingerprint(
+        **values,
+        _mint_capability=manifest_owner._FINGERPRINT_MINT_CAPABILITY,
+    )
 
 
 def _write_discovery_packet(root: Path) -> Path:

@@ -6,8 +6,10 @@ import hashlib
 import json
 import math
 import re
-from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field, fields
+import secrets
+import time
+from collections.abc import Callable, Mapping
+from dataclasses import InitVar, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import cast
 
@@ -32,7 +34,10 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.presets import apply_to_alignment, apply_to_discovery, load_preset
-from xic_extractor.processing_identity import fingerprint_file_content
+from xic_extractor.processing_identity import (
+    FileContentFingerprint,
+    fingerprint_file_content,
+)
 
 PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION = (
     "untargeted_provisional_matrix_publication_envelope_v2"
@@ -75,12 +80,73 @@ _ARTIFACT_BINDING_FIELDS = frozenset(
 _DISCOVERY_CENSUS_FIELDS = frozenset(
     {"sample_count", "receipt_count", "candidate_count", "receipt_census_sha256"}
 )
+_MANIFEST_BINDING_ROLES = frozenset(
+    {
+        "input:sample_metadata",
+        "input:discovery_batch_index",
+        *(
+            f"artifact:{artifact_name}"
+            for artifact_name in _ARTIFACT_SCHEMAS
+        ),
+    }
+)
+_TRANSACTION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+_FINGERPRINT_MINT_CAPABILITY = object()
+_STAT_WITNESS_FIELDS = (
+    "st_dev",
+    "st_ino",
+    "st_size",
+    "st_mtime_ns",
+    "st_ctime_ns",
+)
 
 _OWNER_BUILD_BACKENDS = frozenset({"raw", "raw_superwindow", "ms1_index"})
 _OWNER_BACKFILL_BACKENDS = frozenset(
     {"raw", "ms1_index", "ms1_index_hybrid"}
 )
 _OWNER_BACKFILL_WINDOW_STRATEGIES = frozenset({"exact", "super-window"})
+
+
+@dataclass(frozen=True, slots=True)
+class _ImmutableManifestFingerprint:
+    """Owner-minted byte facts retained only for one publication transaction."""
+
+    transaction_id: str
+    binding_role: str
+    root: Path
+    resolved_path: Path
+    relative_path: str
+    schema_version: str
+    fingerprint: FileContentFingerprint
+    stat_witness: tuple[int, int, int, int, int] | None
+    _mint_capability: InitVar[object]
+
+    def __post_init__(self, _mint_capability: object) -> None:
+        if _mint_capability is not _FINGERPRINT_MINT_CAPABILITY:
+            raise TypeError("manifest fingerprints must be minted by their owner")
+        if _TRANSACTION_ID_PATTERN.fullmatch(self.transaction_id) is None:
+            raise ValueError("manifest fingerprint transaction identity is invalid")
+        if self.binding_role not in _MANIFEST_BINDING_ROLES:
+            raise ValueError("manifest fingerprint role is invalid")
+        if not self.root.is_absolute() or not self.resolved_path.is_absolute():
+            raise ValueError("manifest fingerprint paths must be canonical")
+        relative_path = Path(self.relative_path)
+        if (
+            not self.relative_path
+            or relative_path.is_absolute()
+            or ".." in relative_path.parts
+        ):
+            raise ValueError("manifest fingerprint relative path is invalid")
+        if not self.schema_version:
+            raise ValueError("manifest fingerprint schema is invalid")
+        if not isinstance(self.fingerprint, FileContentFingerprint):
+            raise TypeError("manifest fingerprint content facts are invalid")
+
+
+@dataclass(frozen=True, slots=True)
+class _ManifestBuild:
+    payload: dict[str, object]
+    fingerprints: tuple[_ImmutableManifestFingerprint, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +213,98 @@ def write_provisional_run_manifest(
 ) -> Path:
     """Write and immediately verify one portable, byte-bound run envelope."""
 
+    build = _build_manifest(
+        root=root,
+        code_revision=code_revision,
+        preset_name=preset_name,
+        discovery_settings=discovery_settings,
+        alignment_config=alignment_config,
+        runtime=runtime,
+        retained_sample_metadata=retained_sample_metadata,
+        discovery_batch_index=discovery_batch_index,
+        artifacts=artifacts,
+        transaction_id=None,
+    )
+    _write_json_atomic(path, build.payload)
+    validate_provisional_run_manifest(path, root=root)
+    return path
+
+
+def publish_provisional_run_bundle_atomic(
+    staging_root: Path,
+    output_dir: Path,
+    *,
+    code_revision: str,
+    preset_name: str,
+    discovery_settings: DiscoverySettings,
+    alignment_config: AlignmentConfig,
+    runtime: ProvisionalRunRuntimeConfiguration,
+    retained_sample_metadata: Path,
+    discovery_batch_index: Path,
+    artifacts: Mapping[str, Path],
+) -> Path:
+    """Bind one immutable manifest and atomically publish its whole directory."""
+
+    resolved_staging = staging_root.resolve(strict=True)
+    resolved_output_parent = output_dir.parent.resolve(strict=True)
+    resolved_output = resolved_output_parent / output_dir.name
+    if resolved_staging.parent != resolved_output_parent:
+        raise ValueError("staging and final output directories must share a parent")
+    if resolved_staging == resolved_output or resolved_output.exists():
+        raise ValueError("final publication directory must not already exist")
+    manifest_path = resolved_staging / "run_manifest.json"
+    if manifest_path.exists():
+        raise ValueError("staging publication already contains a run manifest")
+
+    transaction_id = secrets.token_hex(16)
+    build = _build_manifest(
+        root=resolved_staging,
+        code_revision=code_revision,
+        preset_name=preset_name,
+        discovery_settings=discovery_settings,
+        alignment_config=alignment_config,
+        runtime=runtime,
+        retained_sample_metadata=retained_sample_metadata,
+        discovery_batch_index=discovery_batch_index,
+        artifacts=artifacts,
+        transaction_id=transaction_id,
+    )
+    _write_json_atomic(manifest_path, build.payload)
+    payload = _read_manifest_payload(manifest_path)
+    registry = _OwnerFingerprintRegistry(
+        build.fingerprints,
+        transaction_id=transaction_id,
+    )
+    _validate_manifest_payload(
+        payload,
+        root=resolved_staging,
+        fingerprint_registry=registry,
+    )
+
+    def confirm_immutable_bundle() -> None:
+        _confirm_owner_fingerprints(build.fingerprints)
+
+    _publish_directory_atomic(
+        resolved_staging,
+        resolved_output,
+        before_attempt=confirm_immutable_bundle,
+    )
+    return resolved_output / "run_manifest.json"
+
+
+def _build_manifest(
+    *,
+    root: Path,
+    code_revision: str,
+    preset_name: str,
+    discovery_settings: DiscoverySettings,
+    alignment_config: AlignmentConfig,
+    runtime: ProvisionalRunRuntimeConfiguration,
+    retained_sample_metadata: Path,
+    discovery_batch_index: Path,
+    artifacts: Mapping[str, Path],
+    transaction_id: str | None,
+) -> _ManifestBuild:
     code_revision = _validated_revision(code_revision)
     if not isinstance(runtime, ProvisionalRunRuntimeConfiguration):
         raise TypeError(
@@ -168,7 +326,7 @@ def write_provisional_run_manifest(
         discovery_settings=discovery_settings,
         alignment_config=alignment_config,
     )
-
+    fingerprints: list[_ImmutableManifestFingerprint] = []
     payload: dict[str, object] = {
         "schema_version": PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
         "validation_status": "diagnostic_only",
@@ -187,12 +345,18 @@ def write_provisional_run_manifest(
                 retained_sample_metadata,
                 root=root,
                 schema_version="sample_metadata_v1",
+                binding_role="input:sample_metadata",
+                transaction_id=transaction_id,
+                fingerprint_sink=fingerprints,
             ),
             "discovery_batch_index": {
                 **_artifact_binding(
                     discovery_batch_index,
                     root=root,
                     schema_version=DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
+                    binding_role="input:discovery_batch_index",
+                    transaction_id=transaction_id,
+                    fingerprint_sink=fingerprints,
                 ),
                 "sample_count": len(batch.sample_order),
                 "receipt_count": len(receipt_census),
@@ -205,13 +369,14 @@ def write_provisional_run_manifest(
                 artifacts[name],
                 root=root,
                 schema_version=schema_version,
+                binding_role=f"artifact:{name}",
+                transaction_id=transaction_id,
+                fingerprint_sink=fingerprints,
             )
             for name, schema_version in _ARTIFACT_SCHEMAS.items()
         },
     }
-    _write_json_atomic(path, payload)
-    validate_provisional_run_manifest(path, root=root)
-    return path
+    return _ManifestBuild(payload=payload, fingerprints=tuple(fingerprints))
 
 
 def validate_provisional_run_manifest(
@@ -221,6 +386,12 @@ def validate_provisional_run_manifest(
 ) -> dict[str, object]:
     """Validate envelope structure and exact bytes without semantic replay."""
 
+    payload = _read_manifest_payload(path)
+    _validate_manifest_payload(payload, root=root, fingerprint_registry=None)
+    return payload
+
+
+def _read_manifest_payload(path: Path) -> dict[str, object]:
     try:
         payload = json.loads(
             path.read_text(encoding="utf-8"),
@@ -230,6 +401,15 @@ def validate_provisional_run_manifest(
         raise ValueError("provisional run manifest is unreadable") from exc
     if not isinstance(payload, dict):
         raise ValueError("provisional run manifest must be an object")
+    return payload
+
+
+def _validate_manifest_payload(
+    payload: Mapping[str, object],
+    *,
+    root: Path,
+    fingerprint_registry: _OwnerFingerprintRegistry | None,
+) -> None:
     if set(payload) != _MANIFEST_FIELDS:
         raise ValueError("provisional run manifest field set is invalid")
     if payload.get("schema_version") != PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION:
@@ -257,6 +437,8 @@ def validate_provisional_run_manifest(
         _required_mapping(inputs, "sample_metadata"),
         root=root,
         expected_schema="sample_metadata_v1",
+        binding_role="input:sample_metadata",
+        fingerprint_registry=fingerprint_registry,
     )
     discovery_binding = _required_mapping(inputs, "discovery_batch_index")
     _validate_binding(
@@ -264,6 +446,8 @@ def validate_provisional_run_manifest(
         root=root,
         expected_schema=DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
         extra_fields=_DISCOVERY_CENSUS_FIELDS,
+        binding_role="input:discovery_batch_index",
+        fingerprint_registry=fingerprint_registry,
     )
     sample_count = _positive_int(discovery_binding, "sample_count")
     receipt_count = _positive_int(discovery_binding, "receipt_count")
@@ -283,10 +467,13 @@ def validate_provisional_run_manifest(
             _required_mapping(artifacts, name),
             root=root,
             expected_schema=expected_schema,
+            binding_role=f"artifact:{name}",
+            fingerprint_registry=fingerprint_registry,
         )
     _validate_effective_configuration(payload)
     _validate_runtime_configuration(payload, sample_count=sample_count)
-    return payload
+    if fingerprint_registry is not None:
+        fingerprint_registry.assert_consumed()
 
 
 def _effective_configuration_from_owner(
@@ -379,6 +566,9 @@ def _artifact_binding(
     *,
     root: Path,
     schema_version: str,
+    binding_role: str,
+    transaction_id: str | None,
+    fingerprint_sink: list[_ImmutableManifestFingerprint],
 ) -> dict[str, object]:
     resolved_root = root.resolve(strict=True)
     resolved_path = path.resolve(strict=True)
@@ -386,7 +576,27 @@ def _artifact_binding(
         relative_path = resolved_path.relative_to(resolved_root)
     except ValueError as exc:
         raise ValueError("manifest artifact must stay under the run root") from exc
+    stat_before = (
+        _file_stat_witness(resolved_path) if transaction_id is not None else None
+    )
     fingerprint = fingerprint_file_content(resolved_path)
+    if transaction_id is not None:
+        stat_after = _file_stat_witness(resolved_path)
+        if stat_before is not None and stat_after != stat_before:
+            raise ValueError("manifest artifact changed during fingerprint minting")
+        fingerprint_sink.append(
+            _ImmutableManifestFingerprint(
+                transaction_id=transaction_id,
+                binding_role=binding_role,
+                root=resolved_root,
+                resolved_path=resolved_path,
+                relative_path=relative_path.as_posix(),
+                schema_version=schema_version,
+                fingerprint=fingerprint,
+                stat_witness=stat_after,
+                _mint_capability=_FINGERPRINT_MINT_CAPABILITY,
+            )
+        )
     return {
         "path": relative_path.as_posix(),
         "schema_version": schema_version,
@@ -401,6 +611,8 @@ def _validate_binding(
     root: Path,
     expected_schema: str,
     extra_fields: frozenset[str] = frozenset(),
+    binding_role: str,
+    fingerprint_registry: _OwnerFingerprintRegistry | None,
 ) -> Path:
     if set(binding) != _ARTIFACT_BINDING_FIELDS | extra_fields:
         raise ValueError(
@@ -421,10 +633,129 @@ def _validate_binding(
         artifact_path.relative_to(root.resolve(strict=True))
     except ValueError as exc:
         raise ValueError("manifest artifact resolves outside the run root") from exc
-    actual = fingerprint_file_content(artifact_path)
-    if actual.content_sha256 != expected_sha or actual.byte_size != expected_size:
-        raise ValueError("manifest artifact bytes do not match their binding")
+    if fingerprint_registry is None:
+        actual = fingerprint_file_content(artifact_path)
+        if actual.content_sha256 != expected_sha or actual.byte_size != expected_size:
+            raise ValueError("manifest artifact bytes do not match their binding")
+    else:
+        fingerprint_registry.consume(
+            binding_role=binding_role,
+            root=root,
+            artifact_path=artifact_path,
+            relative_path=relative_path.as_posix(),
+            schema_version=expected_schema,
+            content_sha256=expected_sha,
+            byte_size=expected_size,
+        )
     return artifact_path
+
+
+class _OwnerFingerprintRegistry:
+    """Consume every owner-minted binding exactly once inside one transaction."""
+
+    def __init__(
+        self,
+        fingerprints: tuple[_ImmutableManifestFingerprint, ...],
+        *,
+        transaction_id: str,
+    ) -> None:
+        if _TRANSACTION_ID_PATTERN.fullmatch(transaction_id) is None:
+            raise ValueError("manifest fingerprint transaction identity is invalid")
+        by_role: dict[str, _ImmutableManifestFingerprint] = {}
+        for fingerprint in fingerprints:
+            if fingerprint.transaction_id != transaction_id:
+                raise ValueError(
+                    "manifest fingerprint belongs to a foreign transaction"
+                )
+            if fingerprint.binding_role in by_role:
+                raise ValueError("manifest fingerprint role is duplicated")
+            by_role[fingerprint.binding_role] = fingerprint
+        if set(by_role) != _MANIFEST_BINDING_ROLES:
+            raise ValueError("manifest fingerprint set is incomplete")
+        self._remaining = by_role
+
+    def consume(
+        self,
+        *,
+        binding_role: str,
+        root: Path,
+        artifact_path: Path,
+        relative_path: str,
+        schema_version: str,
+        content_sha256: str,
+        byte_size: int,
+    ) -> None:
+        fingerprint = self._remaining.pop(binding_role, None)
+        if fingerprint is None:
+            raise ValueError("manifest fingerprint binding is missing or duplicated")
+        if fingerprint.root != root.resolve(strict=True):
+            raise ValueError("manifest fingerprint root was substituted")
+        if fingerprint.resolved_path != artifact_path:
+            raise ValueError("manifest fingerprint path was substituted")
+        if fingerprint.relative_path != relative_path:
+            raise ValueError("manifest fingerprint relative path was substituted")
+        if fingerprint.schema_version != schema_version:
+            raise ValueError("manifest fingerprint schema was substituted")
+        if (
+            fingerprint.fingerprint.content_sha256 != content_sha256
+            or fingerprint.fingerprint.byte_size != byte_size
+        ):
+            raise ValueError("manifest fingerprint bytes were substituted")
+
+    def assert_consumed(self) -> None:
+        if self._remaining:
+            raise ValueError("manifest fingerprint set contains unconsumed bindings")
+
+
+def _confirm_owner_fingerprints(
+    fingerprints: tuple[_ImmutableManifestFingerprint, ...],
+) -> None:
+    for fingerprint in fingerprints:
+        current_path = (fingerprint.root / fingerprint.relative_path).resolve(
+            strict=True
+        )
+        if current_path != fingerprint.resolved_path:
+            raise ValueError(
+                "manifest artifact path changed after fingerprint minting"
+            )
+        current_witness = _file_stat_witness(current_path)
+        if fingerprint.stat_witness is not None and current_witness is not None:
+            if current_witness != fingerprint.stat_witness:
+                raise ValueError(
+                    "manifest artifact changed after fingerprint minting"
+                )
+            continue
+        actual = fingerprint_file_content(current_path)
+        if actual != fingerprint.fingerprint:
+            raise ValueError("manifest artifact bytes changed before publication")
+
+
+def _file_stat_witness(path: Path) -> tuple[int, int, int, int, int] | None:
+    try:
+        stat_result = path.stat()
+        values = tuple(getattr(stat_result, field) for field in _STAT_WITNESS_FIELDS)
+    except (AttributeError, OSError):
+        return None
+    if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
+        return None
+    return cast(tuple[int, int, int, int, int], values)
+
+
+def _publish_directory_atomic(
+    staging: Path,
+    output_dir: Path,
+    *,
+    before_attempt: Callable[[], None],
+) -> None:
+    for attempt in range(5):
+        before_attempt()
+        try:
+            staging.replace(output_dir)
+            return
+        except PermissionError:
+            if output_dir.exists() or attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def _mapping_without_duplicate_keys(
@@ -546,6 +877,7 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
 __all__ = (
     "PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION",
     "ProvisionalRunRuntimeConfiguration",
+    "publish_provisional_run_bundle_atomic",
     "validate_provisional_run_manifest",
     "write_provisional_run_manifest",
 )

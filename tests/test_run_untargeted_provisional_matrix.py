@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import scripts.run_untargeted_provisional_matrix as runner
+import xic_extractor.extraction.provisional_run_manifest as manifest_owner
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
@@ -39,12 +40,21 @@ def test_runner_publishes_full_universe_outputs_atomically(
 
     monkeypatch.setattr(runner, "_resolve_inputs", lambda _args: inputs)
 
-    def fake_manifest(path, **kwargs):
+    def fake_publish(staging, final_output, **kwargs):
         captured["manifest"] = kwargs
-        path.write_text("{}\n", encoding="utf-8")
-        return path
+        (staging / "run_manifest.json").write_text("{}\n", encoding="utf-8")
+        manifest_owner._publish_directory_atomic(
+            staging,
+            final_output,
+            before_attempt=lambda: None,
+        )
+        return final_output / "run_manifest.json"
 
-    monkeypatch.setattr(runner, "write_provisional_run_manifest", fake_manifest)
+    monkeypatch.setattr(
+        runner,
+        "publish_provisional_run_bundle_atomic",
+        fake_publish,
+    )
 
     def fake_workflow(**kwargs):
         captured.update(kwargs)
@@ -173,7 +183,7 @@ def test_runner_preflight_does_not_start_raw_workflow(
     assert not output_dir.with_name("final.attempt").exists()
 
 
-def test_atomic_directory_publication_retries_transient_windows_lock(
+def test_manifest_owner_atomic_directory_publication_retries_transient_windows_lock(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -193,9 +203,13 @@ def test_atomic_directory_publication_retries_transient_windows_lock(
         return original_replace(path, target)
 
     monkeypatch.setattr(Path, "replace", replace_after_transient_lock)
-    monkeypatch.setattr(runner.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(manifest_owner.time, "sleep", lambda _seconds: None)
 
-    runner._publish_directory_atomic(staging, output_dir)
+    manifest_owner._publish_directory_atomic(
+        staging,
+        output_dir,
+        before_attempt=lambda: None,
+    )
 
     assert attempts == 2
     assert not staging.exists()
