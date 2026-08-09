@@ -805,7 +805,13 @@ exact owner serialization against a private six-role transaction. Before every
 directory-replace attempt it fully rehashes all six bound files, compares the
 owner-written `run_manifest.json` to the exact in-memory bytes, and makes the
 whole directory visible with one atomic rename. No filesystem timestamp is used
-as a byte-identity oracle. Foreign receipts or transactions, duplicate or
+as a byte-identity oracle. This is a closed single-writer visibility contract:
+the publication owner and its in-process collaborators stop writing staging
+before binding, but W5b does not claim an OS-level seal against another
+same-permission process writing during the final check-to-rename interval. A
+stronger concurrent-writer threat model is a separate storage/lifecycle redesign;
+visible bundles remain untrusted until the independent validator rehashes them.
+Foreign receipts or transactions, duplicate or
 missing roles, path/schema substitution, valid manifest substitution, same-size
 artifact mutation with restored mtime, and retry-time artifact or manifest
 mutation fail before the final directory exists. The public
@@ -855,5 +861,6 @@ no partial final directory. Validation status remains `diagnostic_only`.
 Decision: `GO` for the exact-safe W5b mechanism when all remaining static,
 architecture, whole-PR review, and independent QA gates pass. Any manifest or
 bound-artifact byte diff, caller-minted authority, skipped independent validator,
-or partial final visibility is `KILL`; a schema/lifecycle/recovery dependency is
-`REDESIGN`.
+or partial final visibility within the closed single-writer protocol is `KILL`;
+a requirement to resist another same-permission writer during publication, or a
+schema/lifecycle/recovery dependency, is `REDESIGN`.

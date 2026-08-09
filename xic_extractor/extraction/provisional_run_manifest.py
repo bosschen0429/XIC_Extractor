@@ -318,7 +318,14 @@ def publish_provisional_run_bundle_atomic(
     ),
     alignment_artifact_fingerprints: AlignmentArtifactFingerprintBatch,
 ) -> Path:
-    """Bind one immutable manifest and atomically publish its whole directory."""
+    """Bind and publish one directory under a closed single-writer protocol.
+
+    Atomicity applies to final-directory visibility.  The caller and all
+    in-process collaborators must stop writing ``staging_root`` before entry;
+    this function does not claim an OS-level seal against another
+    same-permission process mutating staging during the final check-to-rename
+    interval.  Consumers independently validate the visible manifest bytes.
+    """
 
     resolved_staging = staging_root.resolve(strict=True)
     resolved_output_parent = output_dir.parent.resolve(strict=True)

@@ -81,7 +81,11 @@ def test_manifest_binds_effective_configuration_receipts_and_artifact_bytes(
     ]["provisional_matrix"].stat().st_size
 
 
-def test_manifest_rejects_artifact_mutation(tmp_path: Path) -> None:
+def test_external_validator_rejects_visible_artifact_mutation(
+    tmp_path: Path,
+) -> None:
+    # Atomic publication is a closed single-writer visibility contract, not an
+    # OS seal.  Visible bytes remain untrusted until this validator rehashes them.
     packet = _packet(tmp_path / "run", matrix_bytes="matrix-a\n")
     packet["artifacts"]["provisional_matrix"].write_text(
         "mutated\n",
