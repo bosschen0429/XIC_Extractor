@@ -353,6 +353,58 @@ def test_manifest_bound_atomic_publish_rejects_post_fingerprint_mutation(
     assert not output_dir.exists()
 
 
+def test_manifest_bound_atomic_publish_rehashes_when_pre_stat_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    output_dir = tmp_path / "candidate"
+    target = staging / _publication_relative_paths()[0]
+    original_stat_witness = manifest_owner._file_stat_witness
+    original_fingerprint = manifest_owner.fingerprint_file_content
+    pre_stat_dropped = False
+    target_fingerprinted = False
+
+    def intermittently_missing_stat_witness(path: Path):
+        nonlocal pre_stat_dropped
+        if Path(path) == target and not pre_stat_dropped:
+            pre_stat_dropped = True
+            return None
+        return original_stat_witness(path)
+
+    def mutate_after_first_target_fingerprint(path, **kwargs):
+        nonlocal target_fingerprinted
+        fingerprint = original_fingerprint(path, **kwargs)
+        if Path(path) == target and not target_fingerprinted:
+            target_fingerprinted = True
+            target.write_text("mutated-during-fingerprint\n", encoding="utf-8")
+        return fingerprint
+
+    monkeypatch.setattr(
+        manifest_owner,
+        "_file_stat_witness",
+        intermittently_missing_stat_witness,
+    )
+    monkeypatch.setattr(
+        manifest_owner,
+        "fingerprint_file_content",
+        mutate_after_first_target_fingerprint,
+    )
+
+    with pytest.raises(ValueError, match="bytes changed before publication"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **_publication_arguments(staging),
+        )
+
+    assert pre_stat_dropped
+    assert target_fingerprinted
+    assert staging.is_dir()
+    assert not output_dir.exists()
+
+
 def test_manifest_bound_atomic_publish_failure_never_exposes_final_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -393,6 +445,43 @@ def test_manifest_bound_atomic_publish_failure_never_exposes_final_directory(
             output_dir,
             **_publication_arguments(staging),
         )
+    assert staging.is_dir()
+    assert not output_dir.exists()
+
+
+def test_manifest_bound_atomic_publish_rejects_manifest_mutation_between_retries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    output_dir = tmp_path / "candidate"
+    original_replace = Path.replace
+    publication_attempts = 0
+
+    def mutate_manifest_then_block(path: Path, target: Path) -> Path:
+        nonlocal publication_attempts
+        if path == staging:
+            publication_attempts += 1
+            if publication_attempts == 1:
+                (staging / "run_manifest.json").write_text(
+                    '{"tampered": true}\n',
+                    encoding="utf-8",
+                )
+                raise PermissionError("injected transient directory lock")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", mutate_manifest_then_block)
+    monkeypatch.setattr(manifest_owner.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(ValueError, match="changed after fingerprint minting"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **_publication_arguments(staging),
+        )
+
+    assert publication_attempts == 1
     assert staging.is_dir()
     assert not output_dir.exists()
 

@@ -797,12 +797,14 @@ Issue #213 closes W5b inside the existing provisional-run manifest owner. The
 runner now submits one complete attempt directory to
 `publish_provisional_run_bundle_atomic`; that owner mints a private immutable
 fingerprint for each of the two manifest inputs and four provisional artifacts,
-validates the unchanged manifest against those exact typed facts, rechecks the
-owner-held file identity/size/time witness before every directory-replace
-attempt, and makes the whole directory visible with one atomic rename. A missing
-stat witness retains a full byte rehash. Foreign transactions, duplicate or
-missing roles, path/schema substitution, and post-fingerprint mutation fail
-before the final directory exists. The public
+validates the unchanged manifest against those exact typed facts, binds the
+actual owner-written `run_manifest.json` bytes into the same private transaction,
+rechecks every owner-held file identity/size/time witness before every
+directory-replace attempt, and makes the whole directory visible with one atomic
+rename. A missing pre- or post-read stat witness retains a full byte rehash.
+Foreign transactions, duplicate or missing roles, path/schema substitution,
+post-fingerprint artifact mutation, and retry-time manifest mutation fail before
+the final directory exists. The public
 `validate_provisional_run_manifest` path is unchanged and still reads and hashes
 the visible bytes independently.
 
@@ -825,11 +827,12 @@ byte, and function-time evidence only; it is not physical disk I/O, end-to-end
 elapsed, RAW-call, chromatogram-call, point-count, monetary, or real-population
 savings evidence.
 
-Focused no-RAW manifest/runner/projection/atomic regressions passed 76 tests.
+Focused no-RAW manifest/runner/projection/atomic regressions passed 78 tests.
 The principal census/parity oracle is
 `tests/test_alignment_provisional_run_manifest.py::test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff`;
-the mutation and publication-failure tests in the same file prove no partial
-final directory. Validation status remains `diagnostic_only`.
+the stat-witness fallback, retry-time manifest mutation, and publication-failure
+tests in the same file prove no partial final directory. Validation status
+remains `diagnostic_only`.
 
 Decision: `GO` for the exact-safe W5b mechanism when all remaining static,
 architecture, whole-PR review, and independent QA gates pass. Any manifest or

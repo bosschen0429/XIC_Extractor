@@ -90,6 +90,7 @@ _MANIFEST_BINDING_ROLES = frozenset(
         ),
     }
 )
+_PUBLICATION_FILE_ROLES = _MANIFEST_BINDING_ROLES | {"run_manifest"}
 _TRANSACTION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _FINGERPRINT_MINT_CAPABILITY = object()
 _STAT_WITNESS_FIELDS = (
@@ -126,7 +127,7 @@ class _ImmutableManifestFingerprint:
             raise TypeError("manifest fingerprints must be minted by their owner")
         if _TRANSACTION_ID_PATTERN.fullmatch(self.transaction_id) is None:
             raise ValueError("manifest fingerprint transaction identity is invalid")
-        if self.binding_role not in _MANIFEST_BINDING_ROLES:
+        if self.binding_role not in _PUBLICATION_FILE_ROLES:
             raise ValueError("manifest fingerprint role is invalid")
         if not self.root.is_absolute() or not self.resolved_path.is_absolute():
             raise ValueError("manifest fingerprint paths must be canonical")
@@ -270,7 +271,11 @@ def publish_provisional_run_bundle_atomic(
         transaction_id=transaction_id,
     )
     _write_json_atomic(manifest_path, build.payload)
-    payload = _read_manifest_payload(manifest_path)
+    payload, manifest_fingerprint = _read_owner_manifest_for_publication(
+        manifest_path,
+        root=resolved_staging,
+        transaction_id=transaction_id,
+    )
     registry = _OwnerFingerprintRegistry(
         build.fingerprints,
         transaction_id=transaction_id,
@@ -282,7 +287,9 @@ def publish_provisional_run_bundle_atomic(
     )
 
     def confirm_immutable_bundle() -> None:
-        _confirm_owner_fingerprints(build.fingerprints)
+        _confirm_owner_fingerprints(
+            (*build.fingerprints, manifest_fingerprint)
+        )
 
     _publish_directory_atomic(
         resolved_staging,
@@ -402,6 +409,58 @@ def _read_manifest_payload(path: Path) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("provisional run manifest must be an object")
     return payload
+
+
+def _read_owner_manifest_for_publication(
+    path: Path,
+    *,
+    root: Path,
+    transaction_id: str,
+) -> tuple[dict[str, object], _ImmutableManifestFingerprint]:
+    resolved_root = root.resolve(strict=True)
+    resolved_path = path.resolve(strict=True)
+    try:
+        relative_path = resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError("run manifest must stay under the publication root") from exc
+    stat_before = _file_stat_witness(resolved_path)
+    try:
+        encoded = resolved_path.read_bytes()
+        payload = json.loads(
+            encoded,
+            object_pairs_hook=_mapping_without_duplicate_keys,
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("provisional run manifest is unreadable") from exc
+    stat_after = _file_stat_witness(resolved_path)
+    if (
+        stat_before is not None
+        and stat_after is not None
+        and stat_after != stat_before
+    ):
+        raise ValueError("run manifest changed while binding publication")
+    if not isinstance(payload, dict):
+        raise ValueError("provisional run manifest must be an object")
+    stable_stat_witness = (
+        stat_after
+        if stat_before is not None and stat_after == stat_before
+        else None
+    )
+    fingerprint = _ImmutableManifestFingerprint(
+        transaction_id=transaction_id,
+        binding_role="run_manifest",
+        root=resolved_root,
+        resolved_path=resolved_path,
+        relative_path=relative_path.as_posix(),
+        schema_version=PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
+        fingerprint=FileContentFingerprint(
+            content_sha256=hashlib.sha256(encoded).hexdigest(),
+            byte_size=len(encoded),
+        ),
+        stat_witness=stable_stat_witness,
+        _mint_capability=_FINGERPRINT_MINT_CAPABILITY,
+    )
+    return payload, fingerprint
 
 
 def _validate_manifest_payload(
@@ -582,8 +641,17 @@ def _artifact_binding(
     fingerprint = fingerprint_file_content(resolved_path)
     if transaction_id is not None:
         stat_after = _file_stat_witness(resolved_path)
-        if stat_before is not None and stat_after != stat_before:
+        if (
+            stat_before is not None
+            and stat_after is not None
+            and stat_after != stat_before
+        ):
             raise ValueError("manifest artifact changed during fingerprint minting")
+        stable_stat_witness = (
+            stat_after
+            if stat_before is not None and stat_after == stat_before
+            else None
+        )
         fingerprint_sink.append(
             _ImmutableManifestFingerprint(
                 transaction_id=transaction_id,
@@ -593,7 +661,7 @@ def _artifact_binding(
                 relative_path=relative_path.as_posix(),
                 schema_version=schema_version,
                 fingerprint=fingerprint,
-                stat_witness=stat_after,
+                stat_witness=stable_stat_witness,
                 _mint_capability=_FINGERPRINT_MINT_CAPABILITY,
             )
         )
