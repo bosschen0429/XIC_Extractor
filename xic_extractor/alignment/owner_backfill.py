@@ -732,7 +732,7 @@ def _iter_exact_request_traces(
     items: tuple[_ExtractionRequestItem, ...],
     chunk_size: int,
 ):
-    chunks = _scan_window_aware_chunks(source, items, chunk_size)
+    chunks = _scan_window_aware_extraction_chunks(source, items, chunk_size)
     _validate_equivalence_grouping(chunks)
     for chunk in chunks:
         try:
@@ -747,6 +747,22 @@ def _iter_exact_request_traces(
 
 
 def _scan_window_aware_chunks(
+    source: OwnerBackfillSource,
+    items: tuple[_RequestItem, ...],
+    chunk_size: int,
+) -> tuple[tuple[_RequestItem, ...], ...]:
+    """Preserve the diagnostics-facing raw request-item chunking contract."""
+    extraction_chunks = _scan_window_aware_extraction_chunks(
+        source,
+        tuple(_ExtractionRequestItem(item) for item in items),
+        chunk_size,
+    )
+    return tuple(
+        tuple(item.item for item in chunk) for chunk in extraction_chunks
+    )
+
+
+def _scan_window_aware_extraction_chunks(
     source: OwnerBackfillSource,
     items: tuple[_ExtractionRequestItem, ...],
     chunk_size: int,
