@@ -55,6 +55,7 @@ from xic_extractor.alignment.ms1_index_source import (
 )
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
+    OwnerBackfillRequestReuseObservation,
     OwnerBackfillWindowStrategy,
     build_owner_backfill_result,
 )
@@ -191,6 +192,10 @@ class OwnerBackfillSampleResult:
     cells: tuple[AlignedCell, ...]
     candidate_audit_rows: tuple[OwnerBackfillCandidateAuditRow, ...] = ()
     timing_stats: tuple[OwnerBackfillTimingStats, ...] = ()
+    request_reuse_observations: tuple[
+        OwnerBackfillRequestReuseObservation,
+        ...,
+    ] = ()
 
 
 @dataclass(frozen=True)
@@ -198,6 +203,10 @@ class OwnerBackfillProcessOutput:
     cells: tuple[AlignedCell, ...]
     timing_stats: tuple[OwnerBackfillTimingStats, ...]
     candidate_audit_rows: tuple[OwnerBackfillCandidateAuditRow, ...] = ()
+    request_reuse_observations: tuple[
+        OwnerBackfillRequestReuseObservation,
+        ...,
+    ] = ()
 
 
 @dataclass(frozen=True)
@@ -690,10 +699,16 @@ def collect_owner_backfill_results(
             ),
         )
     )
+    request_reuse_observations = tuple(
+        observation
+        for result in sorted(successes, key=lambda item: item.sample_index)
+        for observation in result.request_reuse_observations
+    )
     return OwnerBackfillProcessOutput(
         cells=cells,
         timing_stats=timing_stats,
         candidate_audit_rows=candidate_audit_rows,
+        request_reuse_observations=request_reuse_observations,
     )
 
 
@@ -773,9 +788,15 @@ def extract_owner_backfill_sample_job(
                 sample_order=(job.sample_stem,),
                 raw_sources={job.sample_stem: timed_raw},
                 **validation_kwargs,
+                expected_acquisition_sources=(
+                    {job.sample_stem: job.expected_acquisition_source}
+                    if job.expected_acquisition_source is not None
+                    else None
+                ),
                 alignment_config=job.alignment_config,
                 peak_config=job.peak_config,
                 raw_xic_batch_size=job.raw_xic_batch_size,
+                owner_backfill_xic_backend=job.owner_backfill_xic_backend,
                 owner_backfill_window_strategy=job.owner_backfill_window_strategy,
                 owner_backfill_superwindow_span_factor=(
                     job.owner_backfill_superwindow_span_factor
@@ -789,6 +810,9 @@ def extract_owner_backfill_sample_job(
             sample_stem=job.sample_stem,
             cells=backfill_result.cells,
             candidate_audit_rows=backfill_result.candidate_audit_rows,
+            request_reuse_observations=(
+                backfill_result.request_reuse_observations
+            ),
             timing_stats=(
                 OwnerBackfillTimingStats(
                     sample_stem=job.sample_stem,

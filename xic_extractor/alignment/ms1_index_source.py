@@ -41,6 +41,10 @@ class MS1IndexedRawSource:
         value = getattr(self._source, "raw_chromatogram_call_count", 0)
         return value if isinstance(value, int) else 0
 
+    @property
+    def acquisition_source(self) -> Any:
+        return getattr(self._source, "acquisition_source", None)
+
     def extract_xic(
         self,
         mz: float,
@@ -99,6 +103,10 @@ class RawSuperWindowSource:
     def raw_chromatogram_call_count(self) -> int:
         value = getattr(self._source, "raw_chromatogram_call_count", 0)
         return value if isinstance(value, int) else 0
+
+    @property
+    def acquisition_source(self) -> Any:
+        return getattr(self._source, "acquisition_source", None)
 
     def extract_xic(
         self,

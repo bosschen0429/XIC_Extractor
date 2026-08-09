@@ -706,3 +706,40 @@ owner-valid survivor-only execution closes the counterfactual expected diff.
 Any false loser, terminal-winner mismatch, missing/cyclic lineage,
 non-positive projected workload reduction, or nonzero scientific/output diff
 is `KILL`. Status remains `diagnostic_only`.
+
+## Issue #195 owner-minted exact request reuse
+
+Issue #210 implements the current in-process owner path for exact Backfill
+request equivalence and typed result fan-out. The request-plan owner binds the
+canonical sample, full `AcquisitionSourceIdentity`, exact m/z/RT/ppm request,
+backend, window strategy, validation phase, and trace-result semantics. Every
+hypothesis-bound logical request belongs to exactly one deterministic class.
+The extraction owner evaluates one representative per class and fans the typed
+trace back to the complete logical population before the unchanged
+per-hypothesis peak, candidate-audit, claim-registry, consolidation, Matrix, and
+writer owners run.
+
+No RAW, 2RAW, 8RAW, or 85RAW input was opened for this slice. Deterministic
+owner fixtures observed two logical requests in one canonical class, one
+extraction request, and two hypothesis-bound results. Mutation and negative
+oracles separate sample/acquisition, m/z, both RT bounds, ppm, backend, window,
+validation, and result semantics; missing or mismatched acquisition ownership
+cannot emit an exact-equivalence observation. Synthetic baseline-versus-exact
+cells, candidate audit, final claim/consolidation Matrix, row identity, and the
+rendered cells TSV are hard-zero, including byte-for-byte writer parity.
+
+The PR #207 displayed-coordinate proxy remains historical diagnostic context,
+not proof. Its exact-owner debt is closed for the current owner-closed in-process
+runtime, but the retained stale-revision artifact still lacks the typed request
+population and therefore cannot be rehydrated into current exact class counts.
+No comparable current owner-correlated population, elapsed-time, RAW-call,
+chromatogram-call, point-count, or monetary evidence exists, so no savings or
+real-dataset prevalence claim is made. PR #209's early-loser shadow remains
+`diagnostic_only`, does not feed Backfill or Pass B, and is not used by this
+reuse path. PR E streaming/artifact format and PR F recovery/checkpoint scope
+remain excluded.
+
+Decision: `GO` for the exact-safe implementation under owner closure, with
+validation status `diagnostic_only` and synthetic/no-RAW evidence only.
+Any incomplete owner partition, cross-semantics reuse, logical fan-out loss, or
+nonzero final scientific/output diff is `KILL / REDESIGN`.

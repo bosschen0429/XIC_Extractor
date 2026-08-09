@@ -161,6 +161,38 @@ the shadow instrumentation and typed lineage close and all three projected
 owner workload reductions are positive; it never grants early skip,
 Backfill eligibility, Matrix, ProductWriter, or activation authority.
 
+## Exact Backfill request reuse
+
+The owner-closed Backfill path may reuse one extracted trace only through the
+typed request partition minted by `owner_backfill_request_plan`. Its canonical
+identity binds the canonical sample stem, the complete rehydratable
+`AcquisitionSourceIdentity`, exact m/z and RT bounds, ppm tolerance, extraction
+backend, window strategy and span factor, validation phase, and trace-result
+semantics. The partition retains every hypothesis-bound logical request with a
+stable logical index and requires complete, exactly-once membership in one
+canonical class. Display IDs, rounded coordinates, persisted projections, and
+proxy counts are never accepted as equivalence proof.
+
+The extraction owner executes one representative per canonical class and
+returns an owner-bound typed trace result. It fans that trace back to every
+logical member in deterministic request order; each hypothesis still performs
+its own peak evaluation and keeps its original result, candidate-audit, claim,
+consolidation, Matrix-row, and writer semantics. Primary, hybrid prefilter, and
+RAW validation phases use distinct identities and cannot reuse across phases or
+incompatible acquisition/backend/window/result semantics.
+
+Exact reuse is available only when the Discovery owner closure supplies one
+owner-minted acquisition identity per sample and the opened source exposes the
+same identity. Missing, ambiguous, or mismatched owner semantics fail closed:
+the runtime emits no exact-equivalence observation. Any legacy in-call
+`XICRequest` equality behavior is compatibility behavior only and is not
+semantic evidence. Timing diagnostics may report observed logical-request and
+canonical-class counts when the exact owner partition exists; they do not claim
+elapsed-time, RAW-call, chromatogram-call, point-count, or monetary savings.
+This path does not consume the early-loser shadow and grants no new Backfill
+eligibility, claim, Matrix, ProductWriter, activation, streaming, artifact, or
+recovery authority.
+
 ## Surfaces
 
 | Surface | Role |

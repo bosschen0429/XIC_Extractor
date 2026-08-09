@@ -66,6 +66,10 @@ class TimedRawSource:
         self._stats.point_count += _trace_point_count(rt)
         return rt, intensity
 
+    @property
+    def acquisition_source(self) -> object | None:
+        return getattr(self._source, "acquisition_source", None)
+
     def extract_xic_many(self, requests):
         requests = tuple(requests)
         if hasattr(self._source, "extract_xic_many"):

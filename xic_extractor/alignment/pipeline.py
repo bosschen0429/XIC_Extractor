@@ -44,6 +44,7 @@ from xic_extractor.alignment.ms1_index_source import (
 from xic_extractor.alignment.output_levels import AlignmentOutputLevel
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
+    OwnerBackfillRequestReuseObservation,
     OwnerBackfillResult,
     OwnerBackfillWindowStrategy,
     build_owner_backfill_cells,
@@ -498,6 +499,10 @@ def run_alignment(
                 OwnerBackfillCandidateAuditRow,
                 ...,
             ] = ()
+            request_reuse_observations: tuple[
+                OwnerBackfillRequestReuseObservation,
+                ...,
+            ] = ()
             if raw_workers > 1:
                 process_output = run_owner_backfill_process(
                     backfill_features,
@@ -526,6 +531,9 @@ def run_alignment(
                 rescued_cells = process_output.cells
                 owner_backfill_candidate_audit_rows = (
                     process_output.candidate_audit_rows
+                )
+                request_reuse_observations = (
+                    process_output.request_reuse_observations
                 )
                 owner_backfill_stage.metrics.update(
                     _summarize_xic_timing_stats(process_output.timing_stats),
@@ -566,9 +574,11 @@ def run_alignment(
                     sample_order=batch.sample_order,
                     raw_sources=backfill_raw_sources,
                     **validation_kwargs,
+                    expected_acquisition_sources=expected_acquisition_sources,
                     alignment_config=alignment_config,
                     peak_config=peak_config,
                     raw_xic_batch_size=raw_xic_batch_size,
+                    owner_backfill_xic_backend=owner_backfill_xic_backend,
                     owner_backfill_window_strategy=owner_backfill_window_strategy,
                     owner_backfill_superwindow_span_factor=(
                         owner_backfill_superwindow_span_factor
@@ -581,10 +591,16 @@ def run_alignment(
                 owner_backfill_candidate_audit_rows = (
                     backfill_result.candidate_audit_rows
                 )
+                request_reuse_observations = (
+                    backfill_result.request_reuse_observations
+                )
                 owner_backfill_stage.metrics.update(
                     _summarize_xic_timing_stats(timing_stats),
                 )
                 record_raw_source_timing_stats(timing_stats, recorder=recorder)
+            owner_backfill_stage.metrics.update(
+                _request_reuse_summary(request_reuse_observations)
+            )
         matrix_sample_order = batch.sample_order
         if sample_column_injection_order is not None:
             injection_order, injection_order_source_schema = (
@@ -744,8 +760,11 @@ def _expected_acquisition_sources(
 
 def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResult:
     if build_owner_backfill_cells is not _DEFAULT_BUILD_OWNER_BACKFILL_CELLS:
+        legacy_kwargs = dict(kwargs)
+        legacy_kwargs.pop("expected_acquisition_sources", None)
+        legacy_kwargs.pop("owner_backfill_xic_backend", None)
         return OwnerBackfillResult(
-            cells=tuple(build_owner_backfill_cells(*args, **kwargs)),
+            cells=tuple(build_owner_backfill_cells(*args, **legacy_kwargs)),
             candidate_audit_rows=(),
         )
     return build_owner_backfill_result(*args, **kwargs)
@@ -900,6 +919,7 @@ def _record_owner_backfill_progress(
         "sample_index": result.sample_index,
         "rescued_cell_count": len(result.cells),
     }
+    metrics.update(_request_reuse_summary(result.request_reuse_observations))
     if result.timing_stats:
         stats = result.timing_stats[0]
         metrics.update(
@@ -948,6 +968,26 @@ def _summarize_xic_timing_stats(
             None
             if extract_xic_batch_count == 0
             else extract_xic_count / extract_xic_batch_count
+        ),
+    }
+
+
+def _request_reuse_summary(
+    observations: Iterable[OwnerBackfillRequestReuseObservation],
+) -> dict[str, int | bool]:
+    items = tuple(observations)
+    if not items:
+        return {}
+    logical_request_count = sum(item.logical_request_count for item in items)
+    canonical_request_class_count = sum(
+        item.canonical_request_class_count for item in items
+    )
+    return {
+        "exact_request_equivalence_available": True,
+        "logical_request_count": logical_request_count,
+        "canonical_request_class_count": canonical_request_class_count,
+        "equivalent_logical_request_count": (
+            logical_request_count - canonical_request_class_count
         ),
     }
 
