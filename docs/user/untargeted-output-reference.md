@@ -155,6 +155,8 @@ injection order when an injection-order source is provided).
 The TSV uses stable numeric text for machine and spreadsheet consumers:
 
 - `Mz` is written with exactly four digits after the decimal point.
+- If four decimal places cannot preserve the existing canonical parsed `Mz`
+  value, the writer rejects the output instead of silently rounding it.
 - Nonblank sample areas use lowercase scientific notation with five digits
   after the decimal point (for example, `1.23457e+03`).
 - `RT` keeps its existing compact numeric rendering, and absent or unchecked
