@@ -289,15 +289,41 @@ def write_alignment_matrix_tsv(
     production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
     columns = ("Mz", "RT", *matrix.sample_order)
+    rows = product_matrix_tsv_rows(
+        matrix,
+        alignment_config=alignment_config,
+        production_decisions=production_decisions,
+    )
     return _write_tsv(
         path,
         columns,
-        product_matrix_tsv_rows(
-            matrix,
-            alignment_config=alignment_config,
-            production_decisions=production_decisions,
+        _format_alignment_matrix_rows(
+            rows,
+            sample_order=matrix.sample_order,
         ),
     )
+
+
+def _format_alignment_matrix_rows(
+    rows: Iterable[Mapping[str, object]],
+    *,
+    sample_order: tuple[str, ...],
+) -> Iterable[Mapping[str, object]]:
+    for row in rows:
+        yield {
+            "Mz": f"{float(str(row['Mz'])):.4f}",
+            "RT": row["RT"],
+            **{
+                sample_id: _format_alignment_matrix_area(row.get(sample_id, ""))
+                for sample_id in sample_order
+            },
+        }
+
+
+def _format_alignment_matrix_area(value: object) -> str:
+    if value is None or value == "":
+        return ""
+    return f"{float(str(value)):.5e}"
 
 
 def write_alignment_matrix_identity_tsv(

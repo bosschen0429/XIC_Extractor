@@ -152,6 +152,18 @@ the primary cross-sample quantitative output.
 Sample columns follow the order determined by `matrix.sample_order` (typically
 injection order when an injection-order source is provided).
 
+The TSV uses stable numeric text for machine and spreadsheet consumers:
+
+- `Mz` is written with exactly four digits after the decimal point.
+- Nonblank sample areas use lowercase scientific notation with five digits
+  after the decimal point (for example, `1.23457e+03`).
+- `RT` keeps its existing compact numeric rendering, and absent or unchecked
+  sample cells remain blank.
+
+This formatting contract applies only to `alignment_matrix.tsv`; it does not
+change numeric values, row or sample ordering, identity sidecars, review or
+evidence TSVs, or workbook numeric cells.
+
 ---
 
 ### `alignment_review.tsv`

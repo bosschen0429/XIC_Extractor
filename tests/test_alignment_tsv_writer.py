@@ -315,17 +315,43 @@ def test_write_alignment_matrix_tsv_blanks_missing_and_invalid_areas(tmp_path: P
         "negative",
         "nan",
     ]
-    assert rows[0]["Mz"] == "500.123"
+    assert rows[0]["Mz"] == "500.1230"
     assert rows[0]["RT"] == "8.49"
-    assert rows[0]["detected-positive"] == "1234.57"
-    assert rows[0]["detected-positive-2"] == "2345"
-    assert rows[0]["rescued-positive"] == "25"
+    assert rows[0]["detected-positive"] == "1.23457e+03"
+    assert rows[0]["detected-positive-2"] == "2.34500e+03"
+    assert rows[0]["rescued-positive"] == "2.50000e+01"
     assert rows[0]["absent-positive"] == ""
     assert rows[0]["unchecked-positive"] == ""
     assert rows[0]["none"] == ""
     assert rows[0]["zero"] == ""
     assert rows[0]["negative"] == ""
     assert rows[0]["nan"] == ""
+
+
+def test_write_alignment_matrix_tsv_uses_stable_numeric_text_without_value_drift(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+    matrix = AlignmentMatrix(
+        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        cells=(
+            _cell("small", "detected", area=0.00123456),
+            _cell("large", "detected", area=123456789.0),
+            _cell("blank", "absent", area=42.0),
+        ),
+        sample_order=("small", "large", "blank"),
+    )
+
+    row = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))[0]
+
+    assert row["Mz"] == "500.1230"
+    assert row["RT"] == "8.49"
+    assert row["small"] == "1.23456e-03"
+    assert row["large"] == "1.23457e+08"
+    assert row["blank"] == ""
+    assert float(row["small"]) == float(f"{0.00123456:.6g}")
+    assert float(row["large"]) == float(f"{123456789.0:.6g}")
 
 
 def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
@@ -359,8 +385,8 @@ def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
         "sample-a",
         "sample-b",
     ]
-    assert rows[0]["sample-a"] == "66.6"
-    assert rows[0]["sample-b"] == "20"
+    assert rows[0]["sample-a"] == "6.66000e+01"
+    assert rows[0]["sample-b"] == "2.00000e+01"
 
 
 def test_write_alignment_matrix_tsv_blanks_duplicate_assigned_cells(tmp_path: Path):
@@ -384,8 +410,8 @@ def test_write_alignment_matrix_tsv_blanks_duplicate_assigned_cells(tmp_path: Pa
     rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
 
     assert rows[0]["sample-a"] == ""
-    assert rows[0]["sample-b"] == "200"
-    assert rows[0]["sample-c"] == "300"
+    assert rows[0]["sample-b"] == "2.00000e+02"
+    assert rows[0]["sample-c"] == "3.00000e+02"
 
 
 def test_write_alignment_matrix_tsv_blanks_ambiguous_ms1_owner_cells(
@@ -411,8 +437,8 @@ def test_write_alignment_matrix_tsv_blanks_ambiguous_ms1_owner_cells(
     rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
 
     assert rows[0]["sample-a"] == ""
-    assert rows[0]["sample-b"] == "200"
-    assert rows[0]["sample-c"] == "300"
+    assert rows[0]["sample-b"] == "2.00000e+02"
+    assert rows[0]["sample-c"] == "3.00000e+02"
 
 
 def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
@@ -448,9 +474,9 @@ def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
 
     rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
 
-    assert [(row["Mz"], row["RT"]) for row in rows] == [("500.123", "8.49")]
-    assert rows[0]["sample-a"] == "100"
-    assert rows[0]["sample-b"] == "110"
+    assert [(row["Mz"], row["RT"]) for row in rows] == [("500.1230", "8.49")]
+    assert rows[0]["sample-a"] == "1.00000e+02"
+    assert rows[0]["sample-b"] == "1.10000e+02"
 
 
 def test_write_alignment_matrix_identity_tsv_maps_product_rows(
@@ -484,7 +510,7 @@ def test_write_alignment_matrix_identity_tsv_maps_product_rows(
     assert identity_rows[0] == {
         "identity_schema_version": "untargeted_peak_hypothesis_matrix_identity_v1",
         "matrix_row_index": "1",
-        "Mz": matrix_rows[0]["Mz"],
+        "Mz": "500.123",
         "RT": matrix_rows[0]["RT"],
         "peak_hypothesis_id": "ALN000001",
         "row_identity_basis": "no_split_peak_hypothesis",
@@ -649,8 +675,8 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
 
     assert list(matrix_rows[0]) == ["Mz", "RT", "sample-a", "sample-b"]
     assert [(row["sample-a"], row["sample-b"]) for row in matrix_rows] == [
-        ("100", ""),
-        ("", "110"),
+        ("1.00000e+02", ""),
+        ("", "1.10000e+02"),
     ]
     assert [row["peak_hypothesis_id"] for row in identity_rows] == [
         "FAM_PARENT::early",
