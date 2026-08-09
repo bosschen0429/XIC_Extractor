@@ -512,6 +512,28 @@ SHA-256 digests; it does not certify Matrix cells or values.
 
 ---
 
+### `run_alignment` owner-minted exact Backfill request reuse
+
+**Purpose**: Partition the live hypothesis-bound Backfill request population by
+complete typed extraction semantics, execute one extraction per canonical
+class, and fan the typed trace back to every logical request.
+**Topic group**: `xic_extractor/alignment/owner_backfill_request_plan.py` +
+`owner_backfill.py` (in-process request-plan and extraction owners; no
+standalone persisted-projection reader).
+**Originating issues**: [#195](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/195)
+and [#210](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/210).
+**Status note**: `production_candidate`; current evidence is synthetic/no-RAW.
+Exact identity requires owner-closed acquisition content identity plus exact
+m/z, RT bounds, ppm, backend, window, validation, and result semantics. Missing
+or mismatched owner context emits no exact claim. Timing records expose only
+observed logical-request and canonical-class counts. Display-coordinate and
+persisted-projection proxies remain non-proof; no elapsed, RAW-call,
+chromatogram-call, point, cost, or current real-population savings are claimed.
+The path does not consume the early-loser shadow or change Backfill eligibility,
+claim/Matrix/writer authority, PR E artifact streaming, or PR F recovery.
+
+---
+
 ## Backfill Reviews
 
 Three overlapping review axes (seed-level / family-level /

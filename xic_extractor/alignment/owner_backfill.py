@@ -4,7 +4,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import groupby
-from typing import Literal, Protocol
+from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,9 +17,20 @@ from xic_extractor.alignment.cell_region_audit import with_region_audit
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.matrix_handoff import integration_from_peak_trace
+from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
 from xic_extractor.alignment.owner_area import median_owner_area, positive_finite
 from xic_extractor.alignment.owner_backfill_request_plan import (
+    OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+    OWNER_BACKFILL_VALIDATION_MODES,
+    OWNER_BACKFILL_WINDOW_STRATEGIES,
+    OWNER_BACKFILL_XIC_BACKENDS,
+    OwnerBackfillRequestEquivalenceClass,
+    OwnerBackfillRequestEquivalenceContext,
+    OwnerBackfillRequestIdentity,
     OwnerBackfillRequestItem,
+    OwnerBackfillValidationMode,
+    OwnerBackfillWindowStrategy,
+    build_owner_backfill_request_equivalence_classes,
     build_owner_backfill_request_plan,
 )
 from xic_extractor.alignment.owner_group_delivery import (
@@ -36,17 +47,13 @@ from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.region_audit import build_peak_region_audit_summary
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 _RequestItem = OwnerBackfillRequestItem
 _RequestGroupKey = tuple[str, int | float, int | float]
 _WindowedRequestItem = tuple[_RequestItem, tuple[int, int]]
-OwnerBackfillWindowStrategy = Literal["exact", "super-window"]
-OWNER_BACKFILL_WINDOW_STRATEGIES: tuple[OwnerBackfillWindowStrategy, ...] = (
-    "exact",
-    "super-window",
-)
 
 
 class OwnerBackfillSource(Protocol):
@@ -89,6 +96,42 @@ class OwnerBackfillCandidateAuditRow:
 class OwnerBackfillResult:
     cells: tuple[AlignedCell, ...]
     candidate_audit_rows: tuple[OwnerBackfillCandidateAuditRow, ...]
+    request_reuse_observations: tuple[
+        OwnerBackfillRequestReuseObservation,
+        ...,
+    ] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillRequestReuseObservation:
+    sample_stem: str
+    validation_mode: OwnerBackfillValidationMode
+    logical_request_count: int
+    canonical_request_class_count: int
+
+    def __post_init__(self) -> None:
+        if not self.sample_stem or self.sample_stem != self.sample_stem.strip():
+            raise ValueError("sample_stem must be owner-normalized text")
+        if self.validation_mode not in OWNER_BACKFILL_VALIDATION_MODES:
+            raise ValueError("unsupported owner Backfill validation mode")
+        for field in ("logical_request_count", "canonical_request_class_count"):
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field} must be a non-negative integer")
+        if self.canonical_request_class_count > self.logical_request_count:
+            raise ValueError("canonical classes cannot exceed logical requests")
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillExtractionResult:
+    request_identity: OwnerBackfillRequestIdentity
+    trace: XICTrace
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.request_identity, OwnerBackfillRequestIdentity):
+            raise TypeError("request_identity must be owner-minted")
+        if not isinstance(self.trace, XICTrace):
+            raise TypeError("trace must be an XICTrace")
 
 
 @dataclass(frozen=True)
@@ -104,9 +147,12 @@ def build_owner_backfill_cells(
     sample_order: tuple[str, ...],
     raw_sources: Mapping[str, OwnerBackfillSource],
     validation_raw_sources: Mapping[str, OwnerBackfillSource] | None = None,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
+    | None = None,
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
     raw_xic_batch_size: int = 1,
+    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
     emit_region_audit: bool = False,
@@ -118,9 +164,11 @@ def build_owner_backfill_cells(
         sample_order=sample_order,
         raw_sources=raw_sources,
         validation_raw_sources=validation_raw_sources,
+        expected_acquisition_sources=expected_acquisition_sources,
         alignment_config=alignment_config,
         peak_config=peak_config,
         raw_xic_batch_size=raw_xic_batch_size,
+        owner_backfill_xic_backend=owner_backfill_xic_backend,
         owner_backfill_window_strategy=owner_backfill_window_strategy,
         owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
         emit_region_audit=emit_region_audit,
@@ -135,9 +183,12 @@ def build_owner_backfill_result(
     sample_order: tuple[str, ...],
     raw_sources: Mapping[str, OwnerBackfillSource],
     validation_raw_sources: Mapping[str, OwnerBackfillSource] | None = None,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
+    | None = None,
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
     raw_xic_batch_size: int = 1,
+    owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
     owner_backfill_superwindow_span_factor: int = 2,
     emit_region_audit: bool = False,
@@ -151,15 +202,40 @@ def build_owner_backfill_result(
     if owner_backfill_window_strategy not in OWNER_BACKFILL_WINDOW_STRATEGIES:
         raise ValueError(
             "owner_backfill_window_strategy must be exact or super-window",
+        )
+    if owner_backfill_xic_backend not in OWNER_BACKFILL_XIC_BACKENDS:
+        raise ValueError("unsupported owner Backfill XIC backend")
+    _validate_owner_bound_sources(
+        raw_sources,
+        expected_acquisition_sources=expected_acquisition_sources,
+        source_label="primary",
     )
+    if validation_raw_sources is not None:
+        _validate_owner_bound_sources(
+            validation_raw_sources,
+            expected_acquisition_sources=expected_acquisition_sources,
+            source_label="validation",
+        )
     effective_emit_region_audit = emit_region_audit and audit_evidence_mode != "none"
     cells: list[AlignedCell] = []
     candidate_records: list[_OwnerBackfillCandidateRecord] = []
+    request_reuse_observations: list[OwnerBackfillRequestReuseObservation] = []
+    primary_validation_mode: OwnerBackfillValidationMode = (
+        "prefilter" if validation_raw_sources is not None else "primary"
+    )
+    primary_equivalence_context = _request_equivalence_context(
+        expected_acquisition_sources=expected_acquisition_sources,
+        backend=owner_backfill_xic_backend,
+        window_strategy=owner_backfill_window_strategy,
+        superwindow_span_factor=owner_backfill_superwindow_span_factor,
+        validation_mode=primary_validation_mode,
+    )
     request_plan = build_owner_backfill_request_plan(
         features,
         sample_order=sample_order,
         raw_sample_stems=frozenset(raw_sources),
         alignment_config=alignment_config,
+        equivalence_context=primary_equivalence_context,
     )
     backfill_by_feature_sample: dict[tuple[str, str], AlignedCell] = {}
     validation_pending: dict[str, list[_RequestItem]] = defaultdict(list)
@@ -168,6 +244,20 @@ def build_owner_backfill_result(
         sample_requests = request_plan.requests_for_sample(sample_stem)
         if not sample_requests:
             continue
+        equivalence_classes = (
+            request_plan.equivalence_classes_for_sample(sample_stem)
+            if request_plan.exact_equivalence_available
+            else None
+        )
+        if equivalence_classes is not None:
+            request_reuse_observations.append(
+                OwnerBackfillRequestReuseObservation(
+                    sample_stem=sample_stem,
+                    validation_mode=primary_validation_mode,
+                    logical_request_count=len(sample_requests),
+                    canonical_request_class_count=len(equivalence_classes),
+                )
+            )
         source = raw_sources[sample_stem]
         for chunk, traces in _iter_extracted_request_traces(
             source,
@@ -175,6 +265,7 @@ def build_owner_backfill_result(
             raw_xic_batch_size,
             window_strategy=owner_backfill_window_strategy,
             superwindow_span_factor=owner_backfill_superwindow_span_factor,
+            equivalence_classes=equivalence_classes,
         ):
             for (feature, requested_sample, request, preferred_rt), trace in zip(
                 chunk,
@@ -278,12 +369,38 @@ def build_owner_backfill_result(
                     )
                 continue
             source = validation_raw_sources[sample_stem]
+            validation_items = tuple(validation_requests)
+            validation_context = _request_equivalence_context(
+                expected_acquisition_sources=expected_acquisition_sources,
+                backend="raw",
+                window_strategy="exact",
+                superwindow_span_factor=owner_backfill_superwindow_span_factor,
+                validation_mode="validation",
+            )
+            validation_classes = (
+                build_owner_backfill_request_equivalence_classes(
+                    validation_items,
+                    context=validation_context,
+                )
+                if validation_context is not None
+                else None
+            )
+            if validation_classes is not None:
+                request_reuse_observations.append(
+                    OwnerBackfillRequestReuseObservation(
+                        sample_stem=sample_stem,
+                        validation_mode="validation",
+                        logical_request_count=len(validation_items),
+                        canonical_request_class_count=len(validation_classes),
+                    )
+                )
             for chunk, traces in _iter_extracted_request_traces(
                 source,
-                tuple(validation_requests),
+                validation_items,
                 raw_xic_batch_size,
                 window_strategy="exact",
                 superwindow_span_factor=owner_backfill_superwindow_span_factor,
+                equivalence_classes=validation_classes,
             ):
                 for (
                     feature,
@@ -364,7 +481,57 @@ def build_owner_backfill_result(
             feature_order=tuple(feature.feature_family_id for feature in features),
             sample_order=sample_order,
         ),
+        request_reuse_observations=tuple(request_reuse_observations),
     )
+
+
+def _request_equivalence_context(
+    *,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
+    | None,
+    backend: OwnerBackfillXicBackend,
+    window_strategy: OwnerBackfillWindowStrategy,
+    superwindow_span_factor: int,
+    validation_mode: OwnerBackfillValidationMode,
+) -> OwnerBackfillRequestEquivalenceContext | None:
+    if expected_acquisition_sources is None:
+        return None
+    return OwnerBackfillRequestEquivalenceContext(
+        acquisition_sources=expected_acquisition_sources,
+        backend=backend,
+        window_strategy=window_strategy,
+        superwindow_span_factor=superwindow_span_factor,
+        validation_mode=validation_mode,
+        result_semantics=OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
+    )
+
+
+def _validate_owner_bound_sources(
+    sources: Mapping[str, OwnerBackfillSource],
+    *,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
+    | None,
+    source_label: str,
+) -> None:
+    if expected_acquisition_sources is None:
+        return
+    for sample_stem, source in sources.items():
+        expected = expected_acquisition_sources.get(sample_stem)
+        if not isinstance(expected, AcquisitionSourceIdentity):
+            raise ValueError(
+                "exact request equivalence requires an owner-minted acquisition "
+                f"identity for {sample_stem}"
+            )
+        actual = getattr(source, "acquisition_source", None)
+        if not isinstance(actual, AcquisitionSourceIdentity):
+            raise ValueError(
+                f"{source_label} source for {sample_stem} is not owner-bound"
+            )
+        if actual != expected:
+            raise ValueError(
+                f"{source_label} source for {sample_stem} has a different "
+                "acquisition identity"
+            )
 
 
 def _iter_extracted_request_traces(
@@ -374,7 +541,10 @@ def _iter_extracted_request_traces(
     *,
     window_strategy: OwnerBackfillWindowStrategy,
     superwindow_span_factor: int,
+    equivalence_classes: tuple[OwnerBackfillRequestEquivalenceClass, ...]
+    | None = None,
 ):
+    identity_by_item_id = _identity_by_item_id(items, equivalence_classes)
     if window_strategy == "super-window":
         retention_time_by_scan: dict[int, float | None] = {}
         groups = _superwindow_groups(
@@ -384,6 +554,10 @@ def _iter_extracted_request_traces(
             retention_time_by_scan=retention_time_by_scan,
         )
         if groups is not None:
+            _validate_equivalence_grouping(
+                tuple(tuple(item for item, _scan_window in group) for group in groups),
+                identity_by_item_id,
+            )
             for group in groups:
                 group_items = tuple(item for item, _scan_window in group)
                 try:
@@ -391,15 +565,24 @@ def _iter_extracted_request_traces(
                         source,
                         group,
                         retention_time_by_scan=retention_time_by_scan,
+                        identity_by_item_id=identity_by_item_id,
                     )
                 except OSError:
+                    if identity_by_item_id is not None:
+                        continue
                     yield from _iter_exact_request_traces(
                         source,
                         group_items,
                         chunk_size,
+                        identity_by_item_id=identity_by_item_id,
                     )
             return
-    yield from _iter_exact_request_traces(source, items, chunk_size)
+    yield from _iter_exact_request_traces(
+        source,
+        items,
+        chunk_size,
+        identity_by_item_id=identity_by_item_id,
+    )
 
 
 def _append_candidate_record(
@@ -487,10 +670,19 @@ def _iter_exact_request_traces(
     source: OwnerBackfillSource,
     items: tuple[_RequestItem, ...],
     chunk_size: int,
+    *,
+    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity] | None = None,
 ):
-    for chunk in _scan_window_aware_chunks(source, items, chunk_size):
+    chunks = _scan_window_aware_chunks(source, items, chunk_size)
+    _validate_equivalence_grouping(chunks, identity_by_item_id)
+    for chunk in chunks:
         try:
-            traces = _extract_many(source, tuple(item[2] for item in chunk))
+            traces = _extract_many(
+                source,
+                tuple(item[2] for item in chunk),
+                items=chunk,
+                identity_by_item_id=identity_by_item_id,
+            )
         except OSError:
             continue
         yield chunk, traces
@@ -639,6 +831,7 @@ def _extract_superwindow_group(
     group: tuple[_WindowedRequestItem, ...],
     *,
     retention_time_by_scan: ScanRetentionTimeCache,
+    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity] | None = None,
 ) -> tuple[XICTrace, ...]:
     union_start = min(scan_window[0] for _item, scan_window in group)
     union_end = max(scan_window[1] for _item, scan_window in group)
@@ -665,6 +858,40 @@ def _extract_superwindow_group(
         )
         for item, _scan_window in group
     )
+    group_items = tuple(item for item, _scan_window in group)
+    if identity_by_item_id is not None:
+        (
+            unique_identities,
+            unique_union_requests,
+            representative_by_identity,
+        ) = _typed_extraction_inputs(
+            group_items,
+            union_requests,
+            identity_by_item_id,
+        )
+        unique_union_traces = _extract_unique_many(source, unique_union_requests)
+        scan_window_by_item_id = {
+            id(item): scan_window for item, scan_window in group
+        }
+        cropped_traces = tuple(
+            _crop_trace_to_scan_window(
+                source,
+                trace,
+                scan_window_by_item_id[id(representative_by_identity[identity])],
+                retention_time_by_scan=retention_time_by_scan,
+            )
+            for identity, trace in zip(
+                unique_identities,
+                unique_union_traces,
+                strict=True,
+            )
+        )
+        return _fan_out_typed_results(
+            group_items,
+            unique_identities,
+            cropped_traces,
+            identity_by_item_id,
+        )
     union_traces = _extract_many(source, union_requests)
     return tuple(
         _crop_trace_to_scan_window(
@@ -959,13 +1186,139 @@ def _rescued_cell_sort_key(cell: AlignedCell) -> tuple[float, float, float]:
 def _extract_many(
     source: OwnerBackfillSource,
     requests: tuple[XICRequest, ...],
+    *,
+    items: tuple[_RequestItem, ...] | None = None,
+    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity] | None = None,
 ) -> tuple[XICTrace, ...]:
+    if identity_by_item_id is not None:
+        if items is None or len(items) != len(requests):
+            raise ValueError(
+                "typed request extraction requires one logical item per request"
+            )
+        (
+            unique_identities,
+            unique_requests,
+            _representative_by_identity,
+        ) = _typed_extraction_inputs(
+            items,
+            requests,
+            identity_by_item_id,
+        )
+        unique_traces = _extract_unique_many(source, unique_requests)
+        return _fan_out_typed_results(
+            items,
+            unique_identities,
+            unique_traces,
+            identity_by_item_id,
+        )
     unique_requests = tuple(dict.fromkeys(requests))
     if len(unique_requests) != len(requests):
         unique_traces = _extract_unique_many(source, unique_requests)
         traces_by_request = dict(zip(unique_requests, unique_traces, strict=True))
         return tuple(traces_by_request[request] for request in requests)
     return _extract_unique_many(source, requests)
+
+
+def _typed_extraction_inputs(
+    items: tuple[_RequestItem, ...],
+    requests: tuple[XICRequest, ...],
+    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity],
+) -> tuple[
+    tuple[OwnerBackfillRequestIdentity, ...],
+    tuple[XICRequest, ...],
+    Mapping[OwnerBackfillRequestIdentity, _RequestItem],
+]:
+    if len(items) != len(requests):
+        raise ValueError("typed extraction inputs must have equal cardinality")
+    unique_identities: list[OwnerBackfillRequestIdentity] = []
+    request_by_identity: dict[OwnerBackfillRequestIdentity, XICRequest] = {}
+    representative_by_identity: dict[
+        OwnerBackfillRequestIdentity,
+        _RequestItem,
+    ] = {}
+    for item, request in zip(items, requests, strict=True):
+        identity = identity_by_item_id.get(id(item))
+        if identity is None:
+            raise ValueError("logical request is missing owner equivalence identity")
+        previous = request_by_identity.get(identity)
+        if previous is not None and previous != request:
+            raise ValueError(
+                "one equivalence class produced incompatible extraction requests"
+            )
+        if previous is None:
+            unique_identities.append(identity)
+            request_by_identity[identity] = request
+            representative_by_identity[identity] = item
+    return (
+        tuple(unique_identities),
+        tuple(request_by_identity[identity] for identity in unique_identities),
+        representative_by_identity,
+    )
+
+
+def _fan_out_typed_results(
+    items: tuple[_RequestItem, ...],
+    unique_identities: tuple[OwnerBackfillRequestIdentity, ...],
+    unique_traces: tuple[XICTrace, ...],
+    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity],
+) -> tuple[XICTrace, ...]:
+    typed_results = tuple(
+        OwnerBackfillExtractionResult(identity, trace)
+        for identity, trace in zip(
+            unique_identities,
+            unique_traces,
+            strict=True,
+        )
+    )
+    result_by_identity = {
+        result.request_identity: result for result in typed_results
+    }
+    if len(result_by_identity) != len(unique_identities):
+        raise ValueError("typed extraction produced duplicate canonical results")
+    return tuple(
+        result_by_identity[identity_by_item_id[id(item)]].trace for item in items
+    )
+
+
+def _identity_by_item_id(
+    items: tuple[_RequestItem, ...],
+    equivalence_classes: tuple[OwnerBackfillRequestEquivalenceClass, ...] | None,
+) -> dict[int, OwnerBackfillRequestIdentity] | None:
+    if equivalence_classes is None:
+        return None
+    identity_by_item_id: dict[int, OwnerBackfillRequestIdentity] = {}
+    for equivalence_class in equivalence_classes:
+        for member in equivalence_class.members:
+            item_id = id(member.item)
+            if item_id in identity_by_item_id:
+                raise ValueError(
+                    "logical request belongs to multiple equivalence classes"
+                )
+            identity_by_item_id[item_id] = equivalence_class.identity
+    if set(identity_by_item_id) != {id(item) for item in items}:
+        raise ValueError("equivalence partition does not cover the logical population")
+    return identity_by_item_id
+
+
+def _validate_equivalence_grouping(
+    groups: Sequence[tuple[_RequestItem, ...]],
+    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity] | None,
+) -> None:
+    if identity_by_item_id is None:
+        return
+    group_by_identity: dict[OwnerBackfillRequestIdentity, int] = {}
+    for group_index, group in enumerate(groups):
+        for item in group:
+            identity = identity_by_item_id.get(id(item))
+            if identity is None:
+                raise ValueError(
+                    "logical request is missing owner equivalence identity"
+                )
+            previous_group = group_by_identity.setdefault(identity, group_index)
+            if previous_group != group_index:
+                raise ValueError(
+                    "one equivalence class was split across extraction groups"
+                )
 
 
 def _extract_unique_many(
