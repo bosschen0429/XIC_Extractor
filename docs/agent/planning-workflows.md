@@ -91,11 +91,18 @@ minimal fixtures, paths, row counts, and hashes.
 ### Issue Closure Ownership
 
 Issue linkage is part of delivery ownership, not a second progress ledger. A PR
-that completes its issue uses a GitHub closing keyword. When several PRs deliver
-one issue, only the completing PR uses that keyword; in a stack this is normally
-the final rollup PR already responsible for shared-ledger reconciliation.
-Intermediate PRs use `Refs #N` only. They must not place `close`, `closes`, or
-`closed` immediately before the issue number even in a negated sentence, because
+that completes its issue and targets the repository's default branch uses a
+GitHub closing keyword. When several PRs deliver one issue, only the completing
+PR uses that keyword; in a stack this is normally the final rollup PR already
+responsible for shared-ledger reconciliation. If the completing PR targets a
+non-default branch, use `Refs #N` there. The later PR that integrates the work
+into the default branch owns the closing keyword; if no such PR remains, verify
+default-branch integration and use the evidence-backed manual closure path below.
+
+Intermediate and non-default-branch PRs use `Refs #N` only. They must not place
+any supported closing-keyword form (`close`, `closes`, `closed`, `fix`, `fixes`,
+`fixed`, `resolve`, `resolves`, or `resolved`) immediately before the issue
+number, including uppercase or colon variants and negated sentences, because
 GitHub may still classify that text as a closing reference.
 
 If historical work has no remaining completing PR, reconcile the issue against
