@@ -89,6 +89,10 @@ Use the single-context domain documentation layout. See
 - Treat `.codex/config.toml`, `.codex/hooks.json`, `.codex/rules/`, hook
   scripts, execpolicy, and subagent TOML as execution-affecting config. Changes
   follow the smoke and scan contract in `docs/agent/codex-operating-system.md`.
+- External structural-context tools are optional reconnaissance. Use one only
+  when the current checkout has a healthy matching index; otherwise fall back
+  to `rg` and targeted reads. CI, validation, and correctness claims must not
+  depend on an external local index.
 
 ## PR Gate
 
