@@ -9,9 +9,9 @@ migration policy. Stable runners and validation command shapes remain in
 - Before phase plans or expensive validation, name the decision the run can
   close, strongest existing oracle, missing independent evidence, expected
   runtime/artifacts, and fail-fast or inconclusive path.
-- Use tools proactively. Pick the available search, CodeGraph, subagent,
-  plugin, external-docs, or real-data validation path that best closes the
-  decision; do not choose a weaker path only to save tokens or cost.
+- Use tools proactively. Pick the available local search, structural-context,
+  subagent, plugin, external-docs, or real-data validation path that best
+  closes the decision; do not choose a weaker path only to save tokens or cost.
 - For long tool chains, write the decision map first: question, evidence source,
   action if pass, action if fail. This prevents blind loops without discouraging
   tool use.
@@ -159,12 +159,9 @@ a new source of evidence instead of another blind retry.
 
 ## Skills And Subagents
 
-- When the user asks for subagent review, follow
-  `docs/agent/subagent-routing.md`. Do not replace a requested multi-angle
-  review with one generic reviewer unless a runtime limit blocks it and the
-  bypass is reported.
-- Repo-local execution subagents are opt-in. The main agent owns synthesis,
-  edits, final judgment, and verification.
+- The global Codex Agent Router owns generic agent selection and dispatch.
+  `docs/agent/subagent-routing.md` adds only the XIC lenses, triggers, and
+  evidence boundaries that belong in task packets.
 - Reusable workflows belong in global skills first. Repo-local `.codex/skills/`
   entries should exist only for XIC-specific checklists that cannot live cleanly
   in routing docs.

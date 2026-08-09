@@ -1,7 +1,7 @@
 # Architecture And Public Contracts
 
-This file owns high-level dependency guardrails, CodeGraph usage, and public
-contract surfaces. The fuller decomposition contract remains in
+This file owns high-level dependency guardrails and public contract surfaces.
+The fuller decomposition contract remains in
 `docs/architecture-contract.md`.
 
 ## Architecture Guardrails
@@ -264,25 +264,6 @@ exact-equality/fail-closed replay and CAS rules are unchanged. Causal chronology
 normalization intentionally changes canonical
 event order, bytes, and digests for affected running attempts; pre-correction
 diagnostic markers therefore do not claim byte parity with corrected output.
-
-## CodeGraph
-
-- Prefer the `codegraph` CLI for broad indexed search, status, files, and
-  context-building when it can answer the question cleanly.
-- Use CodeGraph MCP when the query needs capabilities the CLI does not expose or
-  exposes less clearly, especially caller/callee/impact tracing, single-symbol
-  source lookup, or explicit MCP-requested structural context.
-- For subagent reviews, tell reviewers to start with `codegraph` CLI, `rg`, and
-  targeted file reads for simple no-use checks. Allow CodeGraph MCP when the
-  review asks a structural caller/callee/impact question or CLI output is
-  insufficient.
-
-CodeGraph is a reconnaissance aid, not a clean-checkout CI authority. Its local
-index can belong to another worktree or contain unresolved references. The
-clean-checkout architecture baseline therefore uses two deliberately narrow
-surfaces: `scripts/check_architecture_census.py` for disposable checkout facts,
-and Import Linter's `.importlinter` contracts for blocking static dependency
-directions.
 
 ## Executable Census And Dependency Gate
 
