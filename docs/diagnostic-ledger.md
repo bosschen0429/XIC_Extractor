@@ -796,10 +796,11 @@ projection or to combine W5a with manifest ownership is `REDESIGN`.
 Issue #213 closes W5b inside the existing provisional-run manifest owner. The
 runner now submits one complete attempt directory to
 `publish_provisional_run_bundle_atomic`. Its upstream Alignment writer supplies
-one complete owner-minted fingerprint batch for the four provisional artifacts,
-and the publication owner mints a path/root-bound receipt while verifying the
-retained sample-metadata copy. The manifest owner reuses those five facts, hashes
-the Discovery batch index once while building the manifest, and validates the
+one complete owner-minted writer fingerprint batch containing the four
+provisional artifacts, and the publication owner mints a path/root-bound receipt
+while verifying the retained sample-metadata copy. The manifest owner reuses
+those five facts, hashes the Discovery batch index once while building the
+manifest, and validates the
 exact owner serialization against a private six-role transaction. Before every
 directory-replace attempt it fully rehashes all six bound files, compares the
 owner-written `run_manifest.json` to the exact in-memory bytes, and makes the
