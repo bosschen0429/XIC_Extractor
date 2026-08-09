@@ -88,6 +88,30 @@ validated by explicit opt-in flags such as `--require-rendered-local`, but the
 default check must validate only tracked contract artifacts: schemas, summaries,
 minimal fixtures, paths, row counts, and hashes.
 
+### Issue Closure Ownership
+
+Issue linkage is part of delivery ownership, not a second progress ledger. A PR
+that completes its issue and targets the repository's default branch uses a
+GitHub closing keyword. When several PRs deliver one issue, only the completing
+PR uses that keyword; in a stack this is normally the final rollup PR already
+responsible for shared-ledger reconciliation. If the completing PR targets a
+non-default branch, use `Refs #N` there. The later PR that integrates the work
+into the default branch owns the closing keyword; if no such PR remains, verify
+default-branch integration and use the evidence-backed manual closure path below.
+
+Intermediate and non-default-branch PRs use `Refs #N` only. They must not place
+any supported closing-keyword form (`close`, `closes`, `closed`, `fix`, `fixes`,
+`fixed`, `resolve`, `resolves`, or `resolved`) immediately before the issue
+number, including uppercase or colon variants and negated sentences, because
+GitHub may still classify that text as a closing reference.
+
+If historical work has no remaining completing PR, reconcile the issue against
+the merged-PR census and canonical evidence, add one evidence comment, and close
+it manually. Stop instead when completion cannot be verified. Open/closed plus
+that evidence chain is the default lifecycle; do not mirror programme progress
+vocabularies as labels. Use native `blocked_by` only for a real open prerequisite,
+not parent/child membership, optional sequencing, or intentional deferral.
+
 ## Goal Contract Shape
 
 Use goals for phase-sized, cross-turn, RAW/data-backed, PR-ready, CI/release-like,

@@ -34,6 +34,11 @@ dated productization control-plane path is compatibility lookup only.
   failure mode, or validation gate.
 - If this ledger already closes the diagnostic question, reuse the cited note or
   artifact instead of rerunning RAW.
+- Treat programme-level `Frozen Inputs` as rerun memory when they point to a
+  canonical owner or retained artifact. Reuse them until their checksum, public
+  contract, owner, or implementation assumption materially changes; a new date
+  alone is not invalidation. Keep programme status in its issue/map rather than
+  copying it into this ledger.
 - Rerun only when current code touched selection, boundary, identity,
   consolidation, integration, matrix delivery, or the cited artifacts are stale.
 - Do not escalate from 8RAW to 85RAW when the 8RAW evidence is already `NO_GO`.

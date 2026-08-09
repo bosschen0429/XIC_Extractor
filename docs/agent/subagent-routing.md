@@ -75,6 +75,11 @@ Retire a repo-local skill when it only summarizes an existing owner, emits an
 ignored report without a gate, or duplicates a global skill without a distinct
 XIC stop rule.
 
+Those are structural grounds and require no telemetry. Effect-based keep/retire
+decisions use the on-demand adjudication in
+`codex-operating-system.md#adoption-rules`; absence of effect evidence retains
+the route provisionally without making an effectiveness claim.
+
 This repo owns only XIC-specific overlays and routing docs. Global skills are
 environment-level workflow dependencies outside this repo diff. If a named
 global skill is unavailable, report `global skill unavailable`, use `AGENTS.md`,
