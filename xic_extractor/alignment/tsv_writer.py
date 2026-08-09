@@ -1,12 +1,8 @@
 from __future__ import annotations
 
 import csv
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
-from io import StringIO
-from itertools import islice
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from time import perf_counter
 from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -36,19 +32,6 @@ from xic_extractor.alignment.production_decisions import (
     build_production_decisions,
 )
 from xic_extractor.peak_detection.baseline import LINEAR_EDGE_RETIRED_MESSAGE
-
-
-@dataclass(slots=True)
-class ArtifactWriteMeasurement:
-    """Measured projection, rendering, and temporary-write work for one artifact."""
-
-    projection_time_sec: float = 0.0
-    render_time_sec: float = 0.0
-    temp_write_time_sec: float = 0.0
-    byte_size: int = 0
-
-
-_MEASURED_WRITE_CHUNK_ROWS = 2048
 
 ALIGNMENT_REVIEW_COLUMNS = (
     "feature_family_id",
@@ -877,89 +860,16 @@ def _write_tsv(
     path: Path,
     fieldnames: tuple[str, ...],
     rows: Iterable[Mapping[str, object]],
-    *,
-    measurement: ArtifactWriteMeasurement | None = None,
-    timer: Callable[[], float] = perf_counter,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if measurement is None:
-        column_map = tuple(
-            (column, escape_excel_formula(column)) for column in fieldnames
-        )
-        with path.open(
-            "w",
-            newline="",
-            encoding="utf-8",
-            buffering=1024 * 1024,
-        ) as handle:
-            writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-            writer.writerow([escaped_column for _, escaped_column in column_map])
-            for row in rows:
-                writer.writerow(
-                    [format_value(row.get(column, "")) for column, _ in column_map],
-                )
-        return path
-
-    started = timer()
     column_map = tuple((column, escape_excel_formula(column)) for column in fieldnames)
-    measurement.render_time_sec += timer() - started
-    started = timer()
-    handle = path.open(
-        "w",
-        newline="",
-        encoding="utf-8",
-        buffering=1024 * 1024,
-    )
-    measurement.temp_write_time_sec += timer() - started
-    try:
-        started = timer()
-        header_buffer = StringIO(newline="")
-        header_writer = csv.writer(
-            header_buffer,
-            delimiter="\t",
-            lineterminator="\n",
-        )
-        header_writer.writerow(
-            [escaped_column for _, escaped_column in column_map]
-        )
-        rendered_header = header_buffer.getvalue()
-        measurement.render_time_sec += timer() - started
-        started = timer()
-        handle.write(rendered_header)
-        measurement.temp_write_time_sec += timer() - started
-
-        iterator = iter(rows)
-        while True:
-            started = timer()
-            chunk = tuple(islice(iterator, _MEASURED_WRITE_CHUNK_ROWS))
-            measurement.projection_time_sec += timer() - started
-            if not chunk:
-                break
-
-            started = timer()
-            buffer = StringIO(newline="")
-            writer = csv.writer(buffer, delimiter="\t", lineterminator="\n")
-            for row in chunk:
-                writer.writerow(
-                    [
-                        format_value(row.get(column, ""))
-                        for column, _ in column_map
-                    ]
-                )
-            rendered_chunk = buffer.getvalue()
-            measurement.render_time_sec += timer() - started
-            started = timer()
-            handle.write(rendered_chunk)
-            measurement.temp_write_time_sec += timer() - started
-
-        started = timer()
-        handle.flush()
-        measurement.temp_write_time_sec += timer() - started
-    finally:
-        started = timer()
-        handle.close()
-        measurement.temp_write_time_sec += timer() - started
-    measurement.byte_size = path.stat().st_size
+    with path.open("w", newline="", encoding="utf-8", buffering=1024 * 1024) as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow([escaped_column for _, escaped_column in column_map])
+        for row in rows:
+            writer.writerow(
+                [format_value(row.get(column, "")) for column, _ in column_map],
+            )
     return path
 
 
@@ -967,12 +877,10 @@ def write_safe_alignment_tsv(
     path: Path,
     fieldnames: tuple[str, ...],
     rows: Iterable[Mapping[str, object]],
-    *,
-    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     """Write an Alignment-owned TSV with spreadsheet-safe headers and values."""
 
-    return _write_tsv(path, fieldnames, rows, measurement=measurement)
+    return _write_tsv(path, fieldnames, rows)
 
 
 def _write_tsv_sequences(

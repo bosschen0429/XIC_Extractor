@@ -7,7 +7,6 @@ import math
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from time import perf_counter
 from types import MappingProxyType
 from typing import Any
 
@@ -17,10 +16,7 @@ from xic_extractor.alignment.matrix import (
     AlignmentRowLike,
 )
 from xic_extractor.alignment.models import AlignmentCluster
-from xic_extractor.alignment.tsv_writer import (
-    ArtifactWriteMeasurement,
-    write_safe_alignment_tsv,
-)
+from xic_extractor.alignment.tsv_writer import write_safe_alignment_tsv
 
 PROVISIONAL_VALIDATION_STATUS = "diagnostic_only"
 PROVISIONAL_MATRIX_SCHEMA_VERSION = "untargeted_provisional_matrix_v1"
@@ -97,6 +93,13 @@ class _ProvisionalRowCounts:
     detected: int
     backfill: int
     quant_available: int
+
+
+@dataclass(slots=True)
+class _MutableProvisionalRowCounts:
+    detected: int = 0
+    backfill: int = 0
+    quant_available: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,7 +215,7 @@ def build_provisional_matrix_projection(
 
     cells_by_key: dict[tuple[str, str], AlignedCell] = {}
     mutable_row_counts = {
-        public_family_id: [0, 0, 0]
+        public_family_id: _MutableProvisionalRowCounts()
         for public_family_id in clusters_by_public_id
     }
     detected_cell_count = 0
@@ -240,13 +243,13 @@ def build_provisional_matrix_projection(
         cells_by_key[key] = cell
         counts = mutable_row_counts[cell.cluster_id]
         if cell.status == "detected":
-            counts[0] += 1
+            counts.detected += 1
             detected_cell_count += 1
         elif cell.status == "rescued":
-            counts[1] += 1
+            counts.backfill += 1
             backfill_candidate_cell_count += 1
         if _matrix_value(cell):
-            counts[2] += 1
+            counts.quant_available += 1
             quant_available_cell_count += 1
 
     matrix_header = (
@@ -256,7 +259,11 @@ def build_provisional_matrix_projection(
     row_count = len(matrix.clusters)
     row_counts = MappingProxyType(
         {
-            public_family_id: _ProvisionalRowCounts(*counts)
+            public_family_id: _ProvisionalRowCounts(
+                detected=counts.detected,
+                backfill=counts.backfill,
+                quant_available=counts.quant_available,
+            )
             for public_family_id, counts in mutable_row_counts.items()
         }
     )
@@ -293,14 +300,11 @@ def build_provisional_matrix_projection(
 def write_provisional_matrix_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
-    *,
-    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     write_safe_alignment_tsv(
         path,
         projection.matrix_header,
         projection.iter_matrix_rows(),
-        measurement=measurement,
     )
     return path
 
@@ -308,14 +312,11 @@ def write_provisional_matrix_tsv(
 def write_provisional_identity_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
-    *,
-    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     write_safe_alignment_tsv(
         path,
         PROVISIONAL_IDENTITY_COLUMNS,
         projection.iter_identity_rows(),
-        measurement=measurement,
     )
     return path
 
@@ -323,14 +324,11 @@ def write_provisional_identity_tsv(
 def write_provisional_provenance_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
-    *,
-    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     write_safe_alignment_tsv(
         path,
         PROVISIONAL_PROVENANCE_COLUMNS,
         projection.iter_provenance_rows(),
-        measurement=measurement,
     )
     return path
 
@@ -338,27 +336,12 @@ def write_provisional_provenance_tsv(
 def write_provisional_summary_json(
     path: Path,
     projection: ProvisionalMatrixProjection,
-    *,
-    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if measurement is None:
-        path.write_text(
-            json.dumps(projection.summary, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        return path
-
-    started = perf_counter()
-    summary = projection.summary
-    measurement.projection_time_sec += perf_counter() - started
-    started = perf_counter()
-    rendered = json.dumps(summary, indent=2, sort_keys=True) + "\n"
-    measurement.render_time_sec += perf_counter() - started
-    started = perf_counter()
-    path.write_text(rendered, encoding="utf-8")
-    measurement.temp_write_time_sec += perf_counter() - started
-    measurement.byte_size = path.stat().st_size
+    path.write_text(
+        json.dumps(projection.summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return path
 
 

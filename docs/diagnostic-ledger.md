@@ -759,18 +759,32 @@ execution input.
 No RAW, 2RAW, 8RAW, or 85RAW input was opened. A deterministic no-RAW allocation
 probe over 400 groups by 100 samples retained zero dense row objects, zero cells,
 and 400 compact per-row count entries. Building the compact projection peaked at
-142,980 traced bytes; materializing the legacy-compatible 40,000-row provenance
-view peaked at 18,940,952 bytes (132.47 times the compact peak). This bounded
+130,364 traced bytes; materializing the legacy-compatible 40,000-row provenance
+view peaked at 18,940,952 bytes (145.29 times the compact peak). This bounded
 probe is mechanism evidence only, not a real-population elapsed-time or savings
-claim. Frozen byte hashes, chunk-boundary parity, schema/order/identity oracles,
-and whole-bundle failure tests remain hard-zero.
+claim. Frozen byte hashes, streamed-versus-materialized edge-case parity,
+schema/order/identity oracles, and whole-bundle failure tests remain hard-zero.
 
-The writer timing projection now separates streamed row projection, rendering,
-temporary-file writes, rename, and final-file hash phases for the four
-provisional artifacts. Ephemeral row projection bytes remain explicitly
-unavailable. Manifest-bound immutable hashing and directory publication belong
-to Issue #213, which is sequentially blocked by #212; recovery/checkpoint work
-remains excluded as PR F.
+The reproducible probe owner and assertion are
+`tests/test_alignment_provisional_matrix.py::test_projection_has_bounded_no_raw_peak_allocation`.
+The exact observation above is emitted with:
+
+```powershell
+@'
+import json, runpy
+probe = runpy.run_path('tests/test_alignment_provisional_matrix.py')['_allocation_probe']
+observed = probe()
+observed['peak_ratio'] = round(observed['materialized_provenance_peak_bytes'] / observed['compact_projection_peak_bytes'], 2)
+print(json.dumps(observed, sort_keys=True))
+'@ | .venv\Scripts\python.exe -
+```
+
+The compact-plan build retains its shared measured stage. Per-artifact lazy row
+projection is interleaved with rendering and temporary-file writes, so those
+phases remain explicitly unavailable or partial rather than receiving fabricated
+attribution; rename and final-file hash remain measured. Manifest-bound immutable
+hashing and directory publication belong to Issue #213, which is sequentially
+blocked by #212; recovery/checkpoint work remains excluded as PR F.
 
 Decision: `GO` for retaining the exact-safe W5a streaming implementation with
 validation status `diagnostic_only`. Any byte/schema/order/identity/atomic-

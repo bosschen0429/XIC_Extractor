@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import gc
 import hashlib
+import json
+import tracemalloc
 from dataclasses import fields
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,6 +15,8 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.provisional_matrix import (
+    PROVISIONAL_IDENTITY_COLUMNS,
+    PROVISIONAL_PROVENANCE_COLUMNS,
     PROVISIONAL_VALIDATION_STATUS,
     build_provisional_matrix_projection,
     write_provisional_identity_tsv,
@@ -19,7 +24,7 @@ from xic_extractor.alignment.provisional_matrix import (
     write_provisional_provenance_tsv,
     write_provisional_summary_json,
 )
-from xic_extractor.alignment.tsv_writer import ArtifactWriteMeasurement
+from xic_extractor.alignment.tsv_writer import write_safe_alignment_tsv
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
@@ -134,6 +139,18 @@ def test_projection_retains_compact_state_instead_of_dense_row_grid() -> None:
     )
 
 
+def test_projection_has_bounded_no_raw_peak_allocation() -> None:
+    observed = _allocation_probe()
+
+    assert observed["dense_row_count"] == 40_000
+    assert observed["retained_cell_count"] == 0
+    assert observed["retained_row_count_entries"] == 400
+    assert observed["materialized_row_count"] == 40_000
+    assert observed["materialized_provenance_peak_bytes"] > (
+        observed["compact_projection_peak_bytes"] * 20
+    )
+
+
 def test_streamed_provisional_artifacts_match_frozen_materializing_hashes(
     tmp_path: Path,
 ) -> None:
@@ -169,7 +186,7 @@ def test_streamed_provisional_artifacts_match_frozen_materializing_hashes(
     }
 
 
-def test_provisional_writer_timing_splits_streamed_artifact_phases(
+def test_provisional_writer_timing_reports_only_owner_supported_phases(
     tmp_path: Path,
 ) -> None:
     outputs = _provisional_outputs(tmp_path)
@@ -191,61 +208,109 @@ def test_provisional_writer_timing_splits_streamed_artifact_phases(
         "provisional_cell_provenance",
         "provisional_matrix_summary",
     }
-    for metric in (
-        "writer_projection_time_sec",
-        "writer_render_time_sec",
-        "writer_temp_write_time_sec",
-        "writer_rename_time_sec",
-        "writer_hash_time_sec",
-    ):
+    for metric in ("writer_projection_time_sec", "writer_temp_write_time_sec"):
+        rows = [row for row in observations if row["metric"] == metric]
+        assert {row["scope"] for row in rows} == expected_scopes
+        assert all(row["availability"] == "unavailable" for row in rows)
+        assert all(row["value"] is None for row in rows)
+
+    render_rows = [
+        row for row in observations if row["metric"] == "writer_render_time_sec"
+    ]
+    assert {row["scope"] for row in render_rows} == expected_scopes
+    assert all(row["availability"] == "partial" for row in render_rows)
+    assert all(row["value"] is not None for row in render_rows)
+
+    for metric in ("writer_rename_time_sec", "writer_hash_time_sec"):
         rows = [row for row in observations if row["metric"] == metric]
         assert {row["scope"] for row in rows} == expected_scopes
         assert all(row["availability"] == "measured" for row in rows)
         assert all(row["value"] is not None for row in rows)
 
-    byte_rows = [
-        row for row in observations if row["metric"] == "writer_temp_write_bytes"
-    ]
-    assert {row["scope"] for row in byte_rows} == expected_scopes
-    assert all(row["availability"] == "measured" for row in byte_rows)
 
-
-def test_measured_streamed_artifacts_preserve_unmeasured_bytes(
+def test_streamed_pipeline_matches_materialized_formula_and_unquantified_bytes(
     tmp_path: Path,
 ) -> None:
-    sample_order = tuple(f"sample-{index:03d}" for index in range(60))
-    groups = tuple(
-        _group(
-            f"GRP-{index:03d}",
-            f"FAM{index:06d}",
-            mz=100.0 + index,
-            rt=1.0 + index,
-        )
-        for index in range(40)
+    matrix = AlignmentMatrix(
+        clusters=(
+            _group("GRP-FORMULA", "FAM000001", mz=100.0, rt=1.0),
+            _group("GRP-UNQUANT", "FAM000002", mz=200.0, rt=2.0),
+        ),
+        cells=(
+            _cell(
+                "=sample",
+                "GRP-FORMULA",
+                "FAM000001",
+                status="detected",
+                area=10.0,
+                source_candidate_id="+candidate",
+            ),
+            _cell(
+                "=sample",
+                "GRP-UNQUANT",
+                "FAM000002",
+                status="detected",
+                area=0.0,
+                source_candidate_id="=unquantified",
+            ),
+            _cell(
+                "sample-b",
+                "GRP-UNQUANT",
+                "FAM000002",
+                status="rescued",
+                area=0.0,
+            ),
+        ),
+        sample_order=("=sample", "sample-b"),
     )
-    projection = _projection(
-        AlignmentMatrix(clusters=groups, cells=(), sample_order=sample_order)
+    projection = _projection(matrix)
+    materialized_dir = tmp_path / "materialized"
+    materialized_paths = (
+        write_safe_alignment_tsv(
+            materialized_dir / "provisional_alignment_matrix.tsv",
+            projection.matrix_header,
+            projection.matrix_rows,
+        ),
+        write_safe_alignment_tsv(
+            materialized_dir / "provisional_row_identity.tsv",
+            PROVISIONAL_IDENTITY_COLUMNS,
+            projection.identity_rows,
+        ),
+        write_safe_alignment_tsv(
+            materialized_dir / "provisional_cell_provenance.tsv",
+            PROVISIONAL_PROVENANCE_COLUMNS,
+            projection.provenance_rows,
+        ),
+        materialized_dir / "provisional_matrix_summary.json",
     )
-    writers = (
-        ("matrix.tsv", write_provisional_matrix_tsv),
-        ("identity.tsv", write_provisional_identity_tsv),
-        ("provenance.tsv", write_provisional_provenance_tsv),
-        ("summary.json", write_provisional_summary_json),
+    materialized_paths[-1].write_text(
+        json.dumps(projection.summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
-    for name, writer in writers:
-        baseline = writer(tmp_path / "baseline" / name, projection)
-        measurement = ArtifactWriteMeasurement()
-        measured = writer(
-            tmp_path / "measured" / name,
-            projection,
-            measurement=measurement,
-        )
+    streamed_outputs = _provisional_outputs(tmp_path / "streamed")
+    pipeline_outputs.write_outputs_atomic(
+        streamed_outputs,
+        matrix,
+        metadata=_provisional_metadata(),
+        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
+        alignment_config=AlignmentConfig(),
+        timing_recorder=TimingRecorder("alignment", instrument_writers=True),
+    )
 
-        assert measured.read_bytes() == baseline.read_bytes()
-        assert measurement.byte_size == measured.stat().st_size
-        assert measurement.projection_time_sec >= 0.0
-        assert measurement.render_time_sec >= 0.0
-        assert measurement.temp_write_time_sec >= 0.0
+    for materialized, streamed in zip(
+        materialized_paths,
+        _output_paths(streamed_outputs),
+        strict=True,
+    ):
+        assert streamed.read_bytes() == materialized.read_bytes()
+
+    assert "\t'=sample\tsample-b\n" in materialized_paths[0].read_text(
+        encoding="utf-8"
+    )
+    provenance_text = materialized_paths[2].read_text(encoding="utf-8")
+    assert "\t'+candidate\t" in provenance_text
+    assert "observed_unquantified" in provenance_text
+    assert "backfill_unquantified" in provenance_text
 
 
 def test_projection_retains_unquantified_groups_and_counts_observations() -> None:
@@ -497,6 +562,43 @@ def _representative_matrix() -> AlignmentMatrix:
         ),
         sample_order=("sample-b", "sample-a"),
     )
+
+
+def _allocation_probe() -> dict[str, int]:
+    group_count = 400
+    sample_count = 100
+    groups = tuple(
+        _group(
+            f"GRP-{index:04d}",
+            f"FAM{index:06d}",
+            mz=100.0 + index,
+            rt=1.0 + index,
+        )
+        for index in range(group_count)
+    )
+    samples = tuple(f"sample-{index:03d}" for index in range(sample_count))
+    matrix = AlignmentMatrix(clusters=groups, cells=(), sample_order=samples)
+
+    gc.collect()
+    tracemalloc.start()
+    projection = _projection(matrix)
+    _, compact_peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    gc.collect()
+    tracemalloc.start()
+    materialized = projection.provenance_rows
+    _, materialized_peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    return {
+        "dense_row_count": group_count * sample_count,
+        "retained_cell_count": len(projection._cells_by_key),
+        "retained_row_count_entries": len(projection._row_counts),
+        "compact_projection_peak_bytes": compact_peak,
+        "materialized_provenance_peak_bytes": materialized_peak,
+        "materialized_row_count": len(materialized),
+    }
 
 
 def _group(group_id: str, family_id: str, *, mz: float, rt: float) -> object:

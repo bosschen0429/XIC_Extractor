@@ -4,7 +4,6 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 
 from xic_extractor.alignment.backfill_scope import (
@@ -44,7 +43,6 @@ from xic_extractor.alignment.provisional_matrix import (
     write_provisional_summary_json,
 )
 from xic_extractor.alignment.tsv_writer import (
-    ArtifactWriteMeasurement,
     write_alignment_backfill_cell_evidence_tsv,
     write_alignment_cell_integration_audit_tsv,
     write_alignment_cells_tsv,
@@ -299,7 +297,6 @@ def write_outputs_atomic(
     early_loser_shadow: EarlyLoserShadowReport | None = None,
 ) -> None:
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
-    writer_measurements: dict[Path, ArtifactWriteMeasurement] = {}
     provisional_projection = None
     provisional_output_paths = (
         outputs.provisional_matrix_tsv,
@@ -325,6 +322,33 @@ def write_outputs_atomic(
                 selected_family_count=_metadata_nonnegative_int(
                     metadata,
                     "selected_family_count",
+                ),
+            )
+        for path in provisional_output_paths:
+            assert path is not None
+            recorder.observe(
+                "writer_projection_time_sec",
+                value=None,
+                scope=_writer_artifact_name(path),
+                unit="seconds",
+                source="alignment.provisional_matrix",
+                availability="unavailable",
+                reason=(
+                    "shared compact-plan construction is measured once; lazy "
+                    "row projection is interleaved with rendering and cannot be "
+                    "attributed per artifact without changing writer behavior"
+                ),
+            )
+            recorder.observe(
+                "writer_projection_bytes",
+                value=None,
+                scope=_writer_artifact_name(path),
+                unit="bytes",
+                source="alignment.provisional_matrix",
+                availability="unavailable",
+                reason=(
+                    "the compact plan is shared and streamed row objects are "
+                    "ephemeral with no stable byte representation"
                 ),
             )
     else:
@@ -494,31 +518,38 @@ def write_outputs_atomic(
         assert outputs.provisional_identity_tsv is not None
         assert outputs.provisional_cell_provenance_tsv is not None
         assert outputs.provisional_summary_json is not None
-        provisional_writers = (
-            (outputs.provisional_matrix_tsv, write_provisional_matrix_tsv),
-            (outputs.provisional_identity_tsv, write_provisional_identity_tsv),
+        output_paths_and_writers.extend(
             (
-                outputs.provisional_cell_provenance_tsv,
-                write_provisional_provenance_tsv,
-            ),
-            (outputs.provisional_summary_json, write_provisional_summary_json),
-        )
-        for final_path, provisional_writer in provisional_writers:
-            measurement = (
-                ArtifactWriteMeasurement() if recorder.instrument_writers else None
-            )
-            if measurement is not None:
-                writer_measurements[final_path] = measurement
-            output_paths_and_writers.append(
                 (
-                    final_path,
-                    partial(
-                        provisional_writer,
-                        projection=provisional_projection,
-                        measurement=measurement,
+                    outputs.provisional_matrix_tsv,
+                    lambda path: write_provisional_matrix_tsv(
+                        path,
+                        provisional_projection,
                     ),
-                )
+                ),
+                (
+                    outputs.provisional_identity_tsv,
+                    lambda path: write_provisional_identity_tsv(
+                        path,
+                        provisional_projection,
+                    ),
+                ),
+                (
+                    outputs.provisional_cell_provenance_tsv,
+                    lambda path: write_provisional_provenance_tsv(
+                        path,
+                        provisional_projection,
+                    ),
+                ),
+                (
+                    outputs.provisional_summary_json,
+                    lambda path: write_provisional_summary_json(
+                        path,
+                        provisional_projection,
+                    ),
+                ),
             )
+        )
     if (outputs.early_loser_shadow_json is None) != (early_loser_shadow is None):
         raise ValueError(
             "early-loser shadow output and owner report must be provided together"
@@ -547,59 +578,25 @@ def write_outputs_atomic(
         for final_path, writer in output_paths_and_writers:
             temp_path = _temp_path(final_path)
             artifact = _writer_artifact_name(final_path)
-            measurement = writer_measurements.get(final_path)
             with recorder.stage(f"writer.{artifact}.render") as stage:
                 writer(temp_path)
                 rendered_bytes = (
                     temp_path.stat().st_size if temp_path.exists() else None
                 )
                 stage.metrics["bytes"] = rendered_bytes
-                if measurement is None:
-                    stage.metrics["availability"] = "partial"
-                    stage.metrics["reason"] = (
-                        "renderer combines serialization and temp-file write"
-                    )
-                else:
-                    stage.metrics["availability"] = "measured"
-                    stage.metrics["reason"] = (
-                        "aggregate wall encloses separately measured projection, "
-                        "serialization, and temporary-file write phases"
-                    )
-            if measurement is not None:
-                recorder.observe(
-                    "writer_projection_time_sec",
-                    value=measurement.projection_time_sec,
-                    scope=artifact,
-                    unit="seconds",
-                    source="alignment.provisional_matrix",
-                )
-                recorder.observe(
-                    "writer_projection_bytes",
-                    value=None,
-                    scope=artifact,
-                    unit="bytes",
-                    source="alignment.provisional_matrix",
-                    availability="unavailable",
-                    reason=(
-                        "streamed row objects are ephemeral and have no stable "
-                        "byte representation"
-                    ),
+                stage.metrics["availability"] = "partial"
+                stage.metrics["reason"] = (
+                    "renderer combines serialization and temp-file write"
                 )
             recorder.observe(
                 "writer_render_time_sec",
-                value=(
-                    stage.elapsed_sec
-                    if measurement is None
-                    else measurement.render_time_sec
-                ),
+                value=stage.elapsed_sec,
                 scope=artifact,
                 unit="seconds",
                 source="alignment.pipeline_outputs",
-                availability="partial" if measurement is None else "measured",
+                availability="partial",
                 reason=(
                     "render timing includes the renderer's temp-file write"
-                    if measurement is None
-                    else ""
                 ),
             )
             recorder.observe(
@@ -608,47 +605,33 @@ def write_outputs_atomic(
                 scope=artifact,
                 unit="bytes",
                 source="alignment.pipeline_outputs",
-                availability="partial" if measurement is None else "measured",
+                availability="partial",
                 reason=(
                     "render bytes include the renderer's temp-file write"
-                    if measurement is None
-                    else ""
                 ),
             )
             recorder.observe(
                 "writer_temp_write_time_sec",
-                value=(
-                    None
-                    if measurement is None
-                    else measurement.temp_write_time_sec
-                ),
+                value=None,
                 scope=artifact,
                 unit="seconds",
                 source="alignment.pipeline_outputs",
-                availability=(
-                    "unavailable" if measurement is None else "measured"
-                ),
+                availability="unavailable",
                 reason=(
                     "renderer combines serialization and temp-file write; "
                     "phase cannot be separated without changing writer behavior"
-                    if measurement is None
-                    else ""
                 ),
             )
             recorder.observe(
                 "writer_temp_write_bytes",
-                value=None if measurement is None else measurement.byte_size,
+                value=None,
                 scope=artifact,
                 unit="bytes",
                 source="alignment.pipeline_outputs",
-                availability=(
-                    "unavailable" if measurement is None else "measured"
-                ),
+                availability="unavailable",
                 reason=(
                     "renderer combines serialization and temp-file write; "
                     "phase cannot be separated without changing writer behavior"
-                    if measurement is None
-                    else ""
                 ),
             )
         for final_path, _writer in output_paths_and_writers:
