@@ -734,8 +734,8 @@ emit the same minimal machine contract and heartbeat shape documented here.
 
 - This repo is normally operated from PowerShell. Do not paste Bash heredocs such
   as `python - <<'PY'`; PowerShell treats `<` as redirection and fails before
-  Python starts. Use `python -c "..."`, a short PowerShell loop, or a temporary
-  checked-in helper when the logic is worth keeping.
+  Python starts. Use `.venv\Scripts\python.exe -c "..."`, a short PowerShell
+  loop, or a temporary checked-in helper when the logic is worth keeping.
 - For multiline PowerShell commands, use backtick continuations exactly as shown
   in this file, or split the command into separate lines in the shell. Do not use
   `&&` or Unix-style `export`.

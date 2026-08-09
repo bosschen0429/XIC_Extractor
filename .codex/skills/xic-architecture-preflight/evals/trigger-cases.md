@@ -16,9 +16,9 @@ not widen or narrow the skill trigger.
   `xic-performance-diagnosis` and before code edits.
 - "Implement immutable manifest fingerprint reuse and a manifest-bound atomic
   publish bundle." This is the delivered Issue #213 / PR #215 boundary task.
-  Root `AGENTS.md` requires the skill for non-trivial diagnostics and persisted
-  publication boundaries; the skill must bind the manifest owner, call-cost,
-  public contract, and failure oracle before edits.
+  The skill description requires preflight when crossing an evidence/runtime
+  boundary or changing a public contract; the skill must bind the manifest
+  owner, call-cost, public contract, and failure oracle before edits.
 
 ## Should Not Trigger
 
