@@ -318,15 +318,13 @@ def test_writer_mints_exact_fingerprint_receipts_without_timing_instrumentation(
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
-    receipts: list[AlignmentArtifactFingerprintReceipt] = []
-
-    pipeline_outputs_module.write_outputs_atomic(
+    receipts = pipeline_outputs_module.write_outputs_atomic(
         outputs,
         _matrix(("Sample_A", "Sample_B")),
         metadata={},
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=AlignmentConfig(),
-        artifact_fingerprint_sink=receipts.append,
+        capture_artifact_fingerprints=True,
     )
 
     output_files = {
@@ -381,13 +379,12 @@ def test_writer_receipt_sink_reuses_instrumented_hashes_without_output_changes(
         "fingerprint_file_content",
         counted_fingerprint,
     )
-    receipts: list[AlignmentArtifactFingerprintReceipt] = []
-    pipeline_outputs_module.write_outputs_atomic(
+    receipts = pipeline_outputs_module.write_outputs_atomic(
         candidate_outputs,
         *writer_args,
         **writer_kwargs,
         timing_recorder=TimingRecorder("alignment", instrument_writers=True),
-        artifact_fingerprint_sink=receipts.append,
+        capture_artifact_fingerprints=True,
     )
 
     baseline_files = {
@@ -408,7 +405,10 @@ def test_writer_receipt_sink_reuses_instrumented_hashes_without_output_changes(
     )
 
 
-def test_writer_receipt_sink_failure_rolls_back_outputs(tmp_path: Path) -> None:
+def test_writer_fingerprint_failure_rolls_back_without_returning_receipts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     outputs = output_paths(
         tmp_path / "out",
         output_level="validation-minimal",
@@ -422,19 +422,33 @@ def test_writer_receipt_sink_failure_rolls_back_outputs(tmp_path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"prior output")
 
-    def reject_receipt(_receipt: AlignmentArtifactFingerprintReceipt) -> None:
-        raise RuntimeError("receipt consumer failed")
+    original_fingerprint = pipeline_outputs_module.fingerprint_file_content
+    fingerprint_calls = 0
 
-    with pytest.raises(RuntimeError, match="receipt consumer failed"):
+    def fail_second_fingerprint(*args, **kwargs):
+        nonlocal fingerprint_calls
+        fingerprint_calls += 1
+        if fingerprint_calls == 2:
+            raise RuntimeError("fingerprint failed")
+        return original_fingerprint(*args, **kwargs)
+
+    monkeypatch.setattr(
+        pipeline_outputs_module,
+        "fingerprint_file_content",
+        fail_second_fingerprint,
+    )
+
+    with pytest.raises(RuntimeError, match="fingerprint failed"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
             _matrix(("Sample_A", "Sample_B")),
             metadata={},
             ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
             alignment_config=AlignmentConfig(),
-            artifact_fingerprint_sink=reject_receipt,
+            capture_artifact_fingerprints=True,
         )
 
+    assert fingerprint_calls == 2
     assert all(path.read_bytes() == b"prior output" for path in output_files)
     assert not tuple((tmp_path / "out").glob("*.tmp"))
     assert not tuple((tmp_path / "out").glob("*.bak"))

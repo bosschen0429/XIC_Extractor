@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import final
@@ -49,12 +48,6 @@ class AlignmentArtifactFingerprintReceipt:
             raise TypeError("fingerprint must be a FileContentFingerprint")
 
 
-AlignmentArtifactFingerprintSink = Callable[
-    [AlignmentArtifactFingerprintReceipt],
-    None,
-]
-
-
 def _mint_alignment_artifact_fingerprint_receipt(
     *,
     artifact_path: Path,
@@ -71,5 +64,4 @@ def _mint_alignment_artifact_fingerprint_receipt(
 
 __all__ = [
     "AlignmentArtifactFingerprintReceipt",
-    "AlignmentArtifactFingerprintSink",
 ]

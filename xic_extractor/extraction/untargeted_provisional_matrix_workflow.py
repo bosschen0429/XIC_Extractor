@@ -6,9 +6,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintSink,
-)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import (
     OwnerBackfillXicBackend,
@@ -46,7 +43,7 @@ def run_untargeted_provisional_matrix_workflow(
     sample_column_injection_order: Path | None = None,
     timing_recorder: TimingRecorder | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
-    artifact_fingerprint_sink: AlignmentArtifactFingerprintSink | None = None,
+    capture_alignment_artifact_fingerprints: bool = False,
 ) -> UntargetedProvisionalMatrixRun:
     """Run every fresh Discovery candidate through existing full Alignment."""
 
@@ -108,7 +105,7 @@ def run_untargeted_provisional_matrix_workflow(
         ),
         sample_column_injection_order=sample_column_injection_order,
         timing_recorder=timing_recorder,
-        artifact_fingerprint_sink=artifact_fingerprint_sink,
+        capture_artifact_fingerprints=capture_alignment_artifact_fingerprints,
         backfill_scope="full-audit",
         audit_evidence_mode="none",
         selected_family_ids=frozenset(),
