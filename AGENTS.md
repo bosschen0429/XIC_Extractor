@@ -73,8 +73,8 @@ Use the single-context domain documentation layout. See
 - Keep active plans and handoffs as short, self-contained current-state stubs;
   use the PR body for normal durable closeout. Detailed retention and Obsidian
   routing live in the handoff owners above.
-- State validation status explicitly: `diagnostic_only`, `shadow_ready`,
-  `production_candidate`, `production_ready`, or `inconclusive`.
+- State validation evidence status explicitly using the canonical Evidence
+  labels in `docs/product/README.md`.
 - Tests passing is not production readiness. For extraction, alignment, scoring,
   and matrix behavior changes, report which method-appropriate evidence was
   used: synthetic tests, lane-specified 8RAW/85RAW, targeted benchmark,

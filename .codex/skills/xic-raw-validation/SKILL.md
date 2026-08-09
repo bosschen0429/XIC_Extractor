@@ -94,7 +94,7 @@ Evidence source and producing code state:
 Current-checkout compatibility:
 run_ok for which source:
 gate_ok and lane-owned acceptance oracle:
-Validation status and evidence owner:
+Validation evidence status (Evidence label from `docs/product/README.md`) and owner:
 rerun_needed: true | false
 Smallest missing oracle or reason no rerun is needed:
 Contradictory or superseding evidence:
@@ -102,8 +102,9 @@ Authority boundary:
 Stop / retry condition:
 ```
 
-Use the validation-status vocabulary and independent acceptance review defined
-in `docs/agent/subagent-routing.md`. A coherent artifact packet can establish a
+Use the validation evidence-status vocabulary owned by
+`docs/product/README.md` and the independent acceptance review defined in
+`docs/agent/subagent-routing.md`. A coherent artifact packet can establish a
 historical run result without establishing current reproducibility, science
 acceptance when required, or product readiness. Diagnostic sidecars and gate
 results grant no counted-detection, selected-value, matrix, workbook,

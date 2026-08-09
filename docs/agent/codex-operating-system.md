@@ -174,12 +174,12 @@ Before closeout:
 
 ```powershell
 git diff --check
-Get-Content .codex\hooks\fixtures\prompt_architecture.json -Raw | python .codex\hooks\xic_prompt_router.py
-Get-Content .codex\hooks\fixtures\prompt_productization.json -Raw | python .codex\hooks\xic_prompt_router.py
+Get-Content .codex\hooks\fixtures\prompt_architecture.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_prompt_router.py
+Get-Content .codex\hooks\fixtures\prompt_productization.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_prompt_router.py
 
-Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | python .codex\hooks\xic_post_tool_guard.py
+Get-Content .codex\hooks\fixtures\posttool_zero_tests.json -Raw | .venv\Scripts\python.exe .codex\hooks\xic_post_tool_guard.py
 
-python .codex\hooks\fixtures\assert_hook_outputs.py
+.venv\Scripts\python.exe .codex\hooks\fixtures\assert_hook_outputs.py
 .venv\Scripts\python.exe -m pytest tests\test_agent_sandbox_doctor.py tests\test_config_codex_hooks.py -q
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "git -C C:\repo push origin HEAD"
 .venv\Scripts\python.exe -m scripts.agent_sandbox_doctor --command-only --command "git --git-dir C:\repo\.git push origin HEAD"

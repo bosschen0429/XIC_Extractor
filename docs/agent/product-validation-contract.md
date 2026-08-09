@@ -34,9 +34,9 @@ not create ProductWriter or matrix-writing authority unless a separate
 activation/export contract, expected-diff gate, and current structured lane entry
 say so.
 
-## Readiness And Promotion Semantics
+## Lane Readiness And Promotion Semantics
 
-The persisted readiness vocabulary is:
+The persisted lane readiness-status vocabulary is:
 
 | Status | Meaning |
 | --- | --- |
@@ -53,6 +53,13 @@ index. Historical planning labels such as `missing`, `partial_internal`,
 `shadow_ready`, and `production_surface` are not persisted current-state values.
 Their durable intent is carried by the evidence and public-surface gates below,
 not by maintaining a second transition ladder.
+
+Lane readiness status is distinct from the validation evidence status owned by
+`docs/product/README.md`. It is also distinct from owner-scoped artifact
+contract ceilings and compound gate verdicts: a typed artifact may enforce
+`shadow_ready` with no product authority even though `shadow_ready` is forbidden
+from the lane status index. Owner-specific tokens are interpreted only by their
+producer and must not be parsed as a shared readiness ladder.
 
 Promotion is evidence-driven, not an automatic adjacent-status transition:
 

@@ -54,6 +54,9 @@ project tests、scripts 或 RAW。即使 bare launcher 恰好有 pytest，也不
   identity 與同 lane RAW canary 時才可使用；Package 3A 的 bounded canary owner
   是 `output/package3a_trace_canary_20260727/README.md`。
 - no-RAW pytest、repo scripts 與 RAW validation 都使用 worktree `.venv`。
+- worktree 尚未建立 `.venv` 或 bootstrap check 失敗時，先執行本頁的
+  `scripts/bootstrap_worktree.py` bootstrap；不得改用 bare `python` 跑 project
+  tests，也不得借用其他 worktree 的 `.venv`。
 - 在 worktree 內跑正式 85RAW 時，`scripts.run_alignment
   --expected-sample-count 85` 會要求 Python executable 位於該 worktree 的
   `.venv` 底下。不要用 root repo 的絕對路徑
@@ -210,9 +213,9 @@ gh api rate_limit
 | 寫入 RAW/DLL storage、桌面資料夾、`$CODEX_HOME` / `%USERPROFILE%\.codex` 失敗 | 把 output / cache / sidecar 改到目前 worktree 的 `output/...` 或 sandbox-provided temp dir；若真的要改全域 Codex 設定，先明確取得使用者要求 | 不要切 `danger-full-access` 或擴大 writable root 只為了省一次路徑修正 |
 | package install、`npx`、下載文件、GitHub/網路失敗 | 確認這是任務必要條件後，用 narrow approval / prefix；成功後記錄穩定命令或替代離線路徑 | 不要把 network access 永久打開當預設 |
 | pytest / Python 產生 cache 被擋 | 在 worktree 內跑；必要時加 `$env:PYTHONDONTWRITEBYTECODE='1'` 和 `-p no:cacheprovider`；verification run 可 workspace-write 只為 verification side effects，驗證後要回報 `git status` 是否只剩預期 side effects | 不要讓 verification run 改 source |
-| pytest 回 `no tests ran` 或 `not found` | 先用 `rg -n "<test_name>|def test_" tests\...` 找實際名稱；必要時跑 `$env:UV_CACHE_DIR='.uv-cache'; uv run pytest --collect-only -q <test-file>` 後再下精準 node id | 不要把 `no tests ran` 當成測試失敗或通過；不要猜 node id 一直重跑 |
+| pytest 回 `no tests ran` 或 `not found` | 先用 `rg -n "<test_name>|def test_" tests\...` 找實際名稱；必要時跑 `.venv\Scripts\python.exe -m pytest --collect-only -q <test-file>` 後再下精準 node id | 不要把 `no tests ran` 當成測試失敗或通過；不要猜 node id 一直重跑 |
 | RAW / DLL 讀不到 | 先跑本檔 Preflight 的 `Test-Path` 與 Python runner check；RAW 命令用 `.venv\Scripts\python.exe` | 不要用 bare `python` 重試 RAW，也不要掃 sibling directory 猜路徑 |
-| PowerShell 語法錯誤 | 改成 PowerShell 語法；多行命令用 backtick；inline Python 用 `python -c` 或 PowerShell here-string pipe；不確定時先跑 `scripts.agent_sandbox_doctor` | 不要貼 Bash heredoc、`export`、`&&` |
+| PowerShell 語法錯誤 | 改成 PowerShell 語法；多行命令用 backtick；inline Python 用 `.venv\Scripts\python.exe -c` 或 PowerShell here-string pipe 到同一 worktree interpreter；不確定時先跑 `scripts.agent_sandbox_doctor` | 不要貼 Bash heredoc、`export`、`&&` |
 | 長時間 85RAW 卡住 | 用 foreground command + `--timing-live-output`；先看 heartbeat / timing artifact 再重跑 | 不要背景 `Start-Process` 後回來輪詢 |
 | `git add` / `git commit` / `git stash` / `git worktree add` 出現 `.git\index.lock`、ref-lock、`.gitconfig` unreadable 或 permission denied | 先跑 doctor 並確認 worktree；對同一個精確 Git 命令使用 **Approve for me** | 不要用 `git add -A`、`git add --all` 或 `git add .` 擴大 staging scope；不要新增 repo-local permission profile、sandbox override 或 shell-environment workaround；不要把 host permission failure 誤判成程式碼問題 |
 | 要續接舊 worktree / 舊 artifact | 先 `git worktree list` 與 `Test-Path` exact artifact；若 worktree/output 不存在，改用 `local_validation_artifacts/` 或明確重建 smoke path | 不要假設上一輪 worktree 還存在；不要把 `.worktrees/<branch>/output/...` 當長期可重用 input |
@@ -296,7 +299,7 @@ instead of inheriting CID-NL 8RAW/85RAW gates by default.
 No-RAW tests:
 
 ```powershell
-python -m pytest <narrow-test-shard> -q
+.venv\Scripts\python.exe -m pytest <narrow-test-shard> -q
 ```
 
 Untargeted CID-NL M7 real-data bridge, one known-SUPPORT RAW canary:
@@ -731,8 +734,8 @@ emit the same minimal machine contract and heartbeat shape documented here.
 
 - This repo is normally operated from PowerShell. Do not paste Bash heredocs such
   as `python - <<'PY'`; PowerShell treats `<` as redirection and fails before
-  Python starts. Use `python -c "..."`, a short PowerShell loop, or a temporary
-  checked-in helper when the logic is worth keeping.
+  Python starts. Use `.venv\Scripts\python.exe -c "..."`, a short PowerShell
+  loop, or a temporary checked-in helper when the logic is worth keeping.
 - For multiline PowerShell commands, use backtick continuations exactly as shown
   in this file, or split the command into separate lines in the shell. Do not use
   `&&` or Unix-style `export`.
@@ -741,8 +744,10 @@ emit the same minimal machine contract and heartbeat shape documented here.
 
 ## Agent Rules
 
-1. 選 Python runner 前，先判斷命令是否讀 RAW。RAW 用
-   `.venv\Scripts\python.exe`；no-RAW pytest 才可用 `python`。
+1. 所有 project tests（包含 no-RAW pytest）都用目前 worktree 的
+   `.venv\Scripts\python.exe -m pytest`；RAW/DLL 命令同樣使用該 worktree
+   interpreter，並另外遵守本頁的 RAW preflight。Bare `python` 只保留給
+   documented bootstrap driver 或 launcher-identity check。
 2. 選 RAW / DLL 目錄前，先查本檔並 `Test-Path`。不要先掃 filesystem。
 3. 已列在 `Approval-First Commands` 的命令不要先在 sandbox 裡撞一次；
    任務必要時直接用 narrow approval 跑固定命令，否則改用既有 artifact 或
