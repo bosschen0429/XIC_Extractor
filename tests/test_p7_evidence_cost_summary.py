@@ -6,6 +6,11 @@ import pytest
 
 from tools.diagnostics import p7_evidence_cost_summary
 from tools.diagnostics.p7_evidence_cost_summary import run_p7_evidence_cost_summary
+from xic_extractor.alignment.backfill_scope import (
+    PREDICATE_VERSION,
+    SkippedEvidenceRecord,
+    write_skipped_evidence_ledger_tsv,
+)
 
 
 def test_p7_evidence_cost_summary_passes_when_backfill_cost_drops(
@@ -28,11 +33,9 @@ def test_p7_evidence_cost_summary_passes_when_backfill_cost_drops(
         owner_extract_xic_count=300,
         raw_chromatogram_call_count=300,
     )
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n"
-        "FAM001\tS2\t1\n"
-        "FAM001\tS3\t1\n",
-        encoding="utf-8",
+    _write_ledger(
+        ledger,
+        [("FAM001", "S2", 1), ("FAM001", "S3", 1)],
     )
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=40)
@@ -89,11 +92,7 @@ def test_p7_evidence_cost_summary_passes_on_small_positive_resource_improvement(
     ledger = tmp_path / "skipped_evidence_ledger.tsv"
     _timing(baseline, owner_backfill_elapsed=100.0, owner_extract_xic_count=100)
     _timing(optimized, owner_backfill_elapsed=80.0, owner_extract_xic_count=80)
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n"
-        "FAM001\tS2\t1\n",
-        encoding="utf-8",
-    )
+    _write_ledger(ledger, [("FAM001", "S2", 1)])
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=80)
 
@@ -123,10 +122,9 @@ def test_p7_evidence_cost_summary_uses_ledger_when_economics_estimator_is_static
     _timing(optimized, owner_backfill_elapsed=40.0, owner_extract_xic_count=40)
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=100)
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n"
-        + "".join(f"FAM{i:03d}\tS2\t1\n" for i in range(60)),
-        encoding="utf-8",
+    _write_ledger(
+        ledger,
+        [(f"FAM{i:03d}", "S2", 1) for i in range(60)],
     )
 
     result = run_p7_evidence_cost_summary(
@@ -156,10 +154,7 @@ def test_p7_evidence_cost_summary_marks_inconclusive_when_nothing_improves(
     _timing(optimized, owner_backfill_elapsed=100.0, owner_extract_xic_count=100)
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=100)
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n",
-        encoding="utf-8",
-    )
+    _write_ledger(ledger, [])
 
     result = run_p7_evidence_cost_summary(
         baseline_timing_json=baseline,
@@ -214,11 +209,7 @@ def test_p7_evidence_cost_summary_cli_returns_zero_for_positive_improvement(
     _timing(optimized, owner_backfill_elapsed=80.0, owner_extract_xic_count=80)
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=80)
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n"
-        "FAM001\tS2\t1\n",
-        encoding="utf-8",
-    )
+    _write_ledger(ledger, [("FAM001", "S2", 1)])
 
     code = p7_evidence_cost_summary.main(
         [
@@ -258,11 +249,7 @@ def test_p7_evidence_cost_summary_cli_returns_nonzero_for_correctness_blocker(
     _timing(optimized, owner_backfill_elapsed=80.0, owner_extract_xic_count=80)
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=80)
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n"
-        "FAM001\tS2\t1\n",
-        encoding="utf-8",
-    )
+    _write_ledger(ledger, [("FAM001", "S2", 1)])
 
     code = p7_evidence_cost_summary.main(
         [
@@ -303,11 +290,7 @@ def test_p7_evidence_cost_summary_combines_correctness_and_operations(
     _timing(optimized, owner_backfill_elapsed=80.0, owner_extract_xic_count=80)
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=80)
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n"
-        "FAM001\tS2\t1\n",
-        encoding="utf-8",
-    )
+    _write_ledger(ledger, [("FAM001", "S2", 1)])
 
     result = run_p7_evidence_cost_summary(
         baseline_timing_json=baseline,
@@ -336,11 +319,7 @@ def test_p7_evidence_cost_summary_correctness_blocker_overrides_ops_pass(
     _timing(optimized, owner_backfill_elapsed=80.0, owner_extract_xic_count=80)
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=80)
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n"
-        "FAM001\tS2\t1\n",
-        encoding="utf-8",
-    )
+    _write_ledger(ledger, [("FAM001", "S2", 1)])
 
     result = run_p7_evidence_cost_summary(
         baseline_timing_json=baseline,
@@ -369,10 +348,7 @@ def test_p7_evidence_cost_summary_keeps_correctness_blocker_on_perf_stall(
     _timing(optimized, owner_backfill_elapsed=100.0, owner_extract_xic_count=100)
     _economics(baseline_economics, request_target_count=100)
     _economics(optimized_economics, request_target_count=100)
-    ledger.write_text(
-        "feature_family_id\tsample_stem\traw_xic_requests_skipped\n",
-        encoding="utf-8",
-    )
+    _write_ledger(ledger, [])
 
     result = run_p7_evidence_cost_summary(
         baseline_timing_json=baseline,
@@ -481,3 +457,34 @@ def _economics(path: Path, *, request_target_count: int) -> None:
         }
     }
     path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _write_ledger(
+    path: Path,
+    rows: list[tuple[str, str, int]],
+) -> None:
+    records = tuple(
+        SkippedEvidenceRecord(
+            feature_family_id=feature_family_id,
+            sample_stem=sample_stem,
+            family_center_mz=200.0 + index,
+            family_center_rt=5.0,
+            rt_window_start=2.0,
+            rt_window_end=8.0,
+            pre_backfill_category="single_detected_no_consolidation_candidate",
+            skipped_stage="owner_backfill",
+            skip_reason="single_detected_no_consolidation_candidate",
+            backfill_scope="production-equivalent",
+            predicate_version=PREDICATE_VERSION,
+            raw_xic_requests_skipped=raw_xic_requests_skipped,
+            would_emit_in_full_audit=True,
+            full_audit_available=True,
+            source_artifact="owner_backfill",
+        )
+        for index, (
+            feature_family_id,
+            sample_stem,
+            raw_xic_requests_skipped,
+        ) in enumerate(rows)
+    )
+    write_skipped_evidence_ledger_tsv(path, records)

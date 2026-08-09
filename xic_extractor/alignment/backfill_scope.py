@@ -7,6 +7,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
+from xic_extractor.alignment.backfill_evidence_contract import (
+    PREDICATE_VERSION,
+    SKIPPED_EVIDENCE_LEDGER_COLUMNS,
+    SkippedEvidenceRecord,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.family_compatibility import (
     family_center_mz,
@@ -22,45 +27,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.tabular_io import write_tsv
 
 BackfillScope = Literal["full-audit", "production-equivalent", "selected-families"]
-PREDICATE_VERSION = "p7-backfill-scope-v1"
 REQUEST_PLAN_VERSION = "p7-owner-backfill-request-plan-v1"
-
-SKIPPED_EVIDENCE_LEDGER_COLUMNS = (
-    "feature_family_id",
-    "sample_stem",
-    "family_center_mz",
-    "family_center_rt",
-    "rt_window_start",
-    "rt_window_end",
-    "pre_backfill_category",
-    "skipped_stage",
-    "skip_reason",
-    "backfill_scope",
-    "predicate_version",
-    "raw_xic_requests_skipped",
-    "would_emit_in_full_audit",
-    "full_audit_available",
-    "source_artifact",
-)
-
-
-@dataclass(frozen=True)
-class SkippedEvidenceRecord:
-    feature_family_id: str
-    sample_stem: str
-    family_center_mz: float
-    family_center_rt: float
-    rt_window_start: float
-    rt_window_end: float
-    pre_backfill_category: str
-    skipped_stage: str
-    skip_reason: str
-    backfill_scope: str
-    predicate_version: str
-    raw_xic_requests_skipped: int
-    would_emit_in_full_audit: bool
-    full_audit_available: bool
-    source_artifact: str
 
 
 @dataclass(frozen=True)

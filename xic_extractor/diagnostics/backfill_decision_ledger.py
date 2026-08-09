@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
+from xic_extractor.alignment.backfill_evidence_contract import (
+    ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+    BackfillEvidenceOwnerBindings,
+)
+from xic_extractor.alignment.backfill_evidence_tsv import iter_backfill_evidence_tsv
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
@@ -19,11 +24,7 @@ from xic_extractor.alignment.provisional_matrix import (
     PROVISIONAL_PROVENANCE_COLUMNS,
     PROVISIONAL_PROVENANCE_SCHEMA_VERSION,
 )
-from xic_extractor.alignment.tsv_writer import (
-    ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
-    ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
-    ALIGNMENT_REVIEW_COLUMNS,
-)
+from xic_extractor.alignment.tsv_writer import ALIGNMENT_REVIEW_COLUMNS
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
@@ -660,41 +661,19 @@ def _read_backfill_evidence(
 ) -> _BackfillCensus:
     row_count = 0
     candidate_groups: dict[tuple[str, str], set[str]] = defaultdict(set)
-    for row_number, row in _iter_delimited_rows(
+    for record in iter_backfill_evidence_tsv(
         path,
-        delimiter="\t",
-        required_columns=_BACKFILL_COLUMNS,
+        owner_bindings=BackfillEvidenceOwnerBindings(
+            known_group_ids=known_group_ids,
+            candidate_samples=candidate_samples,
+            known_sample_stems=known_sample_stems,
+        ),
     ):
         row_count += 1
-        _require_schema_version(
-            path,
-            row_number,
-            row,
-            ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
-        )
-        group_id = _required_text(path, row_number, row, "group_hypothesis_id")
-        if group_id not in known_group_ids:
-            raise ValueError(
-                f"{path}: row {row_number}: unknown group_hypothesis_id {group_id!r}"
-            )
-        sample_stem = _required_text(path, row_number, row, "sample_stem")
-        if sample_stem not in known_sample_stems:
-            raise ValueError(
-                f"{path}: row {row_number}: unknown sample_stem {sample_stem!r}"
-            )
-        candidate_id = row.get("source_candidate_id", "")
+        group_id = record.group_hypothesis_id
+        sample_stem = record.sample_stem
+        candidate_id = record.source_candidate_id
         if candidate_id:
-            candidate_sample = candidate_samples.get(candidate_id)
-            if candidate_sample is None:
-                raise ValueError(
-                    f"{path}: row {row_number}: unknown source_candidate_id "
-                    f"{candidate_id!r}"
-                )
-            if candidate_sample != sample_stem:
-                raise ValueError(
-                    f"{path}: row {row_number}: source_candidate_id {candidate_id!r} "
-                    f"belongs to sample {candidate_sample!r}, not {sample_stem!r}"
-                )
             candidate_groups[(sample_stem, candidate_id)].add(group_id)
     return _BackfillCensus(
         row_count=row_count,

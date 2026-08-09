@@ -5,6 +5,10 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.alignment.backfill_evidence_contract import (
+    ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+    ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_output_contract import (
@@ -147,42 +151,6 @@ ALIGNMENT_CELLS_COLUMNS = (
     "region_baseline_method",
 )
 
-ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION = "alignment_backfill_cell_evidence_v1"
-ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
-    "schema_version",
-    "feature_family_id",
-    "group_hypothesis_id",
-    "public_family_id",
-    "sample_stem",
-    "status",
-    "production_cell_status",
-    "rescue_tier",
-    "write_matrix_value",
-    "include_in_primary_matrix",
-    "identity_decision",
-    "row_flags",
-    "area",
-    "primary_matrix_area",
-    "primary_matrix_area_source",
-    "primary_matrix_area_reason",
-    "apex_rt",
-    "height",
-    "peak_start_rt",
-    "peak_end_rt",
-    "rt_delta_sec",
-    "trace_quality",
-    "scan_support_score",
-    "gap_fill_state",
-    "gap_fill_reason",
-    "backfill_evidence_reason",
-    "source_candidate_id",
-    "source_raw_file",
-    "neutral_loss_tag",
-    "family_center_mz",
-    "family_center_rt",
-    "region_shadow_verdict",
-    "reason",
-)
 BACKFILL_EVIDENCE_ROW_FLAGS = frozenset(
     {
         "backfill_cell_evidence_required",

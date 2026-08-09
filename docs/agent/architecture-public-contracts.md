@@ -95,6 +95,34 @@ Apply these ownership rules:
   unknown/duplicate fields, cross-key substitution, stale owner snapshots,
   reordered members, and partial payloads where applicable.
 
+#### Alignment Backfill evidence records
+
+`xic_extractor.alignment.backfill_evidence_contract` owns the immutable record
+and claim models, while its focused `backfill_evidence_tsv` adapter owns strict
+TSV rehydration for the existing `alignment_backfill_cell_evidence.tsv` and
+`skipped_evidence_ledger.tsv` projections. This contract does not change either
+writer schema, path, output level, or publication default.
+
+- `BackfillEvidenceRecord` preserves the exact 33-field compact row and derives
+  identity as `(feature_family_id, group_hypothesis_id, sample_stem)`. Its row
+  content remains `structure_bound`: the projection omits the complete
+  `AlignedCell` and `ProductionDecisionSet` inputs needed to recompute cell and
+  product decisions. Supplied owner group, sample, and Discovery-candidate keys
+  may be accepted as an `owner_rehydrated` cross-artifact binding, but that does
+  not raise the decision fields or complete cell to owner authority.
+- `SkippedEvidenceRecord` is the complete persisted form of the existing
+  Backfill-scope producer dataclass. Its parser reconstructs typed values and
+  recomputes the scope/disposition, predicate, request-count, window, and source
+  invariants. A supplied family/sample/scope/predicate/source context may close
+  its cross-artifact binding. The persisted `full_audit_available` literal stays
+  `structure_bound`; it is not a runtime execution receipt.
+- Both readers require the exact current header and reject missing, unknown,
+  duplicate, or reordered columns; malformed/non-finite fields; conflicting
+  duplicate composite identities in a bounded lookup; stale predicate/source
+  bindings; and cross-key substitution. Distinct records remain source-order
+  preserving. A zero-row lookup always reports the absence claim as
+  `unavailable`.
+
 ### Closed Writer Transaction Authority
 
 A writer-adjacent finalizer must not reconstruct authority from several loose,

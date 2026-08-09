@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import shutil
 from collections.abc import Mapping, Sequence
@@ -9,13 +8,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.tabular_io import write_tsv
-
-REQUIRED_LEDGER_COLUMNS = (
-    "feature_family_id",
-    "sample_stem",
-    "raw_xic_requests_skipped",
+from xic_extractor.alignment.backfill_evidence_tsv import (
+    iter_skipped_evidence_tsv,
 )
+from xic_extractor.tabular_io import write_tsv
 
 
 @dataclass(frozen=True)
@@ -204,24 +200,15 @@ def _timing_metrics(path: Path) -> dict[str, float | int]:
 
 
 def _ledger_metrics(path: Path) -> dict[str, int]:
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        fieldnames = tuple(reader.fieldnames or ())
-        missing = [
-            column for column in REQUIRED_LEDGER_COLUMNS if column not in fieldnames
-        ]
-        if missing:
-            raise ValueError(
-                f"{path}: missing required columns: {', '.join(missing)}"
-            )
-        rows = tuple(reader)
+    row_count = 0
     skipped_requests = 0
     feature_ids: set[str] = set()
-    for row in rows:
-        skipped_requests += _int(row.get("raw_xic_requests_skipped", 0))
-        feature_ids.add(row.get("feature_family_id", ""))
+    for record in iter_skipped_evidence_tsv(path):
+        row_count += 1
+        skipped_requests += record.raw_xic_requests_skipped
+        feature_ids.add(record.feature_family_id)
     return {
-        "skipped_evidence_row_count": len(rows),
+        "skipped_evidence_row_count": row_count,
         "raw_xic_requests_skipped": skipped_requests,
         "skipped_raw_xic_requests": skipped_requests,
         "skipped_feature_count": len(feature_ids),
