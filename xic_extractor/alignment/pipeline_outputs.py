@@ -331,11 +331,12 @@ def write_outputs_atomic(
                 value=None,
                 scope=_writer_artifact_name(path),
                 unit="seconds",
-                source="alignment.pipeline_outputs",
-                availability="partial",
+                source="alignment.provisional_matrix",
+                availability="unavailable",
                 reason=(
-                    "one shared provisional projection feeds this artifact; "
-                    "per-artifact projection attribution is unavailable"
+                    "shared compact-plan construction is measured once; lazy "
+                    "row projection is interleaved with rendering and cannot be "
+                    "attributed per artifact without changing writer behavior"
                 ),
             )
             recorder.observe(
@@ -343,11 +344,11 @@ def write_outputs_atomic(
                 value=None,
                 scope=_writer_artifact_name(path),
                 unit="bytes",
-                source="alignment.pipeline_outputs",
+                source="alignment.provisional_matrix",
                 availability="unavailable",
                 reason=(
-                    "one shared in-memory projection feeds this artifact; "
-                    "projection bytes cannot be attributed per artifact"
+                    "the compact plan is shared and streamed row objects are "
+                    "ephemeral with no stable byte representation"
                 ),
             )
     else:
