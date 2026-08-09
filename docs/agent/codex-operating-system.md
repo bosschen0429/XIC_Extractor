@@ -205,16 +205,6 @@ decision changed or failure prevented, evidence locator, and observed friction.
 No evidence defaults to `retain / no effect claim`; it neither validates nor
 automatically retires the component, and it does not block unrelated skills.
 
-The first bounded experiment is #224's proposed CodeGraph route inside
-`xic-architecture-preflight`, not the whole skill. For the next three eligible
-owner/helper questions, record CodeGraph state, its source-verified answer, the
-fallback answer, and decision impact. Keep the route if at least one result
-changes the selected owner/helper set or closes an explicit structural unknown;
-retire the route after three eligible opportunities with no decision delta;
-redesign on a false ownership edge; and report `inconclusive` if fewer than
-three eligible opportunities exist. Hooks, contract files, and other skills are
-outside that experiment.
-
 ## Self-Improvement Rule
 
 When an agent correction, repeated failure, or review finding suggests durable
