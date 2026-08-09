@@ -16,7 +16,9 @@ from tests.alignment_pipeline_helpers import (
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment import artifact_write_receipts as receipts_module
 from xic_extractor.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
     AlignmentArtifactFingerprintReceipt,
 )
 from xic_extractor.alignment.pipeline_outputs import alignment_metadata, output_paths
@@ -318,7 +320,7 @@ def test_writer_mints_exact_fingerprint_receipts_without_timing_instrumentation(
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
-    receipts = pipeline_outputs_module.write_outputs_atomic(
+    batch = pipeline_outputs_module.write_outputs_atomic(
         outputs,
         _matrix(("Sample_A", "Sample_B")),
         metadata={},
@@ -327,6 +329,8 @@ def test_writer_mints_exact_fingerprint_receipts_without_timing_instrumentation(
         capture_artifact_fingerprints=True,
     )
 
+    assert isinstance(batch, AlignmentArtifactFingerprintBatch)
+    receipts = batch.receipts
     output_files = {
         path.resolve() for path in outputs.__dict__.values() if isinstance(path, Path)
     }
@@ -338,7 +342,58 @@ def test_writer_mints_exact_fingerprint_receipts_without_timing_instrumentation(
     )
 
 
-def test_writer_receipt_sink_reuses_instrumented_hashes_without_output_changes(
+def test_writer_fingerprint_batch_rejects_missing_duplicate_or_foreign_receipts(
+    tmp_path: Path,
+) -> None:
+    first_outputs = output_paths(
+        tmp_path / "first",
+        output_level="validation-minimal",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+    second_outputs = output_paths(
+        tmp_path / "second",
+        output_level="validation-minimal",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+    writer_kwargs = {
+        "metadata": {},
+        "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
+        "alignment_config": AlignmentConfig(),
+        "capture_artifact_fingerprints": True,
+    }
+    first_batch = pipeline_outputs_module.write_outputs_atomic(
+        first_outputs,
+        _matrix(("Sample_A", "Sample_B")),
+        **writer_kwargs,
+    )
+    second_batch = pipeline_outputs_module.write_outputs_atomic(
+        second_outputs,
+        _matrix(("Sample_A", "Sample_B")),
+        **writer_kwargs,
+    )
+    assert isinstance(first_batch, AlignmentArtifactFingerprintBatch)
+    assert isinstance(second_batch, AlignmentArtifactFingerprintBatch)
+
+    with pytest.raises(ValueError, match="exactly cover"):
+        receipts_module._mint_alignment_artifact_fingerprint_batch(
+            artifact_paths=first_batch.artifact_paths,
+            receipts=first_batch.receipts[:-1],
+        )
+    with pytest.raises(ValueError, match="receipt artifact paths must be unique"):
+        receipts_module._mint_alignment_artifact_fingerprint_batch(
+            artifact_paths=first_batch.artifact_paths,
+            receipts=(first_batch.receipts[0],) * len(first_batch.receipts),
+        )
+    with pytest.raises(ValueError, match="exactly cover"):
+        receipts_module._mint_alignment_artifact_fingerprint_batch(
+            artifact_paths=first_batch.artifact_paths,
+            receipts=(*first_batch.receipts[:-1], second_batch.receipts[-1]),
+        )
+
+
+def test_writer_receipt_capture_reuses_instrumented_hashes_without_output_changes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -379,7 +434,7 @@ def test_writer_receipt_sink_reuses_instrumented_hashes_without_output_changes(
         "fingerprint_file_content",
         counted_fingerprint,
     )
-    receipts = pipeline_outputs_module.write_outputs_atomic(
+    batch = pipeline_outputs_module.write_outputs_atomic(
         candidate_outputs,
         *writer_args,
         **writer_kwargs,
@@ -387,6 +442,8 @@ def test_writer_receipt_sink_reuses_instrumented_hashes_without_output_changes(
         capture_artifact_fingerprints=True,
     )
 
+    assert isinstance(batch, AlignmentArtifactFingerprintBatch)
+    receipts = batch.receipts
     baseline_files = {
         path.name: path
         for path in baseline_outputs.__dict__.values()
@@ -474,6 +531,8 @@ def test_alignment_artifact_fingerprint_receipt_cannot_be_caller_minted(
             fingerprint=fingerprint,
             _mint_token=object(),
         )
+    with pytest.raises(TypeError, match="_mint_token"):
+        AlignmentArtifactFingerprintBatch(artifact_paths=(), receipts=())
 
 
 class _Timer:

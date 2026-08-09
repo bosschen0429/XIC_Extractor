@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.alignment.artifact_write_receipts import (
-    AlignmentArtifactFingerprintReceipt,
+    AlignmentArtifactFingerprintBatch,
 )
 from xic_extractor.alignment.backfill_scope import (
     PREDICATE_VERSION,
@@ -674,7 +674,7 @@ def run_alignment(
                     }
                 )
         with recorder.stage("alignment.write_outputs"):
-            artifact_fingerprint_receipts = _write_outputs_atomic(
+            artifact_fingerprint_batch = _write_outputs_atomic(
                 outputs,
                 matrix,
                 metadata=_metadata(
@@ -734,16 +734,16 @@ def run_alignment(
                 capture_artifact_fingerprints=capture_artifact_fingerprints,
             )
         if capture_artifact_fingerprints:
-            if not isinstance(artifact_fingerprint_receipts, tuple) or any(
-                not isinstance(receipt, AlignmentArtifactFingerprintReceipt)
-                for receipt in artifact_fingerprint_receipts
+            if not isinstance(
+                artifact_fingerprint_batch,
+                AlignmentArtifactFingerprintBatch,
             ):
                 raise TypeError(
-                    "Alignment writer must return a complete fingerprint receipt tuple"
+                    "Alignment writer must return an owner-minted fingerprint batch"
                 )
             outputs = replace(
                 outputs,
-                artifact_fingerprint_receipts=artifact_fingerprint_receipts,
+                artifact_fingerprint_batch=artifact_fingerprint_batch,
             )
         return outputs
 

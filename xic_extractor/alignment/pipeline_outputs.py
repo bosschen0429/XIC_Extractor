@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
     AlignmentArtifactFingerprintReceipt,
+    _mint_alignment_artifact_fingerprint_batch,
     _mint_alignment_artifact_fingerprint_receipt,
 )
 from xic_extractor.alignment.backfill_scope import (
@@ -87,9 +89,7 @@ class AlignmentRunOutputs:
     provisional_cell_provenance_tsv: Path | None = None
     provisional_summary_json: Path | None = None
     early_loser_shadow_json: Path | None = None
-    artifact_fingerprint_receipts: tuple[
-        AlignmentArtifactFingerprintReceipt, ...
-    ] = ()
+    artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
 
 
 def output_paths(
@@ -303,7 +303,7 @@ def write_outputs_atomic(
     timing_recorder: TimingRecorder | None = None,
     early_loser_shadow: EarlyLoserShadowReport | None = None,
     capture_artifact_fingerprints: bool = False,
-) -> tuple[AlignmentArtifactFingerprintReceipt, ...]:
+) -> AlignmentArtifactFingerprintBatch | None:
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
     provisional_projection = None
     provisional_output_paths = (
@@ -691,10 +691,20 @@ def write_outputs_atomic(
                             fingerprint=fingerprint,
                         )
                     )
+        fingerprint_batch = (
+            _mint_alignment_artifact_fingerprint_batch(
+                artifact_paths=tuple(
+                    final_path for final_path, _writer in output_paths_and_writers
+                ),
+                receipts=fingerprint_receipts,
+            )
+            if capture_artifact_fingerprints
+            else None
+        )
         for _final_path, backup_path in backups:
             with suppress(OSError):
                 backup_path.unlink(missing_ok=True)
-        return tuple(fingerprint_receipts)
+        return fingerprint_batch
     except Exception:
         for final_path in replaced_paths:
             final_path.unlink(missing_ok=True)
