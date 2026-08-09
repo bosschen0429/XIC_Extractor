@@ -605,6 +605,60 @@ def test_alignment_matrix_identity_schema_dispatch_is_explicit() -> None:
             )
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "identity_overflow",
+        "identity_missing_key",
+        "identity_truncated",
+        "matrix_overflow",
+        "matrix_missing_key",
+        "matrix_truncated",
+    ),
+)
+def test_alignment_matrix_identity_rejects_malformed_serialized_row_shapes(
+    mutation: str,
+) -> None:
+    from tests.matrix_identity_fixtures import legacy_matrix_identity_row
+    from xic_extractor.alignment.matrix_output_contract import (
+        LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        validate_matrix_identity_rows,
+    )
+
+    matrix_header = ("Mz", "RT", "sample-a")
+    matrix_row: dict[object, object] = {
+        "Mz": "500.123",
+        "RT": "8.49",
+        "sample-a": "100",
+    }
+    identity_row: dict[object, object] = legacy_matrix_identity_row(
+        index=1,
+        mz="500.123",
+        rt="8.49",
+        peak_hypothesis_id="ALN000001",
+    )
+    if mutation == "identity_overflow":
+        identity_row[None] = ["overflow"]
+    elif mutation == "identity_missing_key":
+        identity_row.pop("child_peak_hypothesis_ids")
+    elif mutation == "identity_truncated":
+        identity_row["child_peak_hypothesis_ids"] = None
+    elif mutation == "matrix_overflow":
+        matrix_row[None] = ["overflow"]
+    elif mutation == "matrix_missing_key":
+        matrix_row.pop("sample-a")
+    else:
+        matrix_row["sample-a"] = None
+
+    with pytest.raises(ValueError, match="row fields|missing cells"):
+        validate_matrix_identity_rows(
+            matrix_header=matrix_header,
+            matrix_rows=(matrix_row,),
+            identity_columns=LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+            identity_rows=(identity_row,),
+        )
+
+
 def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
     tmp_path: Path,
 ) -> None:

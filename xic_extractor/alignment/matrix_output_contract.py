@@ -248,6 +248,16 @@ def validate_matrix_identity_row(
         identity_columns,
         allow_legacy=True,
     )
+    _validate_serialized_row_shape(
+        matrix_row,
+        matrix_header,
+        label="Matrix",
+    )
+    _validate_serialized_row_shape(
+        identity_row,
+        identity_columns,
+        label="identity",
+    )
     schema = _declared_identity_schema(identity_row)
     if schema != header_schema:
         raise ValueError("alignment matrix identity schema does not match its columns")
@@ -275,6 +285,17 @@ def matrix_row_binding_sha256(
 ) -> str:
     """Hash one complete public row together with its complete identity row."""
 
+    _validate_binding_headers(matrix_header, identity_columns)
+    _validate_serialized_row_shape(
+        matrix_row,
+        matrix_header,
+        label="Matrix",
+    )
+    _validate_serialized_row_shape(
+        identity_row,
+        identity_columns,
+        label="identity",
+    )
     identity_binding_columns = tuple(
         column for column in identity_columns if column != MATRIX_ROW_BINDING_COLUMN
     )
@@ -331,6 +352,20 @@ def _validate_binding_headers(
         "alignment matrix identity columns do not match v1 or v2 schema: "
         + "; ".join(details)
     )
+
+
+def _validate_serialized_row_shape(
+    row: Mapping[str, object],
+    columns: Sequence[str],
+    *,
+    label: str,
+) -> None:
+    if set(row) != set(columns):
+        raise ValueError(
+            f"alignment matrix {label} row fields must exactly match declared columns"
+        )
+    if any(row[column] is None for column in columns):
+        raise ValueError(f"alignment matrix {label} row contains missing cells")
 
 
 def _validate_matrix_identity_row(
