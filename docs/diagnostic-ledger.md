@@ -795,44 +795,50 @@ projection or to combine W5a with manifest ownership is `REDESIGN`.
 
 Issue #213 closes W5b inside the existing provisional-run manifest owner. The
 runner now submits one complete attempt directory to
-`publish_provisional_run_bundle_atomic`; that owner mints a private immutable
-fingerprint for each of the two manifest inputs and four provisional artifacts,
-validates the unchanged manifest against those exact typed facts, binds the
-actual owner-written `run_manifest.json` bytes into the same private transaction,
-rechecks every owner-held file identity/size/time witness before every
-directory-replace attempt, and makes the whole directory visible with one atomic
-rename. A missing pre- or post-read stat witness retains a full byte rehash.
-Foreign transactions, duplicate or missing roles, path/schema substitution,
-post-fingerprint artifact mutation, and retry-time manifest mutation fail before
-the final directory exists. The public
+`publish_provisional_run_bundle_atomic`. Its upstream Alignment writer supplies
+one complete owner-minted fingerprint batch for the four provisional artifacts,
+and the publication owner mints a path/root-bound receipt while verifying the
+retained sample-metadata copy. The manifest owner reuses those five facts, hashes
+the Discovery batch index once while building the manifest, and validates the
+exact owner serialization against a private six-role transaction. Before every
+directory-replace attempt it fully rehashes all six bound files, compares the
+owner-written `run_manifest.json` to the exact in-memory bytes, and makes the
+whole directory visible with one atomic rename. No filesystem timestamp is used
+as a byte-identity oracle. Foreign receipts or transactions, duplicate or
+missing roles, path/schema substitution, valid manifest substitution, same-size
+artifact mutation with restored mtime, and retry-time artifact or manifest
+mutation fail before the final directory exists. The public
 `validate_provisional_run_manifest` path is unchanged and still reads and hashes
 the visible bytes independently.
 
 Manifest schema, claim levels, relative paths, artifact SHA/size rows, and exact
 manifest plus bound-artifact bytes are hard-zero against the legacy write path.
-The private transaction identity and stat witness are deliberately not persisted;
-the manifest remains byte-bound only and gains no authenticity, semantic replay,
-scientific, Matrix, writer, or activation authority. PR #209 remains shadow-only,
-PR #211 exact request identity remains typed upstream input, W5a remains the
-merged projection prerequisite, and PR F recovery/checkpoint work is excluded.
+The private transaction identity, writer batch, and metadata receipt are not
+persisted; the manifest remains byte-bound only and gains no authenticity,
+semantic replay, scientific, Matrix, writer, or activation authority. PR #209
+remains shadow-only, PR #211 exact request identity remains typed upstream input,
+W5a remains the merged projection prerequisite, PR #216 is the sequential E2a
+writer-receipt prerequisite, and PR F recovery/checkpoint work is excluded.
 
 A 9-pair, order-interleaved, no-RAW probe used one 8 MiB synthetic provisional
 matrix plus the five smaller bound files. The legacy manifest write/immediate-
-validation path observed 12 fingerprint calls and 16,779,390 bytes per run;
-median summed fingerprint time was 0.034796 s (range 0.031480-0.043620 s). The
-closed atomic-bundle path observed 6 calls and 8,389,695 bytes per run; median
-summed fingerprint time was 0.024486 s (range 0.020998-0.029606 s). The bounded
-median removed fingerprint time was 0.010310 s. This is synthetic owner-call,
+validation path observed 12 fingerprint calls and 16,779,410 bytes per run;
+median summed fingerprint time was 0.022091 s (range 0.020313-0.024616 s). The
+closed atomic-bundle path observed 7 calls and 8,390,689 bytes per run: one
+Discovery-index hash while building, followed by one full six-file confirmation
+before publication. Median summed fingerprint time was 0.011333 s (range
+0.010254-0.013194 s); the paired median removed fingerprint time was 0.010464 s.
+All nine pairs preserved exact file bytes. This is synthetic owner-call,
 byte, and function-time evidence only; it is not physical disk I/O, end-to-end
 elapsed, RAW-call, chromatogram-call, point-count, monetary, or real-population
 savings evidence.
 
-Focused no-RAW manifest/runner/projection/atomic regressions passed 78 tests.
+Focused no-RAW manifest/runner/projection/atomic regressions passed 86 tests.
 The principal census/parity oracle is
 `tests/test_alignment_provisional_run_manifest.py::test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff`;
-the stat-witness fallback, retry-time manifest mutation, and publication-failure
-tests in the same file prove no partial final directory. Validation status
-remains `diagnostic_only`.
+the exact-manifest substitution, same-size restored-mtime mutation, retry-time
+artifact/manifest mutation, and publication-failure tests in the same file prove
+no partial final directory. Validation status remains `diagnostic_only`.
 
 Decision: `GO` for the exact-safe W5b mechanism when all remaining static,
 architecture, whole-PR review, and independent QA gates pass. Any manifest or

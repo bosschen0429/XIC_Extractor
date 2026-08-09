@@ -5,14 +5,18 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import secrets
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import InitVar, asdict, dataclass, field, fields
 from pathlib import Path
-from typing import cast
+from typing import cast, final
 
+from xic_extractor.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
@@ -90,16 +94,10 @@ _MANIFEST_BINDING_ROLES = frozenset(
         ),
     }
 )
-_PUBLICATION_FILE_ROLES = _MANIFEST_BINDING_ROLES | {"run_manifest"}
+_PUBLICATION_FILE_ROLES = _MANIFEST_BINDING_ROLES
 _TRANSACTION_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 _FINGERPRINT_MINT_CAPABILITY = object()
-_STAT_WITNESS_FIELDS = (
-    "st_dev",
-    "st_ino",
-    "st_size",
-    "st_mtime_ns",
-    "st_ctime_ns",
-)
+_RETAINED_METADATA_FINGERPRINT_MINT_CAPABILITY = object()
 
 _OWNER_BUILD_BACKENDS = frozenset({"raw", "raw_superwindow", "ms1_index"})
 _OWNER_BACKFILL_BACKENDS = frozenset(
@@ -119,7 +117,6 @@ class _ImmutableManifestFingerprint:
     relative_path: str
     schema_version: str
     fingerprint: FileContentFingerprint
-    stat_witness: tuple[int, int, int, int, int] | None
     _mint_capability: InitVar[object]
 
     def __post_init__(self, _mint_capability: object) -> None:
@@ -142,6 +139,43 @@ class _ImmutableManifestFingerprint:
             raise ValueError("manifest fingerprint schema is invalid")
         if not isinstance(self.fingerprint, FileContentFingerprint):
             raise TypeError("manifest fingerprint content facts are invalid")
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class RetainedSampleMetadataFingerprintReceipt:
+    """Owner-minted bytes for one retained publication metadata copy."""
+
+    root: Path
+    resolved_path: Path
+    relative_path: str
+    fingerprint: FileContentFingerprint
+    _mint_capability: InitVar[object]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("RetainedSampleMetadataFingerprintReceipt is final")
+
+    def __post_init__(self, _mint_capability: object) -> None:
+        if _mint_capability is not _RETAINED_METADATA_FINGERPRINT_MINT_CAPABILITY:
+            raise TypeError(
+                "retained sample metadata fingerprints must be minted by "
+                "their owner"
+            )
+        if not self.root.is_absolute() or not self.resolved_path.is_absolute():
+            raise ValueError("retained sample metadata paths must be canonical")
+        relative_path = Path(self.relative_path)
+        if (
+            not self.relative_path
+            or relative_path.is_absolute()
+            or ".." in relative_path.parts
+        ):
+            raise ValueError(
+                "retained sample metadata relative path is invalid"
+            )
+        if not isinstance(self.fingerprint, FileContentFingerprint):
+            raise TypeError(
+                "retained sample metadata fingerprint content facts are invalid"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,6 +233,34 @@ class ProvisionalRunRuntimeConfiguration:
             raise ValueError("owner_backfill_window_strategy is unsupported")
 
 
+def mint_retained_sample_metadata_fingerprint_receipt(
+    path: Path,
+    *,
+    root: Path,
+    observation: Callable[[Mapping[str, object]], None] | None = None,
+) -> RetainedSampleMetadataFingerprintReceipt:
+    """Fingerprint one retained metadata copy through its publication owner."""
+
+    resolved_root = root.resolve(strict=True)
+    resolved_path = path.resolve(strict=True)
+    try:
+        relative_path = resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError(
+            "retained sample metadata must stay under the publication root"
+        ) from exc
+    return RetainedSampleMetadataFingerprintReceipt(
+        root=resolved_root,
+        resolved_path=resolved_path,
+        relative_path=relative_path.as_posix(),
+        fingerprint=fingerprint_file_content(
+            resolved_path,
+            observation=observation,
+        ),
+        _mint_capability=_RETAINED_METADATA_FINGERPRINT_MINT_CAPABILITY,
+    )
+
+
 def write_provisional_run_manifest(
     path: Path,
     *,
@@ -225,6 +287,8 @@ def write_provisional_run_manifest(
         discovery_batch_index=discovery_batch_index,
         artifacts=artifacts,
         transaction_id=None,
+        retained_sample_metadata_fingerprint=None,
+        alignment_artifact_fingerprints=None,
     )
     _write_json_atomic(path, build.payload)
     validate_provisional_run_manifest(path, root=root)
@@ -243,6 +307,10 @@ def publish_provisional_run_bundle_atomic(
     retained_sample_metadata: Path,
     discovery_batch_index: Path,
     artifacts: Mapping[str, Path],
+    retained_sample_metadata_fingerprint: (
+        RetainedSampleMetadataFingerprintReceipt
+    ),
+    alignment_artifact_fingerprints: AlignmentArtifactFingerprintBatch,
 ) -> Path:
     """Bind one immutable manifest and atomically publish its whole directory."""
 
@@ -269,12 +337,16 @@ def publish_provisional_run_bundle_atomic(
         discovery_batch_index=discovery_batch_index,
         artifacts=artifacts,
         transaction_id=transaction_id,
+        retained_sample_metadata_fingerprint=(
+            retained_sample_metadata_fingerprint
+        ),
+        alignment_artifact_fingerprints=alignment_artifact_fingerprints,
     )
+    expected_manifest_bytes = _manifest_json_bytes(build.payload)
     _write_json_atomic(manifest_path, build.payload)
-    payload, manifest_fingerprint = _read_owner_manifest_for_publication(
+    payload = _read_owner_manifest_for_publication(
         manifest_path,
-        root=resolved_staging,
-        transaction_id=transaction_id,
+        expected_bytes=expected_manifest_bytes,
     )
     registry = _OwnerFingerprintRegistry(
         build.fingerprints,
@@ -287,8 +359,10 @@ def publish_provisional_run_bundle_atomic(
     )
 
     def confirm_immutable_bundle() -> None:
-        _confirm_owner_fingerprints(
-            (*build.fingerprints, manifest_fingerprint)
+        _confirm_owner_fingerprints(build.fingerprints)
+        _confirm_owner_manifest_bytes(
+            manifest_path,
+            expected_bytes=expected_manifest_bytes,
         )
 
     _publish_directory_atomic(
@@ -311,6 +385,10 @@ def _build_manifest(
     discovery_batch_index: Path,
     artifacts: Mapping[str, Path],
     transaction_id: str | None,
+    retained_sample_metadata_fingerprint: (
+        RetainedSampleMetadataFingerprintReceipt | None
+    ),
+    alignment_artifact_fingerprints: AlignmentArtifactFingerprintBatch | None,
 ) -> _ManifestBuild:
     code_revision = _validated_revision(code_revision)
     if not isinstance(runtime, ProvisionalRunRuntimeConfiguration):
@@ -322,6 +400,16 @@ def _build_manifest(
         raise ValueError("provisional run manifest requires preset_name")
     if set(artifacts) != set(_ARTIFACT_SCHEMAS):
         raise ValueError("provisional run manifest artifact set is incomplete")
+    reused_fingerprints = _publication_fingerprint_reuse(
+        root=root,
+        retained_sample_metadata=retained_sample_metadata,
+        artifacts=artifacts,
+        retained_sample_metadata_fingerprint=(
+            retained_sample_metadata_fingerprint
+        ),
+        alignment_artifact_fingerprints=alignment_artifact_fingerprints,
+        required=transaction_id is not None,
+    )
 
     batch = read_discovery_batch_index(
         discovery_batch_index,
@@ -355,6 +443,9 @@ def _build_manifest(
                 binding_role="input:sample_metadata",
                 transaction_id=transaction_id,
                 fingerprint_sink=fingerprints,
+                reused_fingerprint=reused_fingerprints.get(
+                    "input:sample_metadata"
+                ),
             ),
             "discovery_batch_index": {
                 **_artifact_binding(
@@ -364,6 +455,7 @@ def _build_manifest(
                     binding_role="input:discovery_batch_index",
                     transaction_id=transaction_id,
                     fingerprint_sink=fingerprints,
+                    reused_fingerprint=None,
                 ),
                 "sample_count": len(batch.sample_order),
                 "receipt_count": len(receipt_census),
@@ -379,6 +471,9 @@ def _build_manifest(
                 binding_role=f"artifact:{name}",
                 transaction_id=transaction_id,
                 fingerprint_sink=fingerprints,
+                reused_fingerprint=reused_fingerprints.get(
+                    f"artifact:{name}"
+                ),
             )
             for name, schema_version in _ARTIFACT_SCHEMAS.items()
         },
@@ -414,53 +509,23 @@ def _read_manifest_payload(path: Path) -> dict[str, object]:
 def _read_owner_manifest_for_publication(
     path: Path,
     *,
-    root: Path,
-    transaction_id: str,
-) -> tuple[dict[str, object], _ImmutableManifestFingerprint]:
-    resolved_root = root.resolve(strict=True)
-    resolved_path = path.resolve(strict=True)
+    expected_bytes: bytes,
+) -> dict[str, object]:
     try:
-        relative_path = resolved_path.relative_to(resolved_root)
-    except ValueError as exc:
-        raise ValueError("run manifest must stay under the publication root") from exc
-    stat_before = _file_stat_witness(resolved_path)
-    try:
-        encoded = resolved_path.read_bytes()
+        encoded = path.read_bytes()
+        if encoded != expected_bytes:
+            raise ValueError(
+                "run manifest bytes do not match owner serialization"
+            )
         payload = json.loads(
             encoded,
             object_pairs_hook=_mapping_without_duplicate_keys,
         )
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("provisional run manifest is unreadable") from exc
-    stat_after = _file_stat_witness(resolved_path)
-    if (
-        stat_before is not None
-        and stat_after is not None
-        and stat_after != stat_before
-    ):
-        raise ValueError("run manifest changed while binding publication")
     if not isinstance(payload, dict):
         raise ValueError("provisional run manifest must be an object")
-    stable_stat_witness = (
-        stat_after
-        if stat_before is not None and stat_after == stat_before
-        else None
-    )
-    fingerprint = _ImmutableManifestFingerprint(
-        transaction_id=transaction_id,
-        binding_role="run_manifest",
-        root=resolved_root,
-        resolved_path=resolved_path,
-        relative_path=relative_path.as_posix(),
-        schema_version=PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
-        fingerprint=FileContentFingerprint(
-            content_sha256=hashlib.sha256(encoded).hexdigest(),
-            byte_size=len(encoded),
-        ),
-        stat_witness=stable_stat_witness,
-        _mint_capability=_FINGERPRINT_MINT_CAPABILITY,
-    )
-    return payload, fingerprint
+    return payload
 
 
 def _validate_manifest_payload(
@@ -620,6 +685,77 @@ def _validate_runtime_configuration(
         raise ValueError("provisional run runtime is not owner-normalized")
 
 
+def _publication_fingerprint_reuse(
+    *,
+    root: Path,
+    retained_sample_metadata: Path,
+    artifacts: Mapping[str, Path],
+    retained_sample_metadata_fingerprint: (
+        RetainedSampleMetadataFingerprintReceipt | None
+    ),
+    alignment_artifact_fingerprints: AlignmentArtifactFingerprintBatch | None,
+    required: bool,
+) -> dict[str, FileContentFingerprint]:
+    if not required:
+        if (
+            retained_sample_metadata_fingerprint is not None
+            or alignment_artifact_fingerprints is not None
+        ):
+            raise ValueError(
+                "publication fingerprint reuse requires a publication transaction"
+            )
+        return {}
+    if not isinstance(
+        retained_sample_metadata_fingerprint,
+        RetainedSampleMetadataFingerprintReceipt,
+    ):
+        raise TypeError(
+            "publication requires an owner-minted retained metadata fingerprint"
+        )
+    if not isinstance(
+        alignment_artifact_fingerprints,
+        AlignmentArtifactFingerprintBatch,
+    ):
+        raise TypeError(
+            "publication requires an owner-minted Alignment fingerprint batch"
+        )
+
+    resolved_root = root.resolve(strict=True)
+    resolved_metadata = retained_sample_metadata.resolve(strict=True)
+    try:
+        metadata_relative_path = resolved_metadata.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError(
+            "retained sample metadata must stay under the publication root"
+        ) from exc
+    if (
+        retained_sample_metadata_fingerprint.root != resolved_root
+        or retained_sample_metadata_fingerprint.resolved_path != resolved_metadata
+        or retained_sample_metadata_fingerprint.relative_path
+        != metadata_relative_path.as_posix()
+    ):
+        raise ValueError("retained sample metadata fingerprint was substituted")
+
+    receipts_by_path = {
+        receipt.artifact_path: receipt.fingerprint
+        for receipt in alignment_artifact_fingerprints.receipts
+    }
+    reused = {
+        "input:sample_metadata": (
+            retained_sample_metadata_fingerprint.fingerprint
+        )
+    }
+    for artifact_name, artifact_path in artifacts.items():
+        resolved_path = artifact_path.resolve(strict=True)
+        fingerprint = receipts_by_path.get(resolved_path)
+        if fingerprint is None:
+            raise ValueError(
+                f"Alignment fingerprint batch is missing {artifact_name}"
+            )
+        reused[f"artifact:{artifact_name}"] = fingerprint
+    return reused
+
+
 def _artifact_binding(
     path: Path,
     *,
@@ -628,6 +764,7 @@ def _artifact_binding(
     binding_role: str,
     transaction_id: str | None,
     fingerprint_sink: list[_ImmutableManifestFingerprint],
+    reused_fingerprint: FileContentFingerprint | None,
 ) -> dict[str, object]:
     resolved_root = root.resolve(strict=True)
     resolved_path = path.resolve(strict=True)
@@ -635,23 +772,12 @@ def _artifact_binding(
         relative_path = resolved_path.relative_to(resolved_root)
     except ValueError as exc:
         raise ValueError("manifest artifact must stay under the run root") from exc
-    stat_before = (
-        _file_stat_witness(resolved_path) if transaction_id is not None else None
+    fingerprint = (
+        reused_fingerprint
+        if reused_fingerprint is not None
+        else fingerprint_file_content(resolved_path)
     )
-    fingerprint = fingerprint_file_content(resolved_path)
     if transaction_id is not None:
-        stat_after = _file_stat_witness(resolved_path)
-        if (
-            stat_before is not None
-            and stat_after is not None
-            and stat_after != stat_before
-        ):
-            raise ValueError("manifest artifact changed during fingerprint minting")
-        stable_stat_witness = (
-            stat_after
-            if stat_before is not None and stat_after == stat_before
-            else None
-        )
         fingerprint_sink.append(
             _ImmutableManifestFingerprint(
                 transaction_id=transaction_id,
@@ -661,7 +787,6 @@ def _artifact_binding(
                 relative_path=relative_path.as_posix(),
                 schema_version=schema_version,
                 fingerprint=fingerprint,
-                stat_witness=stable_stat_witness,
                 _mint_capability=_FINGERPRINT_MINT_CAPABILITY,
             )
         )
@@ -786,27 +911,18 @@ def _confirm_owner_fingerprints(
             raise ValueError(
                 "manifest artifact path changed after fingerprint minting"
             )
-        current_witness = _file_stat_witness(current_path)
-        if fingerprint.stat_witness is not None and current_witness is not None:
-            if current_witness != fingerprint.stat_witness:
-                raise ValueError(
-                    "manifest artifact changed after fingerprint minting"
-                )
-            continue
         actual = fingerprint_file_content(current_path)
         if actual != fingerprint.fingerprint:
             raise ValueError("manifest artifact bytes changed before publication")
 
 
-def _file_stat_witness(path: Path) -> tuple[int, int, int, int, int] | None:
+def _confirm_owner_manifest_bytes(path: Path, *, expected_bytes: bytes) -> None:
     try:
-        stat_result = path.stat()
-        values = tuple(getattr(stat_result, field) for field in _STAT_WITNESS_FIELDS)
-    except (AttributeError, OSError):
-        return None
-    if any(isinstance(value, bool) or not isinstance(value, int) for value in values):
-        return None
-    return cast(tuple[int, int, int, int, int], values)
+        actual_bytes = path.read_bytes()
+    except OSError as exc:
+        raise ValueError("run manifest is unreadable before publication") from exc
+    if actual_bytes != expected_bytes:
+        raise ValueError("run manifest bytes changed before publication")
 
 
 def _publish_directory_atomic(
@@ -935,16 +1051,20 @@ def _json_value(value: object) -> object:
 def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.tmp")
-    temporary.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    temporary.write_bytes(_manifest_json_bytes(payload))
     temporary.replace(path)
+
+
+def _manifest_json_bytes(payload: Mapping[str, object]) -> bytes:
+    text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    return text.replace("\n", os.linesep).encode("utf-8")
 
 
 __all__ = (
     "PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION",
     "ProvisionalRunRuntimeConfiguration",
+    "RetainedSampleMetadataFingerprintReceipt",
+    "mint_retained_sample_metadata_fingerprint_receipt",
     "publish_provisional_run_bundle_atomic",
     "validate_provisional_run_manifest",
     "write_provisional_run_manifest",

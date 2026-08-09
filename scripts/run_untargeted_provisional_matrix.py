@@ -12,6 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from xic_extractor.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import (
     OwnerBackfillXicBackend,
@@ -24,6 +27,7 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.extraction.provisional_run_manifest import (
     ProvisionalRunRuntimeConfiguration,
+    mint_retained_sample_metadata_fingerprint_receipt,
     publish_provisional_run_bundle_atomic,
 )
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
@@ -167,16 +171,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
         )
         shutil.copyfile(inputs.sample_metadata_path, retained_sample_metadata)
-        if fingerprint_file_content(
+        source_metadata_fingerprint = fingerprint_file_content(
             inputs.sample_metadata_path,
             observation=lambda event: _record_fingerprint_observation(
                 timing_recorder, event
             ),
-        ) != fingerprint_file_content(
-            retained_sample_metadata,
-            observation=lambda event: _record_fingerprint_observation(
-                timing_recorder, event
-            ),
+        )
+        retained_metadata_fingerprint = (
+            mint_retained_sample_metadata_fingerprint_receipt(
+                retained_sample_metadata,
+                root=attempt_dir,
+                observation=lambda event: _record_fingerprint_observation(
+                    timing_recorder, event
+                ),
+            )
+        )
+        if (
+            source_metadata_fingerprint
+            != retained_metadata_fingerprint.fingerprint
         ):
             raise ValueError("retained sample metadata does not match its source")
         heartbeat = _Heartbeat(attempt_dir / "heartbeat.json", started=started)
@@ -211,6 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             sample_column_injection_order=retained_sample_metadata,
             timing_recorder=timing_recorder,
             progress_callback=progress,
+            capture_alignment_artifact_fingerprints=True,
         )
         timing_recorder.write_json(attempt_dir / "timing.json")
         matrix_path = run.alignment_outputs.provisional_matrix_tsv
@@ -224,6 +237,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             or summary_path is None
         ):
             raise RuntimeError("provisional output bundle is incomplete")
+        alignment_fingerprint_batch = (
+            run.alignment_outputs.artifact_fingerprint_batch
+        )
+        if not isinstance(
+            alignment_fingerprint_batch,
+            AlignmentArtifactFingerprintBatch,
+        ):
+            raise RuntimeError(
+                "provisional output bundle omitted Alignment fingerprints"
+            )
         matrix_relative = matrix_path.relative_to(attempt_dir)
         identity_relative = identity_path.relative_to(attempt_dir)
         provenance_relative = provenance_path.relative_to(attempt_dir)
@@ -247,6 +270,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "provisional_cell_provenance": provenance_path,
                 "provisional_summary": summary_path,
             },
+            retained_sample_metadata_fingerprint=retained_metadata_fingerprint,
+            alignment_artifact_fingerprints=alignment_fingerprint_batch,
         )
     except Exception as exc:
         if heartbeat is not None:

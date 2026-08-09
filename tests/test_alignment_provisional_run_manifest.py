@@ -4,11 +4,13 @@ import copy
 import csv
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
 import pytest
 
+import xic_extractor.alignment.artifact_write_receipts as alignment_receipt_owner
 import xic_extractor.extraction.provisional_run_manifest as manifest_owner
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.batch_contract import (
@@ -26,7 +28,10 @@ from xic_extractor.extraction.provisional_run_manifest import (
     validate_provisional_run_manifest,
     write_provisional_run_manifest,
 )
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import (
+    build_acquisition_source_identity,
+    fingerprint_file_content,
+)
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -292,17 +297,26 @@ def test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff(
     assert len(baseline_calls) == 12
 
     staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    publication_arguments = _publication_arguments(staging)
     calls.clear()
     published_manifest = publish_provisional_run_bundle_atomic(
         staging,
         tmp_path / "candidate",
-        **_publication_arguments(staging),
+        **publication_arguments,
     )
     candidate_calls = tuple(calls)
 
-    assert len(candidate_calls) == 6
-    assert sum(size for _name, size in baseline_calls) == 2 * sum(
-        size for _name, size in candidate_calls
+    assert len(candidate_calls) == 7
+    assert [name for name, _size in candidate_calls].count(
+        "discovery_batch_index.csv"
+    ) == 2
+    discovery_size = next(
+        size
+        for name, size in candidate_calls
+        if name == "discovery_batch_index.csv"
+    )
+    assert sum(size for _name, size in baseline_calls) == 2 * (
+        sum(size for _name, size in candidate_calls) - discovery_size
     )
     assert not staging.exists()
     assert published_manifest == tmp_path / "candidate" / "run_manifest.json"
@@ -342,7 +356,7 @@ def test_manifest_bound_atomic_publish_rejects_post_fingerprint_mutation(
         mutate_after_manifest_write,
     )
 
-    with pytest.raises(ValueError, match="changed after fingerprint minting"):
+    with pytest.raises(ValueError, match="bytes changed before publication"):
         publish_provisional_run_bundle_atomic(
             staging,
             output_dir,
@@ -353,7 +367,38 @@ def test_manifest_bound_atomic_publish_rejects_post_fingerprint_mutation(
     assert not output_dir.exists()
 
 
-def test_manifest_bound_atomic_publish_rehashes_when_pre_stat_is_unavailable(
+def test_manifest_bound_atomic_publish_rejects_valid_manifest_substitution(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    output_dir = tmp_path / "candidate"
+    original_write = manifest_owner._write_json_atomic
+
+    def substitute_valid_manifest(path, payload):
+        substituted = dict(payload)
+        substituted["code_revision"] = "f" * 40
+        original_write(path, substituted)
+
+    monkeypatch.setattr(
+        manifest_owner,
+        "_write_json_atomic",
+        substitute_valid_manifest,
+    )
+
+    with pytest.raises(ValueError, match="owner serialization"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **_publication_arguments(staging),
+        )
+
+    assert staging.is_dir()
+    assert not output_dir.exists()
+
+
+def test_manifest_bound_atomic_publish_rejects_same_size_restored_mtime_mutation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -361,35 +406,26 @@ def test_manifest_bound_atomic_publish_rehashes_when_pre_stat_is_unavailable(
     staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
     output_dir = tmp_path / "candidate"
     target = staging / _publication_relative_paths()[0]
-    original_stat_witness = manifest_owner._file_stat_witness
-    original_fingerprint = manifest_owner.fingerprint_file_content
-    pre_stat_dropped = False
-    target_fingerprinted = False
+    original_stat = target.stat()
+    original_write = manifest_owner._write_json_atomic
+    mutation_applied = False
 
-    def intermittently_missing_stat_witness(path: Path):
-        nonlocal pre_stat_dropped
-        if Path(path) == target and not pre_stat_dropped:
-            pre_stat_dropped = True
-            return None
-        return original_stat_witness(path)
-
-    def mutate_after_first_target_fingerprint(path, **kwargs):
-        nonlocal target_fingerprinted
-        fingerprint = original_fingerprint(path, **kwargs)
-        if Path(path) == target and not target_fingerprinted:
-            target_fingerprinted = True
-            target.write_text("mutated-during-fingerprint\n", encoding="utf-8")
-        return fingerprint
+    def mutate_with_restored_mtime(path, payload):
+        nonlocal mutation_applied
+        original_write(path, payload)
+        original_bytes = target.read_bytes()
+        replacement = bytes([original_bytes[0] ^ 1]) + original_bytes[1:]
+        target.write_bytes(replacement)
+        os.utime(
+            target,
+            ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+        )
+        mutation_applied = True
 
     monkeypatch.setattr(
         manifest_owner,
-        "_file_stat_witness",
-        intermittently_missing_stat_witness,
-    )
-    monkeypatch.setattr(
-        manifest_owner,
-        "fingerprint_file_content",
-        mutate_after_first_target_fingerprint,
+        "_write_json_atomic",
+        mutate_with_restored_mtime,
     )
 
     with pytest.raises(ValueError, match="bytes changed before publication"):
@@ -399,8 +435,9 @@ def test_manifest_bound_atomic_publish_rehashes_when_pre_stat_is_unavailable(
             **_publication_arguments(staging),
         )
 
-    assert pre_stat_dropped
-    assert target_fingerprinted
+    assert mutation_applied
+    assert target.stat().st_size == original_stat.st_size
+    assert target.stat().st_mtime_ns == original_stat.st_mtime_ns
     assert staging.is_dir()
     assert not output_dir.exists()
 
@@ -474,7 +511,7 @@ def test_manifest_bound_atomic_publish_rejects_manifest_mutation_between_retries
     monkeypatch.setattr(Path, "replace", mutate_manifest_then_block)
     monkeypatch.setattr(manifest_owner.time, "sleep", lambda _seconds: None)
 
-    with pytest.raises(ValueError, match="changed after fingerprint minting"):
+    with pytest.raises(ValueError, match="run manifest bytes changed"):
         publish_provisional_run_bundle_atomic(
             staging,
             output_dir,
@@ -482,6 +519,50 @@ def test_manifest_bound_atomic_publish_rejects_manifest_mutation_between_retries
         )
 
     assert publication_attempts == 1
+    assert staging.is_dir()
+    assert not output_dir.exists()
+
+
+def test_manifest_bound_atomic_publish_rehashes_artifacts_between_retries(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    output_dir = tmp_path / "candidate"
+    target = staging / _publication_relative_paths()[0]
+    target_stat = target.stat()
+    original_replace = Path.replace
+    publication_attempts = 0
+
+    def mutate_artifact_then_block(path: Path, target_path: Path) -> Path:
+        nonlocal publication_attempts
+        if path == staging:
+            publication_attempts += 1
+            if publication_attempts == 1:
+                original_bytes = target.read_bytes()
+                replacement = bytes([original_bytes[0] ^ 1]) + original_bytes[1:]
+                target.write_bytes(replacement)
+                os.utime(
+                    target,
+                    ns=(target_stat.st_atime_ns, target_stat.st_mtime_ns),
+                )
+                raise PermissionError("injected transient directory lock")
+        return original_replace(path, target_path)
+
+    monkeypatch.setattr(Path, "replace", mutate_artifact_then_block)
+    monkeypatch.setattr(manifest_owner.time, "sleep", lambda _seconds: None)
+
+    with pytest.raises(ValueError, match="bytes changed before publication"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **_publication_arguments(staging),
+        )
+
+    assert publication_attempts == 1
+    assert target.stat().st_size == target_stat.st_size
+    assert target.stat().st_mtime_ns == target_stat.st_mtime_ns
     assert staging.is_dir()
     assert not output_dir.exists()
 
@@ -520,6 +601,40 @@ def test_manifest_fingerprint_registry_rejects_foreign_duplicate_and_missing(
             build.fingerprints[:-1],
             transaction_id=transaction_id,
         )
+
+
+def test_publication_rejects_foreign_owner_fingerprint_reuse(
+    tmp_path: Path,
+) -> None:
+    baseline = _packet(tmp_path / "baseline", matrix_bytes="matrix-a\n")
+    staging = _copy_packet_for_publication(baseline, tmp_path / "candidate.attempt")
+    output_dir = tmp_path / "candidate"
+    candidate_arguments = _publication_arguments(staging)
+    baseline_arguments = _publication_arguments(baseline["root"])
+
+    candidate_arguments["retained_sample_metadata_fingerprint"] = (
+        baseline_arguments["retained_sample_metadata_fingerprint"]
+    )
+    with pytest.raises(ValueError, match="metadata fingerprint was substituted"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **candidate_arguments,
+        )
+
+    candidate_arguments = _publication_arguments(staging)
+    candidate_arguments["alignment_artifact_fingerprints"] = (
+        baseline_arguments["alignment_artifact_fingerprints"]
+    )
+    with pytest.raises(ValueError, match="Alignment fingerprint batch is missing"):
+        publish_provisional_run_bundle_atomic(
+            staging,
+            output_dir,
+            **candidate_arguments,
+        )
+
+    assert staging.is_dir()
+    assert not output_dir.exists()
 
 
 @pytest.mark.parametrize(
@@ -576,7 +691,14 @@ def test_manifest_fingerprint_cannot_be_caller_minted(tmp_path: Path) -> None:
             relative_path=path.name,
             schema_version="schema_v1",
             fingerprint=fingerprint,
-            stat_witness=None,
+            _mint_capability=object(),
+        )
+    with pytest.raises(TypeError, match="must be minted by their owner"):
+        manifest_owner.RetainedSampleMetadataFingerprintReceipt(
+            root=tmp_path.resolve(),
+            resolved_path=path.resolve(),
+            relative_path=path.name,
+            fingerprint=fingerprint,
             _mint_capability=object(),
         )
 
@@ -648,6 +770,27 @@ def _copy_packet_for_publication(packet: dict[str, object], staging: Path) -> Pa
 
 
 def _publication_arguments(root: Path) -> dict[str, object]:
+    retained_sample_metadata = root / "inputs" / "sample_metadata.tsv"
+    artifacts = {
+        "provisional_matrix": root / _publication_relative_paths()[0],
+        "provisional_identity": root / _publication_relative_paths()[1],
+        "provisional_cell_provenance": root / _publication_relative_paths()[2],
+        "provisional_summary": root / _publication_relative_paths()[3],
+    }
+    artifact_paths = tuple(artifacts.values())
+    artifact_receipts = tuple(
+        alignment_receipt_owner._mint_alignment_artifact_fingerprint_receipt(
+            artifact_path=path,
+            fingerprint=fingerprint_file_content(path),
+        )
+        for path in artifact_paths
+    )
+    alignment_fingerprints = (
+        alignment_receipt_owner._mint_alignment_artifact_fingerprint_batch(
+            artifact_paths=artifact_paths,
+            receipts=artifact_receipts,
+        )
+    )
     return {
         "code_revision": "a" * 40,
         "preset_name": "dna_dr",
@@ -666,16 +809,18 @@ def _publication_arguments(root: Path) -> dict[str, object]:
             owner_backfill_window_strategy="super-window",
             owner_backfill_superwindow_span_factor=2,
         ),
-        "retained_sample_metadata": root / "inputs" / "sample_metadata.tsv",
+        "retained_sample_metadata": retained_sample_metadata,
         "discovery_batch_index": (
             root / "workflow" / "discovery" / "discovery_batch_index.csv"
         ),
-        "artifacts": {
-            "provisional_matrix": root / _publication_relative_paths()[0],
-            "provisional_identity": root / _publication_relative_paths()[1],
-            "provisional_cell_provenance": root / _publication_relative_paths()[2],
-            "provisional_summary": root / _publication_relative_paths()[3],
-        },
+        "artifacts": artifacts,
+        "retained_sample_metadata_fingerprint": (
+            manifest_owner.mint_retained_sample_metadata_fingerprint_receipt(
+                retained_sample_metadata,
+                root=root,
+            )
+        ),
+        "alignment_artifact_fingerprints": alignment_fingerprints,
     }
 
 
@@ -703,7 +848,6 @@ def _remint_fingerprint(
         "relative_path": fingerprint.relative_path,
         "schema_version": fingerprint.schema_version,
         "fingerprint": fingerprint.fingerprint,
-        "stat_witness": fingerprint.stat_witness,
         **changes,
     }
     return manifest_owner._ImmutableManifestFingerprint(

@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import scripts.run_untargeted_provisional_matrix as runner
+import xic_extractor.alignment.artifact_write_receipts as alignment_receipt_owner
 import xic_extractor.extraction.provisional_run_manifest as manifest_owner
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
@@ -14,6 +15,7 @@ from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     UntargetedProvisionalMatrixRun,
 )
+from xic_extractor.processing_identity import fingerprint_file_content
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
 from xic_extractor.tabular_io import render_delimited_rows
 
@@ -75,12 +77,18 @@ def test_runner_publishes_full_universe_outputs_atomically(
         }
         for path in paths.values():
             path.write_text("ok\n", encoding="utf-8")
+        fingerprint_batch = _alignment_fingerprint_batch(
+            tuple(paths.values())
+        )
         discovery_index = workflow_dir / "discovery" / "discovery_batch_index.csv"
         discovery_index.parent.mkdir()
         discovery_index.write_text("ok\n", encoding="utf-8")
         return UntargetedProvisionalMatrixRun(
             discovery_index=discovery_index,
-            alignment_outputs=AlignmentRunOutputs(**paths),
+            alignment_outputs=AlignmentRunOutputs(
+                **paths,
+                artifact_fingerprint_batch=fingerprint_batch,
+            ),
         )
 
     monkeypatch.setattr(
@@ -127,6 +135,7 @@ def test_runner_publishes_full_universe_outputs_atomically(
     assert captured["raw_files"] == inputs.raw_files
     assert captured["raw_workers"] == 3
     assert captured["raw_xic_batch_size"] == 16
+    assert captured["capture_alignment_artifact_fingerprints"] is True
     assert captured["sample_column_injection_order"] == (
         output_dir.with_name("final.attempt")
         / "inputs"
@@ -137,6 +146,14 @@ def test_runner_publishes_full_universe_outputs_atomically(
     assert manifest["code_revision"] == "a" * 40
     assert manifest["runtime"].raw_workers == 3
     assert manifest["runtime"].raw_xic_batch_size == 16
+    assert isinstance(
+        manifest["retained_sample_metadata_fingerprint"],
+        manifest_owner.RetainedSampleMetadataFingerprintReceipt,
+    )
+    assert isinstance(
+        manifest["alignment_artifact_fingerprints"],
+        alignment_receipt_owner.AlignmentArtifactFingerprintBatch,
+    )
     timing = json.loads((output_dir / "timing.json").read_text(encoding="utf-8"))
     assert timing["measurement_contract"]["cache_state"] == (
         "uncontrolled_os_cache_no_eviction"
@@ -379,6 +396,22 @@ def test_runner_rejects_dirty_or_mismatched_executing_checkout(monkeypatch) -> N
 def test_runner_rejects_unsupported_sample_metadata_suffix() -> None:
     with pytest.raises(ValueError, match="must use .csv, .tsv, or .txt"):
         runner._retained_sample_metadata_suffix(Path("samples.data"))
+
+
+def _alignment_fingerprint_batch(
+    paths: tuple[Path, ...],
+) -> alignment_receipt_owner.AlignmentArtifactFingerprintBatch:
+    receipts = tuple(
+        alignment_receipt_owner._mint_alignment_artifact_fingerprint_receipt(
+            artifact_path=path,
+            fingerprint=fingerprint_file_content(path),
+        )
+        for path in paths
+    )
+    return alignment_receipt_owner._mint_alignment_artifact_fingerprint_batch(
+        artifact_paths=paths,
+        receipts=receipts,
+    )
 
 
 def _inputs(
