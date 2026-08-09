@@ -8,9 +8,10 @@ router and does not own installation or lifecycle policy for external tools.
 
 Stable runners, RAW paths, validation tiers, and command shapes live in
 `docs/agent/parameter-settings.md`. Architecture and public-output boundaries
-live in `docs/agent/architecture-public-contracts.md`. When a global route is
-unavailable, use the host's normal fallback and retain the XIC constraints
-below; do not recreate the global workflow in this repo.
+live in `docs/agent/architecture-public-contracts.md`. An unavailable global
+review route may be replaced only by a host-provided read-only reviewer.
+Otherwise report the unavailable route and do not claim an independent review;
+this repo does not define a generic-agent fallback.
 
 ## Active Review Lenses
 
