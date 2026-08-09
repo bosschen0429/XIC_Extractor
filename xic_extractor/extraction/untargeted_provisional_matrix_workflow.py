@@ -43,6 +43,7 @@ def run_untargeted_provisional_matrix_workflow(
     sample_column_injection_order: Path | None = None,
     timing_recorder: TimingRecorder | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    capture_alignment_artifact_fingerprints: bool = False,
 ) -> UntargetedProvisionalMatrixRun:
     """Run every fresh Discovery candidate through existing full Alignment."""
 
@@ -104,6 +105,7 @@ def run_untargeted_provisional_matrix_workflow(
         ),
         sample_column_injection_order=sample_column_injection_order,
         timing_recorder=timing_recorder,
+        capture_artifact_fingerprints=capture_alignment_artifact_fingerprints,
         backfill_scope="full-audit",
         audit_evidence_mode="none",
         selected_family_ids=frozenset(),

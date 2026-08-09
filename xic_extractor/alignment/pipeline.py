@@ -6,6 +6,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
+)
 from xic_extractor.alignment.backfill_scope import (
     PREDICATE_VERSION,
     REQUEST_PLAN_VERSION,
@@ -137,6 +140,7 @@ def run_alignment(
     drift_lookup: DriftLookupProtocol | None = None,
     sample_column_injection_order: Path | None = None,
     timing_recorder: TimingRecorder | None = None,
+    capture_artifact_fingerprints: bool = False,
     backfill_scope: BackfillScope = "full-audit",
     audit_evidence_mode: str = "auto",
     selected_family_ids: frozenset[str] = frozenset(),
@@ -670,7 +674,7 @@ def run_alignment(
                     }
                 )
         with recorder.stage("alignment.write_outputs"):
-            _write_outputs_atomic(
+            artifact_fingerprint_batch = _write_outputs_atomic(
                 outputs,
                 matrix,
                 metadata=_metadata(
@@ -727,6 +731,19 @@ def run_alignment(
                 baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
                 timing_recorder=recorder,
                 early_loser_shadow=early_loser_shadow_report,
+                capture_artifact_fingerprints=capture_artifact_fingerprints,
+            )
+        if capture_artifact_fingerprints:
+            if not isinstance(
+                artifact_fingerprint_batch,
+                AlignmentArtifactFingerprintBatch,
+            ):
+                raise TypeError(
+                    "Alignment writer must return an owner-minted fingerprint batch"
+                )
+            outputs = replace(
+                outputs,
+                artifact_fingerprint_batch=artifact_fingerprint_batch,
             )
         return outputs
 

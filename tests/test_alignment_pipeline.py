@@ -354,21 +354,25 @@ def test_pipeline_builds_owner_features_before_owner_matrix(
         "build_owner_alignment_matrix",
         fake_owner_matrix,
     )
-    monkeypatch.setattr(
-        pipeline_module,
-        "_write_outputs_atomic",
-        lambda outputs, matrix, **kwargs: calls.setdefault("written_matrix", matrix),
-    )
 
-    pipeline_module.run_alignment(
-        discovery_batch_index=batch_index,
-        raw_dir=raw_dir,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        alignment_config=AlignmentConfig(),
-        peak_config=_peak_config(),
-        raw_opener=FakeRawOpener(),
-    )
+    def fake_write_outputs(outputs, matrix, **kwargs):
+        calls["written_matrix"] = matrix
+        calls["write_kwargs"] = kwargs
+        return ()
+
+    monkeypatch.setattr(pipeline_module, "_write_outputs_atomic", fake_write_outputs)
+
+    with pytest.raises(TypeError, match="owner-minted fingerprint batch"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            raw_opener=FakeRawOpener(),
+            capture_artifact_fingerprints=True,
+        )
 
     assert calls["owners"] == (owner,)
     assert calls["backfill_features"] == (feature, "ambiguous-feature")
@@ -376,6 +380,9 @@ def test_pipeline_builds_owner_features_before_owner_matrix(
     assert calls["ambiguous_by_sample"] == {}
     assert calls["rescued_cells"] == ("rescued",)
     assert calls["written_matrix"] is owner_matrix
+    write_kwargs = calls["write_kwargs"]
+    assert isinstance(write_kwargs, dict)
+    assert write_kwargs["capture_artifact_fingerprints"] is True
 
 
 def test_pipeline_production_equivalent_scope_skips_safe_backfill_only(

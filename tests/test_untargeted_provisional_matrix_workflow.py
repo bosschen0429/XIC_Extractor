@@ -48,6 +48,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     monkeypatch.setattr(workflow, "run_alignment", fake_alignment)
 
     timing_recorder = TimingRecorder.disabled("test")
+
     result = workflow.run_untargeted_provisional_matrix_workflow(
         raw_files=raw_files,
         dll_dir=dll_dir,
@@ -61,6 +62,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         raw_workers=3,
         raw_xic_batch_size=16,
         timing_recorder=timing_recorder,
+        capture_alignment_artifact_fingerprints=True,
     )
 
     assert captured["discovery_raw_files"] == raw_files
@@ -77,6 +79,7 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert alignment["require_discovery_owner_closure"] is True
     assert alignment["raw_workers"] == 3
     assert alignment["raw_xic_batch_size"] == 16
+    assert alignment["capture_artifact_fingerprints"] is True
     assert "precursor_mz" not in alignment
     assert result.discovery_index == discovery_index
     assert result.alignment_outputs.provisional_matrix_tsv == provisional_matrix

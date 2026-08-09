@@ -6,6 +6,12 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintBatch,
+    AlignmentArtifactFingerprintReceipt,
+    _mint_alignment_artifact_fingerprint_batch,
+    _mint_alignment_artifact_fingerprint_receipt,
+)
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
     SkippedEvidenceRecord,
@@ -83,6 +89,7 @@ class AlignmentRunOutputs:
     provisional_cell_provenance_tsv: Path | None = None
     provisional_summary_json: Path | None = None
     early_loser_shadow_json: Path | None = None
+    artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
 
 
 def output_paths(
@@ -295,7 +302,8 @@ def write_outputs_atomic(
     baseline_audit_method: str = "",
     timing_recorder: TimingRecorder | None = None,
     early_loser_shadow: EarlyLoserShadowReport | None = None,
-) -> None:
+    capture_artifact_fingerprints: bool = False,
+) -> AlignmentArtifactFingerprintBatch | None:
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
     provisional_projection = None
     provisional_output_paths = (
@@ -664,7 +672,8 @@ def write_outputs_atomic(
                 source="alignment.pipeline_outputs",
             )
             replaced_paths.append(final_path)
-        if recorder.instrument_writers:
+        fingerprint_receipts: list[AlignmentArtifactFingerprintReceipt] = []
+        if recorder.instrument_writers or capture_artifact_fingerprints:
             for final_path, _writer in output_paths_and_writers:
                 artifact = _writer_artifact_name(final_path)
                 with recorder.stage(f"writer.{artifact}.hash") as stage:
@@ -675,9 +684,27 @@ def write_outputs_atomic(
                         ),
                     )
                     stage.metrics["bytes"] = fingerprint.byte_size
+                if capture_artifact_fingerprints:
+                    fingerprint_receipts.append(
+                        _mint_alignment_artifact_fingerprint_receipt(
+                            artifact_path=final_path,
+                            fingerprint=fingerprint,
+                        )
+                    )
+        fingerprint_batch = (
+            _mint_alignment_artifact_fingerprint_batch(
+                artifact_paths=tuple(
+                    final_path for final_path, _writer in output_paths_and_writers
+                ),
+                receipts=fingerprint_receipts,
+            )
+            if capture_artifact_fingerprints
+            else None
+        )
         for _final_path, backup_path in backups:
             with suppress(OSError):
                 backup_path.unlink(missing_ok=True)
+        return fingerprint_batch
     except Exception:
         for final_path in replaced_paths:
             final_path.unlink(missing_ok=True)
