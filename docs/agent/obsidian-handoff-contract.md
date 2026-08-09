@@ -413,7 +413,8 @@ Required fields:
 
 - `Branch:`
 - `Status:`
-- `Validation status:`
+- `Validation evidence status:` using an Evidence label from
+  `docs/product/README.md`;
 - current objective;
 - public/sanitized current state;
 - active decisions and constraints;

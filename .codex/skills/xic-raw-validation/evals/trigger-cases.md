@@ -13,12 +13,14 @@ or narrow the skill trigger.
   rerunning RAW." The hook fixture exercises this prompt, and the skill
   description plus Branch B require the same gate when deciding whether
   existing RAW artifacts can satisfy acceptance.
-- "Launch this production-equivalent validation; it will likely take more than
-  30 minutes." `docs/agent/subagent-routing.md#hard-triggers` explicitly
-  requires the skill for production-equivalent or likely long RAW runs.
-- "Rerun the lane's 8RAW fixture because the current artifact packet lacks the
-  required science oracle." The skill description covers RAW reruns; Branch A
-  must prove why existing evidence cannot answer the bound question first.
+- "Run the approved current-master 85RAW production-equivalent Alignment and
+  Backfill comparison." This is the completed Issue #195 evidence step.
+  `docs/agent/subagent-routing.md#hard-triggers` explicitly requires the skill
+  for a RAW-backed production-equivalent 85RAW run.
+- "Run current-master 8RAW before deciding whether the 85RAW comparison is
+  necessary." This is the lower-cost precondition recorded on Issue #195. The
+  skill description covers RAW launches; Branch A must bind the decision and
+  prove why existing evidence cannot answer it first.
 
 ## Should Not Trigger
 

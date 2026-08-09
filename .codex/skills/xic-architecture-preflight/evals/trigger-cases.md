@@ -5,21 +5,20 @@ not widen or narrow the skill trigger.
 
 ## Should Trigger
 
-- "Change Matrix extraction behavior and the selected area written for each
-  row." The root `AGENTS.md` Workflow Routing rule requires this skill for
-  matrix and evidence-provider work; the skill must bind owner, value delta,
-  public contract, and acceptance before edits.
-- "After the timing diagnosis, implement a new owner-level cache for the
-  Backfill preset." `docs/agent/planning-workflows.md#skills-and-subagents`
-  requires the skill for preset-performance changes, and root `AGENTS.md`
-  requires it after `xic-performance-diagnosis` and before code edits.
-- "Add a non-trivial diagnostic that projects PeakHypothesis evidence into a
-  persisted review artifact." Root `AGENTS.md` requires the skill for
-  non-trivial diagnostics and RAW-backed evidence; the skill's boundary map
-  must bind the evidence owner and persisted projection.
-- "Add a new HCD-PI evidence provider to model selection." The trigger list in
-  `docs/agent/planning-workflows.md#skills-and-subagents` explicitly includes
-  HCD-PI and other evidence-provider additions.
+- "Change matrix extraction behavior, then run 85RAW validation." This exact
+  prompt is exercised by `.codex/hooks/fixtures/assert_hook_outputs.py`; root
+  `AGENTS.md` requires the architecture preflight for the Matrix behavior edit
+  before the separate RAW gate.
+- "Optimize matrix extraction performance, then run 85RAW validation." This
+  exact prompt is exercised by `.codex/hooks/fixtures/assert_hook_outputs.py`.
+  `docs/agent/planning-workflows.md#skills-and-subagents` requires the skill for
+  preset-performance changes, and root `AGENTS.md` requires it after
+  `xic-performance-diagnosis` and before code edits.
+- "Implement immutable manifest fingerprint reuse and a manifest-bound atomic
+  publish bundle." This is the delivered Issue #213 / PR #215 boundary task.
+  Root `AGENTS.md` requires the skill for non-trivial diagnostics and persisted
+  publication boundaries; the skill must bind the manifest owner, call-cost,
+  public contract, and failure oracle before edits.
 
 ## Should Not Trigger
 
