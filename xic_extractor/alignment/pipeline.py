@@ -6,6 +6,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintSink,
+)
 from xic_extractor.alignment.backfill_scope import (
     PREDICATE_VERSION,
     REQUEST_PLAN_VERSION,
@@ -137,6 +140,7 @@ def run_alignment(
     drift_lookup: DriftLookupProtocol | None = None,
     sample_column_injection_order: Path | None = None,
     timing_recorder: TimingRecorder | None = None,
+    artifact_fingerprint_sink: AlignmentArtifactFingerprintSink | None = None,
     backfill_scope: BackfillScope = "full-audit",
     audit_evidence_mode: str = "auto",
     selected_family_ids: frozenset[str] = frozenset(),
@@ -727,6 +731,7 @@ def run_alignment(
                 baseline_audit_method=getattr(peak_config, "baseline_audit_method", ""),
                 timing_recorder=recorder,
                 early_loser_shadow=early_loser_shadow_report,
+                artifact_fingerprint_sink=artifact_fingerprint_sink,
             )
         return outputs
 

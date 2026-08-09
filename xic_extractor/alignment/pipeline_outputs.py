@@ -6,6 +6,11 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.alignment.artifact_write_receipts import (
+    AlignmentArtifactFingerprintReceipt,
+    AlignmentArtifactFingerprintSink,
+    _mint_alignment_artifact_fingerprint_receipt,
+)
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
     SkippedEvidenceRecord,
@@ -295,6 +300,7 @@ def write_outputs_atomic(
     baseline_audit_method: str = "",
     timing_recorder: TimingRecorder | None = None,
     early_loser_shadow: EarlyLoserShadowReport | None = None,
+    artifact_fingerprint_sink: AlignmentArtifactFingerprintSink | None = None,
 ) -> None:
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
     provisional_projection = None
@@ -664,7 +670,8 @@ def write_outputs_atomic(
                 source="alignment.pipeline_outputs",
             )
             replaced_paths.append(final_path)
-        if recorder.instrument_writers:
+        fingerprint_receipts: list[AlignmentArtifactFingerprintReceipt] = []
+        if recorder.instrument_writers or artifact_fingerprint_sink is not None:
             for final_path, _writer in output_paths_and_writers:
                 artifact = _writer_artifact_name(final_path)
                 with recorder.stage(f"writer.{artifact}.hash") as stage:
@@ -675,6 +682,16 @@ def write_outputs_atomic(
                         ),
                     )
                     stage.metrics["bytes"] = fingerprint.byte_size
+                if artifact_fingerprint_sink is not None:
+                    fingerprint_receipts.append(
+                        _mint_alignment_artifact_fingerprint_receipt(
+                            artifact_path=final_path,
+                            fingerprint=fingerprint,
+                        )
+                    )
+        if artifact_fingerprint_sink is not None:
+            for receipt in fingerprint_receipts:
+                artifact_fingerprint_sink(receipt)
         for _final_path, backup_path in backups:
             with suppress(OSError):
                 backup_path.unlink(missing_ok=True)
