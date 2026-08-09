@@ -418,6 +418,15 @@ authenticity, semantic replay, or product authority after caller re-sealing. A
 copied bundle can support byte/structure comparison only; a stronger claim
 requires a separately activated owner consumer.
 
+For this runner, atomic publication is a **closed single-writer visibility
+contract**. The publication owner and its in-process collaborators stop writing
+the attempt directory before manifest binding; the final directory then appears
+with one rename. This is not an OS-level seal against another same-permission
+process changing staging during the last validation-to-rename interval. Such a
+threat model requires a separate storage/lifecycle design. Visible bundles remain
+untrusted projections, and every consumer that claims byte binding must run the
+independent manifest validator against the bytes it opens.
+
 `--raw-workers` is one shared machine budget for process-parallel Discovery and
 the existing Alignment process stages. Discovery workers receive only pickleable
 paths/settings/identity values, open and dispose one RAW handle inside the spawned
