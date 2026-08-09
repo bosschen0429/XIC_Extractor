@@ -354,6 +354,99 @@ def test_write_alignment_matrix_tsv_uses_stable_numeric_text_without_value_drift
     assert float(row["large"]) == float(f"{123456789.0:.6g}")
 
 
+def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.shared_peak_identity_explanation import (
+        product_activation,
+    )
+    from xic_extractor.alignment.tsv_writer import (
+        write_alignment_matrix_identity_tsv,
+        write_alignment_matrix_tsv,
+    )
+
+    matrix = AlignmentMatrix(
+        clusters=(
+            _cluster(
+                center_mz=500.123456,
+                fold_evidence="owner_complete_link;owner_count=2",
+            ),
+        ),
+        cells=(
+            _cell("sample-a", "detected", area=100.0),
+            _cell("sample-b", "detected", area=110.0),
+        ),
+        sample_order=("sample-a", "sample-b"),
+    )
+
+    matrix_row = _read_tsv(
+        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+    )[0]
+    identity_row = _read_tsv(
+        write_alignment_matrix_identity_tsv(
+            tmp_path / "alignment_matrix_identity.tsv",
+            matrix,
+        )
+    )[0]
+
+    assert matrix_row["Mz"] == "500.1230"
+    assert identity_row["Mz"] == "500.123"
+    assert float(matrix_row["Mz"]) == float(identity_row["Mz"])
+    product_activation._validate_identity_coordinate(1, matrix_row, identity_row)
+
+
+def test_alignment_matrix_mz_format_rejects_canonical_value_drift(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+    matrix = AlignmentMatrix(
+        clusters=(
+            _cluster(
+                center_mz=5.123456,
+                fold_evidence="owner_complete_link;owner_count=2",
+            ),
+        ),
+        cells=(
+            _cell("sample-a", "detected", area=100.0),
+            _cell("sample-b", "detected", area=110.0),
+        ),
+        sample_order=("sample-a", "sample-b"),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="without changing its canonical public value",
+    ):
+        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+
+
+@pytest.mark.parametrize("center_mz", [math.nan, math.inf, -math.inf])
+def test_alignment_matrix_mz_format_preserves_nonfinite_blank_semantics(
+    tmp_path: Path,
+    center_mz: float,
+) -> None:
+    from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
+
+    matrix = AlignmentMatrix(
+        clusters=(
+            _cluster(
+                center_mz=center_mz,
+                fold_evidence="owner_complete_link;owner_count=2",
+            ),
+        ),
+        cells=(
+            _cell("sample-a", "detected", area=100.0),
+            _cell("sample-b", "detected", area=110.0),
+        ),
+        sample_order=("sample-a", "sample-b"),
+    )
+
+    row = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))[0]
+
+    assert row["Mz"] == ""
+
+
 def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
     tmp_path: Path,
 ):
@@ -1502,6 +1595,7 @@ def _read_tsv(path: Path) -> list[dict[str, str]]:
 def _cluster(
     *,
     cluster_id: str = "ALN000001",
+    center_mz: float = 500.123,
     neutral_loss_tag: str = "DNA_dR",
     has_anchor: bool = True,
     member_count: int = 0,
@@ -1513,7 +1607,7 @@ def _cluster(
     return AlignmentCluster(
         cluster_id=cluster_id,
         neutral_loss_tag=neutral_loss_tag,
-        cluster_center_mz=500.123,
+        cluster_center_mz=center_mz,
         cluster_center_rt=8.49,
         cluster_product_mz=384.076,
         cluster_observed_neutral_loss_da=116.047,

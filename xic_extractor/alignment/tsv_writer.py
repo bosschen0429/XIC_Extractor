@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -311,13 +312,29 @@ def _format_alignment_matrix_rows(
 ) -> Iterable[Mapping[str, object]]:
     for row in rows:
         yield {
-            "Mz": f"{float(str(row['Mz'])):.4f}",
+            "Mz": _format_alignment_matrix_mz(row["Mz"]),
             "RT": row["RT"],
             **{
                 sample_id: _format_alignment_matrix_area(row.get(sample_id, ""))
                 for sample_id in sample_order
             },
         }
+
+
+def _format_alignment_matrix_mz(value: object) -> str:
+    canonical_text = format_value(value)
+    if canonical_text == "":
+        return ""
+    canonical_value = float(canonical_text)
+    if not math.isfinite(canonical_value):
+        return ""
+    formatted_value = f"{canonical_value:.4f}"
+    if float(formatted_value) != canonical_value:
+        raise ValueError(
+            "Mz cannot be rendered with four decimal places without changing "
+            "its canonical public value"
+        )
+    return formatted_value
 
 
 def _format_alignment_matrix_area(value: object) -> str:
