@@ -272,6 +272,11 @@ class OwnerBackfillRequestPlan:
             raise ValueError("equivalence partition must cover every request sample")
         for sample_stem, requests in self.requests_by_sample.items():
             classes = self.equivalence_classes_by_sample[sample_stem]
+            first_indices = tuple(item.members[0].logical_index for item in classes)
+            if first_indices != tuple(sorted(first_indices)):
+                raise ValueError(
+                    "equivalence classes must follow first logical occurrence"
+                )
             members = tuple(member for item in classes for member in item.members)
             indices = tuple(member.logical_index for member in members)
             if tuple(sorted(indices)) != tuple(range(len(requests))):

@@ -7,7 +7,11 @@ from tests.test_alignment_owner_backfill import _feature, _peak_config
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
-from xic_extractor.alignment.owner_backfill import build_owner_backfill_result
+from xic_extractor.alignment.owner_backfill import (
+    OwnerBackfillLogicalExtractionResult,
+    _iter_extracted_request_traces,
+    build_owner_backfill_result,
+)
 from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_TRACE_RESULT_SEMANTICS,
     OwnerBackfillRequestEquivalenceContext,
@@ -85,7 +89,11 @@ class _FailingOwnerBoundWindowSource(_OwnerBoundWindowSource):
     ) -> tuple[XICTrace, ...]:
         requests = tuple(requests)
         self.batch_sizes.append(len(requests))
-        raise OSError("super-window unavailable")
+        if any(request.rt_max - request.rt_min > 2.0 for request in requests):
+            raise OSError("super-window unavailable")
+        return tuple(
+            _trace_for_request(request, height=self.height) for request in requests
+        )
 
 
 def test_request_plan_mints_complete_partition_in_first_logical_order(
@@ -132,6 +140,14 @@ def test_request_plan_mints_complete_partition_in_first_logical_order(
         classes[0].identity.result_semantics
         == OWNER_BACKFILL_TRACE_RESULT_SEMANTICS
     )
+    with pytest.raises(
+        ValueError,
+        match="equivalence classes must follow first logical occurrence",
+    ):
+        replace(
+            plan,
+            equivalence_classes_by_sample={"sample-b": tuple(reversed(classes))},
+        )
 
 
 def test_request_identity_rejects_resealed_semantic_mutation(tmp_path: Path) -> None:
@@ -361,35 +377,136 @@ def test_superwindow_extracts_once_per_exact_class_and_fans_out(
     ] == [(2, 1)]
 
 
-def test_exact_superwindow_failure_does_not_retry_under_another_strategy(
+def test_typed_fanout_preserves_logical_identity_to_consumer_boundary(
+    tmp_path: Path,
+) -> None:
+    source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
+    source = _OwnerBoundBatchSource(source_identity)
+    features = (
+        _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
+        _feature(feature_family_id="FAM000002", mz=500.0, rt=8.5),
+    )
+    plan = build_owner_backfill_request_plan(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sample_stems=frozenset({"sample-b"}),
+        alignment_config=AlignmentConfig(),
+        equivalence_context=_context({"sample-b": source_identity}),
+    )
+    logical_items = plan.requests_for_sample("sample-b")
+    chunks = tuple(
+        _iter_extracted_request_traces(
+            source,
+            logical_items,
+            1,
+            window_strategy="exact",
+            superwindow_span_factor=2,
+            equivalence_classes=plan.equivalence_classes_for_sample("sample-b"),
+        )
+    )
+
+    assert source.batch_sizes == [1]
+    assert len(chunks) == 1
+    chunk, results = chunks[0]
+    assert chunk == logical_items
+    assert all(
+        isinstance(result, OwnerBackfillLogicalExtractionResult)
+        for result in results
+    )
+    typed_results = tuple(
+        result
+        for result in results
+        if isinstance(result, OwnerBackfillLogicalExtractionResult)
+    )
+    assert [result.logical_request.item for result in typed_results] == list(chunk)
+    assert (
+        len(
+            {
+                result.logical_request.logical_request_id
+                for result in typed_results
+            }
+        )
+        == 2
+    )
+    assert typed_results[0].canonical_result is typed_results[1].canonical_result
+
+
+def test_exact_superwindow_failure_falls_back_with_exact_typed_identity(
     tmp_path: Path,
 ) -> None:
     source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
     source = _FailingOwnerBoundWindowSource(source_identity)
+    features = (
+        _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
+        _feature(feature_family_id="FAM000002", mz=500.0, rt=8.8),
+    )
+    alignment_config = AlignmentConfig(max_rt_sec=60.0)
 
     result = build_owner_backfill_result(
-        (
-            _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
-            _feature(feature_family_id="FAM000002", mz=500.0, rt=8.5),
-        ),
+        features,
         sample_order=("sample-a", "sample-b"),
         raw_sources={"sample-b": source},
         expected_acquisition_sources={"sample-b": source_identity},
-        alignment_config=AlignmentConfig(),
+        alignment_config=alignment_config,
         peak_config=_peak_config(),
-        raw_xic_batch_size=1,
+        raw_xic_batch_size=64,
         owner_backfill_window_strategy="super-window",
     )
+    baseline = build_owner_backfill_result(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={
+            "sample-b": _FailingOwnerBoundWindowSource(source_identity)
+        },
+        expected_acquisition_sources={"sample-b": source_identity},
+        alignment_config=alignment_config,
+        peak_config=_peak_config(),
+        raw_xic_batch_size=64,
+        owner_backfill_window_strategy="exact",
+    )
+    typed_source = _FailingOwnerBoundWindowSource(source_identity)
+    typed_plan = build_owner_backfill_request_plan(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sample_stems=frozenset({"sample-b"}),
+        alignment_config=alignment_config,
+        equivalence_context=replace(
+            _context({"sample-b": source_identity}),
+            window_strategy="super-window",
+        ),
+    )
+    typed_chunks = tuple(
+        _iter_extracted_request_traces(
+            typed_source,
+            typed_plan.requests_for_sample("sample-b"),
+            64,
+            window_strategy="super-window",
+            superwindow_span_factor=2,
+            equivalence_classes=typed_plan.equivalence_classes_for_sample(
+                "sample-b"
+            ),
+        )
+    )
+    typed_results = tuple(
+        item
+        for _chunk, chunk_results in typed_chunks
+        for item in chunk_results
+        if isinstance(item, OwnerBackfillLogicalExtractionResult)
+    )
 
-    assert source.batch_sizes == [1]
-    assert len(result.cells) == 2
-    assert {cell.trace_quality for cell in result.cells} == {
-        "owner_backfill_unassessable"
-    }
+    assert source.batch_sizes == [2, 2]
+    assert typed_source.batch_sizes == [2, 2]
+    assert len(typed_results) == 2
+    assert {
+        item.canonical_result.request_identity.window_strategy
+        for item in typed_results
+    } == {"exact"}
+    assert result.cells == baseline.cells
+    assert result.candidate_audit_rows == baseline.candidate_audit_rows
     assert [
         (item.logical_request_count, item.canonical_request_class_count)
         for item in result.request_reuse_observations
-    ] == [(2, 1)]
+    ] == [(2, 2)]
 
 
 @pytest.mark.parametrize("backend", ("raw", "ms1_index", "ms1_index_hybrid"))

@@ -522,7 +522,7 @@ class, and fan the typed trace back to every logical request.
 standalone persisted-projection reader).
 **Originating issues**: [#195](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/195)
 and [#210](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/210).
-**Status note**: `production_candidate`; current evidence is synthetic/no-RAW.
+**Status note**: `diagnostic_only`; current evidence is synthetic/no-RAW.
 Exact identity requires owner-closed acquisition content identity plus exact
 m/z, RT bounds, ppm, backend, window, validation, and result semantics. Missing
 or mismatched owner context emits no exact claim. Timing records expose only

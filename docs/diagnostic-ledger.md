@@ -740,6 +740,6 @@ reuse path. PR E streaming/artifact format and PR F recovery/checkpoint scope
 remain excluded.
 
 Decision: `GO` for the exact-safe implementation under owner closure, with
-validation status `production_candidate` and synthetic/no-RAW evidence only.
+validation status `diagnostic_only` and synthetic/no-RAW evidence only.
 Any incomplete owner partition, cross-semantics reuse, logical fan-out loss, or
 nonzero final scientific/output diff is `KILL / REDESIGN`.

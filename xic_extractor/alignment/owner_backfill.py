@@ -24,6 +24,7 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     OWNER_BACKFILL_VALIDATION_MODES,
     OWNER_BACKFILL_WINDOW_STRATEGIES,
     OWNER_BACKFILL_XIC_BACKENDS,
+    OwnerBackfillLogicalRequestMember,
     OwnerBackfillRequestEquivalenceClass,
     OwnerBackfillRequestEquivalenceContext,
     OwnerBackfillRequestIdentity,
@@ -32,6 +33,7 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     OwnerBackfillWindowStrategy,
     build_owner_backfill_request_equivalence_classes,
     build_owner_backfill_request_plan,
+    mint_owner_backfill_request_identity,
 )
 from xic_extractor.alignment.owner_group_delivery import (
     OwnerGroupDeliveryFeature,
@@ -53,7 +55,24 @@ from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 _RequestItem = OwnerBackfillRequestItem
 _RequestGroupKey = tuple[str, int | float, int | float]
-_WindowedRequestItem = tuple[_RequestItem, tuple[int, int]]
+
+
+@dataclass(frozen=True, slots=True)
+class _ExtractionRequestItem:
+    item: _RequestItem
+    logical_request: OwnerBackfillLogicalRequestMember | None = None
+    request_identity: OwnerBackfillRequestIdentity | None = None
+
+    def __post_init__(self) -> None:
+        if (self.logical_request is None) != (self.request_identity is None):
+            raise ValueError(
+                "logical request and canonical identity must be supplied together"
+            )
+        if self.logical_request is not None and self.logical_request.item != self.item:
+            raise ValueError("logical request is not bound to its extraction item")
+
+
+_WindowedRequestItem = tuple[_ExtractionRequestItem, tuple[int, int]]
 
 
 class OwnerBackfillSource(Protocol):
@@ -132,6 +151,30 @@ class OwnerBackfillExtractionResult:
             raise TypeError("request_identity must be owner-minted")
         if not isinstance(self.trace, XICTrace):
             raise TypeError("trace must be an XICTrace")
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillLogicalExtractionResult:
+    logical_request: OwnerBackfillLogicalRequestMember
+    canonical_result: OwnerBackfillExtractionResult
+
+    def __post_init__(self) -> None:
+        if not isinstance(
+            self.logical_request,
+            OwnerBackfillLogicalRequestMember,
+        ):
+            raise TypeError("logical_request must be owner-minted")
+        if not isinstance(self.canonical_result, OwnerBackfillExtractionResult):
+            raise TypeError("canonical_result must be an owner extraction result")
+        identity = self.canonical_result.request_identity
+        if self.logical_request.item.sample_stem != identity.sample_stem:
+            raise ValueError("logical result crosses canonical samples")
+        if self.logical_request.item.request != identity.request:
+            raise ValueError("logical result crosses canonical request semantics")
+
+    @property
+    def trace(self) -> XICTrace:
+        return self.canonical_result.trace
 
 
 @dataclass(frozen=True)
@@ -267,11 +310,20 @@ def build_owner_backfill_result(
             superwindow_span_factor=owner_backfill_superwindow_span_factor,
             equivalence_classes=equivalence_classes,
         ):
-            for (feature, requested_sample, request, preferred_rt), trace in zip(
+            for (feature, requested_sample, request, preferred_rt), result in zip(
                 chunk,
                 traces,
                 strict=True,
             ):
+                trace = _trace_for_logical_request_result(
+                    OwnerBackfillRequestItem(
+                        feature,
+                        requested_sample,
+                        request,
+                        preferred_rt,
+                    ),
+                    result,
+                )
                 cell = _backfill_feature_sample_trace(
                     feature,
                     requested_sample,
@@ -407,11 +459,20 @@ def build_owner_backfill_result(
                     requested_sample,
                     _request,
                     preferred_rt,
-                ), trace in zip(
+                ), result in zip(
                     chunk,
                     traces,
                     strict=True,
                 ):
+                    trace = _trace_for_logical_request_result(
+                        OwnerBackfillRequestItem(
+                            feature,
+                            requested_sample,
+                            _request,
+                            preferred_rt,
+                        ),
+                        result,
+                    )
                     cell = _backfill_feature_sample_trace(
                         feature,
                         requested_sample,
@@ -544,44 +605,44 @@ def _iter_extracted_request_traces(
     equivalence_classes: tuple[OwnerBackfillRequestEquivalenceClass, ...]
     | None = None,
 ):
-    identity_by_item_id = _identity_by_item_id(items, equivalence_classes)
+    extraction_items = _extraction_request_items(items, equivalence_classes)
     if window_strategy == "super-window":
         retention_time_by_scan: dict[int, float | None] = {}
         groups = _superwindow_groups(
             source,
-            items,
+            extraction_items,
             superwindow_span_factor=superwindow_span_factor,
             retention_time_by_scan=retention_time_by_scan,
         )
         if groups is not None:
             _validate_equivalence_grouping(
                 tuple(tuple(item for item, _scan_window in group) for group in groups),
-                identity_by_item_id,
             )
             for group in groups:
                 group_items = tuple(item for item, _scan_window in group)
                 try:
-                    yield group_items, _extract_superwindow_group(
-                        source,
-                        group,
-                        retention_time_by_scan=retention_time_by_scan,
-                        identity_by_item_id=identity_by_item_id,
+                    yield (
+                        tuple(item.item for item in group_items),
+                        _extract_superwindow_group(
+                            source,
+                            group,
+                            retention_time_by_scan=retention_time_by_scan,
+                        ),
                     )
                 except OSError:
-                    if identity_by_item_id is not None:
-                        continue
+                    exact_items = tuple(
+                        _with_exact_window_strategy(item) for item in group_items
+                    )
                     yield from _iter_exact_request_traces(
                         source,
-                        group_items,
+                        exact_items,
                         chunk_size,
-                        identity_by_item_id=identity_by_item_id,
                     )
             return
     yield from _iter_exact_request_traces(
         source,
-        items,
+        extraction_items,
         chunk_size,
-        identity_by_item_id=identity_by_item_id,
     )
 
 
@@ -668,37 +729,34 @@ def _candidate_outcome(cell: AlignedCell) -> str:
 
 def _iter_exact_request_traces(
     source: OwnerBackfillSource,
-    items: tuple[_RequestItem, ...],
+    items: tuple[_ExtractionRequestItem, ...],
     chunk_size: int,
-    *,
-    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity] | None = None,
 ):
     chunks = _scan_window_aware_chunks(source, items, chunk_size)
-    _validate_equivalence_grouping(chunks, identity_by_item_id)
+    _validate_equivalence_grouping(chunks)
     for chunk in chunks:
         try:
             traces = _extract_many(
                 source,
-                tuple(item[2] for item in chunk),
+                tuple(item.item[2] for item in chunk),
                 items=chunk,
-                identity_by_item_id=identity_by_item_id,
             )
         except OSError:
             continue
-        yield chunk, traces
+        yield tuple(item.item for item in chunk), traces
 
 
 def _scan_window_aware_chunks(
     source: OwnerBackfillSource,
-    items: tuple[_RequestItem, ...],
+    items: tuple[_ExtractionRequestItem, ...],
     chunk_size: int,
-) -> tuple[tuple[_RequestItem, ...], ...]:
+) -> tuple[tuple[_ExtractionRequestItem, ...], ...]:
     if chunk_size < 1:
         raise ValueError("raw_xic_batch_size must be >= 1")
     keyed_items = tuple((_request_group_key(source, item), item) for item in items)
     ordered_items = tuple(sorted(keyed_items, key=_grouped_request_sort_key))
-    chunks: list[tuple[_RequestItem, ...]] = []
-    current: list[_RequestItem] = []
+    chunks: list[tuple[_ExtractionRequestItem, ...]] = []
+    current: list[_ExtractionRequestItem] = []
     for _group_key, group_iter in groupby(ordered_items, key=lambda pair: pair[0]):
         group = [item for _key, item in group_iter]
         if current and len(current) + len(group) > chunk_size:
@@ -714,10 +772,10 @@ def _scan_window_aware_chunks(
 
 
 def _grouped_request_sort_key(
-    keyed_item: tuple[_RequestGroupKey, _RequestItem],
+    keyed_item: tuple[_RequestGroupKey, _ExtractionRequestItem],
 ) -> tuple[str, int | float, int | float, float, str, str]:
     group_key, item = keyed_item
-    feature, sample_stem, request, _preferred_rt = item
+    feature, sample_stem, request, _preferred_rt = item.item
     return (
         *group_key,
         request.mz,
@@ -728,9 +786,9 @@ def _grouped_request_sort_key(
 
 def _request_group_key(
     source: OwnerBackfillSource,
-    item: _RequestItem,
+    item: _ExtractionRequestItem,
 ) -> _RequestGroupKey:
-    request = item[2]
+    request = item.item[2]
     scan_window = _source_scan_window_for_request(source, request)
     if scan_window is not None:
         return ("scan", scan_window[0], scan_window[1])
@@ -739,14 +797,14 @@ def _request_group_key(
 
 def _superwindow_groups(
     source: OwnerBackfillSource,
-    items: tuple[_RequestItem, ...],
+    items: tuple[_ExtractionRequestItem, ...],
     *,
     superwindow_span_factor: int,
     retention_time_by_scan: ScanRetentionTimeCache,
 ) -> tuple[tuple[_WindowedRequestItem, ...], ...] | None:
     windowed_items: list[_WindowedRequestItem] = []
     for item in items:
-        scan_window = _source_scan_window_for_request(source, item[2])
+        scan_window = _source_scan_window_for_request(source, item.item[2])
         if scan_window is None:
             return None
         if (
@@ -816,7 +874,7 @@ def _windowed_request_sort_key(
     windowed_item: _WindowedRequestItem,
 ) -> tuple[int, int, float, str, str]:
     item, scan_window = windowed_item
-    feature, sample_stem, request, _preferred_rt = item
+    feature, sample_stem, request, _preferred_rt = item.item
     return (
         scan_window[0],
         scan_window[1],
@@ -831,8 +889,7 @@ def _extract_superwindow_group(
     group: tuple[_WindowedRequestItem, ...],
     *,
     retention_time_by_scan: ScanRetentionTimeCache,
-    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity] | None = None,
-) -> tuple[XICTrace, ...]:
+) -> tuple[XICTrace | OwnerBackfillLogicalExtractionResult, ...]:
     union_start = min(scan_window[0] for _item, scan_window in group)
     union_end = max(scan_window[1] for _item, scan_window in group)
     union_rt_min = _source_retention_time_for_scan(
@@ -851,33 +908,34 @@ def _extract_superwindow_group(
         union_rt_min, union_rt_max = union_rt_max, union_rt_min
     union_requests = tuple(
         XICRequest(
-            mz=item[2].mz,
+            mz=item.item[2].mz,
             rt_min=union_rt_min,
             rt_max=union_rt_max,
-            ppm_tol=item[2].ppm_tol,
+            ppm_tol=item.item[2].ppm_tol,
         )
         for item, _scan_window in group
     )
     group_items = tuple(item for item, _scan_window in group)
-    if identity_by_item_id is not None:
+    if group_items and group_items[0].logical_request is not None:
         (
             unique_identities,
             unique_union_requests,
-            representative_by_identity,
+            _representative_by_identity,
         ) = _typed_extraction_inputs(
             group_items,
             union_requests,
-            identity_by_item_id,
         )
         unique_union_traces = _extract_unique_many(source, unique_union_requests)
-        scan_window_by_item_id = {
-            id(item): scan_window for item, scan_window in group
+        scan_window_by_identity = {
+            item.request_identity: scan_window
+            for item, scan_window in group
+            if item.request_identity is not None
         }
         cropped_traces = tuple(
             _crop_trace_to_scan_window(
                 source,
                 trace,
-                scan_window_by_item_id[id(representative_by_identity[identity])],
+                scan_window_by_identity[identity],
                 retention_time_by_scan=retention_time_by_scan,
             )
             for identity, trace in zip(
@@ -890,9 +948,8 @@ def _extract_superwindow_group(
             group_items,
             unique_identities,
             cropped_traces,
-            identity_by_item_id,
         )
-    union_traces = _extract_many(source, union_requests)
+    union_traces = _require_untyped_traces(_extract_many(source, union_requests))
     return tuple(
         _crop_trace_to_scan_window(
             source,
@@ -1187,10 +1244,9 @@ def _extract_many(
     source: OwnerBackfillSource,
     requests: tuple[XICRequest, ...],
     *,
-    items: tuple[_RequestItem, ...] | None = None,
-    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity] | None = None,
-) -> tuple[XICTrace, ...]:
-    if identity_by_item_id is not None:
+    items: tuple[_ExtractionRequestItem, ...] | None = None,
+) -> tuple[XICTrace | OwnerBackfillLogicalExtractionResult, ...]:
+    if items is not None and items and items[0].logical_request is not None:
         if items is None or len(items) != len(requests):
             raise ValueError(
                 "typed request extraction requires one logical item per request"
@@ -1202,14 +1258,12 @@ def _extract_many(
         ) = _typed_extraction_inputs(
             items,
             requests,
-            identity_by_item_id,
         )
         unique_traces = _extract_unique_many(source, unique_requests)
         return _fan_out_typed_results(
             items,
             unique_identities,
             unique_traces,
-            identity_by_item_id,
         )
     unique_requests = tuple(dict.fromkeys(requests))
     if len(unique_requests) != len(requests):
@@ -1220,13 +1274,12 @@ def _extract_many(
 
 
 def _typed_extraction_inputs(
-    items: tuple[_RequestItem, ...],
+    items: tuple[_ExtractionRequestItem, ...],
     requests: tuple[XICRequest, ...],
-    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity],
 ) -> tuple[
     tuple[OwnerBackfillRequestIdentity, ...],
     tuple[XICRequest, ...],
-    Mapping[OwnerBackfillRequestIdentity, _RequestItem],
+    Mapping[OwnerBackfillRequestIdentity, _ExtractionRequestItem],
 ]:
     if len(items) != len(requests):
         raise ValueError("typed extraction inputs must have equal cardinality")
@@ -1234,10 +1287,10 @@ def _typed_extraction_inputs(
     request_by_identity: dict[OwnerBackfillRequestIdentity, XICRequest] = {}
     representative_by_identity: dict[
         OwnerBackfillRequestIdentity,
-        _RequestItem,
+        _ExtractionRequestItem,
     ] = {}
     for item, request in zip(items, requests, strict=True):
-        identity = identity_by_item_id.get(id(item))
+        identity = item.request_identity
         if identity is None:
             raise ValueError("logical request is missing owner equivalence identity")
         previous = request_by_identity.get(identity)
@@ -1257,11 +1310,10 @@ def _typed_extraction_inputs(
 
 
 def _fan_out_typed_results(
-    items: tuple[_RequestItem, ...],
+    items: tuple[_ExtractionRequestItem, ...],
     unique_identities: tuple[OwnerBackfillRequestIdentity, ...],
     unique_traces: tuple[XICTrace, ...],
-    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity],
-) -> tuple[XICTrace, ...]:
+) -> tuple[OwnerBackfillLogicalExtractionResult, ...]:
     typed_results = tuple(
         OwnerBackfillExtractionResult(identity, trace)
         for identity, trace in zip(
@@ -1275,41 +1327,59 @@ def _fan_out_typed_results(
     }
     if len(result_by_identity) != len(unique_identities):
         raise ValueError("typed extraction produced duplicate canonical results")
-    return tuple(
-        result_by_identity[identity_by_item_id[id(item)]].trace for item in items
-    )
+    logical_results: list[OwnerBackfillLogicalExtractionResult] = []
+    for item in items:
+        if item.logical_request is None or item.request_identity is None:
+            raise ValueError("typed fan-out requires owner logical identity")
+        logical_results.append(
+            OwnerBackfillLogicalExtractionResult(
+                logical_request=item.logical_request,
+                canonical_result=result_by_identity[item.request_identity],
+            )
+        )
+    return tuple(logical_results)
 
 
-def _identity_by_item_id(
+def _extraction_request_items(
     items: tuple[_RequestItem, ...],
     equivalence_classes: tuple[OwnerBackfillRequestEquivalenceClass, ...] | None,
-) -> dict[int, OwnerBackfillRequestIdentity] | None:
+) -> tuple[_ExtractionRequestItem, ...]:
     if equivalence_classes is None:
-        return None
-    identity_by_item_id: dict[int, OwnerBackfillRequestIdentity] = {}
+        return tuple(_ExtractionRequestItem(item) for item in items)
+    binding_by_logical_index: dict[
+        int,
+        tuple[OwnerBackfillLogicalRequestMember, OwnerBackfillRequestIdentity],
+    ] = {}
     for equivalence_class in equivalence_classes:
         for member in equivalence_class.members:
-            item_id = id(member.item)
-            if item_id in identity_by_item_id:
+            if member.logical_index in binding_by_logical_index:
                 raise ValueError(
                     "logical request belongs to multiple equivalence classes"
                 )
-            identity_by_item_id[item_id] = equivalence_class.identity
-    if set(identity_by_item_id) != {id(item) for item in items}:
+            binding_by_logical_index[member.logical_index] = (
+                member,
+                equivalence_class.identity,
+            )
+    if set(binding_by_logical_index) != set(range(len(items))):
         raise ValueError("equivalence partition does not cover the logical population")
-    return identity_by_item_id
+    extraction_items: list[_ExtractionRequestItem] = []
+    for logical_index, item in enumerate(items):
+        member, identity = binding_by_logical_index[logical_index]
+        if member.item != item:
+            raise ValueError("logical identity is rebound to another request item")
+        extraction_items.append(_ExtractionRequestItem(item, member, identity))
+    return tuple(extraction_items)
 
 
 def _validate_equivalence_grouping(
-    groups: Sequence[tuple[_RequestItem, ...]],
-    identity_by_item_id: Mapping[int, OwnerBackfillRequestIdentity] | None,
+    groups: Sequence[tuple[_ExtractionRequestItem, ...]],
 ) -> None:
-    if identity_by_item_id is None:
+    if not groups or not groups[0] or groups[0][0].request_identity is None:
         return
     group_by_identity: dict[OwnerBackfillRequestIdentity, int] = {}
     for group_index, group in enumerate(groups):
         for item in group:
-            identity = identity_by_item_id.get(id(item))
+            identity = item.request_identity
             if identity is None:
                 raise ValueError(
                     "logical request is missing owner equivalence identity"
@@ -1319,6 +1389,44 @@ def _validate_equivalence_grouping(
                 raise ValueError(
                     "one equivalence class was split across extraction groups"
                 )
+
+
+def _with_exact_window_strategy(
+    item: _ExtractionRequestItem,
+) -> _ExtractionRequestItem:
+    identity = item.request_identity
+    if identity is None:
+        return item
+    exact_identity = mint_owner_backfill_request_identity(
+        sample_stem=identity.sample_stem,
+        acquisition_source=identity.acquisition_source,
+        request=identity.request,
+        backend=identity.backend,
+        window_strategy="exact",
+        superwindow_span_factor=identity.superwindow_span_factor,
+        validation_mode=identity.validation_mode,
+        result_semantics=identity.result_semantics,
+    )
+    return _ExtractionRequestItem(item.item, item.logical_request, exact_identity)
+
+
+def _trace_for_logical_request_result(
+    item: _RequestItem,
+    result: XICTrace | OwnerBackfillLogicalExtractionResult,
+) -> XICTrace:
+    if isinstance(result, XICTrace):
+        return result
+    if result.logical_request.item != item:
+        raise ValueError("typed extraction result is rebound to another hypothesis")
+    return result.trace
+
+
+def _require_untyped_traces(
+    results: tuple[XICTrace | OwnerBackfillLogicalExtractionResult, ...],
+) -> tuple[XICTrace, ...]:
+    if any(not isinstance(result, XICTrace) for result in results):
+        raise ValueError("untyped extraction unexpectedly produced logical results")
+    return tuple(result for result in results if isinstance(result, XICTrace))
 
 
 def _extract_unique_many(
