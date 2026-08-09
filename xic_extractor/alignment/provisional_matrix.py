@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
+from types import MappingProxyType
 from typing import Any
 
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.tsv_writer import write_safe_alignment_tsv
+from xic_extractor.alignment.matrix import (
+    AlignedCell,
+    AlignmentMatrix,
+    AlignmentRowLike,
+)
+from xic_extractor.alignment.models import AlignmentCluster
+from xic_extractor.alignment.tsv_writer import (
+    ArtifactWriteMeasurement,
+    write_safe_alignment_tsv,
+)
 
 PROVISIONAL_VALIDATION_STATUS = "diagnostic_only"
 PROVISIONAL_MATRIX_SCHEMA_VERSION = "untargeted_provisional_matrix_v1"
@@ -82,12 +93,81 @@ PROVISIONAL_PROVENANCE_COLUMNS = (
 
 
 @dataclass(frozen=True, slots=True)
+class _ProvisionalRowCounts:
+    detected: int
+    backfill: int
+    quant_available: int
+
+
+@dataclass(frozen=True, slots=True)
 class ProvisionalMatrixProjection:
     matrix_header: tuple[str, ...]
-    matrix_rows: tuple[dict[str, str], ...]
-    identity_rows: tuple[dict[str, str], ...]
-    provenance_rows: tuple[dict[str, str], ...]
-    summary: dict[str, object]
+    _clusters: tuple[AlignmentCluster | AlignmentRowLike, ...]
+    _sample_order: tuple[str, ...]
+    _cells_by_key: Mapping[tuple[str, str], AlignedCell]
+    _row_counts: Mapping[str, _ProvisionalRowCounts]
+    _summary: Mapping[str, object]
+
+    def iter_matrix_rows(self) -> Iterator[dict[str, str]]:
+        for cluster in self._clusters:
+            public_family_id = _public_family_id(cluster)
+            row = {
+                "group_hypothesis_id": _group_hypothesis_id(cluster),
+                "public_family_id": public_family_id,
+                "Mz": _format_number(_group_center_mz(cluster)),
+                "RT": _format_number(_group_center_rt(cluster)),
+            }
+            for sample_stem in self._sample_order:
+                row[sample_stem] = _matrix_value(
+                    self._cells_by_key.get((public_family_id, sample_stem))
+                )
+            yield row
+
+    def iter_identity_rows(self) -> Iterator[dict[str, str]]:
+        for cluster in self._clusters:
+            public_family_id = _public_family_id(cluster)
+            counts = self._row_counts[public_family_id]
+            yield _identity_row(
+                cluster,
+                detected_count=counts.detected,
+                backfill_count=counts.backfill,
+                quant_count=counts.quant_available,
+                missing_count=len(self._sample_order) - counts.quant_available,
+            )
+
+    def iter_provenance_rows(self) -> Iterator[dict[str, str]]:
+        for cluster in self._clusters:
+            public_family_id = _public_family_id(cluster)
+            for sample_stem in self._sample_order:
+                cell = self._cells_by_key.get((public_family_id, sample_stem))
+                yield _provenance_row(
+                    cluster,
+                    sample_stem=sample_stem,
+                    cell=cell,
+                    matrix_value=_matrix_value(cell),
+                )
+
+    @property
+    def matrix_rows(self) -> tuple[dict[str, str], ...]:
+        """Compatibility view; the production writer uses the lazy iterator."""
+
+        return tuple(self.iter_matrix_rows())
+
+    @property
+    def identity_rows(self) -> tuple[dict[str, str], ...]:
+        """Compatibility view; the production writer uses the lazy iterator."""
+
+        return tuple(self.iter_identity_rows())
+
+    @property
+    def provenance_rows(self) -> tuple[dict[str, str], ...]:
+        """Compatibility view; the production writer uses the lazy iterator."""
+
+        return tuple(self.iter_provenance_rows())
+
+    @property
+    def summary(self) -> dict[str, object]:
+        return dict(self._summary)
 
 
 def build_provisional_matrix_projection(
@@ -131,6 +211,13 @@ def build_provisional_matrix_projection(
         seen_group_ids.add(group_hypothesis_id)
 
     cells_by_key: dict[tuple[str, str], AlignedCell] = {}
+    mutable_row_counts = {
+        public_family_id: [0, 0, 0]
+        for public_family_id in clusters_by_public_id
+    }
+    detected_cell_count = 0
+    backfill_candidate_cell_count = 0
+    quant_available_cell_count = 0
     for cell in matrix.cells:
         if cell.status not in _CELL_STATUS_VALUES:
             raise ValueError(f"unsupported provisional cell status: {cell.status}")
@@ -151,88 +238,30 @@ def build_provisional_matrix_projection(
                 f"{cell.cluster_id}/{cell.sample_stem}"
             )
         cells_by_key[key] = cell
+        counts = mutable_row_counts[cell.cluster_id]
+        if cell.status == "detected":
+            counts[0] += 1
+            detected_cell_count += 1
+        elif cell.status == "rescued":
+            counts[1] += 1
+            backfill_candidate_cell_count += 1
+        if _matrix_value(cell):
+            counts[2] += 1
+            quant_available_cell_count += 1
 
     matrix_header = (
         *_MATRIX_METADATA_COLUMNS,
         *matrix.sample_order,
     )
-    matrix_rows: list[dict[str, str]] = []
-    identity_rows: list[dict[str, str]] = []
-    provenance_rows: list[dict[str, str]] = []
-    detected_cell_count = 0
-    backfill_candidate_cell_count = 0
-    quant_available_cell_count = 0
-
-    for cluster in matrix.clusters:
-        public_family_id = _public_family_id(cluster)
-        group_hypothesis_id = _group_hypothesis_id(cluster)
-        row_cells = tuple(
-            cells_by_key.get((public_family_id, sample_stem))
-            for sample_stem in matrix.sample_order
-        )
-        row_values = tuple(_matrix_value(cell) for cell in row_cells)
-        detected_count = sum(
-            1
-            for cell in row_cells
-            if cell is not None and cell.status == "detected"
-        )
-        backfill_count = sum(
-            1
-            for cell in row_cells
-            if cell is not None and cell.status == "rescued"
-        )
-        quant_count = sum(
-            1
-            for cell, value in zip(row_cells, row_values, strict=True)
-            if cell is not None
-            and cell.status in {"detected", "rescued"}
-            and value
-        )
-        missing_count = len(matrix.sample_order) - quant_count
-        detected_cell_count += detected_count
-        backfill_candidate_cell_count += backfill_count
-        quant_available_cell_count += quant_count
-
-        matrix_rows.append(
-            {
-                "group_hypothesis_id": group_hypothesis_id,
-                "public_family_id": public_family_id,
-                "Mz": _format_number(_group_center_mz(cluster)),
-                "RT": _format_number(_group_center_rt(cluster)),
-                **dict(zip(matrix.sample_order, row_values, strict=True)),
-            }
-        )
-        identity_rows.append(
-            _identity_row(
-                cluster,
-                detected_count=detected_count,
-                backfill_count=backfill_count,
-                quant_count=quant_count,
-                missing_count=missing_count,
-            )
-        )
-        provenance_rows.extend(
-            _provenance_row(
-                cluster,
-                sample_stem=sample_stem,
-                cell=cell,
-                matrix_value=value,
-            )
-            for sample_stem, cell, value in zip(
-                matrix.sample_order,
-                row_cells,
-                row_values,
-                strict=True,
-            )
-        )
-
-    row_count = len(matrix_rows)
-    return ProvisionalMatrixProjection(
-        matrix_header=matrix_header,
-        matrix_rows=tuple(matrix_rows),
-        identity_rows=tuple(identity_rows),
-        provenance_rows=tuple(provenance_rows),
-        summary={
+    row_count = len(matrix.clusters)
+    row_counts = MappingProxyType(
+        {
+            public_family_id: _ProvisionalRowCounts(*counts)
+            for public_family_id, counts in mutable_row_counts.items()
+        }
+    )
+    summary = MappingProxyType(
+        {
             "schema_version": PROVISIONAL_SUMMARY_SCHEMA_VERSION,
             "matrix_schema_version": PROVISIONAL_MATRIX_SCHEMA_VERSION,
             "validation_status": PROVISIONAL_VALIDATION_STATUS,
@@ -249,18 +278,29 @@ def build_provisional_matrix_projection(
             "quant_available_cell_count": quant_available_cell_count,
             "matrix_blank_cell_count": row_count * len(matrix.sample_order)
             - quant_available_cell_count,
-        },
+        }
+    )
+    return ProvisionalMatrixProjection(
+        matrix_header=matrix_header,
+        _clusters=tuple(matrix.clusters),
+        _sample_order=tuple(matrix.sample_order),
+        _cells_by_key=MappingProxyType(cells_by_key),
+        _row_counts=row_counts,
+        _summary=summary,
     )
 
 
 def write_provisional_matrix_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
+    *,
+    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     write_safe_alignment_tsv(
         path,
         projection.matrix_header,
-        projection.matrix_rows,
+        projection.iter_matrix_rows(),
+        measurement=measurement,
     )
     return path
 
@@ -268,11 +308,14 @@ def write_provisional_matrix_tsv(
 def write_provisional_identity_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
+    *,
+    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     write_safe_alignment_tsv(
         path,
         PROVISIONAL_IDENTITY_COLUMNS,
-        projection.identity_rows,
+        projection.iter_identity_rows(),
+        measurement=measurement,
     )
     return path
 
@@ -280,11 +323,14 @@ def write_provisional_identity_tsv(
 def write_provisional_provenance_tsv(
     path: Path,
     projection: ProvisionalMatrixProjection,
+    *,
+    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     write_safe_alignment_tsv(
         path,
         PROVISIONAL_PROVENANCE_COLUMNS,
-        projection.provenance_rows,
+        projection.iter_provenance_rows(),
+        measurement=measurement,
     )
     return path
 
@@ -292,12 +338,27 @@ def write_provisional_provenance_tsv(
 def write_provisional_summary_json(
     path: Path,
     projection: ProvisionalMatrixProjection,
+    *,
+    measurement: ArtifactWriteMeasurement | None = None,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(projection.summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    if measurement is None:
+        path.write_text(
+            json.dumps(projection.summary, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    started = perf_counter()
+    summary = projection.summary
+    measurement.projection_time_sec += perf_counter() - started
+    started = perf_counter()
+    rendered = json.dumps(summary, indent=2, sort_keys=True) + "\n"
+    measurement.render_time_sec += perf_counter() - started
+    started = perf_counter()
+    path.write_text(rendered, encoding="utf-8")
+    measurement.temp_write_time_sec += perf_counter() - started
+    measurement.byte_size = path.stat().st_size
     return path
 
 

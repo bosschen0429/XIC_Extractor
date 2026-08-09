@@ -743,3 +743,36 @@ Decision: `GO` for the exact-safe implementation under owner closure, with
 validation status `diagnostic_only` and synthetic/no-RAW evidence only.
 Any incomplete owner partition, cross-semantics reuse, logical fan-out loss, or
 nonzero final scientific/output diff is `KILL / REDESIGN`.
+
+## Issue #195 streamed provisional publication
+
+Issue #212 replaces retained dense provisional matrix, identity, and cell-
+provenance row dictionaries with an immutable Alignment-owned projection plan.
+The existing provisional writers consume that plan as bounded row streams; the
+existing whole-set temporary-file/rename publication owner remains the only
+final visibility path. Matrix values, row identity, schema, ordering, filenames,
+summary content, and atomic visibility are unchanged. PR #211 exact request
+identity is consumed only through the typed Matrix input and is not reconstructed
+from a persisted projection. PR #209 remains an opt-in shadow and is not an
+execution input.
+
+No RAW, 2RAW, 8RAW, or 85RAW input was opened. A deterministic no-RAW allocation
+probe over 400 groups by 100 samples retained zero dense row objects, zero cells,
+and 400 compact per-row count entries. Building the compact projection peaked at
+142,980 traced bytes; materializing the legacy-compatible 40,000-row provenance
+view peaked at 18,940,952 bytes (132.47 times the compact peak). This bounded
+probe is mechanism evidence only, not a real-population elapsed-time or savings
+claim. Frozen byte hashes, chunk-boundary parity, schema/order/identity oracles,
+and whole-bundle failure tests remain hard-zero.
+
+The writer timing projection now separates streamed row projection, rendering,
+temporary-file writes, rename, and final-file hash phases for the four
+provisional artifacts. Ephemeral row projection bytes remain explicitly
+unavailable. Manifest-bound immutable hashing and directory publication belong
+to Issue #213, which is sequentially blocked by #212; recovery/checkpoint work
+remains excluded as PR F.
+
+Decision: `GO` for retaining the exact-safe W5a streaming implementation with
+validation status `diagnostic_only`. Any byte/schema/order/identity/atomic-
+visibility difference is `KILL`; a need to reconstruct semantic truth from a
+projection or to combine W5a with manifest ownership is `REDESIGN`.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from dataclasses import fields
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,44 +17,16 @@ from xic_extractor.alignment.provisional_matrix import (
     write_provisional_identity_tsv,
     write_provisional_matrix_tsv,
     write_provisional_provenance_tsv,
+    write_provisional_summary_json,
 )
+from xic_extractor.alignment.tsv_writer import ArtifactWriteMeasurement
+from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
 
 
 def test_projection_keeps_full_group_breadth_and_cell_provenance() -> None:
-    matrix = AlignmentMatrix(
-        clusters=(
-            _group("GRP-A", "FAM000001", mz=100.123456789, rt=1.25),
-            _group("GRP-B", "FAM000002", mz=900.987654321, rt=28.75),
-        ),
-        cells=(
-            _cell(
-                "sample-b",
-                "GRP-A",
-                "FAM000001",
-                status="detected",
-                area=100.0,
-                source_candidate_id="sample-b#candidate-1",
-            ),
-            _cell(
-                "sample-a",
-                "GRP-A",
-                "FAM000001",
-                status="rescued",
-                area=80.0,
-            ),
-            _cell(
-                "sample-a",
-                "GRP-B",
-                "FAM000002",
-                status="detected",
-                area=25.0,
-                source_candidate_id="sample-a#candidate-2",
-            ),
-        ),
-        sample_order=("sample-b", "sample-a"),
-    )
+    matrix = _representative_matrix()
 
     projection = _projection(matrix)
 
@@ -114,6 +88,164 @@ def test_projection_keeps_full_group_breadth_and_cell_provenance() -> None:
         "quant_available_cell_count": 3,
         "matrix_blank_cell_count": 1,
     }
+
+
+def test_projection_retains_compact_state_instead_of_dense_row_grid() -> None:
+    group_count = 40
+    sample_order = tuple(f"sample-{index:03d}" for index in range(60))
+    groups = tuple(
+        _group(
+            f"GRP-{index:03d}",
+            f"FAM{index:06d}",
+            mz=100.0 + index,
+            rt=1.0 + index,
+        )
+        for index in range(group_count)
+    )
+    cells = (
+        _cell(
+            sample_order[0],
+            "GRP-000",
+            "FAM000000",
+            status="detected",
+            area=10.0,
+        ),
+        _cell(
+            sample_order[-1],
+            f"GRP-{group_count - 1:03d}",
+            f"FAM{group_count - 1:06d}",
+            status="rescued",
+            area=5.0,
+        ),
+    )
+
+    projection = _projection(
+        AlignmentMatrix(clusters=groups, cells=cells, sample_order=sample_order)
+    )
+
+    retained_fields = {field.name for field in fields(projection)}
+    assert retained_fields.isdisjoint(
+        {"matrix_rows", "identity_rows", "provenance_rows"}
+    )
+    assert len(projection._cells_by_key) == len(cells)
+    assert len(projection._row_counts) == group_count
+    assert projection.summary["matrix_blank_cell_count"] == (
+        group_count * len(sample_order) - len(cells)
+    )
+
+
+def test_streamed_provisional_artifacts_match_frozen_materializing_hashes(
+    tmp_path: Path,
+) -> None:
+    projection = _projection(_representative_matrix())
+    paths = (
+        write_provisional_matrix_tsv(tmp_path / "matrix.tsv", projection),
+        write_provisional_identity_tsv(tmp_path / "identity.tsv", projection),
+        write_provisional_provenance_tsv(tmp_path / "provenance.tsv", projection),
+        write_provisional_summary_json(tmp_path / "summary.json", projection),
+    )
+
+    observed = {
+        path.name: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_size)
+        for path in paths
+    }
+    assert observed == {
+        "matrix.tsv": (
+            "d45016f91a57f5161f888f9e0d23273a194d9badca072a01d9566982b194349f",
+            143,
+        ),
+        "identity.tsv": (
+            "7f20ad4ddbc136b8208d8eb113a33e8f289731ae18eaa40469163bd9fa389eeb",
+            924,
+        ),
+        "provenance.tsv": (
+            "d7dd8085004fa672b90863e990bbe467310acc446e23df00dd0c234101950a72",
+            1197,
+        ),
+        "summary.json": (
+            "cb8ef8de0a3152ff9720316827fde25b409b77ee44a632f77e493b755b48af84",
+            573,
+        ),
+    }
+
+
+def test_provisional_writer_timing_splits_streamed_artifact_phases(
+    tmp_path: Path,
+) -> None:
+    outputs = _provisional_outputs(tmp_path)
+    recorder = TimingRecorder("alignment", instrument_writers=True)
+
+    pipeline_outputs.write_outputs_atomic(
+        outputs,
+        _representative_matrix(),
+        metadata=_provisional_metadata(),
+        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
+        alignment_config=AlignmentConfig(),
+        timing_recorder=recorder,
+    )
+
+    observations = recorder.to_json_dict()["measurement_observations"]
+    expected_scopes = {
+        "provisional_alignment_matrix",
+        "provisional_row_identity",
+        "provisional_cell_provenance",
+        "provisional_matrix_summary",
+    }
+    for metric in (
+        "writer_projection_time_sec",
+        "writer_render_time_sec",
+        "writer_temp_write_time_sec",
+        "writer_rename_time_sec",
+        "writer_hash_time_sec",
+    ):
+        rows = [row for row in observations if row["metric"] == metric]
+        assert {row["scope"] for row in rows} == expected_scopes
+        assert all(row["availability"] == "measured" for row in rows)
+        assert all(row["value"] is not None for row in rows)
+
+    byte_rows = [
+        row for row in observations if row["metric"] == "writer_temp_write_bytes"
+    ]
+    assert {row["scope"] for row in byte_rows} == expected_scopes
+    assert all(row["availability"] == "measured" for row in byte_rows)
+
+
+def test_measured_streamed_artifacts_preserve_unmeasured_bytes(
+    tmp_path: Path,
+) -> None:
+    sample_order = tuple(f"sample-{index:03d}" for index in range(60))
+    groups = tuple(
+        _group(
+            f"GRP-{index:03d}",
+            f"FAM{index:06d}",
+            mz=100.0 + index,
+            rt=1.0 + index,
+        )
+        for index in range(40)
+    )
+    projection = _projection(
+        AlignmentMatrix(clusters=groups, cells=(), sample_order=sample_order)
+    )
+    writers = (
+        ("matrix.tsv", write_provisional_matrix_tsv),
+        ("identity.tsv", write_provisional_identity_tsv),
+        ("provenance.tsv", write_provisional_provenance_tsv),
+        ("summary.json", write_provisional_summary_json),
+    )
+    for name, writer in writers:
+        baseline = writer(tmp_path / "baseline" / name, projection)
+        measurement = ArtifactWriteMeasurement()
+        measured = writer(
+            tmp_path / "measured" / name,
+            projection,
+            measurement=measurement,
+        )
+
+        assert measured.read_bytes() == baseline.read_bytes()
+        assert measurement.byte_size == measured.stat().st_size
+        assert measurement.projection_time_sec >= 0.0
+        assert measurement.render_time_sec >= 0.0
+        assert measurement.temp_write_time_sec >= 0.0
 
 
 def test_projection_retains_unquantified_groups_and_counts_observations() -> None:
@@ -330,6 +462,41 @@ def test_provisional_output_failure_leaves_no_partial_final_set(
         )
 
     assert not any(path.exists() for path in _output_paths(outputs))
+
+
+def _representative_matrix() -> AlignmentMatrix:
+    return AlignmentMatrix(
+        clusters=(
+            _group("GRP-A", "FAM000001", mz=100.123456789, rt=1.25),
+            _group("GRP-B", "FAM000002", mz=900.987654321, rt=28.75),
+        ),
+        cells=(
+            _cell(
+                "sample-b",
+                "GRP-A",
+                "FAM000001",
+                status="detected",
+                area=100.0,
+                source_candidate_id="sample-b#candidate-1",
+            ),
+            _cell(
+                "sample-a",
+                "GRP-A",
+                "FAM000001",
+                status="rescued",
+                area=80.0,
+            ),
+            _cell(
+                "sample-a",
+                "GRP-B",
+                "FAM000002",
+                status="detected",
+                area=25.0,
+                source_candidate_id="sample-a#candidate-2",
+            ),
+        ),
+        sample_order=("sample-b", "sample-a"),
+    )
 
 
 def _group(group_id: str, family_id: str, *, mz: float, rt: float) -> object:
