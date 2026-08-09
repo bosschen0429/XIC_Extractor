@@ -762,7 +762,7 @@ and 400 compact per-row count entries. Building the compact projection peaked at
 130,364 traced bytes; materializing the legacy-compatible 40,000-row provenance
 view peaked at 18,940,952 bytes (145.29 times the compact peak). This bounded
 probe is mechanism evidence only, not a real-population elapsed-time or savings
-claim. Frozen byte hashes, streamed-versus-materialized edge-case parity,
+claim. Frozen representative and formula/unquantified edge-case byte hashes,
 schema/order/identity oracles, and whole-bundle failure tests remain hard-zero.
 
 The reproducible probe owner and assertion are

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gc
 import hashlib
-import json
 import tracemalloc
 from dataclasses import fields
 from pathlib import Path
@@ -15,8 +14,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.provisional_matrix import (
-    PROVISIONAL_IDENTITY_COLUMNS,
-    PROVISIONAL_PROVENANCE_COLUMNS,
     PROVISIONAL_VALIDATION_STATUS,
     build_provisional_matrix_projection,
     write_provisional_identity_tsv,
@@ -24,7 +21,6 @@ from xic_extractor.alignment.provisional_matrix import (
     write_provisional_provenance_tsv,
     write_provisional_summary_json,
 )
-from xic_extractor.alignment.tsv_writer import write_safe_alignment_tsv
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
@@ -201,13 +197,21 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
         timing_recorder=recorder,
     )
 
-    observations = recorder.to_json_dict()["measurement_observations"]
+    payload = recorder.to_json_dict()
+    observations = payload["measurement_observations"]
     expected_scopes = {
         "provisional_alignment_matrix",
         "provisional_row_identity",
         "provisional_cell_provenance",
         "provisional_matrix_summary",
     }
+    projection_records = [
+        row
+        for row in payload["records"]
+        if row["stage"] == "writer.provisional_matrix.projection"
+    ]
+    assert len(projection_records) == 1
+    assert projection_records[0]["elapsed_sec"] >= 0.0
     for metric in ("writer_projection_time_sec", "writer_temp_write_time_sec"):
         rows = [row for row in observations if row["metric"] == metric]
         assert {row["scope"] for row in rows} == expected_scopes
@@ -227,8 +231,21 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
         assert all(row["availability"] == "measured" for row in rows)
         assert all(row["value"] is not None for row in rows)
 
+    byte_expectations = {
+        "writer_projection_bytes": ("unavailable", False),
+        "writer_render_bytes": ("partial", True),
+        "writer_temp_write_bytes": ("unavailable", False),
+        "writer_rename_bytes": ("measured", True),
+        "writer_hash_bytes": ("measured", True),
+    }
+    for metric, (availability, has_value) in byte_expectations.items():
+        rows = [row for row in observations if row["metric"] == metric]
+        assert {row["scope"] for row in rows} == expected_scopes
+        assert all(row["availability"] == availability for row in rows)
+        assert all((row["value"] is not None) == has_value for row in rows)
 
-def test_streamed_pipeline_matches_materialized_formula_and_unquantified_bytes(
+
+def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
     tmp_path: Path,
 ) -> None:
     matrix = AlignmentMatrix(
@@ -263,30 +280,6 @@ def test_streamed_pipeline_matches_materialized_formula_and_unquantified_bytes(
         ),
         sample_order=("=sample", "sample-b"),
     )
-    projection = _projection(matrix)
-    materialized_dir = tmp_path / "materialized"
-    materialized_paths = (
-        write_safe_alignment_tsv(
-            materialized_dir / "provisional_alignment_matrix.tsv",
-            projection.matrix_header,
-            projection.matrix_rows,
-        ),
-        write_safe_alignment_tsv(
-            materialized_dir / "provisional_row_identity.tsv",
-            PROVISIONAL_IDENTITY_COLUMNS,
-            projection.identity_rows,
-        ),
-        write_safe_alignment_tsv(
-            materialized_dir / "provisional_cell_provenance.tsv",
-            PROVISIONAL_PROVENANCE_COLUMNS,
-            projection.provenance_rows,
-        ),
-        materialized_dir / "provisional_matrix_summary.json",
-    )
-    materialized_paths[-1].write_text(
-        json.dumps(projection.summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
     streamed_outputs = _provisional_outputs(tmp_path / "streamed")
     pipeline_outputs.write_outputs_atomic(
         streamed_outputs,
@@ -297,17 +290,39 @@ def test_streamed_pipeline_matches_materialized_formula_and_unquantified_bytes(
         timing_recorder=TimingRecorder("alignment", instrument_writers=True),
     )
 
-    for materialized, streamed in zip(
-        materialized_paths,
-        _output_paths(streamed_outputs),
-        strict=True,
-    ):
-        assert streamed.read_bytes() == materialized.read_bytes()
+    observed = {
+        path.name: (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_size)
+        for path in _output_paths(streamed_outputs)
+    }
+    assert observed == {
+        "provisional_alignment_matrix.tsv": (
+            "aba2973588cfa44c841e29e448f71a2c998508db2d42d86a94f33a02844fa077",
+            123,
+        ),
+        "provisional_row_identity.tsv": (
+            "9f3bef2537181c13d417a87f8877141ad594687637baac9ba7d6c287a4d8247a",
+            909,
+        ),
+        "provisional_cell_provenance.tsv": (
+            "068e09a359e8d44a0f7f5fe2f1e35a9cd2a72cd9d228390aa3e3d15f7eba289a",
+            1151,
+        ),
+        "provisional_matrix_summary.json": (
+            "ffd670f1d95d8ea2bebaa4b4c492e765d7ea41adaf31760d6292e2f109e13f7d",
+            573,
+        ),
+    }
 
-    assert "\t'=sample\tsample-b\n" in materialized_paths[0].read_text(
+    assert streamed_outputs.provisional_matrix_tsv is not None
+    assert streamed_outputs.provisional_cell_provenance_tsv is not None
+    assert "\t'=sample\tsample-b\n" in (
+        streamed_outputs.provisional_matrix_tsv.read_text(
+            encoding="utf-8"
+        )
+    )
+    provenance_text = streamed_outputs.provisional_cell_provenance_tsv.read_text(
         encoding="utf-8"
     )
-    provenance_text = materialized_paths[2].read_text(encoding="utf-8")
     assert "\t'+candidate\t" in provenance_text
     assert "observed_unquantified" in provenance_text
     assert "backfill_unquantified" in provenance_text
