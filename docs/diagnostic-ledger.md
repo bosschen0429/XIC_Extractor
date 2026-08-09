@@ -812,12 +812,15 @@ mutation fail before the final directory exists. The public
 the visible bytes independently.
 
 The PR-family finding census classified the two hosted P2 findings plus the
-follow-up cross-role substitution finding as trust-boundary re-derivation. The
-bounded Alignment ingress is four manifest roles: publication now requires the
-exact owner-minted writer path census and the canonical writer filename for
-each role before assigning schema or SHA/size facts. The class oracle enumerates
-all 23 non-identity role permutations plus a duplicate-path census and rejects
-each before manifest write or final visibility.
+follow-up cross-role substitution findings as trust-boundary re-derivation. The
+bounded Alignment ingress is four manifest roles within the Alignment writer's
+complete receipt batch: publication requires each role to map to one unique
+receipt path and its canonical writer filename before assigning schema or
+SHA/size facts. Other owner receipts remain an unclaimed part of the complete
+writer census. The class oracles enumerate all 23 non-identity role
+permutations plus a duplicate-path census and reject each before manifest write
+or final visibility; a real no-RAW writer integration proves the normal eight-
+receipt batch can publish its four manifest-bound artifacts.
 
 Manifest schema, claim levels, relative paths, artifact SHA/size rows, and exact
 manifest plus bound-artifact bytes are hard-zero against the legacy write path.
@@ -841,7 +844,7 @@ byte, and function-time evidence only; it is not physical disk I/O, end-to-end
 elapsed, RAW-call, chromatogram-call, point-count, monetary, or real-population
 savings evidence.
 
-Focused no-RAW manifest/runner/projection/atomic regressions passed 87 tests.
+Focused no-RAW manifest/runner/projection/atomic regressions passed 88 tests.
 The principal census/parity oracle is
 `tests/test_alignment_provisional_run_manifest.py::test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff`;
 the exact-manifest substitution, same-size restored-mtime mutation, retry-time

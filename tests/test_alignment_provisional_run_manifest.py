@@ -7,12 +7,18 @@ import itertools
 import json
 import os
 import shutil
+from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import xic_extractor.alignment.artifact_write_receipts as alignment_receipt_owner
+import xic_extractor.alignment.pipeline_outputs as pipeline_outputs_owner
 import xic_extractor.extraction.provisional_run_manifest as manifest_owner
+from tests.test_alignment_provisional_matrix import (
+    _representative_matrix,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -333,6 +339,87 @@ def test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff(
         root=tmp_path / "candidate",
     )
     assert len(calls) == 6
+
+
+def test_publication_accepts_complete_real_writer_batch_with_unbound_receipts(
+    tmp_path: Path,
+) -> None:
+    staging_packet = _packet(tmp_path / "candidate.attempt", matrix_bytes="matrix-a\n")
+    staging = staging_packet["root"]
+    staging_packet["manifest"].unlink()
+    alignment_dir = staging / "workflow" / "alignment"
+    artifacts = staging_packet["artifacts"]
+    outputs = pipeline_outputs_owner.output_paths(
+        alignment_dir,
+        output_level="validation-minimal",
+        emit_alignment_cells=False,
+        emit_alignment_status_matrix=False,
+    )
+    outputs = replace(
+        outputs,
+        provisional_matrix_tsv=artifacts["provisional_matrix"],
+        provisional_identity_tsv=artifacts["provisional_identity"],
+        provisional_cell_provenance_tsv=(
+            artifacts["provisional_cell_provenance"]
+        ),
+        provisional_summary_json=artifacts["provisional_summary"],
+    )
+    matrix = _representative_matrix()
+    writer_matrix = replace(
+        matrix,
+        clusters=tuple(
+            SimpleNamespace(
+                **vars(cluster),
+                cluster_center_mz=cluster.family_center_mz,
+                cluster_center_rt=cluster.family_center_rt,
+                cluster_product_mz=cluster.family_center_mz - 116.0,
+                cluster_observed_neutral_loss_da=116.0,
+                has_anchor=True,
+                folded_cluster_ids=(),
+                folded_member_count=0,
+                folded_sample_fill_count=0,
+                fold_evidence="",
+            )
+            for cluster in matrix.clusters
+        ),
+    )
+    batch = pipeline_outputs_owner.write_outputs_atomic(
+        outputs,
+        writer_matrix,
+        metadata={
+            "backfill_scope": "full-audit",
+            "require_discovery_owner_closure": "TRUE",
+            "selected_family_count": "0",
+        },
+        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
+        alignment_config=AlignmentConfig(),
+        capture_artifact_fingerprints=True,
+    )
+    assert isinstance(
+        batch,
+        alignment_receipt_owner.AlignmentArtifactFingerprintBatch,
+    )
+    assert len(batch.receipts) == 8
+    arguments = _publication_arguments(staging)
+    arguments["alignment_artifact_fingerprints"] = batch
+
+    manifest_path = publish_provisional_run_bundle_atomic(
+        staging,
+        tmp_path / "candidate",
+        **arguments,
+    )
+
+    validate_provisional_run_manifest(
+        manifest_path,
+        root=tmp_path / "candidate",
+    )
+    assert (
+        tmp_path
+        / "candidate"
+        / "workflow"
+        / "alignment"
+        / "alignment_matrix.tsv"
+    ).is_file()
 
 
 def test_manifest_bound_atomic_publish_rejects_post_fingerprint_mutation(
@@ -776,6 +863,8 @@ def _packet(
     for name, path in artifacts.items():
         if name != "provisional_matrix":
             path.write_text(f"{name}\n", encoding="utf-8")
+    for name in _standard_alignment_artifact_names():
+        (artifact_dir / name).write_text(f"{name}\n", encoding="utf-8")
     manifest = write_provisional_run_manifest(
         root / "run_manifest.json",
         root=root,
@@ -822,7 +911,13 @@ def _publication_arguments(root: Path) -> dict[str, object]:
         "provisional_cell_provenance": root / _publication_relative_paths()[2],
         "provisional_summary": root / _publication_relative_paths()[3],
     }
-    artifact_paths = tuple(artifacts.values())
+    artifact_paths = (
+        *(
+            root / "workflow" / "alignment" / name
+            for name in _standard_alignment_artifact_names()
+        ),
+        *artifacts.values(),
+    )
     artifact_receipts = tuple(
         alignment_receipt_owner._mint_alignment_artifact_fingerprint_receipt(
             artifact_path=path,
@@ -878,6 +973,15 @@ def _publication_relative_paths() -> tuple[Path, ...]:
         artifact_root / "provisional_matrix_summary.json",
         Path("inputs") / "sample_metadata.tsv",
         Path("workflow") / "discovery" / "discovery_batch_index.csv",
+    )
+
+
+def _standard_alignment_artifact_names() -> tuple[str, ...]:
+    return (
+        "alignment_matrix.tsv",
+        "alignment_matrix_identity.tsv",
+        "alignment_review.tsv",
+        "alignment_backfill_cell_evidence.tsv",
     )
 
 

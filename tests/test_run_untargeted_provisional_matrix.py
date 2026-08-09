@@ -64,6 +64,14 @@ def test_runner_publishes_full_universe_outputs_atomically(
         alignment_dir = workflow_dir / "alignment"
         alignment_dir.mkdir(parents=True)
         paths = {
+            "matrix_tsv": alignment_dir / "alignment_matrix.tsv",
+            "matrix_identity_tsv": (
+                alignment_dir / "alignment_matrix_identity.tsv"
+            ),
+            "review_tsv": alignment_dir / "alignment_review.tsv",
+            "backfill_cell_evidence_tsv": (
+                alignment_dir / "alignment_backfill_cell_evidence.tsv"
+            ),
             "provisional_matrix_tsv": (
                 alignment_dir / "provisional_alignment_matrix.tsv"
             ),
@@ -154,6 +162,7 @@ def test_runner_publishes_full_universe_outputs_atomically(
         manifest["alignment_artifact_fingerprints"],
         alignment_receipt_owner.AlignmentArtifactFingerprintBatch,
     )
+    assert len(manifest["alignment_artifact_fingerprints"].receipts) == 8
     timing = json.loads((output_dir / "timing.json").read_text(encoding="utf-8"))
     assert timing["measurement_contract"]["cache_state"] == (
         "uncontrolled_os_cache_no_eviction"

@@ -746,11 +746,10 @@ def _publication_fingerprint_reuse(
         artifact_role: artifact_path.resolve(strict=True)
         for artifact_role, artifact_path in artifacts.items()
     }
-    if set(resolved_artifacts.values()) != set(
-        alignment_artifact_fingerprints.artifact_paths
-    ):
+    resolved_artifact_paths = set(resolved_artifacts.values())
+    if len(resolved_artifact_paths) != len(resolved_artifacts):
         raise ValueError(
-            "Alignment fingerprint batch does not match the artifact path census"
+            "manifest artifact path census contains duplicate paths"
         )
     for artifact_role, resolved_path in resolved_artifacts.items():
         if resolved_path.name != _ALIGNMENT_ARTIFACT_FILENAMES[artifact_role]:
@@ -762,6 +761,11 @@ def _publication_fingerprint_reuse(
         receipt.artifact_path: receipt.fingerprint
         for receipt in alignment_artifact_fingerprints.receipts
     }
+    if not resolved_artifact_paths.issubset(receipts_by_path):
+        raise ValueError(
+            "Alignment fingerprint batch does not cover the manifest artifact "
+            "path census"
+        )
     reused = {
         "input:sample_metadata": (
             retained_sample_metadata_fingerprint.fingerprint
