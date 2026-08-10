@@ -18,6 +18,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     BackfillEvidenceRecord,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import CidNlReferenceSpine
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.conservative_backfill import (
     ConservativeBackfillCellDecision,
     ConservativeBackfillGroupFacts,
@@ -32,7 +33,7 @@ from xic_extractor.alignment.product_matrix import (
     build_product_matrix_rows,
     formatted_identity_rows,
 )
-from xic_extractor.alignment.production_decisions import ProductionDecisionSet
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.alignment.untargeted_explanation_contract import (
     _ENTRY_MINT_TOKEN,
     _INDEX_MINT_TOKEN,
@@ -91,9 +92,9 @@ def build_untargeted_explanation_index(
     *,
     processing_attempt: ProcessingAttemptIdentity,
     matrix: AlignmentMatrix,
+    alignment_config: AlignmentConfig,
     sample_population: Sequence[ResolvedCanonicalSampleIdentity],
     requests: Sequence[ExplanationLookupRequest],
-    production_decisions: ProductionDecisionSet,
     cid_nl_spines: Sequence[CidNlReferenceSpine] = (),
     backfill_group_facts: Sequence[ConservativeBackfillGroupFacts] = (),
     backfill_decisions: Sequence[ConservativeBackfillCellDecision] = (),
@@ -106,8 +107,9 @@ def build_untargeted_explanation_index(
         raise TypeError("processing_attempt must be a ProcessingAttemptIdentity")
     if not isinstance(matrix, AlignmentMatrix):
         raise TypeError("matrix must be an AlignmentMatrix")
-    if not isinstance(production_decisions, ProductionDecisionSet):
-        raise TypeError("production_decisions must be a ProductionDecisionSet")
+    if not isinstance(alignment_config, AlignmentConfig):
+        raise TypeError("alignment_config must be an AlignmentConfig")
+    production_decisions = build_production_decisions(matrix, alignment_config)
     samples = _validate_samples(sample_population, matrix)
     normalized_requests = _validate_requests(requests, samples)
     request_keys = tuple(item.route_key for item in normalized_requests)

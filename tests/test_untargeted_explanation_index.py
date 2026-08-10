@@ -31,7 +31,6 @@ from xic_extractor.alignment.backfill_evidence_tsv import (
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
-from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     build_untargeted_cid_nl_golden_path,
 )
@@ -162,10 +161,7 @@ def _build_index(**kwargs):
     matrix = kwargs.pop("matrix", sample_alignment_matrix())
     return build_untargeted_explanation_index(
         matrix=matrix,
-        production_decisions=build_production_decisions(
-            matrix,
-            AlignmentConfig(),
-        ),
+        alignment_config=AlignmentConfig(),
         **kwargs,
     )
 
@@ -421,17 +417,29 @@ def test_written_backfill_requires_exact_live_matrix_source_candidate(
             for cell in matrix.cells
         ),
     )
-    production_decisions = build_production_decisions(matrix, AlignmentConfig())
     kwargs["matrix"] = matrix
 
     section = build_untargeted_explanation_index(
-        production_decisions=production_decisions,
+        alignment_config=AlignmentConfig(),
         **kwargs,
     ).entries[0].section(ExplanationTopic.BACKFILL)
 
     assert section.claim.state is EvidenceClaimState.UNAVAILABLE
     assert section.payload is None
     assert "does not bind the Backfill matched candidate" in section.claim.reason
+
+
+def test_caller_cannot_supply_a_detached_production_decision_snapshot(
+    tmp_path: Path,
+) -> None:
+    kwargs = _complete_no_raw_kwargs(tmp_path)
+
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        build_untargeted_explanation_index(
+            alignment_config=AlignmentConfig(),
+            production_decisions=object(),
+            **kwargs,
+        )
 
 
 def test_no_raw_selected_direct_support_route_closes_all_four_sections(
