@@ -218,6 +218,42 @@ def test_writer_rejects_missing_or_changed_locator_artifact(
         write_untargeted_evidence_report(report_root / "report.html", index)
 
 
+@pytest.mark.parametrize("alias_kind", ("hardlink", "symlink"))
+def test_writer_rejects_output_aliasing_locator_artifact(
+    tmp_path: Path,
+    alias_kind: str,
+) -> None:
+    samples = _samples()
+    attempt = _attempt()
+    report_root = tmp_path / "report-root"
+    locator = _locator_request(
+        report_root,
+        attempt=attempt,
+        sample=samples[0],
+    )
+    index = _build_index(
+        processing_attempt=attempt,
+        matrix=sample_alignment_matrix(),
+        sample_population=samples,
+        requests=(_request(samples[0], locators=(locator,)),),
+    )
+    artifact = report_root.joinpath(*locator.relative_path.split("/"))
+    output = report_root / "report.html"
+    if alias_kind == "hardlink":
+        output.hardlink_to(artifact)
+    else:
+        try:
+            output.symlink_to(artifact)
+        except OSError as exc:
+            pytest.skip(f"symlink creation is unavailable: {exc}")
+    original = artifact.read_bytes()
+
+    with pytest.raises(ValueError, match="output aliases"):
+        write_untargeted_evidence_report(output, index)
+
+    assert artifact.read_bytes() == original
+
+
 def test_writer_is_opt_in_and_emits_deterministic_utf8_lf_bytes(
     tmp_path: Path,
 ) -> None:

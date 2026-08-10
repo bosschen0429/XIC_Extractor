@@ -114,17 +114,17 @@ def write_untargeted_evidence_report(
     if not isinstance(index, UntargetedExplanationIndex):
         raise TypeError("index must be an UntargetedExplanationIndex")
     path.parent.mkdir(parents=True, exist_ok=True)
-    _verify_locator_artifacts(path.parent, index)
+    _verify_locator_artifacts(path, index)
     rendered = render_untargeted_evidence_report(index)
     path.write_bytes(rendered.encode("utf-8"))
     return path
 
 
 def _verify_locator_artifacts(
-    report_root: Path,
+    report_path: Path,
     index: UntargetedExplanationIndex,
 ) -> None:
-    root = report_root.resolve()
+    root = report_path.parent.resolve()
     for locator in (
         locator
         for entry in index.entries
@@ -139,6 +139,18 @@ def _verify_locator_artifacts(
         resolved_artifact = artifact.resolve(strict=True)
         if not resolved_artifact.is_relative_to(root):
             raise ValueError("explanation locator artifact escaped the report root")
+        if report_path.exists():
+            try:
+                output_aliases_artifact = report_path.samefile(resolved_artifact)
+            except OSError as exc:
+                raise ValueError(
+                    "untargeted evidence report output identity could not be verified"
+                ) from exc
+            if output_aliases_artifact:
+                raise ValueError(
+                    "untargeted evidence report output aliases an explanation "
+                    "locator artifact"
+                )
         if fingerprint_file_content(resolved_artifact) != locator.artifact_fingerprint:
             raise ValueError(
                 f"explanation locator artifact changed: {locator.relative_path}"
