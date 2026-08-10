@@ -264,3 +264,55 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
             / "standard_peak_backfill_preset_summary.json",
         )
     )
+
+
+def test_gui_full_rejects_backfill_expansion_before_discovery(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    output_dir = tmp_path / "out"
+    preset_path = tmp_path / "backfill-expansion.toml"
+    raw_dir.mkdir()
+    output_dir.mkdir()
+    (raw_dir / "A.raw").write_bytes(b"raw")
+    preset_path.write_text(
+        "\n".join(
+            [
+                'name = "Backfill expansion"',
+                'description = "Unsupported GUI post-stage"',
+                'combine_mode = "single"',
+                "",
+                "[[tag]]",
+                'strategy = "neutral_loss"',
+                'name = "TEST"',
+                "value = 100.0",
+                "",
+                "[discovery]",
+                "",
+                "[alignment]",
+                "standard_peak_backfill = true",
+                'backfill_expansion_productization = "clean-target-selective"',
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def reject_discovery(*_args, **_kwargs):
+        raise AssertionError("incompatible preset launched Discovery")
+
+    monkeypatch.setattr(module, "run_discovery_batch", reject_discovery)
+    request = DiscoveryRequest(
+        mode="full",
+        preset=str(preset_path),
+        tuning_overrides={},
+        raw_dir=raw_dir,
+        raw_file=None,
+        dll_dir=tmp_path / "dll",
+        output_dir=output_dir,
+        discovery_batch_index=None,
+    )
+
+    with pytest.raises(ValueError, match="do not support backfill_expansion"):
+        DiscoveryWorker(request)._run_full(request)

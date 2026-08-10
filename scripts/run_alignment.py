@@ -17,6 +17,7 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
 )
 from xic_extractor.alignment.drift_evidence import read_targeted_istd_drift_evidence
+from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.raw_sources import existing_raw_paths
@@ -1220,20 +1221,20 @@ def _owner_backfill_xic_backend(value: str) -> str:
 def _effective_owner_build_xic_backend(
     args: argparse.Namespace,
     recipe: BoundCidNlRecipe | None,
-) -> str:
+) -> OwnerBuildXicBackend:
     if recipe is not None:
-        value = recipe.owner_build_xic_backend
-    else:
-        value = args.owner_build_xic_backend or "raw"
-    return _owner_build_xic_backend(value)
+        return recipe.owner_build_xic_backend
+    return _owner_build_xic_backend(args.owner_build_xic_backend or "raw")
 
 
-def _owner_build_xic_backend(value: str) -> str:
-    if value == "raw-super-window":
+def _owner_build_xic_backend(value: str) -> OwnerBuildXicBackend:
+    if value in {"raw-super-window", "raw_superwindow"}:
         return "raw_superwindow"
-    if value == "ms1-index":
+    if value in {"ms1-index", "ms1_index"}:
         return "ms1_index"
-    return value
+    if value == "raw":
+        return "raw"
+    raise ValueError(f"unsupported owner_build_xic_backend: {value}")
 
 
 def _alignment_production_resolver_mode(resolver_mode: str) -> str:

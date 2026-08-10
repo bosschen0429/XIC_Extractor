@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Literal, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -13,6 +12,10 @@ from xic_extractor.presets.loader import (
     validate_delta_mass_preset_tags,
 )
 from xic_extractor.presets.models import Preset, PresetError, PresetTag
+from xic_extractor.presets.recipe_models import (
+    BoundCidNlRecipe,
+    CidNlRecipeRoute,
+)
 from xic_extractor.settings_schema import RESOLVER_MODES
 
 _POSITIVE_FLOAT_FIELDS = frozenset(
@@ -48,12 +51,6 @@ OWNER_BUILD_XIC_BACKENDS = frozenset(
         "ms1-index",
     }
 )
-CidNlRecipeRoute = Literal[
-    "full",
-    "discovery_only",
-    "align_only",
-    "bounded_mode_track",
-]
 _CID_NL_RECIPE_ROUTES = frozenset(
     {"full", "discovery_only", "align_only", "bounded_mode_track"}
 )
@@ -64,28 +61,6 @@ _CID_NL_RECIPE_OVERRIDE_KEYS = (
         "owner_build_xic_backend",
     }
 )
-
-
-@dataclass(frozen=True, slots=True)
-class BoundCidNlRecipe:
-    """Immutable preset-owned method and current-route composition."""
-
-    route: CidNlRecipeRoute
-    discovery_settings: DiscoverySettings
-    alignment_config: AlignmentConfig
-    standard_peak_backfill: bool
-    standard_peak_backfill_chunk_size: int
-    standard_peak_backfill_publication_mode: str
-    standard_peak_backfill_write_gallery: bool
-    standard_peak_backfill_reuse_existing: bool
-    standard_peak_backfill_min_shape_r: float
-    owner_build_xic_backend: str
-    backfill_expansion_productization: str
-    backfill_expansion_reuse_existing_raw_overlay: bool
-    backfill_expansion_reuse_existing_shift_aware: bool
-    backfill_expansion_render_shift_aware_images: bool
-    backfill_expansion_min_shape_r: float
-    product_ready_publication_check: bool
 
 
 def bind_cid_nl_recipe(
@@ -117,14 +92,14 @@ def bind_cid_nl_recipe(
     if route == "bounded_mode_track" and len(
         discovery_settings.neutral_loss_profiles
     ) != 1:
-        raise PresetError("ModeTrack runner requires a single-tag CID-NL preset")
+        raise ValueError("ModeTrack runner requires a single-tag CID-NL preset")
 
     alignment_config, runtime_options = apply_to_alignment(preset)
     standard_peak_backfill = bool(
         runtime_options.get("standard_peak_backfill", False)
     )
     publication_mode = cast(
-        str,
+        Literal["matrix-only", "review-gallery", "deep-audit"],
         runtime_options.get("standard_peak_backfill_publication_mode", "deep-audit"),
     )
     write_gallery = bool(
@@ -139,22 +114,26 @@ def bind_cid_nl_recipe(
                 "--standard-peak-backfill-publication-mode requires a preset "
                 "that enables standard_peak_backfill"
             )
-        publication_mode = _publication_mode_setting(
-            {"standard_peak_backfill_publication_mode": publication_override},
-            legacy_write_gallery=write_gallery,
+        publication_mode = cast(
+            Literal["matrix-only", "review-gallery", "deep-audit"],
+            _publication_mode_setting(
+                {"standard_peak_backfill_publication_mode": publication_override},
+                legacy_write_gallery=write_gallery,
+            ),
         )
         write_gallery = publication_mode in {"review-gallery", "deep-audit"}
 
-    owner_build_xic_backend = cast(
-        str,
-        runtime_options.get("owner_build_xic_backend", "raw"),
+    owner_build_xic_backend = _owner_build_xic_backend_projection(
+        runtime_options.get("owner_build_xic_backend", "raw")
     )
     if "owner_build_xic_backend" in overrides:
-        owner_build_xic_backend = _enum_str_setting(
-            overrides,
-            "owner_build_xic_backend",
-            "raw",
-            OWNER_BUILD_XIC_BACKENDS,
+        owner_build_xic_backend = _owner_build_xic_backend_projection(
+            _enum_str_setting(
+                overrides,
+                "owner_build_xic_backend",
+                "raw",
+                OWNER_BUILD_XIC_BACKENDS,
+            )
         )
 
     min_shape_r = float(
@@ -182,7 +161,7 @@ def bind_cid_nl_recipe(
         standard_peak_backfill_min_shape_r=min_shape_r,
         owner_build_xic_backend=owner_build_xic_backend,
         backfill_expansion_productization=cast(
-            str,
+            Literal["off", "clean-target-selective"],
             runtime_options.get("backfill_expansion_productization", "off"),
         ),
         backfill_expansion_reuse_existing_raw_overlay=bool(
@@ -213,6 +192,19 @@ def bind_cid_nl_recipe(
             preset.source == "builtin:dna_dr_product_ready"
         ),
     )
+
+
+def _owner_build_xic_backend_projection(
+    value: object,
+) -> Literal["raw", "raw_superwindow", "ms1_index"]:
+    text = str(value)
+    if text == "raw":
+        return "raw"
+    if text in {"raw-super-window", "raw_superwindow"}:
+        return "raw_superwindow"
+    if text in {"ms1-index", "ms1_index"}:
+        return "ms1_index"
+    raise PresetError(f"unsupported owner_build_xic_backend: {text}")
 
 
 def apply_to_discovery(

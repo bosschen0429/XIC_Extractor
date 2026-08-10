@@ -4,7 +4,7 @@ import csv
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -12,7 +12,6 @@ from gui.workers.backfill_gallery import (
     BackfillGalleryInputs,
     build_backfill_review_gallery,
 )
-from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
@@ -239,9 +238,7 @@ class DiscoveryWorker(QThread):
             output_dir=request.output_dir,
             alignment_config=recipe.alignment_config,
             peak_config=self._alignment_peak_config(request),
-            owner_build_xic_backend=_owner_build_xic_backend(
-                recipe.owner_build_xic_backend,
-            ),
+            owner_build_xic_backend=recipe.owner_build_xic_backend,
             **_GALLERY_ALIGNMENT_KWARGS,
         )
         if self.isInterruptionRequested():
@@ -262,13 +259,8 @@ class DiscoveryWorker(QThread):
         preset = load_preset(request.preset)
         if recipe is None:
             recipe = bind_cid_nl_recipe(preset, request.mode)
+            _validate_gui_alignment_recipe(recipe)
             self._recipe = recipe
-        if recipe.backfill_expansion_productization != "off":
-            raise ValueError(
-                "GUI untargeted presets do not support "
-                "backfill_expansion_productization yet; use scripts.run_alignment "
-                "for this preset",
-            )
         return recipe, _standard_peak_source_run_id(str(preset.source))
 
     def _run_standard_peak_backfill_if_enabled(
@@ -348,6 +340,8 @@ class DiscoveryWorker(QThread):
             request.mode,
             recipe_overrides=request.tuning_overrides,
         )
+        if request.mode != "discovery_only":
+            _validate_gui_alignment_recipe(recipe)
         self._recipe = recipe
         return recipe.discovery_settings
 
@@ -462,15 +456,13 @@ def _standard_peak_source_run_id(preset_source: str) -> str:
     return f"alignment-preset:{safe_source}:standard-peak-backfill"
 
 
-def _owner_build_xic_backend(value: object) -> OwnerBuildXicBackend:
-    text = str(value)
-    if text == "raw-super-window":
-        return "raw_superwindow"
-    if text == "ms1-index":
-        return "ms1_index"
-    if text in {"raw", "raw_superwindow", "ms1_index"}:
-        return cast(OwnerBuildXicBackend, text)
-    raise ValueError(f"unsupported owner_build_xic_backend: {text}")
+def _validate_gui_alignment_recipe(recipe: BoundCidNlRecipe) -> None:
+    if recipe.backfill_expansion_productization != "off":
+        raise ValueError(
+            "GUI untargeted presets do not support "
+            "backfill_expansion_productization yet; use scripts.run_alignment "
+            "for this preset",
+        )
 
 
 def _alignment_summary(

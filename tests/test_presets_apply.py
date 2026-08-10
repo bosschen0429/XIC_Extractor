@@ -290,7 +290,7 @@ def test_bind_cid_nl_recipe_applies_only_recipe_owned_overrides() -> None:
     assert recipe.discovery_settings.rt_max == pytest.approx(20.0)
     assert recipe.standard_peak_backfill_publication_mode == "deep-audit"
     assert recipe.standard_peak_backfill_write_gallery is True
-    assert recipe.owner_build_xic_backend == "ms1-index"
+    assert recipe.owner_build_xic_backend == "ms1_index"
     assert recipe.product_ready_publication_check is True
 
     with pytest.raises(PresetError, match="unknown CID-NL recipe override"):
@@ -317,7 +317,7 @@ def test_bind_cid_nl_recipe_preserves_route_compatibility_boundaries() -> None:
 
     generic_recipe = bind_cid_nl_recipe(multi_tag, "full")
     assert len(generic_recipe.discovery_settings.neutral_loss_profiles) == 2
-    with pytest.raises(PresetError, match="single-tag CID-NL preset"):
+    with pytest.raises(ValueError, match="single-tag CID-NL preset"):
         bind_cid_nl_recipe(multi_tag, "bounded_mode_track")
     with pytest.raises(PresetError, match="neutral-loss preset"):
         bind_cid_nl_recipe(load_preset("pt_pattern"), "discovery_only")

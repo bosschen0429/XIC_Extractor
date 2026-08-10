@@ -365,9 +365,7 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         discovery_settings=recipe.discovery_settings,
         alignment_config=recipe.alignment_config,
         sample_metadata_path=sample_metadata_path,
-        owner_build_xic_backend=_owner_build_backend(
-            recipe.owner_build_xic_backend
-        ),
+        owner_build_xic_backend=recipe.owner_build_xic_backend,
         code_revision=code_revision,
     )
 
@@ -454,19 +452,6 @@ def _record_fingerprint_observation(
         availability=availability,
         reason=reason,
     )
-
-
-def _owner_build_backend(value: str) -> OwnerBuildXicBackend:
-    mapped = {
-        "raw": "raw",
-        "raw-super-window": "raw_superwindow",
-        "raw_superwindow": "raw_superwindow",
-        "ms1-index": "ms1_index",
-        "ms1_index": "ms1_index",
-    }.get(value)
-    if mapped is None:
-        raise ValueError(f"unsupported owner build XIC backend: {value}")
-    return cast(OwnerBuildXicBackend, mapped)
 
 
 def _owner_backfill_backend(value: str) -> OwnerBackfillXicBackend:

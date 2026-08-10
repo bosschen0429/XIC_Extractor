@@ -239,6 +239,78 @@ def test_preflight_closes_inputs_without_running_raw(
     assert not (tmp_path / "preflight-output.attempt").exists()
 
 
+def test_preflight_preserves_multi_tag_error_class(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    projection, _proposal_dir = _gate_c_proposal(tmp_path)
+    review_bundle = _review_bundle(tmp_path, projection)
+    raw_dir, dll_dir, metadata_path = _operator_inputs(tmp_path)
+    preset_path = tmp_path / "multi-tag.toml"
+    preset_path.write_text(
+        "\n".join(
+            [
+                'name = "Two CID-NL tags"',
+                'description = "Invalid bounded ModeTrack preset"',
+                'combine_mode = "union"',
+                "",
+                "[[tag]]",
+                'strategy = "neutral_loss"',
+                'name = "A"',
+                "value = 100.0",
+                "",
+                "[[tag]]",
+                'strategy = "neutral_loss"',
+                'name = "B"',
+                "value = 120.0",
+                "",
+                "[discovery]",
+                "",
+                "[alignment]",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        runner,
+        "run_untargeted_cid_nl_mode_track_workflow",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("invalid preset launched RAW")
+        ),
+    )
+
+    exit_code = runner.main(
+        [
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--sample-metadata",
+            str(metadata_path),
+            "--preset",
+            str(preset_path),
+            "--precursor-mz",
+            "349.215",
+            "--review-bundle-dir",
+            str(review_bundle),
+            "--output-dir",
+            str(tmp_path / "multi-tag-output"),
+            "--manifest-root",
+            str(tmp_path),
+            "--sample-identity-namespace",
+            "synthetic-mode-track",
+            "--preflight-only",
+        ]
+    )
+
+    assert exit_code == 2
+    stderr = capsys.readouterr().err
+    assert "ValueError: ModeTrack runner requires a single-tag CID-NL preset" in stderr
+    assert "PresetError:" not in stderr
+
+
 def test_preflight_rejects_invalid_thermo_runtime_before_running_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
