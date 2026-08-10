@@ -40,6 +40,7 @@ from xic_extractor.alignment.untargeted_explanation_contract import (
     _SUBJECT_MINT_TOKEN,
     EXPLANATION_INDEX_SCHEMA_VERSION,
     EXPLANATION_INFORMATION_REQUIREMENTS,
+    EXPLANATION_ROUTE_LIMIT,
     AlignmentExplanationPayload,
     BackfillExplanationPayload,
     DiscoveryExplanationPayload,
@@ -109,9 +110,9 @@ def build_untargeted_explanation_index(
         raise TypeError("matrix must be an AlignmentMatrix")
     if not isinstance(alignment_config, AlignmentConfig):
         raise TypeError("alignment_config must be an AlignmentConfig")
-    production_decisions = build_production_decisions(matrix, alignment_config)
     samples = _validate_samples(sample_population, matrix)
     normalized_requests = _validate_requests(requests, samples)
+    production_decisions = build_production_decisions(matrix, alignment_config)
     request_keys = tuple(item.route_key for item in normalized_requests)
     backfill_by_key = _index_backfill_inputs(backfill_inputs, request_keys)
     spine_by_source_feature = _index_spines(
@@ -270,6 +271,11 @@ def _validate_requests(
     keys = tuple(item.route_key for item in normalized)
     if len(keys) != len(set(keys)):
         raise ValueError("explanation lookup requests must be unique")
+    if len(normalized) > EXPLANATION_ROUTE_LIMIT:
+        raise ValueError(
+            f"explanation index accepts at most {EXPLANATION_ROUTE_LIMIT} "
+            "requested routes"
+        )
     sample_by_id = {sample.identity.sample_identity_id: sample for sample in samples}
     for request in normalized:
         if (
@@ -396,6 +402,7 @@ def _index_matrix_cells(matrix: AlignmentMatrix) -> dict[tuple[str, str], Aligne
 __all__ = (
     "EXPLANATION_INDEX_SCHEMA_VERSION",
     "EXPLANATION_INFORMATION_REQUIREMENTS",
+    "EXPLANATION_ROUTE_LIMIT",
     "AlignmentExplanationPayload",
     "BackfillExplanationPayload",
     "BackfillExplanationInput",

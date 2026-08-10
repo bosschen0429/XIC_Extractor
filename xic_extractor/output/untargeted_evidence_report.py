@@ -2,8 +2,8 @@
 
 The report is a bounded consumer.  It reuses the Backfill reconciliation
 gallery's presentation assets, but it never loads scientific artifacts,
-reconstructs scientific facts, or writes Matrix values. The opt-in writer only
-rechecks navigation artifact bytes against owner-minted receipts.
+reconstructs scientific facts, or writes Matrix values. Public render and write
+surfaces recheck navigation artifact bytes against owner-minted receipts.
 """
 
 from __future__ import annotations
@@ -48,11 +48,20 @@ _AVAILABLE_STATES = frozenset(
 
 def render_untargeted_evidence_report(
     index: UntargetedExplanationIndex,
+    *,
+    navigation_root: Path | None = None,
 ) -> str:
     """Render one deterministic, self-contained explanation-only HTML page."""
 
     if not isinstance(index, UntargetedExplanationIndex):
         raise TypeError("index must be an UntargetedExplanationIndex")
+    if navigation_root is not None and not isinstance(navigation_root, Path):
+        raise TypeError("navigation_root must be a Path")
+    _verify_locator_artifacts(navigation_root, index)
+    return _render_untargeted_evidence_report(index)
+
+
+def _render_untargeted_evidence_report(index: UntargetedExplanationIndex) -> str:
     rows = [
         fragment
         for rank, entry in enumerate(index.entries, start=1)
@@ -114,23 +123,32 @@ def write_untargeted_evidence_report(
     if not isinstance(index, UntargetedExplanationIndex):
         raise TypeError("index must be an UntargetedExplanationIndex")
     path.parent.mkdir(parents=True, exist_ok=True)
-    _verify_locator_artifacts(path, index)
-    rendered = render_untargeted_evidence_report(index)
+    _verify_locator_artifacts(path.parent, index, report_path=path)
+    rendered = _render_untargeted_evidence_report(index)
     path.write_bytes(rendered.encode("utf-8"))
     return path
 
 
 def _verify_locator_artifacts(
-    report_path: Path,
+    navigation_root: Path | None,
     index: UntargetedExplanationIndex,
+    *,
+    report_path: Path | None = None,
 ) -> None:
-    root = report_path.parent.resolve()
-    for locator in (
+    locators = tuple(
         locator
         for entry in index.entries
         for section in entry.sections
         for locator in section.locators
-    ):
+    )
+    if not locators:
+        return
+    if navigation_root is None:
+        raise ValueError(
+            "navigation_root is required when an explanation index has locators"
+        )
+    root = navigation_root.resolve()
+    for locator in locators:
         artifact = root.joinpath(*PurePosixPath(locator.relative_path).parts)
         if not artifact.is_file():
             raise ValueError(
@@ -139,7 +157,7 @@ def _verify_locator_artifacts(
         resolved_artifact = artifact.resolve(strict=True)
         if not resolved_artifact.is_relative_to(root):
             raise ValueError("explanation locator artifact escaped the report root")
-        if report_path.exists():
+        if report_path is not None and report_path.exists():
             try:
                 output_aliases_artifact = report_path.samefile(resolved_artifact)
             except OSError as exc:

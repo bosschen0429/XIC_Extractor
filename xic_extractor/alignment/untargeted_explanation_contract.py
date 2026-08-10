@@ -21,6 +21,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 EXPLANATION_INDEX_SCHEMA_VERSION = "untargeted_explanation_index_v3"
+EXPLANATION_ROUTE_LIMIT = 1500
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
@@ -659,6 +660,7 @@ class ExplanationLookupRequest:
 __all__ = (
     "EXPLANATION_INDEX_SCHEMA_VERSION",
     "EXPLANATION_INFORMATION_REQUIREMENTS",
+    "EXPLANATION_ROUTE_LIMIT",
     "AlignmentExplanationPayload",
     "BackfillExplanationPayload",
     "DiscoveryExplanationPayload",

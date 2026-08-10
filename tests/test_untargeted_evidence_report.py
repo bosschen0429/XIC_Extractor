@@ -180,7 +180,12 @@ def test_relative_locator_stays_offline_and_overlay_uses_existing_lightbox(
     source_dir.mkdir()
     monkeypatch.chdir(source_dir)
 
-    rendered = render_untargeted_evidence_report(index)
+    with pytest.raises(ValueError, match="navigation_root"):
+        render_untargeted_evidence_report(index)
+    rendered = render_untargeted_evidence_report(
+        index,
+        navigation_root=report_root,
+    )
 
     assert f'href="{locator.relative_path}"' in rendered
     assert f'data-lightbox-src="{locator.relative_path}"' in rendered
@@ -189,9 +194,11 @@ def test_relative_locator_stays_offline_and_overlay_uses_existing_lightbox(
     assert "http://" not in rendered
 
 
+@pytest.mark.parametrize("surface", ("render", "write"))
 @pytest.mark.parametrize("mutation", ("missing", "tampered"))
-def test_writer_rejects_missing_or_changed_locator_artifact(
+def test_public_report_surfaces_reject_missing_or_changed_locator_artifact(
     tmp_path: Path,
+    surface: str,
     mutation: str,
 ) -> None:
     samples = _samples()
@@ -215,7 +222,13 @@ def test_writer_rejects_missing_or_changed_locator_artifact(
         artifact.write_bytes(b"tampered")
 
     with pytest.raises(ValueError, match="unavailable|changed"):
-        write_untargeted_evidence_report(report_root / "report.html", index)
+        if surface == "render":
+            render_untargeted_evidence_report(
+                index,
+                navigation_root=report_root,
+            )
+        else:
+            write_untargeted_evidence_report(report_root / "report.html", index)
 
 
 @pytest.mark.parametrize("alias_kind", ("hardlink", "symlink"))

@@ -883,3 +883,22 @@ def test_duplicate_route_and_partial_sample_owner_inputs_fail_closed() -> None:
             sample_population=samples[:2],
             requests=(_request(samples[0]),),
         )
+
+
+def test_explanation_route_population_is_bounded_before_projection() -> None:
+    samples = _samples()
+    requests = tuple(
+        replace(
+            _request(samples[0]),
+            peak_hypothesis_id=f"bounded-route-{index:04d}",
+        )
+        for index in range(1501)
+    )
+
+    with pytest.raises(ValueError, match="at most 1500 requested routes"):
+        _build_index(
+            processing_attempt=_attempt(),
+            matrix=sample_alignment_matrix(),
+            sample_population=samples,
+            requests=requests,
+        )
