@@ -15,11 +15,15 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     EvidenceClaimState,
 )
 from xic_extractor.alignment.untargeted_explanation_contract import (
+    AlignmentExplanationPayload,
+    BackfillExplanationPayload,
+    DiscoveryExplanationPayload,
     ExplanationIndexEntry,
     ExplanationLocator,
     ExplanationLocatorKind,
     ExplanationSection,
     ExplanationTopic,
+    MatrixExplanationPayload,
     UntargetedExplanationIndex,
 )
 from xic_extractor.diagnostics.backfill_reconciliation_gallery_assets import (
@@ -305,6 +309,8 @@ def _entry_rows(
         '<div class="chain-body" aria-label="route identity binding">',
         '<p class="chain-note"><strong>source feature family:</strong> '
         f"{escape_html(subject.source_feature_family_id)}</p>",
+        '<p class="chain-note"><strong>Matrix row identity basis:</strong> '
+        f"{escape_html(subject.matrix_row_identity_basis)}</p>",
         '<p class="chain-note"><strong>canonical sample identity:</strong> '
         f"{escape_html(subject.sample.identity.sample_identity_id)}</p>",
         '<p class="chain-note"><strong>Matrix row binding SHA-256:</strong> '
@@ -328,11 +334,77 @@ def _availability_badge(category: str) -> str:
 
 def _matrix_value_text(section: ExplanationSection) -> str:
     payload = section.payload
-    if payload is None:
+    if not isinstance(payload, MatrixExplanationPayload):
         return "unavailable"
     if payload.written:
         return f"written: {payload.matrix_value}"
     return "not written"
+
+
+def _payload_html(section: ExplanationSection) -> tuple[str, ...]:
+    payload = section.payload
+    if isinstance(payload, DiscoveryExplanationPayload):
+        selected = payload.selected_peak_hypothesis_id or "none"
+        return (
+            '<p class="review-note"><strong>Candidate universe:</strong> '
+            f"{escape_html(payload.candidate_universe_artifact_id)}</p>",
+            '<p class="chain-note"><strong>Selection:</strong> '
+            f"{escape_html(payload.selection_outcome)} · "
+            f"selected PeakHypothesis={escape_html(selected)}</p>",
+            *_text_list_html(
+                "Candidate PeakContents",
+                payload.candidate_peak_content_ids,
+            ),
+            *_text_list_html("Selection reasons", payload.selection_reasons),
+        )
+    if isinstance(payload, AlignmentExplanationPayload):
+        sample_member = payload.sample_member_peak_hypothesis_id or "none"
+        return (
+            '<p class="review-note"><strong>Peak group:</strong> '
+            f"{escape_html(payload.group_hypothesis_id)}</p>",
+            '<p class="chain-note"><strong>Sample member:</strong> '
+            f"{escape_html(sample_member)} · disposition="
+            f"{escape_html(payload.grouping_disposition)}</p>",
+            '<p class="chain-note"><strong>Representative group:</strong> '
+            f"{escape_html(payload.representative_group_hypothesis_id)}</p>",
+            *_text_list_html(
+                "Member PeakHypotheses",
+                payload.member_peak_hypothesis_ids,
+            ),
+            *_text_list_html("Alignment reasons", payload.decision_reasons),
+        )
+    if isinstance(payload, BackfillExplanationPayload):
+        matched = payload.matched_candidate_peak_content_id or "none"
+        return (
+            '<p class="review-note"><strong>Backfill disposition:</strong> '
+            f"{escape_html(payload.disposition)}</p>",
+            '<p class="chain-note"><strong>Production decision:</strong> '
+            f"{escape_html(payload.production_status)} · write Matrix="
+            f"{str(payload.write_matrix_value).lower()}</p>",
+            '<p class="chain-note"><strong>Policy:</strong> '
+            f"{escape_html(payload.policy_version)} · evaluated="
+            f"{str(payload.evaluated).lower()}</p>",
+            '<p class="chain-note"><strong>Matched candidate PeakContent:</strong> '
+            f"{escape_html(matched)}</p>",
+            *_text_list_html("Backfill reasons", payload.decision_reasons),
+        )
+    if isinstance(payload, MatrixExplanationPayload):
+        return (
+            '<p class="review-note"><strong>Matrix:</strong> '
+            f"{escape_html(_matrix_value_text(section))}</p>",
+        )
+    if payload is not None:
+        raise TypeError("unsupported explanation payload")
+    return ()
+
+
+def _text_list_html(label: str, values: tuple[str, ...]) -> tuple[str, ...]:
+    return (
+        f'<p class="chain-note"><strong>{escape_html(label)}:</strong></p>',
+        '<ul class="component-list">',
+        *(f"<li>{escape_html(value)}</li>" for value in values),
+        "</ul>",
+    )
 
 
 def _section_html(section: ExplanationSection) -> str:
@@ -353,11 +425,7 @@ def _section_html(section: ExplanationSection) -> str:
         f"{escape_html(section.source_owner)}</p>",
         f'<p class="chain-note">{escape_html(section.claim.reason)}</p>',
     ]
-    if section.payload is not None:
-        body.append(
-            '<p class="review-note"><strong>Matrix:</strong> '
-            f"{escape_html(_matrix_value_text(section))}</p>"
-        )
+    body.extend(_payload_html(section))
     if section.missing_requirements:
         body.extend(
             (

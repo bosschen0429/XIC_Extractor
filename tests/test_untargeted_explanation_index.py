@@ -5,15 +5,22 @@ from pathlib import Path
 
 import pytest
 
+from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
 from tests.test_alignment_xlsx_writer import sample_alignment_matrix
 from tests.test_backfill_evidence_contract import (
     _backfill_bindings,
     _backfill_row,
     _write_rows,
 )
+from tests.test_untargeted_cid_nl_golden_path import (
+    SAMPLE_ROLES,
+    SOURCE_RELPATH,
+    _golden_inputs,
+)
 from xic_extractor.alignment import artifact_write_receipts
 from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+    BackfillEvidenceOwnerBindings,
     EvidenceClaim,
     EvidenceClaimState,
     EvidenceQueryResult,
@@ -22,15 +29,28 @@ from xic_extractor.alignment.backfill_evidence_tsv import (
     lookup_backfill_evidence_tsv,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
+    build_untargeted_cid_nl_golden_path,
+)
 from xic_extractor.alignment.untargeted_explanation_index import (
     EXPLANATION_INFORMATION_REQUIREMENTS,
+    AlignmentExplanationPayload,
     BackfillExplanationInput,
+    BackfillExplanationPayload,
+    DiscoveryExplanationPayload,
     ExplanationLocator,
     ExplanationLocatorKind,
     ExplanationLookupRequest,
     ExplanationTopic,
+    MatrixExplanationPayload,
+    UntargetedExplanationIndex,
     build_untargeted_explanation_index,
+)
+from xic_extractor.peak_detection.ms1_morphology import (
+    MS1_MORPHOLOGY_AREA_SOURCE,
+    MS1_MORPHOLOGY_TRACE_METHOD,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -109,6 +129,120 @@ def _build_index(**kwargs):
     )
 
 
+def _build_complete_no_raw_index(
+    tmp_path: Path,
+    *,
+    include_backfill_query: bool = True,
+) -> UntargetedExplanationIndex:
+    fixture = build_issue175_no_raw_fixture(tmp_path, sample_roles=SAMPLE_ROLES)
+    sample_inputs, recovery = _golden_inputs(fixture)
+    projection = build_untargeted_cid_nl_golden_path(
+        processing_owners=fixture.owners,
+        method_subject=fixture.method_subject,
+        sample_inputs=sample_inputs,
+        recovery_inputs=(recovery,),
+        source_artifact_relpath=SOURCE_RELPATH,
+    )
+    group = projection.spine.group
+    assert group is not None
+    samples = fixture.owners.sample_resolutions
+    sample_order = tuple(sample.lookup_token for sample in samples)
+    matrix = build_owner_alignment_matrix(
+        (group,),
+        sample_order=sample_order,
+        ambiguous_by_sample={},
+        rescued_cells=(),
+    )
+    matrix = replace(
+        matrix,
+        cells=tuple(
+            replace(
+                cell,
+                selected_integration=replace(
+                    cell.selected_integration,
+                    area_ms1_morphology=(
+                        cell.selected_integration.area_raw_counts_seconds
+                    ),
+                    ms1_morphology_area_source=MS1_MORPHOLOGY_AREA_SOURCE,
+                    ms1_morphology_trace_method=MS1_MORPHOLOGY_TRACE_METHOD,
+                    ms1_morphology_trace_window_points=15,
+                    ms1_morphology_trace_effective_points=3,
+                ),
+            )
+            if cell.status == "detected" and cell.selected_integration is not None
+            else cell
+            for cell in matrix.cells
+        ),
+    )
+    sample = next(item for item in samples if item.lookup_token == "Missing")
+    decision = next(
+        item
+        for item in projection.backfill_decisions
+        if item.target_cell.content.canonical_sample_identity_id
+        == sample.identity.sample_identity_id
+    )
+    assert decision.matched_candidate is not None
+    source_candidate_id = (
+        decision.matched_candidate.peak_observation.content
+    ).peak_observation_content_id
+    backfill_inputs: tuple[BackfillExplanationInput, ...] = ()
+    if include_backfill_query:
+        path = _write_rows(
+            tmp_path / "backfill.tsv",
+            ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+            [
+                _backfill_row(
+                    feature_family_id=group.group_hypothesis_id,
+                    group_hypothesis_id=group.group_hypothesis_id,
+                    public_family_id=group.public_family_id,
+                    sample_stem=sample.lookup_token,
+                    source_candidate_id=source_candidate_id,
+                )
+            ],
+        )
+        bindings = BackfillEvidenceOwnerBindings(
+            known_group_ids=frozenset({group.group_hypothesis_id}),
+            known_sample_stems=frozenset({sample.lookup_token}),
+            candidate_samples={source_candidate_id: sample.lookup_token},
+            group_feature_family_ids={
+                group.group_hypothesis_id: group.group_hypothesis_id
+            },
+            group_public_family_ids={
+                group.group_hypothesis_id: group.public_family_id
+            },
+        )
+        query_result = lookup_backfill_evidence_tsv(
+            path,
+            feature_family_id=group.group_hypothesis_id,
+            group_hypothesis_id=group.group_hypothesis_id,
+            sample_stem=sample.lookup_token,
+            owner_bindings=bindings,
+        )
+        backfill_inputs = (
+            BackfillExplanationInput(
+                route_key=(
+                    group.group_hypothesis_id,
+                    sample.identity.sample_identity_id,
+                ),
+                query_result=query_result,
+            ),
+        )
+    return _build_index(
+        processing_attempt=fixture.owners.attempt,
+        matrix=matrix,
+        sample_population=samples,
+        requests=(
+            ExplanationLookupRequest(
+                peak_hypothesis_id=group.group_hypothesis_id,
+                sample=sample,
+            ),
+        ),
+        cid_nl_spines=(projection.spine,),
+        backfill_decisions=projection.backfill_decisions,
+        backfill_inputs=backfill_inputs,
+    )
+
+
 def test_builds_only_requested_routes_in_deterministic_owner_order() -> None:
     samples = _samples()
     index = _build_index(
@@ -155,6 +289,57 @@ def test_builds_only_requested_routes_in_deterministic_owner_order() -> None:
             section.missing_requirements
             == (EXPLANATION_INFORMATION_REQUIREMENTS[topic])
         )
+
+
+def test_no_raw_owner_route_closes_all_four_explanation_sections(
+    tmp_path: Path,
+) -> None:
+    index = _build_complete_no_raw_index(tmp_path)
+    entry = index.entries[0]
+
+    assert all(
+        section.claim.state is EvidenceClaimState.OWNER_REHYDRATED
+        for section in entry.sections
+    )
+    discovery = entry.section(ExplanationTopic.DISCOVERY).payload
+    alignment = entry.section(ExplanationTopic.ALIGNMENT).payload
+    backfill = entry.section(ExplanationTopic.BACKFILL).payload
+    matrix = entry.section(ExplanationTopic.MATRIX).payload
+    assert isinstance(discovery, DiscoveryExplanationPayload)
+    assert discovery.selection_outcome == "HOLD"
+    assert discovery.selected_peak_hypothesis_id is None
+    assert isinstance(alignment, AlignmentExplanationPayload)
+    assert alignment.sample_member_peak_hypothesis_id is None
+    assert alignment.group_hypothesis_id == entry.subject.peak_hypothesis_id
+    assert isinstance(backfill, BackfillExplanationPayload)
+    assert backfill.evaluated is True
+    assert backfill.disposition == "unresolved"
+    assert backfill.matched_candidate_peak_content_id is not None
+    assert isinstance(matrix, MatrixExplanationPayload)
+    assert matrix.written is False
+
+
+def test_missing_backfill_sidecar_stays_unavailable_without_hiding_live_owners(
+    tmp_path: Path,
+) -> None:
+    entry = _build_complete_no_raw_index(
+        tmp_path,
+        include_backfill_query=False,
+    ).entries[0]
+
+    assert entry.section(ExplanationTopic.DISCOVERY).claim.state is (
+        EvidenceClaimState.OWNER_REHYDRATED
+    )
+    assert entry.section(ExplanationTopic.ALIGNMENT).claim.state is (
+        EvidenceClaimState.OWNER_REHYDRATED
+    )
+    backfill = entry.section(ExplanationTopic.BACKFILL)
+    assert backfill.claim.state is EvidenceClaimState.UNAVAILABLE
+    assert backfill.payload is None
+    assert backfill.claim.reason == "no owner-reader Backfill query result was supplied"
+    assert entry.section(ExplanationTopic.MATRIX).claim.state is (
+        EvidenceClaimState.OWNER_REHYDRATED
+    )
 
 
 def test_backfill_owner_query_preserves_claim_ceiling_and_quarantines_row_text(

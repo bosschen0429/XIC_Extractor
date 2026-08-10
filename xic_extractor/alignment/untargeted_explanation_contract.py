@@ -22,7 +22,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-EXPLANATION_INDEX_SCHEMA_VERSION = "untargeted_explanation_index_v1"
+EXPLANATION_INDEX_SCHEMA_VERSION = "untargeted_explanation_index_v2"
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
@@ -59,7 +59,7 @@ EXPLANATION_INFORMATION_REQUIREMENTS: Mapping[ExplanationTopic, tuple[str, ...]]
                 "group_hypothesis_id",
                 "member_peak_hypothesis_ids",
                 "grouping_disposition",
-                "representative_peak_hypothesis_id",
+                "representative_group_hypothesis_id",
                 "decision_reason",
             ),
             ExplanationTopic.BACKFILL: (
@@ -135,11 +135,158 @@ class MatrixExplanationPayload:
 
 @final
 @dataclass(frozen=True, slots=True)
+class DiscoveryExplanationPayload:
+    candidate_universe_artifact_id: str
+    candidate_peak_content_ids: tuple[str, ...]
+    selected_peak_hypothesis_id: str | None
+    selection_outcome: str
+    selection_reasons: tuple[str, ...]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("DiscoveryExplanationPayload is final")
+
+    def __post_init__(self) -> None:
+        _require_payload_text(
+            self.candidate_universe_artifact_id,
+            field="candidate_universe_artifact_id",
+        )
+        _require_unique_payload_texts(
+            self.candidate_peak_content_ids,
+            field="candidate_peak_content_ids",
+        )
+        if self.selected_peak_hypothesis_id is not None:
+            _require_payload_text(
+                self.selected_peak_hypothesis_id,
+                field="selected_peak_hypothesis_id",
+            )
+        _require_payload_text(self.selection_outcome, field="selection_outcome")
+        _require_unique_payload_texts(
+            self.selection_reasons,
+            field="selection_reasons",
+            allow_empty=False,
+        )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class AlignmentExplanationPayload:
+    group_hypothesis_id: str
+    member_peak_hypothesis_ids: tuple[str, ...]
+    sample_member_peak_hypothesis_id: str | None
+    grouping_disposition: str
+    representative_group_hypothesis_id: str
+    decision_reasons: tuple[str, ...]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("AlignmentExplanationPayload is final")
+
+    def __post_init__(self) -> None:
+        _require_payload_text(self.group_hypothesis_id, field="group_hypothesis_id")
+        _require_unique_payload_texts(
+            self.member_peak_hypothesis_ids,
+            field="member_peak_hypothesis_ids",
+            allow_empty=False,
+        )
+        if self.sample_member_peak_hypothesis_id is not None:
+            _require_payload_text(
+                self.sample_member_peak_hypothesis_id,
+                field="sample_member_peak_hypothesis_id",
+            )
+            if (
+                self.sample_member_peak_hypothesis_id
+                not in self.member_peak_hypothesis_ids
+            ):
+                raise ValueError(
+                    "sample member must belong to the Alignment group membership"
+                )
+        _require_payload_text(
+            self.grouping_disposition,
+            field="grouping_disposition",
+        )
+        _require_payload_text(
+            self.representative_group_hypothesis_id,
+            field="representative_group_hypothesis_id",
+        )
+        _require_unique_payload_texts(
+            self.decision_reasons,
+            field="decision_reasons",
+            allow_empty=False,
+        )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class BackfillExplanationPayload:
+    evaluated: bool
+    disposition: str
+    production_status: str
+    write_matrix_value: bool
+    policy_version: str
+    matched_candidate_peak_content_id: str | None
+    decision_reasons: tuple[str, ...]
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("BackfillExplanationPayload is final")
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.evaluated, bool):
+            raise TypeError("evaluated must be bool")
+        if not isinstance(self.write_matrix_value, bool):
+            raise TypeError("write_matrix_value must be bool")
+        _require_payload_text(self.disposition, field="disposition")
+        _require_payload_text(self.production_status, field="production_status")
+        _require_payload_text(self.policy_version, field="policy_version")
+        if self.matched_candidate_peak_content_id is not None:
+            _require_payload_text(
+                self.matched_candidate_peak_content_id,
+                field="matched_candidate_peak_content_id",
+            )
+        _require_unique_payload_texts(
+            self.decision_reasons,
+            field="decision_reasons",
+            allow_empty=False,
+        )
+
+
+ExplanationPayload = (
+    DiscoveryExplanationPayload
+    | AlignmentExplanationPayload
+    | BackfillExplanationPayload
+    | MatrixExplanationPayload
+)
+
+
+def _require_payload_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise ValueError(f"{field} must be non-empty canonical text")
+    return value
+
+
+def _require_unique_payload_texts(
+    values: object,
+    *,
+    field: str,
+    allow_empty: bool = True,
+) -> tuple[str, ...]:
+    if not isinstance(values, tuple) or any(
+        not isinstance(value, str) or not value.strip() or value != value.strip()
+        for value in values
+    ):
+        raise ValueError(f"{field} must contain canonical text values")
+    if not allow_empty and not values:
+        raise ValueError(f"{field} must not be empty")
+    if values != tuple(sorted(set(values))):
+        raise ValueError(f"{field} must be unique and canonical-sorted")
+    return values
+
+
+@final
+@dataclass(frozen=True, slots=True)
 class ExplanationSection:
     topic: ExplanationTopic
     source_owner: str
     claim: EvidenceClaim
-    payload: MatrixExplanationPayload | None
+    payload: ExplanationPayload | None
     missing_requirements: tuple[str, ...]
     supporting_claims: tuple[EvidenceClaim, ...] = ()
     locators: tuple[ExplanationLocator, ...] = ()
@@ -189,13 +336,20 @@ class ExplanationSection:
                     "an unavailable explanation requires explicit missing information"
                 )
         else:
-            if self.topic is not ExplanationTopic.MATRIX:
-                raise ValueError("only the current Matrix owner has a payload contract")
-            if not isinstance(self.payload, MatrixExplanationPayload):
-                raise TypeError("Matrix explanation payload has the wrong type")
             if not claim_available or self.missing_requirements:
                 raise ValueError(
-                    "a Matrix payload requires an available claim and no missing facts"
+                    "an explanation payload requires an available claim and no "
+                    "missing facts"
+                )
+            expected_payload_type = {
+                ExplanationTopic.DISCOVERY: DiscoveryExplanationPayload,
+                ExplanationTopic.ALIGNMENT: AlignmentExplanationPayload,
+                ExplanationTopic.BACKFILL: BackfillExplanationPayload,
+                ExplanationTopic.MATRIX: MatrixExplanationPayload,
+            }[self.topic]
+            if not isinstance(self.payload, expected_payload_type):
+                raise TypeError(
+                    f"{self.topic.value} explanation payload has the wrong type"
                 )
 
 
@@ -206,6 +360,7 @@ class ExplanationSubject:
     matrix_row_index: int
     matrix_sample_index: int
     matrix_row_binding_sha256: str
+    matrix_row_identity_basis: str
     peak_hypothesis_id: str
     source_feature_family_id: str
     sample: ResolvedCanonicalSampleIdentity
@@ -237,6 +392,7 @@ class ExplanationSubject:
         if _SHA256_RE.fullmatch(self.matrix_row_binding_sha256) is None:
             raise ValueError("matrix_row_binding_sha256 must be lowercase SHA-256")
         for name, value in (
+            ("matrix_row_identity_basis", self.matrix_row_identity_basis),
             ("peak_hypothesis_id", self.peak_hypothesis_id),
             ("source_feature_family_id", self.source_feature_family_id),
             ("sample_stem", self.sample_stem),
@@ -436,11 +592,15 @@ class BackfillExplanationInput:
 __all__ = (
     "EXPLANATION_INDEX_SCHEMA_VERSION",
     "EXPLANATION_INFORMATION_REQUIREMENTS",
+    "AlignmentExplanationPayload",
+    "BackfillExplanationPayload",
     "BackfillExplanationInput",
+    "DiscoveryExplanationPayload",
     "ExplanationIndexEntry",
     "ExplanationLocator",
     "ExplanationLocatorKind",
     "ExplanationLookupRequest",
+    "ExplanationPayload",
     "ExplanationRunBinding",
     "ExplanationSection",
     "ExplanationSubject",

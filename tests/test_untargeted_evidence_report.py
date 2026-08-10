@@ -7,6 +7,7 @@ import pytest
 from tests.test_alignment_xlsx_writer import sample_alignment_matrix
 from tests.test_untargeted_explanation_index import (
     _attempt,
+    _build_complete_no_raw_index,
     _build_index,
     _request,
     _samples,
@@ -54,8 +55,7 @@ def test_renders_one_integrated_bounded_report_with_existing_gallery_shell() -> 
     assert (
         "writer byte receipts and processing attempt identity do not prove" in rendered
     )
-    assert "no owner-produced Discovery selection explanation was supplied" in rendered
-    assert "no owner-produced Alignment grouping explanation was supplied" in rendered
+    assert "no owner-produced CID-NL reference spine was supplied" in rendered
     assert "no owner-reader Backfill query result was supplied" in rendered
     assert "gallery-hero" in rendered
     assert "data-filter-control" in rendered
@@ -65,6 +65,29 @@ def test_renders_one_integrated_bounded_report_with_existing_gallery_shell() -> 
     assert "data-lightbox" in rendered
     assert "const applyFilters" in rendered
     assert "sample=s2" not in rendered
+
+
+def test_renders_owner_rehydrated_discovery_alignment_and_backfill_content(
+    tmp_path: Path,
+) -> None:
+    index = _build_complete_no_raw_index(tmp_path)
+
+    rendered = render_untargeted_evidence_report(index)
+
+    assert "available sections</span><strong>4</strong>" in rendered
+    assert "Candidate universe:" in rendered
+    assert "Candidate PeakContents" in rendered
+    assert "Selection reasons" in rendered
+    assert "Peak group:" in rendered
+    assert "Member PeakHypotheses" in rendered
+    assert "Alignment reasons" in rendered
+    assert "Matrix row identity basis:" in rendered
+    assert "no_split_peak_hypothesis" in rendered
+    assert "Backfill disposition:" in rendered
+    assert "Production decision:" in rendered
+    assert "write Matrix=false" in rendered
+    assert "Backfill reasons" in rendered
+    assert "Matrix:</strong> not written" in rendered
 
 
 def test_report_accepts_only_the_owner_minted_typed_index() -> None:
