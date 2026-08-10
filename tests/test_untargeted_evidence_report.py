@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -9,23 +10,26 @@ from tests.test_untargeted_explanation_index import (
     _attempt,
     _build_complete_no_raw_index,
     _build_index,
+    _locator_request,
     _request,
     _samples,
 )
 from xic_extractor.alignment.backfill_evidence_contract import (
     EvidenceClaim,
     EvidenceClaimState,
-    EvidenceQueryResult,
 )
 from xic_extractor.alignment.output_levels import artifact_names_for_output_level
-from xic_extractor.alignment.untargeted_evidence_report import (
-    render_untargeted_evidence_report,
-    write_untargeted_evidence_report,
+from xic_extractor.alignment.untargeted_explanation_contract import (
+    _ENTRY_MINT_TOKEN,
+    _INDEX_MINT_TOKEN,
+    _SECTION_MINT_TOKEN,
 )
 from xic_extractor.alignment.untargeted_explanation_index import (
-    BackfillExplanationInput,
-    ExplanationLocator,
     ExplanationLocatorKind,
+)
+from xic_extractor.output.untargeted_evidence_report import (
+    render_untargeted_evidence_report,
+    write_untargeted_evidence_report,
 )
 
 
@@ -61,10 +65,17 @@ def test_renders_one_integrated_bounded_report_with_existing_gallery_shell() -> 
     assert "data-filter-control" in rendered
     assert "data-search-control" in rendered
     assert "data-detail-toggle" in rendered
-    assert '<span class="result-count" data-result-count' not in rendered
+    assert (
+        '<span class="result-count" data-result-count '
+        'data-result-label="routes">' in rendered
+    )
+    assert "${resultLabel}`" in rendered
     assert "data-lightbox" in rendered
     assert "const applyFilters" in rendered
     assert "sample=s2" not in rendered
+    assert "m/z=242.1140" in rendered
+    assert "RT=12.593" in rendered
+    assert 'data-search="1 1 FAM000001' in rendered
 
 
 def test_renders_owner_rehydrated_discovery_alignment_and_backfill_content(
@@ -90,6 +101,17 @@ def test_renders_owner_rehydrated_discovery_alignment_and_backfill_content(
     assert "Matrix:</strong> not written" in rendered
 
 
+def test_renders_selected_written_direct_support_route(tmp_path: Path) -> None:
+    rendered = render_untargeted_evidence_report(
+        _build_complete_no_raw_index(tmp_path, sample_stem="StudySupport")
+    )
+
+    assert "selected PeakHypothesis=xic.peak-hypothesis" in rendered
+    assert "evaluated=false" in rendered
+    assert "direct_support_no_recovery_required" in rendered
+    assert "Matrix:</strong> written:" in rendered
+
+
 def test_report_accepts_only_the_owner_minted_typed_index() -> None:
     with pytest.raises(TypeError, match="UntargetedExplanationIndex"):
         render_untargeted_evidence_report({})  # type: ignore[arg-type]
@@ -97,82 +119,103 @@ def test_report_accepts_only_the_owner_minted_typed_index() -> None:
 
 def test_owner_text_is_escaped_and_unavailable_claims_remain_explicit() -> None:
     malicious_reason = '<script>alert("x")</script> & "quoted"'
-    claim_subjects = (
-        "record_content",
-        "group_assignment_binding",
-        "public_family_binding",
-        "cross_artifact_binding",
-        "production_decision",
-        "full_aligned_cell",
-        "missing_key_absence",
-    )
-    query_result = EvidenceQueryResult(
-        records=(),
-        claims=tuple(
-            EvidenceClaim(
-                subject=subject,
-                state=EvidenceClaimState.UNAVAILABLE,
-                reason=(
-                    malicious_reason if subject == "missing_key_absence" else "missing"
-                ),
-            )
-            for subject in claim_subjects
-        ),
-    )
     samples = _samples()
     index = _build_index(
         processing_attempt=_attempt(),
         matrix=sample_alignment_matrix(),
         sample_population=samples,
         requests=(_request(samples[0]),),
-        backfill_inputs=(
-            BackfillExplanationInput(
-                route_key=(
-                    "FAM000001",
-                    samples[0].identity.sample_identity_id,
-                ),
-                query_result=query_result,
-            ),
+    )
+    entry = index.entries[0]
+    section = entry.sections[0]
+    hostile_section = replace(
+        section,
+        claim=EvidenceClaim(
+            subject=section.claim.subject,
+            state=EvidenceClaimState.UNAVAILABLE,
+            reason=malicious_reason,
         ),
+        _mint_token=_SECTION_MINT_TOKEN,
+    )
+    hostile_entry = replace(
+        entry,
+        sections=(hostile_section, *entry.sections[1:]),
+        _mint_token=_ENTRY_MINT_TOKEN,
+    )
+    hostile_index = replace(
+        index,
+        entries=(hostile_entry,),
+        _mint_token=_INDEX_MINT_TOKEN,
     )
 
-    rendered = render_untargeted_evidence_report(index)
+    rendered = render_untargeted_evidence_report(hostile_index)
 
     assert malicious_reason not in rendered
-    assert '&lt;script&gt;alert(&quot;' in rendered
-    assert '&lt;/script&gt; &amp; &quot;' in rendered
+    assert "&lt;script&gt;alert(&quot;" in rendered
+    assert "&lt;/script&gt; &amp; &quot;" in rendered
     assert "unavailable" in rendered
-    assert "Owner claim census" in rendered
 
 
 def test_relative_locator_stays_offline_and_overlay_uses_existing_lightbox(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    locator = ExplanationLocator(
-        kind=ExplanationLocatorKind.OVERLAY,
-        relative_path="overlays/FAM000001-s1.png",
-    )
     samples = _samples()
+    attempt = _attempt()
+    report_root = tmp_path / "report-root"
+    locator = _locator_request(
+        report_root,
+        attempt=attempt,
+        sample=samples[0],
+        kind=ExplanationLocatorKind.OVERLAY,
+        artifact_name="FAM000001-s1.png",
+    )
     index = _build_index(
-        processing_attempt=_attempt(),
+        processing_attempt=attempt,
         matrix=sample_alignment_matrix(),
         sample_population=samples,
         requests=(_request(samples[0], locators=(locator,)),),
     )
     source_dir = tmp_path / "unrelated-cwd"
-    existing_overlay = source_dir / locator.relative_path
-    existing_overlay.parent.mkdir(parents=True)
-    existing_overlay.write_bytes(b"fixture")
+    source_dir.mkdir()
     monkeypatch.chdir(source_dir)
 
     rendered = render_untargeted_evidence_report(index)
 
-    assert 'href="overlays/FAM000001-s1.png"' in rendered
-    assert 'data-lightbox-src="overlays/FAM000001-s1.png"' in rendered
+    assert f'href="{locator.relative_path}"' in rendered
+    assert f'data-lightbox-src="{locator.relative_path}"' in rendered
     assert "file://" not in rendered
     assert "https://" not in rendered
     assert "http://" not in rendered
+
+
+@pytest.mark.parametrize("mutation", ("missing", "tampered"))
+def test_writer_rejects_missing_or_changed_locator_artifact(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    samples = _samples()
+    attempt = _attempt()
+    report_root = tmp_path / "report-root"
+    locator = _locator_request(
+        report_root,
+        attempt=attempt,
+        sample=samples[0],
+    )
+    index = _build_index(
+        processing_attempt=attempt,
+        matrix=sample_alignment_matrix(),
+        sample_population=samples,
+        requests=(_request(samples[0], locators=(locator,)),),
+    )
+    artifact = report_root.joinpath(*locator.relative_path.split("/"))
+    if mutation == "missing":
+        artifact.unlink()
+    else:
+        artifact.write_bytes(b"tampered")
+
+    with pytest.raises(ValueError, match="unavailable|changed"):
+        write_untargeted_evidence_report(report_root / "report.html", index)
 
 
 def test_writer_is_opt_in_and_emits_deterministic_utf8_lf_bytes(

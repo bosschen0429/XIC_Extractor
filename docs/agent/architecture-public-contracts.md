@@ -97,9 +97,16 @@ Apply these ownership rules:
 
 #### Alignment Backfill evidence records
 
-`xic_extractor.alignment.backfill_evidence_contract` owns the immutable record
-and claim models, while its focused `backfill_evidence_tsv` adapter owns strict
-TSV rehydration for the existing `alignment_backfill_cell_evidence.tsv` and
+`xic_extractor.alignment.backfill_evidence_contract` owns the immutable
+Backfill record models and continues to re-export the public claim vocabulary.
+The dependency-light `xic_extractor.alignment.evidence_claims` leaf owns that
+generic vocabulary so outer renderers can consume typed claims without gaining
+a transitive RAW-reader dependency. Backfill claim-census semantics remain with
+`backfill_evidence_owner`; only the strict `backfill_evidence_tsv` and
+`backfill_evidence_parquet` readers may mint `EvidenceQueryResult`. A caller-made
+record/claim tuple is not a reader result and cannot cross an explanation or
+other semantic boundary. The focused adapters own strict rehydration for the
+existing `alignment_backfill_cell_evidence.tsv` and
 `skipped_evidence_ledger.tsv` projections. This contract does not change either
 writer schema, path, output level, or publication default.
 

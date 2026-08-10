@@ -10,11 +10,9 @@ from pathlib import PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 from typing import final
 
-from xic_extractor.alignment.backfill_evidence_contract import (
-    BackfillEvidenceRecord,
+from xic_extractor.alignment.evidence_claims import (
     EvidenceClaim,
     EvidenceClaimState,
-    EvidenceQueryResult,
 )
 from xic_extractor.processing_identity import (
     FileContentFingerprint,
@@ -22,7 +20,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-EXPLANATION_INDEX_SCHEMA_VERSION = "untargeted_explanation_index_v2"
+EXPLANATION_INDEX_SCHEMA_VERSION = "untargeted_explanation_index_v3"
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
@@ -30,6 +28,8 @@ _CROSS_PLATFORM_FORBIDDEN_PATH_CHARS = frozenset('<>:"|?*\\#%')
 _SECTION_MINT_TOKEN = object()
 _SUBJECT_MINT_TOKEN = object()
 _ENTRY_MINT_TOKEN = object()
+_LOCATOR_REQUEST_MINT_TOKEN = object()
+_LOCATOR_MINT_TOKEN = object()
 _RUN_BINDING_MINT_TOKEN = object()
 _INDEX_MINT_TOKEN = object()
 
@@ -81,36 +81,93 @@ EXPLANATION_INFORMATION_REQUIREMENTS: Mapping[ExplanationTopic, tuple[str, ...]]
 
 @final
 @dataclass(frozen=True, slots=True)
-class ExplanationLocator:
-    """Portable, relative navigation only; never evidence or authority."""
+class ExplanationLocatorRequest:
+    """Artifact-owner receipt before exact explanation entry binding."""
 
     kind: ExplanationLocatorKind
+    topic: ExplanationTopic
     relative_path: str
+    processing_attempt_id: str
+    peak_hypothesis_id: str
+    canonical_sample_identity_id: str
+    artifact_fingerprint: FileContentFingerprint
+    _mint_token: InitVar[object] = field(kw_only=True)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("ExplanationLocatorRequest is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _LOCATOR_REQUEST_MINT_TOKEN:
+            raise ValueError(
+                "ExplanationLocatorRequest must be minted by the navigation owner"
+            )
+        if not isinstance(self.kind, ExplanationLocatorKind):
+            raise TypeError("locator kind must be an ExplanationLocatorKind")
+        if not isinstance(self.topic, ExplanationTopic):
+            raise TypeError("locator topic must be an ExplanationTopic")
+        _require_portable_locator_path(self.relative_path)
+        for field_name, value in (
+            ("processing_attempt_id", self.processing_attempt_id),
+            ("peak_hypothesis_id", self.peak_hypothesis_id),
+            ("canonical_sample_identity_id", self.canonical_sample_identity_id),
+        ):
+            _require_payload_text(value, field=field_name)
+        if not isinstance(self.artifact_fingerprint, FileContentFingerprint):
+            raise TypeError("artifact_fingerprint must be a FileContentFingerprint")
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class ExplanationLocator:
+    """Owner-bound navigation only; never evidence or authority."""
+
+    kind: ExplanationLocatorKind
+    topic: ExplanationTopic
+    relative_path: str
+    processing_attempt_id: str
+    peak_hypothesis_id: str
+    canonical_sample_identity_id: str
+    artifact_fingerprint: FileContentFingerprint
+    _mint_token: InitVar[object] = field(kw_only=True)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("ExplanationLocator is final")
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _LOCATOR_MINT_TOKEN:
+            raise ValueError("ExplanationLocator must be bound by the index owner")
         if not isinstance(self.kind, ExplanationLocatorKind):
             raise TypeError("locator kind must be an ExplanationLocatorKind")
-        path = self.relative_path
-        if not isinstance(path, str) or not path or path != path.strip():
-            raise ValueError("explanation locator must be non-empty canonical text")
-        if any(ord(char) < 32 for char in path):
-            raise ValueError("explanation locator must not contain control characters")
-        if _URL_SCHEME_RE.match(path):
-            raise ValueError("explanation locator must not contain a URL scheme")
-        if any(char in _CROSS_PLATFORM_FORBIDDEN_PATH_CHARS for char in path):
-            raise ValueError(
-                "explanation locator must use portable POSIX path characters"
-            )
-        posix_path = PurePosixPath(path)
-        if posix_path.is_absolute() or PureWindowsPath(path).drive:
-            raise ValueError("explanation locator must be relative")
-        if any(part in {"", ".", ".."} for part in posix_path.parts):
-            raise ValueError("explanation locator must not traverse directories")
-        if posix_path.as_posix() != path:
-            raise ValueError("explanation locator must use canonical POSIX separators")
+        if not isinstance(self.topic, ExplanationTopic):
+            raise TypeError("locator topic must be an ExplanationTopic")
+        _require_portable_locator_path(self.relative_path)
+        for field_name, value in (
+            ("processing_attempt_id", self.processing_attempt_id),
+            ("peak_hypothesis_id", self.peak_hypothesis_id),
+            ("canonical_sample_identity_id", self.canonical_sample_identity_id),
+        ):
+            _require_payload_text(value, field=field_name)
+        if not isinstance(self.artifact_fingerprint, FileContentFingerprint):
+            raise TypeError("artifact_fingerprint must be a FileContentFingerprint")
+
+
+def _require_portable_locator_path(path: object) -> str:
+    if not isinstance(path, str) or not path or path != path.strip():
+        raise ValueError("explanation locator must be non-empty canonical text")
+    if any(ord(char) < 32 for char in path):
+        raise ValueError("explanation locator must not contain control characters")
+    if _URL_SCHEME_RE.match(path):
+        raise ValueError("explanation locator must not contain a URL scheme")
+    if any(char in _CROSS_PLATFORM_FORBIDDEN_PATH_CHARS for char in path):
+        raise ValueError("explanation locator must use portable POSIX path characters")
+    posix_path = PurePosixPath(path)
+    if posix_path.is_absolute() or PureWindowsPath(path).drive:
+        raise ValueError("explanation locator must be relative")
+    if any(part in {"", ".", ".."} for part in posix_path.parts):
+        raise ValueError("explanation locator must not traverse directories")
+    if posix_path.as_posix() != path:
+        raise ValueError("explanation locator must use canonical POSIX separators")
+    return path
 
 
 @final
@@ -118,6 +175,9 @@ class ExplanationLocator:
 class MatrixExplanationPayload:
     written: bool
     matrix_value: str | None
+    matrix_row_mz: str
+    matrix_row_rt: str
+    sample_stem: str
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("MatrixExplanationPayload is final")
@@ -131,6 +191,9 @@ class MatrixExplanationPayload:
             raise ValueError(
                 "matrix_value must be present exactly when the Matrix cell is written"
             )
+        _require_payload_text(self.matrix_row_mz, field="matrix_row_mz")
+        _require_payload_text(self.matrix_row_rt, field="matrix_row_rt")
+        _require_payload_text(self.sample_stem, field="sample_stem")
 
 
 @final
@@ -320,7 +383,11 @@ class ExplanationSection:
             not isinstance(locator, ExplanationLocator) for locator in self.locators
         ):
             raise TypeError("locators must contain ExplanationLocator values")
-        locator_keys = tuple((item.kind, item.relative_path) for item in self.locators)
+        if any(locator.topic is not self.topic for locator in self.locators):
+            raise ValueError("explanation locator topic must match its section")
+        locator_keys = tuple(
+            (item.kind, item.topic, item.relative_path) for item in self.locators
+        )
         if len(locator_keys) != len(set(locator_keys)):
             raise ValueError("explanation locators must be unique")
 
@@ -430,6 +497,19 @@ class ExplanationIndexEntry:
         topics = tuple(section.topic for section in self.sections)
         if topics != tuple(ExplanationTopic):
             raise ValueError("entry sections must contain the four canonical topics")
+        for section in self.sections:
+            for locator in section.locators:
+                if (
+                    locator.processing_attempt_id
+                    != self.subject.processing_attempt.processing_attempt_id
+                    or locator.peak_hypothesis_id != self.subject.peak_hypothesis_id
+                    or locator.canonical_sample_identity_id
+                    != self.subject.sample.identity.sample_identity_id
+                ):
+                    raise ValueError(
+                        "explanation locator must bind the exact entry route "
+                        "and attempt"
+                    )
 
     def section(self, topic: ExplanationTopic) -> ExplanationSection:
         for section in self.sections:
@@ -546,7 +626,7 @@ class UntargetedExplanationIndex:
 class ExplanationLookupRequest:
     peak_hypothesis_id: str
     sample: ResolvedCanonicalSampleIdentity
-    locators: tuple[ExplanationLocator, ...] = ()
+    locators: tuple[ExplanationLocatorRequest, ...] = ()
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("ExplanationLookupRequest is final")
@@ -557,9 +637,16 @@ class ExplanationLookupRequest:
         if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
             raise TypeError("sample must be a ResolvedCanonicalSampleIdentity")
         if any(
-            not isinstance(locator, ExplanationLocator) for locator in self.locators
+            not isinstance(locator, ExplanationLocatorRequest)
+            for locator in self.locators
         ):
-            raise TypeError("locators must contain ExplanationLocator values")
+            raise TypeError("locators must contain ExplanationLocatorRequest values")
+        locator_keys = tuple(
+            (locator.topic, locator.kind, locator.relative_path)
+            for locator in self.locators
+        )
+        if len(locator_keys) != len(set(locator_keys)):
+            raise ValueError("locator requests must be unique within one route")
 
     @property
     def route_key(self) -> tuple[str, str]:
@@ -569,36 +656,16 @@ class ExplanationLookupRequest:
         )
 
 
-@final
-@dataclass(frozen=True, slots=True)
-class BackfillExplanationInput:
-    route_key: tuple[str, str]
-    query_result: EvidenceQueryResult[BackfillEvidenceRecord]
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        raise TypeError("BackfillExplanationInput is final")
-
-    def __post_init__(self) -> None:
-        if (
-            not isinstance(self.route_key, tuple)
-            or len(self.route_key) != 2
-            or any(not isinstance(value, str) or not value for value in self.route_key)
-        ):
-            raise ValueError("Backfill explanation route_key must contain two IDs")
-        if not isinstance(self.query_result, EvidenceQueryResult):
-            raise TypeError("query_result must be an EvidenceQueryResult")
-
-
 __all__ = (
     "EXPLANATION_INDEX_SCHEMA_VERSION",
     "EXPLANATION_INFORMATION_REQUIREMENTS",
     "AlignmentExplanationPayload",
     "BackfillExplanationPayload",
-    "BackfillExplanationInput",
     "DiscoveryExplanationPayload",
     "ExplanationIndexEntry",
     "ExplanationLocator",
     "ExplanationLocatorKind",
+    "ExplanationLocatorRequest",
     "ExplanationLookupRequest",
     "ExplanationPayload",
     "ExplanationRunBinding",

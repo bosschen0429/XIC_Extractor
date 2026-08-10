@@ -1,16 +1,17 @@
-"""Alignment-owned HTML presentation for one Untargeted explanation index.
+"""Output-owned HTML presentation for one Untargeted explanation index.
 
 The report is a bounded consumer.  It reuses the Backfill reconciliation
-gallery's presentation assets, but it never loads artifacts, reconstructs
-scientific facts, or writes Matrix values.
+gallery's presentation assets, but it never loads scientific artifacts,
+reconstructs scientific facts, or writes Matrix values. The opt-in writer only
+rechecks navigation artifact bytes against owner-minted receipts.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-from xic_extractor.alignment.backfill_evidence_contract import (
+from xic_extractor.alignment.evidence_claims import (
     EvidenceClaim,
     EvidenceClaimState,
 )
@@ -35,6 +36,7 @@ from xic_extractor.diagnostics.backfill_reconciliation_gallery_html import (
     escape_attr,
     escape_html,
 )
+from xic_extractor.processing_identity import fingerprint_file_content
 
 _AVAILABLE_STATES = frozenset(
     {
@@ -109,10 +111,38 @@ def write_untargeted_evidence_report(
 
     if not isinstance(path, Path):
         raise TypeError("path must be a Path")
+    if not isinstance(index, UntargetedExplanationIndex):
+        raise TypeError("index must be an UntargetedExplanationIndex")
     path.parent.mkdir(parents=True, exist_ok=True)
+    _verify_locator_artifacts(path.parent, index)
     rendered = render_untargeted_evidence_report(index)
     path.write_bytes(rendered.encode("utf-8"))
     return path
+
+
+def _verify_locator_artifacts(
+    report_root: Path,
+    index: UntargetedExplanationIndex,
+) -> None:
+    root = report_root.resolve()
+    for locator in (
+        locator
+        for entry in index.entries
+        for section in entry.sections
+        for locator in section.locators
+    ):
+        artifact = root.joinpath(*PurePosixPath(locator.relative_path).parts)
+        if not artifact.is_file():
+            raise ValueError(
+                f"explanation locator artifact is unavailable: {locator.relative_path}"
+            )
+        resolved_artifact = artifact.resolve(strict=True)
+        if not resolved_artifact.is_relative_to(root):
+            raise ValueError("explanation locator artifact escaped the report root")
+        if fingerprint_file_content(resolved_artifact) != locator.artifact_fingerprint:
+            raise ValueError(
+                f"explanation locator artifact changed: {locator.relative_path}"
+            )
 
 
 def _summary_html(index: UntargetedExplanationIndex) -> list[str]:
@@ -208,7 +238,7 @@ def _filter_html(route_count: int) -> list[str]:
         '<label for="searchBox">Search</label>',
         '<input id="searchBox" type="search" data-search-control '
         'aria-label="Search Matrix row, PeakHypothesis, sample, claim or reason">',
-        '<span class="result-count">顯示 '
+        '<span class="result-count" data-result-count data-result-label="routes">顯示 '
         f"{route_count} / "
         f"{route_count} routes</span>",
         "</section>",
@@ -261,15 +291,7 @@ def _entry_rows(
         if section.claim.state not in _AVAILABLE_STATES
     )
     category = "complete" if not unavailable else "partial"
-    search = " ".join(
-        (
-            subject.peak_hypothesis_id,
-            subject.source_feature_family_id,
-            subject.sample_stem,
-            subject.sample.identity.sample_identity_id,
-            *(section.claim.reason for section in entry.sections),
-        )
-    )
+    search = _entry_search_text(entry)
     matrix = entry.section(ExplanationTopic.MATRIX)
     matrix_text = _matrix_value_text(matrix)
     link_html = _entry_link_html(entry)
@@ -284,7 +306,9 @@ def _entry_rows(
         'data-label="hypothesis / sample">'
         f'<span class="family-id">{escape_html(subject.peak_hypothesis_id)}</span>'
         f'<span class="family-meta">sample={escape_html(subject.sample_stem)} · '
-        f"row={subject.matrix_row_index} · cell={subject.matrix_sample_index}</span>"
+        f"row={subject.matrix_row_index} · cell={subject.matrix_sample_index} · "
+        f"m/z={escape_html(_matrix_coordinates(matrix)[0])} · "
+        f"RT={escape_html(_matrix_coordinates(matrix)[1])}</span>"
         "</th>",
         '<td class="cell-state" data-label="availability">'
         f"{_availability_badge(category)}</td>",
@@ -292,8 +316,7 @@ def _entry_rows(
         f'<span class="issue-text">{escape_html(matrix_text)}</span></td>',
         '<td class="cell-counts" data-label="missing">'
         f"{sum(len(section.missing_requirements) for section in unavailable)}</td>",
-        '<td class="cell-overlay" data-label="links">'
-        f"{link_html}</td>",
+        f'<td class="cell-overlay" data-label="links">{link_html}</td>',
         '<td class="cell-details" data-label="chain">'
         '<button type="button" class="detail-toggle" aria-expanded="false" '
         f'aria-controls="{escape_attr(detail_id)}" '
@@ -324,10 +347,78 @@ def _entry_rows(
     )
 
 
+def _entry_search_text(entry: ExplanationIndexEntry) -> str:
+    subject = entry.subject
+    values = [
+        str(subject.matrix_row_index),
+        str(subject.matrix_sample_index),
+        subject.peak_hypothesis_id,
+        subject.source_feature_family_id,
+        subject.sample_stem,
+        subject.sample.identity.sample_identity_id,
+        subject.matrix_row_identity_basis,
+    ]
+    for section in entry.sections:
+        values.extend(
+            (
+                section.topic.value,
+                section.source_owner,
+                section.claim.subject,
+                section.claim.state.value,
+                section.claim.reason,
+                *(claim.subject for claim in section.supporting_claims),
+                *(claim.reason for claim in section.supporting_claims),
+            )
+        )
+        payload = section.payload
+        if isinstance(payload, DiscoveryExplanationPayload):
+            values.extend(
+                (
+                    payload.candidate_universe_artifact_id,
+                    *payload.candidate_peak_content_ids,
+                    payload.selected_peak_hypothesis_id or "",
+                    payload.selection_outcome,
+                    *payload.selection_reasons,
+                )
+            )
+        elif isinstance(payload, AlignmentExplanationPayload):
+            values.extend(
+                (
+                    payload.group_hypothesis_id,
+                    *payload.member_peak_hypothesis_ids,
+                    payload.sample_member_peak_hypothesis_id or "",
+                    payload.grouping_disposition,
+                    payload.representative_group_hypothesis_id,
+                    *payload.decision_reasons,
+                )
+            )
+        elif isinstance(payload, BackfillExplanationPayload):
+            values.extend(
+                (
+                    str(payload.evaluated).lower(),
+                    payload.disposition,
+                    payload.production_status,
+                    str(payload.write_matrix_value).lower(),
+                    payload.policy_version,
+                    payload.matched_candidate_peak_content_id or "",
+                    *payload.decision_reasons,
+                )
+            )
+        elif isinstance(payload, MatrixExplanationPayload):
+            values.extend(
+                (
+                    str(payload.written).lower(),
+                    payload.matrix_value or "",
+                    payload.matrix_row_mz,
+                    payload.matrix_row_rt,
+                    payload.sample_stem,
+                )
+            )
+    return " ".join(value for value in values if value)
+
+
 def _availability_badge(category: str) -> str:
-    css_class = (
-        "product_grade_support" if category == "complete" else "not_assessable"
-    )
+    css_class = "product_grade_support" if category == "complete" else "not_assessable"
     label = "complete" if category == "complete" else "partial / unavailable"
     return f'<span class="badge {css_class}">{label}</span>'
 
@@ -339,6 +430,13 @@ def _matrix_value_text(section: ExplanationSection) -> str:
     if payload.written:
         return f"written: {payload.matrix_value}"
     return "not written"
+
+
+def _matrix_coordinates(section: ExplanationSection) -> tuple[str, str]:
+    payload = section.payload
+    if not isinstance(payload, MatrixExplanationPayload):
+        return ("unavailable", "unavailable")
+    return (payload.matrix_row_mz, payload.matrix_row_rt)
 
 
 def _payload_html(section: ExplanationSection) -> tuple[str, ...]:
@@ -392,6 +490,10 @@ def _payload_html(section: ExplanationSection) -> tuple[str, ...]:
         return (
             '<p class="review-note"><strong>Matrix:</strong> '
             f"{escape_html(_matrix_value_text(section))}</p>",
+            '<p class="chain-note"><strong>Matrix row:</strong> '
+            f"m/z={escape_html(payload.matrix_row_mz)} · "
+            f"RT={escape_html(payload.matrix_row_rt)} · "
+            f"sample={escape_html(payload.sample_stem)}</p>",
         )
     if payload is not None:
         raise TypeError("unsupported explanation payload")
@@ -460,10 +562,7 @@ def _section_html(section: ExplanationSection) -> str:
         body.extend(
             (
                 '<ul class="path-list">',
-                *(
-                    f"<li>{_locator_link(locator)}</li>"
-                    for locator in section.locators
-                ),
+                *(f"<li>{_locator_link(locator)}</li>" for locator in section.locators),
                 "</ul>",
             )
         )
@@ -477,9 +576,7 @@ def _entry_link_html(entry: ExplanationIndexEntry) -> str:
     )
     if not locators:
         return '<span class="muted">unavailable</span>'
-    return " ".join(
-        _locator_link(locator, compact=True) for locator in locators
-    )
+    return " ".join(_locator_link(locator, compact=True) for locator in locators)
 
 
 def _locator_link(

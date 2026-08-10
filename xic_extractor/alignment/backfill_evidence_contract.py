@@ -5,9 +5,12 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
-from typing import Generic, TypeVar
 
+from xic_extractor.alignment.evidence_claims import (
+    EvidenceClaim,
+    EvidenceClaimState,
+    EvidenceQueryResult,
+)
 from xic_extractor.alignment.matrix import CellStatus
 from xic_extractor.alignment.production_decisions import (
     ProductionStatus,
@@ -100,34 +103,6 @@ _SKIPPED_SCOPE_REASON = {
         "not_in_selected_family_allowlist",
     ),
 }
-_T = TypeVar("_T")
-
-
-class EvidenceClaimState(str, Enum):
-    BYTE_BOUND = "byte_bound"
-    STRUCTURE_BOUND = "structure_bound"
-    OWNER_REHYDRATED = "owner_rehydrated"
-    PRODUCT_AUTHORIZED = "product_authorized"
-    UNAVAILABLE = "unavailable"
-
-
-@dataclass(frozen=True, slots=True)
-class EvidenceClaim:
-    subject: str
-    state: EvidenceClaimState
-    reason: str
-
-
-@dataclass(frozen=True, slots=True)
-class EvidenceQueryResult(Generic[_T]):
-    records: tuple[_T, ...]
-    claims: tuple[EvidenceClaim, ...]
-
-    def claim(self, subject: str) -> EvidenceClaim:
-        for claim in self.claims:
-            if claim.subject == subject:
-                return claim
-        raise KeyError(subject)
 
 
 @dataclass(frozen=True, slots=True)
