@@ -37,7 +37,7 @@ from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
 )
 from xic_extractor.discovery.models import DiscoverySettings
-from xic_extractor.presets import apply_to_alignment, apply_to_discovery, load_preset
+from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_extractor.processing_identity import (
     FileContentFingerprint,
     fingerprint_file_content,
@@ -622,11 +622,10 @@ def _effective_configuration_from_owner(
     """Derive and verify effective settings while live owners are available."""
 
     preset = load_preset(preset_name)
-    owned_discovery = apply_to_discovery(preset)
-    owned_alignment, _runtime_options = apply_to_alignment(preset)
+    recipe = bind_cid_nl_recipe(preset, "full")
     expected = {
-        "discovery": _json_value(asdict(owned_discovery)),
-        "alignment": _json_value(asdict(owned_alignment)),
+        "discovery": _json_value(asdict(recipe.discovery_settings)),
+        "alignment": _json_value(asdict(recipe.alignment_config)),
     }
     supplied = {
         "discovery": _json_value(asdict(discovery_settings)),

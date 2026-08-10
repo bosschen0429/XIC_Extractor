@@ -34,8 +34,7 @@ from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
     run_untargeted_provisional_matrix_workflow,
 )
 from xic_extractor.presets import (
-    apply_to_alignment,
-    apply_to_discovery,
+    bind_cid_nl_recipe,
     load_preset,
 )
 from xic_extractor.processing_identity import fingerprint_file_content
@@ -351,18 +350,24 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         raise ValueError("; ".join(details))
 
     preset = load_preset(args.preset)
-    discovery_settings = apply_to_discovery(preset)
-    alignment_config, runtime_options = apply_to_alignment(preset)
-    requested_owner_backend = args.owner_build_xic_backend or str(
-        runtime_options.get("owner_build_xic_backend", "raw")
+    recipe = bind_cid_nl_recipe(
+        preset,
+        "full",
+        recipe_overrides=(
+            {"owner_build_xic_backend": args.owner_build_xic_backend}
+            if args.owner_build_xic_backend is not None
+            else None
+        ),
     )
     return _OperatorInputs(
         raw_files=tuple(raw_by_stem[row.raw_stem.casefold()] for row in metadata),
         dll_dir=dll_dir,
-        discovery_settings=discovery_settings,
-        alignment_config=alignment_config,
+        discovery_settings=recipe.discovery_settings,
+        alignment_config=recipe.alignment_config,
         sample_metadata_path=sample_metadata_path,
-        owner_build_xic_backend=_owner_build_backend(requested_owner_backend),
+        owner_build_xic_backend=_owner_build_backend(
+            recipe.owner_build_xic_backend
+        ),
         code_revision=code_revision,
     )
 
