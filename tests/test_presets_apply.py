@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import FrozenInstanceError, fields
+
 import pytest
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.presets import PresetError, apply_to_alignment, apply_to_discovery
+from xic_extractor.presets import (
+    PresetError,
+    apply_to_alignment,
+    apply_to_discovery,
+    bind_cid_nl_recipe,
+)
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.presets.models import Preset, PresetTag
 
@@ -226,3 +233,91 @@ def test_apply_to_alignment_requires_standard_peak_for_backfill_expansion() -> N
 
     with pytest.raises(PresetError, match="requires standard_peak_backfill"):
         apply_to_alignment(preset)
+
+
+def test_bind_cid_nl_recipe_closes_the_generic_matrix_method_surface() -> None:
+    recipe = bind_cid_nl_recipe(load_preset("dna_dr"), "full")
+
+    assert recipe.route == "full"
+    assert recipe.discovery_settings == apply_to_discovery(load_preset("dna_dr"))
+    assert recipe.alignment_config == AlignmentConfig()
+    assert recipe.standard_peak_backfill is True
+    assert recipe.standard_peak_backfill_chunk_size == 120
+    assert recipe.standard_peak_backfill_publication_mode == "matrix-only"
+    assert recipe.standard_peak_backfill_write_gallery is False
+    assert recipe.standard_peak_backfill_reuse_existing is False
+    assert recipe.standard_peak_backfill_min_shape_r == pytest.approx(0.95)
+    assert recipe.owner_build_xic_backend == "raw"
+    assert recipe.backfill_expansion_productization == "off"
+    assert recipe.backfill_expansion_reuse_existing_raw_overlay is False
+    assert recipe.backfill_expansion_reuse_existing_shift_aware is False
+    assert recipe.backfill_expansion_render_shift_aware_images is False
+    assert recipe.backfill_expansion_min_shape_r == pytest.approx(0.95)
+    assert recipe.product_ready_publication_check is False
+    assert {item.name for item in fields(recipe)} == {
+        "route",
+        "discovery_settings",
+        "alignment_config",
+        "standard_peak_backfill",
+        "standard_peak_backfill_chunk_size",
+        "standard_peak_backfill_publication_mode",
+        "standard_peak_backfill_write_gallery",
+        "standard_peak_backfill_reuse_existing",
+        "standard_peak_backfill_min_shape_r",
+        "owner_build_xic_backend",
+        "backfill_expansion_productization",
+        "backfill_expansion_reuse_existing_raw_overlay",
+        "backfill_expansion_reuse_existing_shift_aware",
+        "backfill_expansion_render_shift_aware_images",
+        "backfill_expansion_min_shape_r",
+        "product_ready_publication_check",
+    }
+    with pytest.raises(FrozenInstanceError):
+        setattr(recipe, "route", "discovery_only")
+
+
+def test_bind_cid_nl_recipe_applies_only_recipe_owned_overrides() -> None:
+    recipe = bind_cid_nl_recipe(
+        load_preset("dna_dr_product_ready"),
+        "align_only",
+        recipe_overrides={
+            "rt_max": 20.0,
+            "standard_peak_backfill_publication_mode": "deep-audit",
+            "owner_build_xic_backend": "ms1-index",
+        },
+    )
+
+    assert recipe.discovery_settings.rt_max == pytest.approx(20.0)
+    assert recipe.standard_peak_backfill_publication_mode == "deep-audit"
+    assert recipe.standard_peak_backfill_write_gallery is True
+    assert recipe.owner_build_xic_backend == "ms1-index"
+    assert recipe.product_ready_publication_check is True
+
+    with pytest.raises(PresetError, match="unknown CID-NL recipe override"):
+        bind_cid_nl_recipe(
+            load_preset("dna_dr"),
+            "full",
+            recipe_overrides={"raw_dir": "not-recipe-content"},
+        )
+
+
+def test_bind_cid_nl_recipe_preserves_route_compatibility_boundaries() -> None:
+    multi_tag = Preset(
+        name="Two CID-NL tags",
+        description="Generic full-universe preset",
+        tags=(
+            PresetTag(strategy="neutral_loss", name="A", value=100.0),
+            PresetTag(strategy="neutral_loss", name="B", value=120.0),
+        ),
+        combine_mode="union",
+        discovery_overrides={},
+        alignment_overrides={},
+        source="test",
+    )
+
+    generic_recipe = bind_cid_nl_recipe(multi_tag, "full")
+    assert len(generic_recipe.discovery_settings.neutral_loss_profiles) == 2
+    with pytest.raises(PresetError, match="single-tag CID-NL preset"):
+        bind_cid_nl_recipe(multi_tag, "bounded_mode_track")
+    with pytest.raises(PresetError, match="neutral-loss preset"):
+        bind_cid_nl_recipe(load_preset("pt_pattern"), "discovery_only")
