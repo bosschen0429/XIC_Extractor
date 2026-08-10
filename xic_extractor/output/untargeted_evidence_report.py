@@ -1,9 +1,9 @@
-"""Output-owned HTML presentation for one Untargeted explanation index.
+"""Internal HTML writer for the opt-in Untargeted explanation prototype.
 
 The report is a bounded consumer.  It reuses the Backfill reconciliation
 gallery's presentation assets, but it never loads scientific artifacts,
-reconstructs scientific facts, or writes Matrix values. Public render and write
-surfaces recheck navigation artifact bytes against owner-minted receipts.
+reconstructs scientific facts, or writes Matrix values. The path-aware writer
+rechecks navigation artifact bytes against owner-minted receipts.
 """
 
 from __future__ import annotations
@@ -46,22 +46,9 @@ _AVAILABLE_STATES = frozenset(
 )
 
 
-def render_untargeted_evidence_report(
-    index: UntargetedExplanationIndex,
-    *,
-    navigation_root: Path | None = None,
-) -> str:
-    """Render one deterministic, self-contained explanation-only HTML page."""
-
+def _render_untargeted_evidence_report(index: UntargetedExplanationIndex) -> str:
     if not isinstance(index, UntargetedExplanationIndex):
         raise TypeError("index must be an UntargetedExplanationIndex")
-    if navigation_root is not None and not isinstance(navigation_root, Path):
-        raise TypeError("navigation_root must be a Path")
-    _verify_locator_artifacts(navigation_root, index)
-    return _render_untargeted_evidence_report(index)
-
-
-def _render_untargeted_evidence_report(index: UntargetedExplanationIndex) -> str:
     rows = [
         fragment
         for rank, entry in enumerate(index.entries, start=1)
@@ -112,11 +99,11 @@ def _render_untargeted_evidence_report(index: UntargetedExplanationIndex) -> str
     return "\n".join(lines) + "\n"
 
 
-def write_untargeted_evidence_report(
+def _write_untargeted_evidence_report(
     path: Path,
     index: UntargetedExplanationIndex,
 ) -> Path:
-    """Write deterministic UTF-8/LF bytes without changing default outputs."""
+    """Write prototype UTF-8/LF bytes without changing default outputs."""
 
     if not isinstance(path, Path):
         raise TypeError("path must be a Path")
@@ -635,7 +622,4 @@ def _locator_link(
     return f"<a {' '.join(attributes)}>{escape_html(label)}</a>"
 
 
-__all__ = (
-    "render_untargeted_evidence_report",
-    "write_untargeted_evidence_report",
-)
+__all__ = ()

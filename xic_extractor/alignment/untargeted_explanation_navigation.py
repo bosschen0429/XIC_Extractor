@@ -1,4 +1,4 @@
-"""Mint byte- and route-bound navigation receipts for explanation artifacts."""
+"""Internal navigation receipts for the Untargeted explanation prototype."""
 
 from __future__ import annotations
 
@@ -122,7 +122,4 @@ def _validate_route_inputs(
         raise TypeError("topic must be an ExplanationTopic")
 
 
-__all__ = (
-    "explanation_locator_relative_path",
-    "mint_explanation_locator_request",
-)
+__all__ = ()

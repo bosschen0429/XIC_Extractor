@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from xic_extractor.alignment.untargeted_explanation_contract import (
-    EXPLANATION_ROUTE_LIMIT,
-)
 from xic_extractor.diagnostics.backfill_reconciliation_gallery_html import (
     escape_html as _escape,
 )
@@ -26,7 +23,7 @@ from xic_extractor.diagnostics.backfill_reconciliation_gallery_models import (
     _GalleryRenderContext,
 )
 
-_HTML_FULL_RENDER_GROUP_LIMIT = EXPLANATION_ROUTE_LIMIT
+_HTML_FULL_RENDER_GROUP_LIMIT = 1500
 _HTML_INCONCLUSIVE_SAMPLE_LIMIT = 200
 _HTML_LOW_INFORMATION_CLASSES = {
     "evidence_inconclusive",

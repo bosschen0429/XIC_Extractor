@@ -23,13 +23,11 @@ from xic_extractor.alignment.untargeted_explanation_contract import (
     _ENTRY_MINT_TOKEN,
     _INDEX_MINT_TOKEN,
     _SECTION_MINT_TOKEN,
-)
-from xic_extractor.alignment.untargeted_explanation_index import (
     ExplanationLocatorKind,
 )
 from xic_extractor.output.untargeted_evidence_report import (
-    render_untargeted_evidence_report,
-    write_untargeted_evidence_report,
+    _render_untargeted_evidence_report,
+    _write_untargeted_evidence_report,
 )
 
 
@@ -42,7 +40,7 @@ def test_renders_one_integrated_bounded_report_with_existing_gallery_shell() -> 
         requests=(_request(samples[2]), _request(samples[0])),
     )
 
-    rendered = render_untargeted_evidence_report(index)
+    rendered = _render_untargeted_evidence_report(index)
 
     assert rendered.count('<tr class="seed-decision-row" data-family-row') == 2
     assert "Untargeted Evidence Report" in rendered
@@ -83,7 +81,7 @@ def test_renders_owner_rehydrated_discovery_alignment_and_backfill_content(
 ) -> None:
     index = _build_complete_no_raw_index(tmp_path)
 
-    rendered = render_untargeted_evidence_report(index)
+    rendered = _render_untargeted_evidence_report(index)
 
     assert "available sections</span><strong>4</strong>" in rendered
     assert "Candidate universe:" in rendered
@@ -102,7 +100,7 @@ def test_renders_owner_rehydrated_discovery_alignment_and_backfill_content(
 
 
 def test_renders_selected_written_direct_support_route(tmp_path: Path) -> None:
-    rendered = render_untargeted_evidence_report(
+    rendered = _render_untargeted_evidence_report(
         _build_complete_no_raw_index(tmp_path, sample_stem="StudySupport")
     )
 
@@ -114,7 +112,7 @@ def test_renders_selected_written_direct_support_route(tmp_path: Path) -> None:
 
 def test_report_accepts_only_the_owner_minted_typed_index() -> None:
     with pytest.raises(TypeError, match="UntargetedExplanationIndex"):
-        render_untargeted_evidence_report({})  # type: ignore[arg-type]
+        _render_untargeted_evidence_report({})  # type: ignore[arg-type]
 
 
 def test_owner_text_is_escaped_and_unavailable_claims_remain_explicit() -> None:
@@ -148,7 +146,7 @@ def test_owner_text_is_escaped_and_unavailable_claims_remain_explicit() -> None:
         _mint_token=_INDEX_MINT_TOKEN,
     )
 
-    rendered = render_untargeted_evidence_report(hostile_index)
+    rendered = _render_untargeted_evidence_report(hostile_index)
 
     assert malicious_reason not in rendered
     assert "&lt;script&gt;alert(&quot;" in rendered
@@ -180,12 +178,9 @@ def test_relative_locator_stays_offline_and_overlay_uses_existing_lightbox(
     source_dir.mkdir()
     monkeypatch.chdir(source_dir)
 
-    with pytest.raises(ValueError, match="navigation_root"):
-        render_untargeted_evidence_report(index)
-    rendered = render_untargeted_evidence_report(
-        index,
-        navigation_root=report_root,
-    )
+    report_path = report_root / "report.html"
+    _write_untargeted_evidence_report(report_path, index)
+    rendered = report_path.read_text(encoding="utf-8")
 
     assert f'href="{locator.relative_path}"' in rendered
     assert f'data-lightbox-src="{locator.relative_path}"' in rendered
@@ -194,11 +189,9 @@ def test_relative_locator_stays_offline_and_overlay_uses_existing_lightbox(
     assert "http://" not in rendered
 
 
-@pytest.mark.parametrize("surface", ("render", "write"))
 @pytest.mark.parametrize("mutation", ("missing", "tampered"))
-def test_public_report_surfaces_reject_missing_or_changed_locator_artifact(
+def test_path_aware_writer_rejects_missing_or_changed_locator_artifact(
     tmp_path: Path,
-    surface: str,
     mutation: str,
 ) -> None:
     samples = _samples()
@@ -222,13 +215,7 @@ def test_public_report_surfaces_reject_missing_or_changed_locator_artifact(
         artifact.write_bytes(b"tampered")
 
     with pytest.raises(ValueError, match="unavailable|changed"):
-        if surface == "render":
-            render_untargeted_evidence_report(
-                index,
-                navigation_root=report_root,
-            )
-        else:
-            write_untargeted_evidence_report(report_root / "report.html", index)
+        _write_untargeted_evidence_report(report_root / "report.html", index)
 
 
 @pytest.mark.parametrize("alias_kind", ("hardlink", "symlink"))
@@ -262,7 +249,7 @@ def test_writer_rejects_output_aliasing_locator_artifact(
     original = artifact.read_bytes()
 
     with pytest.raises(ValueError, match="output aliases"):
-        write_untargeted_evidence_report(output, index)
+        _write_untargeted_evidence_report(output, index)
 
     assert artifact.read_bytes() == original
 
@@ -279,12 +266,12 @@ def test_writer_is_opt_in_and_emits_deterministic_utf8_lf_bytes(
     )
     path = tmp_path / "nested" / "untargeted_evidence_report.html"
 
-    assert write_untargeted_evidence_report(path, index) == path
+    assert _write_untargeted_evidence_report(path, index) == path
     first = path.read_bytes()
     assert first.startswith(b"<!doctype html>\n")
     assert b"\r\n" not in first
 
-    assert write_untargeted_evidence_report(path, index) == path
+    assert _write_untargeted_evidence_report(path, index) == path
     assert path.read_bytes() == first
     assert "untargeted_evidence_report.html" not in artifact_names_for_output_level(
         "production"

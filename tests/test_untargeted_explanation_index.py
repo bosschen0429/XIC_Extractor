@@ -18,6 +18,15 @@ from tests.test_untargeted_cid_nl_golden_path import (
     _golden_inputs,
 )
 from xic_extractor.alignment import artifact_write_receipts
+from xic_extractor.alignment import untargeted_explanation_contract as contract_module
+from xic_extractor.alignment import untargeted_explanation_index as index_module
+from xic_extractor.alignment import (
+    untargeted_explanation_navigation as navigation_module,
+)
+from xic_extractor.alignment import (
+    untargeted_explanation_run_binding as run_binding_module,
+)
+from xic_extractor.alignment import untargeted_explanation_sections as sections_module
 from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     BackfillEvidenceOwnerBindings,
@@ -38,11 +47,8 @@ from xic_extractor.alignment.untargeted_explanation_contract import (
     _ENTRY_MINT_TOKEN,
     _LOCATOR_MINT_TOKEN,
     _SECTION_MINT_TOKEN,
-)
-from xic_extractor.alignment.untargeted_explanation_index import (
     EXPLANATION_INFORMATION_REQUIREMENTS,
     AlignmentExplanationPayload,
-    BackfillExplanationInput,
     BackfillExplanationPayload,
     DiscoveryExplanationPayload,
     ExplanationLocator,
@@ -52,12 +58,16 @@ from xic_extractor.alignment.untargeted_explanation_index import (
     ExplanationTopic,
     MatrixExplanationPayload,
     UntargetedExplanationIndex,
-    build_untargeted_explanation_index,
+)
+from xic_extractor.alignment.untargeted_explanation_index import (
+    BackfillExplanationInput,
+    _build_untargeted_explanation_index,
 )
 from xic_extractor.alignment.untargeted_explanation_navigation import (
     explanation_locator_relative_path,
     mint_explanation_locator_request,
 )
+from xic_extractor.output import untargeted_evidence_report as report_module
 from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
@@ -159,7 +169,7 @@ def _locator_request(
 
 def _build_index(**kwargs):
     matrix = kwargs.pop("matrix", sample_alignment_matrix())
-    return build_untargeted_explanation_index(
+    return _build_untargeted_explanation_index(
         matrix=matrix,
         alignment_config=AlignmentConfig(),
         **kwargs,
@@ -419,7 +429,7 @@ def test_written_backfill_requires_exact_live_matrix_source_candidate(
     )
     kwargs["matrix"] = matrix
 
-    section = build_untargeted_explanation_index(
+    section = _build_untargeted_explanation_index(
         alignment_config=AlignmentConfig(),
         **kwargs,
     ).entries[0].section(ExplanationTopic.BACKFILL)
@@ -435,7 +445,7 @@ def test_caller_cannot_supply_a_detached_production_decision_snapshot(
     kwargs = _complete_no_raw_kwargs(tmp_path)
 
     with pytest.raises(TypeError, match="unexpected keyword argument"):
-        build_untargeted_explanation_index(
+        _build_untargeted_explanation_index(
             alignment_config=AlignmentConfig(),
             production_decisions=object(),
             **kwargs,
@@ -885,17 +895,35 @@ def test_duplicate_route_and_partial_sample_owner_inputs_fail_closed() -> None:
         )
 
 
-def test_explanation_route_population_is_bounded_before_projection() -> None:
+@pytest.mark.parametrize(
+    "module",
+    (
+        contract_module,
+        index_module,
+        navigation_module,
+        run_binding_module,
+        sections_module,
+        report_module,
+    ),
+)
+def test_explanation_prototype_modules_publish_no_public_exports(
+    module: object,
+) -> None:
+    assert getattr(module, "__all__") == ()
+
+
+def test_provisional_route_guard_fails_before_projection() -> None:
     samples = _samples()
+    limit = index_module._PROTOTYPE_ROUTE_LIMIT
     requests = tuple(
         replace(
             _request(samples[0]),
             peak_hypothesis_id=f"bounded-route-{index:04d}",
         )
-        for index in range(1501)
+        for index in range(limit + 1)
     )
 
-    with pytest.raises(ValueError, match="at most 1500 requested routes"):
+    with pytest.raises(ValueError, match=rf"at most {limit} requested routes"):
         _build_index(
             processing_attempt=_attempt(),
             matrix=sample_alignment_matrix(),

@@ -155,38 +155,6 @@ writer schema, path, output level, or publication default.
   bundle. Rollback is removal or disregard of the complete optional bundle while
   the TSV defaults remain authoritative compatibility surfaces.
 
-#### Untargeted explanation composition
-
-`build_untargeted_explanation_index` is a non-writing composition boundary over
-current typed Alignment owners. It accepts the live `AlignmentMatrix` plus an
-explicit `AlignmentConfig` source input and calls `build_production_decisions`
-exactly once for that Matrix. A caller-supplied `ProductionDecisionSet` is not an
-accepted ingress because matching family/sample keys do not bind a derived
-decision set to the supplied Matrix snapshot. The same owner result drives the
-Product Matrix projection and the per-route explanation sections. The index
-accepts at most 1,500 explicitly requested routes, reusing the established
-Backfill Gallery full-render threshold; larger populations fail before owner
-decision projection instead of silently sampling or materializing a dense
-row-by-sample HTML surface.
-
-Supplied CID-NL spines, Backfill group facts, and Backfill cell decisions must
-retain their exact live object chain to the Matrix group and processing attempt.
-Owner-reader `EvidenceQueryResult` values keep the reduced persisted-record
-ceiling defined above; they cannot prove that their source sidecar belongs to the
-live Matrix or processing attempt. Writer fingerprints bind artifact bytes only.
-When either relationship lacks an existing owner binding, the corresponding
-Matrix/run claim remains `unavailable` instead of being inferred from matching
-IDs, paths, or values. Negative oracles cover detached decision snapshots,
-equal-but-substituted live groups, cross-route reader results, stale attempts,
-and crossed artifact locators.
-
-The public renderer may omit a navigation root only when the index has no
-locators. When locators exist, both render and write surfaces resolve them under
-the supplied report/navigation root, reject escapes or unavailable artifacts,
-and recompute the owner-minted byte fingerprint immediately before emitting a
-link. Only the writer additionally rejects an output path that aliases a
-locator artifact.
-
 ### Closed Writer Transaction Authority
 
 A writer-adjacent finalizer must not reconstruct authority from several loose,

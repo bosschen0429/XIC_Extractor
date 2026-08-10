@@ -1,4 +1,4 @@
-"""Compose bounded Untargeted explanation entries from existing live owners.
+"""Compose internal Untargeted prototype entries from existing live owners.
 
 The HTML surface consumes this owner. This module orchestrates typed owner
 projections; it does not render HTML, read persisted evidence, or recompute
@@ -39,21 +39,9 @@ from xic_extractor.alignment.untargeted_explanation_contract import (
     _INDEX_MINT_TOKEN,
     _SUBJECT_MINT_TOKEN,
     EXPLANATION_INDEX_SCHEMA_VERSION,
-    EXPLANATION_INFORMATION_REQUIREMENTS,
-    EXPLANATION_ROUTE_LIMIT,
-    AlignmentExplanationPayload,
-    BackfillExplanationPayload,
-    DiscoveryExplanationPayload,
     ExplanationIndexEntry,
-    ExplanationLocator,
-    ExplanationLocatorKind,
-    ExplanationLocatorRequest,
     ExplanationLookupRequest,
-    ExplanationRunBinding,
-    ExplanationSection,
     ExplanationSubject,
-    ExplanationTopic,
-    MatrixExplanationPayload,
     UntargetedExplanationIndex,
 )
 from xic_extractor.alignment.untargeted_explanation_run_binding import (
@@ -65,6 +53,8 @@ from xic_extractor.alignment.untargeted_explanation_sections import (
 )
 from xic_extractor.processing_identity import ProcessingAttemptIdentity
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+
+_PROTOTYPE_ROUTE_LIMIT = 1500
 
 
 @final
@@ -89,7 +79,7 @@ class BackfillExplanationInput:
             raise TypeError("query_result must be an EvidenceQueryResult")
 
 
-def build_untargeted_explanation_index(
+def _build_untargeted_explanation_index(
     *,
     processing_attempt: ProcessingAttemptIdentity,
     matrix: AlignmentMatrix,
@@ -102,7 +92,7 @@ def build_untargeted_explanation_index(
     backfill_inputs: Sequence[BackfillExplanationInput] = (),
     artifact_fingerprints: AlignmentArtifactFingerprintBatch | None = None,
 ) -> UntargetedExplanationIndex:
-    """Build a bounded index from live owners; no persisted evidence is parsed."""
+    """Build a provisional index from live owners; parse no persisted evidence."""
 
     if not isinstance(processing_attempt, ProcessingAttemptIdentity):
         raise TypeError("processing_attempt must be a ProcessingAttemptIdentity")
@@ -271,9 +261,9 @@ def _validate_requests(
     keys = tuple(item.route_key for item in normalized)
     if len(keys) != len(set(keys)):
         raise ValueError("explanation lookup requests must be unique")
-    if len(normalized) > EXPLANATION_ROUTE_LIMIT:
+    if len(normalized) > _PROTOTYPE_ROUTE_LIMIT:
         raise ValueError(
-            f"explanation index accepts at most {EXPLANATION_ROUTE_LIMIT} "
+            f"explanation prototype accepts at most {_PROTOTYPE_ROUTE_LIMIT} "
             "requested routes"
         )
     sample_by_id = {sample.identity.sample_identity_id: sample for sample in samples}
@@ -399,24 +389,4 @@ def _index_matrix_cells(matrix: AlignmentMatrix) -> dict[tuple[str, str], Aligne
     return by_key
 
 
-__all__ = (
-    "EXPLANATION_INDEX_SCHEMA_VERSION",
-    "EXPLANATION_INFORMATION_REQUIREMENTS",
-    "EXPLANATION_ROUTE_LIMIT",
-    "AlignmentExplanationPayload",
-    "BackfillExplanationPayload",
-    "BackfillExplanationInput",
-    "DiscoveryExplanationPayload",
-    "ExplanationIndexEntry",
-    "ExplanationLocator",
-    "ExplanationLocatorKind",
-    "ExplanationLocatorRequest",
-    "ExplanationLookupRequest",
-    "ExplanationRunBinding",
-    "ExplanationSection",
-    "ExplanationSubject",
-    "ExplanationTopic",
-    "MatrixExplanationPayload",
-    "UntargetedExplanationIndex",
-    "build_untargeted_explanation_index",
-)
+__all__ = ()
