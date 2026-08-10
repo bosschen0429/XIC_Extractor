@@ -122,6 +122,18 @@ writer schema, path, output level, or publication default.
   bindings; and cross-key substitution. Distinct records remain source-order
   preserving. A zero-row lookup always reports the absence claim as
   `unavailable`.
+- `backfill_evidence_parquet` is an optional storage adapter over the same
+  canonical string projection and owner models. Its post-run shadow bundle is
+  `diagnostic_only`: it stores only the two large Backfill evidence tables,
+  preserves source order with an explicit row ordinal, and derives the same
+  query claims as the TSV adapter. It does not replace a TSV writer or become a
+  semantic owner.
+- `backfill_evidence_parquet_bundle` publishes only to a previously absent
+  versioned directory after staged schema/hash/row-count validation. Its
+  manifest uses relative leaf locators and binds source/Parquet bytes; optional
+  run metadata remains byte-bound. Failed build or validation leaves no visible
+  final bundle. Rollback is removal or disregard of the complete optional
+  bundle while the TSV defaults remain authoritative compatibility surfaces.
 
 ### Closed Writer Transaction Authority
 

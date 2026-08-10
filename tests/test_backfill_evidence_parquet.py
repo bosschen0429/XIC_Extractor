@@ -1,0 +1,482 @@
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+
+import pytest
+
+from tools.diagnostics import backfill_evidence_parquet_shadow
+from xic_extractor.alignment.backfill_evidence_contract import (
+    ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+    ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+    PREDICATE_VERSION,
+    SKIPPED_EVIDENCE_LEDGER_COLUMNS,
+    BackfillEvidenceOwnerBindings,
+    EvidenceClaimState,
+    SkippedEvidenceOwnerBindings,
+)
+from xic_extractor.alignment.backfill_evidence_parquet import (
+    iter_backfill_evidence_parquet,
+    iter_skipped_evidence_parquet,
+    lookup_backfill_evidence_parquet,
+    lookup_skipped_evidence_parquet,
+)
+from xic_extractor.alignment.backfill_evidence_parquet_bundle import (
+    PARQUET_SHADOW_BUNDLE_SCHEMA_VERSION,
+    open_backfill_evidence_parquet_shadow_bundle,
+    write_backfill_evidence_parquet_shadow_bundle,
+)
+from xic_extractor.alignment.backfill_evidence_tsv import (
+    iter_backfill_evidence_tsv,
+    iter_skipped_evidence_tsv,
+    lookup_backfill_evidence_tsv,
+    lookup_skipped_evidence_tsv,
+)
+
+
+def _write_rows(
+    path: Path,
+    header: tuple[str, ...],
+    rows: list[dict[str, str]],
+) -> Path:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=header, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
+def _backfill_row(**overrides: str) -> dict[str, str]:
+    row = {
+        "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+        "feature_family_id": "FAM000001",
+        "group_hypothesis_id": "FAM000001",
+        "public_family_id": "FAM000001",
+        "sample_stem": "sample-a",
+        "status": "detected",
+        "production_cell_status": "detected",
+        "rescue_tier": "",
+        "write_matrix_value": "TRUE",
+        "include_in_primary_matrix": "TRUE",
+        "identity_decision": "primary",
+        "row_flags": "backfill_cell_evidence_required",
+        "area": "10",
+        "primary_matrix_area": "9.5",
+        "primary_matrix_area_source": "gaussian15_positive_asls_residual",
+        "primary_matrix_area_reason": "",
+        "apex_rt": "1.2",
+        "height": "5",
+        "peak_start_rt": "1.0",
+        "peak_end_rt": "1.4",
+        "rt_delta_sec": "'-1.25",
+        "trace_quality": "owner_backfill",
+        "scan_support_score": "1",
+        "gap_fill_state": "gap_fill_detected",
+        "gap_fill_reason": "group_centered_query_detected",
+        "backfill_evidence_reason": "owner_backfill_supported",
+        "source_candidate_id": "sample-a#candidate-1",
+        "source_raw_file": "sample-a.raw",
+        "neutral_loss_tag": "DNA_dR",
+        "family_center_mz": "242.1",
+        "family_center_rt": "1.25",
+        "region_shadow_verdict": "",
+        "reason": "owner-centered MS1 backfill",
+    }
+    row.update(overrides)
+    return row
+
+
+def _skipped_row(**overrides: str) -> dict[str, str]:
+    row = {
+        "feature_family_id": "FAM000001",
+        "sample_stem": "sample-a",
+        "family_center_mz": "242.1",
+        "family_center_rt": "1.25",
+        "rt_window_start": "-1.75",
+        "rt_window_end": "4.25",
+        "pre_backfill_category": "single_detected_no_consolidation_candidate",
+        "skipped_stage": "owner_backfill",
+        "skip_reason": "single_detected_no_consolidation_candidate",
+        "backfill_scope": "production-equivalent",
+        "predicate_version": PREDICATE_VERSION,
+        "raw_xic_requests_skipped": "1",
+        "would_emit_in_full_audit": "True",
+        "full_audit_available": "True",
+        "source_artifact": "owner_backfill",
+    }
+    row.update(overrides)
+    return row
+
+
+def _sources(tmp_path: Path, *, duplicate_backfill: bool = False) -> tuple[Path, ...]:
+    backfill_rows = [
+        _backfill_row(),
+        _backfill_row(
+            feature_family_id="FAM000002",
+            group_hypothesis_id="FAM000002",
+            public_family_id="FAM000002",
+            sample_stem="sample-b",
+            source_candidate_id="sample-b#candidate-1",
+        ),
+    ]
+    if duplicate_backfill:
+        backfill_rows.append(_backfill_row(area="11"))
+    backfill = _write_rows(
+        tmp_path / "alignment_backfill_cell_evidence.tsv",
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        backfill_rows,
+    )
+    skipped = _write_rows(
+        tmp_path / "skipped_evidence_ledger.tsv",
+        SKIPPED_EVIDENCE_LEDGER_COLUMNS,
+        [
+            _skipped_row(),
+            _skipped_row(
+                feature_family_id="FAM000002",
+                sample_stem="sample-b",
+                family_center_mz="243.1",
+            ),
+        ],
+    )
+    metadata = tmp_path / "alignment_run_metadata.json"
+    metadata.write_text(
+        json.dumps(
+            {
+                "schema_version": "alignment-results-v3",
+                "backfill_scope": "production-equivalent",
+                "skipped_evidence_predicate_version": PREDICATE_VERSION,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return backfill, skipped, metadata
+
+
+def _backfill_bindings() -> BackfillEvidenceOwnerBindings:
+    return BackfillEvidenceOwnerBindings(
+        known_group_ids=frozenset({"FAM000001", "FAM000002"}),
+        known_sample_stems=frozenset({"sample-a", "sample-b"}),
+        candidate_samples={
+            "sample-a#candidate-1": "sample-a",
+            "sample-b#candidate-1": "sample-b",
+        },
+    )
+
+
+def _skipped_bindings() -> SkippedEvidenceOwnerBindings:
+    return SkippedEvidenceOwnerBindings(
+        known_feature_family_ids=frozenset({"FAM000001", "FAM000002"}),
+        known_sample_stems=frozenset({"sample-a", "sample-b"}),
+        expected_backfill_scope="production-equivalent",
+    )
+
+
+def test_shadow_bundle_roundtrips_owner_records_queries_and_claims(
+    tmp_path: Path,
+) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = tmp_path / "backfill_evidence_parquet_shadow"
+
+    result = write_backfill_evidence_parquet_shadow_bundle(
+        output_dir,
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+    bundle = open_backfill_evidence_parquet_shadow_bundle(
+        result,
+        source_root=tmp_path,
+    )
+
+    assert result == output_dir
+    assert bundle.schema_version == PARQUET_SHADOW_BUNDLE_SCHEMA_VERSION
+    assert tuple(iter_backfill_evidence_parquet(bundle.backfill_parquet)) == tuple(
+        iter_backfill_evidence_tsv(backfill)
+    )
+    assert tuple(iter_skipped_evidence_parquet(bundle.skipped_parquet)) == tuple(
+        iter_skipped_evidence_tsv(skipped)
+    )
+
+    tsv_backfill = lookup_backfill_evidence_tsv(
+        backfill,
+        feature_family_id="FAM000001",
+        sample_stem="sample-a",
+        owner_bindings=_backfill_bindings(),
+    )
+    parquet_backfill = lookup_backfill_evidence_parquet(
+        bundle.backfill_parquet,
+        feature_family_id="FAM000001",
+        sample_stem="sample-a",
+        owner_bindings=_backfill_bindings(),
+    )
+    assert parquet_backfill == tsv_backfill
+
+    tsv_skipped = lookup_skipped_evidence_tsv(
+        skipped,
+        feature_family_id="FAM000001",
+        sample_stem="sample-a",
+        owner_bindings=_skipped_bindings(),
+    )
+    parquet_skipped = lookup_skipped_evidence_parquet(
+        bundle.skipped_parquet,
+        feature_family_id="FAM000001",
+        sample_stem="sample-a",
+        owner_bindings=_skipped_bindings(),
+    )
+    assert parquet_skipped == tsv_skipped
+
+
+def test_shadow_manifest_uses_relative_locators_and_reduced_claim(
+    tmp_path: Path,
+) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = tmp_path / "shadow"
+    write_backfill_evidence_parquet_shadow_bundle(
+        output_dir,
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+
+    manifest_text = (output_dir / "bundle_manifest.json").read_text(encoding="utf-8")
+    manifest = json.loads(manifest_text)
+
+    assert str(tmp_path) not in manifest_text
+    assert manifest["schema_version"] == PARQUET_SHADOW_BUNDLE_SCHEMA_VERSION
+    assert manifest["authority"] == "diagnostic_only_shadow"
+    assert manifest["source_artifacts"]["backfill"]["filename"] == backfill.name
+    assert manifest["source_artifacts"]["skipped"]["filename"] == skipped.name
+    assert manifest["source_artifacts"]["run_metadata"]["filename"] == metadata.name
+
+
+def test_missing_parquet_lookup_never_becomes_absence_proof(tmp_path: Path) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+    bundle = open_backfill_evidence_parquet_shadow_bundle(output_dir)
+
+    backfill_result = lookup_backfill_evidence_parquet(
+        bundle.backfill_parquet,
+        feature_family_id="missing",
+        sample_stem="sample-a",
+    )
+    skipped_result = lookup_skipped_evidence_parquet(
+        bundle.skipped_parquet,
+        feature_family_id="missing",
+        sample_stem="sample-a",
+    )
+
+    assert backfill_result.records == ()
+    assert skipped_result.records == ()
+    assert backfill_result.claim("missing_key_absence").state is (
+        EvidenceClaimState.UNAVAILABLE
+    )
+    assert skipped_result.claim("missing_key_absence").state is (
+        EvidenceClaimState.UNAVAILABLE
+    )
+
+
+def test_shadow_bundle_rejects_stale_source_bytes(tmp_path: Path) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+    source_text = backfill.read_text(encoding="utf-8")
+    backfill.write_text(
+        source_text.replace("FAM000001", "FAM999999", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="source backfill SHA-256 mismatch"):
+        open_backfill_evidence_parquet_shadow_bundle(
+            output_dir,
+            source_root=tmp_path,
+        )
+
+
+def test_shadow_bundle_rejects_tampered_parquet_bytes(tmp_path: Path) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+    parquet_path = output_dir / "backfill.parquet"
+    parquet_bytes = parquet_path.read_bytes()
+    parquet_path.write_bytes(bytes([parquet_bytes[0] ^ 1]) + parquet_bytes[1:])
+
+    with pytest.raises(ValueError, match="backfill Parquet SHA-256 mismatch"):
+        open_backfill_evidence_parquet_shadow_bundle(output_dir)
+
+
+def test_parquet_reader_rejects_unknown_column(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+    source = pq.read_table(output_dir / "backfill.parquet")
+    mutated = source.append_column(
+        "caller_claim",
+        pa.array(["owner_rehydrated"] * source.num_rows),
+    )
+    mutated_path = tmp_path / "mutated.parquet"
+    pq.write_table(mutated, mutated_path)
+
+    with pytest.raises(ValueError, match="exact Parquet schema"):
+        tuple(iter_backfill_evidence_parquet(mutated_path))
+
+
+def test_parquet_reader_rejects_reordered_ordinals(tmp_path: Path) -> None:
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+    source = pq.read_table(output_dir / "backfill.parquet")
+    ordinal_index = source.schema.get_field_index("_row_ordinal")
+    mutated = source.set_column(
+        ordinal_index,
+        source.schema.field(ordinal_index),
+        pa.array(list(reversed(range(source.num_rows)))),
+    )
+    mutated_path = tmp_path / "reordered.parquet"
+    pq.write_table(mutated, mutated_path)
+
+    with pytest.raises(ValueError, match="row ordinal"):
+        tuple(iter_backfill_evidence_parquet(mutated_path))
+
+
+def test_parquet_lookup_rejects_duplicate_composite_identity(tmp_path: Path) -> None:
+    backfill, skipped, metadata = _sources(tmp_path, duplicate_backfill=True)
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+
+    with pytest.raises(ValueError, match="duplicate composite identity"):
+        lookup_backfill_evidence_parquet(
+            output_dir / "backfill.parquet",
+            feature_family_id="FAM000001",
+            sample_stem="sample-a",
+        )
+
+
+def test_shadow_bundle_rejects_unknown_manifest_field(tmp_path: Path) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+    manifest_path = output_dir / "bundle_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["caller_claim"] = "product_authorized"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="exact manifest fields"):
+        open_backfill_evidence_parquet_shadow_bundle(output_dir)
+
+
+def test_failed_shadow_validation_never_publishes_final_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.alignment import backfill_evidence_parquet_bundle
+
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = tmp_path / "shadow"
+
+    def fail_validation(*_args, **_kwargs):
+        raise RuntimeError("injected staged validation failure")
+
+    monkeypatch.setattr(
+        backfill_evidence_parquet_bundle,
+        "_validate_staged_bundle",
+        fail_validation,
+    )
+
+    with pytest.raises(RuntimeError, match="injected staged validation failure"):
+        write_backfill_evidence_parquet_shadow_bundle(
+            output_dir,
+            backfill_tsv=backfill,
+            skipped_tsv=skipped,
+            run_metadata_json=metadata,
+        )
+
+    assert not output_dir.exists()
+    assert not tuple(tmp_path.glob("shadow.tmp-*"))
+
+
+def test_shadow_bundle_refuses_to_overwrite_existing_output(tmp_path: Path) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = tmp_path / "shadow"
+    output_dir.mkdir()
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_backfill_evidence_parquet_shadow_bundle(
+            output_dir,
+            backfill_tsv=backfill,
+            skipped_tsv=skipped,
+            run_metadata_json=metadata,
+        )
+
+
+def test_missing_optional_dependency_has_actionable_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.alignment import backfill_evidence_parquet
+
+    def missing_pyarrow():
+        raise RuntimeError(
+            "Parquet shadow support requires the optional 'parquet' dependency"
+        )
+
+    monkeypatch.setattr(backfill_evidence_parquet, "_load_pyarrow", missing_pyarrow)
+
+    with pytest.raises(RuntimeError, match="optional 'parquet' dependency"):
+        tuple(iter_backfill_evidence_parquet(tmp_path / "missing.parquet"))
+
+
+def test_opt_in_shadow_cli_builds_bundle(tmp_path: Path) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    output_dir = tmp_path / "shadow"
+
+    code = backfill_evidence_parquet_shadow.main(
+        [
+            "--backfill-tsv",
+            str(backfill),
+            "--skipped-tsv",
+            str(skipped),
+            "--run-metadata-json",
+            str(metadata),
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert code == 0
+    assert (output_dir / "bundle_manifest.json").is_file()

@@ -1,8 +1,8 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
 **Last refreshed:** 2026-07-14
-**Total entry-points:** 122
-**Total files (incl. helpers):** 206 Python files under `tools/diagnostics/`
+**Total entry-points:** 123
+**Total files (incl. helpers):** 207 Python files under `tools/diagnostics/`
 **Governing specs:** `docs/architecture-contract.md` and
 `docs/agent/script-tool-lifecycle.md`; the retired dated diagnostic lifecycle
 spec remains only as a same-path public stub.
@@ -545,6 +545,19 @@ provisional candidate-gate sidecar, and 1
 are not economics axes; they emit source-hashed support/blocker/missing-evidence
 rows while the existing review/economics axes remain pending cleanup per
 audit-note Cluster 2.
+
+### `backfill_evidence_parquet_shadow.py`
+
+**Purpose**: Build a post-run, opt-in Parquet shadow bundle for the existing
+owner-readable Backfill and skipped-evidence TSV projections.
+**Topic group**: `backfill_evidence_parquet_shadow.py` +
+`xic_extractor.alignment.backfill_evidence_{parquet,parquet_bundle}`.
+**Originating issue**: [#200](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/200).
+**Status note**: `diagnostic_only`; this command does not run Alignment or RAW,
+does not register a console script, and does not change TSV schemas, paths,
+defaults, Matrix values, or artifact authority. The manifest binds source and
+Parquet bytes, row counts, and relative locators. Owner claims still come from
+the shared Backfill evidence parser; a missing lookup remains unavailable.
 
 ### `seed_aware_backfill_review.py`
 
