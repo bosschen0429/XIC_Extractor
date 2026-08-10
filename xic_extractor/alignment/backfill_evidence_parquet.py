@@ -30,6 +30,7 @@ from xic_extractor.alignment.backfill_evidence_serialization import (
     skipped_evidence_record_from_projection,
     skipped_evidence_record_to_projection,
 )
+from xic_extractor.alignment.evidence_claims import _mint_evidence_query_result
 
 PARQUET_ROW_ORDINAL_COLUMN = "_row_ordinal"
 DEFAULT_PARQUET_ROW_GROUP_SIZE = 16_384
@@ -184,7 +185,7 @@ def lookup_backfill_evidence_parquet(
         if owner_result is not None:
             owner_results.append(owner_result)
     result = tuple(records)
-    return EvidenceQueryResult(
+    return _mint_evidence_query_result(
         records=result,
         claims=backfill_evidence_query_claims(
             found=bool(result),
@@ -228,7 +229,7 @@ def lookup_skipped_evidence_parquet(
         seen.add(record.identity)
         records.append(record)
     result = tuple(records)
-    return EvidenceQueryResult(
+    return _mint_evidence_query_result(
         records=result,
         claims=skipped_evidence_query_claims(
             found=bool(result),

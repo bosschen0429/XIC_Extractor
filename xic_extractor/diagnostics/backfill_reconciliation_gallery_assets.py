@@ -111,6 +111,7 @@ def lightbox_script() -> str:
   const focusFilter = document.querySelector('[data-filter-control]');
   const search = document.querySelector('[data-search-control]');
   const resultCount = document.querySelector('[data-result-count]');
+  const resultLabel = resultCount?.dataset.resultLabel || 'families';
   const familyRows = Array.from(
     document.querySelectorAll('.review-table > tbody > tr[data-family-row]')
   );
@@ -144,7 +145,8 @@ def lightbox_script() -> str:
         });
     });
     if (resultCount) {
-      resultCount.textContent = `顯示 ${visibleFamilies} / ${totalFamilies} families`;
+      resultCount.textContent =
+        `顯示 ${visibleFamilies} / ${totalFamilies} ${resultLabel}`;
     }
   };
   if (focusFilter) focusFilter.addEventListener('change', applyFilters);
