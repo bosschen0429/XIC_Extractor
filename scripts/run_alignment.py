@@ -9,7 +9,6 @@ import sys
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
 
 from xic_extractor.alignment.backfill_scope import read_family_allowlist_tsv
 from xic_extractor.alignment.config import AlignmentConfig
@@ -18,12 +17,18 @@ from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
 )
 from xic_extractor.alignment.drift_evidence import read_targeted_istd_drift_evidence
+from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.presets import PresetError, apply_to_alignment, load_preset
+from xic_extractor.presets import (
+    BoundCidNlRecipe,
+    PresetError,
+    bind_cid_nl_recipe,
+    load_preset,
+)
 from xic_extractor.presets.models import Preset
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import (
@@ -51,29 +56,16 @@ _STANDARD_PEAK_PUBLICATION_MODES = (
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        preset, preset_alignment_config, preset_runtime_options = _resolve_preset(args)
+        preset, recipe = _resolve_preset(args)
     except PresetError as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    standard_peak_backfill_enabled = bool(
-        preset_runtime_options.get("standard_peak_backfill", False),
+    standard_peak_backfill_enabled = (
+        recipe.standard_peak_backfill if recipe is not None else False
     )
-    backfill_expansion_productization_mode = str(
-        preset_runtime_options.get("backfill_expansion_productization", "off"),
+    backfill_expansion_productization_mode = (
+        recipe.backfill_expansion_productization if recipe is not None else "off"
     )
-    if args.standard_peak_backfill_publication_mode is not None:
-        if not standard_peak_backfill_enabled:
-            print(
-                "--standard-peak-backfill-publication-mode requires a preset "
-                "that enables standard_peak_backfill",
-                file=sys.stderr,
-            )
-            return 2
-        preset_runtime_options = dict(preset_runtime_options)
-        _apply_standard_peak_publication_mode_override(
-            preset_runtime_options,
-            args.standard_peak_backfill_publication_mode,
-        )
     if args.standard_peak_evidence_cache_dir is not None and not (
         standard_peak_backfill_enabled
     ):
@@ -105,7 +97,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_workers, raw_xic_batch_size = _resolve_raw_execution_settings(args)
     owner_build_xic_backend = _effective_owner_build_xic_backend(
         args,
-        preset_runtime_options,
+        recipe,
     )
     identity_coherence_output_dir = (
         args.identity_coherence_output_dir.resolve()
@@ -270,7 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "dll_dir": dll_dir,
             "output_dir": output_dir,
             "alignment_config": replace(
-                preset_alignment_config,
+                recipe.alignment_config if recipe is not None else AlignmentConfig(),
                 owner_backfill_min_detected_samples=(
                     args.owner_backfill_min_detected_samples
                 ),
@@ -333,41 +325,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                 outputs = run_alignment(**run_kwargs)
             else:
                 outputs = profiler.runcall(run_alignment, **run_kwargs)
-            if standard_peak_backfill_enabled:
+            if recipe is not None and recipe.standard_peak_backfill:
                 standard_peak_outputs = run_standard_peak_backfill_preset(
                     alignment_dir=output_dir,
                     raw_dir=raw_dir,
                     dll_dir=dll_dir,
                     source_run_id=_preset_source_run_id(preset),
-                    chunk_size=_runtime_int_option(
-                        preset_runtime_options,
-                        "standard_peak_backfill_chunk_size",
+                    chunk_size=recipe.standard_peak_backfill_chunk_size,
+                    reuse_existing=recipe.standard_peak_backfill_reuse_existing,
+                    write_gallery=recipe.standard_peak_backfill_write_gallery,
+                    publication_mode=(
+                        recipe.standard_peak_backfill_publication_mode
                     ),
-                    reuse_existing=bool(
-                        preset_runtime_options[
-                            "standard_peak_backfill_reuse_existing"
-                        ],
-                    ),
-                    write_gallery=bool(
-                        preset_runtime_options[
-                            "standard_peak_backfill_write_gallery"
-                        ],
-                    ),
-                    publication_mode=str(
-                        preset_runtime_options[
-                            "standard_peak_backfill_publication_mode"
-                        ],
-                    ),
-                    min_shape_r=_runtime_float_option(
-                        preset_runtime_options,
-                        "standard_peak_backfill_min_shape_r",
-                    ),
+                    min_shape_r=recipe.standard_peak_backfill_min_shape_r,
                     render_workers=_standard_peak_render_workers(raw_workers),
                     chunk_workers=_standard_peak_chunk_workers(raw_workers),
                     evidence_cache_dir=standard_peak_evidence_cache_dir,
                     timing_recorder=timing_recorder,
                 )
-            if backfill_expansion_productization_mode == "clean-target-selective":
+            if (
+                recipe is not None
+                and backfill_expansion_productization_mode
+                == "clean-target-selective"
+            ):
                 backfill_expansion_outputs = (
                     run_backfill_expansion_clean_target_selective_preset_from_alignment(
                         alignment_dir=output_dir,
@@ -376,32 +356,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                         output_dir=(
                             output_dir / "backfill_expansion_productization_preset"
                         ),
-                        reuse_existing_raw_overlay=bool(
-                            preset_runtime_options[
-                                "backfill_expansion_reuse_existing_raw_overlay"
-                            ],
+                        reuse_existing_raw_overlay=(
+                            recipe.backfill_expansion_reuse_existing_raw_overlay
                         ),
-                        reuse_existing_shift_aware=bool(
-                            preset_runtime_options[
-                                "backfill_expansion_reuse_existing_shift_aware"
-                            ],
+                        reuse_existing_shift_aware=(
+                            recipe.backfill_expansion_reuse_existing_shift_aware
                         ),
-                        render_shift_aware_images=bool(
-                            preset_runtime_options[
-                                "backfill_expansion_render_shift_aware_images"
-                            ],
+                        render_shift_aware_images=(
+                            recipe.backfill_expansion_render_shift_aware_images
                         ),
-                        min_shape_r=_runtime_float_option(
-                            preset_runtime_options,
-                            "backfill_expansion_min_shape_r",
-                        ),
+                        min_shape_r=recipe.backfill_expansion_min_shape_r,
                         timing_recorder=timing_recorder,
                         activation_scope_expected_diff_tsv=(
                             _clean_target_selective_activation_expected_diff_tsv()
                         ),
                     )
                 )
-            if _is_builtin_product_ready_preset(preset):
+            if recipe is not None and recipe.product_ready_publication_check:
                 product_ready_publication_check_outputs = (
                     check_product_ready_preset_publication(
                         alignment_dir=output_dir,
@@ -977,12 +948,27 @@ def _validate_expected_85raw_contract(args: argparse.Namespace) -> None:
 
 def _resolve_preset(
     args: argparse.Namespace,
-) -> tuple[Preset | None, AlignmentConfig, dict[str, object]]:
+) -> tuple[Preset | None, BoundCidNlRecipe | None]:
     if args.preset is None:
-        return None, AlignmentConfig(), {"standard_peak_backfill": False}
+        if args.standard_peak_backfill_publication_mode is not None:
+            raise PresetError(
+                "--standard-peak-backfill-publication-mode requires a preset "
+                "that enables standard_peak_backfill"
+            )
+        return None, None
     preset = load_preset(args.preset)
-    alignment_config, runtime_options = apply_to_alignment(preset)
-    return preset, alignment_config, runtime_options
+    recipe_overrides: dict[str, object] = {}
+    if args.standard_peak_backfill_publication_mode is not None:
+        recipe_overrides["standard_peak_backfill_publication_mode"] = (
+            args.standard_peak_backfill_publication_mode
+        )
+    if args.owner_build_xic_backend is not None:
+        recipe_overrides["owner_build_xic_backend"] = args.owner_build_xic_backend
+    return preset, bind_cid_nl_recipe(
+        preset,
+        "align_only",
+        recipe_overrides=recipe_overrides or None,
+    )
 
 
 def _preset_source_run_id(preset: Preset | None) -> str:
@@ -990,25 +976,6 @@ def _preset_source_run_id(preset: Preset | None) -> str:
         return "alignment-preset:standard-peak-backfill"
     safe_source = preset.source.replace("\\", "/")
     return f"alignment-preset:{safe_source}:standard-peak-backfill"
-
-
-def _apply_standard_peak_publication_mode_override(
-    runtime_options: dict[str, object],
-    publication_mode: str,
-) -> None:
-    runtime_options["standard_peak_backfill_publication_mode"] = publication_mode
-    runtime_options["standard_peak_backfill_write_gallery"] = publication_mode in {
-        "review-gallery",
-        "deep-audit",
-    }
-
-
-def _runtime_int_option(runtime_options: dict[str, object], key: str) -> int:
-    return int(cast(Any, runtime_options[key]))
-
-
-def _runtime_float_option(runtime_options: dict[str, object], key: str) -> float:
-    return float(cast(Any, runtime_options[key]))
 
 
 def _standard_peak_backfill_requires_full_cells(
@@ -1052,10 +1019,6 @@ def check_product_ready_preset_publication(**kwargs):
     )
 
     return checker(**kwargs)
-
-
-def _is_builtin_product_ready_preset(preset: Preset | None) -> bool:
-    return preset is not None and preset.source == "builtin:dna_dr_product_ready"
 
 
 def _clean_target_selective_activation_expected_diff_tsv() -> Path:
@@ -1257,20 +1220,21 @@ def _owner_backfill_xic_backend(value: str) -> str:
 
 def _effective_owner_build_xic_backend(
     args: argparse.Namespace,
-    preset_runtime_options: dict[str, object],
-) -> str:
-    value = args.owner_build_xic_backend
-    if value is None:
-        value = str(preset_runtime_options.get("owner_build_xic_backend", "raw"))
-    return _owner_build_xic_backend(value)
+    recipe: BoundCidNlRecipe | None,
+) -> OwnerBuildXicBackend:
+    if recipe is not None:
+        return recipe.owner_build_xic_backend
+    return _owner_build_xic_backend(args.owner_build_xic_backend or "raw")
 
 
-def _owner_build_xic_backend(value: str) -> str:
-    if value == "raw-super-window":
+def _owner_build_xic_backend(value: str) -> OwnerBuildXicBackend:
+    if value in {"raw-super-window", "raw_superwindow"}:
         return "raw_superwindow"
-    if value == "ms1-index":
+    if value in {"ms1-index", "ms1_index"}:
         return "ms1_index"
-    return value
+    if value == "raw":
+        return "raw"
+    raise ValueError(f"unsupported owner_build_xic_backend: {value}")
 
 
 def _alignment_production_resolver_mode(resolver_mode: str) -> str:

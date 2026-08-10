@@ -37,6 +37,35 @@ they are not product authority by themselves.
 | Resolver settings in config/GUI | Public behavior surface for peak detection choices |
 | Runner metadata and sidecars | Provenance for preset-backed runs |
 
+## CID-NL V1 Workflow Composition
+
+A CID-NL preset is bound once, before expensive work, to one immutable
+in-memory recipe. The recipe contains the existing typed Discovery and
+Alignment settings plus the preset-owned advanced post-stage and owner-build
+choices. It does not contain RAW/output paths, sample metadata, worker counts,
+review inputs, a persisted recipe identity, or a second invocation schema.
+
+The current V1 routes remain the existing entry-point modes:
+
+| Existing route | Preset-backed behavior |
+| --- | --- |
+| `discovery_only` | RAW to the existing Discovery terminal |
+| `full` | RAW -> Discovery -> generic Alignment -> Owner Backfill -> canonical Matrix |
+| `align_only` | Existing Discovery index -> generic Alignment -> Owner Backfill -> canonical Matrix |
+| bounded ModeTrack runner | Existing single-subject M8/M9 compatibility route |
+
+Generic Alignment and Owner Backfill close the basic Matrix loop. Standard
+Peak remains the deeper optional refinement on the CLI/GUI surfaces that
+already execute it; its RAW overlays, reconciliation, quantitation,
+activation, audit, and republication behavior are not decomposed or made a V1
+prerequisite. The provisional full-universe runner continues to stop after its
+existing provisional diagnostic projection, and bounded ModeTrack retains its
+precursor, metadata, injection-order, namespace, and reviewed-input owners.
+
+These route names are existing in-memory selectors, not new preset TOML fields
+or a user-authored workflow graph. Pt and Pt + CID-NL composite presets remain
+owned by the delta-mass Discovery path and are rejected by CID-NL-only binders.
+
 ### Resolver Presets
 
 | Preset | Role |
@@ -81,7 +110,8 @@ Rules:
 ## Boundaries
 
 - **Owns**: preset loading, resolver/alignment preset behavior definitions,
-  TOML resource format, reproducibility guarantees for preset-backed runs.
+  immutable CID-NL recipe binding, TOML resource format, and reproducibility
+  guarantees for preset-backed runs.
 - **Does not own**: ProductWriter authority or accepted publication scope (see
   [productization.md](productization.md)), exact command recipes for every
   validation run (see runner docs), release readiness (see status index and

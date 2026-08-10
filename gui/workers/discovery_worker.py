@@ -4,7 +4,7 @@ import csv
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -12,8 +12,6 @@ from gui.workers.backfill_gallery import (
     BackfillGalleryInputs,
     build_backfill_review_gallery,
 )
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
@@ -21,9 +19,9 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.presets import (
+    BoundCidNlRecipe,
     PresetError,
-    apply_to_alignment,
-    apply_to_discovery,
+    bind_cid_nl_recipe,
     load_preset,
 )
 from xic_extractor.raw_reader import RawReaderError
@@ -76,6 +74,7 @@ class DiscoveryWorker(QThread):
     def __init__(self, request: DiscoveryRequest) -> None:
         super().__init__()
         self._request = request
+        self._recipe_binding: tuple[BoundCidNlRecipe, str] | None = None
 
     def stop(self) -> None:
         self.requestInterruption()
@@ -231,19 +230,15 @@ class DiscoveryWorker(QThread):
         index_path: Path,
         raw_dir: Path,
     ) -> tuple[AlignmentRunOutputs, Any | None]:
-        alignment_config, runtime_options, source_run_id = self._alignment_runtime(
-            request,
-        )
+        recipe, source_run_id = self._alignment_runtime(request)
         outputs = run_alignment(
             discovery_batch_index=index_path,
             raw_dir=raw_dir,
             dll_dir=request.dll_dir,
             output_dir=request.output_dir,
-            alignment_config=alignment_config,
+            alignment_config=recipe.alignment_config,
             peak_config=self._alignment_peak_config(request),
-            owner_build_xic_backend=_owner_build_xic_backend(
-                runtime_options.get("owner_build_xic_backend", "raw"),
-            ),
+            owner_build_xic_backend=recipe.owner_build_xic_backend,
             **_GALLERY_ALIGNMENT_KWARGS,
         )
         if self.isInterruptionRequested():
@@ -251,7 +246,7 @@ class DiscoveryWorker(QThread):
         standard_peak_outputs = self._run_standard_peak_backfill_if_enabled(
             request,
             raw_dir=raw_dir,
-            runtime_options=runtime_options,
+            recipe=recipe,
             source_run_id=source_run_id,
         )
         return outputs, standard_peak_outputs
@@ -259,56 +254,37 @@ class DiscoveryWorker(QThread):
     def _alignment_runtime(
         self,
         request: DiscoveryRequest,
-    ) -> tuple[AlignmentConfig, dict[str, object], str]:
-        preset = load_preset(request.preset)
-        alignment_config, runtime_options = apply_to_alignment(preset)
-        return (
-            alignment_config,
-            runtime_options,
-            _standard_peak_source_run_id(str(preset.source)),
-        )
+    ) -> tuple[BoundCidNlRecipe, str]:
+        binding = self._recipe_binding
+        if binding is None:
+            preset = load_preset(request.preset)
+            recipe = bind_cid_nl_recipe(preset, request.mode)
+            _validate_gui_alignment_recipe(recipe)
+            binding = (recipe, str(preset.source))
+            self._recipe_binding = binding
+        recipe, preset_source = binding
+        return recipe, _standard_peak_source_run_id(preset_source)
 
     def _run_standard_peak_backfill_if_enabled(
         self,
         request: DiscoveryRequest,
         *,
         raw_dir: Path,
-        runtime_options: dict[str, object],
+        recipe: BoundCidNlRecipe,
         source_run_id: str,
     ) -> Any | None:
-        if not bool(runtime_options.get("standard_peak_backfill", False)):
+        if not recipe.standard_peak_backfill:
             return None
-        backfill_expansion_mode = str(
-            runtime_options.get("backfill_expansion_productization", "off"),
-        )
-        if backfill_expansion_mode != "off":
-            raise ValueError(
-                "GUI untargeted presets do not support "
-                "backfill_expansion_productization yet; use scripts.run_alignment "
-                "for this preset",
-            )
         return run_standard_peak_backfill_preset(
             alignment_dir=request.output_dir,
             raw_dir=raw_dir,
             dll_dir=request.dll_dir,
             source_run_id=source_run_id,
-            chunk_size=_runtime_int(
-                runtime_options,
-                "standard_peak_backfill_chunk_size",
-            ),
-            reuse_existing=bool(
-                runtime_options["standard_peak_backfill_reuse_existing"],
-            ),
-            write_gallery=bool(
-                runtime_options["standard_peak_backfill_write_gallery"],
-            ),
-            publication_mode=str(
-                runtime_options["standard_peak_backfill_publication_mode"],
-            ),
-            min_shape_r=_runtime_float(
-                runtime_options,
-                "standard_peak_backfill_min_shape_r",
-            ),
+            chunk_size=recipe.standard_peak_backfill_chunk_size,
+            reuse_existing=recipe.standard_peak_backfill_reuse_existing,
+            write_gallery=recipe.standard_peak_backfill_write_gallery,
+            publication_mode=recipe.standard_peak_backfill_publication_mode,
+            min_shape_r=recipe.standard_peak_backfill_min_shape_r,
         )
 
     def _build_gallery(
@@ -361,10 +337,16 @@ class DiscoveryWorker(QThread):
         return {"gallery_html": str(gallery_html), "gallery_error": None}
 
     def _build_settings(self, request: DiscoveryRequest) -> DiscoverySettings:
-        return apply_to_discovery(
-            load_preset(request.preset),
-            explicit_tuning_overrides=request.tuning_overrides,
+        preset = load_preset(request.preset)
+        recipe = bind_cid_nl_recipe(
+            preset,
+            request.mode,
+            recipe_overrides=request.tuning_overrides,
         )
+        if request.mode != "discovery_only":
+            _validate_gui_alignment_recipe(recipe)
+        self._recipe_binding = (recipe, str(preset.source))
+        return recipe.discovery_settings
 
     def _discovery_peak_config(
         self,
@@ -477,29 +459,13 @@ def _standard_peak_source_run_id(preset_source: str) -> str:
     return f"alignment-preset:{safe_source}:standard-peak-backfill"
 
 
-def _owner_build_xic_backend(value: object) -> OwnerBuildXicBackend:
-    text = str(value)
-    if text == "raw-super-window":
-        return "raw_superwindow"
-    if text == "ms1-index":
-        return "ms1_index"
-    if text in {"raw", "raw_superwindow", "ms1_index"}:
-        return cast(OwnerBuildXicBackend, text)
-    raise ValueError(f"unsupported owner_build_xic_backend: {text}")
-
-
-def _runtime_int(options: dict[str, object], key: str) -> int:
-    value = options[key]
-    if isinstance(value, int):
-        return value
-    raise TypeError(f"{key} must be an int")
-
-
-def _runtime_float(options: dict[str, object], key: str) -> float:
-    value = options[key]
-    if isinstance(value, int | float):
-        return float(value)
-    raise TypeError(f"{key} must be numeric")
+def _validate_gui_alignment_recipe(recipe: BoundCidNlRecipe) -> None:
+    if recipe.backfill_expansion_productization != "off":
+        raise ValueError(
+            "GUI untargeted presets do not support "
+            "backfill_expansion_productization yet; use scripts.run_alignment "
+            "for this preset",
+        )
 
 
 def _alignment_summary(

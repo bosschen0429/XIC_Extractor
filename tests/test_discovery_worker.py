@@ -171,6 +171,13 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     (raw_dir / "A.raw").write_bytes(b"raw")
     captured_alignment: dict[str, object] = {}
     captured_standard_peak: dict[str, object] = {}
+    bound_recipes: list[object] = []
+    real_bind = module.bind_cid_nl_recipe
+
+    def bind_once(*args, **kwargs):
+        recipe = real_bind(*args, **kwargs)
+        bound_recipes.append(recipe)
+        return recipe
 
     def fake_run_alignment(**kwargs):
         captured_alignment.update(kwargs)
@@ -201,6 +208,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
 
     monkeypatch.setattr(module, "run_alignment", fake_run_alignment)
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
+    monkeypatch.setattr(module, "bind_cid_nl_recipe", bind_once)
     monkeypatch.setattr(
         module,
         "run_standard_peak_backfill_preset",
@@ -232,6 +240,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         summary = worker._run_full(request)
 
     assert summary is not None
+    assert len(bound_recipes) == 1
     assert captured_alignment["alignment_config"] == AlignmentConfig()
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
     assert captured_alignment["emit_alignment_cells"] is True
@@ -255,3 +264,102 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
             / "standard_peak_backfill_preset_summary.json",
         )
     )
+
+
+def test_gui_full_reuses_bound_custom_preset_after_discovery(
+    tmp_path: Path,
+) -> None:
+    preset_path = tmp_path / "custom.toml"
+    preset_path.write_text(
+        "\n".join(
+            [
+                'name = "Custom"',
+                'description = "Bind once before Discovery"',
+                'combine_mode = "single"',
+                "",
+                "[[tag]]",
+                'strategy = "neutral_loss"',
+                'name = "TEST"',
+                "value = 100.0",
+                "",
+                "[alignment]",
+                "standard_peak_backfill = true",
+                'owner_build_xic_backend = "ms1-index"',
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    request = DiscoveryRequest(
+        mode="full",
+        preset=str(preset_path),
+        tuning_overrides={},
+        raw_dir=tmp_path / "raw",
+        raw_file=None,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        discovery_batch_index=None,
+    )
+    worker = DiscoveryWorker(request)
+
+    worker._build_settings(request)
+    preset_path.unlink()
+    recipe, source_run_id = worker._alignment_runtime(request)
+
+    assert recipe.owner_build_xic_backend == "ms1_index"
+    assert source_run_id == (
+        f"alignment-preset:{preset_path.as_posix()}:"
+        "standard-peak-backfill"
+    )
+
+
+def test_gui_full_rejects_backfill_expansion_before_discovery(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    output_dir = tmp_path / "out"
+    preset_path = tmp_path / "backfill-expansion.toml"
+    raw_dir.mkdir()
+    output_dir.mkdir()
+    (raw_dir / "A.raw").write_bytes(b"raw")
+    preset_path.write_text(
+        "\n".join(
+            [
+                'name = "Backfill expansion"',
+                'description = "Unsupported GUI post-stage"',
+                'combine_mode = "single"',
+                "",
+                "[[tag]]",
+                'strategy = "neutral_loss"',
+                'name = "TEST"',
+                "value = 100.0",
+                "",
+                "[discovery]",
+                "",
+                "[alignment]",
+                "standard_peak_backfill = true",
+                'backfill_expansion_productization = "clean-target-selective"',
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def reject_discovery(*_args, **_kwargs):
+        raise AssertionError("incompatible preset launched Discovery")
+
+    monkeypatch.setattr(module, "run_discovery_batch", reject_discovery)
+    request = DiscoveryRequest(
+        mode="full",
+        preset=str(preset_path),
+        tuning_overrides={},
+        raw_dir=raw_dir,
+        raw_file=None,
+        dll_dir=tmp_path / "dll",
+        output_dir=output_dir,
+        discovery_batch_index=None,
+    )
+
+    with pytest.raises(ValueError, match="do not support backfill_expansion"):
+        DiscoveryWorker(request)._run_full(request)

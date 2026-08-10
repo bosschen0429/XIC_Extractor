@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 
 from gui import styles
 from gui.ui import section_card
-from xic_extractor.presets import apply_to_discovery, load_preset
+from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_extractor.settings_schema import RESOLVER_MODES
 
 ADVANCED_NUMERIC_FIELDS: tuple[tuple[str, str, float, float, int, float], ...] = (
@@ -167,7 +167,8 @@ class DiscoveryMethodSection(QWidget):
         preset = self._preset_value()
         if preset:
             preset_obj = load_preset(preset)
-            self._update_preset_preview(preset_obj, apply_to_discovery(preset_obj))
+            recipe = bind_cid_nl_recipe(preset_obj, "discovery_only")
+            self._update_preset_preview(preset_obj, recipe.discovery_settings)
         else:
             self._update_preset_preview(None, None)
 
@@ -202,7 +203,10 @@ class DiscoveryMethodSection(QWidget):
             return
 
         preset_obj = load_preset(preset)
-        settings = apply_to_discovery(preset_obj)
+        settings = bind_cid_nl_recipe(
+            preset_obj,
+            "discovery_only",
+        ).discovery_settings
         self._update_preset_preview(preset_obj, settings)
         blockers = [QSignalBlocker(spin) for spin in self._spins.values()]
         blockers.append(QSignalBlocker(self._resolver))

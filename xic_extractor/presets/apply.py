@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from typing import cast
+from typing import Literal, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.detected_features import DeltaMassPatternSettings
@@ -12,6 +12,10 @@ from xic_extractor.presets.loader import (
     validate_delta_mass_preset_tags,
 )
 from xic_extractor.presets.models import Preset, PresetError, PresetTag
+from xic_extractor.presets.recipe_models import (
+    BoundCidNlRecipe,
+    CidNlRecipeRoute,
+)
 from xic_extractor.settings_schema import RESOLVER_MODES
 
 _POSITIVE_FLOAT_FIELDS = frozenset(
@@ -47,6 +51,160 @@ OWNER_BUILD_XIC_BACKENDS = frozenset(
         "ms1-index",
     }
 )
+_CID_NL_RECIPE_ROUTES = frozenset(
+    {"full", "discovery_only", "align_only", "bounded_mode_track"}
+)
+_CID_NL_RECIPE_OVERRIDE_KEYS = (
+    frozenset(DISCOVERY_TUNING_OVERRIDE_KEYS)
+    | {
+        "standard_peak_backfill_publication_mode",
+        "owner_build_xic_backend",
+    }
+)
+
+
+def bind_cid_nl_recipe(
+    preset: Preset,
+    route: CidNlRecipeRoute,
+    *,
+    recipe_overrides: Mapping[str, object] | None = None,
+) -> BoundCidNlRecipe:
+    """Bind one CID-NL preset to an existing V1 execution route."""
+
+    if route not in _CID_NL_RECIPE_ROUTES:
+        supported = ", ".join(sorted(_CID_NL_RECIPE_ROUTES))
+        raise PresetError(f"CID-NL recipe route must be one of: {supported}")
+
+    overrides = dict(recipe_overrides or {})
+    unknown = sorted(set(overrides) - _CID_NL_RECIPE_OVERRIDE_KEYS)
+    if unknown:
+        raise PresetError(f"unknown CID-NL recipe override: {unknown[0]}")
+
+    discovery_overrides = {
+        key: value
+        for key, value in overrides.items()
+        if key in DISCOVERY_TUNING_OVERRIDE_KEYS
+    }
+    discovery_settings = apply_to_discovery(
+        preset,
+        explicit_tuning_overrides=discovery_overrides or None,
+    )
+    if route == "bounded_mode_track" and len(
+        discovery_settings.neutral_loss_profiles
+    ) != 1:
+        raise ValueError("ModeTrack runner requires a single-tag CID-NL preset")
+
+    alignment_config, runtime_options = apply_to_alignment(preset)
+    standard_peak_backfill = bool(
+        runtime_options.get("standard_peak_backfill", False)
+    )
+    publication_mode = cast(
+        Literal["matrix-only", "review-gallery", "deep-audit"],
+        runtime_options.get("standard_peak_backfill_publication_mode", "deep-audit"),
+    )
+    write_gallery = bool(
+        runtime_options.get("standard_peak_backfill_write_gallery", True)
+    )
+    publication_override = overrides.get(
+        "standard_peak_backfill_publication_mode"
+    )
+    if publication_override is not None:
+        if not standard_peak_backfill:
+            raise PresetError(
+                "--standard-peak-backfill-publication-mode requires a preset "
+                "that enables standard_peak_backfill"
+            )
+        publication_mode = cast(
+            Literal["matrix-only", "review-gallery", "deep-audit"],
+            _publication_mode_setting(
+                {"standard_peak_backfill_publication_mode": publication_override},
+                legacy_write_gallery=write_gallery,
+            ),
+        )
+        write_gallery = publication_mode in {"review-gallery", "deep-audit"}
+
+    owner_build_xic_backend = _owner_build_xic_backend_projection(
+        runtime_options.get("owner_build_xic_backend", "raw")
+    )
+    if "owner_build_xic_backend" in overrides:
+        owner_build_xic_backend = _owner_build_xic_backend_projection(
+            _enum_str_setting(
+                overrides,
+                "owner_build_xic_backend",
+                "raw",
+                OWNER_BUILD_XIC_BACKENDS,
+            )
+        )
+
+    min_shape_r = float(
+        cast(
+            int | float,
+            runtime_options.get("standard_peak_backfill_min_shape_r", 0.95),
+        )
+    )
+    return BoundCidNlRecipe(
+        route=route,
+        discovery_settings=discovery_settings,
+        alignment_config=alignment_config,
+        standard_peak_backfill=standard_peak_backfill,
+        standard_peak_backfill_chunk_size=int(
+            cast(
+                int,
+                runtime_options.get("standard_peak_backfill_chunk_size", 120),
+            )
+        ),
+        standard_peak_backfill_publication_mode=publication_mode,
+        standard_peak_backfill_write_gallery=write_gallery,
+        standard_peak_backfill_reuse_existing=bool(
+            runtime_options.get("standard_peak_backfill_reuse_existing", False)
+        ),
+        standard_peak_backfill_min_shape_r=min_shape_r,
+        owner_build_xic_backend=owner_build_xic_backend,
+        backfill_expansion_productization=cast(
+            Literal["off", "clean-target-selective"],
+            runtime_options.get("backfill_expansion_productization", "off"),
+        ),
+        backfill_expansion_reuse_existing_raw_overlay=bool(
+            runtime_options.get(
+                "backfill_expansion_reuse_existing_raw_overlay",
+                False,
+            )
+        ),
+        backfill_expansion_reuse_existing_shift_aware=bool(
+            runtime_options.get(
+                "backfill_expansion_reuse_existing_shift_aware",
+                False,
+            )
+        ),
+        backfill_expansion_render_shift_aware_images=bool(
+            runtime_options.get(
+                "backfill_expansion_render_shift_aware_images",
+                False,
+            )
+        ),
+        backfill_expansion_min_shape_r=float(
+            cast(
+                int | float,
+                runtime_options.get("backfill_expansion_min_shape_r", min_shape_r),
+            )
+        ),
+        product_ready_publication_check=(
+            preset.source == "builtin:dna_dr_product_ready"
+        ),
+    )
+
+
+def _owner_build_xic_backend_projection(
+    value: object,
+) -> Literal["raw", "raw_superwindow", "ms1_index"]:
+    text = str(value)
+    if text == "raw":
+        return "raw"
+    if text in {"raw-super-window", "raw_superwindow"}:
+        return "raw_superwindow"
+    if text in {"ms1-index", "ms1_index"}:
+        return "ms1_index"
+    raise PresetError(f"unsupported owner_build_xic_backend: {text}")
 
 
 def apply_to_discovery(
@@ -245,7 +403,10 @@ def apply_to_alignment(preset: Preset) -> tuple[AlignmentConfig, dict[str, objec
             "backfill_expansion_productization requires standard_peak_backfill"
         )
     if not standard_peak:
-        return AlignmentConfig(), {"standard_peak_backfill": False}
+        return AlignmentConfig(), {
+            "standard_peak_backfill": False,
+            "owner_build_xic_backend": owner_build_xic_backend,
+        }
 
     return AlignmentConfig(), {
         "standard_peak_backfill": True,
