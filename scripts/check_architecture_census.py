@@ -138,6 +138,7 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
     ),
     "xic_extractor.execution_runtime_owner": frozenset(
         {
+            "RuntimeAcquisitionMetrics",
             "RuntimeAcquisitionReceipt",
             "RuntimeArtifactIoSample",
             "RuntimeArtifactRegistrationReceipt",
@@ -148,6 +149,7 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "RuntimeWorkerBatchReceipt",
             "RuntimeWorkerPeakRssSample",
             "accept_runtime_finalization_receipt",
+            "derive_runtime_acquisition_metrics",
             "execute_runtime_attempt",
             "mint_work_unit_settlement",
             "runtime_observation_event_count",

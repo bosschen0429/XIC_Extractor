@@ -1,6 +1,6 @@
 import ast
 import csv
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from concurrent.futures import Future
 from dataclasses import replace
 from pathlib import Path
@@ -27,17 +27,23 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.pipeline import (
     _BATCH_INDEX_COLUMNS,
+    _DISCOVERY_MS1_MEASUREMENT_NAMES,
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
     DiscoverySampleProcessJob,
     DiscoverySampleProcessResult,
     _discover_raw_file,
+    _reject_caller_authored_discovery_ms1_measurement,
     _run_discovery_sample_process_job,
+    _validate_discovery_ms1_observations,
     _write_batch_index,
     run_discovery,
     run_discovery_batch,
 )
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
+    build_acquisition_source_identity,
+)
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -45,6 +51,7 @@ from xic_extractor.raw_reader import (
     Ms2ScanEvent,
 )
 from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
 
@@ -713,6 +720,50 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
     )
 
 
+def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-failure")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    raw = _OwnerBoundFakeRawHandle(
+        source,
+        [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
+        rt=np.asarray([7.7, 7.8, 7.9]),
+        intensity=np.asarray([10.0, 100.0, 10.0]),
+    )
+    recorder = TimingRecorder("discovery")
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("peak failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="peak failed"):
+        _discover_raw_file(
+            raw_path,
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=lambda path, dll_dir: raw,
+            timing_recorder=recorder,
+        )
+
+    rows = {
+        str(row["metric"]): row
+        for row in recorder.measurement_observations
+        if row["scope"] == "sample"
+    }
+    assert rows["logical_xic_request_count"]["value"] == 1
+    assert rows["xic_batch_count"]["value"] == 1
+    assert rows["adapter_chromatogram_call_count"]["value"] == 1
+    assert rows["trace_point_count"]["value"] == 3
+    assert raw.closed
+
+
 def test_adapter_counter_failure_does_not_mask_discovery_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1198,6 +1249,106 @@ def test_pipeline_does_not_import_targeted_extractor_module() -> None:
     assert "xic_extractor.extractor" not in imported_modules | imported_from_modules
 
 
+def test_owner_bound_discovery_projects_complete_ms1_measurements(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "Sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    raw = _OwnerBoundFakeRawHandle(
+        source,
+        [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
+        rt=np.asarray([7.7, 7.8, 7.9]),
+        intensity=np.asarray([10.0, 100.0, 10.0]),
+    )
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: _ok_peak(
+            rt=7.8,
+            intensity=100.0,
+            area=10.0,
+            start=7.7,
+            end=7.9,
+        ),
+    )
+    recorder = TimingRecorder("discovery")
+
+    run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=_settings(),
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda path, dll_dir: raw,
+        timing_recorder=recorder,
+    )
+
+    rows = {
+        str(row["metric"]): row
+        for row in recorder.measurement_observations
+        if row["scope"] == "Sample"
+    }
+    assert rows["raw_open_count"]["value"] == 1
+    assert rows["discovery_ms1_input_group_count"]["value"] == 1
+    assert rows["discovery_ms1_empty_group_count"]["value"] == 0
+    assert rows["logical_xic_request_count"]["value"] == 1
+    assert rows["xic_batch_count"]["value"] == 1
+    assert rows["adapter_chromatogram_call_count"]["value"] == 1
+    assert rows["trace_point_count"]["value"] == 3
+    assert rows["discovery_ms1_exact_scan_window_count"]["value"] == 1
+    assert rows["discovery_ms1_predicted_chunked_call_count"]["value"] == 1
+    assert rows["discovery_ms1_batch_max_requests"]["value"] == 1
+    assert rows["discovery_ms1_predicted_call_reduction_pct"]["value"] == 0.0
+    for metric in ("worker_peak_rss_bytes", "process_tree_peak_rss_bytes"):
+        assert rows[metric]["availability"] == "unavailable"
+        assert str(rows[metric]["reason"]).startswith("unsupported:")
+
+
+@pytest.mark.parametrize(
+    "metric",
+    (
+        "logical_xic_request_count",
+        "trace_point_count",
+        "discovery_ms1_input_group_count",
+    ),
+)
+def test_worker_measurement_projection_rejects_caller_authored_owner_counts(
+    metric: str,
+) -> None:
+    with pytest.raises(ValueError, match="cannot author"):
+        _reject_caller_authored_discovery_ms1_measurement(
+            {"metric": metric, "value": 999}
+        )
+
+
+def test_discovery_ms1_measurement_validator_rejects_duplicate_fields() -> None:
+    recorder = TimingRecorder("discovery")
+    for metric in _DISCOVERY_MS1_MEASUREMENT_NAMES:
+        recorder.observe(metric, value=1, scope="Sample")
+    recorder.observe(
+        "discovery_ms1_input_group_count",
+        value=1,
+        scope="Sample",
+    )
+
+    with pytest.raises(ValueError, match="duplicate"):
+        _validate_discovery_ms1_observations(recorder, "Sample")
+
+
+def test_discovery_ms1_measurement_validator_rejects_unknown_fields() -> None:
+    recorder = TimingRecorder("discovery")
+    for metric in _DISCOVERY_MS1_MEASUREMENT_NAMES:
+        recorder.observe(metric, value=1, scope="Sample")
+    recorder.observe("discovery_ms1_unowned_count", value=1, scope="Sample")
+
+    with pytest.raises(ValueError, match="unexpected=.*unowned"):
+        _validate_discovery_ms1_observations(recorder, "Sample")
+
+
 def _settings(**overrides: object) -> DiscoverySettings:
     values = {
         "neutral_loss_profile": NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
@@ -1276,6 +1427,52 @@ def _ok_peak(
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
+
+
+class _OwnerBoundFakeRawHandle:
+    def __init__(
+        self,
+        source: AcquisitionSourceIdentity,
+        events: list[Ms2ScanEvent],
+        *,
+        rt: np.ndarray,
+        intensity: np.ndarray,
+    ) -> None:
+        self.acquisition_source = source
+        self._events = events
+        self._rt = rt
+        self._intensity = intensity
+        self.raw_chromatogram_call_count = 0
+        self.entered = False
+        self.closed = False
+
+    def __enter__(self) -> "_OwnerBoundFakeRawHandle":
+        self.entered = True
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.closed = True
+
+    def iter_ms2_scans(
+        self,
+        rt_min: float,
+        rt_max: float,
+    ) -> Iterator[Ms2ScanEvent]:
+        yield from self._events
+
+    def extract_xic_many(
+        self,
+        requests: Sequence[XICRequest],
+    ) -> tuple[XICTrace, ...]:
+        self.raw_chromatogram_call_count += len(
+            {self.scan_window_for_request(request) for request in requests}
+        )
+        return tuple(
+            XICTrace.from_arrays(self._rt, self._intensity) for _request in requests
+        )
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        return int(request.rt_min * 100), int(request.rt_max * 100)
 
 
 class _FakeRawHandle:

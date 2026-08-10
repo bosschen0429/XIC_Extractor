@@ -133,6 +133,68 @@ class RuntimeAcquisitionReceipt:
             )
 
 
+@final
+@dataclass(frozen=True, slots=True)
+class RuntimeAcquisitionMetrics:
+    logical_xic_request_count: int
+    xic_batch_count: int
+    adapter_chromatogram_call_count: int
+    trace_point_count: int
+    _mint_token: InitVar[object] = field(kw_only=True)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("RuntimeAcquisitionMetrics is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
+            raise RuntimeFinalizationContractError(
+                "runtime acquisition metrics must be minted by the runtime owner"
+            )
+        for field_name in (
+            "logical_xic_request_count",
+            "xic_batch_count",
+            "adapter_chromatogram_call_count",
+            "trace_point_count",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise RuntimeFinalizationContractError(
+                    f"{field_name} must be a non-negative integer"
+                )
+
+
+def derive_runtime_acquisition_metrics(
+    acquisitions: Sequence[TraceAcquisitionBatch],
+) -> RuntimeAcquisitionMetrics:
+    """Aggregate only acquisition-owner receipts into runtime-owned counts."""
+
+    if isinstance(acquisitions, (str, bytes)):
+        raise RuntimeFinalizationContractError(
+            "acquisitions must contain TraceAcquisitionBatch receipts"
+        )
+    try:
+        batch = tuple(acquisitions)
+    except TypeError as exc:
+        raise RuntimeFinalizationContractError(
+            "acquisitions must contain TraceAcquisitionBatch receipts"
+        ) from exc
+    if any(not isinstance(item, TraceAcquisitionBatch) for item in batch):
+        raise RuntimeFinalizationContractError(
+            "acquisitions must contain TraceAcquisitionBatch receipts"
+        )
+    return RuntimeAcquisitionMetrics(
+        logical_xic_request_count=sum(
+            item.logical_xic_request_count for item in batch
+        ),
+        xic_batch_count=sum(item.xic_batch_count for item in batch),
+        adapter_chromatogram_call_count=sum(
+            item.adapter_chromatogram_call_count for item in batch
+        ),
+        trace_point_count=sum(item.trace_point_count for item in batch),
+        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RuntimeWorkerBatchReceipt:
     """Workflow-neutral closed facts returned from one adapter batch."""
@@ -778,8 +840,11 @@ def _derive_runtime_observability_ledger(
             "worker RSS samples must exactly match owner-derived worker keys"
         )
     worker_samples = {sample.worker_key: sample for sample in telemetry.worker_peak_rss}
+    acquisition_metrics = derive_runtime_acquisition_metrics(
+        tuple(item.acquisition for item in acquisition_batch)
+    )
     acquisition_counts = {
-        name: sum(getattr(item.acquisition, name) for item in acquisition_batch)
+        name: getattr(acquisition_metrics, name)
         for name in (
             "logical_xic_request_count",
             "xic_batch_count",
@@ -1295,6 +1360,7 @@ def _acquisition_receipts_match(
 
 
 __all__ = [
+    "RuntimeAcquisitionMetrics",
     "RuntimeAcquisitionReceipt",
     "RuntimeArtifactIoSample",
     "RuntimeArtifactRegistrationReceipt",
@@ -1310,6 +1376,7 @@ __all__ = [
     "RuntimeWorkerBatchProvider",
     "RuntimeWorkerPeakRssSample",
     "accept_runtime_finalization_receipt",
+    "derive_runtime_acquisition_metrics",
     "execute_runtime_attempt",
     "mint_work_unit_settlement",
     "runtime_observation_event_count",

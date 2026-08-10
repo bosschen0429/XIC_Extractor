@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import get_type_hints
@@ -6,6 +7,7 @@ from typing import get_type_hints
 import numpy as np
 import pytest
 
+from xic_extractor.acquisition_contract import AcquisitionContractError
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import (
@@ -15,10 +17,23 @@ from xic_extractor.discovery.models import (
     NeutralLossProfile,
 )
 from xic_extractor.discovery.ms1_backfill import (
+    _backfill_ms1_candidates_with_acquisition,
     backfill_ms1_candidates,
     merge_candidates_by_ms1_peak,
 )
+from xic_extractor.execution_runtime_owner import (
+    derive_runtime_acquisition_metrics,
+)
+from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
+    build_acquisition_source_identity,
+)
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
 from xic_extractor.signal_processing import PeakDetectionResult, PeakResult
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
 RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")
@@ -676,6 +691,131 @@ def test_best_seed_tie_breaks_by_error_then_rt_then_scan_for_candidate(
     assert candidate.ms1_seed_delta_min == pytest.approx(7.90 - expected_rt)
 
 
+def test_owner_acquisition_characterizes_singleton_requests_and_exact_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    first = _group((_seed(scan_number=10, rt=7.80),))
+    duplicate = replace(
+        first,
+        seeds=(_seed(scan_number=20, rt=7.80),),
+    )
+    later = _group((_seed(scan_number=30, rt=9.00),))
+    empty = replace(first, seeds=())
+    raw = _OwnerBoundBatchRaw(source)
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: _ok_peak(
+            rt=7.8,
+            intensity=100.0,
+            area=10.0,
+            start=7.7,
+            end=7.9,
+        ),
+    )
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (first, duplicate, later, empty),
+        acquisition_source=source,
+        settings=_settings(),
+        peak_config=_peak_config(),
+    )
+
+    measurements = result.measurements
+    runtime_metrics = derive_runtime_acquisition_metrics(
+        measurements.acquisition_batches
+    )
+    assert measurements.input_group_count == 4
+    assert measurements.empty_group_count == 1
+    assert runtime_metrics.logical_xic_request_count == 3
+    assert runtime_metrics.xic_batch_count == 3
+    assert runtime_metrics.adapter_chromatogram_call_count == 3
+    assert runtime_metrics.trace_point_count == 9
+    assert measurements.exact_scan_window_count == 2
+    assert measurements.predicted_chunked_call_count == 2
+    assert measurements.batch_max_requests == 1
+    assert [len(batch) for batch in raw.request_batches] == [1, 1, 1]
+    assert raw.request_batches[0][0] == raw.request_batches[1][0]
+
+
+def test_owner_acquisition_preserves_scalar_candidate_parity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    groups = (
+        _group((_seed(scan_number=10, rt=7.80),)),
+        _group((_seed(scan_number=20, rt=7.84),)),
+    )
+    rt = np.asarray([7.7, 7.8, 7.9], dtype=float)
+    intensity = np.asarray([10.0, 100.0, 10.0], dtype=float)
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: _ok_peak(
+            rt=7.8,
+            intensity=100.0,
+            area=10.0,
+            start=7.7,
+            end=7.9,
+        ),
+    )
+
+    scalar = backfill_ms1_candidates(
+        _FakeRaw(rt=rt, intensity=intensity),
+        groups,
+        settings=_settings(),
+        peak_config=_peak_config(),
+    )
+    acquired = _backfill_ms1_candidates_with_acquisition(
+        _OwnerBoundBatchRaw(source),
+        groups,
+        acquisition_source=source,
+        settings=_settings(),
+        peak_config=_peak_config(),
+    )
+
+    assert acquired.candidates == scalar
+
+
+def test_owner_acquisition_fails_closed_on_wrong_trace_cardinality(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    raw = _OwnerBoundBatchRaw(source, drop_results=True)
+
+    with pytest.raises(
+        AcquisitionContractError,
+        match="exactly one trace per request",
+    ):
+        _backfill_ms1_candidates_with_acquisition(
+            raw,
+            (_group((_seed(scan_number=10, rt=7.80),)),),
+            acquisition_source=source,
+            settings=_settings(),
+            peak_config=_peak_config(),
+        )
+
+
 def _settings(**overrides: float) -> DiscoverySettings:
     values = {
         "neutral_loss_profile": NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
@@ -843,6 +983,40 @@ def _ok_peak(
         max_smoothed=intensity,
         n_prominent_peaks=1,
     )
+
+
+class _OwnerBoundBatchRaw:
+    def __init__(
+        self,
+        source: AcquisitionSourceIdentity,
+        *,
+        drop_results: bool = False,
+    ) -> None:
+        self.acquisition_source = source
+        self.drop_results = drop_results
+        self.raw_chromatogram_call_count = 0
+        self.request_batches: list[tuple[XICRequest, ...]] = []
+        self.rt = np.asarray([7.7, 7.8, 7.9], dtype=float)
+        self.intensity = np.asarray([10.0, 100.0, 10.0], dtype=float)
+
+    def extract_xic_many(
+        self,
+        requests: Sequence[XICRequest],
+    ) -> tuple[XICTrace, ...]:
+        self.request_batches.append(tuple(requests))
+        self.raw_chromatogram_call_count += len(
+            {self.scan_window_for_request(request) for request in requests}
+        )
+        if self.drop_results:
+            return ()
+        return tuple(
+            XICTrace.from_arrays(self.rt, self.intensity) for _request in requests
+        )
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        if request.rt_min < 8.5:
+            return 100, 200
+        return 300, 400
 
 
 class _FakeRaw:

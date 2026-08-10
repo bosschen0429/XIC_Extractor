@@ -213,6 +213,11 @@ The boundary is closed as follows:
   acknowledgement, dispositions, and outcome are owner-derived. Callers must
   not submit a `RuntimeObservabilityLedger`, scalar mechanical counts, a
   coordinator record, or a supervisor record.
+- A stage that needs to render in-flight acquisition diagnostics may submit
+  only owner-minted `TraceAcquisitionBatch` receipts to
+  `derive_runtime_acquisition_metrics`. Its sealed `RuntimeAcquisitionMetrics`
+  result is the sole narrow count projection; it does not construct a ledger,
+  settle work, or bypass atomic attempt finalization.
 - Invalid manifest content remains an owner state, not an exception-only side
   channel. It follows `attempt_queued` -> `manifest_preflight_failed` ->
   `terminal_proposal(failed)` through the same finalization receipt and recovery
