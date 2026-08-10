@@ -20,7 +20,7 @@ from xic_extractor.extraction.untargeted_cid_nl_mode_track_workflow import (
     ModeTrackWorkflowRun,
     run_untargeted_cid_nl_mode_track_workflow,
 )
-from xic_extractor.presets import apply_to_discovery, load_preset
+from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import preflight_raw_reader
 from xic_extractor.sample_metadata import (
     SampleMetadata,
@@ -245,14 +245,12 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         raise ValueError("; ".join(details))
     raw_files = tuple(raw_by_stem[row.raw_stem.casefold()] for row in metadata)
     preset = load_preset(args.preset)
-    settings = apply_to_discovery(preset)
-    if len(settings.neutral_loss_profiles) != 1:
-        raise ValueError("ModeTrack runner requires a single-tag CID-NL preset")
+    recipe = bind_cid_nl_recipe(preset, "bounded_mode_track")
     return _OperatorInputs(
         raw_files=raw_files,
         sample_metadata=metadata,
         dll_dir=dll_dir,
-        settings=settings,
+        settings=recipe.discovery_settings,
         manual_review_path=manual_review_path,
         manual_review_replay_path=manual_review_replay_path,
         review_summary=review_summary,
