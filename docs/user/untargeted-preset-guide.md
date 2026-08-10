@@ -4,6 +4,14 @@ Presets are TOML files that bundle discovery and alignment settings into a
 named method. They live in `xic_extractor/presets/data/` and are selectable
 from the GUI or passed to CLI scripts.
 
+For current CID-NL entry points, one preset selection is bound before execution
+to the existing route. GUI `full` runs RAW -> Discovery -> generic Alignment ->
+Owner Backfill -> the canonical Matrix writer; `align_only` starts from an
+existing Discovery index; and `discovery_only` stops at Discovery. Standard
+Peak remains an optional advanced refinement where the current CLI/GUI already
+runs it. Presets do not expose a public workflow graph or `[workflow]` TOML
+section.
+
 ## Available Presets
 
 | Name | Display name | Strategy | NL mass (Da) | Description |
@@ -119,12 +127,16 @@ for better cross-sample coverage during owner construction.
 ## GUI Advanced Overrides
 
 When running from the GUI, the Advanced panel allows per-run overrides on top
-of the selected preset. These overrides are applied after preset defaults and
-take precedence. Common overrides:
+of the selected preset. These Discovery-method overrides are applied after
+preset defaults and take precedence. They include:
 
 - RT window (`rt_min`, `rt_max`)
 - Tolerance values (`nl_tolerance_ppm`, `precursor_mz_tolerance_ppm`)
-- Backfill chunk size
-- Publication mode
+- Product search, intensity ratio, seed-gap, and MS1 padding values
+- Resolver mode
+
+Alignment and Standard Peak settings such as Backfill chunk size or
+publication mode remain preset/CLI-owned; the current GUI does not expose them
+as method override controls.
 
 Overrides are stored in `config/discovery_gui.json` (machine-local, untracked).
