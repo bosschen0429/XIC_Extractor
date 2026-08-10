@@ -11,6 +11,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     BackfillEvidenceOwnerBindings,
+    BackfillEvidenceOwnerResult,
     BackfillEvidenceRecord,
     EvidenceQueryResult,
     SkippedEvidenceOwnerBindings,
@@ -18,11 +19,12 @@ from xic_extractor.alignment.backfill_evidence_contract import (
 )
 from xic_extractor.alignment.backfill_evidence_owner import (
     backfill_evidence_query_claims,
+    rehydrate_backfill_evidence_bindings,
     skipped_evidence_query_claims,
-    validate_backfill_evidence_bindings,
     validate_skipped_evidence_bindings,
 )
 from xic_extractor.alignment.backfill_evidence_serialization import (
+    backfill_evidence_identity_projection_spellings,
     backfill_evidence_record_from_projection,
     backfill_evidence_record_to_projection,
     skipped_evidence_record_from_projection,
@@ -34,6 +36,7 @@ DEFAULT_PARQUET_ROW_GROUP_SIZE = 16_384
 DEFAULT_PARQUET_COMPRESSION = "zstd"
 
 _RecordT = TypeVar("_RecordT")
+_ParquetFilter = tuple[str, str, object]
 
 
 def write_backfill_evidence_parquet(
@@ -84,7 +87,10 @@ def iter_backfill_evidence_parquet(
         try:
             record = backfill_evidence_record_from_projection(projection)
             if owner_bindings is not None:
-                validate_backfill_evidence_bindings(record, owner_bindings)
+                record = rehydrate_backfill_evidence_bindings(
+                    record,
+                    owner_bindings,
+                ).record
         except ValueError as exc:
             raise ValueError(f"{path}: row ordinal {row_number}: {exc}") from exc
         yield record
@@ -120,16 +126,30 @@ def lookup_backfill_evidence_parquet(
 ) -> EvidenceQueryResult[BackfillEvidenceRecord]:
     _require_lookup_key("feature_family_id", feature_family_id)
     _require_lookup_key("sample_stem", sample_stem)
-    filters: list[tuple[str, str, str]] = [
-        ("feature_family_id", "=", feature_family_id),
-        ("sample_stem", "=", sample_stem),
+    filters: list[_ParquetFilter] = [
+        _backfill_lookup_filter(
+            "feature_family_id",
+            feature_family_id,
+            owner_bound=owner_bindings is not None,
+        ),
+        _backfill_lookup_filter(
+            "sample_stem",
+            sample_stem,
+            owner_bound=owner_bindings is not None,
+        ),
     ]
     if group_hypothesis_id is not None:
         _require_lookup_key("group_hypothesis_id", group_hypothesis_id)
-        filters.append(("group_hypothesis_id", "=", group_hypothesis_id))
+        filters.append(
+            _backfill_lookup_filter(
+                "group_hypothesis_id",
+                group_hypothesis_id,
+                owner_bound=owner_bindings is not None,
+            )
+        )
     records: list[BackfillEvidenceRecord] = []
+    owner_results: list[BackfillEvidenceOwnerResult] = []
     seen: set[tuple[str, str, str]] = set()
-    owner_bound = owner_bindings is not None
     for row_number, projection in _read_filtered_projection_rows(
         path,
         columns=ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
@@ -137,23 +157,40 @@ def lookup_backfill_evidence_parquet(
     ):
         try:
             record = backfill_evidence_record_from_projection(projection)
+            owner_result = None
             if owner_bindings is not None:
-                validate_backfill_evidence_bindings(record, owner_bindings)
-                owner_bound = record.owner_binding_ids_available and owner_bound
+                owner_result = rehydrate_backfill_evidence_bindings(
+                    record,
+                    owner_bindings,
+                )
+                record = owner_result.record
         except ValueError as exc:
             raise ValueError(f"{path}: row ordinal {row_number}: {exc}") from exc
+        if record.feature_family_id != feature_family_id:
+            continue
+        if record.sample_stem != sample_stem:
+            continue
+        if (
+            group_hypothesis_id is not None
+            and record.group_hypothesis_id != group_hypothesis_id
+        ):
+            continue
         if record.identity in seen:
             raise ValueError(
                 f"{path}: duplicate composite identity {record.identity!r}"
             )
         seen.add(record.identity)
         records.append(record)
+        if owner_result is not None:
+            owner_results.append(owner_result)
     result = tuple(records)
     return EvidenceQueryResult(
         records=result,
         claims=backfill_evidence_query_claims(
             found=bool(result),
-            owner_bound=owner_bound,
+            owner_results=(
+                tuple(owner_results) if owner_bindings is not None else None
+            ),
         ),
     )
 
@@ -280,7 +317,7 @@ def _read_filtered_projection_rows(
     path: Path,
     *,
     columns: Sequence[str],
-    filters: list[tuple[str, str, str]],
+    filters: Sequence[_ParquetFilter],
 ) -> tuple[tuple[int, Mapping[str, str]], ...]:
     _pa, pq = _load_pyarrow()
     parquet_file = pq.ParquetFile(str(path))
@@ -301,6 +338,20 @@ def _read_filtered_projection_rows(
         rows.append((ordinal, projection))
         previous_ordinal = ordinal
     return tuple(rows)
+
+
+def _backfill_lookup_filter(
+    field: str,
+    value: str,
+    *,
+    owner_bound: bool,
+) -> _ParquetFilter:
+    if not owner_bound:
+        return (field, "=", value)
+    spellings = backfill_evidence_identity_projection_spellings(value)
+    if len(spellings) == 1:
+        return (field, "=", value)
+    return (field, "in", spellings)
 
 
 def _projection_row(

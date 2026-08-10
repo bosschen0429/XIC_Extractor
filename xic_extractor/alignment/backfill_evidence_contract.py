@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Generic, TypeVar
 
@@ -135,6 +135,8 @@ class BackfillEvidenceOwnerBindings:
     known_group_ids: frozenset[str]
     known_sample_stems: frozenset[str]
     candidate_samples: Mapping[str, str]
+    group_feature_family_ids: Mapping[str, str] = field(default_factory=dict)
+    group_public_family_ids: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,9 +277,30 @@ class BackfillEvidenceRecord:
             self.sample_stem,
         )
 
+
+
+@dataclass(frozen=True, slots=True)
+class BackfillEvidenceCandidateAssignment:
+    sample_stem: str
+    source_candidate_id: str
+    group_hypothesis_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class BackfillEvidenceOwnerResult:
+    record: BackfillEvidenceRecord
+    group_assignment_binding: EvidenceClaimState
+    public_family_binding: EvidenceClaimState
+    candidate_assignment: BackfillEvidenceCandidateAssignment | None
+
     @property
-    def owner_binding_ids_available(self) -> bool:
-        return bool(self.group_hypothesis_id and self.public_family_id)
+    def cross_artifact_binding(self) -> EvidenceClaimState:
+        if (
+            self.group_assignment_binding is EvidenceClaimState.OWNER_REHYDRATED
+            and self.public_family_binding is EvidenceClaimState.OWNER_REHYDRATED
+        ):
+            return EvidenceClaimState.OWNER_REHYDRATED
+        return EvidenceClaimState.UNAVAILABLE
 
 
 @dataclass(frozen=True, slots=True)
@@ -379,7 +402,9 @@ __all__ = (
     "PREDICATE_VERSION",
     "SKIPPED_EVIDENCE_LEDGER_COLUMNS",
     "SKIPPED_EVIDENCE_LEDGER_SCHEMA_VERSION",
+    "BackfillEvidenceCandidateAssignment",
     "BackfillEvidenceOwnerBindings",
+    "BackfillEvidenceOwnerResult",
     "BackfillEvidenceRecord",
     "EvidenceClaim",
     "EvidenceClaimState",

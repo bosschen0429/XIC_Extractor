@@ -185,6 +185,14 @@ def _backfill_bindings() -> BackfillEvidenceOwnerBindings:
             "sample-a#candidate-1": "sample-a",
             "sample-b#candidate-1": "sample-b",
         },
+        group_feature_family_ids={
+            "FAM000001": "FAM000001",
+            "FAM000002": "FAM000002",
+        },
+        group_public_family_ids={
+            "FAM000001": "FAM000001",
+            "FAM000002": "FAM000002",
+        },
     )
 
 
@@ -249,6 +257,57 @@ def test_shadow_bundle_roundtrips_owner_records_queries_and_claims(
         owner_bindings=_skipped_bindings(),
     )
     assert parquet_skipped == tsv_skipped
+
+
+def test_shadow_bundle_rehydrates_formula_escaped_machine_identities(
+    tmp_path: Path,
+) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    canonical = {
+        "feature_family_id": "=family",
+        "group_hypothesis_id": "=group",
+        "public_family_id": "=public",
+        "sample_stem": "=sample",
+        "source_candidate_id": "=candidate",
+    }
+    persisted = {field: f"'{value}" for field, value in canonical.items()}
+    _write_rows(
+        backfill,
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        [_backfill_row(**persisted)],
+    )
+    bindings = BackfillEvidenceOwnerBindings(
+        known_group_ids=frozenset({canonical["group_hypothesis_id"]}),
+        known_sample_stems=frozenset({canonical["sample_stem"]}),
+        candidate_samples={
+            canonical["source_candidate_id"]: canonical["sample_stem"]
+        },
+        group_feature_family_ids={
+            canonical["group_hypothesis_id"]: canonical["feature_family_id"]
+        },
+        group_public_family_ids={
+            canonical["group_hypothesis_id"]: canonical["public_family_id"]
+        },
+    )
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+
+    parquet_result = lookup_backfill_evidence_parquet(
+        output_dir / "backfill.parquet",
+        feature_family_id=canonical["feature_family_id"],
+        group_hypothesis_id=canonical["group_hypothesis_id"],
+        sample_stem=canonical["sample_stem"],
+        owner_bindings=bindings,
+    )
+
+    assert len(parquet_result.records) == 1
+    record = parquet_result.records[0]
+    for field, value in canonical.items():
+        assert getattr(record, field) == value
 
 
 def test_shadow_bundle_roundtrips_structure_bound_rows_without_owner_ids(

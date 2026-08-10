@@ -11,6 +11,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     BackfillEvidenceOwnerBindings,
+    BackfillEvidenceOwnerResult,
     BackfillEvidenceRecord,
     EvidenceQueryResult,
     SkippedEvidenceOwnerBindings,
@@ -18,8 +19,8 @@ from xic_extractor.alignment.backfill_evidence_contract import (
 )
 from xic_extractor.alignment.backfill_evidence_owner import (
     backfill_evidence_query_claims,
+    rehydrate_backfill_evidence_bindings,
     skipped_evidence_query_claims,
-    validate_backfill_evidence_bindings,
     validate_skipped_evidence_bindings,
 )
 from xic_extractor.alignment.backfill_evidence_serialization import (
@@ -35,17 +36,47 @@ def iter_backfill_evidence_tsv(
     *,
     owner_bindings: BackfillEvidenceOwnerBindings | None = None,
 ) -> Iterator[BackfillEvidenceRecord]:
+    for record, _owner_result in _iter_backfill_evidence_tsv_results(
+        path,
+        owner_bindings=owner_bindings,
+    ):
+        yield record
+
+
+def iter_owner_bound_backfill_evidence_tsv(
+    path: Path,
+    *,
+    owner_bindings: BackfillEvidenceOwnerBindings,
+) -> Iterator[BackfillEvidenceOwnerResult]:
+    for _record, owner_result in _iter_backfill_evidence_tsv_results(
+        path,
+        owner_bindings=owner_bindings,
+    ):
+        assert owner_result is not None
+        yield owner_result
+
+
+def _iter_backfill_evidence_tsv_results(
+    path: Path,
+    *,
+    owner_bindings: BackfillEvidenceOwnerBindings | None,
+) -> Iterator[tuple[BackfillEvidenceRecord, BackfillEvidenceOwnerResult | None]]:
     for row_number, row in _iter_exact_tsv_rows(
         path,
         ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ):
         try:
             record = backfill_evidence_record_from_projection(row)
+            owner_result = None
             if owner_bindings is not None:
-                validate_backfill_evidence_bindings(record, owner_bindings)
+                owner_result = rehydrate_backfill_evidence_bindings(
+                    record,
+                    owner_bindings,
+                )
+                record = owner_result.record
         except ValueError as exc:
             raise ValueError(f"{path}: row {row_number}: {exc}") from exc
-        yield record
+        yield record, owner_result
 
 
 def iter_skipped_evidence_tsv(
@@ -79,8 +110,12 @@ def lookup_backfill_evidence_tsv(
     if group_hypothesis_id is not None:
         _require_lookup_key("group_hypothesis_id", group_hypothesis_id)
     matches: list[BackfillEvidenceRecord] = []
+    owner_results: list[BackfillEvidenceOwnerResult] = []
     seen: set[tuple[str, str, str]] = set()
-    for record in iter_backfill_evidence_tsv(path, owner_bindings=owner_bindings):
+    for record, owner_result in _iter_backfill_evidence_tsv_results(
+        path,
+        owner_bindings=owner_bindings,
+    ):
         if record.feature_family_id != feature_family_id:
             continue
         if record.sample_stem != sample_stem:
@@ -96,15 +131,16 @@ def lookup_backfill_evidence_tsv(
             )
         seen.add(record.identity)
         matches.append(record)
+        if owner_result is not None:
+            owner_results.append(owner_result)
     records = tuple(matches)
-    owner_bound = owner_bindings is not None and all(
-        record.owner_binding_ids_available for record in records
-    )
     return EvidenceQueryResult(
         records=records,
         claims=backfill_evidence_query_claims(
             found=bool(records),
-            owner_bound=owner_bound,
+            owner_results=(
+                tuple(owner_results) if owner_bindings is not None else None
+            ),
         ),
     )
 
@@ -194,6 +230,7 @@ def _require_lookup_key(field_name: str, value: str) -> None:
 
 __all__ = (
     "iter_backfill_evidence_tsv",
+    "iter_owner_bound_backfill_evidence_tsv",
     "iter_skipped_evidence_tsv",
     "lookup_backfill_evidence_tsv",
     "lookup_skipped_evidence_tsv",

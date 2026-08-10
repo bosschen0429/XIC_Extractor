@@ -498,7 +498,9 @@ def test_decision_ledger_accepts_loser_chain_to_terminal_winner(
     rows.append({column: "" for column in _REVIEW_COLUMNS})
     rows[2].update(
         {
+            "feature_family_id": "group-3",
             "group_hypothesis_id": "group-3",
+            "public_family_id": "group-3",
             "consolidation_state": "primary_winner",
             "consolidation_winner_group_hypothesis_id": "group-3",
             "event_cluster_ids": "owner-projection-3",
@@ -695,6 +697,35 @@ def test_backfill_projection_accepts_declared_zero_candidate_sample(
     assert census.candidate_group_ids == {}
 
 
+def test_backfill_projection_does_not_infer_assignment_without_group(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "backfill.tsv"
+    _write_tsv(
+        path,
+        _BACKFILL_COLUMNS,
+        [
+            {
+                "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+                "group_hypothesis_id": "",
+                "public_family_id": "",
+                "sample_stem": "Sample_A",
+                "source_candidate_id": "candidate-a",
+            }
+        ],
+    )
+
+    census = _read_backfill_evidence(
+        path,
+        known_group_ids=frozenset({"group-1"}),
+        candidate_samples={"candidate-a": "Sample_A"},
+        known_sample_stems=frozenset({"Sample_A"}),
+    )
+
+    assert census.row_count == 1
+    assert census.candidate_group_ids == {}
+
+
 def test_request_proxy_rejects_unknown_sample_and_is_order_neutral(
     tmp_path: Path,
 ) -> None:
@@ -783,7 +814,9 @@ def _artifact(root: Path) -> Path:
         _REVIEW_COLUMNS,
         [
             {
+                "feature_family_id": "group-1",
                 "group_hypothesis_id": "group-1",
+                "public_family_id": "group-1",
                 "consolidation_state": "primary_loser",
                 "consolidation_winner_group_hypothesis_id": "group-2",
                 "event_cluster_ids": "owner-projection-1",
@@ -792,7 +825,9 @@ def _artifact(root: Path) -> Path:
                 "review_rescue_count": "3",
             },
             {
+                "feature_family_id": "group-2",
                 "group_hypothesis_id": "group-2",
+                "public_family_id": "group-2",
                 "consolidation_state": "primary_winner",
                 "consolidation_winner_group_hypothesis_id": "group-2",
                 "event_cluster_ids": "owner-projection-2",

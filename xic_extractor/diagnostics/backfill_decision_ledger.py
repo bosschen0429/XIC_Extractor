@@ -14,7 +14,9 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     BackfillEvidenceOwnerBindings,
 )
-from xic_extractor.alignment.backfill_evidence_tsv import iter_backfill_evidence_tsv
+from xic_extractor.alignment.backfill_evidence_tsv import (
+    iter_owner_bound_backfill_evidence_tsv,
+)
 from xic_extractor.alignment.csv_io import (
     DiscoveryBatchInput,
     read_discovery_batch_index,
@@ -106,7 +108,9 @@ class BackfillDecisionLedgerOutputs:
 
 @dataclass(frozen=True, slots=True)
 class _ReviewGroup:
+    feature_family_id: str
     group_hypothesis_id: str
+    public_family_id: str
     owner_projection_refs: str
     event_member_count: int
     consolidation_state: str
@@ -197,6 +201,14 @@ def build_backfill_decision_ledger(
     backfill = _read_backfill_evidence(
         _required_file(alignment_dir / "alignment_backfill_cell_evidence.tsv"),
         known_group_ids=frozenset(review.groups),
+        group_feature_family_ids={
+            group_id: group.feature_family_id
+            for group_id, group in review.groups.items()
+        },
+        group_public_family_ids={
+            group_id: group.public_family_id
+            for group_id, group in review.groups.items()
+        },
         candidate_samples=candidate_census.candidate_samples,
         known_sample_stems=frozenset(candidate_census.sample_stems),
     )
@@ -577,7 +589,14 @@ def _read_review_groups(path: Path) -> _ReviewCensus:
             "review_rescue_count",
         )
         groups[group_id] = _ReviewGroup(
+            feature_family_id=_required_text(
+                path,
+                row_number,
+                row,
+                "feature_family_id",
+            ),
             group_hypothesis_id=group_id,
+            public_family_id=row.get("public_family_id", "").strip(),
             owner_projection_refs=row.get("event_cluster_ids", ""),
             event_member_count=_nonnegative_int(
                 path,
@@ -658,23 +677,27 @@ def _read_backfill_evidence(
     known_group_ids: frozenset[str],
     candidate_samples: Mapping[str, str],
     known_sample_stems: frozenset[str],
+    group_feature_family_ids: Mapping[str, str] | None = None,
+    group_public_family_ids: Mapping[str, str] | None = None,
 ) -> _BackfillCensus:
     row_count = 0
     candidate_groups: dict[tuple[str, str], set[str]] = defaultdict(set)
-    for record in iter_backfill_evidence_tsv(
+    for owner_result in iter_owner_bound_backfill_evidence_tsv(
         path,
         owner_bindings=BackfillEvidenceOwnerBindings(
             known_group_ids=known_group_ids,
             candidate_samples=candidate_samples,
             known_sample_stems=known_sample_stems,
+            group_feature_family_ids=group_feature_family_ids or {},
+            group_public_family_ids=group_public_family_ids or {},
         ),
     ):
         row_count += 1
-        group_id = record.group_hypothesis_id
-        sample_stem = record.sample_stem
-        candidate_id = record.source_candidate_id
-        if candidate_id:
-            candidate_groups[(sample_stem, candidate_id)].add(group_id)
+        assignment = owner_result.candidate_assignment
+        if assignment is not None:
+            candidate_groups[
+                (assignment.sample_stem, assignment.source_candidate_id)
+            ].add(assignment.group_hypothesis_id)
     return _BackfillCensus(
         row_count=row_count,
         candidate_group_ids={

@@ -14,12 +14,28 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     SkippedEvidenceRecord,
 )
 from xic_extractor.alignment.matrix import CellStatus
+from xic_extractor.alignment.output_rows import escape_excel_formula
 from xic_extractor.alignment.production_decisions import (
     ProductionStatus,
     RescueTier,
 )
 
 _NONNEGATIVE_INTEGER = re.compile(r"0|[1-9][0-9]*")
+
+
+def backfill_evidence_identity_projection_spellings(value: str) -> tuple[str, ...]:
+    """Return every current projection spelling for one canonical machine ID."""
+
+    escaped = escape_excel_formula(value)
+    return (value,) if escaped == value else (value, escaped)
+
+
+def backfill_evidence_identity_candidates(value: str) -> tuple[str, ...]:
+    """Return canonical candidates for a possibly formula-escaped projection ID."""
+
+    if len(value) >= 2 and value[0] == "'" and value[1] in "=+-@":
+        return (value, value[1:])
+    return (value,)
 
 
 def backfill_evidence_record_from_projection(
@@ -269,6 +285,8 @@ def _float_text(value: float | None) -> str:
 
 
 __all__ = (
+    "backfill_evidence_identity_candidates",
+    "backfill_evidence_identity_projection_spellings",
     "backfill_evidence_record_from_projection",
     "backfill_evidence_record_to_projection",
     "skipped_evidence_record_from_projection",

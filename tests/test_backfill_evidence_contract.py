@@ -108,6 +108,14 @@ def _backfill_bindings() -> BackfillEvidenceOwnerBindings:
             "sample-a#candidate-1": "sample-a",
             "sample-b#candidate-1": "sample-b",
         },
+        group_feature_family_ids={
+            "FAM000001": "FAM000001",
+            "FAM000002": "FAM000002",
+        },
+        group_public_family_ids={
+            "FAM000001": "FAM000001",
+            "FAM000002": "FAM000002",
+        },
     )
 
 
@@ -181,9 +189,142 @@ def test_backfill_lookup_keeps_missing_owner_id_structure_bound(
     assert len(result.records) == 1
     assert getattr(result.records[0], missing_owner_id) == ""
     assert result.claim("record_content").state is EvidenceClaimState.STRUCTURE_BOUND
+    expected_group_state = (
+        EvidenceClaimState.UNAVAILABLE
+        if missing_owner_id == "group_hypothesis_id"
+        else EvidenceClaimState.OWNER_REHYDRATED
+    )
+    assert result.claim("group_assignment_binding").state is expected_group_state
+    assert result.claim("public_family_binding").state is (
+        EvidenceClaimState.UNAVAILABLE
+    )
     assert result.claim("cross_artifact_binding").state is (
         EvidenceClaimState.UNAVAILABLE
     )
+
+
+def test_backfill_lookup_does_not_promote_unvalidated_public_family_binding(
+    tmp_path: Path,
+) -> None:
+    path = _write_rows(
+        tmp_path / "backfill.tsv",
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        [_backfill_row(public_family_id="FOREIGN-PUBLIC-LABEL")],
+    )
+
+    result = lookup_backfill_evidence_tsv(
+        path,
+        feature_family_id="FAM000001",
+        sample_stem="sample-a",
+        owner_bindings=BackfillEvidenceOwnerBindings(
+            known_group_ids=frozenset({"FAM000001"}),
+            known_sample_stems=frozenset({"sample-a"}),
+            candidate_samples={"sample-a#candidate-1": "sample-a"},
+            group_feature_family_ids={"FAM000001": "FAM000001"},
+        ),
+    )
+
+    assert result.claim("public_family_binding").state is (
+        EvidenceClaimState.UNAVAILABLE
+    )
+    assert result.claim("cross_artifact_binding").state is (
+        EvidenceClaimState.UNAVAILABLE
+    )
+
+
+def test_backfill_lookup_rehydrates_formula_escaped_machine_identities(
+    tmp_path: Path,
+) -> None:
+    canonical = {
+        "feature_family_id": "=family",
+        "group_hypothesis_id": "=group",
+        "public_family_id": "=public",
+        "sample_stem": "=sample",
+        "source_candidate_id": "=candidate",
+    }
+    persisted = {field: f"'{value}" for field, value in canonical.items()}
+    path = _write_rows(
+        tmp_path / "backfill.tsv",
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        [_backfill_row(**persisted)],
+    )
+    bindings = BackfillEvidenceOwnerBindings(
+        known_group_ids=frozenset({canonical["group_hypothesis_id"]}),
+        known_sample_stems=frozenset({canonical["sample_stem"]}),
+        candidate_samples={
+            canonical["source_candidate_id"]: canonical["sample_stem"]
+        },
+        group_feature_family_ids={
+            canonical["group_hypothesis_id"]: canonical["feature_family_id"]
+        },
+        group_public_family_ids={
+            canonical["group_hypothesis_id"]: canonical["public_family_id"]
+        },
+    )
+
+    result = lookup_backfill_evidence_tsv(
+        path,
+        feature_family_id=canonical["feature_family_id"],
+        group_hypothesis_id=canonical["group_hypothesis_id"],
+        sample_stem=canonical["sample_stem"],
+        owner_bindings=bindings,
+    )
+
+    assert len(result.records) == 1
+    record = result.records[0]
+    for field, value in canonical.items():
+        assert getattr(record, field) == value
+
+
+@pytest.mark.parametrize(
+    "ambiguous_field",
+    ["group_hypothesis_id", "sample_stem", "source_candidate_id"],
+)
+def test_backfill_owner_rejects_ambiguous_formula_escaped_identity(
+    tmp_path: Path,
+    ambiguous_field: str,
+) -> None:
+    canonical = {
+        "feature_family_id": "=family",
+        "group_hypothesis_id": "=group",
+        "public_family_id": "=public",
+        "sample_stem": "=sample",
+        "source_candidate_id": "=candidate",
+    }
+    persisted = {field: f"'{value}" for field, value in canonical.items()}
+    path = _write_rows(
+        tmp_path / "backfill.tsv",
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        [_backfill_row(**persisted)],
+    )
+    known_group_ids = {canonical["group_hypothesis_id"]}
+    known_sample_stems = {canonical["sample_stem"]}
+    candidate_samples = {
+        canonical["source_candidate_id"]: canonical["sample_stem"]
+    }
+    if ambiguous_field == "group_hypothesis_id":
+        known_group_ids.add(persisted[ambiguous_field])
+    elif ambiguous_field == "sample_stem":
+        known_sample_stems.add(persisted[ambiguous_field])
+    else:
+        candidate_samples[persisted[ambiguous_field]] = canonical["sample_stem"]
+    bindings = BackfillEvidenceOwnerBindings(
+        known_group_ids=frozenset(known_group_ids),
+        known_sample_stems=frozenset(known_sample_stems),
+        candidate_samples=candidate_samples,
+        group_feature_family_ids={
+            canonical["group_hypothesis_id"]: canonical["feature_family_id"]
+        },
+        group_public_family_ids={
+            canonical["group_hypothesis_id"]: canonical["public_family_id"]
+        },
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=rf"ambiguous formula-escaped machine identity.*{ambiguous_field}",
+    ):
+        tuple(iter_backfill_evidence_tsv(path, owner_bindings=bindings))
 
 
 def test_skipped_lookup_roundtrips_writer_record_and_claims(tmp_path: Path) -> None:
@@ -320,6 +461,8 @@ def test_backfill_reader_rejects_malformed_or_inconsistent_owner_fields(
     ("overrides", "message"),
     [
         ({"group_hypothesis_id": "FAM999999"}, "unknown group_hypothesis_id"),
+        ({"feature_family_id": "FAM999999"}, "belongs to feature_family_id"),
+        ({"public_family_id": "FAM999999"}, "has public_family_id"),
         ({"sample_stem": "sample-z"}, "unknown sample_stem"),
         (
             {"sample_stem": "sample-b", "source_candidate_id": "sample-a#candidate-1"},

@@ -109,10 +109,15 @@ writer schema, path, output level, or publication default.
   `AlignedCell` and `ProductionDecisionSet` inputs needed to recompute cell and
   product decisions. The existing writer may leave `group_hypothesis_id` or
   `public_family_id` empty; those rows remain valid `structure_bound` records,
-  but their cross-artifact binding claim stays `unavailable`. When both IDs are
-  present, supplied owner group, sample, and Discovery-candidate keys may be
-  accepted as an `owner_rehydrated` cross-artifact binding, but that does not
-  raise the decision fields or complete cell to owner authority.
+  but omitted relationships stay `unavailable`. The owner result separates the
+  canonical group assignment from the public compatibility-label relationship:
+  a group assignment becomes `owner_rehydrated` only after the supplied
+  group-to-feature relation, sample, and optional Discovery candidate pass;
+  `public_family_id` becomes owner-bound only when a supplied group-to-public
+  relation also matches. The public label remains compatibility metadata, not
+  canonical identity proof. The combined cross-artifact claim closes only when
+  both relationships close, and never raises decision fields or the complete
+  cell to owner authority.
 - `SkippedEvidenceRecord` is the complete persisted form of the existing
   Backfill-scope producer dataclass. Its parser reconstructs typed values and
   recomputes the scope/disposition, predicate, request-count, window, and source
@@ -122,15 +127,19 @@ writer schema, path, output level, or publication default.
 - Both readers require the exact current header and reject missing, unknown,
   duplicate, or reordered columns; malformed/non-finite fields; conflicting
   duplicate composite identities in a bounded lookup; stale predicate/source
-  bindings; and cross-key substitution. Distinct records remain source-order
-  preserving. A zero-row lookup always reports the absence claim as
-  `unavailable`.
+  bindings; and cross-key substitution. Formula-protected machine identifiers
+  are resolved against the supplied owner universe; the reader accepts the one
+  owner-backed canonical spelling and rejects genuinely ambiguous raw-versus-
+  apostrophe identities. Distinct records remain source-order preserving. A
+  zero-row lookup always reports the absence claim as `unavailable`.
 - `backfill_evidence_parquet` is an optional storage adapter over the same
   canonical string projection and owner models. Its post-run shadow bundle is
   `diagnostic_only`: it stores only the two large Backfill evidence tables,
   preserves source order with an explicit row ordinal, and derives the same
-  query claims as the TSV adapter. It does not replace a TSV writer or become a
-  semantic owner.
+  query claims as the TSV adapter. Owner-bound predicate pushdown admits the
+  canonical and current formula-protected storage spellings, then delegates the
+  returned rows to the same owner rehydration result. It does not replace a TSV
+  writer or become a semantic owner.
 - `backfill_evidence_parquet_bundle` publishes only to a previously absent
   versioned directory after staged schema/hash/row-count validation. Its
   manifest uses relative leaf locators and binds one pre-conversion source

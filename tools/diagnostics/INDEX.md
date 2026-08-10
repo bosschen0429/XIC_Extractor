@@ -557,7 +557,10 @@ owner-readable Backfill and skipped-evidence TSV projections.
 does not register a console script, and does not change TSV schemas, paths,
 defaults, Matrix values, or artifact authority. The manifest binds source and
 Parquet bytes, row counts, and relative locators. Owner claims still come from
-the shared Backfill evidence parser; a missing lookup remains unavailable.
+the shared Backfill evidence parser; canonical group assignments and public
+compatibility-label bindings are reported separately, formula-protected machine
+IDs must resolve unambiguously against owner bindings, and a missing lookup
+remains unavailable.
 
 ### `seed_aware_backfill_review.py`
 
