@@ -235,6 +235,31 @@ def test_apply_to_alignment_requires_standard_peak_for_backfill_expansion() -> N
         apply_to_alignment(preset)
 
 
+def test_bind_cid_nl_recipe_preserves_owner_backend_without_standard_peak() -> None:
+    preset = Preset(
+        name="Indexed owner construction",
+        description="Owner construction is independent of Standard Peak",
+        tags=(PresetTag(strategy="neutral_loss", name="DNA_dR", value=116.0474),),
+        combine_mode="single",
+        discovery_overrides={},
+        alignment_overrides={
+            "standard_peak_backfill": False,
+            "owner_build_xic_backend": "ms1-index",
+        },
+        source="test",
+    )
+
+    _, runtime_options = apply_to_alignment(preset)
+    recipe = bind_cid_nl_recipe(preset, "full")
+
+    assert runtime_options == {
+        "standard_peak_backfill": False,
+        "owner_build_xic_backend": "ms1-index",
+    }
+    assert recipe.standard_peak_backfill is False
+    assert recipe.owner_build_xic_backend == "ms1_index"
+
+
 def test_bind_cid_nl_recipe_closes_the_generic_matrix_method_surface() -> None:
     recipe = bind_cid_nl_recipe(load_preset("dna_dr"), "full")
 

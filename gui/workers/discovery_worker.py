@@ -74,7 +74,7 @@ class DiscoveryWorker(QThread):
     def __init__(self, request: DiscoveryRequest) -> None:
         super().__init__()
         self._request = request
-        self._recipe: BoundCidNlRecipe | None = None
+        self._recipe_binding: tuple[BoundCidNlRecipe, str] | None = None
 
     def stop(self) -> None:
         self.requestInterruption()
@@ -255,13 +255,15 @@ class DiscoveryWorker(QThread):
         self,
         request: DiscoveryRequest,
     ) -> tuple[BoundCidNlRecipe, str]:
-        recipe = self._recipe
-        preset = load_preset(request.preset)
-        if recipe is None:
+        binding = self._recipe_binding
+        if binding is None:
+            preset = load_preset(request.preset)
             recipe = bind_cid_nl_recipe(preset, request.mode)
             _validate_gui_alignment_recipe(recipe)
-            self._recipe = recipe
-        return recipe, _standard_peak_source_run_id(str(preset.source))
+            binding = (recipe, str(preset.source))
+            self._recipe_binding = binding
+        recipe, preset_source = binding
+        return recipe, _standard_peak_source_run_id(preset_source)
 
     def _run_standard_peak_backfill_if_enabled(
         self,
@@ -335,14 +337,15 @@ class DiscoveryWorker(QThread):
         return {"gallery_html": str(gallery_html), "gallery_error": None}
 
     def _build_settings(self, request: DiscoveryRequest) -> DiscoverySettings:
+        preset = load_preset(request.preset)
         recipe = bind_cid_nl_recipe(
-            load_preset(request.preset),
+            preset,
             request.mode,
             recipe_overrides=request.tuning_overrides,
         )
         if request.mode != "discovery_only":
             _validate_gui_alignment_recipe(recipe)
-        self._recipe = recipe
+        self._recipe_binding = (recipe, str(preset.source))
         return recipe.discovery_settings
 
     def _discovery_peak_config(

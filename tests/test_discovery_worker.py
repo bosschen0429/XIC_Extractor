@@ -266,6 +266,53 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     )
 
 
+def test_gui_full_reuses_bound_custom_preset_after_discovery(
+    tmp_path: Path,
+) -> None:
+    preset_path = tmp_path / "custom.toml"
+    preset_path.write_text(
+        "\n".join(
+            [
+                'name = "Custom"',
+                'description = "Bind once before Discovery"',
+                'combine_mode = "single"',
+                "",
+                "[[tag]]",
+                'strategy = "neutral_loss"',
+                'name = "TEST"',
+                "value = 100.0",
+                "",
+                "[alignment]",
+                "standard_peak_backfill = true",
+                'owner_build_xic_backend = "ms1-index"',
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    request = DiscoveryRequest(
+        mode="full",
+        preset=str(preset_path),
+        tuning_overrides={},
+        raw_dir=tmp_path / "raw",
+        raw_file=None,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        discovery_batch_index=None,
+    )
+    worker = DiscoveryWorker(request)
+
+    worker._build_settings(request)
+    preset_path.unlink()
+    recipe, source_run_id = worker._alignment_runtime(request)
+
+    assert recipe.owner_build_xic_backend == "ms1_index"
+    assert source_run_id == (
+        f"alignment-preset:{preset_path.as_posix()}:"
+        "standard-peak-backfill"
+    )
+
+
 def test_gui_full_rejects_backfill_expansion_before_discovery(
     tmp_path: Path,
     monkeypatch,

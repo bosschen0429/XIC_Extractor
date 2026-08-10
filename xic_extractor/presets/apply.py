@@ -403,7 +403,10 @@ def apply_to_alignment(preset: Preset) -> tuple[AlignmentConfig, dict[str, objec
             "backfill_expansion_productization requires standard_peak_backfill"
         )
     if not standard_peak:
-        return AlignmentConfig(), {"standard_peak_backfill": False}
+        return AlignmentConfig(), {
+            "standard_peak_backfill": False,
+            "owner_build_xic_backend": owner_build_xic_backend,
+        }
 
     return AlignmentConfig(), {
         "standard_peak_backfill": True,
