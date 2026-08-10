@@ -95,6 +95,59 @@ Apply these ownership rules:
   unknown/duplicate fields, cross-key substitution, stale owner snapshots,
   reordered members, and partial payloads where applicable.
 
+#### Alignment Backfill evidence records
+
+`xic_extractor.alignment.backfill_evidence_contract` owns the immutable record
+and claim models, while its focused `backfill_evidence_tsv` adapter owns strict
+TSV rehydration for the existing `alignment_backfill_cell_evidence.tsv` and
+`skipped_evidence_ledger.tsv` projections. This contract does not change either
+writer schema, path, output level, or publication default.
+
+- `BackfillEvidenceRecord` preserves the exact 33-field compact row and derives
+  identity as `(feature_family_id, group_hypothesis_id, sample_stem)`. Its row
+  content remains `structure_bound`: the projection omits the complete
+  `AlignedCell` and `ProductionDecisionSet` inputs needed to recompute cell and
+  product decisions. The existing writer may leave `group_hypothesis_id` or
+  `public_family_id` empty; those rows remain valid `structure_bound` records,
+  but omitted relationships stay `unavailable`. The owner result separates the
+  canonical group assignment from the public compatibility-label relationship:
+  a group assignment becomes `owner_rehydrated` only after the supplied
+  group-to-feature relation, sample, and optional Discovery candidate pass;
+  `public_family_id` becomes owner-bound only when a supplied group-to-public
+  relation also matches. The public label remains compatibility metadata, not
+  canonical identity proof. The combined cross-artifact claim closes only when
+  both relationships close, and never raises decision fields or the complete
+  cell to owner authority.
+- `SkippedEvidenceRecord` is the complete persisted form of the existing
+  Backfill-scope producer dataclass. Its parser reconstructs typed values and
+  recomputes the scope/disposition, predicate, request-count, window, and source
+  invariants. A supplied family/sample/scope/predicate/source context may close
+  its cross-artifact binding. The persisted `full_audit_available` literal stays
+  `structure_bound`; it is not a runtime execution receipt.
+- Both readers require the exact current header and reject missing, unknown,
+  duplicate, or reordered columns; malformed/non-finite fields; conflicting
+  duplicate composite identities in a bounded lookup; stale predicate/source
+  bindings; and cross-key substitution. Formula-protected machine identifiers
+  are resolved against the supplied owner universe; the reader accepts the one
+  owner-backed canonical spelling and rejects genuinely ambiguous raw-versus-
+  apostrophe identities. Distinct records remain source-order preserving. A
+  zero-row lookup always reports the absence claim as `unavailable`.
+- `backfill_evidence_parquet` is an optional storage adapter over the same
+  canonical string projection and owner models. Its post-run shadow bundle is
+  `diagnostic_only`: it stores only the two large Backfill evidence tables,
+  preserves source order with an explicit row ordinal, and derives the same
+  query claims as the TSV adapter. Owner-bound predicate pushdown admits the
+  canonical and current formula-protected storage spellings, then delegates the
+  returned rows to the same owner rehydration result. It does not replace a TSV
+  writer or become a semantic owner.
+- `backfill_evidence_parquet_bundle` publishes only to a previously absent
+  versioned directory after staged schema/hash/row-count validation. Its
+  manifest uses relative leaf locators and binds one pre-conversion source
+  snapshot by verifying every source again after conversion; optional run
+  metadata remains byte-bound. Failed build or validation leaves no visible final
+  bundle. Rollback is removal or disregard of the complete optional bundle while
+  the TSV defaults remain authoritative compatibility surfaces.
+
 ### Closed Writer Transaction Authority
 
 A writer-adjacent finalizer must not reconstruct authority from several loose,

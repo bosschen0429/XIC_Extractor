@@ -1517,6 +1517,13 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
 def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     tmp_path: Path,
 ) -> None:
+    from xic_extractor.alignment.backfill_evidence_contract import (
+        BackfillEvidenceOwnerBindings,
+        EvidenceClaimState,
+    )
+    from xic_extractor.alignment.backfill_evidence_tsv import (
+        lookup_backfill_evidence_tsv,
+    )
     from xic_extractor.alignment.tsv_writer import (
         ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
         write_alignment_backfill_cell_evidence_tsv,
@@ -1550,12 +1557,11 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
         sample_order=("sample-a", "sample-b", "sample-c"),
     )
 
-    rows = _read_tsv(
-        write_alignment_backfill_cell_evidence_tsv(
-            tmp_path / "alignment_backfill_cell_evidence.tsv",
-            matrix,
-        ),
+    evidence_path = write_alignment_backfill_cell_evidence_tsv(
+        tmp_path / "alignment_backfill_cell_evidence.tsv",
+        matrix,
     )
+    rows = _read_tsv(evidence_path)
 
     assert list(rows[0]) == list(ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS)
     assert {row["feature_family_id"] for row in rows} == {"ALN000001"}
@@ -1568,6 +1574,24 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     assert rescued["primary_matrix_area"] == "8"
     assert "region_candidate_count" not in rows[0]
     assert "backfill_candidate_ms2_product_authority_status" not in rows[0]
+
+    result = lookup_backfill_evidence_tsv(
+        evidence_path,
+        feature_family_id="ALN000001",
+        sample_stem="sample-a",
+        owner_bindings=BackfillEvidenceOwnerBindings(
+            known_group_ids=frozenset(),
+            known_sample_stems=frozenset({"sample-a", "sample-b"}),
+            candidate_samples={"sample-a#1": "sample-a"},
+        ),
+    )
+    assert len(result.records) == 1
+    assert result.records[0].group_hypothesis_id == ""
+    assert result.records[0].public_family_id == ""
+    assert result.claim("record_content").state is EvidenceClaimState.STRUCTURE_BOUND
+    assert result.claim("cross_artifact_binding").state is (
+        EvidenceClaimState.UNAVAILABLE
+    )
 
 
 def test_alignment_cells_tsv_can_emit_without_region_audit(tmp_path: Path) -> None:

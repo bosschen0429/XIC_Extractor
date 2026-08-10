@@ -498,7 +498,9 @@ def test_decision_ledger_accepts_loser_chain_to_terminal_winner(
     rows.append({column: "" for column in _REVIEW_COLUMNS})
     rows[2].update(
         {
+            "feature_family_id": "group-3",
             "group_hypothesis_id": "group-3",
+            "public_family_id": "group-3",
             "consolidation_state": "primary_winner",
             "consolidation_winner_group_hypothesis_id": "group-3",
             "event_cluster_ids": "owner-projection-3",
@@ -695,6 +697,35 @@ def test_backfill_projection_accepts_declared_zero_candidate_sample(
     assert census.candidate_group_ids == {}
 
 
+def test_backfill_projection_does_not_infer_assignment_without_group(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "backfill.tsv"
+    _write_tsv(
+        path,
+        _BACKFILL_COLUMNS,
+        [
+            {
+                "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+                "group_hypothesis_id": "",
+                "public_family_id": "",
+                "sample_stem": "Sample_A",
+                "source_candidate_id": "candidate-a",
+            }
+        ],
+    )
+
+    census = _read_backfill_evidence(
+        path,
+        known_group_ids=frozenset({"group-1"}),
+        candidate_samples={"candidate-a": "Sample_A"},
+        known_sample_stems=frozenset({"Sample_A"}),
+    )
+
+    assert census.row_count == 1
+    assert census.candidate_group_ids == {}
+
+
 def test_request_proxy_rejects_unknown_sample_and_is_order_neutral(
     tmp_path: Path,
 ) -> None:
@@ -783,7 +814,9 @@ def _artifact(root: Path) -> Path:
         _REVIEW_COLUMNS,
         [
             {
+                "feature_family_id": "group-1",
                 "group_hypothesis_id": "group-1",
+                "public_family_id": "group-1",
                 "consolidation_state": "primary_loser",
                 "consolidation_winner_group_hypothesis_id": "group-2",
                 "event_cluster_ids": "owner-projection-1",
@@ -792,7 +825,9 @@ def _artifact(root: Path) -> Path:
                 "review_rescue_count": "3",
             },
             {
+                "feature_family_id": "group-2",
                 "group_hypothesis_id": "group-2",
+                "public_family_id": "group-2",
                 "consolidation_state": "primary_winner",
                 "consolidation_winner_group_hypothesis_id": "group-2",
                 "event_cluster_ids": "owner-projection-2",
@@ -930,10 +965,50 @@ def _write_tsv(
     fieldnames: tuple[str, ...],
     rows: list[dict[str, str]],
 ) -> None:
+    if fieldnames == _BACKFILL_COLUMNS:
+        rows = [{**_owner_valid_backfill_row(), **row} for row in rows]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _owner_valid_backfill_row() -> dict[str, str]:
+    return {
+        "schema_version": ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
+        "feature_family_id": "group-1",
+        "group_hypothesis_id": "group-1",
+        "public_family_id": "group-1",
+        "sample_stem": "Sample_A",
+        "status": "detected",
+        "production_cell_status": "detected",
+        "rescue_tier": "",
+        "write_matrix_value": "TRUE",
+        "include_in_primary_matrix": "TRUE",
+        "identity_decision": "primary",
+        "row_flags": "backfill_cell_evidence_required",
+        "area": "10",
+        "primary_matrix_area": "10",
+        "primary_matrix_area_source": "gaussian15_positive_asls_residual",
+        "primary_matrix_area_reason": "",
+        "apex_rt": "8.5",
+        "height": "5",
+        "peak_start_rt": "8.4",
+        "peak_end_rt": "8.6",
+        "rt_delta_sec": "0",
+        "trace_quality": "owner_backfill",
+        "scan_support_score": "1",
+        "gap_fill_state": "gap_fill_detected",
+        "gap_fill_reason": "group_centered_query_detected",
+        "backfill_evidence_reason": "owner_backfill_supported",
+        "source_candidate_id": "",
+        "source_raw_file": "Sample_A.synthetic",
+        "neutral_loss_tag": "DNA_dR",
+        "family_center_mz": "500",
+        "family_center_rt": "8.5",
+        "region_shadow_verdict": "",
+        "reason": "owner-centered MS1 backfill",
+    }
 
 
 def _rewrite_batch_candidate_locator(path: Path, candidate_csv: str) -> None:
