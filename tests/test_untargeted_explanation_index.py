@@ -29,6 +29,7 @@ from xic_extractor.alignment.backfill_evidence_tsv import (
     lookup_backfill_evidence_tsv,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
@@ -386,6 +387,51 @@ def test_no_raw_owner_route_closes_all_four_explanation_sections(
     assert backfill.matched_candidate_peak_content_id is not None
     assert isinstance(matrix, MatrixExplanationPayload)
     assert matrix.written is False
+
+
+def test_written_backfill_requires_exact_live_matrix_source_candidate(
+    tmp_path: Path,
+) -> None:
+    kwargs = _complete_no_raw_kwargs(tmp_path)
+    matrix = kwargs["matrix"]
+    assert isinstance(matrix, AlignmentMatrix)
+    owner_decision = next(
+        item
+        for item in kwargs["backfill_decisions"]
+        if item.matched_candidate is not None
+    )
+    request = kwargs["requests"][0]
+    key = (
+        owner_decision.group_facts.group_context.group.feature_family_id,
+        request.sample.lookup_token,
+    )
+    different_candidate_cell = next(
+        cell for cell in matrix.cells if cell.status == "detected"
+    )
+    matrix = replace(
+        matrix,
+        cells=tuple(
+            replace(
+                different_candidate_cell,
+                cluster_id=key[0],
+                sample_stem=key[1],
+            )
+            if (cell.cluster_id, cell.sample_stem) == key
+            else cell
+            for cell in matrix.cells
+        ),
+    )
+    production_decisions = build_production_decisions(matrix, AlignmentConfig())
+    kwargs["matrix"] = matrix
+
+    section = build_untargeted_explanation_index(
+        production_decisions=production_decisions,
+        **kwargs,
+    ).entries[0].section(ExplanationTopic.BACKFILL)
+
+    assert section.claim.state is EvidenceClaimState.UNAVAILABLE
+    assert section.payload is None
+    assert "does not bind the Backfill matched candidate" in section.claim.reason
 
 
 def test_no_raw_selected_direct_support_route_closes_all_four_sections(

@@ -69,6 +69,7 @@ def build_explanation_sections(
         ),
         _backfill_section(
             subject,
+            matrix_cell=matrix_cell,
             query_result=query_result,
             spine=spine,
             owner_group_facts=owner_group_facts,
@@ -294,6 +295,7 @@ def _matrix_section(
 def _backfill_section(
     subject: ExplanationSubject,
     *,
+    matrix_cell: AlignedCell | None,
     query_result: EvidenceQueryResult[BackfillEvidenceRecord] | None,
     spine: CidNlReferenceSpine | None,
     owner_group_facts: ConservativeBackfillGroupFacts | None,
@@ -421,6 +423,25 @@ def _backfill_section(
             _mint_token=_SECTION_MINT_TOKEN,
         )
     if owner_decision is not None:
+        matched_candidate = owner_decision.matched_candidate
+        if production_decision.write_matrix_value and matched_candidate is not None:
+            matched_content_id = (
+                matched_candidate.peak_observation.content.peak_observation_content_id
+            )
+            if (
+                matrix_cell is None
+                or matrix_cell.source_candidate_id != matched_content_id
+            ):
+                return _unavailable_section(
+                    ExplanationTopic.BACKFILL,
+                    source_owner="xic_extractor.alignment.conservative_backfill",
+                    reason=(
+                        "the live Matrix cell does not bind the Backfill matched "
+                        "candidate"
+                    ),
+                    supporting_claims=query_result.claims,
+                    locators=locators,
+                )
         return _evaluated_backfill_section(
             owner_decision,
             production_decision,
