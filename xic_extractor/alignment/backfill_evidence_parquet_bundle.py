@@ -83,6 +83,13 @@ def write_backfill_evidence_parquet_shadow_bundle(
         skipped_tsv,
         run_metadata_json,
     )
+    backfill_source_binding = _file_binding(backfill_tsv)
+    skipped_source_binding = _file_binding(skipped_tsv)
+    run_metadata_source_binding = (
+        _file_binding(run_metadata_json)
+        if run_metadata_json is not None
+        else None
+    )
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     staging_dir = output_dir.with_name(
         f"{output_dir.name}.tmp-{uuid.uuid4().hex}"
@@ -103,6 +110,22 @@ def write_backfill_evidence_parquet_shadow_bundle(
             row_group_size=row_group_size,
             compression=compression,
         )
+        _validate_file_binding(
+            backfill_tsv,
+            backfill_source_binding,
+            label="source backfill",
+        )
+        _validate_file_binding(
+            skipped_tsv,
+            skipped_source_binding,
+            label="source skipped",
+        )
+        if run_metadata_json is not None and run_metadata_source_binding is not None:
+            _validate_file_binding(
+                run_metadata_json,
+                run_metadata_source_binding,
+                label="source run_metadata",
+            )
         manifest = {
             "schema_version": PARQUET_SHADOW_BUNDLE_SCHEMA_VERSION,
             "authority": PARQUET_SHADOW_AUTHORITY,
@@ -113,13 +136,9 @@ def write_backfill_evidence_parquet_shadow_bundle(
                 "logical_types": "canonical_non_null_utf8_projection_plus_row_ordinal",
             },
             "source_artifacts": {
-                "backfill": _file_binding(backfill_tsv),
-                "skipped": _file_binding(skipped_tsv),
-                "run_metadata": (
-                    _file_binding(run_metadata_json)
-                    if run_metadata_json is not None
-                    else None
-                ),
+                "backfill": backfill_source_binding,
+                "skipped": skipped_source_binding,
+                "run_metadata": run_metadata_source_binding,
             },
             "parquet_artifacts": {
                 "backfill": {

@@ -192,8 +192,6 @@ class BackfillEvidenceRecord:
             )
         for field_name in (
             "feature_family_id",
-            "group_hypothesis_id",
-            "public_family_id",
             "sample_stem",
             "identity_decision",
             "neutral_loss_tag",
@@ -276,6 +274,10 @@ class BackfillEvidenceRecord:
             self.group_hypothesis_id,
             self.sample_stem,
         )
+
+    @property
+    def owner_binding_ids_available(self) -> bool:
+        return bool(self.group_hypothesis_id and self.public_family_id)
 
 
 @dataclass(frozen=True, slots=True)

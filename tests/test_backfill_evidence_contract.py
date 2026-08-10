@@ -157,6 +157,35 @@ def test_backfill_lookup_rehydrates_reduced_owner_record_and_claims(
     assert result.claim("missing_key_absence").state is EvidenceClaimState.UNAVAILABLE
 
 
+@pytest.mark.parametrize(
+    "missing_owner_id",
+    ["group_hypothesis_id", "public_family_id"],
+)
+def test_backfill_lookup_keeps_missing_owner_id_structure_bound(
+    tmp_path: Path,
+    missing_owner_id: str,
+) -> None:
+    path = _write_rows(
+        tmp_path / "backfill.tsv",
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        [_backfill_row(**{missing_owner_id: ""})],
+    )
+
+    result = lookup_backfill_evidence_tsv(
+        path,
+        feature_family_id="FAM000001",
+        sample_stem="sample-a",
+        owner_bindings=_backfill_bindings(),
+    )
+
+    assert len(result.records) == 1
+    assert getattr(result.records[0], missing_owner_id) == ""
+    assert result.claim("record_content").state is EvidenceClaimState.STRUCTURE_BOUND
+    assert result.claim("cross_artifact_binding").state is (
+        EvidenceClaimState.UNAVAILABLE
+    )
+
+
 def test_skipped_lookup_roundtrips_writer_record_and_claims(tmp_path: Path) -> None:
     source = SkippedEvidenceRecord(
         feature_family_id="FAM000001",

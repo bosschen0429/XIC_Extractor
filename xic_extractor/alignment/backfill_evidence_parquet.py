@@ -129,6 +129,7 @@ def lookup_backfill_evidence_parquet(
         filters.append(("group_hypothesis_id", "=", group_hypothesis_id))
     records: list[BackfillEvidenceRecord] = []
     seen: set[tuple[str, str, str]] = set()
+    owner_bound = owner_bindings is not None
     for row_number, projection in _read_filtered_projection_rows(
         path,
         columns=ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
@@ -138,6 +139,7 @@ def lookup_backfill_evidence_parquet(
             record = backfill_evidence_record_from_projection(projection)
             if owner_bindings is not None:
                 validate_backfill_evidence_bindings(record, owner_bindings)
+                owner_bound = record.owner_binding_ids_available and owner_bound
         except ValueError as exc:
             raise ValueError(f"{path}: row ordinal {row_number}: {exc}") from exc
         if record.identity in seen:
@@ -151,7 +153,7 @@ def lookup_backfill_evidence_parquet(
         records=result,
         claims=backfill_evidence_query_claims(
             found=bool(result),
-            owner_bound=owner_bindings is not None,
+            owner_bound=owner_bound,
         ),
     )
 
@@ -287,11 +289,17 @@ def _read_filtered_projection_rows(
     finally:
         parquet_file.close()
     table = pq.read_table(str(path), filters=filters)
-    rows = [
-        _projection_row(path, raw_row, columns)
-        for raw_row in table.to_pylist()
-    ]
-    rows.sort(key=lambda item: item[0])
+    rows: list[tuple[int, Mapping[str, str]]] = []
+    previous_ordinal: int | None = None
+    for raw_row in table.to_pylist():
+        ordinal, projection = _projection_row(path, raw_row, columns)
+        if previous_ordinal is not None and ordinal <= previous_ordinal:
+            raise ValueError(
+                f"{path}: filtered row ordinals must be strictly increasing; "
+                f"got {ordinal} after {previous_ordinal}"
+            )
+        rows.append((ordinal, projection))
+        previous_ordinal = ordinal
     return tuple(rows)
 
 

@@ -109,15 +109,26 @@ def _skipped_row(**overrides: str) -> dict[str, str]:
     return row
 
 
-def _sources(tmp_path: Path, *, duplicate_backfill: bool = False) -> tuple[Path, ...]:
+def _sources(
+    tmp_path: Path,
+    *,
+    duplicate_backfill: bool = False,
+    multiple_lookup_matches: bool = False,
+) -> tuple[Path, ...]:
     backfill_rows = [
         _backfill_row(),
         _backfill_row(
-            feature_family_id="FAM000002",
+            feature_family_id=(
+                "FAM000001" if multiple_lookup_matches else "FAM000002"
+            ),
             group_hypothesis_id="FAM000002",
             public_family_id="FAM000002",
-            sample_stem="sample-b",
-            source_candidate_id="sample-b#candidate-1",
+            sample_stem="sample-a" if multiple_lookup_matches else "sample-b",
+            source_candidate_id=(
+                "sample-a#candidate-2"
+                if multiple_lookup_matches
+                else "sample-b#candidate-1"
+            ),
         ),
     ]
     if duplicate_backfill:
@@ -133,9 +144,20 @@ def _sources(tmp_path: Path, *, duplicate_backfill: bool = False) -> tuple[Path,
         [
             _skipped_row(),
             _skipped_row(
-                feature_family_id="FAM000002",
-                sample_stem="sample-b",
+                feature_family_id=(
+                    "FAM000001" if multiple_lookup_matches else "FAM000002"
+                ),
+                sample_stem="sample-a" if multiple_lookup_matches else "sample-b",
                 family_center_mz="243.1",
+                **(
+                    {
+                        "pre_backfill_category": "selected_family_excluded",
+                        "skip_reason": "not_in_selected_family_allowlist",
+                        "backfill_scope": "selected-families",
+                    }
+                    if multiple_lookup_matches
+                    else {}
+                ),
             ),
         ],
     )
@@ -229,6 +251,40 @@ def test_shadow_bundle_roundtrips_owner_records_queries_and_claims(
     assert parquet_skipped == tsv_skipped
 
 
+def test_shadow_bundle_roundtrips_structure_bound_rows_without_owner_ids(
+    tmp_path: Path,
+) -> None:
+    backfill, skipped, metadata = _sources(tmp_path)
+    _write_rows(
+        backfill,
+        ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
+        [_backfill_row(group_hypothesis_id="", public_family_id="")],
+    )
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+
+    result = lookup_backfill_evidence_parquet(
+        output_dir / "backfill.parquet",
+        feature_family_id="FAM000001",
+        sample_stem="sample-a",
+        owner_bindings=BackfillEvidenceOwnerBindings(
+            known_group_ids=frozenset(),
+            known_sample_stems=frozenset({"sample-a"}),
+            candidate_samples={"sample-a#candidate-1": "sample-a"},
+        ),
+    )
+
+    assert len(result.records) == 1
+    assert result.claim("record_content").state is EvidenceClaimState.STRUCTURE_BOUND
+    assert result.claim("cross_artifact_binding").state is (
+        EvidenceClaimState.UNAVAILABLE
+    )
+
+
 def test_shadow_manifest_uses_relative_locators_and_reduced_claim(
     tmp_path: Path,
 ) -> None:
@@ -304,6 +360,48 @@ def test_shadow_bundle_rejects_stale_source_bytes(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("source_index", "source_label"),
+    [(0, "backfill"), (1, "skipped"), (2, "run_metadata")],
+)
+def test_shadow_bundle_rejects_source_replacement_during_conversion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_index: int,
+    source_label: str,
+) -> None:
+    from xic_extractor.alignment import backfill_evidence_parquet_bundle
+
+    sources = _sources(tmp_path)
+    source_path = sources[source_index]
+    output_dir = tmp_path / "shadow"
+    original_write = backfill_evidence_parquet_bundle.write_skipped_evidence_parquet
+
+    def write_then_replace_source(*args, **kwargs):
+        row_count = original_write(*args, **kwargs)
+        replacement = bytearray(source_path.read_bytes())
+        replacement[0] ^= 1
+        source_path.write_bytes(replacement)
+        return row_count
+
+    monkeypatch.setattr(
+        backfill_evidence_parquet_bundle,
+        "write_skipped_evidence_parquet",
+        write_then_replace_source,
+    )
+
+    with pytest.raises(ValueError, match=f"source {source_label}"):
+        write_backfill_evidence_parquet_shadow_bundle(
+            output_dir,
+            backfill_tsv=sources[0],
+            skipped_tsv=sources[1],
+            run_metadata_json=sources[2],
+        )
+
+    assert not output_dir.exists()
+    assert not tuple(tmp_path.glob("shadow.tmp-*"))
+
+
 def test_shadow_bundle_rejects_tampered_parquet_bytes(tmp_path: Path) -> None:
     backfill, skipped, metadata = _sources(tmp_path)
     output_dir = write_backfill_evidence_parquet_shadow_bundle(
@@ -364,6 +462,54 @@ def test_parquet_reader_rejects_reordered_ordinals(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="row ordinal"):
         tuple(iter_backfill_evidence_parquet(mutated_path))
+
+
+@pytest.mark.parametrize(
+    ("artifact_name", "lookup"),
+    [
+        ("backfill.parquet", lookup_backfill_evidence_parquet),
+        ("skipped.parquet", lookup_skipped_evidence_parquet),
+    ],
+)
+@pytest.mark.parametrize(
+    "ordinals",
+    [(1, 0), (0, 0)],
+    ids=("reordered", "duplicate"),
+)
+def test_filtered_parquet_lookup_rejects_non_increasing_ordinals(
+    tmp_path: Path,
+    artifact_name: str,
+    lookup,
+    ordinals: tuple[int, int],
+) -> None:
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    backfill, skipped, metadata = _sources(
+        tmp_path,
+        multiple_lookup_matches=True,
+    )
+    output_dir = write_backfill_evidence_parquet_shadow_bundle(
+        tmp_path / "shadow",
+        backfill_tsv=backfill,
+        skipped_tsv=skipped,
+        run_metadata_json=metadata,
+    )
+    source = pq.read_table(output_dir / artifact_name)
+    ordinal_index = source.schema.get_field_index("_row_ordinal")
+    mutated = source.set_column(
+        ordinal_index,
+        source.schema.field(ordinal_index),
+        pa.array(ordinals),
+    )
+    mutated_path = tmp_path / f"mutated-{artifact_name}"
+    pq.write_table(mutated, mutated_path)
+
+    with pytest.raises(ValueError, match="strictly increasing"):
+        lookup(
+            mutated_path,
+            feature_family_id="FAM000001",
+            sample_stem="sample-a",
+        )
 
 
 def test_parquet_lookup_rejects_duplicate_composite_identity(tmp_path: Path) -> None:

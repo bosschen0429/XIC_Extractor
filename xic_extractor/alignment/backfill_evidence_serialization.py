@@ -29,8 +29,8 @@ def backfill_evidence_record_from_projection(
     return BackfillEvidenceRecord(
         schema_version=_required_text(row, "schema_version"),
         feature_family_id=_required_text(row, "feature_family_id"),
-        group_hypothesis_id=_required_text(row, "group_hypothesis_id"),
-        public_family_id=_required_text(row, "public_family_id"),
+        group_hypothesis_id=_optional_text(row, "group_hypothesis_id"),
+        public_family_id=_optional_text(row, "public_family_id"),
         sample_stem=_required_text(row, "sample_stem"),
         status=cast(CellStatus, _required_text(row, "status")),
         production_cell_status=cast(
@@ -183,10 +183,14 @@ def _require_exact_fields(row: Mapping[str, str], expected: tuple[str, ...]) -> 
 
 
 def _required_text(row: Mapping[str, str], field_name: str) -> str:
-    value = row[field_name].strip()
+    value = _optional_text(row, field_name)
     if not value:
         raise ValueError(f"{field_name} is required")
     return value
+
+
+def _optional_text(row: Mapping[str, str], field_name: str) -> str:
+    return row[field_name].strip()
 
 
 def _parse_required_float(row: Mapping[str, str], field_name: str) -> float:

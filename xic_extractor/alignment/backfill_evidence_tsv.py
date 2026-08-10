@@ -97,11 +97,14 @@ def lookup_backfill_evidence_tsv(
         seen.add(record.identity)
         matches.append(record)
     records = tuple(matches)
+    owner_bound = owner_bindings is not None and all(
+        record.owner_binding_ids_available for record in records
+    )
     return EvidenceQueryResult(
         records=records,
         claims=backfill_evidence_query_claims(
             found=bool(records),
-            owner_bound=owner_bindings is not None,
+            owner_bound=owner_bound,
         ),
     )
 

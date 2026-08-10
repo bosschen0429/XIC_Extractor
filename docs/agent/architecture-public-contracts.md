@@ -107,9 +107,12 @@ writer schema, path, output level, or publication default.
   identity as `(feature_family_id, group_hypothesis_id, sample_stem)`. Its row
   content remains `structure_bound`: the projection omits the complete
   `AlignedCell` and `ProductionDecisionSet` inputs needed to recompute cell and
-  product decisions. Supplied owner group, sample, and Discovery-candidate keys
-  may be accepted as an `owner_rehydrated` cross-artifact binding, but that does
-  not raise the decision fields or complete cell to owner authority.
+  product decisions. The existing writer may leave `group_hypothesis_id` or
+  `public_family_id` empty; those rows remain valid `structure_bound` records,
+  but their cross-artifact binding claim stays `unavailable`. When both IDs are
+  present, supplied owner group, sample, and Discovery-candidate keys may be
+  accepted as an `owner_rehydrated` cross-artifact binding, but that does not
+  raise the decision fields or complete cell to owner authority.
 - `SkippedEvidenceRecord` is the complete persisted form of the existing
   Backfill-scope producer dataclass. Its parser reconstructs typed values and
   recomputes the scope/disposition, predicate, request-count, window, and source
@@ -130,10 +133,11 @@ writer schema, path, output level, or publication default.
   semantic owner.
 - `backfill_evidence_parquet_bundle` publishes only to a previously absent
   versioned directory after staged schema/hash/row-count validation. Its
-  manifest uses relative leaf locators and binds source/Parquet bytes; optional
-  run metadata remains byte-bound. Failed build or validation leaves no visible
-  final bundle. Rollback is removal or disregard of the complete optional
-  bundle while the TSV defaults remain authoritative compatibility surfaces.
+  manifest uses relative leaf locators and binds one pre-conversion source
+  snapshot by verifying every source again after conversion; optional run
+  metadata remains byte-bound. Failed build or validation leaves no visible final
+  bundle. Rollback is removal or disregard of the complete optional bundle while
+  the TSV defaults remain authoritative compatibility surfaces.
 
 ### Closed Writer Transaction Authority
 

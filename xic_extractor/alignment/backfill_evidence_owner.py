@@ -16,24 +16,26 @@ def validate_backfill_evidence_bindings(
     record: BackfillEvidenceRecord,
     bindings: BackfillEvidenceOwnerBindings,
 ) -> None:
-    if record.group_hypothesis_id not in bindings.known_group_ids:
+    if (
+        record.group_hypothesis_id
+        and record.group_hypothesis_id not in bindings.known_group_ids
+    ):
         raise ValueError(
             f"unknown group_hypothesis_id {record.group_hypothesis_id!r}"
         )
     if record.sample_stem not in bindings.known_sample_stems:
         raise ValueError(f"unknown sample_stem {record.sample_stem!r}")
-    if not record.source_candidate_id:
-        return
-    candidate_sample = bindings.candidate_samples.get(record.source_candidate_id)
-    if candidate_sample is None:
-        raise ValueError(
-            f"unknown source_candidate_id {record.source_candidate_id!r}"
-        )
-    if candidate_sample != record.sample_stem:
-        raise ValueError(
-            f"source_candidate_id {record.source_candidate_id!r} belongs to sample "
-            f"{candidate_sample!r}, not {record.sample_stem!r}"
-        )
+    if record.source_candidate_id:
+        candidate_sample = bindings.candidate_samples.get(record.source_candidate_id)
+        if candidate_sample is None:
+            raise ValueError(
+                f"unknown source_candidate_id {record.source_candidate_id!r}"
+            )
+        if candidate_sample != record.sample_stem:
+            raise ValueError(
+                f"source_candidate_id {record.source_candidate_id!r} belongs to "
+                f"sample {candidate_sample!r}, not {record.sample_stem!r}"
+            )
 
 
 def validate_skipped_evidence_bindings(
@@ -91,9 +93,11 @@ def backfill_evidence_query_claims(
                 else EvidenceClaimState.UNAVAILABLE
             ),
             reason=(
-                "group, sample, and candidate bindings passed owner validation"
+                "required group/public IDs are present and group, sample, and "
+                "candidate bindings passed owner validation"
                 if found and owner_bound
-                else "complete owner bindings were not supplied or no record matched"
+                else "complete owner IDs and bindings were not supplied or no "
+                "record matched"
             ),
         ),
         EvidenceClaim(
