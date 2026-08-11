@@ -143,6 +143,12 @@ must remain clean-checkout safe.
 
 ## Workflow Routing
 
+- Before activating a `needs-info` issue, transforming a legacy owner, or
+  resuming after a load-bearing premise correction, follow
+  `docs/agent/planning-workflows.md#needs-info-activation-and-premise-compilation`.
+  Observed legacy behavior is evidence, not a frozen invariant; compile one
+  current packet and invalidate its displaced assumptions before production
+  edits resume.
 - Before non-trivial diagnostics, RAW-backed evidence, matrix activation, or
   evidence-provider work, use `xic-architecture-preflight` and name owner/helper
   reuse, call-cost model, public contract risk, validation gate, and stop rule.

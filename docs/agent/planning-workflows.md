@@ -26,6 +26,91 @@ migration policy. Stable runners and validation command shapes remain in
   critical-thinking review angle: strongest assumption, stale-artifact risk,
   cheaper existing oracle, or condition that would invalidate the path.
 
+## Needs-Info Activation And Premise Compilation
+
+Use this gate before production edits when an issue is labelled `needs-info`,
+the work transforms a legacy owner, dialogue corrected a load-bearing premise,
+or the real production transaction and consumer set are not yet bounded. A
+focused fix inside an established owner with a fixed oracle and known consumers
+stays on the normal fast path.
+
+The issue body always carries the single authority pointer stub for the
+**Current Packet**: packet ID, revision, base SHA, status, and exact location.
+The packet may live in the issue body, one canonical comment, or a linked
+tracked spec. Every replacement is self-contained and lists all superseded
+packet IDs; partial supersession such as "replace one section and inherit the
+rest" is invalid. Earlier comments remain history and do not remain active
+acceptance text after a refreeze. The packet contains four compiled blocks:
+
+1. **Premise ledger** — list each decision-bearing statement, its authority,
+   state, and what it invalidates. Valid states are `contract`, `observed`,
+   `hypothesis`, and `rejected`. Current legacy behavior is evidence, not a
+   frozen invariant, unless operator intent or a product/architecture contract
+   grants it that status.
+2. **Asset disposition** — classify every in-scope legacy capability, test,
+   helper, and public surface as `keep`, `reuse_after_cleanup`,
+   `compatibility_only`, `replace_or_retire`, or `unknown`. Name its successor
+   owner and oracle; do not infer either wholesale preservation or wholesale
+   rejection.
+3. **Transaction compilation** — map each requirement through the real entry
+   point, semantic owner, and every live consumer reachable from the in-scope
+   production entries and exported surfaces, including writer/renderer/cache/
+   reuse paths and downstream readers. Record the census command/query, base
+   SHA, exclusions, call cost, counterexample, and acceptance evidence. Use
+   CodeGraph for static topology when its index is healthy. Where dynamic
+   dispatch, call count, or repeated work matters, execute the highest
+   production entry with each named real consumer present. List every
+   monkeypatch, no-op, or substitution; it cannot prove completeness for the
+   path it replaces. A direct helper test does not prove that the CLI/main
+   transaction has the same behavior. Bound the claim to in-repo reachability
+   plus known external contracts rather than an unknowable external universe.
+4. **Acceptance and stop** — record preserved invariants, expected product diff,
+   non-goals, focused and representative verification, expected delivery cost,
+   and the fail-fast condition. One consolidated review plus one root-class
+   corrective is a convergence target, not a hard cap or permission to skip a
+   final review.
+
+If a premise correction changes ownership, scope, oracle, compatibility, or
+material cost, stop mutation and trace every dependent scope row, test, budget,
+and compatibility assumption. Publish a clean replacement Current Packet
+before resuming; do not append another exception while leaving invalidated text
+active.
+An `unknown` may remain only when its resolution cannot change ownership, public
+surface, material cost, or acceptance. Otherwise the issue remains
+`needs-info`, not implementation-ready.
+
+Unresolved reporter or product input keeps the `needs-info` label. After the
+Current Packet passes this gate, remove `needs-info` and apply the repository's
+`ready-for-agent` state before production edits. The label meanings are owned by
+`docs/agents/triage-labels.md`.
+
+Review incident thresholds and corrective handling remain owned by the root
+review-class rule and the existing root-class closure workflow. Treat one
+consolidated review plus one root-class corrective as a convergence target and
+measure, not a duplicate safety gate. The final mutation still requires a fresh
+whole-diff review. When the existing owner trips, stop instance patches, reopen
+the transaction census, and bound, shrink, delete, or replace the mechanism, or
+return the issue to `needs-info` with the exact missing oracle or surface.
+
+Subagents may independently census topology, owner contracts, tests, historical
+findings, and runtime probes when each task has a fixed read-only schema. One
+root agent owns premise reconciliation, the Current Packet, and the final
+acceptance decision; parallel evidence gathering must not create parallel
+conceptual owners.
+
+Activation is complete only after a fresh read-only review challenges the
+load-bearing premise and inspects the evidence for at least one representative
+highest-entry transaction with its real consumers intact. The reviewer must be
+able to identify the packet ID/base SHA, normative premises, asset disposition,
+bounded production transaction, census commands and exclusions, falsifying
+case, acceptance evidence, and stop rule without reconstructing them from the
+comment history. Closeout reports clarification/review rounds, delivered heads,
+same-class recurrence, diff churn, packet-shaping cost, and any missed surface
+when the work crossed this gate. Use PR metadata and existing receipts; do not
+create another progress ledger merely to measure the workflow. Until a
+prospective issue supplies this evidence, describe rework prevention as a
+hypothesis rather than a verified benefit.
+
 ## Productization Work Cycle
 
 Productization planning limits active work instead of turning every diagnostic
