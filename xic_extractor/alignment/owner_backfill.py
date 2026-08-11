@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import groupby
+from time import perf_counter
 from typing import Protocol
 
 import numpy as np
@@ -16,7 +18,7 @@ from xic_extractor.alignment.backfill_scope import (
 from xic_extractor.alignment.cell_region_audit import with_region_audit
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
-from xic_extractor.alignment.matrix_handoff import integration_from_peak_trace
+from xic_extractor.alignment.matrix_handoff import integration_from_peak
 from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
 from xic_extractor.alignment.owner_area import median_owner_area, positive_finite
 from xic_extractor.alignment.owner_backfill_request_plan import (
@@ -47,6 +49,10 @@ from xic_extractor.alignment.scan_retention_times import (
 )
 from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.evidence_facts import (
+    PeakTraceEvidenceFacts,
+    peak_trace_evidence,
+)
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.region_audit import build_peak_region_audit_summary
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -119,6 +125,92 @@ class OwnerBackfillResult:
         OwnerBackfillRequestReuseObservation,
         ...,
     ] = ()
+    peak_fact_observations: tuple[OwnerBackfillPeakFactObservation, ...] = ()
+    peak_fact_cost: OwnerBackfillPeakFactCostReceipt | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillPeakFactObservation:
+    logical_request: OwnerBackfillLogicalRequestMember
+    request_identity: OwnerBackfillRequestIdentity
+    candidate_index: int
+    candidate_phase: str
+    selected_for_output: bool
+    cell: AlignedCell
+    facts: PeakTraceEvidenceFacts | None
+    fact_elapsed_seconds: float | None
+
+    @property
+    def evidence_authority(self) -> str:
+        return "evidence_only_no_write_authority"
+
+    def __post_init__(self) -> None:
+        observed_binding = (
+            self.logical_request.item.sample_stem,
+            self.logical_request.group_hypothesis_id,
+            self.request_identity.sample_stem,
+            self.request_identity.request,
+        )
+        expected_binding = (
+            self.cell.sample_stem,
+            self.cell.group_hypothesis_id,
+            self.cell.sample_stem,
+            self.logical_request.item.request,
+        )
+        if observed_binding != expected_binding:
+            raise ValueError("peak fact observation crosses sealed identity")
+        if self.candidate_index < 0:
+            raise ValueError("candidate_index must be non-negative")
+        if not self.candidate_phase:
+            raise ValueError("candidate_phase must be non-empty")
+        if self.facts is None:
+            if self.fact_elapsed_seconds is not None:
+                raise ValueError("elapsed fact work requires available facts")
+        elif self.fact_elapsed_seconds is not None and (
+            not math.isfinite(self.fact_elapsed_seconds)
+            or self.fact_elapsed_seconds <= 0
+        ):
+            raise ValueError("fact elapsed observation must be finite and positive")
+
+
+@dataclass(frozen=True, slots=True)
+class OwnerBackfillPeakFactCostReceipt:
+    raw_open_count: int
+    trace_evaluation_count: int
+    smoothing_count: int
+    integration_count: int
+    artifact_round_trip_count: int
+    sealed_observation_count: int
+    identity_unavailable_count: int
+    elapsed_seconds: float | None
+
+    @property
+    def count_scope(self) -> str:
+        return "shared_peak_facts_from_already_acquired_owner_backfill_trace"
+
+    def __post_init__(self) -> None:
+        counts = (
+            "raw_open_count",
+            "trace_evaluation_count",
+            "smoothing_count",
+            "integration_count",
+            "artifact_round_trip_count",
+            "sealed_observation_count",
+            "identity_unavailable_count",
+        )
+        if any(
+            isinstance(getattr(self, field), bool)
+            or not isinstance(getattr(self, field), int)
+            or getattr(self, field) < 0
+            for field in counts
+        ):
+            raise ValueError("peak fact counts must be non-negative integers")
+        if self.elapsed_seconds is not None and (
+            not math.isfinite(self.elapsed_seconds) or self.elapsed_seconds <= 0
+        ):
+            raise ValueError(
+                "elapsed_seconds must be finite and positive when available"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +274,18 @@ class _OwnerBackfillCandidateRecord:
     cell: AlignedCell
     candidate_index: int
     candidate_phase: str
+    trace_evaluated: bool = False
+    peak_facts: PeakTraceEvidenceFacts | None = None
+    peak_fact_elapsed_seconds: float | None = None
+    logical_request: OwnerBackfillLogicalRequestMember | None = None
+    request_identity: OwnerBackfillRequestIdentity | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _OwnerBackfillTraceEvaluation:
+    cell: AlignedCell
+    peak_facts: PeakTraceEvidenceFacts | None
+    peak_fact_elapsed_seconds: float | None
 
 
 def build_owner_backfill_cells(
@@ -315,6 +419,7 @@ def build_owner_backfill_result(
                 traces,
                 strict=True,
             ):
+                logical_request, request_identity = _logical_binding_for_result(result)
                 trace = _trace_for_logical_request_result(
                     OwnerBackfillRequestItem(
                         feature,
@@ -324,46 +429,52 @@ def build_owner_backfill_result(
                     ),
                     result,
                 )
-                cell = _backfill_feature_sample_trace(
+                evaluation = _backfill_feature_sample_trace(
                     feature,
                     requested_sample,
                     trace,
                     request=request,
                     preferred_rt=preferred_rt,
                     peak_config=peak_config,
+                    require_sealed_facts=logical_request is not None,
                     emit_region_audit=_emit_region_audit_for_family(
                         effective_emit_region_audit,
                         feature.feature_family_id,
                         region_audit_family_ids,
                     ),
                 )
-                if cell is not None:
-                    _append_candidate_record(
-                        candidate_records,
+                cell = evaluation.cell
+                _append_candidate_record(
+                    candidate_records,
+                    cell,
+                    phase=(
+                        "prefilter_query"
+                        if validation_raw_sources is not None
+                        else "primary_query"
+                    ),
+                    trace_evaluated=True,
+                    peak_facts=evaluation.peak_facts,
+                    peak_fact_elapsed_seconds=evaluation.peak_fact_elapsed_seconds,
+                    logical_request=logical_request,
+                    request_identity=request_identity,
+                )
+                if validation_raw_sources is None or cell.status != "rescued":
+                    _keep_best_backfill_outcome_cell(
+                        backfill_by_feature_sample,
                         cell,
-                        phase=(
-                            "prefilter_query"
-                            if validation_raw_sources is not None
-                            else "primary_query"
-                        ),
                     )
-                    if validation_raw_sources is None or cell.status != "rescued":
-                        _keep_best_backfill_outcome_cell(
-                            backfill_by_feature_sample,
-                            cell,
+                else:
+                    validation_pending[requested_sample].append(
+                        OwnerBackfillRequestItem(
+                            feature,
+                            requested_sample,
+                            request,
+                            preferred_rt,
                         )
-                    else:
-                        validation_pending[requested_sample].append(
-                            OwnerBackfillRequestItem(
-                                feature,
-                                requested_sample,
-                                request,
-                                preferred_rt,
-                            )
-                        )
-                        validation_pending_keys.add(
-                            (feature.feature_family_id, requested_sample)
-                        )
+                    )
+                    validation_pending_keys.add(
+                        (feature.feature_family_id, requested_sample)
+                    )
         for feature, requested_sample, request, preferred_rt in sample_requests:
             key = (feature.feature_family_id, requested_sample)
             if (
@@ -464,6 +575,9 @@ def build_owner_backfill_result(
                     traces,
                     strict=True,
                 ):
+                    logical_request, request_identity = _logical_binding_for_result(
+                        result
+                    )
                     trace = _trace_for_logical_request_result(
                         OwnerBackfillRequestItem(
                             feature,
@@ -473,29 +587,35 @@ def build_owner_backfill_result(
                         ),
                         result,
                     )
-                    cell = _backfill_feature_sample_trace(
+                    evaluation = _backfill_feature_sample_trace(
                         feature,
                         requested_sample,
                         trace,
                         request=_request,
                         preferred_rt=preferred_rt,
                         peak_config=peak_config,
+                        require_sealed_facts=logical_request is not None,
                         emit_region_audit=_emit_region_audit_for_family(
                             effective_emit_region_audit,
                             feature.feature_family_id,
                             region_audit_family_ids,
                         ),
                     )
-                    if cell is not None:
-                        _append_candidate_record(
-                            candidate_records,
-                            cell,
-                            phase="validation_query",
-                        )
-                        _keep_best_backfill_outcome_cell(
-                            backfill_by_feature_sample,
-                            cell,
-                        )
+                    cell = evaluation.cell
+                    _append_candidate_record(
+                        candidate_records,
+                        cell,
+                        phase="validation_query",
+                        trace_evaluated=True,
+                        peak_facts=evaluation.peak_facts,
+                        peak_fact_elapsed_seconds=evaluation.peak_fact_elapsed_seconds,
+                        logical_request=logical_request,
+                        request_identity=request_identity,
+                    )
+                    _keep_best_backfill_outcome_cell(
+                        backfill_by_feature_sample,
+                        cell,
+                    )
             for (
                 feature,
                 requested_sample,
@@ -528,12 +648,16 @@ def build_owner_backfill_result(
         if feature.review_only:
             continue
         for sample_stem in sample_order:
-            cell = backfill_by_feature_sample.get(
+            selected_cell = backfill_by_feature_sample.get(
                 (feature.feature_family_id, sample_stem)
             )
-            if cell is not None:
-                cells.append(cell)
+            if selected_cell is not None:
+                cells.append(selected_cell)
     selected_cell_ids = {id(cell) for cell in backfill_by_feature_sample.values()}
+    peak_fact_observations = _peak_fact_observations(
+        candidate_records,
+        selected_cell_ids=selected_cell_ids,
+    )
     return OwnerBackfillResult(
         cells=tuple(cells),
         candidate_audit_rows=_candidate_audit_rows(
@@ -543,6 +667,11 @@ def build_owner_backfill_result(
             sample_order=sample_order,
         ),
         request_reuse_observations=tuple(request_reuse_observations),
+        peak_fact_observations=peak_fact_observations,
+        peak_fact_cost=_peak_fact_cost_receipt(
+            candidate_records,
+            sealed_observation_count=len(peak_fact_observations),
+        ),
     )
 
 
@@ -651,13 +780,91 @@ def _append_candidate_record(
     cell: AlignedCell,
     *,
     phase: str,
+    trace_evaluated: bool = False,
+    peak_facts: PeakTraceEvidenceFacts | None = None,
+    peak_fact_elapsed_seconds: float | None = None,
+    logical_request: OwnerBackfillLogicalRequestMember | None = None,
+    request_identity: OwnerBackfillRequestIdentity | None = None,
 ) -> None:
+    if (logical_request is None) != (request_identity is None):
+        raise ValueError("logical request and request identity must stay paired")
     records.append(
         _OwnerBackfillCandidateRecord(
             cell=cell,
             candidate_index=len(records) + 1,
             candidate_phase=phase,
+            trace_evaluated=trace_evaluated,
+            peak_facts=peak_facts,
+            peak_fact_elapsed_seconds=peak_fact_elapsed_seconds,
+            logical_request=logical_request,
+            request_identity=request_identity,
         )
+    )
+
+
+def _peak_fact_observations(
+    records: Sequence[_OwnerBackfillCandidateRecord],
+    *,
+    selected_cell_ids: set[int],
+) -> tuple[OwnerBackfillPeakFactObservation, ...]:
+    return tuple(
+        OwnerBackfillPeakFactObservation(
+            logical_request=record.logical_request,
+            request_identity=record.request_identity,
+            candidate_index=record.candidate_index,
+            candidate_phase=record.candidate_phase,
+            selected_for_output=id(record.cell) in selected_cell_ids,
+            cell=record.cell,
+            facts=record.peak_facts,
+            fact_elapsed_seconds=record.peak_fact_elapsed_seconds,
+        )
+        for record in records
+        if record.logical_request is not None and record.request_identity is not None
+    )
+
+
+def _peak_fact_cost_receipt(
+    records: Sequence[_OwnerBackfillCandidateRecord],
+    *,
+    sealed_observation_count: int,
+) -> OwnerBackfillPeakFactCostReceipt:
+    evaluated = tuple(record for record in records if record.trace_evaluated)
+    fact_records = tuple(
+        record for record in evaluated if record.peak_facts is not None
+    )
+    durations = tuple(
+        record.peak_fact_elapsed_seconds
+        for record in fact_records
+        if record.peak_fact_elapsed_seconds is not None
+    )
+    elapsed_seconds = (
+        sum(durations)
+        if fact_records and len(durations) == len(fact_records) and sum(durations) > 0
+        else None
+    )
+    return OwnerBackfillPeakFactCostReceipt(
+        raw_open_count=0,
+        trace_evaluation_count=len(evaluated),
+        smoothing_count=sum(
+            record.peak_facts.smoothing_count
+            if record.peak_facts is not None
+            else 0
+            for record in fact_records
+        ),
+        integration_count=sum(
+            record.peak_facts.integration_count
+            if record.peak_facts is not None
+            else 0
+            for record in fact_records
+        ),
+        artifact_round_trip_count=0,
+        sealed_observation_count=sealed_observation_count,
+        identity_unavailable_count=sum(
+            1
+            for record in evaluated
+            if record.logical_request is None or record.request_identity is None
+        ),
+        elapsed_seconds=elapsed_seconds,
     )
 
 
@@ -1038,8 +1245,9 @@ def _backfill_feature_sample_trace(
     request: XICRequest,
     preferred_rt: float | None = None,
     peak_config: ExtractionConfig,
+    require_sealed_facts: bool = False,
     emit_region_audit: bool = False,
-) -> AlignedCell | None:
+) -> _OwnerBackfillTraceEvaluation:
     peak_preferred_rt = (
         feature.family_center_rt if preferred_rt is None else preferred_rt
     )
@@ -1052,31 +1260,83 @@ def _backfill_feature_sample_trace(
         peak_finder=find_peak_and_area,
     )
     if detection.status == "unassessable_trace":
-        return _backfill_unchecked_cell(
-            feature,
-            sample_stem,
-            request=request,
-            preferred_rt=preferred_rt,
-            trace_quality="owner_backfill_unassessable",
-            reason="owner-centered MS1 backfill query was not assessable",
+        return _OwnerBackfillTraceEvaluation(
+            cell=_backfill_unchecked_cell(
+                feature,
+                sample_stem,
+                request=request,
+                preferred_rt=preferred_rt,
+                trace_quality="owner_backfill_unassessable",
+                reason="owner-centered MS1 backfill query was not assessable",
+            ),
+            peak_facts=None,
+            peak_fact_elapsed_seconds=None,
         )
     if (
         detection.status != "detected"
         or detection.result is None
         or detection.peak is None
     ):
-        return _backfill_unchecked_cell(
-            feature,
-            sample_stem,
-            request=request,
-            preferred_rt=preferred_rt,
-            trace_quality="owner_backfill_not_detected",
-            reason="owner-centered MS1 backfill query found no accepted peak",
+        return _OwnerBackfillTraceEvaluation(
+            cell=_backfill_unchecked_cell(
+                feature,
+                sample_stem,
+                request=request,
+                preferred_rt=preferred_rt,
+                trace_quality="owner_backfill_not_detected",
+                reason="owner-centered MS1 backfill query found no accepted peak",
+            ),
+            peak_facts=None,
+            peak_fact_elapsed_seconds=None,
         )
     rt_array = detection.rt
     intensity_array = detection.intensity
     result = detection.result
     peak = detection.peak
+    base_integration = integration_from_peak(
+        peak,
+        boundary_sources=("owner_backfill_batch",),
+    )
+    fact_start = perf_counter()
+    try:
+        peak_facts = (
+            peak_trace_evidence(
+                base_integration,
+                rt_array,
+                intensity_array,
+                baseline_integration_method=getattr(
+                    peak_config,
+                    "baseline_integration_method",
+                    "asls",
+                ),
+            )
+            if base_integration is not None
+            else None
+        )
+    except (IndexError, TypeError, ValueError, FloatingPointError):
+        peak_facts = None
+    fact_elapsed_seconds = _positive_elapsed(perf_counter() - fact_start)
+    if peak_facts is None:
+        fact_elapsed_seconds = None
+    if require_sealed_facts and not _peak_facts_match_baseline(
+        base_integration,
+        peak_facts,
+    ):
+        return _OwnerBackfillTraceEvaluation(
+            cell=_backfill_unchecked_cell(
+                feature,
+                sample_stem,
+                request=request,
+                preferred_rt=preferred_rt,
+                trace_quality="owner_backfill_unassessable",
+                reason=(
+                    "shared peak facts were unavailable or disagreed with the "
+                    "sealed Owner Backfill hypothesis"
+                ),
+            ),
+            peak_facts=peak_facts,
+            peak_fact_elapsed_seconds=fact_elapsed_seconds,
+        )
     trace_group = (
         alignment_trace_group(
             sample_stem=sample_stem,
@@ -1127,16 +1387,8 @@ def _backfill_feature_sample_trace(
         source_candidate_id=None,
         source_raw_file=None,
         reason="owner-centered MS1 backfill",
-        selected_integration=integration_from_peak_trace(
-            peak,
-            rt_array,
-            intensity_array,
-            boundary_sources=("owner_backfill_batch",),
-            baseline_integration_method=getattr(
-                peak_config,
-                "baseline_integration_method",
-                "asls",
-            ),
+        selected_integration=(
+            peak_facts.integration if peak_facts is not None else base_integration
         ),
         backfill_seed_mz=request.mz,
         backfill_seed_rt=preferred_rt,
@@ -1150,7 +1402,11 @@ def _backfill_feature_sample_trace(
             missing_observation_state="queried_and_detected",
         ),
     )
-    return with_region_audit(cell, region_audit)
+    return _OwnerBackfillTraceEvaluation(
+        cell=with_region_audit(cell, region_audit),
+        peak_facts=peak_facts,
+        peak_fact_elapsed_seconds=fact_elapsed_seconds,
+    )
 
 
 def _backfill_unchecked_cell(
@@ -1435,6 +1691,53 @@ def _trace_for_logical_request_result(
     if result.logical_request.item != item:
         raise ValueError("typed extraction result is rebound to another hypothesis")
     return result.trace
+
+
+def _logical_binding_for_result(
+    result: XICTrace | OwnerBackfillLogicalExtractionResult,
+) -> tuple[
+    OwnerBackfillLogicalRequestMember | None,
+    OwnerBackfillRequestIdentity | None,
+]:
+    if isinstance(result, XICTrace):
+        return None, None
+    return result.logical_request, result.canonical_result.request_identity
+
+
+def _positive_elapsed(value: float) -> float | None:
+    return value if math.isfinite(value) and value > 0 else None
+
+
+def _peak_facts_match_baseline(
+    baseline: object,
+    facts: PeakTraceEvidenceFacts | None,
+) -> bool:
+    if baseline is None or facts is None:
+        return False
+    candidate = facts.integration
+    compatibility_fields = (
+        "rt_left_min",
+        "rt_apex_min",
+        "rt_right_min",
+        "raw_apex_rt_min",
+        "rt_width_min",
+        "height_raw",
+        "height_smoothed",
+        "area_raw_counts_seconds",
+        "integration_method",
+        "boundary_sources",
+    )
+    return (
+        all(
+            getattr(candidate, field) == getattr(baseline, field)
+            for field in compatibility_fields
+        )
+        and facts.normalized_shape_trace.is_usable
+        and facts.window.status == "ok"
+        and facts.window.query_apex_rt_min == candidate.rt_apex_min
+        and facts.window.query_apex_in_trace_window
+        and candidate.area_ms1_morphology is not None
+    )
 
 
 def _require_untyped_traces(
