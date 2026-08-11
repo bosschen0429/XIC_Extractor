@@ -11,9 +11,13 @@ import numpy as np
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
+    from xic_extractor.peak_detection.ms1_shape_identity import OwnMaxTrace
 
 from tools.diagnostics.family_ms1_overlay_evidence import (
+    FamilyMs1EvidenceContext,
+    _absolute_own_max_normalized_trace,
     _apex_aligned_normalized_trace,
+    _build_family_ms1_evidence_context,
     _gaussian_smooth_values,
     _global_trace_apex_delta,
 )
@@ -51,6 +55,40 @@ def render_family_ms1_overlay(
     drift_lookup: DriftLookupProtocol | None = None,
     dpi: int = 140,
 ) -> None:
+    context = _build_family_ms1_evidence_context(rows)
+    _render_family_ms1_overlay_from_context(
+        rows=rows,
+        context=context,
+        png_path=png_path,
+        pdf_path=pdf_path,
+        family_id=family_id,
+        mz=mz,
+        ppm=ppm,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        family_center_rt=family_center_rt,
+        drift_lookup=drift_lookup,
+        dpi=dpi,
+    )
+
+
+def _render_family_ms1_overlay_from_context(
+    *,
+    rows: Sequence[TraceOverlayRow],
+    context: FamilyMs1EvidenceContext,
+    png_path: Path,
+    pdf_path: Path | None,
+    family_id: str,
+    mz: float,
+    ppm: float,
+    rt_min: float,
+    rt_max: float,
+    family_center_rt: float | None,
+    drift_lookup: DriftLookupProtocol | None = None,
+    dpi: int = 140,
+) -> None:
+    context.require_exact_rows(rows)
+    normalized_by_row = context.normalized_by_row
     import matplotlib
 
     matplotlib.use("Agg")
@@ -84,6 +122,7 @@ def render_family_ms1_overlay(
         family_center_rt=family_center_rt,
         rt_min=rt_min,
         rt_max=rt_max,
+        normalized_by_row=normalized_by_row,
         total_trace_count=len(rows),
     )
     _plot_raw_highlights(
@@ -92,6 +131,7 @@ def render_family_ms1_overlay(
         family_center_rt=family_center_rt,
         rt_min=rt_min,
         rt_max=rt_max,
+        normalized_by_row=normalized_by_row,
         total_trace_count=len(rows),
     )
     _plot_unified_legend(axes["legend"])
@@ -127,6 +167,38 @@ def render_hypothesis_ms1_overlay(
     family_center_rt: float | None,
     dpi: int = 140,
 ) -> None:
+    context = _build_family_ms1_evidence_context(rows)
+    _render_hypothesis_ms1_overlay_from_context(
+        rows=rows,
+        context=context,
+        png_path=png_path,
+        pdf_path=pdf_path,
+        family_id=family_id,
+        mz=mz,
+        ppm=ppm,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        family_center_rt=family_center_rt,
+        dpi=dpi,
+    )
+
+
+def _render_hypothesis_ms1_overlay_from_context(
+    *,
+    rows: Sequence[TraceOverlayRow],
+    context: FamilyMs1EvidenceContext,
+    png_path: Path,
+    pdf_path: Path | None,
+    family_id: str,
+    mz: float,
+    ppm: float,
+    rt_min: float,
+    rt_max: float,
+    family_center_rt: float | None,
+    dpi: int = 140,
+) -> None:
+    context.require_exact_rows(rows)
+    normalized_by_row = context.normalized_by_row
     import matplotlib
 
     matplotlib.use("Agg")
@@ -154,6 +226,7 @@ def render_hypothesis_ms1_overlay(
         axes["aligned"],
         focus_rows,
         anchor_rows=focus_detected,
+        normalized_by_row=normalized_by_row,
         total_trace_count=len(rows),
     )
     _plot_raw_highlights(
@@ -162,6 +235,7 @@ def render_hypothesis_ms1_overlay(
         family_center_rt=family_center_rt,
         rt_min=rt_min,
         rt_max=rt_max,
+        normalized_by_row=normalized_by_row,
         total_trace_count=len(rows),
     )
     _plot_unified_legend(axes["legend"])
@@ -221,25 +295,22 @@ def _plot_normalized_overlay(
     family_center_rt: float | None,
     rt_min: float,
     rt_max: float,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
     total_trace_count: int | None = None,
 ) -> None:
     total_trace_count = total_trace_count or len(rows)
     _draw_selected_peak_segment(ax, rows)
     for row in rows:
-        rt = np.asarray(row.rt, dtype=float)
-        intensity = _gaussian_smooth(
-            np.asarray(row.intensity, dtype=float),
-            points=PLOT_GAUSSIAN_SMOOTH_POINTS,
+        rt, normalized = _absolute_own_max_normalized_trace(
+            row,
+            normalized_trace=normalized_by_row[row],
         )
-        if rt.size == 0 or row.trace_max_intensity <= 0:
-            continue
-        max_intensity = float(np.max(intensity)) if intensity.size else 0.0
-        if max_intensity <= 0:
+        if rt.size == 0:
             continue
         color, alpha, line_width, zorder = _line_style(row.group)
         ax.plot(
             rt,
-            intensity / max_intensity,
+            normalized,
             color=color,
             alpha=alpha,
             lw=line_width,
@@ -254,6 +325,7 @@ def _plot_normalized_overlay(
         rt_min=rt_min,
         rt_max=rt_max,
         linestyle="--",
+        normalized_by_row=normalized_by_row,
     )
     _draw_center_rt(ax, family_center_rt)
     ax.set_title("Family RT context: own-max scaled selected-peak membership")
@@ -350,19 +422,21 @@ def _plot_raw_highlights(
     family_center_rt: float | None,
     rt_min: float,
     rt_max: float,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
     total_trace_count: int | None = None,
 ) -> None:
     total_trace_count = total_trace_count or len(rows)
     labels_seen: set[str] = set()
     _draw_selected_peak_segment(ax, rows)
     for row in rows:
-        rt = np.asarray(row.rt, dtype=float)
-        intensity = _gaussian_smooth(
-            np.asarray(row.intensity, dtype=float),
-            points=PLOT_GAUSSIAN_SMOOTH_POINTS,
+        normalized_trace = normalized_by_row[row]
+        rt, normalized = _absolute_own_max_normalized_trace(
+            row,
+            normalized_trace=normalized_trace,
         )
-        if rt.size == 0:
+        if rt.size == 0 or normalized_trace.max_intensity is None:
             continue
+        intensity = normalized * normalized_trace.max_intensity
         color, alpha, line_width, _zorder = _line_style(row.group)
         label = _trace_group_label(row)
         ax.plot(
@@ -393,6 +467,7 @@ def _plot_apex_aligned_overlay(
     *,
     total_trace_count: int | None = None,
     anchor_rows: Sequence[TraceOverlayRow] = (),
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
 ) -> None:
     total_trace_count = total_trace_count or len(rows)
     detected_anchor_rows = tuple(anchor_rows) or tuple(
@@ -406,7 +481,7 @@ def _plot_apex_aligned_overlay(
     for row in rows:
         rt, normalized = _apex_aligned_normalized_trace(
             row,
-            smooth_points=PLOT_GAUSSIAN_SMOOTH_POINTS,
+            normalized_trace=normalized_by_row[row],
         )
         if rt.size == 0:
             continue
@@ -429,6 +504,7 @@ def _plot_apex_aligned_overlay(
         rt_max=APEX_ALIGN_HALF_WINDOW_MIN,
         linestyle="--",
         align_to_apex=True,
+        normalized_by_row=normalized_by_row,
     )
     ax.axvline(0.0, color="black", lw=1, ls="--", alpha=0.6)
     ax.set_title("Detected-anchor apex-aligned MS1 shape")
@@ -560,7 +636,7 @@ def _plot_group_median_trace(
     rt_max: float,
     linestyle: str = "-",
     align_to_apex: bool = False,
-    smooth_points: int = PLOT_GAUSSIAN_SMOOTH_POINTS,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
 ) -> None:
     grid = np.linspace(rt_min, rt_max, 250)
     normalized_traces: list[np.ndarray] = []
@@ -569,23 +645,18 @@ def _plot_group_median_trace(
             include = row.status == "rescued"
         else:
             include = row.group == group
-        if not include or row.trace_max_intensity <= 0:
+        if not include:
             continue
         if align_to_apex:
             rt, normalized = _apex_aligned_normalized_trace(
                 row,
-                smooth_points=smooth_points,
+                normalized_trace=normalized_by_row[row],
             )
         else:
-            rt = np.asarray(row.rt, dtype=float)
-            intensity = _gaussian_smooth(
-                np.asarray(row.intensity, dtype=float),
-                points=smooth_points,
+            rt, normalized = _absolute_own_max_normalized_trace(
+                row,
+                normalized_trace=normalized_by_row[row],
             )
-            max_intensity = float(np.max(intensity)) if intensity.size else 0.0
-            if max_intensity <= 0:
-                continue
-            normalized = intensity / max_intensity
         if rt.size < 2:
             continue
         interp = np.interp(grid, rt, normalized, left=np.nan, right=np.nan)

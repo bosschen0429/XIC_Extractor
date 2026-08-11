@@ -8,21 +8,14 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tools.diagnostics.family_ms1_overlay_evidence import (
-    _absolute_own_max_shape_similarity,
-    _apex_aligned_shape_similarity,
-    _global_trace_apex_delta,
-    _local_to_global_max_ratio,
-    _local_window_peak,
-    build_family_ms1_evidence_summary,
-)
+from tools.diagnostics.family_ms1_overlay_evidence import FamilyMs1EvidenceContext
 from tools.diagnostics.family_ms1_overlay_models import (
     FamilyMs1OverlayOutputs,
     TraceOverlayRow,
 )
 from tools.diagnostics.family_ms1_overlay_rendering import (
-    render_family_ms1_overlay,
-    render_hypothesis_ms1_overlay,
+    _render_family_ms1_overlay_from_context,
+    _render_hypothesis_ms1_overlay_from_context,
 )
 from xic_extractor.tabular_io import write_tsv
 
@@ -41,11 +34,13 @@ def write_family_ms1_overlay_outputs(
     rt_min: float,
     rt_max: float,
     family_center_rt: float | None,
+    context: FamilyMs1EvidenceContext,
     provenance: Mapping[str, object] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     write_pdf: bool = True,
     dpi: int = 140,
 ) -> FamilyMs1OverlayOutputs:
+    context.require_exact_rows(rows)
     output_dir.mkdir(parents=True, exist_ok=True)
     summary_tsv = output_dir / f"{output_prefix}_trace_summary.tsv"
     trace_data_json = output_dir / f"{output_prefix}_trace_data.json"
@@ -56,7 +51,11 @@ def write_family_ms1_overlay_outputs(
         output_dir / f"{output_prefix}_hypothesis.pdf" if write_pdf else None
     )
 
-    _write_summary(summary_tsv, rows)
+    _write_summary(
+        summary_tsv,
+        rows,
+        context=context,
+    )
     _write_trace_data(
         trace_data_json,
         rows=rows,
@@ -67,9 +66,11 @@ def write_family_ms1_overlay_outputs(
         rt_max=rt_max,
         family_center_rt=family_center_rt,
         provenance=provenance,
+        context=context,
     )
-    render_family_ms1_overlay(
+    _render_family_ms1_overlay_from_context(
         rows=rows,
+        context=context,
         png_path=png_path,
         pdf_path=pdf_path,
         family_id=family_id,
@@ -81,8 +82,9 @@ def write_family_ms1_overlay_outputs(
         drift_lookup=drift_lookup,
         dpi=dpi,
     )
-    render_hypothesis_ms1_overlay(
+    _render_hypothesis_ms1_overlay_from_context(
         rows=rows,
+        context=context,
         png_path=hypothesis_png_path,
         pdf_path=hypothesis_pdf_path,
         family_id=family_id,
@@ -101,9 +103,17 @@ def write_family_ms1_overlay_outputs(
     )
 
 
-def _write_summary(path: Path, rows: Sequence[TraceOverlayRow]) -> None:
-    shape_similarity = _apex_aligned_shape_similarity(rows)
-    absolute_shape_similarity = _absolute_own_max_shape_similarity(rows)
+def _write_summary(
+    path: Path,
+    rows: Sequence[TraceOverlayRow],
+    *,
+    context: FamilyMs1EvidenceContext,
+) -> None:
+    context.require_exact_rows(rows)
+    normalized_by_row = context.normalized_by_row
+    window_facts_by_row = context.window_facts_by_row
+    shape_similarity = context.shape_similarity
+    absolute_shape_similarity = context.absolute_shape_similarity
     fields = (
         "sample_stem",
         "status",
@@ -135,19 +145,24 @@ def _write_summary(path: Path, rows: Sequence[TraceOverlayRow]) -> None:
                 "cell_apex_rt": _format_float(row.cell_apex_rt, digits=6),
                 "cell_start_rt": _format_float(row.cell_start_rt, digits=6),
                 "cell_end_rt": _format_float(row.cell_end_rt, digits=6),
-                "trace_max_intensity": _format_float(row.trace_max_intensity),
-                "trace_apex_rt": _format_float(row.trace_apex_rt, digits=6),
+                "trace_max_intensity": _format_float(
+                    normalized_by_row[row].max_intensity,
+                ),
+                "trace_apex_rt": _format_float(
+                    window_facts_by_row[row].trace_apex_rt_min,
+                    digits=6,
+                ),
                 "global_trace_apex_delta_min": _format_float(
-                    _global_trace_apex_delta(row),
+                    window_facts_by_row[row].global_trace_apex_delta_min,
                 ),
                 "local_window_max_intensity": _format_float(
-                    _local_window_peak(row)[1],
+                    window_facts_by_row[row].local_max_intensity,
                 ),
                 "local_window_apex_delta_min": _format_float(
-                    _local_window_peak(row)[0],
+                    window_facts_by_row[row].local_apex_delta_min,
                 ),
                 "local_window_to_global_max_ratio": _format_float(
-                    _local_to_global_max_ratio(row),
+                    window_facts_by_row[row].local_to_global_max_ratio,
                 ),
                 "region_shadow_verdict": row.region_shadow_verdict,
                 "source_candidate_id": row.source_candidate_id,
@@ -177,10 +192,14 @@ def _write_trace_data(
     rt_min: float,
     rt_max: float,
     family_center_rt: float | None,
+    context: FamilyMs1EvidenceContext,
     provenance: Mapping[str, object] | None = None,
 ) -> None:
-    shape_similarity = _apex_aligned_shape_similarity(rows)
-    absolute_shape_similarity = _absolute_own_max_shape_similarity(rows)
+    context.require_exact_rows(rows)
+    normalized_by_row = context.normalized_by_row
+    window_facts_by_row = context.window_facts_by_row
+    shape_similarity = context.shape_similarity
+    absolute_shape_similarity = context.absolute_shape_similarity
     data = {
         "family_id": family_id,
         "mz": mz,
@@ -190,7 +209,7 @@ def _write_trace_data(
         "family_center_rt": family_center_rt,
         "provenance": dict(provenance or {}),
         "trace_count": len(rows),
-        "evidence_summary": build_family_ms1_evidence_summary(rows),
+        "evidence_summary": dict(context.evidence_summary),
         "traces": [
             {
                 "sample_stem": row.sample_stem,
@@ -201,19 +220,23 @@ def _write_trace_data(
                 "cell_apex_rt": row.cell_apex_rt,
                 "cell_start_rt": row.cell_start_rt,
                 "cell_end_rt": row.cell_end_rt,
-                "trace_max_intensity": row.trace_max_intensity,
-                "trace_apex_rt": row.trace_apex_rt,
+                "trace_max_intensity": _json_float(
+                    normalized_by_row[row].max_intensity,
+                ),
+                "trace_apex_rt": _json_float(
+                    window_facts_by_row[row].trace_apex_rt_min,
+                ),
                 "global_trace_apex_delta_min": _json_float(
-                    _global_trace_apex_delta(row),
+                    window_facts_by_row[row].global_trace_apex_delta_min,
                 ),
                 "local_window_max_intensity": _json_float(
-                    _local_window_peak(row)[1],
+                    window_facts_by_row[row].local_max_intensity,
                 ),
                 "local_window_apex_delta_min": _json_float(
-                    _local_window_peak(row)[0],
+                    window_facts_by_row[row].local_apex_delta_min,
                 ),
                 "local_window_to_global_max_ratio": _json_float(
-                    _local_to_global_max_ratio(row),
+                    window_facts_by_row[row].local_to_global_max_ratio,
                 ),
                 "region_shadow_verdict": row.region_shadow_verdict,
                 "source_candidate_id": row.source_candidate_id,
@@ -230,8 +253,6 @@ def _write_trace_data(
         ],
     }
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-
-
 def _format_float(value: float | None, *, digits: int = 6) -> str:
     if value is None or not math.isfinite(value):
         return ""

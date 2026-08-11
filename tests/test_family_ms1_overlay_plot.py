@@ -5,6 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from tools.diagnostics import family_ms1_overlay_evidence as evidence
 from tools.diagnostics import family_ms1_overlay_plot as report
 from tools.diagnostics.family_ms1_overlay_models import TraceOverlayRow
 from xic_extractor.alignment.edge_scoring import DriftPriorSource
@@ -444,8 +447,7 @@ def test_apex_aligned_shape_similarity_uses_detected_anchor_reference() -> None:
     assert similarity["rescued-like-detected"] is not None
     assert similarity["rescued-like-detected"] > 0.5
     assert all(
-        (similarity[f"rescued-neighbor-{index}"] or 0.0) < 0.0
-        for index in range(3)
+        (similarity[f"rescued-neighbor-{index}"] or 0.0) < 0.0 for index in range(3)
     )
 
 
@@ -459,7 +461,7 @@ def test_hypothesis_overlay_layout_keeps_apex_alignment_on_evidence_surface() ->
     assert "shape" not in panel_ids
 
 
-def test_apex_aligned_trace_uses_local_peak_normalization() -> None:
+def test_apex_aligned_trace_uses_shared_gaussian15_normalization() -> None:
     row = report.trace_row_from_arrays(
         _family_cell("large-neighbor", apex_rt=1.0),
         "rescued_other",
@@ -468,9 +470,18 @@ def test_apex_aligned_trace_uses_local_peak_normalization() -> None:
     )
 
     _rt, normalized = report._apex_aligned_normalized_trace(row)
+    _shared_trace, shared_facts = evidence.gaussian15_trace_window_evidence(
+        row.rt,
+        row.intensity,
+        query_apex_rt_min=row.cell_apex_rt,
+        half_window_min=report.APEX_ALIGN_HALF_WINDOW_MIN,
+    )
 
     assert max(normalized) == 1.0
-    assert report._local_to_global_max_ratio(row) == 0.01
+    assert report._local_to_global_max_ratio(row) == pytest.approx(
+        shared_facts.local_to_global_max_ratio
+    )
+    assert report._local_to_global_max_ratio(row) != pytest.approx(0.01)
 
 
 def test_gaussian_smooth_is_plot_only_and_preserves_trace_shape() -> None:

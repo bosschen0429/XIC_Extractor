@@ -1,5 +1,8 @@
+from dataclasses import replace
+
 import numpy as np
 
+from xic_extractor.alignment import matrix_handoff
 from xic_extractor.alignment.matrix_handoff import integration_from_peak_trace
 from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -7,6 +10,39 @@ from xic_extractor.peak_detection.ms1_morphology import (
     MS1_MORPHOLOGY_AREA_SOURCE,
     MS1_MORPHOLOGY_TRACE_METHOD,
 )
+
+
+def test_integration_from_peak_trace_delegates_owner_computation_once(
+    monkeypatch,
+) -> None:
+    peak = PeakResult(
+        rt=2.0,
+        intensity=50.0,
+        intensity_smoothed=45.0,
+        area=4000.0,
+        peak_start=1.0,
+        peak_end=3.0,
+    )
+    calls: list[str] = []
+
+    def _delegate(
+        integration, _rt_values, _intensity_values, *, baseline_integration_method
+    ):
+        calls.append(baseline_integration_method)
+        return replace(integration, baseline_type="delegated")
+
+    monkeypatch.setattr(matrix_handoff, "integration_with_trace_evidence", _delegate)
+
+    integration = matrix_handoff.integration_from_peak_trace(
+        peak,
+        np.array([0.0, 1.0, 2.0, 3.0, 4.0]),
+        np.array([10.0, 12.0, 50.0, 12.0, 10.0]),
+        boundary_sources=("test_trace",),
+    )
+
+    assert calls == ["asls"]
+    assert integration is not None
+    assert integration.baseline_type == "delegated"
 
 
 def test_integration_from_peak_trace_populates_asls_primary_fields() -> None:

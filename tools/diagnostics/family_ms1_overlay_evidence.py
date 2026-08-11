@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from types import MappingProxyType
 
 import numpy as np
 
@@ -22,23 +24,72 @@ from tools.diagnostics.family_ms1_overlay_models import (
     SHAPE_SUPPORT_MIN,
     TraceOverlayRow,
 )
-from xic_extractor.peak_detection.ms1_shape_identity import (
-    gaussian_smooth_values as _shared_gaussian_smooth_values,
+from xic_extractor.peak_detection.evidence_facts import (
+    TraceWindowEvidenceFacts,
+    gaussian15_trace_window_evidence,
 )
+from xic_extractor.peak_detection.ms1_shape_identity import (
+    DEFAULT_OWN_MAX_SMOOTH_POINTS,
+    OwnMaxTrace,
+    gaussian_smooth_values,
+    own_max_normalized_trace,
+)
+
+FamilyMs1EvidenceScalar = int | float | str | bool | None
+_FAMILY_MS1_EVIDENCE_CONTEXT_MINT_TOKEN = object()
+
+
+@dataclass(frozen=True, slots=True)
+class FamilyMs1EvidenceContext:
+    """Owner-minted, immutable binding for one overlay output transaction."""
+
+    rows: tuple[TraceOverlayRow, ...]
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace]
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts]
+    shape_similarity: Mapping[str, float | None]
+    absolute_shape_similarity: Mapping[str, float | None]
+    evidence_summary: Mapping[str, FamilyMs1EvidenceScalar]
+    _binding_seal: tuple[int, ...] = field(repr=False, compare=False)
+    _mint_token: object = field(repr=False, compare=False)
+
+    def require_exact_rows(self, rows: Sequence[TraceOverlayRow]) -> None:
+        if self._mint_token is not _FAMILY_MS1_EVIDENCE_CONTEXT_MINT_TOKEN:
+            raise ValueError("exact owner-minted Gaussian15 context is required")
+        if self._binding_seal != _family_ms1_context_binding_seal(
+            self.rows,
+            self.normalized_by_row,
+            self.window_facts_by_row,
+            self.shape_similarity,
+            self.absolute_shape_similarity,
+            self.evidence_summary,
+        ):
+            raise ValueError("exact owner-minted Gaussian15 context is required")
+        expected_rows = tuple(rows)
+        if len(expected_rows) != len(self.rows) or any(
+            expected is not observed
+            for expected, observed in zip(expected_rows, self.rows, strict=True)
+        ):
+            raise ValueError("exact owner-minted Gaussian15 context is required")
 
 
 def build_family_ms1_evidence_summary(
     rows: Sequence[TraceOverlayRow],
+) -> dict[str, FamilyMs1EvidenceScalar]:
+    return dict(_build_family_ms1_evidence_context(rows).evidence_summary)
+
+
+def _build_family_ms1_evidence_summary(
+    rows: Sequence[TraceOverlayRow],
+    *,
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
+    shape_similarity: Mapping[str, float | None],
+    absolute_shape_similarity: Mapping[str, float | None],
 ) -> dict[str, int | float | str | bool | None]:
-    shape_similarity = _apex_aligned_shape_similarity(rows)
-    absolute_shape_similarity = _absolute_own_max_shape_similarity(rows)
     detected = [row for row in rows if row.status == "detected"]
     rescued = [row for row in rows if row.status == "rescued"]
     status_rows = [row for row in rows if row.status in {"detected", "rescued"}]
     evaluable = [
-        row
-        for row in status_rows
-        if shape_similarity.get(row.sample_stem) is not None
+        row for row in status_rows if shape_similarity.get(row.sample_stem) is not None
     ]
     shape_supported = [
         row
@@ -60,35 +111,63 @@ def build_family_ms1_evidence_summary(
         absolute_trace_apex_clustered,
         absolute_trace_apex_median_rt,
         absolute_trace_apex_delta_abs_median,
-    ) = _absolute_trace_apex_cluster(status_rows)
+    ) = _absolute_trace_apex_cluster(
+        status_rows,
+        window_facts_by_row=window_facts_by_row,
+    )
     global_apex_assessable = [
-        row for row in status_rows if _global_trace_apex_delta(row) is not None
+        row
+        for row in status_rows
+        if _global_trace_apex_delta(
+            row,
+            window_facts=window_facts_by_row[row],
+        )
+        is not None
     ]
     selected_apex_in_trace_window = [
-        row for row in status_rows if _selected_apex_in_trace_window(row)
+        row
+        for row in status_rows
+        if window_facts_by_row[row].query_apex_in_trace_window
     ]
     global_apex_interference = [
         row
         for row in global_apex_assessable
-        if _abs_or_none(_global_trace_apex_delta(row)) is not None
-        and (_abs_or_none(_global_trace_apex_delta(row)) or 0.0)
+        if _abs_or_none(
+            _global_trace_apex_delta(
+                row,
+                window_facts=window_facts_by_row[row],
+            )
+        )
+        is not None
+        and (
+            _abs_or_none(
+                _global_trace_apex_delta(
+                    row,
+                    window_facts=window_facts_by_row[row],
+                )
+            )
+            or 0.0
+        )
         > GLOBAL_APEX_CONFLICT_DELTA_MIN
     ]
     local_apex_assessable = [
-        row for row in status_rows if _local_window_peak(row)[0] is not None
+        row
+        for row in status_rows
+        if window_facts_by_row[row].local_apex_delta_min is not None
     ]
     local_apex_supported = [
         row
         for row in local_apex_assessable
-        if _abs_or_none(_local_window_peak(row)[0]) is not None
-        and (_abs_or_none(_local_window_peak(row)[0]) or 0.0)
+        if _abs_or_none(window_facts_by_row[row].local_apex_delta_min) is not None
+        and (_abs_or_none(window_facts_by_row[row].local_apex_delta_min) or 0.0)
         <= LOCAL_APEX_SUPPORT_DELTA_MIN
     ]
     low_local_to_global = [
         row
         for row in evaluable
-        if _local_to_global_max_ratio(row) is not None
-        and (_local_to_global_max_ratio(row) or 0.0) < LOW_LOCAL_TO_GLOBAL_RATIO
+        if window_facts_by_row[row].local_to_global_max_ratio is not None
+        and (window_facts_by_row[row].local_to_global_max_ratio or 0.0)
+        < LOW_LOCAL_TO_GLOBAL_RATIO
     ]
     shape_fraction = _safe_fraction(len(shape_supported), len(evaluable))
     global_apex_assessable_fraction = _safe_fraction(
@@ -119,10 +198,10 @@ def build_family_ms1_evidence_summary(
     detected_height_median = _median_value(row.cell_height for row in detected)
     rescued_height_median = _median_value(row.cell_height for row in rescued)
     detected_local_max_median = _median_value(
-        _local_window_peak(row)[1] for row in detected
+        window_facts_by_row[row].local_max_intensity for row in detected
     )
     rescued_local_max_median = _median_value(
-        _local_window_peak(row)[1] for row in rescued
+        window_facts_by_row[row].local_max_intensity for row in rescued
     )
     height_ratio = _positive_ratio(detected_height_median, rescued_height_median)
     local_max_ratio = _positive_ratio(
@@ -235,19 +314,149 @@ def build_family_ms1_evidence_summary(
             shape_similarity.get(row.sample_stem) for row in rescued
         ),
         "global_trace_apex_delta_abs_median_min": _median_value(
-            _abs_or_none(_global_trace_apex_delta(row)) for row in evaluable
+            _abs_or_none(
+                _global_trace_apex_delta(
+                    row,
+                    window_facts=window_facts_by_row[row],
+                )
+            )
+            for row in evaluable
         ),
         "local_window_apex_delta_abs_median_min": _median_value(
-            _abs_or_none(_local_window_peak(row)[0]) for row in evaluable
+            _abs_or_none(window_facts_by_row[row].local_apex_delta_min)
+            for row in evaluable
         ),
         "local_window_to_global_max_ratio_median": _median_value(
-            _local_to_global_max_ratio(row) for row in evaluable
+            window_facts_by_row[row].local_to_global_max_ratio for row in evaluable
         ),
     }
 
 
+def _build_family_ms1_evidence_maps(
+    rows: Sequence[TraceOverlayRow],
+) -> tuple[
+    dict[TraceOverlayRow, OwnMaxTrace],
+    dict[TraceOverlayRow, TraceWindowEvidenceFacts],
+    dict[str, float | None],
+    dict[str, float | None],
+]:
+    normalized_by_row: dict[TraceOverlayRow, OwnMaxTrace] = {}
+    window_facts_by_row: dict[TraceOverlayRow, TraceWindowEvidenceFacts] = {}
+    for row in rows:
+        normalized_trace, window_facts = gaussian15_trace_window_evidence(
+            row.rt,
+            row.intensity,
+            query_apex_rt_min=row.cell_apex_rt,
+            half_window_min=APEX_ALIGN_HALF_WINDOW_MIN,
+        )
+        normalized_by_row[row] = normalized_trace
+        window_facts_by_row[row] = window_facts
+    return (
+        normalized_by_row,
+        window_facts_by_row,
+        _apex_aligned_shape_similarity(
+            rows,
+            normalized_by_row=normalized_by_row,
+        ),
+        _absolute_own_max_shape_similarity(
+            rows,
+            normalized_by_row=normalized_by_row,
+        ),
+    )
+
+
+def _build_family_ms1_evidence_context(
+    rows: Sequence[TraceOverlayRow],
+) -> FamilyMs1EvidenceContext:
+    (
+        normalized_by_row,
+        window_facts_by_row,
+        shape_similarity,
+        absolute_shape_similarity,
+    ) = _build_family_ms1_evidence_maps(rows)
+    evidence_summary = _build_family_ms1_evidence_summary(
+        rows,
+        window_facts_by_row=window_facts_by_row,
+        shape_similarity=shape_similarity,
+        absolute_shape_similarity=absolute_shape_similarity,
+    )
+    return _bind_family_ms1_evidence_context(
+        rows,
+        normalized_by_row=normalized_by_row,
+        window_facts_by_row=window_facts_by_row,
+        shape_similarity=shape_similarity,
+        absolute_shape_similarity=absolute_shape_similarity,
+        evidence_summary=evidence_summary,
+    )
+
+
+def _bind_family_ms1_evidence_context(
+    rows: Sequence[TraceOverlayRow],
+    *,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
+    shape_similarity: Mapping[str, float | None],
+    absolute_shape_similarity: Mapping[str, float | None],
+    evidence_summary: Mapping[str, FamilyMs1EvidenceScalar],
+) -> FamilyMs1EvidenceContext:
+    bound_rows = tuple(rows)
+    bound_normalized = MappingProxyType(dict(normalized_by_row))
+    bound_window_facts = MappingProxyType(dict(window_facts_by_row))
+    bound_shape = MappingProxyType(dict(shape_similarity))
+    bound_absolute_shape = MappingProxyType(dict(absolute_shape_similarity))
+    bound_summary = MappingProxyType(dict(evidence_summary))
+    expected_rows = set(bound_rows)
+    if (
+        set(bound_normalized) != expected_rows
+        or set(bound_window_facts) != expected_rows
+        or any(
+            not isinstance(bound_normalized[row], OwnMaxTrace)
+            or not isinstance(bound_window_facts[row], TraceWindowEvidenceFacts)
+            for row in bound_rows
+        )
+    ):
+        raise ValueError("complete Gaussian15 trace context is required")
+    return FamilyMs1EvidenceContext(
+        rows=bound_rows,
+        normalized_by_row=bound_normalized,
+        window_facts_by_row=bound_window_facts,
+        shape_similarity=bound_shape,
+        absolute_shape_similarity=bound_absolute_shape,
+        evidence_summary=bound_summary,
+        _binding_seal=_family_ms1_context_binding_seal(
+            bound_rows,
+            bound_normalized,
+            bound_window_facts,
+            bound_shape,
+            bound_absolute_shape,
+            bound_summary,
+        ),
+        _mint_token=_FAMILY_MS1_EVIDENCE_CONTEXT_MINT_TOKEN,
+    )
+
+
+def _family_ms1_context_binding_seal(
+    rows: tuple[TraceOverlayRow, ...],
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
+    shape_similarity: Mapping[str, float | None],
+    absolute_shape_similarity: Mapping[str, float | None],
+    evidence_summary: Mapping[str, FamilyMs1EvidenceScalar],
+) -> tuple[int, ...]:
+    return (
+        id(rows),
+        id(normalized_by_row),
+        id(window_facts_by_row),
+        id(shape_similarity),
+        id(absolute_shape_similarity),
+        id(evidence_summary),
+    )
+
+
 def _apex_aligned_shape_similarity(
     rows: Sequence[TraceOverlayRow],
+    *,
+    normalized_by_row: dict[TraceOverlayRow, OwnMaxTrace] | None = None,
 ) -> dict[str, float | None]:
     grid = np.linspace(
         -APEX_ALIGN_HALF_WINDOW_MIN,
@@ -256,7 +465,12 @@ def _apex_aligned_shape_similarity(
     )
     traces: dict[str, np.ndarray] = {}
     for row in rows:
-        rt, normalized = _apex_aligned_normalized_trace(row)
+        rt, normalized = _apex_aligned_normalized_trace(
+            row,
+            normalized_trace=(
+                normalized_by_row.get(row) if normalized_by_row is not None else None
+            ),
+        )
         if rt.size < 2:
             continue
         traces[row.sample_stem] = np.interp(
@@ -288,10 +502,17 @@ def _apex_aligned_shape_similarity(
 
 def _absolute_own_max_shape_similarity(
     rows: Sequence[TraceOverlayRow],
+    *,
+    normalized_by_row: dict[TraceOverlayRow, OwnMaxTrace] | None = None,
 ) -> dict[str, float | None]:
     traces: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for row in rows:
-        rt, normalized = _absolute_own_max_normalized_trace(row)
+        rt, normalized = _absolute_own_max_normalized_trace(
+            row,
+            normalized_trace=(
+                normalized_by_row.get(row) if normalized_by_row is not None else None
+            ),
+        )
         if rt.size < 2:
             continue
         traces[row.sample_stem] = (rt, normalized)
@@ -320,43 +541,40 @@ def _absolute_own_max_shape_similarity(
 def _absolute_own_max_normalized_trace(
     row: TraceOverlayRow,
     *,
-    smooth_points: int = 0,
+    smooth_points: int = DEFAULT_OWN_MAX_SMOOTH_POINTS,
+    normalized_trace: OwnMaxTrace | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    rt = np.asarray(row.rt, dtype=float)
-    intensity = np.asarray(row.intensity, dtype=float)
-    mask = np.isfinite(rt) & np.isfinite(intensity)
-    if not np.any(mask):
+    trace = normalized_trace or _own_max_trace(row, smooth_points=smooth_points)
+    if not trace.is_usable:
         return np.array([], dtype=float), np.array([], dtype=float)
-    rt = rt[mask]
-    intensity = _gaussian_smooth_values(intensity[mask], points=smooth_points)
-    order = np.argsort(rt)
-    rt = rt[order]
-    intensity = intensity[order]
-    max_intensity = float(np.max(intensity)) if intensity.size else 0.0
-    if max_intensity <= 0:
-        return np.array([], dtype=float), np.array([], dtype=float)
-    return rt, intensity / max_intensity
+    return np.asarray(trace.rt, dtype=float), np.asarray(trace.intensity, dtype=float)
 
 
 def _apex_aligned_normalized_trace(
     row: TraceOverlayRow,
     *,
-    smooth_points: int = 0,
+    smooth_points: int = DEFAULT_OWN_MAX_SMOOTH_POINTS,
+    normalized_trace: OwnMaxTrace | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    apex_rt = row.cell_apex_rt if row.cell_apex_rt is not None else row.trace_apex_rt
+    trace = normalized_trace or _own_max_trace(row, smooth_points=smooth_points)
+    if not trace.is_usable:
+        return np.array([], dtype=float), np.array([], dtype=float)
+    trace_rt = np.asarray(trace.rt, dtype=float)
+    trace_intensity = np.asarray(trace.intensity, dtype=float)
+    trace_apex_rt = float(trace_rt[int(np.argmax(trace_intensity))])
+    apex_rt = row.cell_apex_rt if row.cell_apex_rt is not None else trace_apex_rt
     if apex_rt is None or not math.isfinite(apex_rt):
         return np.array([], dtype=float), np.array([], dtype=float)
-    rt = np.asarray(row.rt, dtype=float) - apex_rt
-    intensity = np.asarray(row.intensity, dtype=float)
+    rt = trace_rt - apex_rt
     mask = (
         np.isfinite(rt)
-        & np.isfinite(intensity)
+        & np.isfinite(trace_intensity)
         & (rt >= -APEX_ALIGN_HALF_WINDOW_MIN)
         & (rt <= APEX_ALIGN_HALF_WINDOW_MIN)
     )
     if not np.any(mask):
         return np.array([], dtype=float), np.array([], dtype=float)
-    local_intensity = _gaussian_smooth_values(intensity[mask], points=smooth_points)
+    local_intensity = trace_intensity[mask]
     local_max = float(np.max(local_intensity)) if local_intensity.size else 0.0
     if local_max <= 0:
         return np.array([], dtype=float), np.array([], dtype=float)
@@ -365,32 +583,63 @@ def _apex_aligned_normalized_trace(
 
 def _absolute_trace_apex_cluster(
     rows: Sequence[TraceOverlayRow],
+    *,
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts]
+    | None = None,
 ) -> tuple[list[TraceOverlayRow], list[TraceOverlayRow], float | None, float | None]:
     assessable = [
         row
         for row in rows
-        if row.trace_apex_rt is not None and math.isfinite(row.trace_apex_rt)
+        if (
+            window_facts_by_row[row].trace_apex_rt_min
+            if window_facts_by_row is not None
+            else _trace_window_facts(row).trace_apex_rt_min
+        )
+        is not None
     ]
-    median_rt = _median_value(row.trace_apex_rt for row in assessable)
+    trace_apex_by_row = {
+        row: (
+            window_facts_by_row[row].trace_apex_rt_min
+            if window_facts_by_row is not None
+            else _trace_window_facts(row).trace_apex_rt_min
+        )
+        for row in assessable
+    }
+    median_rt = _median_value(trace_apex_by_row.values())
     if median_rt is None:
         return assessable, [], None, None
     clustered = [
         row
         for row in assessable
-        if row.trace_apex_rt is not None
-        and abs(row.trace_apex_rt - median_rt) <= GLOBAL_APEX_CONFLICT_DELTA_MIN
+        if trace_apex_by_row[row] is not None
+        and abs((trace_apex_by_row[row] or 0.0) - median_rt)
+        <= GLOBAL_APEX_CONFLICT_DELTA_MIN
     ]
     delta_median = _median_value(
-        abs(row.trace_apex_rt - median_rt)
+        abs((trace_apex_by_row[row] or 0.0) - median_rt)
         for row in assessable
-        if row.trace_apex_rt is not None
+        if trace_apex_by_row[row] is not None
     )
     return assessable, clustered, median_rt, delta_median
 
 
+def _own_max_trace(
+    row: TraceOverlayRow,
+    *,
+    smooth_points: int = DEFAULT_OWN_MAX_SMOOTH_POINTS,
+) -> OwnMaxTrace:
+    return own_max_normalized_trace(
+        row.rt,
+        row.intensity,
+        smooth_points=smooth_points,
+    )
+
+
 def _gaussian_smooth_values(values: np.ndarray, *, points: int) -> np.ndarray:
+    """Compatibility adapter for diagnostic rendering; evidence uses OwnMaxTrace."""
+
     return np.asarray(
-        _shared_gaussian_smooth_values(
+        gaussian_smooth_values(
             tuple(float(value) for value in values),
             points=points,
         ),
@@ -414,56 +663,49 @@ def _pearson_similarity(
     return float(np.corrcoef(x, y)[0, 1])
 
 
-def _global_trace_apex_delta(row: TraceOverlayRow) -> float | None:
-    if row.cell_apex_rt is None or row.trace_apex_rt is None:
-        return None
-    if not math.isfinite(row.cell_apex_rt) or not math.isfinite(row.trace_apex_rt):
-        return None
-    return row.trace_apex_rt - row.cell_apex_rt
-
-
-def _local_window_peak(row: TraceOverlayRow) -> tuple[float | None, float | None]:
-    apex_rt = row.cell_apex_rt if row.cell_apex_rt is not None else row.trace_apex_rt
-    if apex_rt is None or not math.isfinite(apex_rt):
-        return None, None
-    rt = np.asarray(row.rt, dtype=float) - apex_rt
-    intensity = np.asarray(row.intensity, dtype=float)
-    mask = (
-        np.isfinite(rt)
-        & np.isfinite(intensity)
-        & (rt >= -APEX_ALIGN_HALF_WINDOW_MIN)
-        & (rt <= APEX_ALIGN_HALF_WINDOW_MIN)
+def _trace_window_facts(
+    row: TraceOverlayRow,
+) -> TraceWindowEvidenceFacts:
+    _trace, facts = gaussian15_trace_window_evidence(
+        row.rt,
+        row.intensity,
+        query_apex_rt_min=row.cell_apex_rt,
+        half_window_min=APEX_ALIGN_HALF_WINDOW_MIN,
     )
-    if not np.any(mask):
-        return None, None
-    local_rt = rt[mask]
-    local_intensity = intensity[mask]
-    if local_intensity.size == 0:
-        return None, None
-    local_max = float(np.max(local_intensity))
-    if local_max <= 0:
-        return None, None
-    index = int(np.argmax(local_intensity))
-    return float(local_rt[index]), local_max
+    return facts
 
 
-def _local_to_global_max_ratio(row: TraceOverlayRow) -> float | None:
-    if row.trace_max_intensity <= 0:
-        return None
-    _delta, local_max = _local_window_peak(row)
-    if local_max is None or local_max <= 0:
-        return None
-    return local_max / row.trace_max_intensity
+def _global_trace_apex_delta(
+    row: TraceOverlayRow,
+    *,
+    window_facts: TraceWindowEvidenceFacts | None = None,
+) -> float | None:
+    facts = window_facts or _trace_window_facts(row)
+    return facts.global_trace_apex_delta_min
+
+
+def _local_window_peak(
+    row: TraceOverlayRow,
+    *,
+    window_facts: TraceWindowEvidenceFacts | None = None,
+) -> tuple[float | None, float | None]:
+    facts = window_facts or _trace_window_facts(row)
+    return facts.local_apex_delta_min, facts.local_max_intensity
+
+
+def _local_to_global_max_ratio(
+    row: TraceOverlayRow,
+    *,
+    window_facts: TraceWindowEvidenceFacts | None = None,
+) -> float | None:
+    facts = window_facts or _trace_window_facts(row)
+    return facts.local_to_global_max_ratio
 
 
 def _selected_apex_in_trace_window(row: TraceOverlayRow) -> bool:
     if row.cell_apex_rt is None or not math.isfinite(row.cell_apex_rt):
         return False
-    rt = _finite_values(row.rt)
-    if not rt:
-        return False
-    tolerance = 1e-9
-    return min(rt) - tolerance <= row.cell_apex_rt <= max(rt) + tolerance
+    return _trace_window_facts(row).query_apex_in_trace_window
 
 
 def _abs_or_none(value: float | None) -> float | None:

@@ -39,9 +39,9 @@ REQUIRED_QUEUE_COLUMNS = (
 SUPPORT_FAMILY_VERDICT = "ms1_shape_supports_family_backfill"
 TOP30_EXPANSION_ELIGIBLE = "eligible"
 TOP30_EXPANSION_BLOCKED = "blocked"
-OVERLAY_BATCH_SOURCE = "family_ms1_overlay_batch_v1"
+OVERLAY_BATCH_SOURCE = "family_ms1_overlay_batch_v2"
 OVERLAY_SUPERWINDOW_SPAN_FACTOR = 2
-OVERLAY_EVIDENCE_CACHE_SCHEMA = "family_ms1_overlay_evidence_cache_v5"
+OVERLAY_EVIDENCE_CACHE_SCHEMA = "family_ms1_overlay_evidence_cache_v6"
 RAW_IDENTITY_METHOD = "path_stat_v1"
 OverlayTraceItem = tuple[int, overlay_plot.FamilyCell, str, Any]
 WindowedOverlayTraceItem = tuple[int, OverlayTraceItem, tuple[int, int]]
@@ -999,6 +999,8 @@ def _render_family(
         source_provenance=source_provenance,
         raw_identity_by_sample=raw_identity_by_sample,
     )
+    context = overlay_plot._build_family_ms1_evidence_context(trace_rows)
+    evidence = dict(context.evidence_summary)
     outputs: Mapping[str, Path | None] | overlay_plot.FamilyMs1OverlayOutputs
     if evidence_only:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1012,7 +1014,11 @@ def _render_family(
         trace_data_json = outputs["trace_data_json"]
         if summary_tsv is None or trace_data_json is None:
             raise ValueError("evidence-only row requires summary TSV and trace JSON")
-        overlay_plot._write_summary(summary_tsv, trace_rows)
+        overlay_plot._write_summary(
+            summary_tsv,
+            trace_rows,
+            context=context,
+        )
         overlay_plot._write_trace_data(
             trace_data_json,
             rows=trace_rows,
@@ -1023,9 +1029,10 @@ def _render_family(
             rt_max=request.rt_max,
             family_center_rt=request.family_center_rt,
             provenance=provenance,
+            context=context,
         )
     else:
-        outputs = overlay_plot.write_family_ms1_overlay_outputs(
+        outputs = overlay_plot._render_family_ms1_overlay_outputs(
             rows=trace_rows,
             output_dir=output_dir,
             output_prefix=request.output_prefix,
@@ -1036,10 +1043,10 @@ def _render_family(
             rt_max=request.rt_max,
             family_center_rt=request.family_center_rt,
             provenance=provenance,
+            context=context,
             write_pdf=write_pdf,
             dpi=dpi,
         )
-    evidence = overlay_plot.build_family_ms1_evidence_summary(trace_rows)
     return _success_row_from_evidence(
         request,
         outputs=outputs,
