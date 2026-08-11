@@ -137,17 +137,45 @@ PARITY_OR_EXPECTED_DIFF = {
     "renderer_no_semantic_diff",
     "retire_after_no_live_callers",
 }
-IMPLEMENTATION_CHILDREN = {"#240", "#241", "#243", "#247", "#250", "#251"}
+IMPLEMENTATION_CHILDREN = {
+    "#240",
+    "#241",
+    "#243",
+    "#247",
+    "#250",
+    "#251",
+    "#252",
+}
+FINAL_SUCCESSOR_OWNERS = {
+    "execution_runtime_owner",
+    "tools.diagnostics.dna_dr_product_ready_stage_replay",
+    "tools.diagnostics.family_ms1_alignment_experiment",
+    "tools.diagnostics.family_ms1_overlay_rendering",
+    "tools.diagnostics.product_ready_preset_publication_check",
+    "tools.diagnostics.standard_peak_manual_oracle",
+    "tools.diagnostics.standard_peak_policy_observed_oracle",
+    "xic_extractor.alignment.cross_sample_peak_groups",
+    "xic_extractor.alignment.edge_scoring",
+    "xic_extractor.alignment.owner_backfill",
+    "xic_extractor.alignment.owner_backfill_request_plan",
+    "xic_extractor.alignment.pipeline",
+    "xic_extractor.alignment.shared_peak_identity_explanation.product_activation",
+    "xic_extractor.diagnostics.standard_peak_backfill_productization",
+    "xic_extractor.peak_detection",
+    "xic_extractor.presets.standard_peak_compatibility",
+}
 LIVE_RUNTIME_DISPOSITIONS = {
     "live_shared_fact",
     "live_stage_policy",
     "live_authority_adapter",
     "live_compatibility",
 }
-ROUTE_CUTOVER_STATUS = "BLOCKED_PENDING_250_251"
+ROUTE_CUTOVER_STATUS = "BLOCKED_PENDING_250_252_251"
+EVIDENCE_LABEL = "diagnostic_only"
+WRITE_AUTHORITY = "none"
 EXPECTED_RULE_IDS = {f"SP-{number:03d}" for number in range(1, 56)}
 EXPECTED_FAILURE_IDS = {
-    *(f"HF-{number:03d}" for number in range(1, 18)),
+    *(f"HF-{number:03d}" for number in range(1, 19)),
     "FC-A",
     "FC-B",
     "FC-C",
@@ -169,6 +197,7 @@ REQUIRED_HISTORICAL_FAILURES = {
     "HF-015",  # missing successor owner and deletion gate
     "HF-016",  # raw compatibility versus Gaussian quantitation
     "HF-017",  # bound recipe reload/rebind regression
+    "HF-018",  # compatibility child assigned policy no current owner implements
     "FC-A",
     "FC-B",
     "FC-C",
@@ -189,6 +218,20 @@ EXPECTED_SHARED_IDENTITIES = {
         "sample_stem|feature_family_id|local_window|global_window|competing_peak_set"
     ),
 }
+EXPECTED_PROMOTED_FACT_IDS = frozenset(EXPECTED_SHARED_IDENTITIES)
+POLICY_ADOPTION_IDS = {
+    "SP-003",
+    "SP-004",
+    "SP-006",
+    "SP-015",
+    "SP-022",
+    "SP-023",
+    "SP-032",
+    "SP-033",
+    "SP-034",
+}
+COMPATIBILITY_COMPOSITION_IDS = {"SP-007", "SP-030"}
+POLICY_ORACLE_IDS = {"SP-019", "SP-021", "SP-042"}
 EXPECTED_DISTINCT_STATES = {
     "SP-018": "technical_unavailable",
     "SP-006": "hold_review",
@@ -202,6 +245,12 @@ def test_packet_is_closed_complete_and_non_authorizing() -> None:
 
     assert terminal == "PROMOTE_TO_T1"
     assert _read_route_cutover(PACKET_DIR / "README.md") == ROUTE_CUTOVER_STATUS
+    assert _read_status_value(PACKET_DIR / "README.md", "Evidence label") == (
+        EVIDENCE_LABEL
+    )
+    assert _read_status_value(PACKET_DIR / "README.md", "Write authority") == (
+        WRITE_AUTHORITY
+    )
     assert {row["rule_id"] for row in rules} == EXPECTED_RULE_IDS
     assert {row["failure_class_id"] for row in failures} == EXPECTED_FAILURE_IDS
     assert {row["scope_id"] for row in call_costs} == EXPECTED_CALL_COST_IDS
@@ -280,6 +329,32 @@ def test_duplicate_crossed_partial_and_schema_mutations_fail_closed(
     )
     with pytest.raises(ValueError, match="diagnostic owner remains live"):
         _validate_packet(diagnostic_live_owner)
+
+    dual_owner = _copy_packet(tmp_path / "dual-owner")
+    rows = _read_tsv(dual_owner / "rule_disposition_v1.tsv", RULE_COLUMNS)
+    next(row for row in rows if row["rule_id"] == "SP-003")["final_successor_owner"] = (
+        "xic_extractor.alignment.owner_backfill;"
+        "xic_extractor.presets.standard_peak_compatibility"
+    )
+    _write_tsv(dual_owner / "rule_disposition_v1.tsv", rows, RULE_COLUMNS)
+    with pytest.raises(ValueError, match="unknown final successor owner"):
+        _validate_packet(dual_owner)
+
+    widened_promotion = _copy_packet(tmp_path / "widened-promotion")
+    rows = _read_tsv(
+        widened_promotion / "rule_disposition_v1.tsv",
+        RULE_COLUMNS,
+    )
+    next(row for row in rows if row["rule_id"] == "SP-015")["proposed_disposition"] = (
+        "shared_peak_fact"
+    )
+    _write_tsv(
+        widened_promotion / "rule_disposition_v1.tsv",
+        rows,
+        RULE_COLUMNS,
+    )
+    with pytest.raises(ValueError, match="promotion scope widened"):
+        _validate_packet(widened_promotion)
 
 
 def test_stale_evidence_unresolved_and_state_collapse_fail_closed(
@@ -376,12 +451,30 @@ def _read_route_cutover(readme: Path) -> str:
     return matches[0]
 
 
+def _read_status_value(readme: Path, field: str) -> str:
+    matches = re.findall(
+        rf"^- {re.escape(field)}: `([^`]+)`\.$",
+        readme.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    if len(matches) != 1:
+        raise ValueError(f"expected exactly one {field}: {matches}")
+    return matches[0]
+
+
 def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
     rule_ids = [row["rule_id"] for row in rows]
     if len(rule_ids) != len(set(rule_ids)):
         raise ValueError("duplicate rule_id")
     if set(rule_ids) != EXPECTED_RULE_IDS:
         raise ValueError("partial rule population")
+    promoted_ids = {
+        row["rule_id"]
+        for row in rows
+        if row["proposed_disposition"] == "shared_peak_fact"
+    }
+    if not promoted_ids <= EXPECTED_PROMOTED_FACT_IDS:
+        raise ValueError("promotion scope widened")
 
     for row in rows:
         if row["proposed_disposition"] not in DISPOSITIONS:
@@ -401,6 +494,8 @@ def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
             "final_successor_owner"
         ].startswith("tools.diagnostics"):
             raise ValueError("diagnostic owner remains live")
+        if row["final_successor_owner"] not in FINAL_SUCCESSOR_OWNERS:
+            raise ValueError("unknown final successor owner")
         if row["proposed_disposition"] == "shared_peak_fact":
             if row["proposed_owner"] != "xic_extractor/peak_detection":
                 raise ValueError("shared peak fact has wrong owner")
@@ -419,6 +514,43 @@ def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
             if row["final_runtime_disposition"] != "live_shared_fact":
                 raise ValueError("shared peak fact has wrong final disposition")
 
+    by_id = {row["rule_id"]: row for row in rows}
+    for rule_id in POLICY_ADOPTION_IDS:
+        row = by_id[rule_id]
+        if (
+            row["implementation_child"] != "#252"
+            or row["final_successor_owner"] != "xic_extractor.alignment.owner_backfill"
+            or row["final_runtime_disposition"] != "live_stage_policy"
+            or row["parity_or_expected_diff"] != "exact_parity"
+        ):
+            raise ValueError("Backfill policy bypasses #252 adoption")
+
+    for rule_id in COMPATIBILITY_COMPOSITION_IDS:
+        row = by_id[rule_id]
+        if (
+            row["implementation_child"] != "#251"
+            or row["final_successor_owner"]
+            != "xic_extractor.presets.standard_peak_compatibility"
+            or row["final_runtime_disposition"] != "live_compatibility"
+        ):
+            raise ValueError("compatibility composition has wrong owner")
+
+    for rule_id in POLICY_ORACLE_IDS:
+        row = by_id[rule_id]
+        if (
+            row["implementation_child"] != "#252"
+            or row["final_runtime_disposition"] != "offline_oracle"
+            or row["parity_or_expected_diff"] != "offline_oracle_only"
+        ):
+            raise ValueError("legacy policy escaped the #252 oracle boundary")
+
+    if any(
+        row["implementation_child"] == "#251"
+        and row["final_successor_owner"] == "xic_extractor.alignment.owner_backfill"
+        for row in rows
+    ):
+        raise ValueError("compatibility child invents absent Backfill policy")
+
     for rule_id in ("SP-035", "SP-045"):
         row = next(row for row in rows if row["rule_id"] == rule_id)
         if row["implementation_child"] != "#250":
@@ -426,7 +558,7 @@ def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
         if row["parity_or_expected_diff"] != "approved_expected_diff_only":
             raise ValueError("quantitation projection lacks expected-diff gate")
 
-    legacy_shift = next(row for row in rows if row["rule_id"] == "SP-019")
+    legacy_shift = by_id["SP-019"]
     if legacy_shift["final_runtime_disposition"] != "offline_oracle":
         raise ValueError("legacy best-shift policy remains live")
 
@@ -448,6 +580,8 @@ def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
         row["proposed_disposition"] == "unresolved" for row in rows
     ):
         raise ValueError("unresolved blocks promotion")
+    if promoted_ids != EXPECTED_PROMOTED_FACT_IDS:
+        raise ValueError("promotion scope narrowed")
 
 
 def _validate_failure_rows(rows: list[dict[str, str]]) -> None:

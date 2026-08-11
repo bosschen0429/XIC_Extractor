@@ -1,11 +1,19 @@
 # Standard Peak shared-evidence T0 characterization v1
 
+This packet can support only the no-write #240 shared-fact owner deepening after
+PR #249 merges green; it cannot cut over the Standard Peak route or write a
+Matrix value. The retained evidence closes SP-011–SP-014, while review found a
+load-bearing stage-policy owner gap now isolated in #252. Next, merge this
+corrected T0 packet and activate #240 from the then-current `master`; #250,
+#252, and #251 remain separate downstream gates.
+
 ## Status
 
 - Issue: GitHub #239, child of #238; architecture parents #113 and #159.
 - Frozen source revision: `db3fa5e6c1d2756afe1c600b57a81ef17aef2443`.
 - Characterization branch: `codex/issue-239-standard-peak-characterization`.
-- Evidence label: `diagnostic_only / no-write`.
+- Evidence label: `diagnostic_only`.
+- Write authority: `none`.
 - Scope: current Standard Peak production/replay path only. Pt, ModeTrack,
   broad Backfill activation, report UX, public preset redesign, and Targeted
   orchestration are excluded by #239.
@@ -20,14 +28,14 @@
 
 ## Result in one sentence
 
-The reusable physical facts already fit the existing
-`xic_extractor/peak_detection` owner, while family policy, review routing,
-Backfill authority, artifact finalization, and Matrix publication remain with
-their current owners; no duplicate semantic owner is needed.
+The reusable physical facts fit the existing `xic_extractor/peak_detection`
+owner, but nine load-bearing Standard Peak stage-policy rows do not yet have an
+implemented package owner; #252 must either deepen the existing Backfill policy
+owner under exact parity or keep the route blocked.
 
 Terminal disposition: PROMOTE_TO_T1
 
-Route cutover status: BLOCKED_PENDING_250_251
+Route cutover status: BLOCKED_PENDING_250_252_251
 
 This disposition authorizes only the already-frozen no-RAW T1 characterization
 and owner-deepening scope in #240. It does not activate a downstream issue,
@@ -40,20 +48,23 @@ single implementation children and deletion gates in `rule_disposition_v1.tsv`.
 
 ## Boundary-closure refreeze
 
-The post-T0 boundary review found that the original serial issue stack encoded
-optional sequencing as native causality, left the final successor of many
-Standard Peak rules implicit, and combined an exact-parity Owner Backfill move
-with an unresolved raw-versus-Gaussian Matrix-value decision. The programme was
-refrozen before production implementation:
+The post-T0 boundary and code review found that the original serial issue stack
+encoded optional sequencing as native causality, left the final successor of
+many Standard Peak rules implicit, combined an exact-parity Owner Backfill move
+with an unresolved raw-versus-Gaussian Matrix-value decision, and then falsely
+assigned twelve diagnostic policy/orchestration rows to an Owner Backfill
+module that did not implement them. The programme was refrozen before
+production implementation:
 
 ```text
 #239 -> #240 shared no-write fact seam
-          -> #241 Owner Backfill migration -> #250 quantitation projection
+          -> #241 Owner Backfill fact migration -> #250 T3E-Q quantitation
           -> #242 Discovery adapter
           -> #243 Alignment relation adapter
           -> #244 optional Targeted duplicate census
 
-#241 + #243 + #250 -> #251 live policy/authority compatibility closure
+#241 + #243 -> #252 T3E-P Backfill stage-policy adoption
+#250 + #252 -> #251 live authority/finalization compatibility closure
 #251 -> #245 CLI -> #246 GUI -> #247 retirement
 ```
 
@@ -61,11 +72,13 @@ refrozen before production implementation:
 without a branch when its owner-derived census finds no duplicate Targeted
 physical-fact call.
 
-The rule ledger now closes the missing owner-migration middle. Every SP rule has
-exactly one final successor owner, one implementation child, one final runtime
-disposition, one downstream input, one parity/expected-diff rule, and one
-deletion gate. A live successor cannot remain in `tools/diagnostics`; retained
-diagnostic code is limited to offline oracle/falsification or rendering.
+The rule ledger now records one planned successor owner, implementation child,
+runtime disposition, downstream input, parity/expected-diff rule, and deletion
+gate for every SP rule. Planned does not mean implemented: SP-003/004/006/015/
+022/023/032/033/034 remain blocked on #252. SP-007 and SP-030 are #251
+compatibility composition; SP-019, SP-021, and SP-042 are #252 offline oracles.
+A live successor cannot remain in diagnostic code, and #251 cannot invent a
+policy that its delegated owner does not implement.
 
 ### Quantitation truth table
 
@@ -82,8 +95,9 @@ close either by retaining the current compatibility projection or by promoting
 the Gaussian value through an approved cell-level expected diff. Neither result
 allows a refactor to disguise a scientific value change.
 
-The exact parent refreeze and native dependency DAG are recorded at
-https://github.com/Chao-hu-Lab/XIC_Extractor/issues/238#issuecomment-5252117893.
+The original parent refreeze is recorded at
+https://github.com/Chao-hu-Lab/XIC_Extractor/issues/238#issuecomment-5252117893;
+the review correction and policy-adoption boundary are tracked by #252.
 
 ## Performance diagnosis baseline
 
@@ -244,17 +258,31 @@ These states have explicit rows and are mechanically checked as distinct.
 | E — declared fields | Packet TSV schemas are exact; missing or undeclared semantic fields fail. Existing runtime owners validate their own complete payloads rather than accepting partial caller projections. |
 | G — receipt sealing | Git revision and tracked SHA seal characterization. Runtime cache/authority/publication receipts remain owner-minted and invalidate on request, artifact, source, path-stat, schema, count, or hash mismatch. |
 
-No authoritative `findings.tsv` is tracked in the checkout. However, the
-reproducible reviewer-os last-30-PR collector run on 2026-08-11 produced 122
-findings, of which 35 were not classified by the current ledger. That result
-supersedes the earlier statement that no current collector evidence existed.
-It is a refreeze signal, not proof that all 35 instances apply to this
-programme. The four applicable programme-level gaps are now closed explicitly
-as HF-014–HF-017: non-causal issue dependencies, unallocated successor
-ownership, the quantitation-contract conflict, and bound-recipe routing
-regression. The remaining instances are missing classification evidence; they
-do not establish a defect in the no-write SP-011–SP-014 fact move, but they
-prevent this packet from claiming that the whole route history is closed.
+No authoritative raw `findings.tsv` is tracked in the checkout. The following
+retained receipt freezes the local reviewer-os census that corrected the
+earlier “no current collector evidence” statement:
+
+| Field | Frozen value |
+| --- | --- |
+| Run date/repository | 2026-08-11; `Chao-hu-Lab/XIC_Extractor` |
+| Exact 30-PR universe | 174,176,178,181,182,183,187,188,189,190,192,194,204,206,207,209,211,214,215,216,225,227,228,229,230,231,233,235,237,249 |
+| PRs with retained finding rows | 174,176,182,183,188,189,190,192,194,204,206,207,215,225,228,229,230,231,233 |
+| Collector result | 122 non-reply review findings; raw TSV SHA-256 `48b613fe0dd0cdc042a44e83467805f5aa6636dc28b54fe2b0fcebe3c7632ed3` |
+| reviewer-os revision | `f93fa90450b99263c0616b7a5655f3e363a20c47` |
+| `fetch_findings.py` SHA-256 | `700a9abde28ee0ab2b04c26b3509c28926b1c2080607361caf2587e1a69a7f26` |
+| `class_census.py` SHA-256 | `bcb9bcb95022507e52f962efbcdf1071c08adcc7226555a440fa0e20564892e1` |
+| Inputs/options | collector `--repo Chao-hu-Lab/XIC_Extractor --pr <exact-universe>`, replies excluded; census against `docs/finding_class_ledger.tsv` |
+| Census result | 122 findings, eight open classes, 35 ledger-unclassified instances |
+| Retained summary locator | this receipt plus `historical_failure_matrix_v1.tsv` HF-013 and HF-018 |
+
+The raw collector rows are intentionally not presented as a closed
+clean-checkout oracle; only their exact universe, tool identity, digest, and
+bounded summary are retained. The five applicable programme-level gaps are
+HF-014–HF-018: non-causal dependencies, missing successor allocation,
+quantitation conflict, bound-recipe regression, and false policy-owner
+allocation. The other 35 instances remain missing classification evidence.
+They do not establish a defect in the no-write SP-011–SP-014 fact move, but
+they prevent any claim that whole-route review history is closed.
 
 ## Assumptions and limitations
 
@@ -269,10 +297,10 @@ prevent this packet from claiming that the whole route history is closed.
 
 ## Smallest next evidence loop
 
-After this corrected packet is merged, update #238 and rerun
-`plan-spec-review`. If that review keeps the refrozen answers intact, #240 may
-perform T1 as an exact no-RAW owner deepening: make the four fact families
-callable from `peak_detection`, use the existing
+The corrected parent `plan-spec-review` authorizes only #240 after PR #249
+merges green. Activate #240 from the then-current `master`, rerun its required
+performance and architecture preflights, and perform an exact no-RAW owner
+deepening: make the four fact families callable from `peak_detection`, use the existing
 `alignment.matrix_handoff.integration_from_peak_trace` path as the first
 exact-parity consumer, preserve all stage policies, and prove byte/decision
 parity with focused tests. Do not begin T1 in this worktree.
@@ -280,4 +308,6 @@ parity with focused tests. Do not begin T1 in this worktree.
 The first measured production-cutover loop is #241: run the internal shadow
 consumer with owner-derived acquisition/trace/artifact counts and compare the
 complete route, not a microbenchmark. RAW remains gated separately and no 85RAW
-run is implied by this packet.
+run is implied by this packet. The later route cannot reach #251 until #250
+closes the quantitation projection and #252 closes the stage-policy adoption;
+a non-promoting #252 terminal returns the route to #238 instead of guessing.
