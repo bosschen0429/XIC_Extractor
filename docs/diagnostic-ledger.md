@@ -1046,3 +1046,54 @@ This confirmation closes the process-backend uncertainty for the bounded 2RAW
 lane and strengthens, but does not broaden, Terminal B. It does not establish a
 universal dataset gain, an RSS bound, or product/scientific authority. No
 additional 8RAW or 85RAW run was launched for this loop.
+
+### Corrective owner-bound RAW-open receipt confirmation
+
+The review-corrective receipt seam was validated in one fresh two-worker 2RAW
+process smoke at clean producing revision `633c4d80`. The final #234 delivery
+keeps that acquisition/runtime/Discovery code unchanged; it only removes the
+separable `TimingRecorder` retry into follow-up #236 and adds this durable
+receipt. The smoke used Python 3.12.13, Thermo RawFileReader 4.0.19.0, and DLL
+SHA-256
+`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`.
+
+Inputs were the same task-local hardlinks used by the earlier 2RAW lane:
+
+- `NormalBC2312_DNA.raw`: 199,440,593 bytes, SHA-256
+  `74bbf71d3ebc85d944b23cbd5b5487bdbc5d38a1b57f56bbf0ee43f20ff729bf`;
+- `TumorBC2312_DNA.raw`: 202,128,099 bytes, SHA-256
+  `cbf020359be2249e800825ad810a3ea38ea990599da08ba0f165ac60e13a7a1f`.
+
+The task-local wrapper selected the retained private candidate batch maximum
+`256`, default Discovery CID-NL/peak settings, full candidate/review CSV output,
+and exactly two process workers. No application XIC cache was enabled; OS
+filesystem cache remained uncontrolled. One repetition was run in the
+foreground. Wall elapsed was 22.628193 s, which is recorded only as smoke
+provenance and is not a new performance comparison.
+
+Both RAW-owning workers returned a typed `RawAcquisitionSessionReceipt` that
+`execution_runtime_owner.derive_runtime_raw_open_metrics` validated against the
+parent-minted capability:
+
+| Sample | `raw_open_count` | Availability | Reason |
+| --- | ---: | --- | --- |
+| NormalBC2312_DNA | 1 | measured | empty |
+| TumorBC2312_DNA | 1 | measured | empty |
+
+The five persisted Discovery CSV artifacts matched the accepted exact-safe
+oracle:
+
+- batch index:
+  `beb8e4e1d376a573386d93a751f5e70179d0dfb32d0cf490b1bda8cf7e1b7164`;
+- Normal candidates/review:
+  `68510b5fff4f0b87d20d18e70168498f970d0af68ef9222d6a4e814ea11ecafc` /
+  `b1bbdd591345ee8c80e8124091f631495deedaedbf4a82aff3d701448ff09bfd`;
+- Tumor candidates/review:
+  `58e016b5f5bab1b30f96e7e93b5c41d0a0bfe46f9380fc5fe423e5a1ec9743ce` /
+  `723278e68109898707fddadaf82c2a8f9ebc180e1facc096cc5743e386773184`.
+
+`run_ok` and the owner-receipt/parity gate both passed. This closes only the
+review-found RAW-open observability gap: it does not repeat or broaden the
+paired performance evidence, and the Terminal B disposition remains
+**`RETAIN_NATIVE_BATCHING`** with `diagnostic_only` evidence status. No new
+8RAW or 85RAW run was launched.

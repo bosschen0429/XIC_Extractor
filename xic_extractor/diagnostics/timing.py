@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from time import perf_counter, sleep
+from time import perf_counter
 
 JsonMetric = str | int | float | bool | None
 TimingObserver = Callable[[Mapping[str, object]], None]
@@ -327,20 +327,7 @@ class TimingRecorder:
             f"{self.live_output_path.name}.tmp"
         )
         temporary_path.write_text(serialized, encoding="utf-8")
-        _replace_live_output(temporary_path, self.live_output_path)
-
-
-def _replace_live_output(temporary_path: Path, output_path: Path) -> None:
-    """Retry transient Windows locks while preserving atomic live updates."""
-
-    for attempt in range(5):
-        try:
-            temporary_path.replace(output_path)
-            return
-        except PermissionError:
-            if attempt == 4:
-                raise
-            sleep(0.05 * (attempt + 1))
+        temporary_path.replace(self.live_output_path)
 
 
 def _clean_metrics(metrics: Mapping[str, object]) -> dict[str, JsonMetric]:
