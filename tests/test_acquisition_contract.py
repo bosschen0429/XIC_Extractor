@@ -1,3 +1,4 @@
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -5,8 +6,11 @@ import pytest
 
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
+    RawAcquisitionSessionCapability,
+    RawAcquisitionSessionReceipt,
     TraceCoordinateKind,
     acquire_trace_batch,
+    mint_raw_acquisition_session_capability,
     mint_trace_acquisition_capability,
 )
 from xic_extractor.execution_runtime_owner import (
@@ -36,6 +40,37 @@ class _NoRawBatchAdapter:
     def scan_window_for_request(self, request):
         self.scan_calls += 1
         return (100, 120)
+
+
+def test_raw_session_capability_is_unique_pickleable_and_owner_minted(
+    tmp_path: Path,
+) -> None:
+    source = _source(tmp_path)
+
+    first = mint_raw_acquisition_session_capability(source)
+    second = mint_raw_acquisition_session_capability(source)
+
+    assert first != second
+    assert first.acquisition_source == source
+    assert pickle.loads(pickle.dumps(first)) == first
+    with pytest.raises(AcquisitionContractError, match="minted by acquisition owner"):
+        RawAcquisitionSessionCapability(
+            capability_id=first.capability_id,
+            session_nonce=first.session_nonce,
+            acquisition_source=source,
+            _mint_token=object(),
+        )
+
+
+def test_raw_session_receipt_cannot_be_caller_minted(tmp_path: Path) -> None:
+    capability = mint_raw_acquisition_session_capability(_source(tmp_path))
+
+    with pytest.raises(AcquisitionContractError, match="minted by raw_reader"):
+        RawAcquisitionSessionReceipt(
+            receipt_id="forged",
+            capability=capability,
+            _mint_token=object(),
+        )
 
 
 def test_capability_aware_batch_trace_coordinates_are_executable_no_raw(

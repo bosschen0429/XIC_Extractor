@@ -15,6 +15,7 @@ import ast
 import hashlib
 import importlib
 import json
+import os
 import subprocess
 import sys
 import tomllib
@@ -29,6 +30,25 @@ import grimp
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY_ROOTS = ("xic_extractor", "gui", "scripts", "tools")
 STATIC_DEPENDENCY_SCOPE = "grimp_static_import_graph"
+_GIT_LOCAL_ENVIRONMENT_VARIABLES = frozenset(
+    {
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_CONFIG",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_PARAMETERS",
+        "GIT_DIR",
+        "GIT_GRAFT_FILE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_NO_REPLACE_OBJECTS",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_PREFIX",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_WORK_TREE",
+    }
+)
 
 ARCHITECTURE_OWNER = "docs/architecture-contract.md"
 PUBLIC_CONTRACT_OWNER = "docs/agent/architecture-public-contracts.md"
@@ -66,6 +86,12 @@ RUNTIME_AUTHORITY_MODULES = frozenset(
         "xic_extractor.execution_runtime_observability",
         "xic_extractor.execution_runtime_owner",
     }
+)
+RAW_OPEN_RECEIPT_MINTER_REFERENCE = (
+    "xic_extractor.acquisition_contract._mint_raw_acquisition_session_receipt"
+)
+RAW_OPEN_RECEIPT_MINTER_ALLOWED_PATHS = frozenset(
+    {"xic_extractor/raw_reader.py"}
 )
 RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
     "xic_extractor/execution_runtime.py": frozenset(
@@ -144,12 +170,14 @@ RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
             "RuntimeArtifactRegistrationReceipt",
             "RuntimeCancellationRequest",
             "RuntimeProcessTreePeakRssSample",
+            "RuntimeRawOpenMetrics",
             "RuntimeResourceSettlementReceipt",
             "RuntimeTelemetrySamples",
             "RuntimeWorkerBatchReceipt",
             "RuntimeWorkerPeakRssSample",
             "accept_runtime_finalization_receipt",
             "derive_runtime_acquisition_metrics",
+            "derive_runtime_raw_open_metrics",
             "execute_runtime_attempt",
             "mint_work_unit_settlement",
             "runtime_observation_event_count",
@@ -174,6 +202,7 @@ RUNTIME_CALLER_PROJECTION_TYPES = frozenset(
     {
         "CoordinatorTerminalRecord",
         "RuntimeObservabilityLedger",
+        "RuntimeRawOpenMetrics",
         "SupervisorFinalizationRecord",
     }
 )
@@ -415,6 +444,26 @@ def validate_runtime_boundary_authority(
                             ),
                         )
                     )
+            if isinstance(node, (ast.Name, ast.Attribute)):
+                raw_receipt_reference = _runtime_symbol_reference(
+                    node,
+                    aliases,
+                    parents=parents,
+                    scope_bindings=scope_bindings,
+                )
+                if (
+                    not is_test
+                    and path_key not in RAW_OPEN_RECEIPT_MINTER_ALLOWED_PATHS
+                    and raw_receipt_reference
+                    == RAW_OPEN_RECEIPT_MINTER_REFERENCE
+                ):
+                    problems.append(
+                        _runtime_boundary_problem(
+                            path_key,
+                            node.lineno,
+                            "RAW-open receipt minter is private to raw_reader",
+                        )
+                    )
             if (
                 not is_runtime_owner
                 and not is_state_model_test_owner
@@ -537,6 +586,7 @@ def repository_python_paths(repo_root: Path = ROOT) -> tuple[Path, ...]:
         check=True,
         capture_output=True,
         text=True,
+        env=_git_subprocess_environment(),
     )
     candidates = sorted(
         Path(line) for line in completed.stdout.splitlines() if line.strip()
@@ -590,6 +640,7 @@ def repository_tracked_paths(repo_root: Path = ROOT) -> frozenset[str]:
         check=True,
         capture_output=True,
         text=True,
+        env=_git_subprocess_environment(),
     )
     return frozenset(line for line in completed.stdout.splitlines() if line)
 
@@ -1261,12 +1312,14 @@ def _source_identity(
         check=True,
         capture_output=True,
         text=True,
+        env=_git_subprocess_environment(),
     )
     head = subprocess.run(
         ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
         check=True,
         capture_output=True,
         text=True,
+        env=_git_subprocess_environment(),
     ).stdout.strip()
     encoded = json.dumps(
         census.serializable(),
@@ -1289,8 +1342,23 @@ def _output_is_allowed(path: Path, repo_root: Path) -> bool:
     completed = subprocess.run(
         ["git", "-C", str(root), "check-ignore", "--quiet", "--", str(relative)],
         check=False,
+        env=_git_subprocess_environment(),
     )
     return completed.returncode == 0
+
+
+def _git_subprocess_environment() -> dict[str, str]:
+    """Drop caller-repository bindings before running Git against an exact root."""
+
+    environment = dict(os.environ)
+    for name in tuple(environment):
+        if (
+            name in _GIT_LOCAL_ENVIRONMENT_VARIABLES
+            or name.startswith("GIT_CONFIG_KEY_")
+            or name.startswith("GIT_CONFIG_VALUE_")
+        ):
+            environment.pop(name)
+    return environment
 
 
 def write_architecture_census_json(

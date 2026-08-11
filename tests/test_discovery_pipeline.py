@@ -12,6 +12,10 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from xic_extractor.acquisition_contract import (
+    _mint_raw_acquisition_session_receipt,
+    mint_raw_acquisition_session_capability,
+)
 from xic_extractor.alignment.csv_io import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
@@ -357,7 +361,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     parallel_handles = _handles()
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda acquisition_source: (
+        lambda acquisition_source, raw_session_capability: (
             lambda path, dll_dir: parallel_handles[path]
         ),
     )
@@ -619,6 +623,9 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
 
         def submit(self, worker, job):
             future = Future()
+            raw_open_receipt = _mint_raw_acquisition_session_receipt(
+                job.raw_session_capability
+            )
             future.set_result(
                 DiscoverySampleProcessError(
                     sample_index=job.sample_index,
@@ -626,6 +633,7 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
                     raw_name=job.raw_path.name,
                     message="RuntimeError: owner boom",
                     ms1_measurements=measurements,
+                    raw_open_receipt=raw_open_receipt,
                 )
             )
             return future
@@ -652,11 +660,9 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
     }
     assert rows["logical_xic_request_count"]["value"] == 0
     assert rows["logical_xic_request_count"]["availability"] == "measured"
-    assert rows["raw_open_count"]["value"] is None
-    assert rows["raw_open_count"]["availability"] == "unavailable"
-    assert rows["raw_open_count"]["reason"] == (
-        "process result carries no owner resource settlement receipt"
-    )
+    assert rows["raw_open_count"]["value"] == 1
+    assert rows["raw_open_count"]["availability"] == "measured"
+    assert rows["raw_open_count"]["reason"] == ""
 
 
 def test_parallel_batch_disabled_timing_skips_ipc_serialization(
@@ -748,6 +754,13 @@ def test_discovery_worker_disabled_mode_omits_diagnostic_payload(
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         ),
+        raw_session_capability=mint_raw_acquisition_session_capability(
+            build_acquisition_source_identity(
+                raw_path,
+                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            )
+        ),
         instrument_diagnostics=False,
     )
 
@@ -796,6 +809,13 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
             acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
             observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
         ),
+        raw_session_capability=mint_raw_acquisition_session_capability(
+            build_acquisition_source_identity(
+                raw_path,
+                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            )
+        ),
         instrument_diagnostics=True,
     )
 
@@ -809,7 +829,9 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
     assert result.ms1_measurements == measurements
 
 
-def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip() -> None:
+def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip(
+    tmp_path: Path,
+) -> None:
     measurements = _DiscoveryMs1Measurements(
         input_group_count=0,
         empty_group_count=0,
@@ -818,12 +840,21 @@ def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip() -> No
         batch_max_requests=256,
         acquisition_batches=(),
     )
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"spawn-receipt")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    capability = mint_raw_acquisition_session_capability(source)
     error = DiscoverySampleProcessError(
         sample_index=0,
         sample_stem="sample",
         raw_name="sample.raw",
         message="RuntimeError: owner boom",
         ms1_measurements=measurements,
+        raw_open_receipt=_mint_raw_acquisition_session_receipt(capability),
     )
 
     context = multiprocessing.get_context("spawn")
@@ -840,8 +871,20 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"failure-receipt")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    receipt = _mint_raw_acquisition_session_receipt(
+        mint_raw_acquisition_session_capability(source)
+    )
     raw = _FakeRawHandle(events=[])
+    raw.raw_open_receipt = receipt
     recorder = TimingRecorder("discovery")
+    observed_receipts = []
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline.collect_strict_nl_seeds",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("scan failed")),
@@ -849,20 +892,17 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
 
     with pytest.raises(RuntimeError, match="scan failed"):
         _discover_raw_file(
-            tmp_path / "sample.raw",
+            raw_path,
             settings=_settings(),
             peak_config=_peak_config(tmp_path),
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
+            raw_open_receipt_observer=observed_receipts.append,
         )
 
     rows = recorder.measurement_observations
-    assert any(
-        row["metric"] == "raw_open_count"
-        and row["value"] == 1
-        and row["availability"] == "measured"
-        for row in rows
-    )
+    assert observed_receipts == [receipt]
+    assert not any(row["metric"] == "raw_open_count" for row in rows)
     assert any(
         row["metric"] == "logical_xic_request_count"
         and row["availability"] == "unavailable"
@@ -1341,37 +1381,57 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
     raw_path.write_bytes(b"owner-bound-raw")
     peak_config = _peak_config(tmp_path)
     raw = _FakeRawHandle(events=[])
-    calls: list[tuple[Path, Path, object]] = []
+    calls: list[tuple[Path, Path, object, object]] = []
 
     def _open(
         path: Path,
         dll_dir: Path,
         *,
         expected_acquisition_source: object = None,
+        _raw_session_capability: object = None,
     ) -> _FakeRawHandle:
-        calls.append((path, dll_dir, expected_acquisition_source))
+        calls.append(
+            (
+                path,
+                dll_dir,
+                expected_acquisition_source,
+                _raw_session_capability,
+            )
+        )
+        raw.raw_open_receipt = _mint_raw_acquisition_session_receipt(
+            _raw_session_capability
+        )
         return raw
 
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open)
 
+    recorder = TimingRecorder("discovery")
     run_discovery_batch(
         (raw_path,),
         output_dir=tmp_path / "out",
         settings=_settings(),
         peak_config=peak_config,
+        timing_recorder=recorder,
     )
 
-    assert calls == [
-        (
-            raw_path,
-            peak_config.dll_dir,
-            build_acquisition_source_identity(
-                raw_path,
-                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-            ),
-        )
+    assert len(calls) == 1
+    path, dll_dir, source, capability = calls[0]
+    assert path == raw_path
+    assert dll_dir == peak_config.dll_dir
+    assert source == build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    assert capability.acquisition_source == source
+    raw_open_rows = [
+        row
+        for row in recorder.measurement_observations
+        if row["metric"] == "raw_open_count" and row["scope"] == "Sample"
     ]
+    assert len(raw_open_rows) == 1
+    assert raw_open_rows[0]["value"] == 1
+    assert raw_open_rows[0]["availability"] == "measured"
     assert raw.closed is True
 
 
@@ -1442,7 +1502,9 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
         for row in recorder.measurement_observations
         if row["scope"] == "Sample"
     }
-    assert rows["raw_open_count"]["value"] == 1
+    assert rows["raw_open_count"]["value"] is None
+    assert rows["raw_open_count"]["availability"] == "unavailable"
+    assert rows["raw_open_count"]["reason"]
     assert rows["discovery_ms1_input_group_count"]["value"] == 1
     assert rows["discovery_ms1_empty_group_count"]["value"] == 0
     assert rows["logical_xic_request_count"]["value"] == 1

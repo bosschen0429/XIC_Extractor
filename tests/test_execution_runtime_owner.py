@@ -9,6 +9,10 @@ import pytest
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
+from xic_extractor.acquisition_contract import (
+    _mint_raw_acquisition_session_receipt,
+    mint_raw_acquisition_session_capability,
+)
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
     AttemptTerminalOutcome,
@@ -34,12 +38,14 @@ from xic_extractor.execution_runtime_owner import (
     RuntimeAttemptAggregate,
     RuntimeCancellationRequest,
     RuntimeFinalizationReceipt,
+    RuntimeRawOpenMetrics,
     RuntimeResourceSettlementReceipt,
     RuntimeWorkerBatchReceipt,
     _apply_runtime_worker_batch,
     _derive_runtime_observability_ledger,
     _finalize_runtime_attempt,
     _prepare_runtime_attempt,
+    derive_runtime_raw_open_metrics,
     execute_runtime_attempt,
     mint_work_unit_settlement,
     start_runtime_attempt,
@@ -54,6 +60,44 @@ from xic_extractor.processing_identity import (
     build_processing_request_identity,
     issue_processing_attempt,
 )
+
+
+def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"raw-open-owner")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    capability = mint_raw_acquisition_session_capability(source)
+    receipt = _mint_raw_acquisition_session_receipt(capability)
+
+    measured = derive_runtime_raw_open_metrics(capability, (receipt,))
+    unavailable = derive_runtime_raw_open_metrics(capability, ())
+
+    assert measured.raw_open_count == 1
+    assert measured.unavailable_reason == ""
+    assert unavailable.raw_open_count is None
+    assert unavailable.unavailable_reason
+    with pytest.raises(RuntimeFinalizationContractError, match="duplicate"):
+        derive_runtime_raw_open_metrics(capability, (receipt, receipt))
+
+    foreign = mint_raw_acquisition_session_capability(source)
+    with pytest.raises(RuntimeFinalizationContractError, match="capability"):
+        derive_runtime_raw_open_metrics(foreign, (receipt,))
+
+    with pytest.raises(
+        RuntimeFinalizationContractError,
+        match="minted by the runtime owner",
+    ):
+        RuntimeRawOpenMetrics(
+            raw_open_count=999,
+            unavailable_reason="",
+            _mint_token=object(),
+        )
 
 
 def test_owner_start_accepts_exact_typed_cancellation_request(

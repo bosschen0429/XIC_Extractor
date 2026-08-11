@@ -218,6 +218,24 @@ The boundary is closed as follows:
   `derive_runtime_acquisition_metrics`. Its sealed `RuntimeAcquisitionMetrics`
   result is the sole narrow count projection; it does not construct a ledger,
   settle work, or bypass atomic attempt finalization.
+- Discovery may render one in-flight physical RAW-open diagnostic without
+  claiming a complete runtime lifecycle. Its parent mints one unique,
+  pickleable `RawAcquisitionSessionCapability` for the exact acquisition source;
+  `raw_reader.open_raw` alone privately mints the matching
+  `RawAcquisitionSessionReceipt`, and only after source verification and a
+  successful vendor-handle open. The process result transports that typed
+  receipt, `derive_runtime_raw_open_metrics` revalidates the exact capability
+  binding and derives `raw_open_count`, and `TimingRecorder` only renders the
+  owner projection. One matching receipt means measured count `1`; absence means
+  unavailable, never inferred zero; mismatched, cross-capability, untyped, or
+  duplicate receipts fail closed. A receipt remains truthful if later science
+  or output work fails because the physical open already occurred.
+- The narrow RAW-open receipt proves neither cleanup nor resource/work
+  settlement, artifact authority, terminal outcome, or finalization. It must not
+  enter a lifecycle ledger or act as a settlement-only alternative to
+  `execute_runtime_attempt`. `scripts/check_architecture_census.py` restricts its
+  private production minter to `xic_extractor.raw_reader`; tests may construct
+  typed fixtures only to exercise the boundary.
 - Invalid manifest content remains an owner state, not an exception-only side
   channel. It follows `attempt_queued` -> `manifest_preflight_failed` ->
   `terminal_proposal(failed)` through the same finalization receipt and recovery
