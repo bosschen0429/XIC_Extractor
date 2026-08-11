@@ -144,12 +144,17 @@ def test_live_output_replace_failure_preserves_last_good_artifact(
     live_path.write_text('{"last_good": true}', encoding="utf-8")
     original_replace = Path.replace
 
+    replace_attempts = 0
+
     def _fail_live_replace(path: Path, target: Path) -> Path:
+        nonlocal replace_attempts
         if path == live_path.with_name(f"{live_path.name}.tmp"):
+            replace_attempts += 1
             raise PermissionError("replace blocked")
         return original_replace(path, target)
 
     monkeypatch.setattr(Path, "replace", _fail_live_replace)
+    monkeypatch.setattr("xic_extractor.diagnostics.timing.sleep", lambda _: None)
     recorder = TimingRecorder("alignment", live_output_path=live_path)
 
     with pytest.raises(PermissionError, match="replace blocked"):
@@ -158,6 +163,39 @@ def test_live_output_replace_failure_preserves_last_good_artifact(
     assert json.loads(live_path.read_text(encoding="utf-8")) == {
         "last_good": True
     }
+    assert replace_attempts == 5
+
+
+def test_live_output_replace_retries_transient_windows_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live_path = tmp_path / "timing.live.json"
+    original_replace = Path.replace
+    replace_attempts = 0
+    delays: list[float] = []
+
+    def _transient_live_replace(path: Path, target: Path) -> Path:
+        nonlocal replace_attempts
+        if path == live_path.with_name(f"{live_path.name}.tmp"):
+            replace_attempts += 1
+            if replace_attempts < 3:
+                raise PermissionError("replace temporarily blocked")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", _transient_live_replace)
+    monkeypatch.setattr(
+        "xic_extractor.diagnostics.timing.sleep",
+        delays.append,
+    )
+    recorder = TimingRecorder("alignment", live_output_path=live_path)
+
+    recorder.record("alignment.run_config", elapsed_sec=0.0)
+
+    payload = json.loads(live_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "timing.live.v2"
+    assert replace_attempts == 3
+    assert delays == [0.05, 0.1]
 
 
 def test_timing_recorder_disabled_mode_is_a_complete_noop(tmp_path: Path) -> None:
