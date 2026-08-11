@@ -5,9 +5,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from tools.diagnostics import family_ms1_overlay_evidence as evidence
 from tools.diagnostics import family_ms1_overlay_plot as report
+from tools.diagnostics import family_ms1_overlay_writers as writers
 from tools.diagnostics.family_ms1_overlay_models import TraceOverlayRow
 from xic_extractor.alignment.edge_scoring import DriftPriorSource
+from xic_extractor.peak_detection.ms1_shape_identity import own_max_normalized_trace
 
 
 def test_path_style_cli_help_preserves_public_script_contract() -> None:
@@ -444,8 +449,7 @@ def test_apex_aligned_shape_similarity_uses_detected_anchor_reference() -> None:
     assert similarity["rescued-like-detected"] is not None
     assert similarity["rescued-like-detected"] > 0.5
     assert all(
-        (similarity[f"rescued-neighbor-{index}"] or 0.0) < 0.0
-        for index in range(3)
+        (similarity[f"rescued-neighbor-{index}"] or 0.0) < 0.0 for index in range(3)
     )
 
 
@@ -459,7 +463,7 @@ def test_hypothesis_overlay_layout_keeps_apex_alignment_on_evidence_surface() ->
     assert "shape" not in panel_ids
 
 
-def test_apex_aligned_trace_uses_local_peak_normalization() -> None:
+def test_apex_aligned_trace_uses_shared_gaussian15_normalization() -> None:
     row = report.trace_row_from_arrays(
         _family_cell("large-neighbor", apex_rt=1.0),
         "rescued_other",
@@ -468,9 +472,89 @@ def test_apex_aligned_trace_uses_local_peak_normalization() -> None:
     )
 
     _rt, normalized = report._apex_aligned_normalized_trace(row)
+    shared_trace = own_max_normalized_trace(row.rt, row.intensity)
+    shared_facts = evidence.trace_window_evidence_facts(
+        row.rt,
+        shared_trace,
+        query_apex_rt_min=row.cell_apex_rt,
+        half_window_min=report.APEX_ALIGN_HALF_WINDOW_MIN,
+    )
 
     assert max(normalized) == 1.0
-    assert report._local_to_global_max_ratio(row) == 0.01
+    assert report._local_to_global_max_ratio(row) == pytest.approx(
+        shared_facts.local_to_global_max_ratio
+    )
+    assert report._local_to_global_max_ratio(row) != pytest.approx(0.01)
+
+
+def test_family_evidence_summary_smooths_each_trace_once(monkeypatch) -> None:
+    rows = [
+        report.trace_row_from_arrays(
+            _family_cell(f"sample-{index}", apex_rt=1.0),
+            "rescued_other",
+            [0.8, 0.9, 1.0, 1.1, 1.2],
+            [0.0, 20.0, 100.0, 20.0, 0.0],
+        )
+        for index in range(3)
+    ]
+    original = evidence.own_max_normalized_trace
+    smooth_points_seen: list[int] = []
+
+    def _counting_owner(rt, intensity, *, smooth_points):
+        smooth_points_seen.append(smooth_points)
+        return original(rt, intensity, smooth_points=smooth_points)
+
+    monkeypatch.setattr(evidence, "own_max_normalized_trace", _counting_owner)
+
+    evidence.build_family_ms1_evidence_summary(rows)
+
+    assert smooth_points_seen == [15, 15, 15]
+
+
+def test_overlay_writer_reuses_one_trace_evidence_pass(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    rows = [
+        report.trace_row_from_arrays(
+            _family_cell(f"writer-sample-{index}", apex_rt=1.0),
+            "rescued_other",
+            [0.8, 0.9, 1.0, 1.1, 1.2],
+            [0.0, 20.0, 100.0, 20.0, 0.0],
+        )
+        for index in range(2)
+    ]
+    original = evidence.own_max_normalized_trace
+    smooth_points_seen: list[int] = []
+
+    def _counting_owner(rt, intensity, *, smooth_points):
+        smooth_points_seen.append(smooth_points)
+        return original(rt, intensity, smooth_points=smooth_points)
+
+    monkeypatch.setattr(evidence, "own_max_normalized_trace", _counting_owner)
+    monkeypatch.setattr(writers, "render_family_ms1_overlay", lambda **_kwargs: None)
+    monkeypatch.setattr(
+        writers,
+        "render_hypothesis_ms1_overlay",
+        lambda **_kwargs: None,
+    )
+
+    outputs = writers.write_family_ms1_overlay_outputs(
+        rows=rows,
+        output_dir=tmp_path,
+        output_prefix="writer-reuse",
+        family_id="FAM001",
+        mz=251.165,
+        ppm=10.0,
+        rt_min=0.8,
+        rt_max=1.2,
+        family_center_rt=1.0,
+        write_pdf=False,
+    )
+
+    assert smooth_points_seen == [15, 15]
+    assert outputs.summary_tsv.is_file()
+    assert outputs.trace_data_json.is_file()
 
 
 def test_gaussian_smooth_is_plot_only_and_preserves_trace_shape() -> None:

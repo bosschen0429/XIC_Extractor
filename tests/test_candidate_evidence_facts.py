@@ -1,13 +1,85 @@
 import numpy as np
+import pytest
 
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
+    integration_with_trace_evidence,
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
+    trace_window_evidence_facts,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
+from xic_extractor.peak_detection.ms1_shape_identity import own_max_normalized_trace
 from xic_extractor.peak_detection.scoring_models import ScoringContext
+
+
+def test_trace_window_evidence_uses_shared_gaussian15_own_max_trace() -> None:
+    rt = [0.0, 0.1, 0.2, 0.3, 0.4]
+    normalized = own_max_normalized_trace(rt, [0.0, 0.0, 100.0, 0.0, 0.0])
+
+    facts = trace_window_evidence_facts(
+        rt,
+        normalized,
+        query_apex_rt_min=0.2,
+        half_window_min=0.11,
+    )
+
+    assert facts.status == "ok"
+    assert facts.reason == "smoothed_query_window_evidence"
+    assert facts.query_apex_in_trace_window is True
+    assert facts.trace_apex_rt_min == pytest.approx(0.2)
+    assert facts.local_apex_delta_min == pytest.approx(0.0)
+    assert facts.local_to_global_max_ratio == pytest.approx(1.0)
+    assert facts.local_max_intensity == pytest.approx(normalized.max_intensity)
+
+
+def test_trace_window_coverage_survives_inconclusive_non_positive_signal() -> None:
+    rt = [0.0, 0.1, 0.2]
+    normalized = own_max_normalized_trace(rt, [0.0, 0.0, 0.0])
+
+    facts = trace_window_evidence_facts(
+        rt,
+        normalized,
+        query_apex_rt_min=0.1,
+    )
+
+    assert facts.status == "inconclusive"
+    assert facts.reason == "non_positive_signal"
+    assert facts.query_apex_in_trace_window is True
+    assert facts.local_to_global_max_ratio is None
+
+
+def test_integration_trace_evidence_preserves_compatibility_fields() -> None:
+    integration = IntegrationResult(
+        rt_left_min=1.0,
+        rt_apex_min=2.0,
+        rt_right_min=3.0,
+        raw_apex_rt_min=2.0,
+        rt_width_min=2.0,
+        height_raw=50.0,
+        height_smoothed=45.0,
+        area_raw_counts_seconds=4000.0,
+        integration_method="raw_trapezoid",
+        boundary_sources=("test_trace",),
+        raw_scan_indices=(1, 2, 3),
+    )
+
+    enriched = integration_with_trace_evidence(
+        integration,
+        [0.0, 1.0, 2.0, 3.0, 4.0],
+        [10.0, 12.0, 50.0, 12.0, 10.0],
+    )
+
+    assert enriched.area_raw_counts_seconds == 4000.0
+    assert enriched.integration_method == "raw_trapezoid"
+    assert enriched.boundary_sources == ("test_trace",)
+    assert enriched.raw_scan_indices == (1, 2, 3)
+    assert enriched.baseline_type == "asls"
+    assert enriched.area_baseline_corrected is not None
+    assert enriched.area_ms1_morphology is not None
+    assert enriched.ms1_morphology_trace_method == "gaussian_15"
 
 
 def test_build_candidate_evidence_facts_from_scoring_context() -> None:
