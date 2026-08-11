@@ -1,3 +1,4 @@
+import pickle
 from pathlib import Path
 
 import numpy as np
@@ -5,9 +6,16 @@ import pytest
 
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
+    RawAcquisitionSessionCapability,
+    RawAcquisitionSessionReceipt,
     TraceCoordinateKind,
     acquire_trace_batch,
+    mint_raw_acquisition_session_capability,
     mint_trace_acquisition_capability,
+)
+from xic_extractor.execution_runtime_owner import (
+    RuntimeAcquisitionMetrics,
+    derive_runtime_acquisition_metrics,
 )
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.xic_models import XICRequest, XICTrace
@@ -32,6 +40,37 @@ class _NoRawBatchAdapter:
     def scan_window_for_request(self, request):
         self.scan_calls += 1
         return (100, 120)
+
+
+def test_raw_session_capability_is_unique_pickleable_and_owner_minted(
+    tmp_path: Path,
+) -> None:
+    source = _source(tmp_path)
+
+    first = mint_raw_acquisition_session_capability(source)
+    second = mint_raw_acquisition_session_capability(source)
+
+    assert first != second
+    assert first.acquisition_source == source
+    assert pickle.loads(pickle.dumps(first)) == first
+    with pytest.raises(AcquisitionContractError, match="minted by acquisition owner"):
+        RawAcquisitionSessionCapability(
+            capability_id=first.capability_id,
+            session_nonce=first.session_nonce,
+            acquisition_source=source,
+            _mint_token=object(),
+        )
+
+
+def test_raw_session_receipt_cannot_be_caller_minted(tmp_path: Path) -> None:
+    capability = mint_raw_acquisition_session_capability(_source(tmp_path))
+
+    with pytest.raises(AcquisitionContractError, match="minted by raw_reader"):
+        RawAcquisitionSessionReceipt(
+            receipt_id="forged",
+            capability=capability,
+            _mint_token=object(),
+        )
 
 
 def test_capability_aware_batch_trace_coordinates_are_executable_no_raw(
@@ -62,6 +101,41 @@ def test_capability_aware_batch_trace_coordinates_are_executable_no_raw(
         trace.coordinate.acquisition_source_id == source.acquisition_source_id
         for trace in batch.traces
     )
+
+
+def test_runtime_owner_aggregates_only_typed_acquisition_receipts(
+    tmp_path: Path,
+) -> None:
+    capability = mint_trace_acquisition_capability(
+        _source(tmp_path),
+        adapter_namespace="tests.runtime_owner_aggregation",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    adapter = _NoRawBatchAdapter()
+    request = XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0)
+    batches = (
+        acquire_trace_batch(capability, (request,), adapter),
+        acquire_trace_batch(capability, (request, request), adapter),
+    )
+
+    metrics = derive_runtime_acquisition_metrics(batches)
+
+    assert metrics.logical_xic_request_count == 3
+    assert metrics.xic_batch_count == 2
+    assert metrics.adapter_chromatogram_call_count == 0
+    assert metrics.trace_point_count == 6
+    with pytest.raises(ValueError, match="TraceAcquisitionBatch receipts"):
+        derive_runtime_acquisition_metrics(  # type: ignore[arg-type]
+            ({"logical_xic_request_count": 999},)
+        )
+    with pytest.raises(ValueError, match="minted by the runtime owner"):
+        RuntimeAcquisitionMetrics(
+            logical_xic_request_count=999,
+            xic_batch_count=999,
+            adapter_chromatogram_call_count=999,
+            trace_point_count=999,
+            _mint_token=object(),
+        )
 
 
 def test_batch_trace_contract_records_observed_backend_call_delta(

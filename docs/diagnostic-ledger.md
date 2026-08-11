@@ -869,3 +869,231 @@ bound-artifact byte diff, caller-minted authority, skipped independent validator
 or partial final visibility within the closed single-writer protocol is `KILL`;
 a requirement to resist another same-permission writer during publication, or a
 schema/lifecycle/recovery dependency, is `REDESIGN`.
+
+## Issue #234 CID-NL Discovery MS1 telemetry and batching gate
+
+Issue #234 initially recorded Terminal A at clean revision `3b891479`; that
+threshold-only disposition is superseded by the maintainer refreeze and paired
+evidence below. Transaction 1
+maps every non-empty `DiscoverySeedGroup` to one canonical ordered `XICRequest`,
+acquires singleton owner-minted `TraceAcquisitionBatch` receipts, and preserves
+the existing peak/candidate path. `execution_runtime_owner` alone aggregates the
+accepted acquisition receipts into sealed request, batch, adapter-call, and
+trace-point metrics; `TimingRecorder` renders those values plus the Discovery
+input census and exact native-scan-window characterization. Worker projections
+cannot submit those counts. RSS remains explicitly unsupported with the reason
+`unsupported: Discovery runner has no owner-bound RSS sampler`.
+
+Focused no-RAW verification used the Discovery MS1/pipeline, acquisition
+contract, and runtime-observability suites: 100 tests passed. Scalar-versus-owner
+candidate equality, duplicate logical members, input population completeness,
+wrong cardinality, caller-forged counts, duplicate/unknown measurement fields,
+terminal peak failure, RAW disposal, and original-exception preservation were
+covered. Ruff, focused mypy, the architecture census (42 tests plus the direct
+script smoke), and commit hooks passed.
+
+The fresh current 2RAW characterization used the historical CID-NL 8RAW lane's
+`NormalBC2312_DNA.raw` (199,440,593 bytes) and `TumorBC2312_DNA.raw`
+(202,128,099 bytes), exposed through task-local hardlinks. The clean producing
+revision, default `scripts.run_discovery` CID-NL/peak settings, Python project
+environment, and Thermo RawFileReader 4.0.19.0 were fixed across both runs; the
+RawFileReader DLL SHA-256 was
+`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`.
+No application XIC cache was enabled. OS filesystem cache was uncontrolled: the
+one-worker scalar run executed first and the two-worker process smoke second.
+Both used full Discovery candidate/review CSV output and one repetition. Shell
+elapsed observations were approximately 42.0 s scalar and 23.7 s process; these
+single, ordered runs are process-smoke evidence, not a benchmark conclusion.
+
+| Sample | N logical | U exact windows | C256 | Predicted reduction | Singleton batches/calls | Trace points | Candidate rows |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| NormalBC2312_DNA | 3,358 | 3,102 | 3,102 | 7.62% | 3,358 / 3,358 | 50,703 | 3,358 |
+| TumorBC2312_DNA | 3,792 | 3,502 | 3,503 | 7.62% | 3,792 / 3,792 | 58,035 | 3,789 |
+| Aggregate | 7,150 | 6,604 | 6,605 | 7.6224% | 7,150 / 7,150 | 108,738 | 7,147 |
+
+For both samples `input_group_count = empty_group_count + N`, with zero empty
+groups, and singleton physical calls equal logical requests. The process run
+reported identical owner counts and characterization. Its pickled request/result
+payload observations were 3,646/1,739,270 bytes for Normal and
+3,645/1,976,216 bytes for Tumor; these are explicitly partial IPC observations
+and exclude executor/framework overhead.
+
+Scalar-versus-process artifacts were byte-identical:
+
+- batch index:
+  `beb8e4e1d376a573386d93a751f5e70179d0dfb32d0cf490b1bda8cf7e1b7164`;
+- Normal candidates/review:
+  `68510b5fff4f0b87d20d18e70168498f970d0af68ef9222d6a4e814ea11ecafc` /
+  `b1bbdd591345ee8c80e8124091f631495deedaedbf4a82aff3d701448ff09bfd`;
+- Tumor candidates/review:
+  `58e016b5f5bab1b30f96e7e93b5c41d0a0bfe46f9380fc5fe423e5a1ec9743ce` /
+  `723278e68109898707fddadaf82c2a8f9ebc180e1facc096cc5743e386773184`.
+
+The original aggregate promotion result was `7.6224% < 20%`. Under the initial
+hard-threshold wording, Transaction 2 was not authorized, the internal batch
+maximum remained 1, and no paired 8RAW or 85RAW run was launched. The original
+disposition was **`KILL_BATCHING_NO_VALUE`**. The acceptance owner subsequently
+clarified that 20% is an advisory strong signal rather than a hard prohibition;
+the current positive, bounded, reversible exact-safe candidate was authorized
+for paired measurement. The superseding result follows.
+
+### Maintainer soft-gate refreeze and Terminal B evidence
+
+On 2026-08-11 the GitHub Issue #234 body and maintainer receipt were refrozen so
+that a positive exact-window opportunity below 20% may proceed to a bounded
+candidate. Paired 2RAW must beat observed noise with exact parity before paired
+8RAW; Terminal B still requires the complete three-pair 8RAW oracle. The
+production candidate changes only the internal Discovery MS1 batch maximum from
+1 to 256 at commit `8beebe46`. Revision `bf5fd79e` additionally applies the
+existing bounded Windows atomic-replace retry pattern to `TimingRecorder` after
+two excluded runs independently reproduced `PermissionError: [WinError 5]`
+while updating a live timing sidecar. That runtime fix changes neither the
+candidate nor scalar acquisition path.
+
+The scalar and candidate variants used the same clean `bf5fd79e` code,
+environment, Thermo RawFileReader 4.0.19.0, DLL SHA-256
+`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`,
+default `scripts.run_discovery` CID-NL/peak settings, sequential worker budget,
+full Discovery candidate/review CSV output, and no application XIC cache. A
+task-local diagnostic wrapper changed only the private batch maximum to 1 for
+scalar and 256 for candidate. One scalar and one candidate warmup were excluded
+at each tier; the three recorded scalar/candidate observations were interleaved.
+OS filesystem cache remained externally uncontrolled after warmup. Each run had
+a 600-second foreground timeout and used the live/final `timing.json` sidecar.
+
+Paired 2RAW reused `NormalBC2312_DNA.raw` and `TumorBC2312_DNA.raw` through the
+same task-local hardlinks. Recorded wall seconds were scalar
+`32.720, 31.695, 32.512` and candidate `31.471, 34.572, 30.729`. Scalar wall
+median was `32.512 s`, candidate median was `31.471 s`, scalar wall noise was
+`3.155%`, and integrated gain was `3.204%`. The `discover.ms1_backfill` median
+was `11.093 -> 9.713 s`: `12.440%` gain against `5.165%` scalar stage noise.
+Every run preserved 7,150 logical requests and 108,738 trace points; calls were
+`7,150 -> 6,605`. The same five Discovery CSV hashes were byte-identical in all
+six runs. The paired 2RAW gate therefore passed, narrowly on whole-run wall and
+more clearly on the isolated MS1 stage.
+
+Paired 8RAW used the documented validation directory's eight files:
+`BenignfatBC1055_DNA.raw`, `BenignfatBC1151_DNA.raw`,
+`Breast_Cancer_Tissue_pooled_QC3.raw`,
+`Breast_Cancer_Tissue_pooled_QC5.raw`, `NormalBC2263_DNA.raw`,
+`NormalBC2312_DNA.raw`, `TumorBC2263_DNA.raw`, and
+`TumorBC2312_DNA.raw`, totaling 1,601,282,569 bytes.
+
+| Pair | Scalar wall (s) | Candidate wall (s) | Scalar MS1 (s) | Candidate MS1 (s) |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 158.494 | 146.622 | 61.147 | 49.327 |
+| 2 | 166.620 | 149.663 | 66.300 | 51.634 |
+| 3 | 160.238 | 146.829 | 62.603 | 49.556 |
+
+Scalar wall median was `160.238 s`, candidate wall median was `146.829 s`,
+scalar wall noise was `5.071%`, and integrated gain was `8.368%`. The
+`discover.ms1_backfill` median was `62.603 -> 49.556 s`: `20.840%` gain against
+`8.232%` scalar stage noise. Every candidate repetition was faster than its
+paired scalar repetition. Logical requests remained 31,819 and trace points
+remained 454,223. Mechanical batches changed `31,819 -> 128`; physical vendor
+calls changed `31,819 -> 29,148`, a reduction of 2,671 calls (`8.394%`).
+
+All 17 Discovery CSV artifacts were byte-identical across all six recorded
+8RAW runs. The common batch-index SHA-256 was
+`1a634ab3648bb26f1b96fe8e85078fae62ed9edaf3fe77741fa3adc7d489fbbf`.
+The sequential runner emits no process IPC metric. Worker and process-tree RSS
+remained explicitly unavailable with the unchanged truthful reason
+`unsupported: Discovery runner has no owner-bound RSS sampler`; no measured RSS
+claim is made. No super-window, cache, public tuning/configuration, Matrix,
+writer, scientific-rule, Pt/composite, Alignment, or Backfill change occurred.
+
+The exact-safe correctness oracle and the integrated noise rule both pass.
+Superseding disposition: **`RETAIN_NATIVE_BATCHING`** (Terminal B). Validation
+status remains `diagnostic_only`; this performance result grants no new Matrix,
+writer, activation, publication, or scientific authority. No 85RAW run was
+launched.
+
+### Two-worker process confirmation
+
+The highest-value residual evidence loop fixed both variants to the current
+two-worker Windows process backend at clean revision `29d02d0a`. It reused the
+same two RAW hardlinks, Python 3.12.13, DLL identity, default Discovery settings,
+full CSV outputs, and foreground timing contract. A task-local ignored wrapper
+applied the scalar `1` or candidate `256` batch maximum at module import so the
+override executed inside each spawned RAW-owning worker, not only in the parent.
+One warmup per variant was excluded. The formal order was
+`S1 C1 / C2 S2 / S3 C3`; OS filesystem cache remained uncontrolled.
+
+| Pair | Scalar wall (s) | Candidate wall (s) | Paired gain |
+| --- | ---: | ---: | ---: |
+| 1 | 22.149 | 20.654 | 6.753% |
+| 2 | 21.797 | 21.203 | 2.726% |
+| 3 | 21.429 | 20.796 | 2.956% |
+
+Scalar wall median was `21.797 s`, candidate wall median was `20.796 s`, and
+the median gain was `4.594%` against `3.303%` scalar range-over-median noise.
+Every paired candidate was faster. Because samples execute concurrently, the
+process-stage decision metric is the maximum per-sample
+`discover.ms1_backfill` span per run rather than the sum: its median was
+`6.360 -> 5.648 s`, an `11.195%` gain against `4.194%` scalar stage noise.
+
+All six formal runs preserved 7,150 logical requests, 108,738 trace points, and
+the five byte-identical Discovery CSV hashes already listed above. Mechanical
+batches changed `7,150 -> 29`; physical vendor calls changed `7,150 -> 6,605`.
+The worker-emitted batch-maximum observations summed to 2 for scalar and 512 for
+candidate, confirming that the intended variant reached both spawned workers.
+Partial pickled request/result payload observations changed
+`3,722,849 -> 3,566,259 bytes`; they still exclude executor framing and confirmed
+transport bytes. Worker and process-tree RSS remain unavailable with the owner
+reason `unsupported: Discovery runner has no owner-bound RSS sampler`.
+
+This confirmation closes the process-backend uncertainty for the bounded 2RAW
+lane and strengthens, but does not broaden, Terminal B. It does not establish a
+universal dataset gain, an RSS bound, or product/scientific authority. No
+additional 8RAW or 85RAW run was launched for this loop.
+
+### Corrective owner-bound RAW-open receipt confirmation
+
+The review-corrective receipt seam was validated in one fresh two-worker 2RAW
+process smoke at clean producing revision `633c4d80`. The final #234 delivery
+keeps that acquisition/runtime/Discovery code unchanged; it only removes the
+separable `TimingRecorder` retry into follow-up #236 and adds this durable
+receipt. The smoke used Python 3.12.13, Thermo RawFileReader 4.0.19.0, and DLL
+SHA-256
+`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`.
+
+Inputs were the same task-local hardlinks used by the earlier 2RAW lane:
+
+- `NormalBC2312_DNA.raw`: 199,440,593 bytes, SHA-256
+  `74bbf71d3ebc85d944b23cbd5b5487bdbc5d38a1b57f56bbf0ee43f20ff729bf`;
+- `TumorBC2312_DNA.raw`: 202,128,099 bytes, SHA-256
+  `cbf020359be2249e800825ad810a3ea38ea990599da08ba0f165ac60e13a7a1f`.
+
+The task-local wrapper selected the retained private candidate batch maximum
+`256`, default Discovery CID-NL/peak settings, full candidate/review CSV output,
+and exactly two process workers. No application XIC cache was enabled; OS
+filesystem cache remained uncontrolled. One repetition was run in the
+foreground. Wall elapsed was 22.628193 s, which is recorded only as smoke
+provenance and is not a new performance comparison.
+
+Both RAW-owning workers returned a typed `RawAcquisitionSessionReceipt` that
+`execution_runtime_owner.derive_runtime_raw_open_metrics` validated against the
+parent-minted capability:
+
+| Sample | `raw_open_count` | Availability | Reason |
+| --- | ---: | --- | --- |
+| NormalBC2312_DNA | 1 | measured | empty |
+| TumorBC2312_DNA | 1 | measured | empty |
+
+The five persisted Discovery CSV artifacts matched the accepted exact-safe
+oracle:
+
+- batch index:
+  `beb8e4e1d376a573386d93a751f5e70179d0dfb32d0cf490b1bda8cf7e1b7164`;
+- Normal candidates/review:
+  `68510b5fff4f0b87d20d18e70168498f970d0af68ef9222d6a4e814ea11ecafc` /
+  `b1bbdd591345ee8c80e8124091f631495deedaedbf4a82aff3d701448ff09bfd`;
+- Tumor candidates/review:
+  `58e016b5f5bab1b30f96e7e93b5c41d0a0bfe46f9380fc5fe423e5a1ec9743ce` /
+  `723278e68109898707fddadaf82c2a8f9ebc180e1facc096cc5743e386773184`.
+
+`run_ok` and the owner-receipt/parity gate both passed. This closes only the
+review-found RAW-open observability gap: it does not repeat or broaden the
+paired performance evidence, and the Terminal B disposition remains
+**`RETAIN_NATIVE_BATCHING`** with `diagnostic_only` evidence status. No new
+8RAW or 85RAW run was launched.

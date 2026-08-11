@@ -192,6 +192,87 @@ def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> 
     assert handle.acquisition_source == source
 
 
+def test_open_raw_mints_receipt_only_after_verified_vendor_open(tmp_path: Path) -> None:
+    from xic_extractor.acquisition_contract import (
+        mint_raw_acquisition_session_capability,
+    )
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+    from xic_extractor.raw_reader import open_raw, reset_reader_state
+
+    reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"sample-a")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    capability = mint_raw_acquisition_session_capability(source)
+
+    handle = open_raw(
+        raw_path,
+        tmp_path,
+        expected_acquisition_source=source,
+        _raw_session_capability=capability,
+        _import_module=_working_imports(),
+        _thermo=_fake_thermo(_FakeRaw()),
+    )
+
+    assert handle.raw_open_receipt is not None
+    assert handle.raw_open_receipt.capability == capability
+
+
+def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import xic_extractor.raw_reader as raw_reader
+    from xic_extractor.acquisition_contract import (
+        mint_raw_acquisition_session_capability,
+    )
+    from xic_extractor.processing_identity import build_acquisition_source_identity
+
+    class _SelectFailRaw(_FakeRaw):
+        def SelectInstrument(self, *_args) -> None:
+            raise RuntimeError("select failed")
+
+    raw_reader.reset_reader_state()
+    _write_expected_dlls(tmp_path)
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"sample-a")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    capability = mint_raw_acquisition_session_capability(source)
+    mint_calls: list[object] = []
+    original_mint = raw_reader._mint_raw_acquisition_session_receipt
+
+    def _record_mint(value):
+        mint_calls.append(value)
+        return original_mint(value)
+
+    monkeypatch.setattr(
+        raw_reader,
+        "_mint_raw_acquisition_session_receipt",
+        _record_mint,
+    )
+
+    with pytest.raises(raw_reader.RawReaderOpenError, match="select failed"):
+        raw_reader.open_raw(
+            raw_path,
+            tmp_path,
+            expected_acquisition_source=source,
+            _raw_session_capability=capability,
+            _import_module=_working_imports(),
+            _thermo=_fake_thermo(_SelectFailRaw()),
+        )
+
+    assert mint_calls == []
+
+
 @pytest.mark.parametrize(
     ("acquisition_format", "observation_namespace"),
     (

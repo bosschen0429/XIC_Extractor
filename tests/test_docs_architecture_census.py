@@ -781,6 +781,7 @@ def test_repository_python_paths_excludes_unstaged_tracked_deletions(
         ["git", "init", "--quiet"],
         cwd=tmp_path,
         check=True,
+        env=census._git_subprocess_environment(),
     )
     package = tmp_path / "xic_extractor"
     package.mkdir()
@@ -790,6 +791,7 @@ def test_repository_python_paths_excludes_unstaged_tracked_deletions(
         ["git", "add", "xic_extractor/deleted.py"],
         cwd=tmp_path,
         check=True,
+        env=census._git_subprocess_environment(),
     )
     deleted.unlink()
     kept = package / "kept.py"
@@ -798,6 +800,28 @@ def test_repository_python_paths_excludes_unstaged_tracked_deletions(
     paths = census.repository_python_paths(tmp_path)
 
     assert paths == (Path("xic_extractor/kept.py"),)
+
+
+def test_git_subprocess_environment_drops_hook_repository_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in census._GIT_LOCAL_ENVIRONMENT_VARIABLES:
+        monkeypatch.setenv(name, "hook-owned")
+    monkeypatch.setenv("GIT_CONFIG_KEY_0", "core.bare")
+    monkeypatch.setenv("GIT_CONFIG_VALUE_0", "true")
+    monkeypatch.setenv("CENSUS_TEST_UNRELATED", "preserved")
+
+    environment = census._git_subprocess_environment()
+
+    assert not (
+        census._GIT_LOCAL_ENVIRONMENT_VARIABLES & environment.keys()
+    )
+    assert not any(
+        name.startswith("GIT_CONFIG_KEY_")
+        or name.startswith("GIT_CONFIG_VALUE_")
+        for name in environment
+    )
+    assert environment["CENSUS_TEST_UNRELATED"] == "preserved"
 
 
 def test_import_linter_config_owns_the_four_static_dependency_contracts() -> None:
@@ -1042,6 +1066,58 @@ def test_census_records_declarations_without_claiming_runtime_closure() -> None:
     )
     assert {pattern.removesuffix("*") for pattern in find["include"]} == set(
         census.REPOSITORY_ROOTS
+    )
+
+
+def test_raw_open_receipt_private_minter_is_restricted_to_raw_reader(
+    tmp_path: Path,
+) -> None:
+    forbidden = Path("xic_extractor/discovery/forged_raw_open.py")
+    forbidden_source = tmp_path / forbidden
+    forbidden_source.parent.mkdir(parents=True)
+    forbidden_source.write_text(
+        (
+            "from xic_extractor.acquisition_contract import "
+            "_mint_raw_acquisition_session_receipt\n\n"
+            "def forge(capability):\n"
+            "    return _mint_raw_acquisition_session_receipt(capability)\n"
+        ),
+        encoding="utf-8",
+    )
+
+    problems = census.validate_runtime_boundary_authority(
+        tmp_path,
+        (forbidden,),
+    )
+
+    assert any(
+        "RAW-open receipt minter is private to raw_reader" in problem
+        for problem in problems
+    )
+
+
+def test_raw_open_receipt_private_minter_allows_raw_reader(tmp_path: Path) -> None:
+    allowed = Path("xic_extractor/raw_reader.py")
+    allowed_source = tmp_path / allowed
+    allowed_source.parent.mkdir(parents=True)
+    allowed_source.write_text(
+        (
+            "from xic_extractor.acquisition_contract import "
+            "_mint_raw_acquisition_session_receipt\n\n"
+            "def mint_after_open(capability):\n"
+            "    return _mint_raw_acquisition_session_receipt(capability)\n"
+        ),
+        encoding="utf-8",
+    )
+
+    problems = census.validate_runtime_boundary_authority(
+        tmp_path,
+        (allowed,),
+    )
+
+    assert not any(
+        "RAW-open receipt minter is private to raw_reader" in problem
+        for problem in problems
     )
 
 

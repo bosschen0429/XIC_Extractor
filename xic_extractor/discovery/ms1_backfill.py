@@ -1,11 +1,19 @@
 import json
 import math
-from collections.abc import Iterable
-from dataclasses import replace
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol, cast
 
 import numpy as np
 
+from xic_extractor.acquisition_contract import (
+    AcquiredTrace,
+    BatchXICAdapter,
+    TraceAcquisitionBatch,
+    TraceCoordinateKind,
+    acquire_trace_batch,
+    mint_trace_acquisition_capability,
+)
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
@@ -22,9 +30,13 @@ from xic_extractor.discovery.priority import (
     build_candidate_reason,
 )
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.signal_processing import PeakResult, find_peak_and_area
+from xic_extractor.xic_models import XICRequest
 
 _TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]
+_DISCOVERY_MS1_BATCH_MAX_REQUESTS = 256
+_DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
 
 
 class MS1XicSource(Protocol):
@@ -38,6 +50,56 @@ class MS1XicSource(Protocol):
         ...
 
 
+@dataclass(frozen=True, slots=True)
+class _DiscoveryMs1RequestPlan:
+    input_ordinal: int
+    group: DiscoverySeedGroup
+    request: XICRequest
+
+
+@dataclass(frozen=True, slots=True)
+class _DiscoveryMs1Measurements:
+    input_group_count: int
+    empty_group_count: int
+    exact_scan_window_count: int
+    predicted_chunked_call_count: int
+    batch_max_requests: int
+    acquisition_batches: tuple[TraceAcquisitionBatch, ...]
+
+    def __post_init__(self) -> None:
+        values = (
+            self.input_group_count,
+            self.empty_group_count,
+            self.exact_scan_window_count,
+            self.predicted_chunked_call_count,
+            self.batch_max_requests,
+        )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) for value in values
+        ):
+            raise ValueError("Discovery MS1 measurements must be integral")
+        if any(value < 0 for value in values[:-1]) or self.batch_max_requests < 1:
+            raise ValueError("Discovery MS1 measurements must be non-negative")
+        if any(
+            not isinstance(batch, TraceAcquisitionBatch)
+            for batch in self.acquisition_batches
+        ):
+            raise ValueError("Discovery MS1 acquisition batches must be owner-minted")
+        nonempty_group_count = self.input_group_count - self.empty_group_count
+        if nonempty_group_count < 0:
+            raise ValueError("Discovery MS1 input population is incomplete")
+        if self.exact_scan_window_count > nonempty_group_count:
+            raise ValueError("exact scan-window count exceeds logical requests")
+        if self.predicted_chunked_call_count > nonempty_group_count:
+            raise ValueError("predicted call count exceeds logical requests")
+
+
+@dataclass(frozen=True, slots=True)
+class _DiscoveryMs1AcquisitionResult:
+    candidates: tuple[DiscoveryCandidate, ...]
+    measurements: _DiscoveryMs1Measurements
+
+
 def backfill_ms1_candidates(
     raw: MS1XicSource,
     groups: Iterable[DiscoverySeedGroup],
@@ -45,76 +107,223 @@ def backfill_ms1_candidates(
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
 ) -> tuple[DiscoveryCandidate, ...]:
+    """Preserve the scalar compatibility path for non-owner-bound callers."""
+
     candidates: list[DiscoveryCandidate] = []
-    for group in groups:
+    for plan in _discovery_ms1_request_plan(groups, settings=settings):
+        request = plan.request
+        rt, intensity = raw.extract_xic(
+            request.mz,
+            request.rt_min,
+            request.rt_max,
+            request.ppm_tol,
+        )
+        candidates.append(
+            _candidate_from_trace(
+                plan.group,
+                rt,
+                intensity,
+                settings=settings,
+                peak_config=peak_config,
+            )
+        )
+    return merge_candidates_by_ms1_peak(candidates, settings=settings)
+
+
+def _backfill_ms1_candidates_with_acquisition(
+    raw: BatchXICAdapter,
+    groups: Iterable[DiscoverySeedGroup],
+    *,
+    acquisition_source: AcquisitionSourceIdentity,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
+) -> _DiscoveryMs1AcquisitionResult:
+    """Acquire canonical Discovery requests in bounded owner-minted batches."""
+
+    group_tuple = tuple(groups)
+    plans = _discovery_ms1_request_plan(group_tuple, settings=settings)
+    capability = mint_trace_acquisition_capability(
+        acquisition_source,
+        adapter_namespace="xic_extractor.discovery.ms1_backfill",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    batches: list[TraceAcquisitionBatch] = []
+    acquired_traces: list[AcquiredTrace] = []
+    for plan_chunk in _chunks(plans, _DISCOVERY_MS1_BATCH_MAX_REQUESTS):
+        batch = acquire_trace_batch(
+            capability,
+            tuple(plan.request for plan in plan_chunk),
+            raw,
+        )
+        _validate_acquired_plan_chunk(plan_chunk, batch)
+        batches.append(batch)
+        acquired_traces.extend(batch.traces)
+
+    scan_windows = tuple(
+        _native_scan_window(
+            acquired.coordinate.first_scan,
+            acquired.coordinate.last_scan,
+        )
+        for acquired in acquired_traces
+    )
+    measurements = _DiscoveryMs1Measurements(
+        input_group_count=len(group_tuple),
+        empty_group_count=sum(not group.seeds for group in group_tuple),
+        exact_scan_window_count=len(set(scan_windows)),
+        predicted_chunked_call_count=_predicted_chunked_call_count(scan_windows),
+        batch_max_requests=_DISCOVERY_MS1_BATCH_MAX_REQUESTS,
+        acquisition_batches=tuple(batches),
+    )
+    if measurement_observer is not None:
+        measurement_observer(measurements)
+
+    if len(acquired_traces) != len(plans):
+        raise ValueError("Discovery MS1 acquisition lost a logical request")
+    candidates = tuple(
+        _candidate_from_trace(
+            plan.group,
+            acquired.trace.rt,
+            acquired.trace.intensity,
+            settings=settings,
+            peak_config=peak_config,
+        )
+        for plan, acquired in zip(plans, acquired_traces, strict=True)
+    )
+    return _DiscoveryMs1AcquisitionResult(
+        candidates=merge_candidates_by_ms1_peak(candidates, settings=settings),
+        measurements=measurements,
+    )
+
+
+def _discovery_ms1_request_plan(
+    groups: Iterable[DiscoverySeedGroup],
+    *,
+    settings: DiscoverySettings,
+) -> tuple[_DiscoveryMs1RequestPlan, ...]:
+    plans: list[_DiscoveryMs1RequestPlan] = []
+    for input_ordinal, group in enumerate(groups):
         if not group.seeds:
             continue
-        best_seed = _best_seed(group.seeds)
-        rt_min = max(0.0, group.rt_seed_min - settings.ms1_search_padding_min)
-        rt_max = group.rt_seed_max + settings.ms1_search_padding_min
-        rt, intensity = raw.extract_xic(
-            group.precursor_mz,
-            rt_min,
-            rt_max,
-            settings.precursor_mz_tolerance_ppm,
+        plans.append(
+            _DiscoveryMs1RequestPlan(
+                input_ordinal=input_ordinal,
+                group=group,
+                request=XICRequest(
+                    mz=group.precursor_mz,
+                    rt_min=max(
+                        0.0,
+                        group.rt_seed_min - settings.ms1_search_padding_min,
+                    ),
+                    rt_max=group.rt_seed_max + settings.ms1_search_padding_min,
+                    ppm_tol=settings.precursor_mz_tolerance_ppm,
+                ),
+            )
         )
-        ms1_fields = _detect_ms1_peak(
-            rt,
-            intensity,
-            peak_config=peak_config,
-            best_seed=best_seed,
-            settings=settings,
-        )
-        priority = assign_review_priority(
-            seed_event_count=len(group.seeds),
-            ms1_peak_found=ms1_fields.peak_found,
-            ms1_seed_delta_min=ms1_fields.seed_delta_min,
-            settings=settings,
-        )
-        reason = build_candidate_reason(
-            seed_event_count=len(group.seeds),
-            ms1_peak_found=ms1_fields.peak_found,
-            ms1_seed_delta_min=ms1_fields.seed_delta_min,
-            settings=settings,
-        )
-        candidate = DiscoveryCandidate.from_values(
-            raw_file=group.raw_file,
-            sample_stem=group.sample_stem,
-            precursor_mz=group.precursor_mz,
-            product_mz=group.product_mz,
-            observed_neutral_loss_da=group.observed_neutral_loss_da,
-            best_seed=best_seed,
-            seed_scan_ids=tuple(seed.scan_number for seed in group.seeds),
-            neutral_loss_tag=group.neutral_loss_tag,
-            configured_neutral_loss_da=group.configured_neutral_loss_da,
-            neutral_loss_mass_error_ppm=group.neutral_loss_mass_error_ppm,
-            rt_seed_min=group.rt_seed_min,
-            rt_seed_max=group.rt_seed_max,
-            ms1_search_rt_min=rt_min,
-            ms1_search_rt_max=rt_max,
-            ms1_seed_delta_min=ms1_fields.seed_delta_min,
-            ms1_peak_rt_start=ms1_fields.peak_rt_start,
-            ms1_peak_rt_end=ms1_fields.peak_rt_end,
-            ms1_height=ms1_fields.height,
-            ms1_trace_quality=ms1_fields.trace_quality,
-            ms1_scan_support_score=ms1_fields.scan_support_score,
-            neutral_loss_error_basis=group.neutral_loss_error_basis,
-            precursor_mz_basis=group.precursor_mz_basis,
-            scan_precursor_mz=group.scan_precursor_mz,
-            scan_precursor_delta_da=group.scan_precursor_delta_da,
-            max_scan_precursor_abs_delta_da=group.max_scan_precursor_abs_delta_da,
-            seed_event_count=len(group.seeds),
-            ms1_peak_found=ms1_fields.peak_found,
-            ms1_apex_rt=ms1_fields.apex_rt,
-            ms1_area=ms1_fields.area,
-            ms2_product_max_intensity=max(
-                seed.product_intensity for seed in group.seeds
-            ),
-            review_priority=priority,
-            reason=reason,
-        )
-        candidates.append(_with_tag_fields(candidate, group=group, settings=settings))
-    return merge_candidates_by_ms1_peak(candidates, settings=settings)
+    return tuple(plans)
+
+
+def _validate_acquired_plan_chunk(
+    plans: Sequence[_DiscoveryMs1RequestPlan],
+    batch: TraceAcquisitionBatch,
+) -> None:
+    if len(plans) != len(batch.traces):
+        raise ValueError("Discovery MS1 acquisition cardinality changed")
+    for plan, acquired in zip(plans, batch.traces, strict=True):
+        if acquired.coordinate.request != plan.request:
+            raise ValueError("Discovery MS1 acquisition request order changed")
+
+
+def _native_scan_window(
+    first_scan: int | None,
+    last_scan: int | None,
+) -> tuple[int, int]:
+    if first_scan is None or last_scan is None:
+        raise ValueError("Discovery MS1 request lacks a native scan window")
+    if first_scan < 0 or last_scan < first_scan:
+        raise ValueError("Discovery MS1 request has an invalid native scan window")
+    return first_scan, last_scan
+
+
+def _predicted_chunked_call_count(
+    scan_windows: Sequence[tuple[int, int]],
+) -> int:
+    return sum(
+        len(set(chunk))
+        for chunk in _chunks(scan_windows, _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS)
+    )
+
+
+def _chunks(values: Sequence[Any], size: int) -> Iterable[Sequence[Any]]:
+    for start in range(0, len(values), size):
+        yield values[start : start + size]
+
+
+def _candidate_from_trace(
+    group: DiscoverySeedGroup,
+    rt: np.ndarray,
+    intensity: np.ndarray,
+    *,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+) -> DiscoveryCandidate:
+    best_seed = _best_seed(group.seeds)
+    rt_min = max(0.0, group.rt_seed_min - settings.ms1_search_padding_min)
+    rt_max = group.rt_seed_max + settings.ms1_search_padding_min
+    ms1_fields = _detect_ms1_peak(
+        rt,
+        intensity,
+        peak_config=peak_config,
+        best_seed=best_seed,
+        settings=settings,
+    )
+    priority = assign_review_priority(
+        seed_event_count=len(group.seeds),
+        ms1_peak_found=ms1_fields.peak_found,
+        ms1_seed_delta_min=ms1_fields.seed_delta_min,
+        settings=settings,
+    )
+    reason = build_candidate_reason(
+        seed_event_count=len(group.seeds),
+        ms1_peak_found=ms1_fields.peak_found,
+        ms1_seed_delta_min=ms1_fields.seed_delta_min,
+        settings=settings,
+    )
+    candidate = DiscoveryCandidate.from_values(
+        raw_file=group.raw_file,
+        sample_stem=group.sample_stem,
+        precursor_mz=group.precursor_mz,
+        product_mz=group.product_mz,
+        observed_neutral_loss_da=group.observed_neutral_loss_da,
+        best_seed=best_seed,
+        seed_scan_ids=tuple(seed.scan_number for seed in group.seeds),
+        neutral_loss_tag=group.neutral_loss_tag,
+        configured_neutral_loss_da=group.configured_neutral_loss_da,
+        neutral_loss_mass_error_ppm=group.neutral_loss_mass_error_ppm,
+        rt_seed_min=group.rt_seed_min,
+        rt_seed_max=group.rt_seed_max,
+        ms1_search_rt_min=rt_min,
+        ms1_search_rt_max=rt_max,
+        ms1_seed_delta_min=ms1_fields.seed_delta_min,
+        ms1_peak_rt_start=ms1_fields.peak_rt_start,
+        ms1_peak_rt_end=ms1_fields.peak_rt_end,
+        ms1_height=ms1_fields.height,
+        ms1_trace_quality=ms1_fields.trace_quality,
+        ms1_scan_support_score=ms1_fields.scan_support_score,
+        neutral_loss_error_basis=group.neutral_loss_error_basis,
+        precursor_mz_basis=group.precursor_mz_basis,
+        scan_precursor_mz=group.scan_precursor_mz,
+        scan_precursor_delta_da=group.scan_precursor_delta_da,
+        max_scan_precursor_abs_delta_da=group.max_scan_precursor_abs_delta_da,
+        seed_event_count=len(group.seeds),
+        ms1_peak_found=ms1_fields.peak_found,
+        ms1_apex_rt=ms1_fields.apex_rt,
+        ms1_area=ms1_fields.area,
+        ms2_product_max_intensity=max(seed.product_intensity for seed in group.seeds),
+        review_priority=priority,
+        reason=reason,
+    )
+    return _with_tag_fields(candidate, group=group, settings=settings)
 
 
 def compute_ms1_scan_support_score(

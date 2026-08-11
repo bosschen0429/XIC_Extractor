@@ -13,7 +13,11 @@ from collections.abc import Callable, Sequence
 from dataclasses import InitVar, dataclass, field, replace
 from typing import final
 
-from xic_extractor.acquisition_contract import TraceAcquisitionBatch
+from xic_extractor.acquisition_contract import (
+    RawAcquisitionSessionCapability,
+    RawAcquisitionSessionReceipt,
+    TraceAcquisitionBatch,
+)
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution_runtime import (
     AttemptLifecycleEventKind,
@@ -131,6 +135,156 @@ class RuntimeAcquisitionReceipt:
             raise RuntimeFinalizationContractError(
                 "acquisition must be an owner-produced TraceAcquisitionBatch"
             )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class RuntimeAcquisitionMetrics:
+    logical_xic_request_count: int
+    xic_batch_count: int
+    adapter_chromatogram_call_count: int
+    trace_point_count: int
+    _mint_token: InitVar[object] = field(kw_only=True)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("RuntimeAcquisitionMetrics is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
+            raise RuntimeFinalizationContractError(
+                "runtime acquisition metrics must be minted by the runtime owner"
+            )
+        for field_name in (
+            "logical_xic_request_count",
+            "xic_batch_count",
+            "adapter_chromatogram_call_count",
+            "trace_point_count",
+        ):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise RuntimeFinalizationContractError(
+                    f"{field_name} must be a non-negative integer"
+                )
+
+
+def derive_runtime_acquisition_metrics(
+    acquisitions: Sequence[TraceAcquisitionBatch],
+) -> RuntimeAcquisitionMetrics:
+    """Aggregate only acquisition-owner receipts into runtime-owned counts."""
+
+    if isinstance(acquisitions, (str, bytes)):
+        raise RuntimeFinalizationContractError(
+            "acquisitions must contain TraceAcquisitionBatch receipts"
+        )
+    try:
+        batch = tuple(acquisitions)
+    except TypeError as exc:
+        raise RuntimeFinalizationContractError(
+            "acquisitions must contain TraceAcquisitionBatch receipts"
+        ) from exc
+    if any(not isinstance(item, TraceAcquisitionBatch) for item in batch):
+        raise RuntimeFinalizationContractError(
+            "acquisitions must contain TraceAcquisitionBatch receipts"
+        )
+    return RuntimeAcquisitionMetrics(
+        logical_xic_request_count=sum(
+            item.logical_xic_request_count for item in batch
+        ),
+        xic_batch_count=sum(item.xic_batch_count for item in batch),
+        adapter_chromatogram_call_count=sum(
+            item.adapter_chromatogram_call_count for item in batch
+        ),
+        trace_point_count=sum(item.trace_point_count for item in batch),
+        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+    )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class RuntimeRawOpenMetrics:
+    """Runtime-owned projection for exactly one planned RAW-open session."""
+
+    raw_open_count: int | None
+    unavailable_reason: str
+    _mint_token: InitVar[object] = field(kw_only=True)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("RuntimeRawOpenMetrics is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
+            raise RuntimeFinalizationContractError(
+                "runtime RAW-open metrics must be minted by the runtime owner"
+            )
+        if self.raw_open_count is None:
+            _required_text(self.unavailable_reason, field="unavailable_reason")
+            return
+        if self.raw_open_count != 1:
+            raise RuntimeFinalizationContractError(
+                "raw_open_count must be exactly one for a receipted session"
+            )
+        if self.unavailable_reason:
+            raise RuntimeFinalizationContractError(
+                "measured raw_open_count cannot carry an unavailable reason"
+            )
+
+
+def derive_runtime_raw_open_metrics(
+    capability: RawAcquisitionSessionCapability | None,
+    receipts: Sequence[RawAcquisitionSessionReceipt],
+) -> RuntimeRawOpenMetrics:
+    """Accept only the receipt bound to this exact planned RAW-open session."""
+
+    if isinstance(receipts, (str, bytes)):
+        raise RuntimeFinalizationContractError(
+            "RAW-open receipts must contain typed session receipts"
+        )
+    try:
+        receipt_batch = tuple(receipts)
+    except TypeError as exc:
+        raise RuntimeFinalizationContractError(
+            "RAW-open receipts must contain typed session receipts"
+        ) from exc
+    if any(
+        not isinstance(receipt, RawAcquisitionSessionReceipt)
+        for receipt in receipt_batch
+    ):
+        raise RuntimeFinalizationContractError(
+            "RAW-open receipts must contain typed session receipts"
+        )
+    if len(receipt_batch) > 1:
+        raise RuntimeFinalizationContractError(
+            "duplicate RAW-open receipts for one session are forbidden"
+        )
+    if capability is None:
+        if receipt_batch:
+            raise RuntimeFinalizationContractError(
+                "RAW-open receipt has no matching parent capability"
+            )
+        return RuntimeRawOpenMetrics(
+            raw_open_count=None,
+            unavailable_reason="RAW opener carries no owner session capability",
+            _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+        )
+    if not isinstance(capability, RawAcquisitionSessionCapability):
+        raise RuntimeFinalizationContractError(
+            "capability must be an owner-minted RAW session capability"
+        )
+    if not receipt_batch:
+        return RuntimeRawOpenMetrics(
+            raw_open_count=None,
+            unavailable_reason="process result carries no owner RAW-open receipt",
+            _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+        )
+    if receipt_batch[0].capability != capability:
+        raise RuntimeFinalizationContractError(
+            "RAW-open receipt is bound to a different session capability"
+        )
+    return RuntimeRawOpenMetrics(
+        raw_open_count=1,
+        unavailable_reason="",
+        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -778,8 +932,11 @@ def _derive_runtime_observability_ledger(
             "worker RSS samples must exactly match owner-derived worker keys"
         )
     worker_samples = {sample.worker_key: sample for sample in telemetry.worker_peak_rss}
+    acquisition_metrics = derive_runtime_acquisition_metrics(
+        tuple(item.acquisition for item in acquisition_batch)
+    )
     acquisition_counts = {
-        name: sum(getattr(item.acquisition, name) for item in acquisition_batch)
+        name: getattr(acquisition_metrics, name)
         for name in (
             "logical_xic_request_count",
             "xic_batch_count",
@@ -1295,6 +1452,7 @@ def _acquisition_receipts_match(
 
 
 __all__ = [
+    "RuntimeAcquisitionMetrics",
     "RuntimeAcquisitionReceipt",
     "RuntimeArtifactIoSample",
     "RuntimeArtifactRegistrationReceipt",
@@ -1303,6 +1461,7 @@ __all__ = [
     "RuntimeFinalizationPersister",
     "RuntimeFinalizationReceipt",
     "RuntimeProcessTreePeakRssSample",
+    "RuntimeRawOpenMetrics",
     "RuntimeResourceSettlementReceipt",
     "RuntimeTelemetryProvider",
     "RuntimeTelemetrySamples",
@@ -1310,6 +1469,8 @@ __all__ = [
     "RuntimeWorkerBatchProvider",
     "RuntimeWorkerPeakRssSample",
     "accept_runtime_finalization_receipt",
+    "derive_runtime_acquisition_metrics",
+    "derive_runtime_raw_open_metrics",
     "execute_runtime_attempt",
     "mint_work_unit_settlement",
     "runtime_observation_event_count",
