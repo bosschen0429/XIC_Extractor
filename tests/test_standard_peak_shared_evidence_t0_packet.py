@@ -330,6 +330,24 @@ def test_duplicate_crossed_partial_and_schema_mutations_fail_closed(
     with pytest.raises(ValueError, match="diagnostic owner remains live"):
         _validate_packet(diagnostic_live_owner)
 
+    package_diagnostic_live_owner = _copy_packet(
+        tmp_path / "package-diagnostic-live-owner"
+    )
+    rows = _read_tsv(
+        package_diagnostic_live_owner / "rule_disposition_v1.tsv",
+        RULE_COLUMNS,
+    )
+    next(row for row in rows if row["rule_id"] == "SP-025")["final_successor_owner"] = (
+        "xic_extractor.diagnostics.standard_peak_backfill_productization"
+    )
+    _write_tsv(
+        package_diagnostic_live_owner / "rule_disposition_v1.tsv",
+        rows,
+        RULE_COLUMNS,
+    )
+    with pytest.raises(ValueError, match="diagnostic owner remains live"):
+        _validate_packet(package_diagnostic_live_owner)
+
     dual_owner = _copy_packet(tmp_path / "dual-owner")
     rows = _read_tsv(dual_owner / "rule_disposition_v1.tsv", RULE_COLUMNS)
     next(row for row in rows if row["rule_id"] == "SP-003")["final_successor_owner"] = (
@@ -492,7 +510,7 @@ def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
             raise ValueError("invalid implementation child")
         if row["final_runtime_disposition"] in LIVE_RUNTIME_DISPOSITIONS and row[
             "final_successor_owner"
-        ].startswith("tools.diagnostics"):
+        ].startswith(("tools.diagnostics", "xic_extractor.diagnostics")):
             raise ValueError("diagnostic owner remains live")
         if row["final_successor_owner"] not in FINAL_SUCCESSOR_OWNERS:
             raise ValueError("unknown final successor owner")
