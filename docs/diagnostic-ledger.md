@@ -869,3 +869,67 @@ bound-artifact byte diff, caller-minted authority, skipped independent validator
 or partial final visibility within the closed single-writer protocol is `KILL`;
 a requirement to resist another same-permission writer during publication, or a
 schema/lifecycle/recovery dependency, is `REDESIGN`.
+
+## Issue #234 CID-NL Discovery MS1 telemetry and batching gate
+
+Issue #234 closed through Terminal A at clean revision `3b891479`. Transaction 1
+maps every non-empty `DiscoverySeedGroup` to one canonical ordered `XICRequest`,
+acquires singleton owner-minted `TraceAcquisitionBatch` receipts, and preserves
+the existing peak/candidate path. `execution_runtime_owner` alone aggregates the
+accepted acquisition receipts into sealed request, batch, adapter-call, and
+trace-point metrics; `TimingRecorder` renders those values plus the Discovery
+input census and exact native-scan-window characterization. Worker projections
+cannot submit those counts. RSS remains explicitly unsupported with the reason
+`unsupported: Discovery runner has no owner-bound RSS sampler`.
+
+Focused no-RAW verification used the Discovery MS1/pipeline, acquisition
+contract, and runtime-observability suites: 100 tests passed. Scalar-versus-owner
+candidate equality, duplicate logical members, input population completeness,
+wrong cardinality, caller-forged counts, duplicate/unknown measurement fields,
+terminal peak failure, RAW disposal, and original-exception preservation were
+covered. Ruff, focused mypy, the architecture census (42 tests plus the direct
+script smoke), and commit hooks passed.
+
+The fresh current 2RAW characterization used the historical CID-NL 8RAW lane's
+`NormalBC2312_DNA.raw` (199,440,593 bytes) and `TumorBC2312_DNA.raw`
+(202,128,099 bytes), exposed through task-local hardlinks. The clean producing
+revision, default `scripts.run_discovery` CID-NL/peak settings, Python project
+environment, and Thermo RawFileReader 4.0.19.0 were fixed across both runs; the
+RawFileReader DLL SHA-256 was
+`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`.
+No application XIC cache was enabled. OS filesystem cache was uncontrolled: the
+one-worker scalar run executed first and the two-worker process smoke second.
+Both used full Discovery candidate/review CSV output and one repetition. Shell
+elapsed observations were approximately 42.0 s scalar and 23.7 s process; these
+single, ordered runs are process-smoke evidence, not a benchmark conclusion.
+
+| Sample | N logical | U exact windows | C256 | Predicted reduction | Singleton batches/calls | Trace points | Candidate rows |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| NormalBC2312_DNA | 3,358 | 3,102 | 3,102 | 7.62% | 3,358 / 3,358 | 50,703 | 3,358 |
+| TumorBC2312_DNA | 3,792 | 3,502 | 3,503 | 7.62% | 3,792 / 3,792 | 58,035 | 3,789 |
+| Aggregate | 7,150 | 6,604 | 6,605 | 7.6224% | 7,150 / 7,150 | 108,738 | 7,147 |
+
+For both samples `input_group_count = empty_group_count + N`, with zero empty
+groups, and singleton physical calls equal logical requests. The process run
+reported identical owner counts and characterization. Its pickled request/result
+payload observations were 3,646/1,739,270 bytes for Normal and
+3,645/1,976,216 bytes for Tumor; these are explicitly partial IPC observations
+and exclude executor/framework overhead.
+
+Scalar-versus-process artifacts were byte-identical:
+
+- batch index:
+  `beb8e4e1d376a573386d93a751f5e70179d0dfb32d0cf490b1bda8cf7e1b7164`;
+- Normal candidates/review:
+  `68510b5fff4f0b87d20d18e70168498f970d0af68ef9222d6a4e814ea11ecafc` /
+  `b1bbdd591345ee8c80e8124091f631495deedaedbf4a82aff3d701448ff09bfd`;
+- Tumor candidates/review:
+  `58e016b5f5bab1b30f96e7e93b5c41d0a0bfe46f9380fc5fe423e5a1ec9743ce` /
+  `723278e68109898707fddadaf82c2a8f9ebc180e1facc096cc5743e386773184`.
+
+The aggregate promotion result is `7.6224% < 20%`. Transaction 2 was therefore
+not authorized, the internal batch maximum remains 1, and no paired 8RAW or
+85RAW run was launched. Disposition: **`KILL_BATCHING_NO_VALUE`**. Truthful
+owner-derived telemetry is retained; exact-window batching, super-windows,
+public tuning/configuration, caches, Matrix/writer changes, and scientific rule
+changes do not ship. Validation status remains `diagnostic_only`.
