@@ -1007,3 +1007,42 @@ Superseding disposition: **`RETAIN_NATIVE_BATCHING`** (Terminal B). Validation
 status remains `diagnostic_only`; this performance result grants no new Matrix,
 writer, activation, publication, or scientific authority. No 85RAW run was
 launched.
+
+### Two-worker process confirmation
+
+The highest-value residual evidence loop fixed both variants to the current
+two-worker Windows process backend at clean revision `29d02d0a`. It reused the
+same two RAW hardlinks, Python 3.12.13, DLL identity, default Discovery settings,
+full CSV outputs, and foreground timing contract. A task-local ignored wrapper
+applied the scalar `1` or candidate `256` batch maximum at module import so the
+override executed inside each spawned RAW-owning worker, not only in the parent.
+One warmup per variant was excluded. The formal order was
+`S1 C1 / C2 S2 / S3 C3`; OS filesystem cache remained uncontrolled.
+
+| Pair | Scalar wall (s) | Candidate wall (s) | Paired gain |
+| --- | ---: | ---: | ---: |
+| 1 | 22.149 | 20.654 | 6.753% |
+| 2 | 21.797 | 21.203 | 2.726% |
+| 3 | 21.429 | 20.796 | 2.956% |
+
+Scalar wall median was `21.797 s`, candidate wall median was `20.796 s`, and
+the median gain was `4.594%` against `3.303%` scalar range-over-median noise.
+Every paired candidate was faster. Because samples execute concurrently, the
+process-stage decision metric is the maximum per-sample
+`discover.ms1_backfill` span per run rather than the sum: its median was
+`6.360 -> 5.648 s`, an `11.195%` gain against `4.194%` scalar stage noise.
+
+All six formal runs preserved 7,150 logical requests, 108,738 trace points, and
+the five byte-identical Discovery CSV hashes already listed above. Mechanical
+batches changed `7,150 -> 29`; physical vendor calls changed `7,150 -> 6,605`.
+The worker-emitted batch-maximum observations summed to 2 for scalar and 512 for
+candidate, confirming that the intended variant reached both spawned workers.
+Partial pickled request/result payload observations changed
+`3,722,849 -> 3,566,259 bytes`; they still exclude executor framing and confirmed
+transport bytes. Worker and process-tree RSS remain unavailable with the owner
+reason `unsupported: Discovery runner has no owner-bound RSS sampler`.
+
+This confirmation closes the process-backend uncertainty for the bounded 2RAW
+lane and strengthens, but does not broaden, Terminal B. It does not establish a
+universal dataset gain, an RSS bound, or product/scientific authority. No
+additional 8RAW or 85RAW run was launched for this loop.
