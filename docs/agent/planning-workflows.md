@@ -9,9 +9,9 @@ migration policy. Stable runners and validation command shapes remain in
 - Before phase plans or expensive validation, name the decision the run can
   close, strongest existing oracle, missing independent evidence, expected
   runtime/artifacts, and fail-fast or inconclusive path.
-- Use tools proactively. Pick the available local search, structural-context,
-  subagent, plugin, external-docs, or real-data validation path that best
-  closes the decision; do not choose a weaker path only to save tokens or cost.
+- Use evidence tools proactively. Pick the structural-context, external-docs,
+  or real-data validation path that best closes the decision; do not choose a
+  weaker path only to save tokens or cost.
 - For long tool chains, write the decision map first: question, evidence source,
   action if pass, action if fail. This prevents blind loops without discouraging
   tool use.
@@ -26,21 +26,48 @@ migration policy. Stable runners and validation command shapes remain in
   critical-thinking review angle: strongest assumption, stale-artifact risk,
   cheaper existing oracle, or condition that would invalidate the path.
 
-## Needs-Info Activation And Premise Compilation
+## Task Shaping And Premise Compilation
 
-Use this gate before production edits when an issue is labelled `needs-info`,
-the work transforms a legacy owner, dialogue corrected a load-bearing premise,
-or the real production transaction and consumer set are not yet bounded. A
-focused fix inside an established owner with a fixed oracle and known consumers
-stays on the normal fast path.
+Every task follows the same delivery loop. Only non-trivial tasks need an
+explicit artifact, and its depth scales with risk:
 
-The issue body always carries the single authority pointer stub for the
+1. **Shape the goal** — name the intended outcome and user value, constraints,
+   and the premise most likely to change the direction.
+2. **Explore current reality** — inspect the current owner, implementation,
+   real entry, tests, and strongest evidence; separate contract, observation,
+   hypothesis, and direction-changing unknowns.
+3. **Bound the task** — define in/out, preserved invariants, expected diff,
+   acceptance evidence, and stop rule so implementation and review share the
+   same finish line.
+4. **Execute the smallest coherent slice** through the real product surface.
+5. **Verify and review** representative output and failure semantics, then
+   report observed facts, inference, and remaining unknowns separately.
+
+This is an iterative loop, not a promise of one-pass delivery. New evidence may
+reopen shaping or boundaries; when it does, update the canonical task shape and
+invalidate displaced assumptions before execution resumes.
+
+An established-owner fix with a fixed oracle may express this shape in the
+request, a few sentences, and a focused test. Multi-step work keeps a short
+task shape in its issue or plan. Escalate to a **Current Packet** only when an
+unknown can change ownership, public surface, material cost, or acceptance;
+the work crosses a semantic/runtime boundary, uses expensive real-data
+validation, transforms a legacy owner, follows a load-bearing premise
+correction, has an unbounded production transaction, or repeats a refreeze or
+rework class. `needs-info` and legacy work are escalation signals, not the
+scope of the delivery loop.
+
+### Current Packet Escalation
+
+The canonical task surface carries the single authority pointer stub for the
 **Current Packet**: packet ID, revision, base SHA, status, and exact location.
-The packet may live in the issue body, one canonical comment, or a linked
-tracked spec. Every replacement is self-contained and lists all superseded
-packet IDs; partial supersession such as "replace one section and inherit the
-rest" is invalid. Earlier comments remain history and do not remain active
-acceptance text after a refreeze. The packet contains four compiled blocks:
+For issue-backed work this stub stays in the issue body; otherwise it stays in
+the active plan, goal, or handoff. The packet may live there, in one canonical
+comment, or in a linked tracked spec. Every replacement is self-contained and
+lists all superseded packet IDs; partial supersession such as "replace one
+section and inherit the rest" is invalid. Earlier versions remain history and
+do not remain active acceptance text after a refreeze. The packet contains four
+compiled blocks:
 
 1. **Premise ledger** — list each decision-bearing statement, its authority,
    state, and what it invalidates. Valid states are `contract`, `observed`,
@@ -92,19 +119,14 @@ whole-diff review. When the existing owner trips, stop instance patches, reopen
 the transaction census, and bound, shrink, delete, or replace the mechanism, or
 return the issue to `needs-info` with the exact missing oracle or surface.
 
-Subagents may independently census topology, owner contracts, tests, historical
-findings, and runtime probes when each task has a fixed read-only schema. One
-root agent owns premise reconciliation, the Current Packet, and the final
-acceptance decision; parallel evidence gathering must not create parallel
-conceptual owners.
-
-Activation is complete only after a fresh read-only review challenges the
-load-bearing premise and inspects the evidence for at least one representative
-highest-entry transaction with its real consumers intact. The reviewer must be
-able to identify the packet ID/base SHA, normative premises, asset disposition,
-bounded production transaction, census commands and exclusions, falsifying
-case, acceptance evidence, and stop rule without reconstructing them from the
-comment history. Closeout reports clarification/review rounds, delivered heads,
+Current Packet escalation is complete only after a fresh read-only review
+challenges the load-bearing premise and inspects the evidence for at least one
+representative highest-entry transaction with its real consumers intact. The
+reviewer must be able to identify the packet ID/base SHA, normative premises,
+asset disposition, bounded production transaction, census commands and
+exclusions, falsifying case, acceptance evidence, and stop rule without
+reconstructing them from the comment history. Closeout reports clarification
+rounds, review rounds, delivered heads,
 same-class recurrence, diff churn, packet-shaping cost, and any missed surface
 when the work crossed this gate. Use PR metadata and existing receipts; do not
 create another progress ledger merely to measure the workflow. Until a
