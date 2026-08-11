@@ -5,8 +5,26 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from tools.diagnostics import family_ms1_overlay_batch as batch
 from tools.diagnostics import family_ms1_overlay_plot as overlay_plot
+
+
+@pytest.fixture(autouse=True)
+def _keep_string_trace_rows_as_test_doubles(monkeypatch) -> None:
+    original = batch.overlay_plot._build_family_ms1_evidence_maps
+
+    def _build_maps(rows):
+        if rows and isinstance(rows[0], str):
+            return {}, {}, {}, {}
+        return original(rows)
+
+    monkeypatch.setattr(
+        batch.overlay_plot,
+        "_build_family_ms1_evidence_maps",
+        _build_maps,
+    )
 
 
 def test_family_ms1_modules_document_legacy_peak_group_terminology() -> None:
@@ -137,13 +155,13 @@ def test_batch_uses_structured_queue_columns_and_limit(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "write_family_ms1_overlay_outputs",
+        "_render_family_ms1_overlay_outputs",
         fake_write_family_ms1_overlay_outputs,
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
             "family_verdict": "ms1_shape_supports_family_backfill",
             "dda_trigger_limited_ms2_support": True,
             "detected_count": 2,
@@ -231,7 +249,7 @@ def test_batch_evidence_only_writes_trace_artifacts_without_png(
     def fail_render(**_kwargs):
         raise AssertionError("evidence-only mode must not render PNG overlays")
 
-    def fake_write_summary(path: Path, _rows) -> None:
+    def fake_write_summary(path: Path, _rows, **_kwargs) -> None:
         path.write_text("sample_stem\nS1\n", encoding="utf-8")
 
     def fake_write_trace_data(path: Path, **_kwargs) -> None:
@@ -250,15 +268,15 @@ def test_batch_evidence_only_writes_trace_artifacts_without_png(
 
     monkeypatch.setattr(
         batch.overlay_plot,
-        "write_family_ms1_overlay_outputs",
+        "_render_family_ms1_overlay_outputs",
         fail_render,
     )
     monkeypatch.setattr(batch.overlay_plot, "_write_summary", fake_write_summary)
     monkeypatch.setattr(batch.overlay_plot, "_write_trace_data", fake_write_trace_data)
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {"family_verdict": batch.SUPPORT_FAMILY_VERDICT},
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {"family_verdict": batch.SUPPORT_FAMILY_VERDICT},
     )
 
     rows = batch.run_overlay_batch(
@@ -309,14 +327,14 @@ def test_batch_evidence_only_reuses_content_keyed_cache_across_output_dirs(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
             "family_verdict": batch.SUPPORT_FAMILY_VERDICT,
             "detected_count": 1,
         },
     )
 
-    def fake_write_summary(path: Path, _rows) -> None:
+    def fake_write_summary(path: Path, _rows, **_kwargs) -> None:
         path.write_text("sample_stem\tstatus\nS1\trescued\n", encoding="utf-8")
 
     def fake_write_trace_data(path: Path, **_kwargs) -> None:
@@ -418,8 +436,8 @@ def test_batch_evidence_cache_stale_index_entry_falls_back(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
             "family_verdict": batch.SUPPORT_FAMILY_VERDICT,
             "detected_count": 1,
         },
@@ -427,7 +445,7 @@ def test_batch_evidence_cache_stale_index_entry_falls_back(
 
     render_count = 0
 
-    def fake_write_summary(path: Path, _rows) -> None:
+    def fake_write_summary(path: Path, _rows, **_kwargs) -> None:
         path.write_text("sample_stem\tstatus\nS1\trescued\n", encoding="utf-8")
 
     def fake_write_trace_data(path: Path, **_kwargs) -> None:
@@ -518,8 +536,8 @@ def test_batch_evidence_cache_rejects_same_size_trace_payload_mismatch(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
             "family_verdict": batch.SUPPORT_FAMILY_VERDICT,
             "detected_count": 1,
         },
@@ -527,7 +545,7 @@ def test_batch_evidence_cache_rejects_same_size_trace_payload_mismatch(
 
     render_count = 0
 
-    def fake_write_summary(path: Path, _rows) -> None:
+    def fake_write_summary(path: Path, _rows, **_kwargs) -> None:
         path.write_text("sample_stem\tstatus\nS1\trescued\n", encoding="utf-8")
 
     def fake_write_trace_data(path: Path, **_kwargs) -> None:
@@ -683,14 +701,14 @@ def test_batch_evidence_cache_reuses_same_request_across_copied_inputs(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
             "family_verdict": batch.SUPPORT_FAMILY_VERDICT,
             "detected_count": 1,
         },
     )
 
-    def fake_write_summary(path: Path, _rows) -> None:
+    def fake_write_summary(path: Path, _rows, **_kwargs) -> None:
         path.write_text("sample_stem\tstatus\nS1\trescued\n", encoding="utf-8")
 
     def fake_write_trace_data(path: Path, **_kwargs) -> None:
@@ -1022,7 +1040,7 @@ def test_batch_uses_backfill_seed_mz_when_seed_queue_provides_it(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "write_family_ms1_overlay_outputs",
+        "_render_family_ms1_overlay_outputs",
         lambda **kwargs: overlay_plot.FamilyMs1OverlayOutputs(
             png_path=output_dir / "seed.png",
             pdf_path=output_dir / "seed.pdf",
@@ -1032,8 +1050,10 @@ def test_batch_uses_backfill_seed_mz_when_seed_queue_provides_it(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {"family_verdict": "ms1_shape_supports_family_backfill"},
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
+            "family_verdict": "ms1_shape_supports_family_backfill"
+        },
     )
 
     rows = batch.run_overlay_batch(
@@ -1091,13 +1111,15 @@ def test_batch_no_pdf_skips_pdf_output_contract(
 
     monkeypatch.setattr(
         batch.overlay_plot,
-        "write_family_ms1_overlay_outputs",
+        "_render_family_ms1_overlay_outputs",
         fake_write_family_ms1_overlay_outputs,
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {"family_verdict": "ms1_shape_supports_family_backfill"},
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
+            "family_verdict": "ms1_shape_supports_family_backfill"
+        },
     )
 
     rows = batch.run_overlay_batch(
@@ -1614,7 +1636,7 @@ def test_batch_does_not_reuse_existing_outputs_with_mismatched_trace_json(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "write_family_ms1_overlay_outputs",
+        "_render_family_ms1_overlay_outputs",
         lambda **kwargs: overlay_plot.FamilyMs1OverlayOutputs(
             png_path=output_dir / f"{kwargs['output_prefix']}.png",
             pdf_path=output_dir / f"{kwargs['output_prefix']}.pdf",
@@ -1624,8 +1646,10 @@ def test_batch_does_not_reuse_existing_outputs_with_mismatched_trace_json(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {"family_verdict": "review_required_uncertain_ms1_shape"},
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
+            "family_verdict": "review_required_uncertain_ms1_shape"
+        },
     )
 
     rows = batch.run_overlay_batch(
@@ -1684,7 +1708,7 @@ def test_batch_does_not_reuse_legacy_trace_json_without_batch_provenance(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "write_family_ms1_overlay_outputs",
+        "_render_family_ms1_overlay_outputs",
         lambda **kwargs: overlay_plot.FamilyMs1OverlayOutputs(
             png_path=output_dir / f"{kwargs['output_prefix']}.png",
             pdf_path=output_dir / f"{kwargs['output_prefix']}.pdf",
@@ -1694,8 +1718,10 @@ def test_batch_does_not_reuse_legacy_trace_json_without_batch_provenance(
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {"family_verdict": "review_required_uncertain_ms1_shape"},
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
+            "family_verdict": "review_required_uncertain_ms1_shape"
+        },
     )
 
     rows = batch.run_overlay_batch(
@@ -1903,14 +1929,14 @@ def _install_fake_cache_renderer(monkeypatch) -> Callable[[], int]:
     )
     monkeypatch.setattr(
         batch.overlay_plot,
-        "build_family_ms1_evidence_summary",
-        lambda _rows: {
+        "_build_family_ms1_evidence_summary",
+        lambda _rows, **_kwargs: {
             "family_verdict": batch.SUPPORT_FAMILY_VERDICT,
             "detected_count": 1,
         },
     )
 
-    def fake_write_summary(path: Path, _rows) -> None:
+    def fake_write_summary(path: Path, _rows, **_kwargs) -> None:
         path.write_text("sample_stem\tstatus\nS1\trescued\n", encoding="utf-8")
 
     def fake_write_trace_data(path: Path, **_kwargs) -> None:

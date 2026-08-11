@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import numpy as np
@@ -16,6 +16,8 @@ from tools.diagnostics.family_ms1_overlay_evidence import (
     _absolute_own_max_shape_similarity,
     _apex_aligned_normalized_trace,
     _apex_aligned_shape_similarity,
+    _build_family_ms1_evidence_maps,
+    _build_family_ms1_evidence_summary,
     _gaussian_smooth_values,
     _global_trace_apex_delta,
     _local_to_global_max_ratio,
@@ -73,8 +75,11 @@ from tools.diagnostics.family_ms1_overlay_writers import (
     _json_float,
     _write_summary,
     _write_trace_data,
-    write_family_ms1_overlay_outputs,
 )
+from tools.diagnostics.family_ms1_overlay_writers import (
+    write_family_ms1_overlay_outputs as _render_family_ms1_overlay_outputs,
+)
+from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 
 __all__ = [
     "APEX_ALIGN_HALF_WINDOW_MIN",
@@ -94,6 +99,8 @@ __all__ = [
     "_absolute_own_max_shape_similarity",
     "_apex_aligned_normalized_trace",
     "_apex_aligned_shape_similarity",
+    "_build_family_ms1_evidence_maps",
+    "_build_family_ms1_evidence_summary",
     "_draw_center_rt",
     "_format_float",
     "_gaussian_smooth",
@@ -116,9 +123,11 @@ __all__ = [
     "_plot_unified_legend",
     "_point_style",
     "_require_columns",
+    "_render_family_ms1_overlay_outputs",
     "_stable_jitter",
     "_write_summary",
     "_write_trace_data",
+    "_write_family_ms1_overlay_transaction",
     "assign_highlight_groups",
     "build_family_ms1_evidence_summary",
     "extract_family_trace_rows",
@@ -131,6 +140,95 @@ __all__ = [
     "trace_row_from_arrays",
     "write_family_ms1_overlay_outputs",
 ]
+
+
+def write_family_ms1_overlay_outputs(
+    *,
+    rows: Sequence[TraceOverlayRow],
+    output_dir: Path,
+    output_prefix: str,
+    family_id: str,
+    mz: float,
+    ppm: float,
+    rt_min: float,
+    rt_max: float,
+    family_center_rt: float | None,
+    provenance: Mapping[str, object] | None = None,
+    drift_lookup: DriftLookupProtocol | None = None,
+    write_pdf: bool = True,
+    dpi: int = 140,
+) -> FamilyMs1OverlayOutputs:
+    """Compatibility wrapper around one complete evidence/output transaction."""
+
+    outputs, _evidence_summary = _write_family_ms1_overlay_transaction(
+        rows=rows,
+        output_dir=output_dir,
+        output_prefix=output_prefix,
+        family_id=family_id,
+        mz=mz,
+        ppm=ppm,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        family_center_rt=family_center_rt,
+        provenance=provenance,
+        drift_lookup=drift_lookup,
+        write_pdf=write_pdf,
+        dpi=dpi,
+    )
+    return outputs
+
+
+def _write_family_ms1_overlay_transaction(
+    *,
+    rows: Sequence[TraceOverlayRow],
+    output_dir: Path,
+    output_prefix: str,
+    family_id: str,
+    mz: float,
+    ppm: float,
+    rt_min: float,
+    rt_max: float,
+    family_center_rt: float | None,
+    provenance: Mapping[str, object] | None = None,
+    drift_lookup: DriftLookupProtocol | None = None,
+    write_pdf: bool = True,
+    dpi: int = 140,
+) -> tuple[
+    FamilyMs1OverlayOutputs,
+    dict[str, int | float | str | bool | None],
+]:
+    (
+        _normalized_by_row,
+        window_facts_by_row,
+        shape_similarity,
+        absolute_shape_similarity,
+    ) = _build_family_ms1_evidence_maps(rows)
+    evidence_summary = _build_family_ms1_evidence_summary(
+        rows,
+        window_facts_by_row=window_facts_by_row,
+        shape_similarity=shape_similarity,
+        absolute_shape_similarity=absolute_shape_similarity,
+    )
+    outputs = _render_family_ms1_overlay_outputs(
+        rows=rows,
+        output_dir=output_dir,
+        output_prefix=output_prefix,
+        family_id=family_id,
+        mz=mz,
+        ppm=ppm,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        family_center_rt=family_center_rt,
+        window_facts_by_row=window_facts_by_row,
+        shape_similarity=shape_similarity,
+        absolute_shape_similarity=absolute_shape_similarity,
+        evidence_summary=evidence_summary,
+        provenance=provenance,
+        drift_lookup=drift_lookup,
+        write_pdf=write_pdf,
+        dpi=dpi,
+    )
+    return outputs, evidence_summary
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -156,7 +254,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # peak-group context overlay is intentionally two-panel and must not fail on a
     # no-op drift artifact.
     drift_lookup = None
-    outputs = write_family_ms1_overlay_outputs(
+    outputs, evidence_summary = _write_family_ms1_overlay_transaction(
         rows=rows,
         output_dir=args.output_dir,
         output_prefix=prefix,
@@ -172,7 +270,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"MS1 overlay PDF: {outputs.pdf_path}")
     print(f"Trace summary TSV: {outputs.summary_tsv}")
     print(f"Trace data JSON: {outputs.trace_data_json}")
-    evidence_summary = build_family_ms1_evidence_summary(rows)
     print(f"Peak-group MS1 verdict: {evidence_summary['family_verdict']}")
     return 0
 
