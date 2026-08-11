@@ -1000,7 +1000,7 @@ def _render_family(
         raw_identity_by_sample=raw_identity_by_sample,
     )
     (
-        _normalized_by_row,
+        normalized_by_row,
         window_facts_by_row,
         shape_similarity,
         absolute_shape_similarity,
@@ -1027,6 +1027,7 @@ def _render_family(
         overlay_plot._write_summary(
             summary_tsv,
             trace_rows,
+            normalized_by_row=normalized_by_row,
             window_facts_by_row=window_facts_by_row,
             shape_similarity=shape_similarity,
             absolute_shape_similarity=absolute_shape_similarity,
@@ -1041,6 +1042,7 @@ def _render_family(
             rt_max=request.rt_max,
             family_center_rt=request.family_center_rt,
             provenance=provenance,
+            normalized_by_row=normalized_by_row,
             window_facts_by_row=window_facts_by_row,
             shape_similarity=shape_similarity,
             absolute_shape_similarity=absolute_shape_similarity,
@@ -1058,6 +1060,7 @@ def _render_family(
             rt_max=request.rt_max,
             family_center_rt=request.family_center_rt,
             provenance=provenance,
+            normalized_by_row=normalized_by_row,
             window_facts_by_row=window_facts_by_row,
             shape_similarity=shape_similarity,
             absolute_shape_similarity=absolute_shape_similarity,

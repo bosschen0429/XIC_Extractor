@@ -17,6 +17,7 @@ from tools.diagnostics.family_ms1_overlay_rendering import (
     render_hypothesis_ms1_overlay,
 )
 from xic_extractor.peak_detection.evidence_facts import TraceWindowEvidenceFacts
+from xic_extractor.peak_detection.ms1_shape_identity import OwnMaxTrace
 from xic_extractor.tabular_io import write_tsv
 
 if TYPE_CHECKING:
@@ -34,6 +35,7 @@ def write_family_ms1_overlay_outputs(
     rt_min: float,
     rt_max: float,
     family_center_rt: float | None,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
     window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
     shape_similarity: Mapping[str, float | None],
     absolute_shape_similarity: Mapping[str, float | None],
@@ -43,6 +45,11 @@ def write_family_ms1_overlay_outputs(
     write_pdf: bool = True,
     dpi: int = 140,
 ) -> FamilyMs1OverlayOutputs:
+    _require_complete_trace_context(
+        rows,
+        normalized_by_row=normalized_by_row,
+        window_facts_by_row=window_facts_by_row,
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     summary_tsv = output_dir / f"{output_prefix}_trace_summary.tsv"
     trace_data_json = output_dir / f"{output_prefix}_trace_data.json"
@@ -56,6 +63,7 @@ def write_family_ms1_overlay_outputs(
     _write_summary(
         summary_tsv,
         rows,
+        normalized_by_row=normalized_by_row,
         window_facts_by_row=window_facts_by_row,
         shape_similarity=shape_similarity,
         absolute_shape_similarity=absolute_shape_similarity,
@@ -70,6 +78,7 @@ def write_family_ms1_overlay_outputs(
         rt_max=rt_max,
         family_center_rt=family_center_rt,
         provenance=provenance,
+        normalized_by_row=normalized_by_row,
         window_facts_by_row=window_facts_by_row,
         shape_similarity=shape_similarity,
         absolute_shape_similarity=absolute_shape_similarity,
@@ -85,6 +94,7 @@ def write_family_ms1_overlay_outputs(
         rt_min=rt_min,
         rt_max=rt_max,
         family_center_rt=family_center_rt,
+        normalized_by_row=normalized_by_row,
         drift_lookup=drift_lookup,
         dpi=dpi,
     )
@@ -98,6 +108,7 @@ def write_family_ms1_overlay_outputs(
         rt_min=rt_min,
         rt_max=rt_max,
         family_center_rt=family_center_rt,
+        normalized_by_row=normalized_by_row,
         dpi=dpi,
     )
     return FamilyMs1OverlayOutputs(
@@ -112,6 +123,7 @@ def _write_summary(
     path: Path,
     rows: Sequence[TraceOverlayRow],
     *,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
     window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
     shape_similarity: Mapping[str, float | None],
     absolute_shape_similarity: Mapping[str, float | None],
@@ -147,8 +159,13 @@ def _write_summary(
                 "cell_apex_rt": _format_float(row.cell_apex_rt, digits=6),
                 "cell_start_rt": _format_float(row.cell_start_rt, digits=6),
                 "cell_end_rt": _format_float(row.cell_end_rt, digits=6),
-                "trace_max_intensity": _format_float(row.trace_max_intensity),
-                "trace_apex_rt": _format_float(row.trace_apex_rt, digits=6),
+                "trace_max_intensity": _format_float(
+                    normalized_by_row[row].max_intensity,
+                ),
+                "trace_apex_rt": _format_float(
+                    window_facts_by_row[row].trace_apex_rt_min,
+                    digits=6,
+                ),
                 "global_trace_apex_delta_min": _format_float(
                     window_facts_by_row[row].global_trace_apex_delta_min,
                 ),
@@ -189,6 +206,7 @@ def _write_trace_data(
     rt_min: float,
     rt_max: float,
     family_center_rt: float | None,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
     window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
     shape_similarity: Mapping[str, float | None],
     absolute_shape_similarity: Mapping[str, float | None],
@@ -215,8 +233,12 @@ def _write_trace_data(
                 "cell_apex_rt": row.cell_apex_rt,
                 "cell_start_rt": row.cell_start_rt,
                 "cell_end_rt": row.cell_end_rt,
-                "trace_max_intensity": row.trace_max_intensity,
-                "trace_apex_rt": row.trace_apex_rt,
+                "trace_max_intensity": _json_float(
+                    normalized_by_row[row].max_intensity,
+                ),
+                "trace_apex_rt": _json_float(
+                    window_facts_by_row[row].trace_apex_rt_min,
+                ),
                 "global_trace_apex_delta_min": _json_float(
                     window_facts_by_row[row].global_trace_apex_delta_min,
                 ),
@@ -244,6 +266,30 @@ def _write_trace_data(
         ],
     }
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def _require_complete_trace_context(
+    rows: Sequence[TraceOverlayRow],
+    *,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
+) -> None:
+    expected_rows = set(rows)
+    if (
+        set(normalized_by_row) != expected_rows
+        or set(window_facts_by_row) != expected_rows
+    ):
+        raise ValueError(
+            "complete Gaussian15 trace context is required before writing outputs",
+        )
+    if any(
+        not isinstance(normalized_by_row[row], OwnMaxTrace)
+        or not isinstance(window_facts_by_row[row], TraceWindowEvidenceFacts)
+        for row in rows
+    ):
+        raise ValueError(
+            "complete Gaussian15 trace context is required before writing outputs",
+        )
 
 
 def _format_float(value: float | None, *, digits: int = 6) -> str:

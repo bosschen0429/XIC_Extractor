@@ -4,10 +4,13 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics import family_ms1_overlay_batch as batch
+from tools.diagnostics import family_ms1_overlay_evidence as overlay_evidence
 from tools.diagnostics import family_ms1_overlay_plot as report
 from tools.diagnostics import family_ms1_overlay_writers as writers
-from xic_extractor.peak_detection import evidence_facts as peak_evidence_owner
+from xic_extractor.peak_detection import ms1_shape_identity as peak_trace_owner
 
 
 def test_cli_and_batch_build_one_gaussian15_context_per_row(
@@ -16,22 +19,21 @@ def test_cli_and_batch_build_one_gaussian15_context_per_row(
 ) -> None:
     rows = _rows()
     smooth_points_seen: list[int] = []
-    original = peak_evidence_owner.own_max_normalized_trace
+    original = peak_trace_owner.gaussian_smooth_values
 
-    def _counting_owner(rt, intensity, *, smooth_points):
-        smooth_points_seen.append(smooth_points)
-        return original(rt, intensity, smooth_points=smooth_points)
+    def _counting_smooth(values, *, points):
+        smooth_points_seen.append(points)
+        return original(values, points=points)
 
     monkeypatch.setattr(
-        peak_evidence_owner,
-        "own_max_normalized_trace",
-        _counting_owner,
+        peak_trace_owner,
+        "gaussian_smooth_values",
+        _counting_smooth,
     )
-    monkeypatch.setattr(writers, "render_family_ms1_overlay", lambda **_kwargs: None)
     monkeypatch.setattr(
-        writers,
-        "render_hypothesis_ms1_overlay",
-        lambda **_kwargs: None,
+        overlay_evidence,
+        "gaussian_smooth_values",
+        _counting_smooth,
     )
     monkeypatch.setattr(report, "load_family_cells", lambda *_args, **_kwargs: ())
     monkeypatch.setattr(
@@ -117,6 +119,115 @@ def test_cli_and_batch_build_one_gaussian15_context_per_row(
     _assert_evidence_outputs(evidence_dir, "batch-evidence")
 
 
+def test_serialized_trace_fields_share_one_gaussian15_basis(tmp_path: Path) -> None:
+    rt = tuple(index / 10.0 for index in range(31))
+    intensity = [0.0] * len(rt)
+    intensity[5] = 100.0
+    for index in range(15, 26):
+        intensity[index] = 40.0
+    shifted = report.trace_row_from_arrays(
+        _cell("basis", status="detected", height=100.0, apex=2.0),
+        "detected_seed",
+        rt,
+        intensity,
+    )
+    inconclusive = report.trace_row_from_arrays(
+        _cell("short", status="rescued", height=10.0, apex=2.0),
+        "top_rescued_ms1_area",
+        (1.9, 2.0),
+        (1.0, 10.0),
+    )
+
+    outputs = report.write_family_ms1_overlay_outputs(
+        rows=(shifted, inconclusive),
+        output_dir=tmp_path,
+        output_prefix="basis",
+        family_id="FAM001",
+        mz=251.165,
+        ppm=10.0,
+        rt_min=0.0,
+        rt_max=3.0,
+        family_center_rt=2.0,
+        write_pdf=False,
+    )
+
+    with outputs.summary_tsv.open(encoding="utf-8", newline="") as handle:
+        summary_by_sample = {
+            row["sample_stem"]: row
+            for row in csv.DictReader(handle, delimiter="\t")
+        }
+    payload = json.loads(outputs.trace_data_json.read_text(encoding="utf-8"))
+    trace_by_sample = {trace["sample_stem"]: trace for trace in payload["traces"]}
+
+    serialized = trace_by_sample["basis"]
+    assert serialized["rt"] == list(rt)
+    assert serialized["intensity"] == intensity
+    assert serialized["trace_apex_rt"] == pytest.approx(2.0)
+    assert serialized["trace_max_intensity"] == pytest.approx(39.02762293290437)
+    assert serialized["global_trace_apex_delta_min"] == pytest.approx(
+        serialized["trace_apex_rt"] - serialized["cell_apex_rt"],
+    )
+    assert serialized["local_window_to_global_max_ratio"] == pytest.approx(
+        serialized["local_window_max_intensity"]
+        / serialized["trace_max_intensity"],
+    )
+
+    summary = summary_by_sample["basis"]
+    assert float(summary["global_trace_apex_delta_min"]) == pytest.approx(
+        float(summary["trace_apex_rt"]) - float(summary["cell_apex_rt"]),
+    )
+    assert float(summary["local_window_to_global_max_ratio"]) == pytest.approx(
+        float(summary["local_window_max_intensity"])
+        / float(summary["trace_max_intensity"]),
+        rel=2e-5,
+    )
+
+    unavailable = trace_by_sample["short"]
+    assert unavailable["trace_apex_rt"] is None
+    assert unavailable["trace_max_intensity"] is None
+    assert unavailable["global_trace_apex_delta_min"] is None
+    assert unavailable["local_window_max_intensity"] is None
+    assert unavailable["local_window_to_global_max_ratio"] is None
+    assert summary_by_sample["short"]["trace_apex_rt"] == ""
+    assert summary_by_sample["short"]["trace_max_intensity"] == ""
+
+
+def test_writer_rejects_incomplete_owner_context_before_output(tmp_path: Path) -> None:
+    rows = _rows()
+    (
+        normalized_by_row,
+        window_facts_by_row,
+        shape_similarity,
+        absolute_shape_similarity,
+    ) = report._build_family_ms1_evidence_maps(rows)
+    evidence_summary = report._build_family_ms1_evidence_summary(
+        rows,
+        window_facts_by_row=window_facts_by_row,
+        shape_similarity=shape_similarity,
+        absolute_shape_similarity=absolute_shape_similarity,
+    )
+
+    with pytest.raises(ValueError, match="complete Gaussian15 trace context"):
+        writers.write_family_ms1_overlay_outputs(
+            rows=rows,
+            output_dir=tmp_path,
+            output_prefix="incomplete",
+            family_id="FAM001",
+            mz=251.165,
+            ppm=10.0,
+            rt_min=0.8,
+            rt_max=1.2,
+            family_center_rt=1.0,
+            normalized_by_row={rows[0]: normalized_by_row[rows[0]]},
+            window_facts_by_row=window_facts_by_row,
+            shape_similarity=shape_similarity,
+            absolute_shape_similarity=absolute_shape_similarity,
+            evidence_summary=evidence_summary,
+            write_pdf=False,
+        )
+    assert not any(tmp_path.iterdir())
+
+
 def _rows() -> tuple[report.TraceOverlayRow, ...]:
     rt = [0.8, 0.9, 1.0, 1.1, 1.2]
     return (
@@ -140,15 +251,16 @@ def _cell(
     *,
     status: str,
     height: float,
+    apex: float = 1.0,
 ) -> report.FamilyCell:
     return report.FamilyCell(
         sample_stem=sample_stem,
         status=status,
         area=height * 10.0,
         height=height,
-        apex_rt=1.0,
-        peak_start_rt=0.9,
-        peak_end_rt=1.1,
+        apex_rt=apex,
+        peak_start_rt=apex - 0.1,
+        peak_end_rt=apex + 0.1,
         region_shadow_verdict="current_supported",
         source_candidate_id=f"{sample_stem}#1",
     )

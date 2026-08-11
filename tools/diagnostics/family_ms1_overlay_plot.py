@@ -198,7 +198,7 @@ def _write_family_ms1_overlay_transaction(
     dict[str, int | float | str | bool | None],
 ]:
     (
-        _normalized_by_row,
+        normalized_by_row,
         window_facts_by_row,
         shape_similarity,
         absolute_shape_similarity,
@@ -219,6 +219,7 @@ def _write_family_ms1_overlay_transaction(
         rt_min=rt_min,
         rt_max=rt_max,
         family_center_rt=family_center_rt,
+        normalized_by_row=normalized_by_row,
         window_facts_by_row=window_facts_by_row,
         shape_similarity=shape_similarity,
         absolute_shape_similarity=absolute_shape_similarity,
