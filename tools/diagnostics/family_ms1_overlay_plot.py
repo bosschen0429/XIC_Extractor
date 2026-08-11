@@ -16,6 +16,7 @@ from tools.diagnostics.family_ms1_overlay_evidence import (
     _absolute_own_max_shape_similarity,
     _apex_aligned_normalized_trace,
     _apex_aligned_shape_similarity,
+    _build_family_ms1_evidence_context,
     _build_family_ms1_evidence_maps,
     _build_family_ms1_evidence_summary,
     _gaussian_smooth_values,
@@ -197,20 +198,11 @@ def _write_family_ms1_overlay_transaction(
     FamilyMs1OverlayOutputs,
     dict[str, int | float | str | bool | None],
 ]:
-    (
-        normalized_by_row,
-        window_facts_by_row,
-        shape_similarity,
-        absolute_shape_similarity,
-    ) = _build_family_ms1_evidence_maps(rows)
-    evidence_summary = _build_family_ms1_evidence_summary(
-        rows,
-        window_facts_by_row=window_facts_by_row,
-        shape_similarity=shape_similarity,
-        absolute_shape_similarity=absolute_shape_similarity,
-    )
+    context = _build_family_ms1_evidence_context(rows)
+    evidence_summary = dict(context.evidence_summary)
     outputs = _render_family_ms1_overlay_outputs(
         rows=rows,
+        context=context,
         output_dir=output_dir,
         output_prefix=output_prefix,
         family_id=family_id,
@@ -219,11 +211,6 @@ def _write_family_ms1_overlay_transaction(
         rt_min=rt_min,
         rt_max=rt_max,
         family_center_rt=family_center_rt,
-        normalized_by_row=normalized_by_row,
-        window_facts_by_row=window_facts_by_row,
-        shape_similarity=shape_similarity,
-        absolute_shape_similarity=absolute_shape_similarity,
-        evidence_summary=evidence_summary,
         provenance=provenance,
         drift_lookup=drift_lookup,
         write_pdf=write_pdf,

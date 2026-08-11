@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from tools.diagnostics import changed_row_mode_overlay_review as mode_review
 from tools.diagnostics import family_ms1_overlay_batch as batch
 from tools.diagnostics import family_ms1_overlay_evidence as overlay_evidence
 from tools.diagnostics import family_ms1_overlay_plot as report
 from tools.diagnostics import family_ms1_overlay_writers as writers
+from xic_extractor.alignment.shared_peak_identity_explanation import (
+    overlay_trace_data,
+)
 from xic_extractor.peak_detection import ms1_shape_identity as peak_trace_owner
 
 
@@ -131,6 +136,16 @@ def test_serialized_trace_fields_share_one_gaussian15_basis(tmp_path: Path) -> N
         rt,
         intensity,
     )
+    late_intensity = [0.0] * len(rt)
+    late_intensity[29] = 100.0
+    for index in range(15, 26):
+        late_intensity[index] = 40.0
+    shifted_late = report.trace_row_from_arrays(
+        _cell("basis-late", status="detected", height=100.0, apex=2.0),
+        "detected_seed",
+        rt,
+        late_intensity,
+    )
     inconclusive = report.trace_row_from_arrays(
         _cell("short", status="rescued", height=10.0, apex=2.0),
         "top_rescued_ms1_area",
@@ -139,7 +154,7 @@ def test_serialized_trace_fields_share_one_gaussian15_basis(tmp_path: Path) -> N
     )
 
     outputs = report.write_family_ms1_overlay_outputs(
-        rows=(shifted, inconclusive),
+        rows=(shifted, shifted_late, inconclusive),
         output_dir=tmp_path,
         output_prefix="basis",
         family_id="FAM001",
@@ -191,41 +206,81 @@ def test_serialized_trace_fields_share_one_gaussian15_basis(tmp_path: Path) -> N
     assert summary_by_sample["short"]["trace_apex_rt"] == ""
     assert summary_by_sample["short"]["trace_max_intensity"] == ""
 
+    assert shifted.trace_apex_rt == pytest.approx(0.5)
+    assert shifted_late.trace_apex_rt == pytest.approx(2.9)
+    downstream_bundle = overlay_trace_data.load_overlay_trace_data(
+        outputs.trace_data_json,
+    )
+    downstream_modes = mode_review._global_trace_mode_ids(
+        downstream_bundle.trace_mappings,
+    )
+    assert downstream_modes == {
+        "basis": "global_trace_mode_1",
+        "basis-late": "global_trace_mode_1",
+    }
+
 
 def test_writer_rejects_incomplete_owner_context_before_output(tmp_path: Path) -> None:
     rows = _rows()
-    (
-        normalized_by_row,
-        window_facts_by_row,
-        shape_similarity,
-        absolute_shape_similarity,
-    ) = report._build_family_ms1_evidence_maps(rows)
-    evidence_summary = report._build_family_ms1_evidence_summary(
-        rows,
-        window_facts_by_row=window_facts_by_row,
-        shape_similarity=shape_similarity,
-        absolute_shape_similarity=absolute_shape_similarity,
+    context = overlay_evidence._build_family_ms1_evidence_context(rows)
+    incomplete = replace(
+        context,
+        normalized_by_row={rows[0]: context.normalized_by_row[rows[0]]},
+    )
+    swapped_normalized = dict(context.normalized_by_row)
+    swapped_normalized[rows[0]], swapped_normalized[rows[1]] = (
+        swapped_normalized[rows[1]],
+        swapped_normalized[rows[0]],
+    )
+    swapped_window_facts = dict(context.window_facts_by_row)
+    swapped_window_facts[rows[0]], swapped_window_facts[rows[1]] = (
+        swapped_window_facts[rows[1]],
+        swapped_window_facts[rows[0]],
+    )
+    crossed = replace(
+        context,
+        normalized_by_row=swapped_normalized,
+        window_facts_by_row=swapped_window_facts,
     )
 
-    with pytest.raises(ValueError, match="complete Gaussian15 trace context"):
-        writers.write_family_ms1_overlay_outputs(
+    for label, invalid_context in (("incomplete", incomplete), ("crossed", crossed)):
+        output_dir = tmp_path / label
+        with pytest.raises(ValueError, match="exact owner-minted Gaussian15 context"):
+            writers.write_family_ms1_overlay_outputs(
+                rows=rows,
+                context=invalid_context,
+                output_dir=output_dir,
+                output_prefix=label,
+                family_id="FAM001",
+                mz=251.165,
+                ppm=10.0,
+                rt_min=0.8,
+                rt_max=1.2,
+                family_center_rt=1.0,
+                write_pdf=False,
+            )
+        assert not output_dir.exists()
+
+
+def test_exported_renderers_keep_existing_call_shape(tmp_path: Path) -> None:
+    rows = _rows()
+    for renderer, filename in (
+        (report.render_family_ms1_overlay, "family.png"),
+        (report.render_hypothesis_ms1_overlay, "hypothesis.png"),
+    ):
+        output_path = tmp_path / filename
+        renderer(
             rows=rows,
-            output_dir=tmp_path,
-            output_prefix="incomplete",
+            png_path=output_path,
+            pdf_path=None,
             family_id="FAM001",
             mz=251.165,
             ppm=10.0,
             rt_min=0.8,
             rt_max=1.2,
             family_center_rt=1.0,
-            normalized_by_row={rows[0]: normalized_by_row[rows[0]]},
-            window_facts_by_row=window_facts_by_row,
-            shape_similarity=shape_similarity,
-            absolute_shape_similarity=absolute_shape_similarity,
-            evidence_summary=evidence_summary,
-            write_pdf=False,
         )
-    assert not any(tmp_path.iterdir())
+        assert output_path.is_file()
 
 
 def _rows() -> tuple[report.TraceOverlayRow, ...]:

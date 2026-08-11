@@ -14,8 +14,10 @@ if TYPE_CHECKING:
     from xic_extractor.peak_detection.ms1_shape_identity import OwnMaxTrace
 
 from tools.diagnostics.family_ms1_overlay_evidence import (
+    FamilyMs1EvidenceContext,
     _absolute_own_max_normalized_trace,
     _apex_aligned_normalized_trace,
+    _build_family_ms1_evidence_context,
     _gaussian_smooth_values,
     _global_trace_apex_delta,
 )
@@ -50,10 +52,43 @@ def render_family_ms1_overlay(
     rt_min: float,
     rt_max: float,
     family_center_rt: float | None,
-    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
     drift_lookup: DriftLookupProtocol | None = None,
     dpi: int = 140,
 ) -> None:
+    context = _build_family_ms1_evidence_context(rows)
+    _render_family_ms1_overlay_from_context(
+        rows=rows,
+        context=context,
+        png_path=png_path,
+        pdf_path=pdf_path,
+        family_id=family_id,
+        mz=mz,
+        ppm=ppm,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        family_center_rt=family_center_rt,
+        drift_lookup=drift_lookup,
+        dpi=dpi,
+    )
+
+
+def _render_family_ms1_overlay_from_context(
+    *,
+    rows: Sequence[TraceOverlayRow],
+    context: FamilyMs1EvidenceContext,
+    png_path: Path,
+    pdf_path: Path | None,
+    family_id: str,
+    mz: float,
+    ppm: float,
+    rt_min: float,
+    rt_max: float,
+    family_center_rt: float | None,
+    drift_lookup: DriftLookupProtocol | None = None,
+    dpi: int = 140,
+) -> None:
+    context.require_exact_rows(rows)
+    normalized_by_row = context.normalized_by_row
     import matplotlib
 
     matplotlib.use("Agg")
@@ -130,9 +165,40 @@ def render_hypothesis_ms1_overlay(
     rt_min: float,
     rt_max: float,
     family_center_rt: float | None,
-    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
     dpi: int = 140,
 ) -> None:
+    context = _build_family_ms1_evidence_context(rows)
+    _render_hypothesis_ms1_overlay_from_context(
+        rows=rows,
+        context=context,
+        png_path=png_path,
+        pdf_path=pdf_path,
+        family_id=family_id,
+        mz=mz,
+        ppm=ppm,
+        rt_min=rt_min,
+        rt_max=rt_max,
+        family_center_rt=family_center_rt,
+        dpi=dpi,
+    )
+
+
+def _render_hypothesis_ms1_overlay_from_context(
+    *,
+    rows: Sequence[TraceOverlayRow],
+    context: FamilyMs1EvidenceContext,
+    png_path: Path,
+    pdf_path: Path | None,
+    family_id: str,
+    mz: float,
+    ppm: float,
+    rt_min: float,
+    rt_max: float,
+    family_center_rt: float | None,
+    dpi: int = 140,
+) -> None:
+    context.require_exact_rows(rows)
+    normalized_by_row = context.normalized_by_row
     import matplotlib
 
     matplotlib.use("Agg")

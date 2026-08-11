@@ -39,9 +39,9 @@ REQUIRED_QUEUE_COLUMNS = (
 SUPPORT_FAMILY_VERDICT = "ms1_shape_supports_family_backfill"
 TOP30_EXPANSION_ELIGIBLE = "eligible"
 TOP30_EXPANSION_BLOCKED = "blocked"
-OVERLAY_BATCH_SOURCE = "family_ms1_overlay_batch_v1"
+OVERLAY_BATCH_SOURCE = "family_ms1_overlay_batch_v2"
 OVERLAY_SUPERWINDOW_SPAN_FACTOR = 2
-OVERLAY_EVIDENCE_CACHE_SCHEMA = "family_ms1_overlay_evidence_cache_v5"
+OVERLAY_EVIDENCE_CACHE_SCHEMA = "family_ms1_overlay_evidence_cache_v6"
 RAW_IDENTITY_METHOD = "path_stat_v1"
 OverlayTraceItem = tuple[int, overlay_plot.FamilyCell, str, Any]
 WindowedOverlayTraceItem = tuple[int, OverlayTraceItem, tuple[int, int]]
@@ -999,18 +999,8 @@ def _render_family(
         source_provenance=source_provenance,
         raw_identity_by_sample=raw_identity_by_sample,
     )
-    (
-        normalized_by_row,
-        window_facts_by_row,
-        shape_similarity,
-        absolute_shape_similarity,
-    ) = overlay_plot._build_family_ms1_evidence_maps(trace_rows)
-    evidence = overlay_plot._build_family_ms1_evidence_summary(
-        trace_rows,
-        window_facts_by_row=window_facts_by_row,
-        shape_similarity=shape_similarity,
-        absolute_shape_similarity=absolute_shape_similarity,
-    )
+    context = overlay_plot._build_family_ms1_evidence_context(trace_rows)
+    evidence = dict(context.evidence_summary)
     outputs: Mapping[str, Path | None] | overlay_plot.FamilyMs1OverlayOutputs
     if evidence_only:
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1027,10 +1017,7 @@ def _render_family(
         overlay_plot._write_summary(
             summary_tsv,
             trace_rows,
-            normalized_by_row=normalized_by_row,
-            window_facts_by_row=window_facts_by_row,
-            shape_similarity=shape_similarity,
-            absolute_shape_similarity=absolute_shape_similarity,
+            context=context,
         )
         overlay_plot._write_trace_data(
             trace_data_json,
@@ -1042,11 +1029,7 @@ def _render_family(
             rt_max=request.rt_max,
             family_center_rt=request.family_center_rt,
             provenance=provenance,
-            normalized_by_row=normalized_by_row,
-            window_facts_by_row=window_facts_by_row,
-            shape_similarity=shape_similarity,
-            absolute_shape_similarity=absolute_shape_similarity,
-            evidence_summary=evidence,
+            context=context,
         )
     else:
         outputs = overlay_plot._render_family_ms1_overlay_outputs(
@@ -1060,11 +1043,7 @@ def _render_family(
             rt_max=request.rt_max,
             family_center_rt=request.family_center_rt,
             provenance=provenance,
-            normalized_by_row=normalized_by_row,
-            window_facts_by_row=window_facts_by_row,
-            shape_similarity=shape_similarity,
-            absolute_shape_similarity=absolute_shape_similarity,
-            evidence_summary=evidence,
+            context=context,
             write_pdf=write_pdf,
             dpi=dpi,
         )

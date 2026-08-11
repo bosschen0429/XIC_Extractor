@@ -8,16 +8,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from tools.diagnostics.family_ms1_overlay_evidence import FamilyMs1EvidenceContext
 from tools.diagnostics.family_ms1_overlay_models import (
     FamilyMs1OverlayOutputs,
     TraceOverlayRow,
 )
 from tools.diagnostics.family_ms1_overlay_rendering import (
-    render_family_ms1_overlay,
-    render_hypothesis_ms1_overlay,
+    _render_family_ms1_overlay_from_context,
+    _render_hypothesis_ms1_overlay_from_context,
 )
-from xic_extractor.peak_detection.evidence_facts import TraceWindowEvidenceFacts
-from xic_extractor.peak_detection.ms1_shape_identity import OwnMaxTrace
 from xic_extractor.tabular_io import write_tsv
 
 if TYPE_CHECKING:
@@ -35,21 +34,13 @@ def write_family_ms1_overlay_outputs(
     rt_min: float,
     rt_max: float,
     family_center_rt: float | None,
-    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
-    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
-    shape_similarity: Mapping[str, float | None],
-    absolute_shape_similarity: Mapping[str, float | None],
-    evidence_summary: Mapping[str, int | float | str | bool | None],
+    context: FamilyMs1EvidenceContext,
     provenance: Mapping[str, object] | None = None,
     drift_lookup: DriftLookupProtocol | None = None,
     write_pdf: bool = True,
     dpi: int = 140,
 ) -> FamilyMs1OverlayOutputs:
-    _require_complete_trace_context(
-        rows,
-        normalized_by_row=normalized_by_row,
-        window_facts_by_row=window_facts_by_row,
-    )
+    context.require_exact_rows(rows)
     output_dir.mkdir(parents=True, exist_ok=True)
     summary_tsv = output_dir / f"{output_prefix}_trace_summary.tsv"
     trace_data_json = output_dir / f"{output_prefix}_trace_data.json"
@@ -63,10 +54,7 @@ def write_family_ms1_overlay_outputs(
     _write_summary(
         summary_tsv,
         rows,
-        normalized_by_row=normalized_by_row,
-        window_facts_by_row=window_facts_by_row,
-        shape_similarity=shape_similarity,
-        absolute_shape_similarity=absolute_shape_similarity,
+        context=context,
     )
     _write_trace_data(
         trace_data_json,
@@ -78,14 +66,11 @@ def write_family_ms1_overlay_outputs(
         rt_max=rt_max,
         family_center_rt=family_center_rt,
         provenance=provenance,
-        normalized_by_row=normalized_by_row,
-        window_facts_by_row=window_facts_by_row,
-        shape_similarity=shape_similarity,
-        absolute_shape_similarity=absolute_shape_similarity,
-        evidence_summary=evidence_summary,
+        context=context,
     )
-    render_family_ms1_overlay(
+    _render_family_ms1_overlay_from_context(
         rows=rows,
+        context=context,
         png_path=png_path,
         pdf_path=pdf_path,
         family_id=family_id,
@@ -94,12 +79,12 @@ def write_family_ms1_overlay_outputs(
         rt_min=rt_min,
         rt_max=rt_max,
         family_center_rt=family_center_rt,
-        normalized_by_row=normalized_by_row,
         drift_lookup=drift_lookup,
         dpi=dpi,
     )
-    render_hypothesis_ms1_overlay(
+    _render_hypothesis_ms1_overlay_from_context(
         rows=rows,
+        context=context,
         png_path=hypothesis_png_path,
         pdf_path=hypothesis_pdf_path,
         family_id=family_id,
@@ -108,7 +93,6 @@ def write_family_ms1_overlay_outputs(
         rt_min=rt_min,
         rt_max=rt_max,
         family_center_rt=family_center_rt,
-        normalized_by_row=normalized_by_row,
         dpi=dpi,
     )
     return FamilyMs1OverlayOutputs(
@@ -123,11 +107,13 @@ def _write_summary(
     path: Path,
     rows: Sequence[TraceOverlayRow],
     *,
-    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
-    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
-    shape_similarity: Mapping[str, float | None],
-    absolute_shape_similarity: Mapping[str, float | None],
+    context: FamilyMs1EvidenceContext,
 ) -> None:
+    context.require_exact_rows(rows)
+    normalized_by_row = context.normalized_by_row
+    window_facts_by_row = context.window_facts_by_row
+    shape_similarity = context.shape_similarity
+    absolute_shape_similarity = context.absolute_shape_similarity
     fields = (
         "sample_stem",
         "status",
@@ -206,13 +192,14 @@ def _write_trace_data(
     rt_min: float,
     rt_max: float,
     family_center_rt: float | None,
-    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
-    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
-    shape_similarity: Mapping[str, float | None],
-    absolute_shape_similarity: Mapping[str, float | None],
-    evidence_summary: Mapping[str, int | float | str | bool | None],
+    context: FamilyMs1EvidenceContext,
     provenance: Mapping[str, object] | None = None,
 ) -> None:
+    context.require_exact_rows(rows)
+    normalized_by_row = context.normalized_by_row
+    window_facts_by_row = context.window_facts_by_row
+    shape_similarity = context.shape_similarity
+    absolute_shape_similarity = context.absolute_shape_similarity
     data = {
         "family_id": family_id,
         "mz": mz,
@@ -222,7 +209,7 @@ def _write_trace_data(
         "family_center_rt": family_center_rt,
         "provenance": dict(provenance or {}),
         "trace_count": len(rows),
-        "evidence_summary": dict(evidence_summary),
+        "evidence_summary": dict(context.evidence_summary),
         "traces": [
             {
                 "sample_stem": row.sample_stem,
@@ -266,32 +253,6 @@ def _write_trace_data(
         ],
     }
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
-
-
-def _require_complete_trace_context(
-    rows: Sequence[TraceOverlayRow],
-    *,
-    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
-    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
-) -> None:
-    expected_rows = set(rows)
-    if (
-        set(normalized_by_row) != expected_rows
-        or set(window_facts_by_row) != expected_rows
-    ):
-        raise ValueError(
-            "complete Gaussian15 trace context is required before writing outputs",
-        )
-    if any(
-        not isinstance(normalized_by_row[row], OwnMaxTrace)
-        or not isinstance(window_facts_by_row[row], TraceWindowEvidenceFacts)
-        for row in rows
-    ):
-        raise ValueError(
-            "complete Gaussian15 trace context is required before writing outputs",
-        )
-
-
 def _format_float(value: float | None, *, digits: int = 6) -> str:
     if value is None or not math.isfinite(value):
         return ""

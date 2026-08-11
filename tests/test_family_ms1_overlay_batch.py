@@ -13,17 +13,27 @@ from tools.diagnostics import family_ms1_overlay_plot as overlay_plot
 
 @pytest.fixture(autouse=True)
 def _keep_string_trace_rows_as_test_doubles(monkeypatch) -> None:
-    original = batch.overlay_plot._build_family_ms1_evidence_maps
+    original = batch.overlay_plot._build_family_ms1_evidence_context
 
-    def _build_maps(rows):
+    def _build_context(rows):
         if rows and isinstance(rows[0], str):
-            return {}, {}, {}, {}
+            evidence_summary = batch.overlay_plot._build_family_ms1_evidence_summary(
+                rows,
+                window_facts_by_row={},
+                shape_similarity={},
+                absolute_shape_similarity={},
+            )
+            return SimpleNamespace(
+                rows=tuple(rows),
+                evidence_summary=evidence_summary,
+                require_exact_rows=lambda _rows: None,
+            )
         return original(rows)
 
     monkeypatch.setattr(
         batch.overlay_plot,
-        "_build_family_ms1_evidence_maps",
-        _build_maps,
+        "_build_family_ms1_evidence_context",
+        _build_context,
     )
 
 
@@ -407,6 +417,78 @@ def test_batch_evidence_only_reuses_content_keyed_cache_across_output_dirs(
     payload = json.loads(trace_path.read_text(encoding="utf-8"))
     assert payload["provenance"]["review_queue_tsv"] == str(queue_tsv)
     assert payload["provenance"]["output_prefix"] == "fam001_overlay"
+
+
+def test_batch_evidence_cache_v6_rejects_v5_scalar_semantics(
+    tmp_path: Path,
+) -> None:
+    assert batch.OVERLAY_BATCH_SOURCE == "family_ms1_overlay_batch_v2"
+    assert batch.OVERLAY_EVIDENCE_CACHE_SCHEMA == "family_ms1_overlay_evidence_cache_v6"
+    cache_dir = tmp_path / "overlay_cache"
+    cache_dir.mkdir()
+    batch._cache_index_path(cache_dir).write_text(
+        json.dumps(
+            {
+                "schema_version": "family_ms1_overlay_evidence_cache_v5",
+                "entries": {"OLD": {"schema_version": "v5"}},
+            },
+        ),
+        encoding="utf-8",
+    )
+    assert batch._read_cache_index(cache_dir) == {}
+
+    request = batch.OverlayBatchRequest(
+        rank=1,
+        family_id="FAM001",
+        seed_group_id="SEED001",
+        mz=251.165,
+        ppm=10.0,
+        rt_min=1.0,
+        rt_max=1.2,
+        family_center_rt=1.1,
+        output_prefix="fam001_overlay",
+    )
+    current_payload = batch._cache_key_payload(
+        request,
+        source_provenance={
+            "overlay_batch_source": batch.OVERLAY_BATCH_SOURCE,
+            "alignment_cells_sha256": "ABC",
+            "raw_dir": "raw",
+            "dll_dir": "dll",
+        },
+        max_highlight_rescued=8,
+    )
+    stale_payload = {
+        **current_payload,
+        "schema_version": "family_ms1_overlay_evidence_cache_v5",
+    }
+    assert batch._cache_key(stale_payload) != batch._cache_key(current_payload)
+    assert not batch._cache_index_entry_matches(
+        {
+            "schema_version": "family_ms1_overlay_evidence_cache_v5",
+            "cache_key": batch._cache_key(stale_payload),
+            "key_payload": stale_payload,
+        },
+        cache_key=batch._cache_key(current_payload),
+        key_payload=current_payload,
+    )
+    assert not batch._existing_provenance_matches_request(
+        {
+            "overlay_batch_source": "family_ms1_overlay_batch_v1",
+            "alignment_cells_sha256": "ABC",
+            "raw_dir": "raw",
+            "dll_dir": "dll",
+            "seed_group_id": "SEED001",
+            "output_prefix": "fam001_overlay",
+        },
+        request,
+        source_provenance={
+            "overlay_batch_source": batch.OVERLAY_BATCH_SOURCE,
+            "alignment_cells_sha256": "ABC",
+            "raw_dir": "raw",
+            "dll_dir": "dll",
+        },
+    )
 
 
 def test_batch_evidence_cache_stale_index_entry_falls_back(

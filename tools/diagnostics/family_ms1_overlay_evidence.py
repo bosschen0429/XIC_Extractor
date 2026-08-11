@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from types import MappingProxyType
 
 import numpy as np
 
@@ -33,22 +35,47 @@ from xic_extractor.peak_detection.ms1_shape_identity import (
     own_max_normalized_trace,
 )
 
+FamilyMs1EvidenceScalar = int | float | str | bool | None
+_FAMILY_MS1_EVIDENCE_CONTEXT_MINT_TOKEN = object()
+
+
+@dataclass(frozen=True, slots=True)
+class FamilyMs1EvidenceContext:
+    """Owner-minted, immutable binding for one overlay output transaction."""
+
+    rows: tuple[TraceOverlayRow, ...]
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace]
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts]
+    shape_similarity: Mapping[str, float | None]
+    absolute_shape_similarity: Mapping[str, float | None]
+    evidence_summary: Mapping[str, FamilyMs1EvidenceScalar]
+    _binding_seal: tuple[int, ...] = field(repr=False, compare=False)
+    _mint_token: object = field(repr=False, compare=False)
+
+    def require_exact_rows(self, rows: Sequence[TraceOverlayRow]) -> None:
+        if self._mint_token is not _FAMILY_MS1_EVIDENCE_CONTEXT_MINT_TOKEN:
+            raise ValueError("exact owner-minted Gaussian15 context is required")
+        if self._binding_seal != _family_ms1_context_binding_seal(
+            self.rows,
+            self.normalized_by_row,
+            self.window_facts_by_row,
+            self.shape_similarity,
+            self.absolute_shape_similarity,
+            self.evidence_summary,
+        ):
+            raise ValueError("exact owner-minted Gaussian15 context is required")
+        expected_rows = tuple(rows)
+        if len(expected_rows) != len(self.rows) or any(
+            expected is not observed
+            for expected, observed in zip(expected_rows, self.rows, strict=True)
+        ):
+            raise ValueError("exact owner-minted Gaussian15 context is required")
+
 
 def build_family_ms1_evidence_summary(
     rows: Sequence[TraceOverlayRow],
-) -> dict[str, int | float | str | bool | None]:
-    (
-        _normalized_by_row,
-        window_facts_by_row,
-        shape_similarity,
-        absolute_shape_similarity,
-    ) = _build_family_ms1_evidence_maps(rows)
-    return _build_family_ms1_evidence_summary(
-        rows,
-        window_facts_by_row=window_facts_by_row,
-        shape_similarity=shape_similarity,
-        absolute_shape_similarity=absolute_shape_similarity,
-    )
+) -> dict[str, FamilyMs1EvidenceScalar]:
+    return dict(_build_family_ms1_evidence_context(rows).evidence_summary)
 
 
 def _build_family_ms1_evidence_summary(
@@ -335,6 +362,94 @@ def _build_family_ms1_evidence_maps(
             rows,
             normalized_by_row=normalized_by_row,
         ),
+    )
+
+
+def _build_family_ms1_evidence_context(
+    rows: Sequence[TraceOverlayRow],
+) -> FamilyMs1EvidenceContext:
+    (
+        normalized_by_row,
+        window_facts_by_row,
+        shape_similarity,
+        absolute_shape_similarity,
+    ) = _build_family_ms1_evidence_maps(rows)
+    evidence_summary = _build_family_ms1_evidence_summary(
+        rows,
+        window_facts_by_row=window_facts_by_row,
+        shape_similarity=shape_similarity,
+        absolute_shape_similarity=absolute_shape_similarity,
+    )
+    return _bind_family_ms1_evidence_context(
+        rows,
+        normalized_by_row=normalized_by_row,
+        window_facts_by_row=window_facts_by_row,
+        shape_similarity=shape_similarity,
+        absolute_shape_similarity=absolute_shape_similarity,
+        evidence_summary=evidence_summary,
+    )
+
+
+def _bind_family_ms1_evidence_context(
+    rows: Sequence[TraceOverlayRow],
+    *,
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
+    shape_similarity: Mapping[str, float | None],
+    absolute_shape_similarity: Mapping[str, float | None],
+    evidence_summary: Mapping[str, FamilyMs1EvidenceScalar],
+) -> FamilyMs1EvidenceContext:
+    bound_rows = tuple(rows)
+    bound_normalized = MappingProxyType(dict(normalized_by_row))
+    bound_window_facts = MappingProxyType(dict(window_facts_by_row))
+    bound_shape = MappingProxyType(dict(shape_similarity))
+    bound_absolute_shape = MappingProxyType(dict(absolute_shape_similarity))
+    bound_summary = MappingProxyType(dict(evidence_summary))
+    expected_rows = set(bound_rows)
+    if (
+        set(bound_normalized) != expected_rows
+        or set(bound_window_facts) != expected_rows
+        or any(
+            not isinstance(bound_normalized[row], OwnMaxTrace)
+            or not isinstance(bound_window_facts[row], TraceWindowEvidenceFacts)
+            for row in bound_rows
+        )
+    ):
+        raise ValueError("complete Gaussian15 trace context is required")
+    return FamilyMs1EvidenceContext(
+        rows=bound_rows,
+        normalized_by_row=bound_normalized,
+        window_facts_by_row=bound_window_facts,
+        shape_similarity=bound_shape,
+        absolute_shape_similarity=bound_absolute_shape,
+        evidence_summary=bound_summary,
+        _binding_seal=_family_ms1_context_binding_seal(
+            bound_rows,
+            bound_normalized,
+            bound_window_facts,
+            bound_shape,
+            bound_absolute_shape,
+            bound_summary,
+        ),
+        _mint_token=_FAMILY_MS1_EVIDENCE_CONTEXT_MINT_TOKEN,
+    )
+
+
+def _family_ms1_context_binding_seal(
+    rows: tuple[TraceOverlayRow, ...],
+    normalized_by_row: Mapping[TraceOverlayRow, OwnMaxTrace],
+    window_facts_by_row: Mapping[TraceOverlayRow, TraceWindowEvidenceFacts],
+    shape_similarity: Mapping[str, float | None],
+    absolute_shape_similarity: Mapping[str, float | None],
+    evidence_summary: Mapping[str, FamilyMs1EvidenceScalar],
+) -> tuple[int, ...]:
+    return (
+        id(rows),
+        id(normalized_by_row),
+        id(window_facts_by_row),
+        id(shape_similarity),
+        id(absolute_shape_similarity),
+        id(evidence_summary),
     )
 
 
