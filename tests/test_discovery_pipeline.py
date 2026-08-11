@@ -1,5 +1,8 @@
 import ast
+import concurrent.futures
 import csv
+import multiprocessing
+import pickle
 from collections.abc import Iterator, Sequence
 from concurrent.futures import Future
 from dataclasses import replace
@@ -25,6 +28,7 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
     NeutralLossProfile,
 )
+from xic_extractor.discovery.ms1_backfill import _DiscoveryMs1Measurements
 from xic_extractor.discovery.pipeline import (
     _BATCH_INDEX_COLUMNS,
     _DISCOVERY_MS1_MEASUREMENT_NAMES,
@@ -443,11 +447,11 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
                         ),
                         measurement_observations=(
                             {
-                                "metric": "raw_open_count",
+                                "metric": "worker_retry_count",
                                 "scope": job.raw_path.stem,
-                                "unit": "opens",
+                                "unit": "retries",
                                 "aggregation": "sum",
-                                "source": "discovery.raw_opener",
+                                "source": "discovery.worker",
                                 "availability": "measured",
                                 "value": 1,
                                 "reason": "",
@@ -494,7 +498,7 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
         for record in recorder.records
     )
     assert any(
-        row["metric"] == "raw_open_count" and row["scope"] == "sample-0"
+        row["metric"] == "worker_retry_count" and row["scope"] == "sample-0"
         for row in recorder.measurement_observations
     )
 
@@ -544,6 +548,115 @@ def test_parallel_batch_preserves_every_same_batch_failure(
     assert error.in_flight_job_count == 0
     assert error.unsubmitted_job_count == 2
     assert not (tmp_path / "out" / "discovery_batch_index.csv").exists()
+
+
+def test_parallel_batch_rejects_error_caller_authored_owner_counts(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"raw")
+
+    class _ForgedErrorExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            future.set_result(
+                DiscoverySampleProcessError(
+                    sample_index=job.sample_index,
+                    sample_stem=job.raw_path.stem,
+                    raw_name=job.raw_path.name,
+                    message="RuntimeError: owner boom",
+                    measurement_observations=(
+                        {
+                            "metric": "raw_open_count",
+                            "scope": job.raw_path.stem,
+                            "unit": "opens",
+                            "aggregation": "sum",
+                            "source": "worker",
+                            "availability": "measured",
+                            "value": 999,
+                            "reason": "",
+                        },
+                    ),
+                )
+            )
+            return future
+
+        def shutdown(self, *, wait, cancel_futures=False) -> None:
+            pass
+
+    with pytest.raises(ValueError, match="cannot author"):
+        run_discovery_batch(
+            (raw_path,),
+            output_dir=tmp_path / "out",
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            timing_recorder=TimingRecorder("discovery"),
+            max_workers=2,
+            executor_factory=_ForgedErrorExecutor,
+        )
+
+
+def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"raw")
+    measurements = _DiscoveryMs1Measurements(
+        input_group_count=0,
+        empty_group_count=0,
+        exact_scan_window_count=0,
+        predicted_chunked_call_count=0,
+        batch_max_requests=256,
+        acquisition_batches=(),
+    )
+
+    class _TypedErrorExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            future = Future()
+            future.set_result(
+                DiscoverySampleProcessError(
+                    sample_index=job.sample_index,
+                    sample_stem=job.raw_path.stem,
+                    raw_name=job.raw_path.name,
+                    message="RuntimeError: owner boom",
+                    ms1_measurements=measurements,
+                )
+            )
+            return future
+
+        def shutdown(self, *, wait, cancel_futures=False) -> None:
+            pass
+
+    recorder = TimingRecorder("discovery")
+    with pytest.raises(DiscoveryProcessExecutionError, match="owner boom"):
+        run_discovery_batch(
+            (raw_path,),
+            output_dir=tmp_path / "out",
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            timing_recorder=recorder,
+            max_workers=2,
+            executor_factory=_TypedErrorExecutor,
+        )
+
+    rows = {
+        str(row["metric"]): row
+        for row in recorder.measurement_observations
+        if row["scope"] == "sample"
+    }
+    assert rows["logical_xic_request_count"]["value"] == 0
+    assert rows["logical_xic_request_count"]["availability"] == "measured"
+    assert rows["raw_open_count"]["value"] is None
+    assert rows["raw_open_count"]["availability"] == "unavailable"
+    assert rows["raw_open_count"]["reason"] == (
+        "process result carries no owner resource settlement receipt"
+    )
 
 
 def test_parallel_batch_disabled_timing_skips_ipc_serialization(
@@ -652,9 +765,20 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"raw")
 
-    def _fail_with_diagnostics(*args, timing_recorder, **kwargs):
+    measurements = _DiscoveryMs1Measurements(
+        input_group_count=0,
+        empty_group_count=0,
+        exact_scan_window_count=0,
+        predicted_chunked_call_count=0,
+        batch_max_requests=256,
+        acquisition_batches=(),
+    )
+
+    def _fail_with_diagnostics(*args, timing_recorder, measurement_observer, **kwargs):
         timing_recorder.record("discover.partial", elapsed_sec=0.5)
         timing_recorder.observe("raw_open_count", value=1, unit="opens")
+        timing_recorder.observe("worker_retry_count", value=1, unit="retries")
+        measurement_observer(measurements)
         raise RuntimeError("owner boom")
 
     monkeypatch.setattr(
@@ -678,12 +802,38 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
     result = _run_discovery_sample_process_job(job)
 
     assert isinstance(result, DiscoverySampleProcessError)
-    assert [record.stage for record in result.timing_records] == [
-        "discover.partial"
-    ]
+    assert [record.stage for record in result.timing_records] == ["discover.partial"]
     assert [row["metric"] for row in result.measurement_observations] == [
-        "raw_open_count"
+        "worker_retry_count"
     ]
+    assert result.ms1_measurements == measurements
+
+
+def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip() -> None:
+    measurements = _DiscoveryMs1Measurements(
+        input_group_count=0,
+        empty_group_count=0,
+        exact_scan_window_count=0,
+        predicted_chunked_call_count=0,
+        batch_max_requests=256,
+        acquisition_batches=(),
+    )
+    error = DiscoverySampleProcessError(
+        sample_index=0,
+        sample_stem="sample",
+        raw_name="sample.raw",
+        message="RuntimeError: owner boom",
+        ms1_measurements=measurements,
+    )
+
+    context = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=1,
+        mp_context=context,
+    ) as executor:
+        restored = executor.submit(pickle.loads, pickle.dumps(error)).result(timeout=30)
+
+    assert restored == error
 
 
 def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
@@ -836,9 +986,9 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
                     ),
                     measurement_observations=(
                         {
-                            "metric": "raw_open_count",
+                            "metric": "worker_retry_count",
                             "scope": "sample-1",
-                            "unit": "calls",
+                            "unit": "retries",
                             "aggregation": "sum",
                             "source": "worker",
                             "availability": "measured",
@@ -868,7 +1018,7 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
     assert caught.value.completed_sample_stems == ("sample-1",)
     assert [record.stage for record in recorder.records] == ["discover.worker"]
     observations = recorder.measurement_observations
-    assert any(row["metric"] == "raw_open_count" for row in observations)
+    assert any(row["metric"] == "worker_retry_count" for row in observations)
     ipc_rows = [row for row in observations if row["metric"] == "ipc_bytes"]
     assert len(ipc_rows) == 4
     assert all(row["availability"] == "partial" for row in ipc_rows)
@@ -1311,6 +1461,7 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
 @pytest.mark.parametrize(
     "metric",
     (
+        "raw_open_count",
         "logical_xic_request_count",
         "trace_point_count",
         "discovery_ms1_input_group_count",

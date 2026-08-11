@@ -120,6 +120,7 @@ class DiscoverySampleProcessError:
     message: str
     timing_records: tuple[TimingRecord, ...] = ()
     measurement_observations: tuple[dict[str, object], ...] = ()
+    ms1_measurements: _DiscoveryMs1Measurements | None = None
 
 
 class DiscoveryProcessExecutionError(RuntimeError):
@@ -347,8 +348,7 @@ def _run_discovery_batch_process(
                 metrics=record.metrics,
             )
         for observation in observed.measurement_observations:
-            if isinstance(observed, DiscoverySampleProcessResult):
-                _reject_caller_authored_discovery_ms1_measurement(observation)
+            _reject_caller_authored_discovery_ms1_measurement(observation)
             timing_recorder.observe(
                 str(observation["metric"]),
                 value=observation.get("value"),
@@ -359,12 +359,15 @@ def _run_discovery_batch_process(
                 availability=str(observation.get("availability", "measured")),
                 reason=str(observation.get("reason", "")),
             )
-        if isinstance(observed, DiscoverySampleProcessResult):
-            _record_discovery_ms1_measurements(
-                timing_recorder,
-                observed.ms1_measurements,
-                observed.sample_stem,
-            )
+        _record_process_raw_open_unavailable(timing_recorder, observed.sample_stem)
+        _record_discovery_ms1_measurements(
+            timing_recorder,
+            observed.ms1_measurements,
+            observed.sample_stem,
+            unavailable_reason=(
+                "process result carries no owner acquisition batch receipts"
+            ),
+        )
     if report.first_failure is not None:
         failure = cast(DiscoverySampleProcessError, report.first_failure)
         completed_samples = tuple(
@@ -458,6 +461,16 @@ def _run_discovery_sample_process_job(
         if job.instrument_diagnostics
         else TimingRecorder.disabled("discovery-worker")
     )
+    acquired_measurements: _DiscoveryMs1Measurements | None = None
+
+    def _capture_acquired_measurements(
+        measurements: _DiscoveryMs1Measurements,
+    ) -> None:
+        nonlocal acquired_measurements
+        if acquired_measurements is not None:
+            raise ValueError("Discovery MS1 measurements were emitted twice")
+        acquired_measurements = measurements
+
     try:
         discovery_result = _discover_raw_file(
             job.raw_path,
@@ -465,6 +478,7 @@ def _run_discovery_sample_process_job(
             peak_config=job.peak_config,
             raw_opener=_owner_bound_raw_opener(job.acquisition_source),
             timing_recorder=recorder,
+            measurement_observer=_capture_acquired_measurements,
         )
         sample_stem = job.raw_path.stem
         discovered = discovery_result.candidates
@@ -500,7 +514,7 @@ def _run_discovery_sample_process_job(
                 index_parent=job.output_dir,
             ),
             timing_records=recorder.records,
-            measurement_observations=recorder.measurement_observations,
+            measurement_observations=_portable_worker_observations(recorder),
             ms1_measurements=discovery_result.ms1_measurements,
         )
     except Exception as exc:
@@ -508,7 +522,8 @@ def _run_discovery_sample_process_job(
             job,
             exc,
             timing_records=recorder.records,
-            measurement_observations=recorder.measurement_observations,
+            measurement_observations=_portable_worker_observations(recorder),
+            ms1_measurements=acquired_measurements,
         )
 
 
@@ -518,6 +533,7 @@ def _discovery_process_error(
     *,
     timing_records: tuple[TimingRecord, ...] = (),
     measurement_observations: tuple[dict[str, object], ...] = (),
+    ms1_measurements: _DiscoveryMs1Measurements | None = None,
 ) -> DiscoverySampleProcessError:
     return DiscoverySampleProcessError(
         sample_index=job.sample_index,
@@ -526,6 +542,7 @@ def _discovery_process_error(
         message=f"{type(exc).__name__}: {exc}",
         timing_records=timing_records,
         measurement_observations=measurement_observations,
+        ms1_measurements=ms1_measurements,
     )
 
 
@@ -643,6 +660,7 @@ def _discover_raw_file(
     peak_config: ExtractionConfig,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
+    measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
 ) -> _DiscoveryRawFileResult:
     sample_stem = raw_path.stem
     with raw_opener(raw_path, peak_config.dll_dir) as raw:
@@ -663,6 +681,8 @@ def _discover_raw_file(
             if acquired_measurements is not None:
                 raise ValueError("Discovery MS1 measurements were emitted twice")
             acquired_measurements = measurements
+            if measurement_observer is not None:
+                measurement_observer(measurements)
 
         try:
             with timing_recorder.stage(
@@ -754,11 +774,16 @@ def _record_discovery_ms1_measurements(
     timing_recorder: TimingRecorder,
     measurements: _DiscoveryMs1Measurements | None,
     sample_stem: str,
+    *,
+    unavailable_reason: str = (
+        "RAW handle is not bound to the acquisition owner batch contract"
+    ),
 ) -> None:
     if measurements is None:
         _record_unavailable_discovery_ms1_measurements(
             timing_recorder,
             sample_stem,
+            reason=unavailable_reason,
         )
         return
 
@@ -856,9 +881,12 @@ def _record_discovery_ms1_measurements(
     _record_rss_unavailable(timing_recorder, sample_stem)
     _validate_discovery_ms1_observations(timing_recorder, sample_stem)
 
+
 def _record_unavailable_discovery_ms1_measurements(
     timing_recorder: TimingRecorder,
     sample_stem: str,
+    *,
+    reason: str,
 ) -> None:
     unavailable = (
         ("logical_xic_request_count", "requests"),
@@ -880,7 +908,7 @@ def _record_unavailable_discovery_ms1_measurements(
             unit=unit,
             source="xic_extractor.discovery.ms1_backfill",
             availability="unavailable",
-            reason="RAW handle is not bound to the acquisition owner batch contract",
+            reason=reason,
         )
     _record_rss_unavailable(timing_recorder, sample_stem)
     _validate_discovery_ms1_observations(timing_recorder, sample_stem)
@@ -904,11 +932,35 @@ def _record_rss_unavailable(
         )
 
 
-def _reject_caller_authored_discovery_ms1_measurement(
-    observation: dict[str, object],
+def _record_process_raw_open_unavailable(
+    timing_recorder: TimingRecorder,
+    sample_stem: str,
 ) -> None:
+    timing_recorder.observe(
+        "raw_open_count",
+        value=None,
+        scope=sample_stem,
+        unit="opens",
+        source="xic_extractor.discovery.pipeline",
+        availability="unavailable",
+        reason="process result carries no owner resource settlement receipt",
+    )
+
+
+def _portable_worker_observations(
+    timing_recorder: TimingRecorder,
+) -> tuple[dict[str, object], ...]:
+    return tuple(
+        observation
+        for observation in timing_recorder.measurement_observations
+        if not _is_reserved_process_measurement(observation)
+    )
+
+
+def _is_reserved_process_measurement(observation: dict[str, object]) -> bool:
     metric = observation.get("metric")
     reserved = {
+        "raw_open_count",
         "logical_xic_request_count",
         "xic_batch_count",
         "adapter_chromatogram_call_count",
@@ -916,9 +968,15 @@ def _reject_caller_authored_discovery_ms1_measurement(
         "worker_peak_rss_bytes",
         "process_tree_peak_rss_bytes",
     }
-    if isinstance(metric, str) and (
+    return isinstance(metric, str) and (
         metric.startswith("discovery_ms1_") or metric in reserved
-    ):
+    )
+
+
+def _reject_caller_authored_discovery_ms1_measurement(
+    observation: dict[str, object],
+) -> None:
+    if _is_reserved_process_measurement(observation):
         raise ValueError(
             "Discovery worker diagnostics cannot author acquisition/runtime counts"
         )
