@@ -47,6 +47,12 @@ RULE_COLUMNS = (
     "failure_behavior",
     "rollback_or_non_adoption",
     "status",
+    "final_successor_owner",
+    "implementation_child",
+    "final_runtime_disposition",
+    "downstream_input",
+    "parity_or_expected_diff",
+    "deletion_gate",
 )
 FAILURE_COLUMNS = (
     "failure_class_id",
@@ -115,9 +121,33 @@ TERMINAL_DISPOSITIONS = {
     "NARROW",
     "KEEP_AS_BOUNDED_ORACLE",
 }
+FINAL_RUNTIME_DISPOSITIONS = {
+    "live_shared_fact",
+    "live_stage_policy",
+    "live_authority_adapter",
+    "live_compatibility",
+    "offline_oracle",
+    "renderer_only",
+    "retire",
+}
+PARITY_OR_EXPECTED_DIFF = {
+    "exact_parity",
+    "approved_expected_diff_only",
+    "offline_oracle_only",
+    "renderer_no_semantic_diff",
+    "retire_after_no_live_callers",
+}
+IMPLEMENTATION_CHILDREN = {"#240", "#241", "#243", "#247", "#250", "#251"}
+LIVE_RUNTIME_DISPOSITIONS = {
+    "live_shared_fact",
+    "live_stage_policy",
+    "live_authority_adapter",
+    "live_compatibility",
+}
+ROUTE_CUTOVER_STATUS = "BLOCKED_PENDING_250_251"
 EXPECTED_RULE_IDS = {f"SP-{number:03d}" for number in range(1, 56)}
 EXPECTED_FAILURE_IDS = {
-    *(f"HF-{number:03d}" for number in range(1, 14)),
+    *(f"HF-{number:03d}" for number in range(1, 18)),
     "FC-A",
     "FC-B",
     "FC-C",
@@ -135,6 +165,10 @@ REQUIRED_HISTORICAL_FAILURES = {
     "HF-006",  # missing overlay evidence
     "HF-007",  # legacy/mechanism oracle versus independent truth
     "HF-008",  # oversized migration and duplicate owner
+    "HF-014",  # non-causal dependency chain
+    "HF-015",  # missing successor owner and deletion gate
+    "HF-016",  # raw compatibility versus Gaussian quantitation
+    "HF-017",  # bound recipe reload/rebind regression
     "FC-A",
     "FC-B",
     "FC-C",
@@ -167,6 +201,7 @@ def test_packet_is_closed_complete_and_non_authorizing() -> None:
     terminal, rules, failures, call_costs = _validate_packet(PACKET_DIR)
 
     assert terminal == "PROMOTE_TO_T1"
+    assert _read_route_cutover(PACKET_DIR / "README.md") == ROUTE_CUTOVER_STATUS
     assert {row["rule_id"] for row in rules} == EXPECTED_RULE_IDS
     assert {row["failure_class_id"] for row in failures} == EXPECTED_FAILURE_IDS
     assert {row["scope_id"] for row in call_costs} == EXPECTED_CALL_COST_IDS
@@ -220,6 +255,31 @@ def test_duplicate_crossed_partial_and_schema_mutations_fail_closed(
     _write_tsv(extra / "rule_disposition_v1.tsv", rows, extra_columns)
     with pytest.raises(ValueError, match="closed schema"):
         _validate_packet(extra)
+
+    dual_child = _copy_packet(tmp_path / "dual-child")
+    rows = _read_tsv(dual_child / "rule_disposition_v1.tsv", RULE_COLUMNS)
+    next(row for row in rows if row["rule_id"] == "SP-011")["implementation_child"] = (
+        "#240;#251"
+    )
+    _write_tsv(dual_child / "rule_disposition_v1.tsv", rows, RULE_COLUMNS)
+    with pytest.raises(ValueError, match="invalid implementation child"):
+        _validate_packet(dual_child)
+
+    diagnostic_live_owner = _copy_packet(tmp_path / "diagnostic-live-owner")
+    rows = _read_tsv(
+        diagnostic_live_owner / "rule_disposition_v1.tsv",
+        RULE_COLUMNS,
+    )
+    next(row for row in rows if row["rule_id"] == "SP-003")["final_successor_owner"] = (
+        "tools.diagnostics.retained_backfill_evidence_gate"
+    )
+    _write_tsv(
+        diagnostic_live_owner / "rule_disposition_v1.tsv",
+        rows,
+        RULE_COLUMNS,
+    )
+    with pytest.raises(ValueError, match="diagnostic owner remains live"):
+        _validate_packet(diagnostic_live_owner)
 
 
 def test_stale_evidence_unresolved_and_state_collapse_fail_closed(
@@ -275,6 +335,9 @@ def _validate_packet(
         )
 
     terminal = _read_terminal(packet_dir / "README.md")
+    route_cutover = _read_route_cutover(packet_dir / "README.md")
+    if route_cutover != ROUTE_CUTOVER_STATUS:
+        raise ValueError(f"unexpected route cutover status: {route_cutover}")
     rules = _read_tsv(packet_dir / "rule_disposition_v1.tsv", RULE_COLUMNS)
     failures = _read_tsv(
         packet_dir / "historical_failure_matrix_v1.tsv",
@@ -302,6 +365,17 @@ def _read_terminal(readme: Path) -> str:
     return matches[0]
 
 
+def _read_route_cutover(readme: Path) -> str:
+    matches = re.findall(
+        r"^Route cutover status: ([A-Z0-9_]+)$",
+        readme.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    if len(matches) != 1:
+        raise ValueError(f"expected exactly one route cutover status: {matches}")
+    return matches[0]
+
+
 def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
     rule_ids = [row["rule_id"] for row in rows]
     if len(rule_ids) != len(set(rule_ids)):
@@ -317,6 +391,16 @@ def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
         if row["value_or_authority_changing"] == "TRUE":
             _require_named_owner(row, "current_decision_owner")
             _require_named_owner(row, "current_authority_owner")
+        if row["final_runtime_disposition"] not in FINAL_RUNTIME_DISPOSITIONS:
+            raise ValueError("unknown final runtime disposition")
+        if row["parity_or_expected_diff"] not in PARITY_OR_EXPECTED_DIFF:
+            raise ValueError("unknown parity or expected-diff rule")
+        if row["implementation_child"] not in IMPLEMENTATION_CHILDREN:
+            raise ValueError("invalid implementation child")
+        if row["final_runtime_disposition"] in LIVE_RUNTIME_DISPOSITIONS and row[
+            "final_successor_owner"
+        ].startswith("tools.diagnostics"):
+            raise ValueError("diagnostic owner remains live")
         if row["proposed_disposition"] == "shared_peak_fact":
             if row["proposed_owner"] != "xic_extractor/peak_detection":
                 raise ValueError("shared peak fact has wrong owner")
@@ -330,6 +414,21 @@ def _validate_rule_rows(rows: list[dict[str, str]], terminal: str) -> None:
                 for field in ("retained_oracle", "positive_case", "counterexample")
             ):
                 raise ValueError("migrated candidate lacks falsification cases")
+            if row["implementation_child"] != "#240":
+                raise ValueError("shared peak fact has wrong implementation child")
+            if row["final_runtime_disposition"] != "live_shared_fact":
+                raise ValueError("shared peak fact has wrong final disposition")
+
+    for rule_id in ("SP-035", "SP-045"):
+        row = next(row for row in rows if row["rule_id"] == rule_id)
+        if row["implementation_child"] != "#250":
+            raise ValueError("quantitation projection bypasses #250")
+        if row["parity_or_expected_diff"] != "approved_expected_diff_only":
+            raise ValueError("quantitation projection lacks expected-diff gate")
+
+    legacy_shift = next(row for row in rows if row["rule_id"] == "SP-019")
+    if legacy_shift["final_runtime_disposition"] != "offline_oracle":
+        raise ValueError("legacy best-shift policy remains live")
 
     for rule_id, expected_identity in EXPECTED_SHARED_IDENTITIES.items():
         row = next(row for row in rows if row["rule_id"] == rule_id)
@@ -403,7 +502,8 @@ def _validate_call_cost_rows(
             source = REPO_ROOT / row["source_locator"]
             if not source.is_file():
                 raise ValueError("retained source is not tracked in-repo evidence")
-            actual_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+            source_text = source.read_text(encoding="utf-8")
+            actual_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
             if actual_hash != row["source_version_or_hash"]:
                 raise ValueError("stale source hash")
         if evidence_status == "unknown":

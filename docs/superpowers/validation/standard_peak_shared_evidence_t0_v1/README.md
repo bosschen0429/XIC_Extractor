@@ -27,9 +27,63 @@ their current owners; no duplicate semantic owner is needed.
 
 Terminal disposition: PROMOTE_TO_T1
 
+Route cutover status: BLOCKED_PENDING_250_251
+
 This disposition authorizes only the already-frozen no-RAW T1 characterization
 and owner-deepening scope in #240. It does not activate a downstream issue,
 authorize production behavior, or authorize a Matrix write.
+
+`PROMOTE_TO_T1` applies only to the shared facts in SP-011–SP-014. It does not
+promote the historical stage policies, quantitation projection, compatibility
+route, or authority/finalization rules. Those rules remain blocked by their
+single implementation children and deletion gates in `rule_disposition_v1.tsv`.
+
+## Boundary-closure refreeze
+
+The post-T0 boundary review found that the original serial issue stack encoded
+optional sequencing as native causality, left the final successor of many
+Standard Peak rules implicit, and combined an exact-parity Owner Backfill move
+with an unresolved raw-versus-Gaussian Matrix-value decision. The programme was
+refrozen before production implementation:
+
+```text
+#239 -> #240 shared no-write fact seam
+          -> #241 Owner Backfill migration -> #250 quantitation projection
+          -> #242 Discovery adapter
+          -> #243 Alignment relation adapter
+          -> #244 optional Targeted duplicate census
+
+#241 + #243 + #250 -> #251 live policy/authority compatibility closure
+#251 -> #245 CLI -> #246 GUI -> #247 retirement
+```
+
+#242 and #244 are not retirement prerequisites. #244 closes `not_needed`
+without a branch when its owner-derived census finds no duplicate Targeted
+physical-fact call.
+
+The rule ledger now closes the missing owner-migration middle. Every SP rule has
+exactly one final successor owner, one implementation child, one final runtime
+disposition, one downstream input, one parity/expected-diff rule, and one
+deletion gate. A live successor cannot remain in `tools/diagnostics`; retained
+diagnostic code is limited to offline oracle/falsification or rendering.
+
+### Quantitation truth table
+
+| Surface | #240/#241 exact-parity value | Final decision owner |
+| --- | --- | --- |
+| Boundary placement | Gaussian15-smoothed positive AsLS residual | `xic_extractor/peak_detection` |
+| Shape evidence | own-max relative-intensity shape on the smoothed trace | peak facts plus the named stage policy |
+| Evidence quantitation fact | Gaussian15 positive-residual area with complete identity/provenance | `xic_extractor/peak_detection` |
+| `AlignedCell.area` / Matrix value | current compatibility projection, kept distinct from the Gaussian fact | #250 expected-diff gate plus existing activation/writer owner |
+| Legacy Standard Peak area | falsification/expected-diff reference only | offline oracle |
+
+Smoothing remains mandatory; no smoothing ablation is requested. #250 may
+close either by retaining the current compatibility projection or by promoting
+the Gaussian value through an approved cell-level expected diff. Neither result
+allows a refactor to disguise a scientific value change.
+
+The exact parent refreeze and native dependency DAG are recorded at
+https://github.com/Chao-hu-Lab/XIC_Extractor/issues/238#issuecomment-5252117893.
 
 ## Performance diagnosis baseline
 
@@ -62,7 +116,7 @@ ignored `output/` content.
 
 | Source | SHA-256 | Use |
 | --- | --- | --- |
-| `docs/solutions/validation/standard-peak-best-shift-only-no-full-run-gain.md` | `ca69646c6140692eac97af93472904bb909cab6334903a5dc11957408e15940e` | no-RAW and complete-stage timing falsification |
+| `docs/solutions/validation/standard-peak-best-shift-only-no-full-run-gain.md` | `7c33ffd9e9a0cbb3de8894de713aff9b32df77e4c4ce85b63f6c7f3fe0d0839d` | no-RAW and complete-stage timing falsification; LF-normalized text hash |
 | `docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2/artifacts/heldout_oracle__summary.json` | `4e90c569f6a9c408f45f637efaf81677337af3c252f37ab01285d5312e61f20a` | held-out boundary/area oracle result |
 | `docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2/artifacts/85raw_large_cohort__standard_peak_activation_inputs_summary.json` | `46e2fb03577cd7cf803442a029b029a8390eed584502fc7f7de98c5a6b293d8e` | 7,307/4,613 activation population |
 | `docs/superpowers/validation/quant_matrix_promotion_validation_packet_v2/quant_matrix_promotion_packet_v2_summary.json` | `da676819bcde2738c9b2ea587900ec6e4e71089d51886233d4a4e0c4ff792d4d` | bounded promotion packet |
@@ -72,7 +126,7 @@ ignored `output/` content.
 | `docs/superpowers/validation/productization_status_index_v1.tsv` | `01f82c06dfc4d627565e20307512b7e418b6194bf45bde6186177c3d67edb993` | current productization status |
 | `docs/superpowers/schemas/productization_authority_manifest.v1.json` | `cde7d135dda6c2b38bc6ee5c03da9012ae9bf936f57186dfec1c5808aea6f9d0` | authority manifest |
 | `docs/finding_class_ledger.tsv` | `a98868fce414ea3d29797d074275ac546fb014ec37a328356190c12e3dd4ec57` | recurring classes A/B/C/D/E/G |
-| `docs/diagnostic-ledger.md` | `06bc12287bd408fc7c4e79de60c5586e35cebed4cb2c2742e1cd08e1582ebf72` | retained owner/cost evidence |
+| `docs/diagnostic-ledger.md` | `76e652b89b498abdb23ad742c532ef5715768a830bd73825db99c8f689a1d5bc` | retained owner/cost evidence; LF-normalized text hash |
 | `tools/diagnostics/INDEX.md` | `c7facd47b1ffd05124f5fa9055db931610098a21cd3db3dfd01e10ffa21e7c23` | retained diagnostic/oracle index |
 
 Persisted artifacts remain untrusted projections after deserialization. The
@@ -190,11 +244,17 @@ These states have explicit rows and are mechanically checked as distinct.
 | E — declared fields | Packet TSV schemas are exact; missing or undeclared semantic fields fail. Existing runtime owners validate their own complete payloads rather than accepting partial caller projections. |
 | G — receipt sealing | Git revision and tracked SHA seal characterization. Runtime cache/authority/publication receipts remain owner-minted and invalidate on request, artifact, source, path-stat, schema, count, or hash mismatch. |
 
-No authoritative current `findings.tsv` collector artifact exists in the tracked
-checkout. That absence is recorded as missing evidence in
-`historical_failure_matrix_v1.tsv`; the authoritative class ledger above is
-still fully mapped. Discovery of a current collector that contradicts this
-packet stops promotion and returns the decision to #238.
+No authoritative `findings.tsv` is tracked in the checkout. However, the
+reproducible reviewer-os last-30-PR collector run on 2026-08-11 produced 122
+findings, of which 35 were not classified by the current ledger. That result
+supersedes the earlier statement that no current collector evidence existed.
+It is a refreeze signal, not proof that all 35 instances apply to this
+programme. The four applicable programme-level gaps are now closed explicitly
+as HF-014–HF-017: non-causal issue dependencies, unallocated successor
+ownership, the quantitation-contract conflict, and bound-recipe routing
+regression. The remaining instances are missing classification evidence; they
+do not establish a defect in the no-write SP-011–SP-014 fact move, but they
+prevent this packet from claiming that the whole route history is closed.
 
 ## Assumptions and limitations
 
@@ -209,10 +269,12 @@ packet stops promotion and returns the decision to #238.
 
 ## Smallest next evidence loop
 
-After this packet, update #238 and rerun `plan-spec-review`. If that review keeps
-the parent frozen answers intact, #240 may perform T1 as an exact no-RAW owner
-deepening: make the four fact families callable from `peak_detection`, preserve
-the Alignment adapter and all existing stage policies, and prove byte/decision
+After this corrected packet is merged, update #238 and rerun
+`plan-spec-review`. If that review keeps the refrozen answers intact, #240 may
+perform T1 as an exact no-RAW owner deepening: make the four fact families
+callable from `peak_detection`, use the existing
+`alignment.matrix_handoff.integration_from_peak_trace` path as the first
+exact-parity consumer, preserve all stage policies, and prove byte/decision
 parity with focused tests. Do not begin T1 in this worktree.
 
 The first measured production-cutover loop is #241: run the internal shadow
