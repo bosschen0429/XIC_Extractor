@@ -133,6 +133,49 @@ create another progress ledger merely to measure the workflow. Until a
 prospective issue supplies this evidence, describe rework prevention as a
 hypothesis rather than a verified benefit.
 
+### Issue, PR, And Repository Authority
+
+Keep task intent, delivery evidence, and durable current truth distinct:
+
+- The canonical task surface, normally the issue plus its Current Packet when
+  escalated, owns the intended outcome, accepted boundaries, constraints, and
+  acceptance.
+- The checked-out implementation and tests describe the observed executable
+  baseline; canonical product, architecture, domain, validation, and workflow
+  owners define the applicable durable contracts. Existing behavior is not
+  automatically a requirement when it conflicts with approved intent.
+- A PR owns its proposed diff, SHA-bound verification, approved deviations,
+  and residual risk. It must not silently redefine the task surface. A discovery
+  that changes the intended outcome, boundaries, constraints, ownership,
+  material cost, or acceptance requires a task refreeze or a separately bounded
+  follow-up before the extra work is delivered.
+
+Issue decomposition and PR decomposition are separate decisions. Prefer one
+cohesive issue-to-PR delivery when a reviewer can judge the outcome end to end.
+Split an issue when its children are independently schedulable problem slices
+with their own bounded outcome, acceptance, and owner. Split a PR when the
+delivery needs a smaller owner or failure-domain seam so each diff is
+independently reviewable, verifiable, and cleanly mergeable on its declared
+base. Multiple PRs do not by themselves require child issues, and one child
+issue may still need more than one PR. Do not split one coherent behavior
+mechanically into model, serializer, tests, and docs PRs. A parent issue retains
+the overall outcome, global constraints, and final acceptance; each child issue
+owns one bounded slice and names its parent and real blockers. Wayfinding
+map/child mechanics remain owned by `docs/agents/issue-tracker.md`, while
+stacked delivery and final issue closure remain owned below.
+
+At merge closeout, ask whether the change creates or changes a durable claim,
+or reveals that the canonical owner does not yet express it, for product
+behavior, a public contract, architecture boundary, domain meaning, validation
+policy, or workflow rule. If it does, promote only the validated current claim
+to its canonical repo owner before merge. If the existing owner already covers
+the claim, confirm its locator rather than editing it. Code and tests retain
+executable behavior, while the PR body retains the delivered evidence and
+rationale. Do not copy the entire PRD, issue history, or review chronology into
+formal docs. If no durable claim changed or is missing, no documentation churn
+is required. Content placement and historical-note absorption remain owned by
+`docs/agent/obsidian-handoff-contract.md#source-of-truth-promotion-rule`.
+
 ## Productization Work Cycle
 
 Productization planning limits active work instead of turning every diagnostic
