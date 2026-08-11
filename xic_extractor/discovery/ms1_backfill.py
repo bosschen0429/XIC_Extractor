@@ -35,7 +35,7 @@ from xic_extractor.signal_processing import PeakResult, find_peak_and_area
 from xic_extractor.xic_models import XICRequest
 
 _TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]
-_DISCOVERY_MS1_BATCH_MAX_REQUESTS = 1
+_DISCOVERY_MS1_BATCH_MAX_REQUESTS = 256
 _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
 
 
@@ -139,7 +139,7 @@ def _backfill_ms1_candidates_with_acquisition(
     peak_config: ExtractionConfig,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
 ) -> _DiscoveryMs1AcquisitionResult:
-    """Acquire canonical Discovery requests through owner-minted singleton batches."""
+    """Acquire canonical Discovery requests in bounded owner-minted batches."""
 
     group_tuple = tuple(groups)
     plans = _discovery_ms1_request_plan(group_tuple, settings=settings)

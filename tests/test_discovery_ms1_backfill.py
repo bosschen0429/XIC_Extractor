@@ -691,7 +691,7 @@ def test_best_seed_tie_breaks_by_error_then_rt_then_scan_for_candidate(
     assert candidate.ms1_seed_delta_min == pytest.approx(7.90 - expected_rt)
 
 
-def test_owner_acquisition_characterizes_singleton_requests_and_exact_windows(
+def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -736,14 +736,63 @@ def test_owner_acquisition_characterizes_singleton_requests_and_exact_windows(
     assert measurements.input_group_count == 4
     assert measurements.empty_group_count == 1
     assert runtime_metrics.logical_xic_request_count == 3
-    assert runtime_metrics.xic_batch_count == 3
-    assert runtime_metrics.adapter_chromatogram_call_count == 3
+    assert runtime_metrics.xic_batch_count == 1
+    assert runtime_metrics.adapter_chromatogram_call_count == 2
     assert runtime_metrics.trace_point_count == 9
     assert measurements.exact_scan_window_count == 2
     assert measurements.predicted_chunked_call_count == 2
-    assert measurements.batch_max_requests == 1
-    assert [len(batch) for batch in raw.request_batches] == [1, 1, 1]
-    assert raw.request_batches[0][0] == raw.request_batches[1][0]
+    assert measurements.batch_max_requests == 256
+    assert [len(batch) for batch in raw.request_batches] == [3]
+    assert raw.request_batches[0][0] == raw.request_batches[0][1]
+
+
+def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    group = _group((_seed(scan_number=10, rt=7.80),))
+    groups = tuple(
+        replace(group, seeds=(_seed(scan_number=index + 1, rt=7.80),))
+        for index in range(257)
+    )
+    raw = _OwnerBoundBatchRaw(source)
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: _ok_peak(
+            rt=7.8,
+            intensity=100.0,
+            area=10.0,
+            start=7.7,
+            end=7.9,
+        ),
+    )
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        groups,
+        acquisition_source=source,
+        settings=_settings(),
+        peak_config=_peak_config(),
+    )
+
+    metrics = derive_runtime_acquisition_metrics(
+        result.measurements.acquisition_batches
+    )
+    assert [len(batch) for batch in raw.request_batches] == [256, 1]
+    assert metrics.logical_xic_request_count == 257
+    assert metrics.xic_batch_count == 2
+    assert metrics.adapter_chromatogram_call_count == 2
+    assert metrics.trace_point_count == 771
+    assert result.measurements.exact_scan_window_count == 1
+    assert result.measurements.predicted_chunked_call_count == 2
+    assert result.measurements.batch_max_requests == 256
 
 
 def test_owner_acquisition_preserves_scalar_candidate_parity(

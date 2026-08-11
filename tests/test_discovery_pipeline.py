@@ -1301,7 +1301,7 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
     assert rows["trace_point_count"]["value"] == 3
     assert rows["discovery_ms1_exact_scan_window_count"]["value"] == 1
     assert rows["discovery_ms1_predicted_chunked_call_count"]["value"] == 1
-    assert rows["discovery_ms1_batch_max_requests"]["value"] == 1
+    assert rows["discovery_ms1_batch_max_requests"]["value"] == 256
     assert rows["discovery_ms1_predicted_call_reduction_pct"]["value"] == 0.0
     for metric in ("worker_peak_rss_bytes", "process_tree_peak_rss_bytes"):
         assert rows[metric]["availability"] == "unavailable"
