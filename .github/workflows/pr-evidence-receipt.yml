@@ -1,0 +1,21 @@
+name: PR Evidence Receipt
+
+on:
+  pull_request:
+    branches: ["master", "main"]
+    types: ["opened", "synchronize", "reopened", "edited"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Validate PR evidence receipt
+        run: python scripts/check_pr_body.py --github-event "$GITHUB_EVENT_PATH"

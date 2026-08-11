@@ -143,6 +143,11 @@ must remain clean-checkout safe.
 
 ## Workflow Routing
 
+- Before non-trivial implementation, follow the proportional task-shaping loop
+  in `docs/agent/planning-workflows.md#task-shaping-and-premise-compilation`.
+  Every task shapes its objective, current evidence, boundaries, acceptance,
+  and stop rule; only direction-changing uncertainty or material risk escalates
+  to a Current Packet.
 - Before non-trivial diagnostics, RAW-backed evidence, matrix activation, or
   evidence-provider work, use `xic-architecture-preflight` and name owner/helper
   reuse, call-cost model, public contract risk, validation gate, and stop rule.

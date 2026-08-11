@@ -9,9 +9,9 @@ migration policy. Stable runners and validation command shapes remain in
 - Before phase plans or expensive validation, name the decision the run can
   close, strongest existing oracle, missing independent evidence, expected
   runtime/artifacts, and fail-fast or inconclusive path.
-- Use tools proactively. Pick the available local search, structural-context,
-  subagent, plugin, external-docs, or real-data validation path that best
-  closes the decision; do not choose a weaker path only to save tokens or cost.
+- Use evidence tools proactively. Pick the structural-context, external-docs,
+  or real-data validation path that best closes the decision; do not choose a
+  weaker path only to save tokens or cost.
 - For long tool chains, write the decision map first: question, evidence source,
   action if pass, action if fail. This prevents blind loops without discouraging
   tool use.
@@ -25,6 +25,156 @@ migration policy. Stable runners and validation command shapes remain in
 - Non-trivial specs, plans, docs, workflow rules, and implementations need a
   critical-thinking review angle: strongest assumption, stale-artifact risk,
   cheaper existing oracle, or condition that would invalidate the path.
+
+## Task Shaping And Premise Compilation
+
+Every task follows the same delivery loop. Only non-trivial tasks need an
+explicit artifact, and its depth scales with risk:
+
+1. **Shape the goal** — name the intended outcome and user value, constraints,
+   and the premise most likely to change the direction.
+2. **Explore current reality** — inspect the current owner, implementation,
+   real entry, tests, and strongest evidence; separate contract, observation,
+   hypothesis, and direction-changing unknowns.
+3. **Bound the task** — define in/out, preserved invariants, expected diff,
+   acceptance evidence, and stop rule so implementation and review share the
+   same finish line.
+4. **Execute the smallest coherent slice** through the real product surface.
+5. **Verify and review** representative output and failure semantics, then
+   report observed facts, inference, and remaining unknowns separately.
+
+This is an iterative loop, not a promise of one-pass delivery. New evidence may
+reopen shaping or boundaries; when it does, update the canonical task shape and
+invalidate displaced assumptions before execution resumes.
+
+An established-owner fix with a fixed oracle may express this shape in the
+request, a few sentences, and a focused test. Multi-step work keeps a short
+task shape in its issue or plan. Escalate to a **Current Packet** only when an
+unknown can change ownership, public surface, material cost, or acceptance;
+the work crosses a semantic/runtime boundary, uses expensive real-data
+validation, transforms a legacy owner, follows a load-bearing premise
+correction, has an unbounded production transaction, or repeats a refreeze or
+rework class. `needs-info` and legacy work are escalation signals, not the
+scope of the delivery loop.
+
+### Current Packet Escalation
+
+The canonical task surface carries the single authority pointer stub for the
+**Current Packet**: packet ID, revision, base SHA, status, and exact location.
+For issue-backed work this stub stays in the issue body; otherwise it stays in
+the active plan, goal, or handoff. The packet may live there, in one canonical
+comment, or in a linked tracked spec. Every replacement is self-contained and
+lists all superseded packet IDs; partial supersession such as "replace one
+section and inherit the rest" is invalid. Earlier versions remain history and
+do not remain active acceptance text after a refreeze. The packet contains four
+compiled blocks:
+
+1. **Premise ledger** — list each decision-bearing statement, its authority,
+   state, and what it invalidates. Valid states are `contract`, `observed`,
+   `hypothesis`, and `rejected`. Current legacy behavior is evidence, not a
+   frozen invariant, unless operator intent or a product/architecture contract
+   grants it that status.
+2. **Asset disposition** — classify every in-scope legacy capability, test,
+   helper, and public surface as `keep`, `reuse_after_cleanup`,
+   `compatibility_only`, `replace_or_retire`, or `unknown`. Name its successor
+   owner and oracle; do not infer either wholesale preservation or wholesale
+   rejection.
+3. **Transaction compilation** — map each requirement through the real entry
+   point, semantic owner, and every live consumer reachable from the in-scope
+   production entries and exported surfaces, including writer/renderer/cache/
+   reuse paths and downstream readers. Record the census command/query, base
+   SHA, exclusions, call cost, counterexample, and acceptance evidence. Use
+   CodeGraph for static topology when its index is healthy. Where dynamic
+   dispatch, call count, or repeated work matters, execute the highest
+   production entry with each named real consumer present. List every
+   monkeypatch, no-op, or substitution; it cannot prove completeness for the
+   path it replaces. A direct helper test does not prove that the CLI/main
+   transaction has the same behavior. Bound the claim to in-repo reachability
+   plus known external contracts rather than an unknowable external universe.
+4. **Acceptance and stop** — record preserved invariants, expected product diff,
+   non-goals, focused and representative verification, expected delivery cost,
+   and the fail-fast condition. One consolidated review plus one root-class
+   corrective is a convergence target, not a hard cap or permission to skip a
+   final review.
+
+If a premise correction changes ownership, scope, oracle, compatibility, or
+material cost, stop mutation and trace every dependent scope row, test, budget,
+and compatibility assumption. Publish a clean replacement Current Packet
+before resuming; do not append another exception while leaving invalidated text
+active.
+An `unknown` may remain only when its resolution cannot change ownership, public
+surface, material cost, or acceptance. Otherwise the issue remains
+`needs-info`, not implementation-ready.
+
+Unresolved reporter or product input keeps the `needs-info` label. After the
+Current Packet passes this gate, remove `needs-info` and apply the repository's
+`ready-for-agent` state before production edits. The label meanings are owned by
+`docs/agents/triage-labels.md`.
+
+Review incident thresholds and corrective handling remain owned by the root
+review-class rule and the existing root-class closure workflow. Treat one
+consolidated review plus one root-class corrective as a convergence target and
+measure, not a duplicate safety gate. The final mutation still requires a fresh
+whole-diff review. When the existing owner trips, stop instance patches, reopen
+the transaction census, and bound, shrink, delete, or replace the mechanism, or
+return the issue to `needs-info` with the exact missing oracle or surface.
+
+Current Packet escalation is complete only after a fresh read-only review
+challenges the load-bearing premise and inspects the evidence for at least one
+representative highest-entry transaction with its real consumers intact. The
+reviewer must be able to identify the packet ID/base SHA, normative premises,
+asset disposition, bounded production transaction, census commands and
+exclusions, falsifying case, acceptance evidence, and stop rule without
+reconstructing them from the comment history. Closeout reports clarification
+rounds, review rounds, delivered heads,
+same-class recurrence, diff churn, packet-shaping cost, and any missed surface
+when the work crossed this gate. Use PR metadata and existing receipts; do not
+create another progress ledger merely to measure the workflow. Until a
+prospective issue supplies this evidence, describe rework prevention as a
+hypothesis rather than a verified benefit.
+
+### Issue, PR, And Repository Authority
+
+Keep task intent, delivery evidence, and durable current truth distinct:
+
+- The canonical task surface, normally the issue plus its Current Packet when
+  escalated, owns the intended outcome, accepted boundaries, constraints, and
+  acceptance.
+- The checked-out implementation and tests describe the observed executable
+  baseline; canonical product, architecture, domain, validation, and workflow
+  owners define the applicable durable contracts. Existing behavior is not
+  automatically a requirement when it conflicts with approved intent.
+- A PR owns its proposed diff, SHA-bound verification, approved deviations,
+  and residual risk. It must not silently redefine the task surface. A discovery
+  that changes the intended outcome, boundaries, constraints, ownership,
+  material cost, or acceptance requires a task refreeze or a separately bounded
+  follow-up before the extra work is delivered.
+
+Issue decomposition and PR decomposition are separate decisions. Prefer one
+cohesive issue-to-PR delivery when a reviewer can judge the outcome end to end.
+Split an issue when its children are independently schedulable problem slices
+with their own bounded outcome, acceptance, and owner. Split a PR when the
+delivery needs a smaller owner or failure-domain seam so each diff is
+independently reviewable, verifiable, and cleanly mergeable on its declared
+base. Multiple PRs do not by themselves require child issues, and one child
+issue may still need more than one PR. Do not split one coherent behavior
+mechanically into model, serializer, tests, and docs PRs. A parent issue retains
+the overall outcome, global constraints, and final acceptance; each child issue
+owns one bounded slice and names its parent and real blockers. Wayfinding
+map/child mechanics remain owned by `docs/agents/issue-tracker.md`, while
+stacked delivery and final issue closure remain owned below.
+
+At merge closeout, ask whether the change creates or changes a durable claim,
+or reveals that the canonical owner does not yet express it, for product
+behavior, a public contract, architecture boundary, domain meaning, validation
+policy, or workflow rule. If it does, promote only the validated current claim
+to its canonical repo owner before merge. If the existing owner already covers
+the claim, confirm its locator rather than editing it. Code and tests retain
+executable behavior, while the PR body retains the delivered evidence and
+rationale. Do not copy the entire PRD, issue history, or review chronology into
+formal docs. If no durable claim changed or is missing, no documentation churn
+is required. Content placement and historical-note absorption remain owned by
+`docs/agent/obsidian-handoff-contract.md#source-of-truth-promotion-rule`.
 
 ## Productization Work Cycle
 
