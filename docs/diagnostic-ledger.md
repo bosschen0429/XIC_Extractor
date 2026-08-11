@@ -872,7 +872,9 @@ schema/lifecycle/recovery dependency, is `REDESIGN`.
 
 ## Issue #234 CID-NL Discovery MS1 telemetry and batching gate
 
-Issue #234 closed through Terminal A at clean revision `3b891479`. Transaction 1
+Issue #234 initially recorded Terminal A at clean revision `3b891479`; that
+threshold-only disposition is superseded by the maintainer refreeze and paired
+evidence below. Transaction 1
 maps every non-empty `DiscoverySeedGroup` to one canonical ordered `XICRequest`,
 acquires singleton owner-minted `TraceAcquisitionBatch` receipts, and preserves
 the existing peak/candidate path. `execution_runtime_owner` alone aggregates the
@@ -927,9 +929,81 @@ Scalar-versus-process artifacts were byte-identical:
   `58e016b5f5bab1b30f96e7e93b5c41d0a0bfe46f9380fc5fe423e5a1ec9743ce` /
   `723278e68109898707fddadaf82c2a8f9ebc180e1facc096cc5743e386773184`.
 
-The aggregate promotion result is `7.6224% < 20%`. Transaction 2 was therefore
-not authorized, the internal batch maximum remains 1, and no paired 8RAW or
-85RAW run was launched. Disposition: **`KILL_BATCHING_NO_VALUE`**. Truthful
-owner-derived telemetry is retained; exact-window batching, super-windows,
-public tuning/configuration, caches, Matrix/writer changes, and scientific rule
-changes do not ship. Validation status remains `diagnostic_only`.
+The original aggregate promotion result was `7.6224% < 20%`. Under the initial
+hard-threshold wording, Transaction 2 was not authorized, the internal batch
+maximum remained 1, and no paired 8RAW or 85RAW run was launched. The original
+disposition was **`KILL_BATCHING_NO_VALUE`**. The acceptance owner subsequently
+clarified that 20% is an advisory strong signal rather than a hard prohibition;
+the current positive, bounded, reversible exact-safe candidate was authorized
+for paired measurement. The superseding result follows.
+
+### Maintainer soft-gate refreeze and Terminal B evidence
+
+On 2026-08-11 the GitHub Issue #234 body and maintainer receipt were refrozen so
+that a positive exact-window opportunity below 20% may proceed to a bounded
+candidate. Paired 2RAW must beat observed noise with exact parity before paired
+8RAW; Terminal B still requires the complete three-pair 8RAW oracle. The
+production candidate changes only the internal Discovery MS1 batch maximum from
+1 to 256 at commit `8beebe46`. Revision `bf5fd79e` additionally applies the
+existing bounded Windows atomic-replace retry pattern to `TimingRecorder` after
+two excluded runs independently reproduced `PermissionError: [WinError 5]`
+while updating a live timing sidecar. That runtime fix changes neither the
+candidate nor scalar acquisition path.
+
+The scalar and candidate variants used the same clean `bf5fd79e` code,
+environment, Thermo RawFileReader 4.0.19.0, DLL SHA-256
+`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`,
+default `scripts.run_discovery` CID-NL/peak settings, sequential worker budget,
+full Discovery candidate/review CSV output, and no application XIC cache. A
+task-local diagnostic wrapper changed only the private batch maximum to 1 for
+scalar and 256 for candidate. One scalar and one candidate warmup were excluded
+at each tier; the three recorded scalar/candidate observations were interleaved.
+OS filesystem cache remained externally uncontrolled after warmup. Each run had
+a 600-second foreground timeout and used the live/final `timing.json` sidecar.
+
+Paired 2RAW reused `NormalBC2312_DNA.raw` and `TumorBC2312_DNA.raw` through the
+same task-local hardlinks. Recorded wall seconds were scalar
+`32.720, 31.695, 32.512` and candidate `31.471, 34.572, 30.729`. Scalar wall
+median was `32.512 s`, candidate median was `31.471 s`, scalar wall noise was
+`3.155%`, and integrated gain was `3.204%`. The `discover.ms1_backfill` median
+was `11.093 -> 9.713 s`: `12.440%` gain against `5.165%` scalar stage noise.
+Every run preserved 7,150 logical requests and 108,738 trace points; calls were
+`7,150 -> 6,605`. The same five Discovery CSV hashes were byte-identical in all
+six runs. The paired 2RAW gate therefore passed, narrowly on whole-run wall and
+more clearly on the isolated MS1 stage.
+
+Paired 8RAW used the documented validation directory's eight files:
+`BenignfatBC1055_DNA.raw`, `BenignfatBC1151_DNA.raw`,
+`Breast_Cancer_Tissue_pooled_QC3.raw`,
+`Breast_Cancer_Tissue_pooled_QC5.raw`, `NormalBC2263_DNA.raw`,
+`NormalBC2312_DNA.raw`, `TumorBC2263_DNA.raw`, and
+`TumorBC2312_DNA.raw`, totaling 1,601,282,569 bytes.
+
+| Pair | Scalar wall (s) | Candidate wall (s) | Scalar MS1 (s) | Candidate MS1 (s) |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 158.494 | 146.622 | 61.147 | 49.327 |
+| 2 | 166.620 | 149.663 | 66.300 | 51.634 |
+| 3 | 160.238 | 146.829 | 62.603 | 49.556 |
+
+Scalar wall median was `160.238 s`, candidate wall median was `146.829 s`,
+scalar wall noise was `5.071%`, and integrated gain was `8.368%`. The
+`discover.ms1_backfill` median was `62.603 -> 49.556 s`: `20.840%` gain against
+`8.232%` scalar stage noise. Every candidate repetition was faster than its
+paired scalar repetition. Logical requests remained 31,819 and trace points
+remained 454,223. Mechanical batches changed `31,819 -> 128`; physical vendor
+calls changed `31,819 -> 29,148`, a reduction of 2,671 calls (`8.394%`).
+
+All 17 Discovery CSV artifacts were byte-identical across all six recorded
+8RAW runs. The common batch-index SHA-256 was
+`1a634ab3648bb26f1b96fe8e85078fae62ed9edaf3fe77741fa3adc7d489fbbf`.
+The sequential runner emits no process IPC metric. Worker and process-tree RSS
+remained explicitly unavailable with the unchanged truthful reason
+`unsupported: Discovery runner has no owner-bound RSS sampler`; no measured RSS
+claim is made. No super-window, cache, public tuning/configuration, Matrix,
+writer, scientific-rule, Pt/composite, Alignment, or Backfill change occurred.
+
+The exact-safe correctness oracle and the integrated noise rule both pass.
+Superseding disposition: **`RETAIN_NATIVE_BATCHING`** (Terminal B). Validation
+status remains `diagnostic_only`; this performance result grants no new Matrix,
+writer, activation, publication, or scientific authority. No 85RAW run was
+launched.
