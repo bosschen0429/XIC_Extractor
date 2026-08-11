@@ -69,6 +69,30 @@ root `AGENTS.md`. Keep the root file limited to high-frequency guardrails.
   from the active handoff during the next prune unless they prevent repeated
   mistakes.
 
+## PR Evidence Receipt
+
+The PR body is the canonical receipt for the proposed diff at its reviewed
+head. Record every decision-bearing claim with these exact columns:
+
+| Claim | Basis | Evidence and binding | Result | What it proves | What it does not prove |
+| --- | --- | --- | --- | --- | --- |
+
+- `Basis` is one of `contract`, `observed`, `decision`, or `inference`.
+- Repository evidence records `head=<40-character SHA>` plus either
+  `command=<exact command>` or `locator=<repo path or public URL>`. External
+  evidence records `input`, `config`, `hash`, and a durable `locator` so
+  another reviewer can identify the same evidence without a private local
+  path.
+- Keep a small PR's receipt inline and proportional, normally one to three
+  rows. Add only the rows needed to support its decision-bearing claims.
+- Science, product-output, or promotion claims link to the existing
+  expected-diff, promotion, RAW-validation, and manual-review owners that apply
+  to that lane. The receipt does not create a universal evidence manifest or a
+  new scientific or product authority.
+- The checker verifies completeness, allowed vocabulary, SHA binding, and
+  traceability. A reviewer still decides whether the chosen oracle supports the
+  claim and whether the stated limitation is accurate.
+
 ## Review Checklist
 
 After completing changes, quickly check:
