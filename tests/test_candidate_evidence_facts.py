@@ -99,6 +99,68 @@ def test_integration_trace_evidence_preserves_compatibility_fields() -> None:
     assert enriched.ms1_morphology_trace_method == "gaussian_15"
 
 
+def test_integration_only_evidence_skips_shape_projection(monkeypatch) -> None:
+    integration = IntegrationResult(
+        rt_left_min=1.0,
+        rt_apex_min=2.0,
+        rt_right_min=3.0,
+        raw_apex_rt_min=2.0,
+        rt_width_min=2.0,
+        height_raw=50.0,
+        height_smoothed=45.0,
+        area_raw_counts_seconds=4000.0,
+        boundary_sources=("alignment_owner",),
+    )
+    projection_calls: list[str] = []
+    smoothing_calls = 0
+    original_normalize = evidence_facts_module._normalized_precomputed_trace
+    original_window = evidence_facts_module._trace_window_evidence_facts
+    original_smoothing = (
+        evidence_facts_module.gaussian15_positive_asls_residual_trace
+    )
+
+    def counted_normalize(*args, **kwargs):
+        projection_calls.append("normalized_shape")
+        return original_normalize(*args, **kwargs)
+
+    def counted_window(*args, **kwargs):
+        projection_calls.append("window")
+        return original_window(*args, **kwargs)
+
+    def counted_smoothing(*args, **kwargs):
+        nonlocal smoothing_calls
+        smoothing_calls += 1
+        return original_smoothing(*args, **kwargs)
+
+    monkeypatch.setattr(
+        evidence_facts_module,
+        "_normalized_precomputed_trace",
+        counted_normalize,
+    )
+    monkeypatch.setattr(
+        evidence_facts_module,
+        "_trace_window_evidence_facts",
+        counted_window,
+    )
+    monkeypatch.setattr(
+        evidence_facts_module,
+        "gaussian15_positive_asls_residual_trace",
+        counted_smoothing,
+    )
+
+    enriched = integration_with_trace_evidence(
+        integration,
+        [0.0, 1.0, 2.0, 3.0, 4.0],
+        [10.0, 12.0, 50.0, 12.0, 10.0],
+    )
+
+    assert projection_calls == []
+    assert smoothing_calls == 1
+    assert enriched.area_raw_counts_seconds == integration.area_raw_counts_seconds
+    assert enriched.boundary_sources == integration.boundary_sources
+    assert enriched.area_ms1_morphology is not None
+
+
 def test_peak_trace_evidence_reuses_one_gaussian15_trace_for_shape_and_area(
     monkeypatch,
 ) -> None:

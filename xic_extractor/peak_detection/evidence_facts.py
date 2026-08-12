@@ -304,12 +304,13 @@ def integration_with_trace_evidence(
 ) -> IntegrationResult:
     """Enrich an existing integration with owner-computed baseline/morphology facts."""
 
-    return peak_trace_evidence(
+    enriched, _rt, _morphology_trace = _integration_and_morphology_trace(
         integration,
         rt_values,
         intensity_values,
         baseline_integration_method=baseline_integration_method,
-    ).integration
+    )
+    return enriched
 
 
 def peak_trace_evidence(
@@ -326,6 +327,36 @@ def peak_trace_evidence(
     and its compatibility area remain caller-owned inputs.
     """
 
+    enriched, rt, morphology_trace = _integration_and_morphology_trace(
+        integration,
+        rt_values,
+        intensity_values,
+        baseline_integration_method=baseline_integration_method,
+    )
+    normalized_shape = _normalized_precomputed_trace(rt, morphology_trace)
+    window = _trace_window_evidence_facts(
+        tuple(float(value) for value in rt),
+        normalized_shape,
+        query_apex_rt_min=integration.rt_apex_min,
+        half_window_min=DEFAULT_LOCAL_HALF_WINDOW_MIN,
+        report_global_trace_apex_delta=True,
+    )
+    return PeakTraceEvidenceFacts(
+        integration=enriched,
+        normalized_shape_trace=normalized_shape,
+        window=window,
+        smoothing_count=1 if morphology_trace is not None else 0,
+        integration_count=1,
+    )
+
+
+def _integration_and_morphology_trace(
+    integration: IntegrationResult,
+    rt_values: object,
+    intensity_values: object,
+    *,
+    baseline_integration_method: str,
+) -> tuple[IntegrationResult, np.ndarray, np.ndarray | None]:
     if not isinstance(integration, IntegrationResult):
         raise TypeError("integration must be an IntegrationResult")
     rt, intensity = validate_ms1_trace_arrays(rt_values, intensity_values)
@@ -388,21 +419,7 @@ def peak_trace_evidence(
             else None
         ),
     )
-    normalized_shape = _normalized_precomputed_trace(rt, morphology_trace)
-    window = _trace_window_evidence_facts(
-        tuple(float(value) for value in rt),
-        normalized_shape,
-        query_apex_rt_min=integration.rt_apex_min,
-        half_window_min=DEFAULT_LOCAL_HALF_WINDOW_MIN,
-        report_global_trace_apex_delta=True,
-    )
-    return PeakTraceEvidenceFacts(
-        integration=enriched,
-        normalized_shape_trace=normalized_shape,
-        window=window,
-        smoothing_count=1 if morphology_trace is not None else 0,
-        integration_count=1,
-    )
+    return enriched, rt, morphology_trace
 
 
 def _normalized_precomputed_trace(
