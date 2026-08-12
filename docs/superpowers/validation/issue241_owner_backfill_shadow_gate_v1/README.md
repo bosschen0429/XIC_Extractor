@@ -117,14 +117,64 @@ decision, identity, boundary, area, Matrix, value, or failure difference.
   classes stops the cutover claim.
 - No 85RAW lane was launched.
 
+## Review P1 closure: bounded process payload
+
+PR #255 review identified that the first cutover retained each complete
+normalized RT/intensity trace in `peak_fact_observations` and transported those
+observations through process-worker results even though the production pipeline
+did not consume them. Finding class I, `transaction cost amplification`, was
+therefore reopened as a plan gap: the original gate bounded calls but not
+retained or serialized payload.
+
+Issue #241 was refrozen before the fix. Mandatory Gaussian-smoothed boundary,
+shape, window, and Gaussian-area evidence still executes before the decision;
+only the post-decision projection changed. Owner Backfill now retains bounded
+scalar fact receipts with sealed identity, while process-worker results retain
+only the aggregated owner-derived cost receipt. Full normalized RT/intensity
+arrays and raw scan-index sequences do not cross that boundary.
+
+The negative no-RAW oracle built equivalent three-point and 50,000-point full
+facts, then proved that receipt pickle size stayed bounded, `raw_scan_indices`
+was empty, no normalized trace field survived, and both worker-result dataclasses
+excluded `peak_fact_observations`.
+
+A fresh 8RAW process lane at commit
+`96cf6065333482989a096f122b9402983e2a5602` used the same owner-bound discovery
+index SHA-256
+`233a0af0e8f6c93c2d5d5fc50536f85075f0b72aad9333724462cc7c9841e01a`,
+exact RAW windows, `raw_workers=2`, and eight samples. It completed with eight
+successful worker receipts and the following owner-derived result:
+
+| Observation | Fresh 8RAW process result |
+| --- | ---: |
+| Sealed candidate observations | 29,458 |
+| Identity-unavailable observations | 0 |
+| Logical trace evaluations | 29,458 |
+| Gaussian smoothing | 27,516 |
+| Gaussian integration | 27,516 |
+| Fact-scope RAW opens | 0 |
+| Artifact round trips | 0 |
+| Worker result contains peak-fact observation field | no |
+| Total serialized worker-result bytes | 23,954,111 |
+| Largest serialized worker result | 3,073,705 |
+| Owner Backfill elapsed observation | 170.31 s |
+
+The six primary output/failure TSVs and all three formal activation value,
+identity, and application TSVs were byte-identical to the previously accepted
+8RAW candidate. This fresh process run changes no Matrix, writer, failure, or
+scientific authority. It closes the payload instance without making a memory or
+wall-time speedup percentage claim.
+
 ## Terminal disposition
 
 Shadow promotion: `PASS`.
 
-Production cutover: `GO` for commit
-`4d93e6be58a2f4a485c5ec112e0da19802aff7a6`. The final code path has one
+Production cutover: `GO` for commits
+`4d93e6be58a2f4a485c5ec112e0da19802aff7a6` and
+`96cf6065333482989a096f122b9402983e2a5602`. The final code path has one
 Owner Backfill peak-fact source; no dormant shadow path or second production
-calculation remains. The result is positive on correctness, ownership, sealed
-identity, and non-increasing call cost. It does not claim a material wall-time
-speedup or redesign hypothesis selection, ModeTrack, Matrix, ProductWriter, or
-public output semantics.
+calculation remains, and no full trace crosses the worker result boundary. The
+result is positive on correctness, ownership, sealed identity, bounded payload,
+and non-increasing call cost. It does not claim a material wall-time speedup or
+redesign hypothesis selection, ModeTrack, Matrix, ProductWriter, or public
+output semantics.
