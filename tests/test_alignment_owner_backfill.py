@@ -1,4 +1,5 @@
-from dataclasses import replace
+import pickle
+from dataclasses import fields, replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -16,7 +17,17 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     build_owner_backfill_request_plan,
 )
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
+from xic_extractor.alignment.process_backend import (
+    OwnerBackfillProcessOutput,
+    OwnerBackfillSampleResult,
+)
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.evidence_facts import (
+    PeakTraceEvidenceFacts,
+    TraceWindowEvidenceFacts,
+)
+from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.ms1_shape_identity import OwnMaxTrace
 from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
 from xic_extractor.processing_identity import build_acquisition_source_identity
 
@@ -115,6 +126,60 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_truthful_cost(
     assert candidate.peak_fact_cost.count_scope.startswith("shared_peak_facts")
     assert owner_backfill_module._positive_elapsed(0.0) is None
     assert owner_backfill_module._positive_elapsed(float("nan")) is None
+
+
+def test_owner_backfill_fact_receipt_drops_trace_arrays_and_worker_payload() -> None:
+    point_count = 50_000
+    integration = IntegrationResult(
+        rt_left_min=8.0,
+        rt_apex_min=8.5,
+        rt_right_min=9.0,
+        raw_apex_rt_min=8.5,
+        rt_width_min=1.0,
+        height_raw=100.0,
+        height_smoothed=95.0,
+        area_raw_counts_seconds=1_000.0,
+        raw_scan_indices=tuple(range(point_count)),
+    )
+    window = TraceWindowEvidenceFacts(
+        status="ok",
+        reason="bounded receipt oracle",
+        query_apex_rt_min=8.5,
+        query_apex_in_trace_window=True,
+    )
+
+    def full_facts(size: int) -> PeakTraceEvidenceFacts:
+        return PeakTraceEvidenceFacts(
+            integration=integration,
+            normalized_shape_trace=OwnMaxTrace(
+                status="ok",
+                reason="bounded receipt oracle",
+                rt=tuple(float(index) for index in range(size)),
+                intensity=tuple(1.0 for _index in range(size)),
+                max_intensity=1.0,
+            ),
+            window=window,
+            smoothing_count=1,
+            integration_count=1,
+        )
+
+    small = owner_backfill_module._bounded_peak_fact_receipt(full_facts(3))
+    large = owner_backfill_module._bounded_peak_fact_receipt(
+        full_facts(point_count)
+    )
+
+    assert small.integration.raw_scan_indices == ()
+    assert large.integration.raw_scan_indices == ()
+    assert small.normalized_shape_point_count == 3
+    assert large.normalized_shape_point_count == point_count
+    assert not hasattr(small, "normalized_shape_trace")
+    assert len(pickle.dumps(large)) <= len(pickle.dumps(small)) + 16
+    assert "peak_fact_observations" not in {
+        field.name for field in fields(OwnerBackfillSampleResult)
+    }
+    assert "peak_fact_observations" not in {
+        field.name for field in fields(OwnerBackfillProcessOutput)
+    }
 
 
 def test_owner_backfill_shared_peak_disagreement_holds_without_write(

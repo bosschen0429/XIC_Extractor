@@ -56,7 +56,6 @@ from xic_extractor.alignment.ms1_index_source import (
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
     OwnerBackfillPeakFactCostReceipt,
-    OwnerBackfillPeakFactObservation,
     OwnerBackfillRequestReuseObservation,
     OwnerBackfillWindowStrategy,
     build_owner_backfill_result,
@@ -198,7 +197,6 @@ class OwnerBackfillSampleResult:
         OwnerBackfillRequestReuseObservation,
         ...,
     ] = ()
-    peak_fact_observations: tuple[OwnerBackfillPeakFactObservation, ...] = ()
     peak_fact_cost: OwnerBackfillPeakFactCostReceipt | None = None
 
 
@@ -211,7 +209,6 @@ class OwnerBackfillProcessOutput:
         OwnerBackfillRequestReuseObservation,
         ...,
     ] = ()
-    peak_fact_observations: tuple[OwnerBackfillPeakFactObservation, ...] = ()
     peak_fact_cost_receipts: tuple[OwnerBackfillPeakFactCostReceipt, ...] = ()
 
 
@@ -710,11 +707,6 @@ def collect_owner_backfill_results(
         for result in sorted(successes, key=lambda item: item.sample_index)
         for observation in result.request_reuse_observations
     )
-    peak_fact_observations = tuple(
-        observation
-        for result in sorted(successes, key=lambda item: item.sample_index)
-        for observation in result.peak_fact_observations
-    )
     peak_fact_cost_receipts = tuple(
         result.peak_fact_cost
         for result in sorted(successes, key=lambda item: item.sample_index)
@@ -725,7 +717,6 @@ def collect_owner_backfill_results(
         timing_stats=timing_stats,
         candidate_audit_rows=candidate_audit_rows,
         request_reuse_observations=request_reuse_observations,
-        peak_fact_observations=peak_fact_observations,
         peak_fact_cost_receipts=peak_fact_cost_receipts,
     )
 
@@ -831,7 +822,6 @@ def extract_owner_backfill_sample_job(
             request_reuse_observations=(
                 backfill_result.request_reuse_observations
             ),
-            peak_fact_observations=backfill_result.peak_fact_observations,
             peak_fact_cost=backfill_result.peak_fact_cost,
             timing_stats=(
                 OwnerBackfillTimingStats(

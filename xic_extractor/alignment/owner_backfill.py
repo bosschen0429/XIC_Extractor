@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import groupby
 from time import perf_counter
 from typing import Protocol
@@ -51,8 +51,10 @@ from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.evidence_facts import (
     PeakTraceEvidenceFacts,
+    TraceWindowEvidenceFacts,
     peak_trace_evidence,
 )
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.region_audit import build_peak_region_audit_summary
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
@@ -130,6 +132,34 @@ class OwnerBackfillResult:
 
 
 @dataclass(frozen=True, slots=True)
+class OwnerBackfillPeakFactReceipt:
+    """Bounded post-decision projection of shared peak evidence."""
+
+    integration: IntegrationResult
+    normalized_shape_status: str
+    normalized_shape_reason: str
+    normalized_shape_point_count: int
+    normalized_shape_max_intensity: float | None
+    window: TraceWindowEvidenceFacts
+    smoothing_count: int
+    integration_count: int
+
+    def __post_init__(self) -> None:
+        if self.integration.raw_scan_indices:
+            raise ValueError("peak fact receipt must not retain raw scan indices")
+        counts = (
+            self.normalized_shape_point_count,
+            self.smoothing_count,
+            self.integration_count,
+        )
+        if any(
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+            for value in counts
+        ):
+            raise ValueError("peak fact receipt counts must be non-negative integers")
+
+
+@dataclass(frozen=True, slots=True)
 class OwnerBackfillPeakFactObservation:
     logical_request: OwnerBackfillLogicalRequestMember
     request_identity: OwnerBackfillRequestIdentity
@@ -137,7 +167,7 @@ class OwnerBackfillPeakFactObservation:
     candidate_phase: str
     selected_for_output: bool
     cell: AlignedCell
-    facts: PeakTraceEvidenceFacts | None
+    facts: OwnerBackfillPeakFactReceipt | None
     fact_elapsed_seconds: float | None
 
     @property
@@ -275,7 +305,7 @@ class _OwnerBackfillCandidateRecord:
     candidate_index: int
     candidate_phase: str
     trace_evaluated: bool = False
-    peak_facts: PeakTraceEvidenceFacts | None = None
+    peak_facts: OwnerBackfillPeakFactReceipt | None = None
     peak_fact_elapsed_seconds: float | None = None
     logical_request: OwnerBackfillLogicalRequestMember | None = None
     request_identity: OwnerBackfillRequestIdentity | None = None
@@ -788,17 +818,36 @@ def _append_candidate_record(
 ) -> None:
     if (logical_request is None) != (request_identity is None):
         raise ValueError("logical request and request identity must stay paired")
+    peak_fact_receipt = _bounded_peak_fact_receipt(peak_facts)
     records.append(
         _OwnerBackfillCandidateRecord(
             cell=cell,
             candidate_index=len(records) + 1,
             candidate_phase=phase,
             trace_evaluated=trace_evaluated,
-            peak_facts=peak_facts,
+            peak_facts=peak_fact_receipt,
             peak_fact_elapsed_seconds=peak_fact_elapsed_seconds,
             logical_request=logical_request,
             request_identity=request_identity,
         )
+    )
+
+
+def _bounded_peak_fact_receipt(
+    facts: PeakTraceEvidenceFacts | None,
+) -> OwnerBackfillPeakFactReceipt | None:
+    if facts is None:
+        return None
+    shape = facts.normalized_shape_trace
+    return OwnerBackfillPeakFactReceipt(
+        integration=replace(facts.integration, raw_scan_indices=()),
+        normalized_shape_status=shape.status,
+        normalized_shape_reason=shape.reason,
+        normalized_shape_point_count=len(shape.rt),
+        normalized_shape_max_intensity=shape.max_intensity,
+        window=facts.window,
+        smoothing_count=facts.smoothing_count,
+        integration_count=facts.integration_count,
     )
 
 

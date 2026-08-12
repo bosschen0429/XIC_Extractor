@@ -698,7 +698,7 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
         (item.logical_request_count, item.canonical_request_class_count)
         for item in result.request_reuse_observations
     ] == [(2, 1)]
-    assert len(result.peak_fact_observations) == 2
+    assert not hasattr(result, "peak_fact_observations")
     assert result.peak_fact_cost is not None
     assert result.peak_fact_cost.sealed_observation_count == 2
 
