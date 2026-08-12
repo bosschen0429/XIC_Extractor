@@ -14,9 +14,10 @@ Parent programme: [#238](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/238
   `validation-minimal`, `audit-evidence-mode=none`.
 - Acquisition: current-schema discovery-owner closure, exact Owner Backfill
   windows, one RAW worker, and no cache, super-window, or checkpoint path.
-- Fact-cost scope: peak facts produced from the already acquired Owner Backfill
-  trace. A fact receipt RAW-open count of zero therefore means no second RAW
-  acquisition; it does not claim that the alignment run opened no RAW data.
+- Historical fact-cost scope: peak facts produced from the already acquired
+  Owner Backfill trace. Its caller-authored incremental RAW-open zero is retained
+  below only as provenance and is superseded by the runtime-owner receipt in the
+  final review closure, which measures one process RAW open per successful worker.
 
 The activation-base path and candidate used separate fresh output directories
 against the same owner-bound discovery index and RAW identities. Legacy
@@ -46,7 +47,7 @@ candidate delta was +0.13% in 2RAW and +0.32% in the 8RAW Owner Backfill stage.
 | Logical trace evaluations | 688 | 688 | 29,458 | 29,458 |
 | Gaussian smoothing | 684 | 684 | 27,516 | 27,516 |
 | Gaussian integration | 684 | 684 | 27,516 | 27,516 |
-| Fact-scope RAW opens | 0 | 0 | 0 | 0 |
+| Historical incremental fact-scope RAW opens (superseded) | 0 | 0 | 0 | 0 |
 | Artifact round trips | 0 | 0 | 0 | 0 |
 | Sealed candidate observations | unavailable on base | 688 | unavailable on base | 29,458 |
 | Identity-unavailable observations | unavailable on base | 0 | unavailable on base | 0 |
@@ -152,7 +153,7 @@ successful worker receipts and the following owner-derived result:
 | Logical trace evaluations | 29,458 |
 | Gaussian smoothing | 27,516 |
 | Gaussian integration | 27,516 |
-| Fact-scope RAW opens | 0 |
+| Historical incremental fact-scope RAW opens (superseded) | 0 |
 | Artifact round trips | 0 |
 | Worker result contains peak-fact observation field | no |
 | Total serialized worker-result bytes | 23,954,111 |
@@ -204,7 +205,7 @@ results were:
 | Sealed trace evaluations | 688 | 29,458 |
 | Gaussian smoothing | 684 | 27,516 |
 | Gaussian integration | 684 | 27,516 |
-| Fact-scope RAW opens | 0 | 0 |
+| Historical incremental fact-scope RAW opens (superseded) | 0 | 0 |
 | Artifact round trips | 0 | 0 |
 | Identity-unavailable observations | 0 | 0 |
 | Owner-build elapsed observation | 7.83 s | 22.43 s |
@@ -224,6 +225,68 @@ The comparable 8RAW owner-build observation decreased from 23.26 s to 22.43 s
 speedup or regression claim. The promotion basis is exact output parity,
 unchanged owner-derived call counts, and the negative projection-call oracle.
 
+## Review P1 closure: runtime-owned cost projection
+
+PR #255 then identified that the historical aggregate receipt was constructed
+by `owner_backfill` and transported through `process_backend`, even though
+runtime observability aggregation belongs to `execution_runtime_owner`. That
+receipt also described the already-acquired fact scope with a literal zero RAW
+open, which was insufficient evidence for the process worker's actual
+acquisition count. Issue #241 was refrozen before this correction; the prior
+PASS/GO was withdrawn while the gate was rerun.
+
+At commit `7afd24c7c58538313d3a58ba897e781ff65eff79`, the scientific owner exposes
+only bounded per-candidate work observations and no aggregate cost receipt. The
+process adapter submits typed work, RAW-session, and artifact-I/O facts to
+`execution_runtime_owner`. That owner validates unique work keys and acquisition
+binding, keeps missing or non-finite observations unavailable, derives the
+counts, and privately mints the projection. The worker boundary carries only
+that projection; it does not carry full peak-fact observations.
+
+The no-RAW gate covered exact parity, disagreement HOLD/no-write, unavailable
+duration and acquisition evidence, duplicate work keys, crossed acquisition
+identity, one process RAW-open receipt, bounded worker payload, and removal of
+the direct-owner aggregate. The proportional validation included 146 focused
+tests, the `alignment-core`, `docs-config`, and `product-gates-activation`
+shards, full Ruff and mypy, import contracts, architecture census, shard-map
+coverage, diagnostics index, docs lifecycle audit, hook/config smoke, runtime
+doctor, `git diff --check`, and a changed-file secret/local-path scan.
+
+Fresh candidate-only RAW validation then used exact windows, `raw_workers=2`,
+the same owner-bound input hashes, and no cache, super-window, checkpoint, or
+second acquisition path:
+
+| Runtime-owner observation | 2RAW | 8RAW |
+| --- | ---: | ---: |
+| Successful worker receipts | 2 | 8 |
+| Measured process RAW opens | 2 | 8 |
+| Logical trace evaluations | 688 | 29,458 |
+| Gaussian smoothing | 684 | 27,516 |
+| Gaussian integration | 684 | 27,516 |
+| Sealed candidate observations | 688 | 29,458 |
+| Identity-unavailable observations | 0 | 0 |
+| Artifact round trips | 0 | 0 |
+| Finite positive peak-fact elapsed total | 0.648789 s | 27.471938 s |
+| Owner Backfill elapsed observation | 9.503683 s | 172.178970 s |
+| Total serialized worker-result bytes | 577,027 | 23,954,391 |
+| Worker result contains peak-fact observation field | no | no |
+
+Every worker receipt reported
+`measurement_source=execution_runtime_owner:v1` and
+`count_scope=owner_backfill_worker_peak_fact_runtime`. Each successful worker
+proved exactly one RAW open, so the lane totals are two and eight; neither zero
+nor unavailable was substituted for acquisition evidence. All elapsed values
+were finite positive observations. These remain single busy-machine timings and
+support no speedup or regression claim.
+
+The six primary output/failure TSVs were byte-identical to the accepted current
+Owner Backfill production baseline in both lanes. The 8RAW top-level activation
+summary and all five formal Matrix/value/identity TSVs were also byte-identical.
+The runtime-owner correction therefore changed observability ownership without
+changing candidate universe, order/cardinality, hypothesis binding, boundary,
+shape, Gaussian area, recovery, Matrix, writer authority, output bytes, or
+failure semantics. No 85RAW lane was launched.
+
 ## Terminal disposition
 
 Shadow promotion: `PASS`.
@@ -231,11 +294,13 @@ Shadow promotion: `PASS`.
 Production cutover: `GO` for commits
 `4d93e6be58a2f4a485c5ec112e0da19802aff7a6` and
 `96cf6065333482989a096f122b9402983e2a5602`, with the bounded sibling-consumer
-correction at `9c2976b6b4a5488cc913cc838501297576ead9ca`. The final code path has one
-Owner Backfill peak-fact source; no dormant shadow path or second production
-calculation remains, no full trace crosses the worker result boundary, and the
-integration-only sibling does not build discarded shape/window projections.
-The result is positive on correctness, ownership, sealed identity, bounded
-payload, and non-increasing semantic call cost. It does not claim a material
-wall-time speedup or redesign hypothesis selection, ModeTrack, Matrix,
-ProductWriter, or public output semantics.
+correction at `9c2976b6b4a5488cc913cc838501297576ead9ca` and the runtime-owner receipt
+correction at `7afd24c7c58538313d3a58ba897e781ff65eff79`. The final code path has one
+Owner Backfill peak-fact source; no dormant shadow path, second production
+calculation, or caller-minted aggregate remains. No full trace crosses the
+worker result boundary, and the integration-only sibling does not build
+discarded shape/window projections. The result is positive on correctness,
+runtime ownership, sealed identity, bounded payload, and non-increasing
+semantic call cost. It does not claim a material wall-time speedup or redesign
+hypothesis selection, ModeTrack, Matrix, ProductWriter, or public output
+semantics.
