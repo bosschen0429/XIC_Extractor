@@ -165,16 +165,77 @@ identity, and application TSVs were byte-identical to the previously accepted
 scientific authority. It closes the payload instance without making a memory or
 wall-time speedup percentage claim.
 
+## Review P2 closure: bounded integration-only projection
+
+PR #255 then identified a sibling instance of the same finding class. The
+compatibility-only `integration_with_trace_evidence` consumer requested an
+enriched `IntegrationResult`, but the shared seam also sorted and copied the
+complete trace into normalized Python tuples and built window evidence that the
+caller immediately discarded. Finding class I, `transaction cost
+amplification`, was reopened again because the first corrective plan enumerated
+the Owner Backfill worker-result boundary but not both direct shared-seam
+consumers.
+
+Issue #241 was refrozen before the second fix. The shared evidence owner still
+validates one trace and computes at most one AsLS baseline, one Gaussian15
+morphology trace, and one integration. The integration-only path now returns
+after that bounded work. Only the full-fact path projects normalized shape and
+window evidence, which remains mandatory for Owner Backfill. No flag, second
+smoothing pass, caller-specific evidence owner, Matrix authority, or public
+output was added.
+
+The no-RAW regression oracle first failed with both discarded projections
+observed, then passed after the split. It proves that the integration-only path
+performs one Gaussian15 smoothing while making zero normalized-shape or window
+projection calls. The full-fact oracle still proves one shared Gaussian15 trace
+feeds both shape and morphology area.
+
+Fresh current-checkout validation at commit
+`9c2976b6b4a5488cc913cc838501297576ead9ca` used exact windows,
+`raw_workers=2`, and the same owner-bound inputs. The first 2RAW execution was
+rejected because its receipt was supplied an incorrect full code-revision
+string; its pipeline output was not used for gate acceptance. A fresh second
+2RAW attempt bound the correct revision and passed. The accepted 2RAW and 8RAW
+results were:
+
+| Observation | 2RAW | 8RAW |
+| --- | ---: | ---: |
+| Worker receipts | 2 | 8 |
+| Sealed trace evaluations | 688 | 29,458 |
+| Gaussian smoothing | 684 | 27,516 |
+| Gaussian integration | 684 | 27,516 |
+| Fact-scope RAW opens | 0 | 0 |
+| Artifact round trips | 0 | 0 |
+| Identity-unavailable observations | 0 | 0 |
+| Owner-build elapsed observation | 7.83 s | 22.43 s |
+
+The six primary output/failure TSVs were byte-identical in both lanes. In the
+8RAW lane, all five formal Matrix/value/identity TSVs were also byte-identical,
+including the three activation application, hypothesis-identity, and value
+delta projections. The accepted input hashes remained
+`16223a06b9cee2d3108875c3a4c7056cf7a668b35479992040b2318e5f1a0a6f`
+for 2RAW and
+`233a0af0e8f6c93c2d5d5fc50536f85075f0b72aad9333724462cc7c9841e01a`
+for 8RAW.
+
+The comparable 8RAW owner-build observation decreased from 23.26 s to 22.43 s
+(about 3.6%), while the Owner Backfill stage increased from 170.31 s to
+183.09 s. These are single busy-machine observations and support no wall-time
+speedup or regression claim. The promotion basis is exact output parity,
+unchanged owner-derived call counts, and the negative projection-call oracle.
+
 ## Terminal disposition
 
 Shadow promotion: `PASS`.
 
 Production cutover: `GO` for commits
 `4d93e6be58a2f4a485c5ec112e0da19802aff7a6` and
-`96cf6065333482989a096f122b9402983e2a5602`. The final code path has one
+`96cf6065333482989a096f122b9402983e2a5602`, with the bounded sibling-consumer
+correction at `9c2976b6b4a5488cc913cc838501297576ead9ca`. The final code path has one
 Owner Backfill peak-fact source; no dormant shadow path or second production
-calculation remains, and no full trace crosses the worker result boundary. The
-result is positive on correctness, ownership, sealed identity, bounded payload,
-and non-increasing call cost. It does not claim a material wall-time speedup or
-redesign hypothesis selection, ModeTrack, Matrix, ProductWriter, or public
-output semantics.
+calculation remains, no full trace crosses the worker result boundary, and the
+integration-only sibling does not build discarded shape/window projections.
+The result is positive on correctness, ownership, sealed identity, bounded
+payload, and non-increasing semantic call cost. It does not claim a material
+wall-time speedup or redesign hypothesis selection, ModeTrack, Matrix,
+ProductWriter, or public output semantics.
