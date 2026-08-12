@@ -1,4 +1,5 @@
-from dataclasses import replace
+import pickle
+from dataclasses import fields, replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -16,8 +17,19 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     build_owner_backfill_request_plan,
 )
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
+from xic_extractor.alignment.process_backend import (
+    OwnerBackfillProcessOutput,
+    OwnerBackfillSampleResult,
+)
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.evidence_facts import (
+    PeakTraceEvidenceFacts,
+    TraceWindowEvidenceFacts,
+)
+from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.ms1_shape_identity import OwnMaxTrace
 from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
+from xic_extractor.processing_identity import build_acquisition_source_identity
 
 
 def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
@@ -64,6 +76,153 @@ def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
     assert cell.region_shadow_status == "evaluated"
     assert cell.region_local_mixture_diagnostic
     assert source.calls == [(500.0, 7.5, 9.5, 20.0)]
+
+
+def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry(
+    tmp_path,
+) -> None:
+    bound_source, acquisition = _owner_bound_peak_source(
+        tmp_path,
+        b"owner-backfill-shadow-corpus",
+    )
+    baseline = build_owner_backfill_result(
+        (_feature(),),
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": _dense_peak_source(center=8.50, height=120.0)},
+        alignment_config=AlignmentConfig(max_rt_sec=60.0),
+        peak_config=replace(_peak_config(), resolver_min_scans=10),
+    )
+
+    candidate = build_owner_backfill_result(
+        (_feature(),),
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": bound_source},
+        expected_acquisition_sources={"sample-b": acquisition},
+        alignment_config=AlignmentConfig(max_rt_sec=60.0),
+        peak_config=replace(_peak_config(), resolver_min_scans=10),
+    )
+
+    assert candidate.cells == baseline.cells
+    assert candidate.candidate_audit_rows == baseline.candidate_audit_rows
+    assert len(baseline.peak_fact_unsealed_evaluation_keys) == 1
+    assert bound_source.calls == [(500.0, 7.5, 9.5, 20.0)]
+    observation = candidate.peak_fact_observations[0]
+    assert observation.logical_request.group_hypothesis_id == "FAM000001"
+    assert observation.request_identity.acquisition_source == acquisition
+    assert observation.facts is not None
+    assert observation.facts.integration == candidate.cells[0].selected_integration
+    assert observation.cell.status == "rescued"
+    assert observation.cell.reason == "owner-centered MS1 backfill"
+    assert observation.evidence_authority == "evidence_only_no_write_authority"
+    assert observation.trace_evaluated is True
+    assert observation.fact_elapsed_seconds is not None
+    assert observation.fact_elapsed_seconds > 0
+    assert candidate.peak_fact_unsealed_evaluation_keys == ()
+    assert not hasattr(candidate, "peak_fact_cost")
+    assert owner_backfill_module._positive_elapsed(0.0) is None
+    assert owner_backfill_module._positive_elapsed(float("nan")) is None
+
+
+def test_owner_backfill_fact_receipt_drops_trace_arrays_and_worker_payload() -> None:
+    point_count = 50_000
+    integration = IntegrationResult(
+        rt_left_min=8.0,
+        rt_apex_min=8.5,
+        rt_right_min=9.0,
+        raw_apex_rt_min=8.5,
+        rt_width_min=1.0,
+        height_raw=100.0,
+        height_smoothed=95.0,
+        area_raw_counts_seconds=1_000.0,
+        raw_scan_indices=tuple(range(point_count)),
+    )
+    window = TraceWindowEvidenceFacts(
+        status="ok",
+        reason="bounded receipt oracle",
+        query_apex_rt_min=8.5,
+        query_apex_in_trace_window=True,
+    )
+
+    def full_facts(size: int) -> PeakTraceEvidenceFacts:
+        return PeakTraceEvidenceFacts(
+            integration=integration,
+            normalized_shape_trace=OwnMaxTrace(
+                status="ok",
+                reason="bounded receipt oracle",
+                rt=tuple(float(index) for index in range(size)),
+                intensity=tuple(1.0 for _index in range(size)),
+                max_intensity=1.0,
+            ),
+            window=window,
+            smoothing_count=1,
+            integration_count=1,
+        )
+
+    small = owner_backfill_module._bounded_peak_fact_receipt(full_facts(3))
+    large = owner_backfill_module._bounded_peak_fact_receipt(
+        full_facts(point_count)
+    )
+
+    assert small.integration.raw_scan_indices == ()
+    assert large.integration.raw_scan_indices == ()
+    assert small.normalized_shape_point_count == 3
+    assert large.normalized_shape_point_count == point_count
+    assert not hasattr(small, "normalized_shape_trace")
+    assert len(pickle.dumps(large)) <= len(pickle.dumps(small)) + 16
+    assert "peak_fact_observations" not in {
+        field.name for field in fields(OwnerBackfillSampleResult)
+    }
+    assert "peak_fact_observations" not in {
+        field.name for field in fields(OwnerBackfillProcessOutput)
+    }
+
+
+def test_owner_backfill_shared_peak_disagreement_holds_without_write(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    source, acquisition = _owner_bound_peak_source(
+        tmp_path,
+        b"owner-backfill-shadow-disagreement",
+    )
+    original = owner_backfill_module.peak_trace_evidence
+
+    def disagreeing_facts(*args, **kwargs):
+        facts = original(*args, **kwargs)
+        return replace(
+            facts,
+            integration=replace(
+                facts.integration,
+                area_raw_counts_seconds=(
+                    facts.integration.area_raw_counts_seconds + 1.0
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        owner_backfill_module,
+        "peak_trace_evidence",
+        disagreeing_facts,
+    )
+
+    result = build_owner_backfill_result(
+        (_feature(),),
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": source},
+        expected_acquisition_sources={"sample-b": acquisition},
+        alignment_config=AlignmentConfig(max_rt_sec=60.0),
+        peak_config=replace(_peak_config(), resolver_min_scans=10),
+    )
+
+    assert len(result.cells) == 1
+    assert result.cells[0].status == "unchecked"
+    assert result.cells[0].area is None
+    assert result.cells[0].selected_integration is None
+    assert result.cells[0].trace_quality == "owner_backfill_unassessable"
+    assert "disagreed" in result.cells[0].reason
+    assert result.candidate_audit_rows[0].selected_for_output is True
+    assert result.candidate_audit_rows[0].candidate_outcome == "unassessable"
+    assert result.peak_fact_observations[0].facts is not None
 
 
 def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -> None:
@@ -1180,6 +1339,19 @@ def _dense_peak_source(*, center: float, height: float) -> FakeBackfillSource:
         rt=np.linspace(center - 0.10, center + 0.10, 11),
         intensity=height * scale,
     )
+
+
+def _owner_bound_peak_source(tmp_path, payload: bytes):
+    raw_path = tmp_path / "sample-b.raw"
+    raw_path.write_bytes(payload)
+    acquisition = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="test-owner-backfill-shadow",
+    )
+    source = _dense_peak_source(center=8.50, height=120.0)
+    source.acquisition_source = acquisition
+    return source, acquisition
 
 
 def _feature(

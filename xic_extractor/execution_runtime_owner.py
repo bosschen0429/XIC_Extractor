@@ -9,8 +9,10 @@ live telemetry, choose storage, or acquire scientific/product authority.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import math
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import InitVar, dataclass, field, replace
+from enum import Enum
 from typing import final
 
 from xic_extractor.acquisition_contract import (
@@ -63,7 +65,10 @@ from xic_extractor.execution_runtime_observability import (
     RuntimeObservationSubject,
     _mint_runtime_observability_ledger,
 )
-from xic_extractor.processing_identity import ProcessingAttemptIdentity
+from xic_extractor.processing_identity import (
+    AcquisitionSourceIdentity,
+    ProcessingAttemptIdentity,
+)
 
 _RUNTIME_OWNER_MEASUREMENT_SOURCE = "execution_runtime_owner:v1"
 _RUNTIME_OWNER_MINT_TOKEN = object()
@@ -378,6 +383,304 @@ class RuntimeArtifactIoSample:
             "write_bytes",
         ):
             _nonnegative_integer(getattr(self, field_name), field=field_name)
+
+
+class RuntimePeakFactOperation(str, Enum):
+    """Finite peak-fact work vocabulary accepted by the runtime owner."""
+
+    TRACE_EVALUATION = "trace_evaluation"
+    GAUSSIAN_SMOOTHING = "gaussian_smoothing"
+    INTEGRATION = "integration"
+
+
+class RuntimePeakFactIdentityStatus(str, Enum):
+    """Whether one work receipt carries the sealed Owner Backfill identity."""
+
+    SEALED = "sealed"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimePeakFactWorkReceipt:
+    """Bounded external work facts for one Owner Backfill candidate."""
+
+    work_unit_key: str
+    sample_stem: str
+    operations: tuple[RuntimePeakFactOperation, ...]
+    identity_status: RuntimePeakFactIdentityStatus
+    owner_request_identity: str | None = None
+    group_hypothesis_id: str | None = None
+    acquisition_source: AcquisitionSourceIdentity | None = None
+    elapsed_seconds: float | None = None
+
+    def __post_init__(self) -> None:
+        _required_text(self.work_unit_key, field="work_unit_key")
+        _required_text(self.sample_stem, field="sample_stem")
+        _require_tuple_of(
+            self.operations,
+            RuntimePeakFactOperation,
+            field="operations",
+        )
+        if not isinstance(self.identity_status, RuntimePeakFactIdentityStatus):
+            raise RuntimeFinalizationContractError(
+                "identity_status must be a RuntimePeakFactIdentityStatus"
+            )
+        if self.identity_status is RuntimePeakFactIdentityStatus.SEALED:
+            _required_text(
+                self.owner_request_identity,
+                field="owner_request_identity",
+            )
+            _required_text(
+                self.group_hypothesis_id,
+                field="group_hypothesis_id",
+            )
+            if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
+                raise RuntimeFinalizationContractError(
+                    "sealed peak-fact work requires owner acquisition identity"
+                )
+        elif any(
+            value is not None
+            for value in (
+                self.owner_request_identity,
+                self.group_hypothesis_id,
+                self.acquisition_source,
+            )
+        ):
+            raise RuntimeFinalizationContractError(
+                "unavailable peak-fact identity cannot carry partial owner binding"
+            )
+        trace_evaluations = self.operations.count(
+            RuntimePeakFactOperation.TRACE_EVALUATION
+        )
+        if trace_evaluations > 1:
+            raise RuntimeFinalizationContractError(
+                "one peak-fact work receipt accepts at most one trace evaluation"
+            )
+        derived_work = any(
+            operation
+            in {
+                RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+                RuntimePeakFactOperation.INTEGRATION,
+            }
+            for operation in self.operations
+        )
+        if derived_work and trace_evaluations != 1:
+            raise RuntimeFinalizationContractError(
+                "smoothing and integration require one trace evaluation"
+            )
+        if (
+            self.identity_status is RuntimePeakFactIdentityStatus.UNAVAILABLE
+            and trace_evaluations != 1
+        ):
+            raise RuntimeFinalizationContractError(
+                "unavailable peak-fact identity requires one trace evaluation"
+            )
+        if self.elapsed_seconds is None:
+            return
+        if (
+            isinstance(self.elapsed_seconds, bool)
+            or not isinstance(self.elapsed_seconds, (int, float))
+            or not math.isfinite(float(self.elapsed_seconds))
+            or self.elapsed_seconds <= 0
+        ):
+            raise RuntimeFinalizationContractError(
+                "elapsed_seconds must be finite and positive when available"
+            )
+        if not derived_work:
+            raise RuntimeFinalizationContractError(
+                "elapsed_seconds requires smoothing or integration work"
+            )
+
+
+@final
+@dataclass(frozen=True, slots=True)
+class RuntimePeakFactCostMetrics:
+    """Runtime-owner projection used by the Owner Backfill shadow gate."""
+
+    raw_open_count: int | None
+    raw_open_unavailable_reason: str
+    trace_evaluation_count: int
+    smoothing_count: int
+    integration_count: int
+    artifact_round_trip_count: int | None
+    artifact_round_trip_unavailable_reason: str
+    sealed_observation_count: int
+    identity_unavailable_count: int
+    elapsed_seconds: float | None
+    elapsed_unavailable_reason: str
+    _mint_token: InitVar[object] = field(kw_only=True)
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        raise TypeError("RuntimePeakFactCostMetrics is final")
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
+            raise RuntimeFinalizationContractError(
+                "peak-fact cost metrics must be minted by the runtime owner"
+            )
+        for field_name in (
+            "trace_evaluation_count",
+            "smoothing_count",
+            "integration_count",
+            "sealed_observation_count",
+            "identity_unavailable_count",
+        ):
+            _nonnegative_integer(getattr(self, field_name), field=field_name)
+        _validate_optional_count_projection(
+            self.raw_open_count,
+            self.raw_open_unavailable_reason,
+            field="raw_open_count",
+        )
+        _validate_optional_count_projection(
+            self.artifact_round_trip_count,
+            self.artifact_round_trip_unavailable_reason,
+            field="artifact_round_trip_count",
+        )
+        _validate_optional_positive_duration(
+            self.elapsed_seconds,
+            self.elapsed_unavailable_reason,
+            field="elapsed_seconds",
+        )
+
+    @property
+    def measurement_source(self) -> str:
+        return _RUNTIME_OWNER_MEASUREMENT_SOURCE
+
+    @property
+    def count_scope(self) -> str:
+        return "owner_backfill_worker_peak_fact_runtime"
+
+
+def derive_runtime_peak_fact_cost_metrics(
+    *,
+    raw_session_capability: RawAcquisitionSessionCapability | None,
+    raw_open_receipts: Sequence[RawAcquisitionSessionReceipt],
+    work_receipts: Iterable[RuntimePeakFactWorkReceipt],
+    artifact_io: RuntimeArtifactIoSample | None,
+) -> RuntimePeakFactCostMetrics:
+    """Derive the narrow Owner Backfill cost projection from typed facts.
+
+    This helper does not settle work or replace ``execute_runtime_attempt``.  It
+    exists only for the in-worker shadow comparison, where full Alignment
+    lifecycle integration is not an activated public path.
+    """
+
+    raw_open_metrics = derive_runtime_raw_open_metrics(
+        raw_session_capability,
+        raw_open_receipts,
+    )
+    if isinstance(work_receipts, (str, bytes)):
+        raise RuntimeFinalizationContractError(
+            "work_receipts must contain RuntimePeakFactWorkReceipt values"
+        )
+    try:
+        receipt_iterator = iter(work_receipts)
+    except TypeError as exc:
+        raise RuntimeFinalizationContractError(
+            "work_receipts must contain RuntimePeakFactWorkReceipt values"
+        ) from exc
+    seen_work_unit_keys: set[str] = set()
+    trace_evaluation_count = 0
+    smoothing_count = 0
+    integration_count = 0
+    sealed_observation_count = 0
+    identity_unavailable_count = 0
+    fact_receipt_count = 0
+    timed_fact_receipt_count = 0
+    elapsed_total = 0.0
+    for receipt in receipt_iterator:
+        if not isinstance(receipt, RuntimePeakFactWorkReceipt):
+            raise RuntimeFinalizationContractError(
+                "work_receipts must contain RuntimePeakFactWorkReceipt values"
+            )
+        if receipt.work_unit_key in seen_work_unit_keys:
+            raise RuntimeFinalizationContractError(
+                "duplicate peak-fact work-unit keys are forbidden"
+            )
+        seen_work_unit_keys.add(receipt.work_unit_key)
+        if (
+            raw_session_capability is not None
+            and receipt.identity_status is RuntimePeakFactIdentityStatus.SEALED
+            and receipt.acquisition_source
+            != raw_session_capability.acquisition_source
+        ):
+            raise RuntimeFinalizationContractError(
+                "peak-fact work identity crosses the RAW session capability"
+            )
+        trace_evaluation_count += receipt.operations.count(
+            RuntimePeakFactOperation.TRACE_EVALUATION
+        )
+        receipt_smoothing_count = receipt.operations.count(
+            RuntimePeakFactOperation.GAUSSIAN_SMOOTHING
+        )
+        receipt_integration_count = receipt.operations.count(
+            RuntimePeakFactOperation.INTEGRATION
+        )
+        smoothing_count += receipt_smoothing_count
+        integration_count += receipt_integration_count
+        sealed_observation_count += (
+            receipt.identity_status is RuntimePeakFactIdentityStatus.SEALED
+        )
+        identity_unavailable_count += (
+            receipt.identity_status is RuntimePeakFactIdentityStatus.UNAVAILABLE
+        )
+        if receipt_smoothing_count or receipt_integration_count:
+            fact_receipt_count += 1
+            if receipt.elapsed_seconds is not None:
+                timed_fact_receipt_count += 1
+                elapsed_total += float(receipt.elapsed_seconds)
+
+    if fact_receipt_count == 0:
+        elapsed_seconds = None
+        elapsed_unavailable_reason = "no available peak-fact work observation"
+    elif timed_fact_receipt_count != fact_receipt_count:
+        elapsed_seconds = None
+        elapsed_unavailable_reason = (
+            "one or more peak-fact work receipts lack elapsed observation"
+        )
+    else:
+        elapsed_seconds = elapsed_total
+        elapsed_unavailable_reason = ""
+
+    if artifact_io is None:
+        artifact_round_trip_count = None
+        artifact_round_trip_unavailable_reason = (
+            "peak-fact stage carries no typed artifact-I/O telemetry"
+        )
+    elif not isinstance(artifact_io, RuntimeArtifactIoSample):
+        raise RuntimeFinalizationContractError(
+            "artifact_io must be a RuntimeArtifactIoSample when available"
+        )
+    elif (
+        artifact_io.read_count == 0
+        and artifact_io.read_bytes == 0
+        and artifact_io.write_count == 0
+        and artifact_io.write_bytes == 0
+    ):
+        artifact_round_trip_count = 0
+        artifact_round_trip_unavailable_reason = ""
+    else:
+        artifact_round_trip_count = None
+        artifact_round_trip_unavailable_reason = (
+            "aggregate artifact I/O does not prove correlated round trips"
+        )
+
+    return RuntimePeakFactCostMetrics(
+        raw_open_count=raw_open_metrics.raw_open_count,
+        raw_open_unavailable_reason=raw_open_metrics.unavailable_reason,
+        trace_evaluation_count=trace_evaluation_count,
+        smoothing_count=smoothing_count,
+        integration_count=integration_count,
+        artifact_round_trip_count=artifact_round_trip_count,
+        artifact_round_trip_unavailable_reason=(
+            artifact_round_trip_unavailable_reason
+        ),
+        sealed_observation_count=sealed_observation_count,
+        identity_unavailable_count=identity_unavailable_count,
+        elapsed_seconds=elapsed_seconds,
+        elapsed_unavailable_reason=elapsed_unavailable_reason,
+        _mint_token=_RUNTIME_OWNER_MINT_TOKEN,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1413,6 +1716,46 @@ def _nonnegative_integer(value: object, *, field: str) -> int:
     return value
 
 
+def _validate_optional_count_projection(
+    value: int | None,
+    unavailable_reason: str,
+    *,
+    field: str,
+) -> None:
+    if value is None:
+        _required_text(unavailable_reason, field=f"{field}_unavailable_reason")
+        return
+    _nonnegative_integer(value, field=field)
+    if unavailable_reason:
+        raise RuntimeFinalizationContractError(
+            f"measured {field} cannot carry an unavailable reason"
+        )
+
+
+def _validate_optional_positive_duration(
+    value: float | None,
+    unavailable_reason: str,
+    *,
+    field: str,
+) -> None:
+    if value is None:
+        _required_text(unavailable_reason, field=f"{field}_unavailable_reason")
+        return
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or value <= 0
+    ):
+        raise RuntimeFinalizationContractError(
+            f"{field} must be finite and positive when available"
+        )
+    if unavailable_reason:
+        raise RuntimeFinalizationContractError(
+            f"measured {field} cannot carry an unavailable reason"
+        )
+
+
 def _require_tuple_of(value: object, item_type: type, *, field: str) -> None:
     if not isinstance(value, tuple) or any(
         not isinstance(item, item_type) for item in value
@@ -1460,6 +1803,10 @@ __all__ = [
     "RuntimeCancellationRequest",
     "RuntimeFinalizationPersister",
     "RuntimeFinalizationReceipt",
+    "RuntimePeakFactCostMetrics",
+    "RuntimePeakFactIdentityStatus",
+    "RuntimePeakFactOperation",
+    "RuntimePeakFactWorkReceipt",
     "RuntimeProcessTreePeakRssSample",
     "RuntimeRawOpenMetrics",
     "RuntimeResourceSettlementReceipt",
@@ -1470,6 +1817,7 @@ __all__ = [
     "RuntimeWorkerPeakRssSample",
     "accept_runtime_finalization_receipt",
     "derive_runtime_acquisition_metrics",
+    "derive_runtime_peak_fact_cost_metrics",
     "derive_runtime_raw_open_metrics",
     "execute_runtime_attempt",
     "mint_work_unit_settlement",

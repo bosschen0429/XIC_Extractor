@@ -19,7 +19,12 @@ from xic_extractor.peak_detection.baseline import (
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import (
-    gaussian15_positive_asls_residual_metrics,
+    DEFAULT_GAUSSIAN15_WINDOW_POINTS,
+    MS1_MORPHOLOGY_AREA_SOURCE,
+    MS1_MORPHOLOGY_TRACE_METHOD,
+    gaussian15_positive_asls_residual_trace,
+    morphology_trace_effective_points,
+    positive_residual_area,
 )
 from xic_extractor.peak_detection.ms1_shape_identity import (
     DEFAULT_LOCAL_HALF_WINDOW_MIN,
@@ -87,6 +92,17 @@ class TraceWindowEvidenceFacts:
     local_apex_delta_min: float | None = None
     local_max_intensity: float | None = None
     local_to_global_max_ratio: float | None = None
+
+
+@dataclass(frozen=True)
+class PeakTraceEvidenceFacts:
+    """One selected integration and its reused Gaussian15 physical evidence."""
+
+    integration: IntegrationResult
+    normalized_shape_trace: OwnMaxTrace
+    window: TraceWindowEvidenceFacts
+    smoothing_count: int
+    integration_count: int
 
 
 @dataclass(frozen=True)
@@ -288,6 +304,59 @@ def integration_with_trace_evidence(
 ) -> IntegrationResult:
     """Enrich an existing integration with owner-computed baseline/morphology facts."""
 
+    enriched, _rt, _morphology_trace = _integration_and_morphology_trace(
+        integration,
+        rt_values,
+        intensity_values,
+        baseline_integration_method=baseline_integration_method,
+    )
+    return enriched
+
+
+def peak_trace_evidence(
+    integration: IntegrationResult,
+    rt_values: object,
+    intensity_values: object,
+    *,
+    baseline_integration_method: str = "asls",
+) -> PeakTraceEvidenceFacts:
+    """Mint selected-peak area, shape, and window facts from one acquired trace.
+
+    The Gaussian15 positive-AsLS residual trace is computed once and reused for
+    morphology area and own-max shape/window projections.  The selected peak
+    and its compatibility area remain caller-owned inputs.
+    """
+
+    enriched, rt, morphology_trace = _integration_and_morphology_trace(
+        integration,
+        rt_values,
+        intensity_values,
+        baseline_integration_method=baseline_integration_method,
+    )
+    normalized_shape = _normalized_precomputed_trace(rt, morphology_trace)
+    window = _trace_window_evidence_facts(
+        tuple(float(value) for value in rt),
+        normalized_shape,
+        query_apex_rt_min=integration.rt_apex_min,
+        half_window_min=DEFAULT_LOCAL_HALF_WINDOW_MIN,
+        report_global_trace_apex_delta=True,
+    )
+    return PeakTraceEvidenceFacts(
+        integration=enriched,
+        normalized_shape_trace=normalized_shape,
+        window=window,
+        smoothing_count=1 if morphology_trace is not None else 0,
+        integration_count=1,
+    )
+
+
+def _integration_and_morphology_trace(
+    integration: IntegrationResult,
+    rt_values: object,
+    intensity_values: object,
+    *,
+    baseline_integration_method: str,
+) -> tuple[IntegrationResult, np.ndarray, np.ndarray | None]:
     if not isinstance(integration, IntegrationResult):
         raise TypeError("integration must be an IntegrationResult")
     rt, intensity = validate_ms1_trace_arrays(rt_values, intensity_values)
@@ -309,18 +378,17 @@ def integration_with_trace_evidence(
         baseline_method=baseline_integration_method,
         baseline_values=baseline_values,
     )
-    morphology = (
-        gaussian15_positive_asls_residual_metrics(
-            rt,
-            intensity,
-            baseline_values,
-            left_index,
-            right_index,
-        )
+    morphology_trace = (
+        gaussian15_positive_asls_residual_trace(intensity, baseline_values)
         if baseline_values is not None
         else None
     )
-    return replace(
+    morphology_area = (
+        positive_residual_area(rt, morphology_trace, left_index, right_index)
+        if morphology_trace is not None
+        else None
+    )
+    enriched = replace(
         integration,
         area_baseline_corrected=baseline.area_baseline_corrected,
         area_uncertainty=baseline.area_uncertainty,
@@ -329,21 +397,58 @@ def integration_with_trace_evidence(
         area_uncertainty_noise_source=baseline.area_uncertainty_noise_source,
         baseline_type=baseline.baseline_type,
         baseline_score=baseline.baseline_score,
-        area_ms1_morphology=(
-            morphology.area_positive_asls_residual if morphology is not None else None
-        ),
+        area_ms1_morphology=morphology_area,
         ms1_morphology_area_source=(
-            morphology.area_source if morphology is not None else ""
+            MS1_MORPHOLOGY_AREA_SOURCE if morphology_trace is not None else ""
         ),
         ms1_morphology_trace_method=(
-            morphology.trace_method if morphology is not None else ""
+            MS1_MORPHOLOGY_TRACE_METHOD if morphology_trace is not None else ""
         ),
         ms1_morphology_trace_window_points=(
-            morphology.trace_window_points if morphology is not None else None
+            DEFAULT_GAUSSIAN15_WINDOW_POINTS
+            if morphology_trace is not None
+            else None
         ),
         ms1_morphology_trace_effective_points=(
-            morphology.trace_effective_points if morphology is not None else None
+            morphology_trace_effective_points(
+                len(morphology_trace),
+                method=MS1_MORPHOLOGY_TRACE_METHOD,
+                window_points=DEFAULT_GAUSSIAN15_WINDOW_POINTS,
+            )
+            if morphology_trace is not None
+            else None
         ),
+    )
+    return enriched, rt, morphology_trace
+
+
+def _normalized_precomputed_trace(
+    rt_values: np.ndarray,
+    intensity_values: np.ndarray | None,
+) -> OwnMaxTrace:
+    if intensity_values is None:
+        return OwnMaxTrace("inconclusive", "gaussian15_trace_unavailable")
+    rt = np.asarray(rt_values, dtype=float)
+    intensity = np.asarray(intensity_values, dtype=float)
+    if rt.ndim != 1 or intensity.ndim != 1 or len(rt) != len(intensity):
+        return OwnMaxTrace("inconclusive", "length_mismatch")
+    mask = np.isfinite(rt) & np.isfinite(intensity)
+    if int(np.sum(mask)) < 3:
+        return OwnMaxTrace("inconclusive", "too_few_points")
+    rt = rt[mask]
+    intensity = intensity[mask]
+    order = np.argsort(rt)
+    rt = rt[order]
+    intensity = intensity[order]
+    maximum = float(np.max(intensity)) if intensity.size else 0.0
+    if maximum <= 0:
+        return OwnMaxTrace("inconclusive", "non_positive_signal")
+    return OwnMaxTrace(
+        "ok",
+        "gaussian15_positive_asls_residual_own_max",
+        tuple(float(value) for value in rt),
+        tuple(float(value) for value in intensity / maximum),
+        maximum,
     )
 
 

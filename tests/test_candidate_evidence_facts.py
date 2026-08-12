@@ -1,16 +1,21 @@
 import numpy as np
 import pytest
 
+import xic_extractor.peak_detection.evidence_facts as evidence_facts_module
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
     gaussian15_trace_window_evidence,
     integration_with_trace_evidence,
+    peak_trace_evidence,
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
+from xic_extractor.peak_detection.ms1_morphology import (
+    gaussian15_positive_asls_residual_metrics,
+)
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 
 
@@ -92,6 +97,122 @@ def test_integration_trace_evidence_preserves_compatibility_fields() -> None:
     assert enriched.area_baseline_corrected is not None
     assert enriched.area_ms1_morphology is not None
     assert enriched.ms1_morphology_trace_method == "gaussian_15"
+
+
+def test_integration_only_evidence_skips_shape_projection(monkeypatch) -> None:
+    integration = IntegrationResult(
+        rt_left_min=1.0,
+        rt_apex_min=2.0,
+        rt_right_min=3.0,
+        raw_apex_rt_min=2.0,
+        rt_width_min=2.0,
+        height_raw=50.0,
+        height_smoothed=45.0,
+        area_raw_counts_seconds=4000.0,
+        boundary_sources=("alignment_owner",),
+    )
+    projection_calls: list[str] = []
+    smoothing_calls = 0
+    original_normalize = evidence_facts_module._normalized_precomputed_trace
+    original_window = evidence_facts_module._trace_window_evidence_facts
+    original_smoothing = (
+        evidence_facts_module.gaussian15_positive_asls_residual_trace
+    )
+
+    def counted_normalize(*args, **kwargs):
+        projection_calls.append("normalized_shape")
+        return original_normalize(*args, **kwargs)
+
+    def counted_window(*args, **kwargs):
+        projection_calls.append("window")
+        return original_window(*args, **kwargs)
+
+    def counted_smoothing(*args, **kwargs):
+        nonlocal smoothing_calls
+        smoothing_calls += 1
+        return original_smoothing(*args, **kwargs)
+
+    monkeypatch.setattr(
+        evidence_facts_module,
+        "_normalized_precomputed_trace",
+        counted_normalize,
+    )
+    monkeypatch.setattr(
+        evidence_facts_module,
+        "_trace_window_evidence_facts",
+        counted_window,
+    )
+    monkeypatch.setattr(
+        evidence_facts_module,
+        "gaussian15_positive_asls_residual_trace",
+        counted_smoothing,
+    )
+
+    enriched = integration_with_trace_evidence(
+        integration,
+        [0.0, 1.0, 2.0, 3.0, 4.0],
+        [10.0, 12.0, 50.0, 12.0, 10.0],
+    )
+
+    assert projection_calls == []
+    assert smoothing_calls == 1
+    assert enriched.area_raw_counts_seconds == integration.area_raw_counts_seconds
+    assert enriched.boundary_sources == integration.boundary_sources
+    assert enriched.area_ms1_morphology is not None
+
+
+def test_peak_trace_evidence_reuses_one_gaussian15_trace_for_shape_and_area(
+    monkeypatch,
+) -> None:
+    integration = IntegrationResult(
+        rt_left_min=1.0,
+        rt_apex_min=2.0,
+        rt_right_min=3.0,
+        raw_apex_rt_min=2.0,
+        rt_width_min=2.0,
+        height_raw=50.0,
+        height_smoothed=45.0,
+        area_raw_counts_seconds=4000.0,
+        boundary_sources=("owner_backfill_batch",),
+    )
+    rt = np.asarray([0.0, 1.0, 2.0, 3.0, 4.0])
+    intensity = np.asarray([10.0, 12.0, 50.0, 12.0, 10.0])
+    baseline = evidence_facts_module.asls_baseline(intensity)
+    expected_morphology = gaussian15_positive_asls_residual_metrics(
+        rt,
+        intensity,
+        baseline,
+        1,
+        4,
+    )
+    smoothing_calls = 0
+    original = evidence_facts_module.gaussian15_positive_asls_residual_trace
+
+    def counted_trace(*args, **kwargs):
+        nonlocal smoothing_calls
+        smoothing_calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        evidence_facts_module,
+        "gaussian15_positive_asls_residual_trace",
+        counted_trace,
+    )
+
+    facts = peak_trace_evidence(integration, rt, intensity)
+
+    assert smoothing_calls == 1
+    assert facts.smoothing_count == 1
+    assert facts.integration_count == 1
+    assert (
+        facts.integration.area_ms1_morphology
+        == expected_morphology.area_positive_asls_residual
+    )
+    assert facts.integration.area_raw_counts_seconds == 4000.0
+    assert facts.integration.boundary_sources == ("owner_backfill_batch",)
+    assert facts.normalized_shape_trace.is_usable
+    assert facts.window.status == "ok"
+    assert facts.window.query_apex_rt_min == 2.0
 
 
 def test_build_candidate_evidence_facts_from_scoring_context() -> None:

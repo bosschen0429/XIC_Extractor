@@ -34,10 +34,15 @@ from xic_extractor.execution_runtime_observability import (
     canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.execution_runtime_owner import (
+    RuntimeArtifactIoSample,
     RuntimeArtifactRegistrationReceipt,
     RuntimeAttemptAggregate,
     RuntimeCancellationRequest,
     RuntimeFinalizationReceipt,
+    RuntimePeakFactCostMetrics,
+    RuntimePeakFactIdentityStatus,
+    RuntimePeakFactOperation,
+    RuntimePeakFactWorkReceipt,
     RuntimeRawOpenMetrics,
     RuntimeResourceSettlementReceipt,
     RuntimeWorkerBatchReceipt,
@@ -45,6 +50,7 @@ from xic_extractor.execution_runtime_owner import (
     _derive_runtime_observability_ledger,
     _finalize_runtime_attempt,
     _prepare_runtime_attempt,
+    derive_runtime_peak_fact_cost_metrics,
     derive_runtime_raw_open_metrics,
     execute_runtime_attempt,
     mint_work_unit_settlement,
@@ -98,6 +104,172 @@ def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
             unavailable_reason="",
             _mint_token=object(),
         )
+
+
+def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"peak-fact-runtime-owner")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    capability = mint_raw_acquisition_session_capability(source)
+    raw_receipt = _mint_raw_acquisition_session_receipt(capability)
+    work = (
+        RuntimePeakFactWorkReceipt(
+            work_unit_key="sealed:1",
+            sample_stem="sample-a",
+            operations=(
+                RuntimePeakFactOperation.TRACE_EVALUATION,
+                RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+                RuntimePeakFactOperation.INTEGRATION,
+            ),
+            identity_status=RuntimePeakFactIdentityStatus.SEALED,
+            owner_request_identity="owner-request:1",
+            group_hypothesis_id="GROUP:1",
+            acquisition_source=source,
+            elapsed_seconds=0.25,
+        ),
+        RuntimePeakFactWorkReceipt(
+            work_unit_key="unsealed:2",
+            sample_stem="sample-a",
+            operations=(RuntimePeakFactOperation.TRACE_EVALUATION,),
+            identity_status=RuntimePeakFactIdentityStatus.UNAVAILABLE,
+        ),
+    )
+
+    metrics = derive_runtime_peak_fact_cost_metrics(
+        raw_session_capability=capability,
+        raw_open_receipts=(raw_receipt,),
+        work_receipts=work,
+        artifact_io=RuntimeArtifactIoSample(
+            read_count=0,
+            read_bytes=0,
+            write_count=0,
+            write_bytes=0,
+        ),
+    )
+
+    assert metrics.raw_open_count == 1
+    assert metrics.trace_evaluation_count == 2
+    assert metrics.smoothing_count == 1
+    assert metrics.integration_count == 1
+    assert metrics.artifact_round_trip_count == 0
+    assert metrics.sealed_observation_count == 1
+    assert metrics.identity_unavailable_count == 1
+    assert metrics.elapsed_seconds == pytest.approx(0.25)
+    assert metrics.measurement_source == "execution_runtime_owner:v1"
+    assert metrics.count_scope == "owner_backfill_worker_peak_fact_runtime"
+
+    with pytest.raises(RuntimeFinalizationContractError, match="duplicate"):
+        derive_runtime_peak_fact_cost_metrics(
+            raw_session_capability=capability,
+            raw_open_receipts=(raw_receipt,),
+            work_receipts=(work[0], work[0]),
+            artifact_io=None,
+        )
+    foreign_path = tmp_path / "foreign.raw"
+    foreign_path.write_bytes(b"foreign-peak-fact-runtime-owner")
+    foreign_source = build_acquisition_source_identity(
+        foreign_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    with pytest.raises(RuntimeFinalizationContractError, match="RAW session"):
+        derive_runtime_peak_fact_cost_metrics(
+            raw_session_capability=capability,
+            raw_open_receipts=(raw_receipt,),
+            work_receipts=(
+                replace(
+                    work[0],
+                    work_unit_key="sealed:foreign",
+                    acquisition_source=foreign_source,
+                ),
+            ),
+            artifact_io=None,
+        )
+    with pytest.raises(RuntimeFinalizationContractError, match="trace evaluation"):
+        RuntimePeakFactWorkReceipt(
+            work_unit_key="unsealed-without-work",
+            sample_stem="sample-a",
+            operations=(),
+            identity_status=RuntimePeakFactIdentityStatus.UNAVAILABLE,
+        )
+    with pytest.raises(RuntimeFinalizationContractError, match="finite and positive"):
+        RuntimePeakFactWorkReceipt(
+            work_unit_key="non-finite",
+            sample_stem="sample-a",
+            operations=(
+                RuntimePeakFactOperation.TRACE_EVALUATION,
+                RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+            ),
+            identity_status=RuntimePeakFactIdentityStatus.SEALED,
+            owner_request_identity="owner-request:non-finite",
+            group_hypothesis_id="GROUP:non-finite",
+            acquisition_source=source,
+            elapsed_seconds=float("nan"),
+        )
+    with pytest.raises(
+        RuntimeFinalizationContractError,
+        match="minted by the runtime owner",
+    ):
+        RuntimePeakFactCostMetrics(
+            raw_open_count=1,
+            raw_open_unavailable_reason="",
+            trace_evaluation_count=2,
+            smoothing_count=1,
+            integration_count=1,
+            artifact_round_trip_count=0,
+            artifact_round_trip_unavailable_reason="",
+            sealed_observation_count=1,
+            identity_unavailable_count=1,
+            elapsed_seconds=0.25,
+            elapsed_unavailable_reason="",
+            _mint_token=object(),
+        )
+
+
+def test_runtime_owner_keeps_missing_peak_fact_timing_and_artifacts_unavailable(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "missing.raw"
+    raw_path.write_bytes(b"missing-peak-fact-runtime-owner")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    capability = mint_raw_acquisition_session_capability(source)
+    metrics = derive_runtime_peak_fact_cost_metrics(
+        raw_session_capability=capability,
+        raw_open_receipts=(),
+        work_receipts=(
+            RuntimePeakFactWorkReceipt(
+                work_unit_key="sealed:missing-time",
+                sample_stem="sample-a",
+                operations=(
+                    RuntimePeakFactOperation.TRACE_EVALUATION,
+                    RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+                    RuntimePeakFactOperation.INTEGRATION,
+                ),
+                identity_status=RuntimePeakFactIdentityStatus.SEALED,
+                owner_request_identity="owner-request:missing-time",
+                group_hypothesis_id="GROUP:missing-time",
+                acquisition_source=source,
+            ),
+        ),
+        artifact_io=None,
+    )
+
+    assert metrics.raw_open_count is None
+    assert metrics.raw_open_unavailable_reason
+    assert metrics.artifact_round_trip_count is None
+    assert metrics.artifact_round_trip_unavailable_reason
+    assert metrics.elapsed_seconds is None
+    assert metrics.elapsed_unavailable_reason
 
 
 def test_owner_start_accepts_exact_typed_cancellation_request(

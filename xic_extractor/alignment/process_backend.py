@@ -2,10 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 from types import TracebackType
 from typing import Any
 
+from xic_extractor.acquisition_contract import (
+    RawAcquisitionSessionCapability,
+    RawAcquisitionSessionReceipt,
+    mint_raw_acquisition_session_capability,
+)
 from xic_extractor.alignment.backfill_scope import (
     REQUEST_PLAN_VERSION,
 )
@@ -56,6 +62,7 @@ from xic_extractor.alignment.ms1_index_source import (
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
     OwnerBackfillRequestReuseObservation,
+    OwnerBackfillResult,
     OwnerBackfillWindowStrategy,
     build_owner_backfill_result,
 )
@@ -88,6 +95,14 @@ from xic_extractor.alignment.process_execution import (
     run_process_jobs as _run_process_jobs,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.execution_runtime_owner import (
+    RuntimeArtifactIoSample,
+    RuntimePeakFactCostMetrics,
+    RuntimePeakFactIdentityStatus,
+    RuntimePeakFactOperation,
+    RuntimePeakFactWorkReceipt,
+    derive_runtime_peak_fact_cost_metrics,
+)
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 
@@ -152,6 +167,7 @@ class OwnerBackfillSampleJob:
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
     expected_acquisition_source: AcquisitionSourceIdentity | None = None
+    raw_session_capability: RawAcquisitionSessionCapability | None = None
     raw_xic_batch_size: int = 1
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw"
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact"
@@ -196,6 +212,7 @@ class OwnerBackfillSampleResult:
         OwnerBackfillRequestReuseObservation,
         ...,
     ] = ()
+    peak_fact_cost: RuntimePeakFactCostMetrics | None = None
 
 
 @dataclass(frozen=True)
@@ -207,6 +224,7 @@ class OwnerBackfillProcessOutput:
         OwnerBackfillRequestReuseObservation,
         ...,
     ] = ()
+    peak_fact_cost_receipts: tuple[RuntimePeakFactCostMetrics, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -601,6 +619,10 @@ def run_owner_backfill_process(
         sample_features = request_plan.features_for_sample(sample_stem)
         if not sample_features:
             continue
+        expected_acquisition_source = _expected_acquisition_source(
+            expected_acquisition_sources,
+            sample_stem,
+        )
         jobs.append(
             OwnerBackfillSampleJob(
                 sample_index=index,
@@ -610,9 +632,13 @@ def run_owner_backfill_process(
                 features=sample_features,
                 alignment_config=alignment_config,
                 peak_config=peak_config,
-                expected_acquisition_source=_expected_acquisition_source(
-                    expected_acquisition_sources,
-                    sample_stem,
+                expected_acquisition_source=expected_acquisition_source,
+                raw_session_capability=(
+                    mint_raw_acquisition_session_capability(
+                        expected_acquisition_source
+                    )
+                    if expected_acquisition_source is not None
+                    else None
                 ),
                 raw_xic_batch_size=raw_xic_batch_size,
                 owner_backfill_xic_backend=owner_backfill_xic_backend,
@@ -704,11 +730,17 @@ def collect_owner_backfill_results(
         for result in sorted(successes, key=lambda item: item.sample_index)
         for observation in result.request_reuse_observations
     )
+    peak_fact_cost_receipts = tuple(
+        result.peak_fact_cost
+        for result in sorted(successes, key=lambda item: item.sample_index)
+        if result.peak_fact_cost is not None
+    )
     return OwnerBackfillProcessOutput(
         cells=cells,
         timing_stats=timing_stats,
         candidate_audit_rows=candidate_audit_rows,
         request_reuse_observations=request_reuse_observations,
+        peak_fact_cost_receipts=peak_fact_cost_receipts,
     )
 
 
@@ -766,7 +798,9 @@ def extract_owner_backfill_sample_job(
             job.raw_path,
             job.dll_dir,
             expected_acquisition_source=job.expected_acquisition_source,
+            _raw_session_capability=job.raw_session_capability,
         ) as raw:
+            raw_open_receipt = getattr(raw, "raw_open_receipt", None)
             stats = _TimedProcessStats(sample_stem=job.sample_stem)
             source = source_for_owner_backfill_backend(
                 raw,
@@ -805,6 +839,12 @@ def extract_owner_backfill_sample_job(
                 region_audit_family_ids=job.region_audit_family_ids,
                 audit_evidence_mode=job.audit_evidence_mode,
             )
+            peak_fact_cost = _runtime_peak_fact_cost_metrics(
+                backfill_result,
+                sample_stem=job.sample_stem,
+                raw_session_capability=job.raw_session_capability,
+                raw_open_receipt=raw_open_receipt,
+            )
         return OwnerBackfillSampleResult(
             sample_index=job.sample_index,
             sample_stem=job.sample_stem,
@@ -813,6 +853,7 @@ def extract_owner_backfill_sample_job(
             request_reuse_observations=(
                 backfill_result.request_reuse_observations
             ),
+            peak_fact_cost=peak_fact_cost,
             timing_stats=(
                 OwnerBackfillTimingStats(
                     sample_stem=job.sample_stem,
@@ -833,6 +874,76 @@ def extract_owner_backfill_sample_job(
             raw_name=job.raw_path.name,
             message=f"{type(exc).__name__}: {exc}",
         )
+
+
+def _runtime_peak_fact_cost_metrics(
+    result: OwnerBackfillResult,
+    *,
+    sample_stem: str,
+    raw_session_capability: RawAcquisitionSessionCapability | None,
+    raw_open_receipt: RawAcquisitionSessionReceipt | None,
+) -> RuntimePeakFactCostMetrics:
+    work_receipts = chain(
+        (
+            RuntimePeakFactWorkReceipt(
+                work_unit_key=observation.work_unit_key,
+                sample_stem=observation.cell.sample_stem,
+                operations=(
+                    (
+                        (RuntimePeakFactOperation.TRACE_EVALUATION,)
+                        if observation.trace_evaluated
+                        else ()
+                    )
+                    + (
+                        (RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,)
+                        * observation.facts.smoothing_count
+                        if observation.facts is not None
+                        else ()
+                    )
+                    + (
+                        (RuntimePeakFactOperation.INTEGRATION,)
+                        * observation.facts.integration_count
+                        if observation.facts is not None
+                        else ()
+                    )
+                ),
+                identity_status=RuntimePeakFactIdentityStatus.SEALED,
+                owner_request_identity=(
+                    observation.request_identity.request_identity_id
+                ),
+                group_hypothesis_id=(
+                    observation.logical_request.group_hypothesis_id
+                ),
+                acquisition_source=(
+                    observation.request_identity.acquisition_source
+                ),
+                elapsed_seconds=observation.fact_elapsed_seconds,
+            )
+            for observation in result.peak_fact_observations
+        ),
+        (
+            RuntimePeakFactWorkReceipt(
+                work_unit_key=work_unit_key,
+                sample_stem=sample_stem,
+                operations=(RuntimePeakFactOperation.TRACE_EVALUATION,),
+                identity_status=RuntimePeakFactIdentityStatus.UNAVAILABLE,
+            )
+            for work_unit_key in result.peak_fact_unsealed_evaluation_keys
+        ),
+    )
+    return derive_runtime_peak_fact_cost_metrics(
+        raw_session_capability=raw_session_capability,
+        raw_open_receipts=(
+            () if raw_open_receipt is None else (raw_open_receipt,)
+        ),
+        work_receipts=work_receipts,
+        artifact_io=RuntimeArtifactIoSample(
+            read_count=0,
+            read_bytes=0,
+            write_count=0,
+            write_bytes=0,
+        ),
+    )
 
 
 def validate_owner_backfill_job_payload(job: OwnerBackfillSampleJob) -> None:
