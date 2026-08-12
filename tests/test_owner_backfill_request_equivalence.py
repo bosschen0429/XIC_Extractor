@@ -4,6 +4,10 @@ from pathlib import Path
 import pytest
 
 from tests.test_alignment_owner_backfill import _feature, _peak_config
+from xic_extractor.acquisition_contract import (
+    _mint_raw_acquisition_session_receipt,
+    mint_raw_acquisition_session_capability,
+)
 from xic_extractor.alignment.claim_registry import apply_ms1_peak_claim_registry
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ms1_index_source import OwnerBackfillXicBackend
@@ -384,12 +388,12 @@ def test_superwindow_extracts_once_per_exact_class_and_fans_out(
         observation.request_identity.acquisition_source == source_identity
         for observation in result.peak_fact_observations
     )
-    assert result.peak_fact_cost is not None
-    assert result.peak_fact_cost.trace_evaluation_count == 2
-    assert result.peak_fact_cost.smoothing_count == 2
-    assert result.peak_fact_cost.integration_count == 2
-    assert result.peak_fact_cost.sealed_observation_count == 2
-    assert result.peak_fact_cost.identity_unavailable_count == 0
+    assert all(
+        observation.trace_evaluated
+        for observation in result.peak_fact_observations
+    )
+    assert result.peak_fact_unsealed_evaluation_keys == ()
+    assert not hasattr(result, "peak_fact_cost")
 
 
 def test_typed_fanout_preserves_logical_identity_to_consumer_boundary(
@@ -669,9 +673,19 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
 ) -> None:
     source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
     source = _OwnerBoundBatchSource(source_identity)
+    raw_session_capability = mint_raw_acquisition_session_capability(source_identity)
+    source.raw_open_receipt = _mint_raw_acquisition_session_receipt(
+        raw_session_capability
+    )
+    raw_open_calls = []
+
+    def fake_open_raw(*_args, **_kwargs):
+        raw_open_calls.append((_args, _kwargs))
+        return source
+
     monkeypatch.setattr(
         "xic_extractor.raw_reader.open_raw",
-        lambda *_args, **_kwargs: source,
+        fake_open_raw,
     )
     job = OwnerBackfillSampleJob(
         sample_index=1,
@@ -685,6 +699,7 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(),
         expected_acquisition_source=source_identity,
+        raw_session_capability=raw_session_capability,
         raw_xic_batch_size=64,
         owner_backfill_xic_backend="raw",
     )
@@ -700,7 +715,20 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
     ] == [(2, 1)]
     assert not hasattr(result, "peak_fact_observations")
     assert result.peak_fact_cost is not None
+    assert result.peak_fact_cost.raw_open_count == 1
+    assert result.peak_fact_cost.raw_open_unavailable_reason == ""
+    assert result.peak_fact_cost.trace_evaluation_count == 2
+    assert result.peak_fact_cost.smoothing_count == 2
+    assert result.peak_fact_cost.integration_count == 2
+    assert result.peak_fact_cost.artifact_round_trip_count == 0
     assert result.peak_fact_cost.sealed_observation_count == 2
+    assert result.peak_fact_cost.identity_unavailable_count == 0
+    assert result.peak_fact_cost.elapsed_seconds is not None
+    assert result.peak_fact_cost.measurement_source == "execution_runtime_owner:v1"
+    assert len(raw_open_calls) == 1
+    assert raw_open_calls[0][1]["_raw_session_capability"] == (
+        raw_session_capability
+    )
 
 
 def _context(

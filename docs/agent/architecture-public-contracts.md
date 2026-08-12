@@ -236,6 +236,19 @@ The boundary is closed as follows:
   `execute_runtime_attempt`. `scripts/check_architecture_census.py` restricts its
   private production minter to `xic_extractor.raw_reader`; tests may construct
   typed fixtures only to exercise the boundary.
+- Owner Backfill's internal peak-fact shadow comparison may submit bounded typed
+  per-candidate work receipts, one runtime-owned RAW-open projection, and typed
+  artifact-I/O telemetry to `derive_runtime_peak_fact_cost_metrics`. The runtime
+  owner alone validates work-key uniqueness, derives trace/smoothing/integration
+  and sealed/unavailable-identity cardinality, aggregates complete finite elapsed
+  observations, and mints the returned projection. The direct scientific owner
+  exposes no aggregate cost receipt, and the process boundary transports only
+  the runtime-owner projection. A receipted process RAW session reports one
+  measured open; a missing capability, receipt, duration, or artifact-I/O sample
+  remains unavailable rather than becoming zero. This narrow diagnostic helper
+  neither settles lifecycle work nor grants scientific, Matrix, writer,
+  finalization, cleanup, or artifact authority, and it is not a substitute for
+  `execute_runtime_attempt` on an activated public runtime path.
 - Invalid manifest content remains an owner state, not an exception-only side
   channel. It follows `attempt_queued` -> `manifest_preflight_failed` ->
   `terminal_proposal(failed)` through the same finalization receipt and recovery

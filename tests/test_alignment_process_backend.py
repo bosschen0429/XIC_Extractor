@@ -187,6 +187,11 @@ def test_process_jobs_carry_discovery_acquisition_source_to_raw_workers(
     assert [job.expected_acquisition_source for job in captured_backfill_jobs] == [
         source
     ]
+    assert [
+        job.raw_session_capability.acquisition_source
+        for job in captured_backfill_jobs
+        if job.raw_session_capability is not None
+    ] == [source]
 
 
 def test_owner_backfill_process_sends_only_sample_requested_features(

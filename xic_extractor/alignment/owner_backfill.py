@@ -128,7 +128,7 @@ class OwnerBackfillResult:
         ...,
     ] = ()
     peak_fact_observations: tuple[OwnerBackfillPeakFactObservation, ...] = ()
-    peak_fact_cost: OwnerBackfillPeakFactCostReceipt | None = None
+    peak_fact_unsealed_evaluation_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,10 +169,18 @@ class OwnerBackfillPeakFactObservation:
     cell: AlignedCell
     facts: OwnerBackfillPeakFactReceipt | None
     fact_elapsed_seconds: float | None
+    trace_evaluated: bool
 
     @property
     def evidence_authority(self) -> str:
         return "evidence_only_no_write_authority"
+
+    @property
+    def work_unit_key(self) -> str:
+        return (
+            f"{self.request_identity.request_identity_id}:"
+            f"{self.candidate_index}:{self.candidate_phase}"
+        )
 
     def __post_init__(self) -> None:
         observed_binding = (
@@ -193,6 +201,8 @@ class OwnerBackfillPeakFactObservation:
             raise ValueError("candidate_index must be non-negative")
         if not self.candidate_phase:
             raise ValueError("candidate_phase must be non-empty")
+        if not isinstance(self.trace_evaluated, bool):
+            raise ValueError("trace_evaluated must be boolean")
         if self.facts is None:
             if self.fact_elapsed_seconds is not None:
                 raise ValueError("elapsed fact work requires available facts")
@@ -201,47 +211,6 @@ class OwnerBackfillPeakFactObservation:
             or self.fact_elapsed_seconds <= 0
         ):
             raise ValueError("fact elapsed observation must be finite and positive")
-
-
-@dataclass(frozen=True, slots=True)
-class OwnerBackfillPeakFactCostReceipt:
-    raw_open_count: int
-    trace_evaluation_count: int
-    smoothing_count: int
-    integration_count: int
-    artifact_round_trip_count: int
-    sealed_observation_count: int
-    identity_unavailable_count: int
-    elapsed_seconds: float | None
-
-    @property
-    def count_scope(self) -> str:
-        return "shared_peak_facts_from_already_acquired_owner_backfill_trace"
-
-    def __post_init__(self) -> None:
-        counts = (
-            "raw_open_count",
-            "trace_evaluation_count",
-            "smoothing_count",
-            "integration_count",
-            "artifact_round_trip_count",
-            "sealed_observation_count",
-            "identity_unavailable_count",
-        )
-        if any(
-            isinstance(getattr(self, field), bool)
-            or not isinstance(getattr(self, field), int)
-            or getattr(self, field) < 0
-            for field in counts
-        ):
-            raise ValueError("peak fact counts must be non-negative integers")
-        if self.elapsed_seconds is not None and (
-            not math.isfinite(self.elapsed_seconds) or self.elapsed_seconds <= 0
-        ):
-            raise ValueError(
-                "elapsed_seconds must be finite and positive when available"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class OwnerBackfillRequestReuseObservation:
@@ -698,9 +667,8 @@ def build_owner_backfill_result(
         ),
         request_reuse_observations=tuple(request_reuse_observations),
         peak_fact_observations=peak_fact_observations,
-        peak_fact_cost=_peak_fact_cost_receipt(
-            candidate_records,
-            sealed_observation_count=len(peak_fact_observations),
+        peak_fact_unsealed_evaluation_keys=(
+            _peak_fact_unsealed_evaluation_keys(candidate_records)
         ),
     )
 
@@ -866,54 +834,25 @@ def _peak_fact_observations(
             cell=record.cell,
             facts=record.peak_facts,
             fact_elapsed_seconds=record.peak_fact_elapsed_seconds,
+            trace_evaluated=record.trace_evaluated,
         )
         for record in records
         if record.logical_request is not None and record.request_identity is not None
     )
 
 
-def _peak_fact_cost_receipt(
+def _peak_fact_unsealed_evaluation_keys(
     records: Sequence[_OwnerBackfillCandidateRecord],
-    *,
-    sealed_observation_count: int,
-) -> OwnerBackfillPeakFactCostReceipt:
-    evaluated = tuple(record for record in records if record.trace_evaluated)
-    fact_records = tuple(
-        record for record in evaluated if record.peak_facts is not None
-    )
-    durations = tuple(
-        record.peak_fact_elapsed_seconds
-        for record in fact_records
-        if record.peak_fact_elapsed_seconds is not None
-    )
-    elapsed_seconds = (
-        sum(durations)
-        if fact_records and len(durations) == len(fact_records) and sum(durations) > 0
-        else None
-    )
-    return OwnerBackfillPeakFactCostReceipt(
-        raw_open_count=0,
-        trace_evaluation_count=len(evaluated),
-        smoothing_count=sum(
-            record.peak_facts.smoothing_count
-            if record.peak_facts is not None
-            else 0
-            for record in fact_records
-        ),
-        integration_count=sum(
-            record.peak_facts.integration_count
-            if record.peak_facts is not None
-            else 0
-            for record in fact_records
-        ),
-        artifact_round_trip_count=0,
-        sealed_observation_count=sealed_observation_count,
-        identity_unavailable_count=sum(
-            1
-            for record in evaluated
-            if record.logical_request is None or record.request_identity is None
-        ),
-        elapsed_seconds=elapsed_seconds,
+) -> tuple[str, ...]:
+    return tuple(
+        (
+            f"unsealed:{record.cell.sample_stem}:"
+            f"{record.cell.group_hypothesis_id}:"
+            f"{record.candidate_index}:{record.candidate_phase}"
+        )
+        for record in records
+        if record.trace_evaluated
+        and (record.logical_request is None or record.request_identity is None)
     )
 
 

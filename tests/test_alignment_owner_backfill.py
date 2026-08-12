@@ -78,7 +78,7 @@ def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
     assert source.calls == [(500.0, 7.5, 9.5, 20.0)]
 
 
-def test_owner_backfill_shared_peak_facts_preserve_projection_and_truthful_cost(
+def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry(
     tmp_path,
 ) -> None:
     bound_source, acquisition = _owner_bound_peak_source(
@@ -104,6 +104,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_truthful_cost(
 
     assert candidate.cells == baseline.cells
     assert candidate.candidate_audit_rows == baseline.candidate_audit_rows
+    assert len(baseline.peak_fact_unsealed_evaluation_keys) == 1
     assert bound_source.calls == [(500.0, 7.5, 9.5, 20.0)]
     observation = candidate.peak_fact_observations[0]
     assert observation.logical_request.group_hypothesis_id == "FAM000001"
@@ -113,17 +114,11 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_truthful_cost(
     assert observation.cell.status == "rescued"
     assert observation.cell.reason == "owner-centered MS1 backfill"
     assert observation.evidence_authority == "evidence_only_no_write_authority"
-    assert candidate.peak_fact_cost is not None
-    assert candidate.peak_fact_cost.raw_open_count == 0
-    assert candidate.peak_fact_cost.trace_evaluation_count == 1
-    assert candidate.peak_fact_cost.smoothing_count == 1
-    assert candidate.peak_fact_cost.integration_count == 1
-    assert candidate.peak_fact_cost.artifact_round_trip_count == 0
-    assert candidate.peak_fact_cost.sealed_observation_count == 1
-    assert candidate.peak_fact_cost.identity_unavailable_count == 0
-    assert candidate.peak_fact_cost.elapsed_seconds is not None
-    assert candidate.peak_fact_cost.elapsed_seconds > 0
-    assert candidate.peak_fact_cost.count_scope.startswith("shared_peak_facts")
+    assert observation.trace_evaluated is True
+    assert observation.fact_elapsed_seconds is not None
+    assert observation.fact_elapsed_seconds > 0
+    assert candidate.peak_fact_unsealed_evaluation_keys == ()
+    assert not hasattr(candidate, "peak_fact_cost")
     assert owner_backfill_module._positive_elapsed(0.0) is None
     assert owner_backfill_module._positive_elapsed(float("nan")) is None
 
