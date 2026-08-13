@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+import xic_extractor.alignment.owner_backfill as owner_backfill_module
 from tests.test_alignment_owner_backfill import _feature, _peak_config
 from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
@@ -36,6 +37,9 @@ from xic_extractor.alignment.process_backend import (
 )
 from xic_extractor.alignment.raw_sources import timed_owner_backfill_sources
 from xic_extractor.alignment.tsv_writer import write_alignment_cells_tsv
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -140,10 +144,7 @@ def test_request_plan_mints_complete_partition_in_first_logical_order(
     assert classes[0].identity.backend == "raw"
     assert classes[0].identity.window_strategy == "exact"
     assert classes[0].identity.validation_mode == "primary"
-    assert (
-        classes[0].identity.result_semantics
-        == OWNER_BACKFILL_TRACE_RESULT_SEMANTICS
-    )
+    assert classes[0].identity.result_semantics == OWNER_BACKFILL_TRACE_RESULT_SEMANTICS
     with pytest.raises(
         ValueError,
         match="equivalence classes must follow first logical occurrence",
@@ -389,11 +390,66 @@ def test_superwindow_extracts_once_per_exact_class_and_fans_out(
         for observation in result.peak_fact_observations
     )
     assert all(
-        observation.trace_evaluated
-        for observation in result.peak_fact_observations
+        observation.trace_evaluated for observation in result.peak_fact_observations
     )
     assert result.peak_fact_unsealed_evaluation_keys == ()
     assert not hasattr(result, "peak_fact_cost")
+
+
+def test_canonical_preparation_cache_runs_once_per_equivalent_question(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_identity = _acquisition_source(tmp_path, "sample-b", b"sample-b")
+    source = _OwnerBoundBatchSource(source_identity)
+    prepare_calls: list[str] = []
+    question_calls: list[str] = []
+    real_prepare = owner_backfill_module.prepare_physical_signal
+    real_evaluate = owner_backfill_module.evaluate_physical_peak
+
+    def counted_prepare(*args, **kwargs):
+        prepared = real_prepare(*args, **kwargs)
+        prepare_calls.append(prepared.projection.prepared_signal_id)
+        return prepared
+
+    def counted_evaluate(prepared, **kwargs):
+        question_calls.append(prepared.projection.prepared_signal_id)
+        return real_evaluate(prepared, **kwargs)
+
+    monkeypatch.setattr(
+        owner_backfill_module,
+        "prepare_physical_signal",
+        counted_prepare,
+    )
+    monkeypatch.setattr(
+        owner_backfill_module,
+        "evaluate_physical_peak",
+        counted_evaluate,
+    )
+
+    result = build_owner_backfill_result(
+        (
+            _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
+            _feature(feature_family_id="FAM000002", mz=500.0, rt=8.5),
+        ),
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": source},
+        expected_acquisition_sources={"sample-b": source_identity},
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        raw_xic_batch_size=1,
+    )
+
+    assert source.batch_sizes == [1]
+    assert len(prepare_calls) == 1
+    assert question_calls == prepare_calls * 2
+    assert len(result.peak_fact_observations) == 2
+    assert {
+        observation.physical_evaluation.prepared.prepared_signal_id
+        for observation in result.peak_fact_observations
+        if observation.physical_evaluation is not None
+    } == set(prepare_calls)
 
 
 def test_typed_fanout_preserves_logical_identity_to_consumer_boundary(
@@ -429,8 +485,7 @@ def test_typed_fanout_preserves_logical_identity_to_consumer_boundary(
     chunk, results = chunks[0]
     assert chunk == logical_items
     assert all(
-        isinstance(result, OwnerBackfillLogicalExtractionResult)
-        for result in results
+        isinstance(result, OwnerBackfillLogicalExtractionResult) for result in results
     )
     typed_results = tuple(
         result
@@ -439,12 +494,7 @@ def test_typed_fanout_preserves_logical_identity_to_consumer_boundary(
     )
     assert [result.logical_request.item for result in typed_results] == list(chunk)
     assert (
-        len(
-            {
-                result.logical_request.logical_request_id
-                for result in typed_results
-            }
-        )
+        len({result.logical_request.logical_request_id for result in typed_results})
         == 2
     )
     assert typed_results[0].canonical_result is typed_results[1].canonical_result
@@ -474,9 +524,7 @@ def test_exact_superwindow_failure_falls_back_with_exact_typed_identity(
     baseline = build_owner_backfill_result(
         features,
         sample_order=("sample-a", "sample-b"),
-        raw_sources={
-            "sample-b": _FailingOwnerBoundWindowSource(source_identity)
-        },
+        raw_sources={"sample-b": _FailingOwnerBoundWindowSource(source_identity)},
         expected_acquisition_sources={"sample-b": source_identity},
         alignment_config=alignment_config,
         peak_config=_peak_config(),
@@ -501,9 +549,7 @@ def test_exact_superwindow_failure_falls_back_with_exact_typed_identity(
             64,
             window_strategy="super-window",
             superwindow_span_factor=2,
-            equivalence_classes=typed_plan.equivalence_classes_for_sample(
-                "sample-b"
-            ),
+            equivalence_classes=typed_plan.equivalence_classes_for_sample("sample-b"),
         )
     )
     typed_results = tuple(
@@ -517,8 +563,7 @@ def test_exact_superwindow_failure_falls_back_with_exact_typed_identity(
     assert typed_source.batch_sizes == [2, 2]
     assert len(typed_results) == 2
     assert {
-        item.canonical_result.request_identity.window_strategy
-        for item in typed_results
+        item.canonical_result.request_identity.window_strategy for item in typed_results
     } == {"exact"}
     assert result.cells == baseline.cells
     assert result.candidate_audit_rows == baseline.candidate_audit_rows
@@ -687,17 +732,30 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
         "xic_extractor.raw_reader.open_raw",
         fake_open_raw,
     )
+    features = (
+        _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
+        _feature(feature_family_id="FAM000002", mz=500.0, rt=8.5),
+    )
+    serial_result = build_owner_backfill_result(
+        features,
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": _OwnerBoundBatchSource(source_identity)},
+        expected_acquisition_sources={"sample-b": source_identity},
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+        raw_xic_batch_size=64,
+        owner_backfill_xic_backend="raw",
+    )
     job = OwnerBackfillSampleJob(
         sample_index=1,
         sample_stem="sample-b",
         raw_path=tmp_path / "sample-b.raw",
         dll_dir=tmp_path / "dll",
-        features=(
-            _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5),
-            _feature(feature_family_id="FAM000002", mz=500.0, rt=8.5),
-        ),
+        features=features,
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
         expected_acquisition_source=source_identity,
         raw_session_capability=raw_session_capability,
         raw_xic_batch_size=64,
@@ -713,22 +771,73 @@ def test_process_worker_rebuilds_owner_partition_and_fans_out(
         (item.logical_request_count, item.canonical_request_class_count)
         for item in result.request_reuse_observations
     ] == [(2, 1)]
-    assert not hasattr(result, "peak_fact_observations")
+    assert len(result.peak_fact_observations) == 2
+    assert [
+        (
+            observation.work_unit_key,
+            observation.prepared_signal_id,
+            observation.physical_evaluation.operations,
+        )
+        for observation in result.peak_fact_observations
+        if observation.physical_evaluation is not None
+    ] == [
+        (
+            observation.work_unit_key,
+            observation.prepared_signal_id,
+            observation.physical_evaluation.operations,
+        )
+        for observation in serial_result.peak_fact_observations
+        if observation.physical_evaluation is not None
+    ]
+    prepared_signal_ids = {
+        observation.physical_evaluation.prepared.prepared_signal_id
+        for observation in result.peak_fact_observations
+        if observation.physical_evaluation is not None
+    }
+    assert len(prepared_signal_ids) == 1
     assert result.peak_fact_cost is not None
     assert result.peak_fact_cost.raw_open_count == 1
     assert result.peak_fact_cost.raw_open_unavailable_reason == ""
-    assert result.peak_fact_cost.trace_evaluation_count == 2
-    assert result.peak_fact_cost.smoothing_count == 2
+    assert result.peak_fact_cost.trace_evaluation_count == 1
+    assert result.peak_fact_cost.asls_baseline_count == 1
+    assert result.peak_fact_cost.smoothing_count == 1
+    assert result.peak_fact_cost.segment_enumeration_count == 2
     assert result.peak_fact_cost.integration_count == 2
+    assert result.peak_fact_cost.normalization_count == 2
+    assert result.peak_fact_cost.raw_descriptor_projection_count == 2
     assert result.peak_fact_cost.artifact_round_trip_count == 0
     assert result.peak_fact_cost.sealed_observation_count == 2
     assert result.peak_fact_cost.identity_unavailable_count == 0
     assert result.peak_fact_cost.elapsed_seconds is not None
     assert result.peak_fact_cost.measurement_source == "execution_runtime_owner:v1"
     assert len(raw_open_calls) == 1
-    assert raw_open_calls[0][1]["_raw_session_capability"] == (
+    assert raw_open_calls[0][1]["_raw_session_capability"] == (raw_session_capability)
+
+    unavailable_source = _OwnerBoundBatchSource(source_identity, height=0.0)
+    unavailable_source.raw_open_receipt = _mint_raw_acquisition_session_receipt(
         raw_session_capability
     )
+    monkeypatch.setattr(
+        "xic_extractor.raw_reader.open_raw",
+        lambda *_args, **_kwargs: unavailable_source,
+    )
+    unavailable = extract_owner_backfill_sample_job(job)
+
+    assert isinstance(unavailable, OwnerBackfillSampleResult)
+    assert len(unavailable.peak_fact_observations) == 2
+    assert {
+        observation.physical_evaluation.operations
+        for observation in unavailable.peak_fact_observations
+        if observation.physical_evaluation is not None
+    } == {("trace_evaluation",)}
+    assert unavailable.peak_fact_cost is not None
+    assert unavailable.peak_fact_cost.trace_evaluation_count == 1
+    assert unavailable.peak_fact_cost.asls_baseline_count == 0
+    assert unavailable.peak_fact_cost.smoothing_count == 0
+    assert unavailable.peak_fact_cost.segment_enumeration_count == 0
+    assert unavailable.peak_fact_cost.integration_count == 0
+    assert unavailable.peak_fact_cost.normalization_count == 0
+    assert unavailable.peak_fact_cost.raw_descriptor_projection_count == 0
 
 
 def _context(

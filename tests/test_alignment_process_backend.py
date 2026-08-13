@@ -39,6 +39,9 @@ from xic_extractor.alignment.process_backend import (
     run_owner_build_process,
 )
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
@@ -101,6 +104,7 @@ def test_owner_backfill_process_builds_pickleable_sample_jobs_and_orders_output(
         dll_dir=tmp_path / "dll",
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(tmp_path, baseline_audit_method="asls"),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         max_workers=2,
         owner_backfill_xic_backend="ms1_index",
         owner_backfill_window_strategy="super-window",
@@ -176,14 +180,13 @@ def test_process_jobs_carry_discovery_acquisition_source_to_raw_workers(
         dll_dir=tmp_path / "dll",
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         max_workers=2,
         expected_acquisition_sources={"sample-a": source},
         runner=backfill_runner,
     )
 
-    assert [job.expected_acquisition_source for job in captured_build_jobs] == [
-        source
-    ]
+    assert [job.expected_acquisition_source for job in captured_build_jobs] == [source]
     assert [job.expected_acquisition_source for job in captured_backfill_jobs] == [
         source
     ]
@@ -219,6 +222,7 @@ def test_owner_backfill_process_sends_only_sample_requested_features(
         dll_dir=tmp_path / "dll",
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         max_workers=2,
         runner=fake_runner,
     )
@@ -264,6 +268,7 @@ def test_owner_backfill_process_reports_payload_economics_without_deepening_payl
         dll_dir=tmp_path / "dll",
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         max_workers=2,
         runner=fake_runner,
     )
@@ -317,6 +322,7 @@ def test_owner_backfill_process_per_sample_features_match_legacy_scan(
         dll_dir=tmp_path / "dll",
         alignment_config=alignment_config,
         peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         max_workers=2,
         runner=fake_runner,
     )
@@ -354,6 +360,7 @@ def test_owner_backfill_process_accepts_delivery_contract_payload(
         dll_dir=tmp_path / "dll",
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         max_workers=2,
         runner=fake_runner,
     )
@@ -400,6 +407,7 @@ def test_owner_backfill_process_passes_progress_callback_to_runner(
         dll_dir=tmp_path / "dll",
         alignment_config=AlignmentConfig(),
         peak_config=_peak_config(tmp_path),
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         max_workers=2,
         runner=fake_runner,
         progress_callback=seen.append,
@@ -430,6 +438,7 @@ def test_owner_backfill_process_raises_worker_errors(tmp_path: Path) -> None:
             dll_dir=tmp_path / "dll",
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(tmp_path),
+            signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
             max_workers=2,
             runner=fake_runner,
         )
@@ -908,6 +917,7 @@ def _peak_config(
         diagnostics_csv=tmp_path / "xic_diagnostics.csv",
         smooth_window=3,
         smooth_polyorder=1,
+        ms1_morphology_smoothing_window_points=3,
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=1.6,

@@ -192,9 +192,7 @@ def derive_runtime_acquisition_metrics(
             "acquisitions must contain TraceAcquisitionBatch receipts"
         )
     return RuntimeAcquisitionMetrics(
-        logical_xic_request_count=sum(
-            item.logical_xic_request_count for item in batch
-        ),
+        logical_xic_request_count=sum(item.logical_xic_request_count for item in batch),
         xic_batch_count=sum(item.xic_batch_count for item in batch),
         adapter_chromatogram_call_count=sum(
             item.adapter_chromatogram_call_count for item in batch
@@ -389,8 +387,31 @@ class RuntimePeakFactOperation(str, Enum):
     """Finite peak-fact work vocabulary accepted by the runtime owner."""
 
     TRACE_EVALUATION = "trace_evaluation"
+    ASLS_BASELINE = "asls_baseline"
     GAUSSIAN_SMOOTHING = "gaussian_smoothing"
+    SEGMENT_ENUMERATION = "segment_enumeration"
     INTEGRATION = "integration"
+    NORMALIZATION = "normalization"
+    RAW_DESCRIPTOR_PROJECTION = "raw_descriptor_projection"
+    REGION_AUDIT_PROJECTION = "region_audit_projection"
+
+
+_RUNTIME_PEAK_FACT_OPERATION_ORDER = tuple(RuntimePeakFactOperation)
+_RUNTIME_PREPARATION_OPERATIONS = frozenset(
+    {
+        RuntimePeakFactOperation.TRACE_EVALUATION,
+        RuntimePeakFactOperation.ASLS_BASELINE,
+        RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+    }
+)
+_RUNTIME_PEAK_FACT_OPERATION_SEQUENCES = tuple(
+    _RUNTIME_PEAK_FACT_OPERATION_ORDER[:count] for count in (0, 1, 2, 3, 4, 7, 8)
+)
+_LEGACY_PEAK_FACT_OPERATION_SEQUENCE = (
+    RuntimePeakFactOperation.TRACE_EVALUATION,
+    RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+    RuntimePeakFactOperation.INTEGRATION,
+)
 
 
 class RuntimePeakFactIdentityStatus(str, Enum):
@@ -411,6 +432,7 @@ class RuntimePeakFactWorkReceipt:
     owner_request_identity: str | None = None
     group_hypothesis_id: str | None = None
     acquisition_source: AcquisitionSourceIdentity | None = None
+    prepared_signal_id: str | None = None
     elapsed_seconds: float | None = None
 
     def __post_init__(self) -> None:
@@ -421,6 +443,17 @@ class RuntimePeakFactWorkReceipt:
             RuntimePeakFactOperation,
             field="operations",
         )
+        if len(self.operations) != len(set(self.operations)):
+            raise RuntimeFinalizationContractError(
+                "peak-fact operations may each occur at most once per work receipt"
+            )
+        if self.operations not in (
+            *_RUNTIME_PEAK_FACT_OPERATION_SEQUENCES,
+            _LEGACY_PEAK_FACT_OPERATION_SEQUENCE,
+        ):
+            raise RuntimeFinalizationContractError(
+                "peak-fact operations must preserve canonical order"
+            )
         if not isinstance(self.identity_status, RuntimePeakFactIdentityStatus):
             raise RuntimeFinalizationContractError(
                 "identity_status must be a RuntimePeakFactIdentityStatus"
@@ -438,12 +471,21 @@ class RuntimePeakFactWorkReceipt:
                 raise RuntimeFinalizationContractError(
                     "sealed peak-fact work requires owner acquisition identity"
                 )
+            if self.prepared_signal_id is None and self.operations != (
+                _LEGACY_PEAK_FACT_OPERATION_SEQUENCE
+            ):
+                raise RuntimeFinalizationContractError(
+                    "canonical peak-fact work requires prepared_signal_id"
+                )
+            if self.prepared_signal_id is not None:
+                _required_prepared_signal_id(self.prepared_signal_id)
         elif any(
             value is not None
             for value in (
                 self.owner_request_identity,
                 self.group_hypothesis_id,
                 self.acquisition_source,
+                self.prepared_signal_id,
             )
         ):
             raise RuntimeFinalizationContractError(
@@ -459,21 +501,19 @@ class RuntimePeakFactWorkReceipt:
         derived_work = any(
             operation
             in {
+                RuntimePeakFactOperation.ASLS_BASELINE,
                 RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+                RuntimePeakFactOperation.SEGMENT_ENUMERATION,
                 RuntimePeakFactOperation.INTEGRATION,
+                RuntimePeakFactOperation.NORMALIZATION,
+                RuntimePeakFactOperation.RAW_DESCRIPTOR_PROJECTION,
+                RuntimePeakFactOperation.REGION_AUDIT_PROJECTION,
             }
             for operation in self.operations
         )
-        if derived_work and trace_evaluations != 1:
+        if trace_evaluations != 1:
             raise RuntimeFinalizationContractError(
-                "smoothing and integration require one trace evaluation"
-            )
-        if (
-            self.identity_status is RuntimePeakFactIdentityStatus.UNAVAILABLE
-            and trace_evaluations != 1
-        ):
-            raise RuntimeFinalizationContractError(
-                "unavailable peak-fact identity requires one trace evaluation"
+                "peak-fact work requires one trace evaluation"
             )
         if self.elapsed_seconds is None:
             return
@@ -500,8 +540,13 @@ class RuntimePeakFactCostMetrics:
     raw_open_count: int | None
     raw_open_unavailable_reason: str
     trace_evaluation_count: int
+    asls_baseline_count: int
     smoothing_count: int
+    segment_enumeration_count: int
     integration_count: int
+    normalization_count: int
+    raw_descriptor_projection_count: int
+    region_audit_projection_count: int
     artifact_round_trip_count: int | None
     artifact_round_trip_unavailable_reason: str
     sealed_observation_count: int
@@ -520,8 +565,13 @@ class RuntimePeakFactCostMetrics:
             )
         for field_name in (
             "trace_evaluation_count",
+            "asls_baseline_count",
             "smoothing_count",
+            "segment_enumeration_count",
             "integration_count",
+            "normalization_count",
+            "raw_descriptor_projection_count",
+            "region_audit_projection_count",
             "sealed_observation_count",
             "identity_unavailable_count",
         ):
@@ -580,9 +630,18 @@ def derive_runtime_peak_fact_cost_metrics(
             "work_receipts must contain RuntimePeakFactWorkReceipt values"
         ) from exc
     seen_work_unit_keys: set[str] = set()
+    prepared_operations_by_signal_id: dict[
+        str,
+        tuple[RuntimePeakFactOperation, ...],
+    ] = {}
     trace_evaluation_count = 0
+    asls_baseline_count = 0
     smoothing_count = 0
+    segment_enumeration_count = 0
     integration_count = 0
+    normalization_count = 0
+    raw_descriptor_projection_count = 0
+    region_audit_projection_count = 0
     sealed_observation_count = 0
     identity_unavailable_count = 0
     fact_receipt_count = 0
@@ -601,30 +660,85 @@ def derive_runtime_peak_fact_cost_metrics(
         if (
             raw_session_capability is not None
             and receipt.identity_status is RuntimePeakFactIdentityStatus.SEALED
-            and receipt.acquisition_source
-            != raw_session_capability.acquisition_source
+            and receipt.acquisition_source != raw_session_capability.acquisition_source
         ):
             raise RuntimeFinalizationContractError(
                 "peak-fact work identity crosses the RAW session capability"
             )
-        trace_evaluation_count += receipt.operations.count(
-            RuntimePeakFactOperation.TRACE_EVALUATION
+        preparation_operations = tuple(
+            operation
+            for operation in receipt.operations
+            if operation in _RUNTIME_PREPARATION_OPERATIONS
+        )
+        prior_preparation_operations = (
+            prepared_operations_by_signal_id.get(receipt.prepared_signal_id)
+            if receipt.prepared_signal_id is not None
+            else None
+        )
+        if (
+            prior_preparation_operations is not None
+            and prior_preparation_operations != preparation_operations
+        ):
+            raise RuntimeFinalizationContractError(
+                "one prepared_signal_id carries inconsistent preparation operations"
+            )
+        prepared_signal_is_new = (
+            receipt.prepared_signal_id is None or prior_preparation_operations is None
+        )
+        if receipt.prepared_signal_id is not None and prepared_signal_is_new:
+            prepared_operations_by_signal_id[receipt.prepared_signal_id] = (
+                preparation_operations
+            )
+        if prepared_signal_is_new:
+            trace_evaluation_count += receipt.operations.count(
+                RuntimePeakFactOperation.TRACE_EVALUATION
+            )
+        receipt_asls_baseline_count = receipt.operations.count(
+            RuntimePeakFactOperation.ASLS_BASELINE
         )
         receipt_smoothing_count = receipt.operations.count(
             RuntimePeakFactOperation.GAUSSIAN_SMOOTHING
         )
+        receipt_segment_enumeration_count = receipt.operations.count(
+            RuntimePeakFactOperation.SEGMENT_ENUMERATION
+        )
         receipt_integration_count = receipt.operations.count(
             RuntimePeakFactOperation.INTEGRATION
         )
-        smoothing_count += receipt_smoothing_count
+        receipt_normalization_count = receipt.operations.count(
+            RuntimePeakFactOperation.NORMALIZATION
+        )
+        receipt_raw_descriptor_projection_count = receipt.operations.count(
+            RuntimePeakFactOperation.RAW_DESCRIPTOR_PROJECTION
+        )
+        receipt_region_audit_projection_count = receipt.operations.count(
+            RuntimePeakFactOperation.REGION_AUDIT_PROJECTION
+        )
+        if prepared_signal_is_new:
+            asls_baseline_count += receipt_asls_baseline_count
+            smoothing_count += receipt_smoothing_count
+        segment_enumeration_count += receipt_segment_enumeration_count
         integration_count += receipt_integration_count
+        normalization_count += receipt_normalization_count
+        raw_descriptor_projection_count += receipt_raw_descriptor_projection_count
+        region_audit_projection_count += receipt_region_audit_projection_count
         sealed_observation_count += (
             receipt.identity_status is RuntimePeakFactIdentityStatus.SEALED
         )
         identity_unavailable_count += (
             receipt.identity_status is RuntimePeakFactIdentityStatus.UNAVAILABLE
         )
-        if receipt_smoothing_count or receipt_integration_count:
+        if any(
+            (
+                receipt_asls_baseline_count,
+                receipt_smoothing_count,
+                receipt_segment_enumeration_count,
+                receipt_integration_count,
+                receipt_normalization_count,
+                receipt_raw_descriptor_projection_count,
+                receipt_region_audit_projection_count,
+            )
+        ):
             fact_receipt_count += 1
             if receipt.elapsed_seconds is not None:
                 timed_fact_receipt_count += 1
@@ -669,12 +783,15 @@ def derive_runtime_peak_fact_cost_metrics(
         raw_open_count=raw_open_metrics.raw_open_count,
         raw_open_unavailable_reason=raw_open_metrics.unavailable_reason,
         trace_evaluation_count=trace_evaluation_count,
+        asls_baseline_count=asls_baseline_count,
         smoothing_count=smoothing_count,
+        segment_enumeration_count=segment_enumeration_count,
         integration_count=integration_count,
+        normalization_count=normalization_count,
+        raw_descriptor_projection_count=raw_descriptor_projection_count,
+        region_audit_projection_count=region_audit_projection_count,
         artifact_round_trip_count=artifact_round_trip_count,
-        artifact_round_trip_unavailable_reason=(
-            artifact_round_trip_unavailable_reason
-        ),
+        artifact_round_trip_unavailable_reason=(artifact_round_trip_unavailable_reason),
         sealed_observation_count=sealed_observation_count,
         identity_unavailable_count=identity_unavailable_count,
         elapsed_seconds=elapsed_seconds,
@@ -1007,10 +1124,7 @@ def _apply_runtime_worker_batch(
     settlements_by_key = {
         item.work_unit_key: item for item in state.runtime.settlements
     }
-    submitted_work_keys = {
-        item.work_unit_key
-        for item in batch.settlements
-    }
+    submitted_work_keys = {item.work_unit_key for item in batch.settlements}
     for acquisition_receipt in sorted(
         batch.acquisitions,
         key=lambda item: manifest_order.get(item.work_unit_key, len(manifest_order)),
@@ -1704,6 +1818,20 @@ def _required_text(value: object, *, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise RuntimeFinalizationContractError(
             f"{field} must be non-empty owner-normalized text"
+        )
+    return value
+
+
+def _required_prepared_signal_id(value: object) -> str:
+    prefix = "prepared-signal.v1:"
+    if not isinstance(value, str) or not value.startswith(prefix):
+        raise RuntimeFinalizationContractError(
+            "prepared_signal_id must use the prepared-signal.v1 identity"
+        )
+    digest = value[len(prefix) :]
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise RuntimeFinalizationContractError(
+            "prepared_signal_id must carry one lowercase SHA-256 digest"
         )
     return value
 

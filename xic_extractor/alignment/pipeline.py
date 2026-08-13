@@ -44,14 +44,29 @@ from xic_extractor.alignment.ms1_index_source import (
     OwnerBuildXicBackend,
     source_for_owner_build_backend,
 )
-from xic_extractor.alignment.output_levels import AlignmentOutputLevel
+from xic_extractor.alignment.output_levels import (
+    AlignmentOutputLevel,
+    artifact_names_for_output_level,
+)
 from xic_extractor.alignment.owner_backfill import (
     OwnerBackfillCandidateAuditRow,
+    OwnerBackfillPeakFactObservation,
     OwnerBackfillRequestReuseObservation,
     OwnerBackfillResult,
     OwnerBackfillWindowStrategy,
     build_owner_backfill_cells,
     build_owner_backfill_result,
+)
+from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    OwnerBackfillCellProjectionV1,
+    OwnerBackfillPeakFactStageProjection,
+    build_owner_backfill_peak_fact_provenance_batch,
+    owner_backfill_authority_cell_projection,
+    owner_backfill_cell_projection,
+    owner_backfill_peak_fact_stage_projection_from_observation,
+)
+from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    OwnerBackfillPeakFactObservation as ProvenanceObservation,
 )
 from xic_extractor.alignment.owner_clustering import (
     cluster_sample_local_owners,
@@ -80,6 +95,11 @@ from xic_extractor.alignment.process_backend import (
     run_owner_backfill_process,
     run_owner_build_process,
 )
+from xic_extractor.alignment.production_decisions import (
+    ProductionDecisionSet,
+    build_production_decisions,
+    production_cell_decision_projection,
+)
 from xic_extractor.alignment.raw_sources import (
     AlignmentRawHandle as _AlignmentRawHandle,
 )
@@ -98,6 +118,12 @@ from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseRec
 from xic_extractor.injection_rolling import (
     order_sample_columns_by_injection,
     read_injection_order,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.sample_metadata import (
@@ -120,6 +146,7 @@ def run_alignment(
     output_dir: Path,
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
+    signal_processing_profile: SignalProcessingProfile | None = None,
     output_level: AlignmentOutputLevel = "machine",
     emit_alignment_cells: bool = False,
     emit_alignment_status_matrix: bool = False,
@@ -149,6 +176,36 @@ def run_alignment(
     emit_provisional_matrix: bool = False,
     emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
+    resolved_signal_processing_profile = resolve_signal_processing_profile(
+        signal_processing_method=getattr(
+            peak_config,
+            "signal_processing_method",
+            DEFAULT_SIGNAL_PROCESSING_PROFILE.method,
+        ),
+        signal_processing_window_points=getattr(
+            peak_config,
+            "signal_processing_window_points",
+            DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points,
+        ),
+    )
+    if signal_processing_profile is not None:
+        if not isinstance(signal_processing_profile, SignalProcessingProfile):
+            raise TypeError(
+                "signal_processing_profile must be a SignalProcessingProfile"
+            )
+        if signal_processing_profile != resolved_signal_processing_profile:
+            raise ValueError(
+                "signal_processing_profile conflicts with peak_config canonical fields"
+            )
+    signal_processing_profile = resolved_signal_processing_profile
+    if (
+        output_level in {"production", "machine"}
+        and signal_processing_profile.profile_id != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID
+    ):
+        raise ValueError(
+            "production and machine outputs require the approved default "
+            "signal-processing profile"
+        )
     if raw_workers < 1:
         raise ValueError("raw_workers must be >= 1")
     if raw_xic_batch_size < 1:
@@ -157,19 +214,14 @@ def run_alignment(
         raise ValueError("owner_backfill_superwindow_span_factor must be >= 1")
     if emit_early_loser_shadow and preconsolidate_owner_families:
         raise ValueError(
-            "early-loser shadow cannot run with activated pre-Backfill "
-            "consolidation"
+            "early-loser shadow cannot run with activated pre-Backfill consolidation"
         )
     if emit_early_loser_shadow and backfill_scope != "full-audit":
         raise ValueError("early-loser shadow requires full-audit Backfill scope")
     if emit_provisional_matrix and not require_discovery_owner_closure:
-        raise ValueError(
-            "provisional matrix emission requires Discovery owner closure"
-        )
+        raise ValueError("provisional matrix emission requires Discovery owner closure")
     if emit_provisional_matrix and backfill_scope != "full-audit":
-        raise ValueError(
-            "provisional matrix emission requires full-audit Backfill"
-        )
+        raise ValueError("provisional matrix emission requires full-audit Backfill")
     if emit_provisional_matrix and (
         selected_family_ids or selected_family_source.strip()
     ):
@@ -177,9 +229,7 @@ def run_alignment(
             "provisional matrix emission does not allow a family selection"
         )
     if require_discovery_owner_closure and raw_opener is not None:
-        raise ValueError(
-            "Discovery owner closure does not allow a custom RAW opener"
-        )
+        raise ValueError("Discovery owner closure does not allow a custom RAW opener")
     if (
         require_discovery_owner_closure
         and emit_identity_coherence_diagnostic
@@ -258,6 +308,12 @@ def run_alignment(
         emit_skipped_evidence_ledger=backfill_scope != "full-audit",
         emit_provisional_matrix=emit_provisional_matrix,
         emit_early_loser_shadow=emit_early_loser_shadow,
+    )
+    _reject_alignment_output_collisions(
+        output_dir=output_dir,
+        outputs=outputs,
+        emit_identity_coherence_diagnostic=emit_identity_coherence_diagnostic,
+        identity_coherence_output_dir=identity_coherence_output_dir,
     )
     resolved_audit_evidence_mode, audit_evidence_mode_reason = (
         _resolve_audit_evidence_mode(
@@ -450,9 +506,7 @@ def run_alignment(
                 )
                 stage.metrics.update(
                     {
-                        "source_feature_count": len(
-                            early_loser_shadow_proposal.rows
-                        ),
+                        "source_feature_count": len(early_loser_shadow_proposal.rows),
                         "proposed_loser_count": sum(
                             row.proposal_status == "loser"
                             for row in early_loser_shadow_proposal.rows
@@ -497,10 +551,14 @@ def run_alignment(
                     **skipped_evidence_summary(scope_selection.skipped),
                     **request_summary,
                 }
-        )
+            )
         with recorder.stage("alignment.owner_backfill") as owner_backfill_stage:
             owner_backfill_candidate_audit_rows: tuple[
                 OwnerBackfillCandidateAuditRow,
+                ...,
+            ] = ()
+            owner_backfill_peak_fact_observations: tuple[
+                OwnerBackfillPeakFactObservation,
                 ...,
             ] = ()
             request_reuse_observations: tuple[
@@ -515,6 +573,7 @@ def run_alignment(
                     dll_dir=dll_dir,
                     alignment_config=alignment_config,
                     peak_config=peak_config,
+                    signal_processing_profile=signal_processing_profile,
                     max_workers=raw_workers,
                     raw_xic_batch_size=raw_xic_batch_size,
                     owner_backfill_xic_backend=owner_backfill_xic_backend,
@@ -536,8 +595,9 @@ def run_alignment(
                 owner_backfill_candidate_audit_rows = (
                     process_output.candidate_audit_rows
                 )
-                request_reuse_observations = (
-                    process_output.request_reuse_observations
+                request_reuse_observations = process_output.request_reuse_observations
+                owner_backfill_peak_fact_observations = (
+                    process_output.peak_fact_observations
                 )
                 owner_backfill_stage.metrics.update(
                     _summarize_xic_timing_stats(process_output.timing_stats),
@@ -581,6 +641,7 @@ def run_alignment(
                     expected_acquisition_sources=expected_acquisition_sources,
                     alignment_config=alignment_config,
                     peak_config=peak_config,
+                    signal_processing_profile=signal_processing_profile,
                     raw_xic_batch_size=raw_xic_batch_size,
                     owner_backfill_xic_backend=owner_backfill_xic_backend,
                     owner_backfill_window_strategy=owner_backfill_window_strategy,
@@ -595,8 +656,9 @@ def run_alignment(
                 owner_backfill_candidate_audit_rows = (
                     backfill_result.candidate_audit_rows
                 )
-                request_reuse_observations = (
-                    backfill_result.request_reuse_observations
+                request_reuse_observations = backfill_result.request_reuse_observations
+                owner_backfill_peak_fact_observations = (
+                    backfill_result.peak_fact_observations
                 )
                 owner_backfill_stage.metrics.update(
                     _summarize_xic_timing_stats(timing_stats),
@@ -643,6 +705,20 @@ def run_alignment(
             matrix = consolidate_primary_family_rows(matrix, alignment_config)
         with recorder.stage("alignment.pre_backfill_recenter"):
             matrix = recenter_pre_backfill_identity_families(matrix)
+        production_decisions = build_production_decisions(matrix, alignment_config)
+        peak_fact_provenance = _owner_backfill_peak_fact_provenance(
+            owner_backfill_peak_fact_observations,
+            matrix=matrix,
+            alignment_config=alignment_config,
+            production_decisions=production_decisions,
+            feature_order=tuple(
+                feature_id
+                for feature in owner_features
+                if (feature_id := getattr(feature, "feature_family_id", None))
+            ),
+            sample_order=matrix_sample_order,
+            signal_processing_profile=signal_processing_profile,
+        )
         early_loser_shadow_report: EarlyLoserShadowReport | None = None
         if early_loser_shadow_proposal is not None:
             with recorder.stage("alignment.early_loser_shadow.compare") as stage:
@@ -692,7 +768,11 @@ def run_alignment(
                     backfill_scope=backfill_scope,
                     output_scope=(
                         "diagnostic_only"
-                        if backfill_scope == "selected-families"
+                        if (
+                            backfill_scope == "selected-families"
+                            or signal_processing_profile.profile_id
+                            != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID
+                        )
                         else backfill_scope
                     ),
                     selected_family_count=len(selected_family_ids),
@@ -709,11 +789,18 @@ def run_alignment(
                     scope_warning=(
                         "diagnostic_only_incomplete_scope"
                         if backfill_scope == "selected-families"
-                        else ""
+                        else (
+                            "diagnostic_only_unapproved_signal_processing_profile"
+                            if signal_processing_profile.profile_id
+                            != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID
+                            else ""
+                        )
                     ),
                     skipped_evidence_predicate_version=PREDICATE_VERSION,
-                    require_discovery_owner_closure=(
-                        require_discovery_owner_closure
+                    require_discovery_owner_closure=(require_discovery_owner_closure),
+                    signal_processing_profile=signal_processing_profile,
+                    owner_backfill_peak_fact_provenance_row_count=len(
+                        peak_fact_provenance.rows
                     ),
                 ),
                 ownership=ownership,
@@ -723,6 +810,8 @@ def run_alignment(
                 owner_backfill_candidate_audit_rows=(
                     owner_backfill_candidate_audit_rows
                 ),
+                owner_backfill_peak_fact_provenance=peak_fact_provenance,
+                production_decisions=production_decisions,
                 baseline_integration_method=getattr(
                     peak_config,
                     "baseline_integration_method",
@@ -753,6 +842,83 @@ _output_paths = output_paths
 _write_outputs_atomic = write_outputs_atomic
 _DEFAULT_BUILD_OWNER_BACKFILL_CELLS = build_owner_backfill_cells
 
+_IDENTITY_COHERENCE_ARTIFACT_NAMES = (
+    "untargeted_identity_coherence_requests.tsv",
+    "untargeted_identity_coherence_decisions.tsv",
+    "untargeted_identity_coherence_cell_evidence.tsv",
+    "untargeted_identity_coherence_controls.tsv",
+    "untargeted_identity_coherence_summary.md",
+)
+_CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
+    "alignment_cell_integration_audit.tsv",
+    "alignment_owner_backfill_seed_audit.tsv",
+    "alignment_owner_backfill_candidate_audit.tsv",
+    "skipped_evidence_ledger.tsv",
+    "alignment_run_metadata.json",
+    "provisional_alignment_matrix.tsv",
+    "provisional_row_identity.tsv",
+    "provisional_cell_provenance.tsv",
+    "provisional_matrix_summary.json",
+    "alignment_early_loser_shadow.json",
+)
+
+
+def _reject_alignment_output_collisions(
+    *,
+    output_dir: Path,
+    outputs: AlignmentRunOutputs,
+    emit_identity_coherence_diagnostic: bool,
+    identity_coherence_output_dir: Path | None,
+) -> None:
+    output_levels: tuple[AlignmentOutputLevel, ...] = (
+        "production",
+        "machine",
+        "debug",
+        "validation",
+        "validation-minimal",
+    )
+    owned_names = {
+        name
+        for level in output_levels
+        for name in artifact_names_for_output_level(level)
+    }
+    owned_names.update(_CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES)
+    owned_names.update(
+        path.name
+        for path in vars(outputs).values()
+        if isinstance(path, Path) and path.parent == output_dir
+    )
+    collisions = _owned_path_collisions(
+        output_dir / name for name in sorted(owned_names)
+    )
+    if emit_identity_coherence_diagnostic:
+        identity_dir = (
+            identity_coherence_output_dir or output_dir / "identity_coherence"
+        )
+        collisions.extend(
+            _owned_path_collisions(
+                identity_dir / name for name in _IDENTITY_COHERENCE_ARTIFACT_NAMES
+            )
+        )
+    if collisions:
+        names = ", ".join(path.name for path in sorted(collisions))
+        raise FileExistsError(
+            "Alignment output directory contains owned artifact collisions: " + names
+        )
+
+
+def _owned_path_collisions(paths: Iterable[Path]) -> list[Path]:
+    collisions: list[Path] = []
+    for path in paths:
+        for candidate in (
+            path,
+            path.with_name(f"{path.name}.tmp"),
+            path.with_name(f"{path.name}.bak"),
+        ):
+            if candidate.exists():
+                collisions.append(candidate)
+    return collisions
+
 
 def _required_candidate_receipt(
     batch: DiscoveryBatchInput,
@@ -780,11 +946,121 @@ def _build_owner_backfill_result(*args: Any, **kwargs: Any) -> OwnerBackfillResu
         legacy_kwargs = dict(kwargs)
         legacy_kwargs.pop("expected_acquisition_sources", None)
         legacy_kwargs.pop("owner_backfill_xic_backend", None)
+        legacy_kwargs.pop("signal_processing_profile", None)
         return OwnerBackfillResult(
             cells=tuple(build_owner_backfill_cells(*args, **legacy_kwargs)),
             candidate_audit_rows=(),
         )
     return build_owner_backfill_result(*args, **kwargs)
+
+
+def _owner_backfill_peak_fact_provenance(
+    observations: Iterable[OwnerBackfillPeakFactObservation],
+    *,
+    matrix,
+    alignment_config: AlignmentConfig,
+    production_decisions: ProductionDecisionSet,
+    feature_order: tuple[str, ...],
+    sample_order: tuple[str, ...],
+    signal_processing_profile: SignalProcessingProfile,
+):
+    feature_rank = {feature_id: index for index, feature_id in enumerate(feature_order)}
+    sample_rank = {sample_stem: index for index, sample_stem in enumerate(sample_order)}
+    final_cells = {}
+    for cell in matrix.cells:
+        key = (cell.group_hypothesis_id, cell.public_family_id, cell.sample_stem)
+        if key in final_cells:
+            raise ValueError("final Matrix contains duplicate owner cell identity")
+        final_cells[key] = cell
+    projected: list[ProvenanceObservation] = []
+    selected: list[
+        tuple[
+            OwnerBackfillPeakFactObservation,
+            OwnerBackfillPeakFactStageProjection,
+        ]
+    ] = []
+    for observation in observations:
+        evaluation = observation.physical_evaluation
+        if evaluation is None:
+            raise ValueError(
+                "covered Untargeted provenance requires canonical physical evaluation"
+            )
+        stage = owner_backfill_peak_fact_stage_projection_from_observation(
+            observation,
+            feature_order_index=feature_rank.get(
+                observation.cell.cluster_id,
+                len(feature_rank),
+            ),
+            sample_order_index=sample_rank.get(
+                observation.cell.sample_stem,
+                len(sample_rank),
+            ),
+        )
+        projected.append(ProvenanceObservation(stage, evaluation))
+        if observation.selected_for_output:
+            selected.append((observation, stage))
+
+    cell_projections: list[OwnerBackfillCellProjectionV1] = []
+    selected_cell_keys: set[tuple[str, str, str]] = set()
+    for observation, stage in selected:
+        evaluation = observation.physical_evaluation
+        if evaluation is None:
+            raise ValueError(
+                "selected Untargeted provenance requires canonical physical evaluation"
+            )
+        facts = evaluation.facts
+        if facts is None or evaluation.answer.physical_segment_id is None:
+            continue
+        key = (
+            observation.cell.group_hypothesis_id,
+            observation.cell.public_family_id,
+            observation.cell.sample_stem,
+        )
+        final_cell = final_cells.get(key)
+        if final_cell is None or final_cell.status != "rescued":
+            continue
+        if observation.facts is None:
+            raise ValueError("selected physical fact lacks bounded owner receipt")
+        if final_cell.selected_integration != observation.facts.integration:
+            raise ValueError("final Matrix cell crosses its selected physical fact")
+        decision = production_decisions.cell(
+            final_cell.cluster_id,
+            final_cell.sample_stem,
+        )
+        if not decision.write_matrix_value:
+            continue
+        if key in selected_cell_keys:
+            raise ValueError("multiple selected work units claim one final Matrix cell")
+        authority_cell = owner_backfill_authority_cell_projection(
+            stage=stage,
+            cell=final_cell,
+            profile_id=signal_processing_profile.profile_id,
+            selected_fact_content_id=facts.fact_content_id,
+            physical_answer_id=evaluation.answer.physical_answer_id,
+            physical_segment_id=evaluation.answer.physical_segment_id,
+        )
+        decision_projection = production_cell_decision_projection(
+            decision,
+            cell=final_cell,
+            config=alignment_config,
+            owner_backfill_cell_content_id=(
+                authority_cell.owner_backfill_cell_content_id
+            ),
+        )
+        cell_projections.append(
+            owner_backfill_cell_projection(
+                authority_cell=authority_cell,
+                production_decision=decision_projection,
+            )
+        )
+        selected_cell_keys.add(key)
+    return build_owner_backfill_peak_fact_provenance_batch(
+        projected,
+        profile=signal_processing_profile,
+        cell_projections=cell_projections,
+    )
+
+
 _metadata = alignment_metadata
 
 
@@ -967,8 +1243,7 @@ def _summarize_xic_timing_stats(
         int(getattr(stats, "extract_xic_batch_count", 0)) for stats in stats_items
     )
     raw_chromatogram_call_count = sum(
-        int(getattr(stats, "raw_chromatogram_call_count", 0))
-        for stats in stats_items
+        int(getattr(stats, "raw_chromatogram_call_count", 0)) for stats in stats_items
     )
     point_count = sum(int(getattr(stats, "point_count", 0)) for stats in stats_items)
     return {

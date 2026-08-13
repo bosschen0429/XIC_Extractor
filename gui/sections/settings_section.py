@@ -62,9 +62,7 @@ class SettingsSection(QWidget):
         )
         header_layout.addStretch()
         self._reset_button = QPushButton("↺ 回到預設")
-        self._reset_button.setToolTip(
-            "將方法參數重設為預設值（保留 Data / DLL 路徑）"
-        )
+        self._reset_button.setToolTip("將方法參數重設為預設值（保留 Data / DLL 路徑）")
         self._reset_button.clicked.connect(self._reset_defaults)
         header_layout.addWidget(self._reset_button)
         root_layout.addWidget(card)
@@ -122,9 +120,7 @@ class SettingsSection(QWidget):
             mode_combo=self._resolver_mode_combo,
             legacy_panel=self._legacy_resolver_panel,
             local_minimum_panel=self._local_minimum_resolver_panel,
-            apply_local_minimum_preset_button=(
-                self._apply_local_minimum_preset_button
-            ),
+            apply_local_minimum_preset_button=(self._apply_local_minimum_preset_button),
             smooth_window_spin=self._smooth_window_spin,
             smooth_polyorder_spin=self._smooth_polyorder_spin,
             ms1_morphology_smoothing_window_spin=(
@@ -288,7 +284,7 @@ class SettingsSection(QWidget):
             self._ms1_morphology_smoothing_window_spin.setValue(
                 _int_value(
                     self._settings_values,
-                    "ms1_morphology_smoothing_window_points",
+                    "signal_processing_window_points",
                 )
             )
             self._peak_rel_height_spin.setValue(
@@ -320,13 +316,17 @@ class SettingsSection(QWidget):
 
     def get_values(self) -> dict[str, str]:
         values = dict(self._settings_values)
+        values.pop("ms1_morphology_smoothing_window_points", None)
         values.update(
             {
                 "data_dir": self._data_dir_edit.text().strip(),
                 "dll_dir": self._dll_dir_edit.text().strip(),
                 "smooth_window": str(self._smooth_window_spin.value()),
                 "smooth_polyorder": str(self._smooth_polyorder_spin.value()),
-                "ms1_morphology_smoothing_window_points": str(
+                "signal_processing_method": CANONICAL_SETTINGS_DEFAULTS[
+                    "signal_processing_method"
+                ],
+                "signal_processing_window_points": str(
                     self._ms1_morphology_smoothing_window_spin.value()
                 ),
                 "peak_rel_height": f"{self._peak_rel_height_spin.value():.2f}",
@@ -453,9 +453,7 @@ class SettingsSection(QWidget):
         values = self.get_values()
         smooth_window = int(values["smooth_window"])
         smooth_polyorder = int(values["smooth_polyorder"])
-        ms1_morphology_smoothing_window_points = int(
-            values["ms1_morphology_smoothing_window_points"]
-        )
+        signal_processing_window_points = int(values["signal_processing_window_points"])
         peak_rel_height = float(values["peak_rel_height"])
         peak_min_prominence_ratio = float(values["peak_min_prominence_ratio"])
         ms2_precursor_tol_da = float(values["ms2_precursor_tol_da"])
@@ -477,8 +475,8 @@ class SettingsSection(QWidget):
             and smooth_window >= 3
             and smooth_window % 2 == 1
             and 1 <= smooth_polyorder < smooth_window
-            and ms1_morphology_smoothing_window_points >= 3
-            and ms1_morphology_smoothing_window_points % 2 == 1
+            and signal_processing_window_points >= 3
+            and signal_processing_window_points % 2 == 1
             and 0.50 <= peak_rel_height <= 0.99
             and 0.01 <= peak_min_prominence_ratio <= 0.50
             and ms2_precursor_tol_da > 0

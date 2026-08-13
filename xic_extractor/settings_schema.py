@@ -1,5 +1,8 @@
 import os
 
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     EXPLICIT_SUPPORT_TSV_POLICY,
     LIMITED_HMDC_MEDC_POLICY,
@@ -28,7 +31,15 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "dll_dir": "C:\\Xcalibur\\system\\programs",
     "smooth_window": "15",
     "smooth_polyorder": "3",
-    "ms1_morphology_smoothing_window_points": "15",
+    "signal_processing_method": DEFAULT_SIGNAL_PROCESSING_PROFILE.method,
+    "signal_processing_window_points": str(
+        DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
+    ),
+    # Direct lookup compatibility for excluded callers that have not migrated.
+    # The settings loader maps this spelling one-way into the canonical key.
+    "ms1_morphology_smoothing_window_points": str(
+        DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
+    ),
     "peak_rel_height": "0.95",
     "peak_min_prominence_ratio": "0.10",
     "resolver_mode": CANONICAL_RESOLVER_MODE,
@@ -69,8 +80,16 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "dll_dir": "Xcalibur DLL 路徑（通常不需更改）",
     "smooth_window": "Savitzky-Golay 平滑視窗長度（必須為奇數，建議 9-21）",
     "smooth_polyorder": "Savitzky-Golay 多項式階數（通常 2-4）",
+    "signal_processing_method": (
+        "Canonical signal smoothing method (gaussian only). AsLS is the fixed "
+        "baseline estimator, not a smoothing method."
+    ),
+    "signal_processing_window_points": (
+        "Canonical Gaussian smoothing window points (odd integer 3-999; default 15)"
+    ),
     "ms1_morphology_smoothing_window_points": (
-        "MS1 morphology Gaussian15 smoothing 視窗點數（必須為奇數；預設 15）"
+        "Legacy Gaussian15 alias for signal_processing_window_points; "
+        "do not use in new settings"
     ),
     "peak_rel_height": (
         "Peak 邊界的相對高度（0.95 = 積分到 apex 的 5%，範圍 0.5-0.99）"

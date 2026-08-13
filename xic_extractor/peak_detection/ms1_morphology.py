@@ -4,6 +4,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
+
 MS1_MORPHOLOGY_TRACE_METHOD = "gaussian_15"
 MS1_MORPHOLOGY_AREA_SOURCE = "gaussian15_positive_asls_residual"
 DEFAULT_GAUSSIAN15_WINDOW_POINTS = 15
@@ -129,6 +133,49 @@ def gaussian15_positive_asls_residual_trace(
         gaussian15_morphology_trace(residual, window_points=window_points),
         0.0,
     )
+
+
+def gaussian_raw_minus_asls_raw_positive_trace(
+    intensity_values: np.ndarray,
+    baseline_values: np.ndarray,
+    *,
+    profile: SignalProcessingProfile,
+) -> np.ndarray:
+    """Apply the canonical Gaussian(raw) - AsLS(raw), clipped at zero."""
+
+    _smoothed, positive = canonical_gaussian_signal_traces(
+        intensity_values,
+        baseline_values,
+        profile=profile,
+    )
+    return positive
+
+
+def canonical_gaussian_signal_traces(
+    intensity_values: np.ndarray,
+    baseline_values: np.ndarray,
+    *,
+    profile: SignalProcessingProfile,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return Gaussian(raw) and max(Gaussian(raw) - AsLS(raw), 0)."""
+
+    if not isinstance(profile, SignalProcessingProfile):
+        raise TypeError("profile must be a SignalProcessingProfile")
+    intensity = np.asarray(intensity_values, dtype=float)
+    baseline = np.asarray(baseline_values, dtype=float)
+    if intensity.ndim != 1 or baseline.ndim != 1:
+        raise ValueError("intensity_values and baseline_values must be one-dimensional")
+    if len(intensity) != len(baseline):
+        raise ValueError("intensity_values and baseline_values must match")
+    if len(intensity) < profile.window_points:
+        raise ValueError("insufficient_points_for_profile")
+    if not np.all(np.isfinite(intensity)) or not np.all(np.isfinite(baseline)):
+        raise ValueError("intensity_values and baseline_values must be finite")
+    smoothed_raw = gaussian15_morphology_trace(
+        intensity,
+        window_points=profile.window_points,
+    )
+    return smoothed_raw, np.maximum(smoothed_raw - baseline, 0.0)
 
 
 def morphology_trace_effective_points(

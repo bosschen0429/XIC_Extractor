@@ -32,9 +32,7 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
         cells = output_dir / "alignment_cells.tsv"
         integration = output_dir / "alignment_cell_integration_audit.tsv"
         backfill_seed = output_dir / "alignment_owner_backfill_seed_audit.tsv"
-        backfill_candidate = (
-            output_dir / "alignment_owner_backfill_candidate_audit.tsv"
-        )
+        backfill_candidate = output_dir / "alignment_owner_backfill_candidate_audit.tsv"
         status = output_dir / "alignment_matrix_status.tsv"
         for path in (
             review,
@@ -96,6 +94,12 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
     assert peak_config.resolver_mode == "legacy_savgol"
     assert peak_config.baseline_audit_method == "asls"
     assert peak_config.baseline_integration_method == "asls"
+    assert peak_config.signal_processing_method == "gaussian"
+    assert peak_config.signal_processing_window_points == 15
+    signal_profile = captured["signal_processing_profile"]
+    assert signal_profile.method == "gaussian"
+    assert signal_profile.window_points == 15
+    assert peak_config.signal_processing_window_points == signal_profile.window_points
     assert captured["output_level"] == "machine"
     assert captured["emit_alignment_cells"] is True
     assert captured["emit_alignment_integration_audit"] is True
@@ -119,6 +123,85 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
     assert "alignment_owner_backfill_candidate_audit.tsv" in stdout
     assert "alignment_matrix_status.tsv" in stdout
     assert "Owner edge evidence TSV:" in stdout
+
+
+def test_run_alignment_cli_passes_nondefault_signal_processing_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    captured = {}
+
+    def fake_run_alignment(**kwargs):
+        captured.update(kwargs)
+        return AlignmentRunOutputs()
+
+    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+
+    code = run_alignment.main(
+        [
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--signal-processing-method",
+            "gaussian",
+            "--signal-processing-window-points",
+            "21",
+        ]
+    )
+
+    assert code == 0
+    profile = captured["signal_processing_profile"]
+    assert profile.method == "gaussian"
+    assert profile.window_points == 21
+    assert captured["peak_config"].signal_processing_window_points == 21
+
+
+@pytest.mark.parametrize("value", ["true", "2", "1000"])
+def test_run_alignment_cli_rejects_invalid_signal_processing_window(
+    value: str,
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        run_alignment._parse_args(
+            [
+                "--discovery-batch-index",
+                "batch.csv",
+                "--raw-dir",
+                "raw",
+                "--dll-dir",
+                "dll",
+                "--signal-processing-window-points",
+                value,
+            ]
+        )
+
+    assert exc_info.value.code == 2
+
+
+def test_run_alignment_cli_rejects_unsupported_signal_processing_method() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        run_alignment._parse_args(
+            [
+                "--discovery-batch-index",
+                "batch.csv",
+                "--raw-dir",
+                "raw",
+                "--dll-dir",
+                "dll",
+                "--signal-processing-method",
+                "asls",
+            ]
+        )
+
+    assert exc_info.value.code == 2
 
 
 def test_run_alignment_accepts_asls_baseline_integration_method_override(
@@ -2264,9 +2347,7 @@ def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n"
-        "S2,S2.raw,s2.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\nS2,S2.raw,s2.csv\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -2332,8 +2413,7 @@ def test_run_alignment_cli_normal_run_does_not_require_all_raw_paths(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\n",
         encoding="utf-8",
     )
     (tmp_path / "s1.csv").write_text("", encoding="utf-8")
@@ -2368,9 +2448,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n"
-        "S2,S2.raw,s2.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\nS2,S2.raw,s2.csv\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -2447,8 +2525,7 @@ def test_run_alignment_cli_preflight_only_uses_shared_batch_parser(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -2478,8 +2555,7 @@ def test_run_alignment_cli_preflight_only_rejects_missing_candidate_csv(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,missing.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,missing.csv\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -2512,8 +2588,7 @@ def test_run_alignment_cli_preflight_only_rejects_missing_raw_file(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\n",
         encoding="utf-8",
     )
     (tmp_path / "s1.csv").write_text("", encoding="utf-8")
@@ -2702,6 +2777,5 @@ def test_pyproject_registers_alignment_cli_script() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
     assert (
-        pyproject["project"]["scripts"]["xic-align-cli"]
-        == "scripts.run_alignment:main"
+        pyproject["project"]["scripts"]["xic-align-cli"] == "scripts.run_alignment:main"
     )

@@ -24,6 +24,9 @@ from xic_extractor.discovery.batch_contract import (
     discovery_receipt_index_fields,
     mint_discovery_candidate_universe_receipt,
 )
+from xic_extractor.peak_detection.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
@@ -82,6 +85,78 @@ def test_pipeline_owner_closure_rejects_legacy_batch_index(tmp_path: Path) -> No
             peak_config=_peak_config(),
             require_discovery_owner_closure=True,
         )
+
+
+def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    touched = False
+
+    def fail_if_touched(*_args, **_kwargs):
+        nonlocal touched
+        touched = True
+        raise AssertionError("entry validation must fail before batch or RAW work")
+
+    monkeypatch.setattr(pipeline_module, "read_discovery_batch_index", fail_if_touched)
+
+    with pytest.raises(ValueError, match="conflicts with peak_config"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=tmp_path / "batch.csv",
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=replace(
+                _peak_config(),
+                signal_processing_window_points=21,
+            ),
+            signal_processing_profile=resolve_signal_processing_profile(
+                signal_processing_window_points=15,
+            ),
+        )
+
+    assert touched is False
+
+
+@pytest.mark.parametrize("suffix", ("", ".tmp", ".bak"))
+def test_pipeline_rejects_owned_output_collision_before_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    sentinel = output_dir / f"alignment_matrix.tsv{suffix}"
+    sentinel.write_bytes(b"sentinel")
+    opened = False
+
+    @contextmanager
+    def fail_opener(*_args, **_kwargs):
+        nonlocal opened
+        opened = True
+        raise AssertionError("RAW must not open after an output collision")
+        yield
+
+    monkeypatch.setattr(pipeline_module, "read_discovery_candidates_csv", lambda _p: ())
+
+    with pytest.raises(FileExistsError, match="owned artifact collisions"):
+        pipeline_module.run_alignment(
+            discovery_batch_index=batch_index,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path / "dll",
+            output_dir=output_dir,
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            raw_opener=fail_opener,
+        )
+
+    assert opened is False
+    assert sentinel.read_bytes() == b"sentinel"
 
 
 def test_pipeline_owner_closure_rejects_raw_replaced_after_discovery(

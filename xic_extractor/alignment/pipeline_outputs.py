@@ -39,8 +39,17 @@ from xic_extractor.alignment.output_levels import (
     artifact_names_for_output_level,
 )
 from xic_extractor.alignment.owner_backfill import OwnerBackfillCandidateAuditRow
+from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
+    OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
+    OwnerBackfillPeakFactProvenanceBatch,
+    render_owner_backfill_peak_fact_provenance_tsv,
+)
 from xic_extractor.alignment.ownership import OwnershipBuildResult
-from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.alignment.production_decisions import (
+    ProductionDecisionSet,
+    build_production_decisions,
+)
 from xic_extractor.alignment.provisional_matrix import (
     build_provisional_matrix_projection,
     write_provisional_identity_tsv,
@@ -62,6 +71,10 @@ from xic_extractor.alignment.tsv_writer import (
 from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    SignalProcessingProfile,
+)
 from xic_extractor.processing_identity import fingerprint_file_content
 
 
@@ -72,6 +85,7 @@ class AlignmentRunOutputs:
     review_tsv: Path | None = None
     matrix_tsv: Path | None = None
     matrix_identity_tsv: Path | None = None
+    owner_backfill_peak_fact_provenance_tsv: Path | None = None
     backfill_cell_evidence_tsv: Path | None = None
     cells_tsv: Path | None = None
     integration_audit_tsv: Path | None = None
@@ -134,6 +148,11 @@ def output_paths(
         matrix_identity_tsv=(
             output_dir / "alignment_matrix_identity.tsv"
             if "alignment_matrix_identity.tsv" in artifacts
+            else None
+        ),
+        owner_backfill_peak_fact_provenance_tsv=(
+            output_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
+            if "alignment_owner_backfill_peak_fact_provenance.tsv" in artifacts
             else None
         ),
         cells_tsv=(
@@ -242,7 +261,21 @@ def alignment_metadata(
     scope_warning: str = "",
     skipped_evidence_predicate_version: str = "",
     require_discovery_owner_closure: bool = False,
+    signal_processing_profile: SignalProcessingProfile = (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE
+    ),
+    owner_backfill_peak_fact_provenance_row_count: int = 0,
 ) -> dict[str, str]:
+    if not isinstance(signal_processing_profile, SignalProcessingProfile):
+        raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
+    if (
+        isinstance(owner_backfill_peak_fact_provenance_row_count, bool)
+        or not isinstance(owner_backfill_peak_fact_provenance_row_count, int)
+        or owner_backfill_peak_fact_provenance_row_count < 0
+    ):
+        raise ValueError(
+            "owner_backfill_peak_fact_provenance_row_count must be non-negative"
+        )
     return {
         "schema_version": "alignment-results-v3",
         "discovery_batch_index": str(discovery_batch_index),
@@ -276,13 +309,25 @@ def alignment_metadata(
         "public_family_id_policy": "fam_compatibility_id",
         "group_delivery_policy": "owner_group_delivery_successor_projection_v1",
         "gap_fill_policy": "missing_observation_gap_fill_v1",
-        "legacy_owner_backfill_role": (
-            "owner_backfill_as_gap_fill_materialization"
-        ),
+        "legacy_owner_backfill_role": ("owner_backfill_as_gap_fill_materialization"),
         "pre_backfill_projection_policy": (
             "pre_backfill_successor_projection_required_when_enabled"
         ),
-        "matrix_value_policy": "gaussian15_positive_asls_residual_primary",
+        "matrix_value_policy": "canonical_signal_profile_selected_area_v1",
+        "signal_processing_profile_schema_version": (
+            signal_processing_profile.schema_version
+        ),
+        "signal_processing_profile_id": signal_processing_profile.profile_id,
+        "signal_processing_profile_hash": signal_processing_profile.profile_hash,
+        "signal_processing_method": signal_processing_profile.method,
+        "signal_processing_window_points": str(signal_processing_profile.window_points),
+        "physical_signal_formula": signal_processing_profile.physical_signal_formula,
+        "owner_backfill_peak_fact_provenance_schema_version": (
+            OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION
+        ),
+        "owner_backfill_peak_fact_provenance_row_count": str(
+            owner_backfill_peak_fact_provenance_row_count
+        ),
     }
 
 
@@ -295,15 +340,36 @@ def write_outputs_atomic(
     alignment_config: AlignmentConfig,
     edge_evidence: Sequence[OwnerEdgeEvidence] = (),
     skipped_evidence: Sequence[SkippedEvidenceRecord] = (),
-    owner_backfill_candidate_audit_rows: Sequence[
-        OwnerBackfillCandidateAuditRow
-    ] = (),
+    owner_backfill_candidate_audit_rows: Sequence[OwnerBackfillCandidateAuditRow] = (),
+    owner_backfill_peak_fact_provenance: OwnerBackfillPeakFactProvenanceBatch = (
+        EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH
+    ),
+    production_decisions: ProductionDecisionSet | None = None,
     baseline_integration_method: str = "asls",
     baseline_audit_method: str = "",
     timing_recorder: TimingRecorder | None = None,
     early_loser_shadow: EarlyLoserShadowReport | None = None,
     capture_artifact_fingerprints: bool = False,
 ) -> AlignmentArtifactFingerprintBatch | None:
+    if not isinstance(
+        owner_backfill_peak_fact_provenance,
+        OwnerBackfillPeakFactProvenanceBatch,
+    ):
+        raise TypeError("owner_backfill_peak_fact_provenance must be a typed batch")
+    metadata = _metadata_bound_to_peak_fact_provenance(
+        metadata,
+        row_count=len(owner_backfill_peak_fact_provenance.rows),
+    )
+    if production_decisions is not None and not isinstance(
+        production_decisions,
+        ProductionDecisionSet,
+    ):
+        raise TypeError("production_decisions must be owner-minted")
+    if (
+        outputs.owner_backfill_peak_fact_provenance_tsv is None
+        and owner_backfill_peak_fact_provenance.rows
+    ):
+        raise ValueError("physical-fact provenance rows require an output path")
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
     provisional_projection = None
     provisional_output_paths = (
@@ -365,13 +431,12 @@ def write_outputs_atomic(
             if timing_recorder is not None and timing_recorder.instrument_writers
             else TimingRecorder.disabled("writer")
         )
-    production_decisions = None
     if (
         outputs.review_tsv is not None
         or outputs.matrix_tsv is not None
         or outputs.matrix_identity_tsv is not None
         or outputs.backfill_cell_evidence_tsv is not None
-    ):
+    ) and production_decisions is None:
         production_decisions = build_production_decisions(matrix, alignment_config)
     if outputs.workbook is not None:
         output_paths_and_writers.append(
@@ -475,6 +540,16 @@ def write_outputs_atomic(
                     owner_backfill_candidate_audit_rows,
                 ),
             ),
+        )
+    if outputs.owner_backfill_peak_fact_provenance_tsv is not None:
+        output_paths_and_writers.append(
+            (
+                outputs.owner_backfill_peak_fact_provenance_tsv,
+                lambda path: _write_owner_backfill_peak_fact_provenance_temp(
+                    path,
+                    owner_backfill_peak_fact_provenance,
+                ),
+            )
         )
     if outputs.status_matrix_tsv is not None:
         output_paths_and_writers.append(
@@ -603,9 +678,7 @@ def write_outputs_atomic(
                 unit="seconds",
                 source="alignment.pipeline_outputs",
                 availability="partial",
-                reason=(
-                    "render timing includes the renderer's temp-file write"
-                ),
+                reason=("render timing includes the renderer's temp-file write"),
             )
             recorder.observe(
                 "writer_render_bytes",
@@ -614,9 +687,7 @@ def write_outputs_atomic(
                 unit="bytes",
                 source="alignment.pipeline_outputs",
                 availability="partial",
-                reason=(
-                    "render bytes include the renderer's temp-file write"
-                ),
+                reason=("render bytes include the renderer's temp-file write"),
             )
             recorder.observe(
                 "writer_temp_write_time_sec",
@@ -728,6 +799,34 @@ def _metadata_nonnegative_int(metadata: dict[str, str], key: str) -> int:
     if parsed < 0:
         raise ValueError(f"alignment metadata {key} must be non-negative")
     return parsed
+
+
+def _metadata_bound_to_peak_fact_provenance(
+    metadata: dict[str, str],
+    *,
+    row_count: int,
+) -> dict[str, str]:
+    key = "owner_backfill_peak_fact_provenance_row_count"
+    bound = dict(metadata)
+    if key in bound and _metadata_nonnegative_int(bound, key) != row_count:
+        raise ValueError(
+            "alignment metadata owner_backfill_peak_fact_provenance_row_count "
+            "does not match the typed provenance batch"
+        )
+    bound[key] = str(row_count)
+    return bound
+
+
+def _write_owner_backfill_peak_fact_provenance_temp(
+    path: Path,
+    batch: OwnerBackfillPeakFactProvenanceBatch,
+) -> Path:
+    """Write owner-rendered bytes into the outer transaction's one temp path."""
+
+    payload = render_owner_backfill_peak_fact_provenance_tsv(batch)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+    return path
 
 
 def _temp_path(final_path: Path) -> Path:

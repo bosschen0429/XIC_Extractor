@@ -23,6 +23,11 @@ from xic_extractor.alignment.process_backend import AlignmentProcessExecutionErr
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     PresetError,
@@ -95,6 +100,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         else None
     )
     raw_workers, raw_xic_batch_size = _resolve_raw_execution_settings(args)
+    signal_processing_profile = resolve_signal_processing_profile(
+        signal_processing_method=args.signal_processing_method,
+        signal_processing_window_points=args.signal_processing_window_points,
+    )
     owner_build_xic_backend = _effective_owner_build_xic_backend(
         args,
         recipe,
@@ -155,9 +164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         resolved_raw_paths = _validate_launch_artifacts(
             discovery_batch,
             raw_dir=raw_dir,
-            require_all_raw=(
-                args.preflight_only or args.expected_sample_count == 85
-            ),
+            require_all_raw=(args.preflight_only or args.expected_sample_count == 85),
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -239,9 +246,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         else None
     )
     timing_kwargs = (
-        {"timing_recorder": timing_recorder}
-        if timing_recorder is not None
-        else {}
+        {"timing_recorder": timing_recorder} if timing_recorder is not None else {}
     )
     standard_peak_outputs = None
     backfill_expansion_outputs = None
@@ -274,7 +279,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _alignment_production_resolver_mode(args.resolver_mode),
                 baseline_audit_method=_baseline_audit_method(args),
                 baseline_integration_method=_baseline_integration_method(args),
+                signal_processing_profile=signal_processing_profile,
             ),
+            "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
             "emit_alignment_cells": (
                 args.emit_alignment_cells
@@ -334,9 +341,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     chunk_size=recipe.standard_peak_backfill_chunk_size,
                     reuse_existing=recipe.standard_peak_backfill_reuse_existing,
                     write_gallery=recipe.standard_peak_backfill_write_gallery,
-                    publication_mode=(
-                        recipe.standard_peak_backfill_publication_mode
-                    ),
+                    publication_mode=(recipe.standard_peak_backfill_publication_mode),
                     min_shape_r=recipe.standard_peak_backfill_min_shape_r,
                     render_workers=_standard_peak_render_workers(raw_workers),
                     chunk_workers=_standard_peak_chunk_workers(raw_workers),
@@ -345,8 +350,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             if (
                 recipe is not None
-                and backfill_expansion_productization_mode
-                == "clean-target-selective"
+                and backfill_expansion_productization_mode == "clean-target-selective"
             ):
                 backfill_expansion_outputs = (
                     run_backfill_expansion_clean_target_selective_preset_from_alignment(
@@ -433,10 +437,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if outputs.early_loser_shadow_json is not None:
         print(f"Alignment early-loser shadow JSON: {outputs.early_loser_shadow_json}")
     if outputs.identity_coherence_output_dir is not None:
-        print(
-            "Identity coherence diagnostic: "
-            f"{outputs.identity_coherence_output_dir}"
-        )
+        print(f"Identity coherence diagnostic: {outputs.identity_coherence_output_dir}")
     if standard_peak_outputs is not None:
         print(
             "Standard-peak backfill preset summary JSON: "
@@ -448,10 +449,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             None,
         )
         if published_manifest is not None:
-            print(
-                "Standard-peak backfill publication manifest: "
-                f"{published_manifest}"
-            )
+            print(f"Standard-peak backfill publication manifest: {published_manifest}")
         gallery_html = getattr(standard_peak_outputs, "gallery_html", None)
         if gallery_html is not None:
             print(f"Standard-peak backfill gallery HTML: {gallery_html}")
@@ -791,6 +789,22 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default="region_first_safe_merge",
     )
     parser.add_argument(
+        "--signal-processing-method",
+        choices=(DEFAULT_SIGNAL_PROCESSING_PROFILE.method,),
+        default=DEFAULT_SIGNAL_PROCESSING_PROFILE.method,
+        help=(
+            "Canonical signal smoothing method. Gaussian is the only supported "
+            "method; AsLS is the fixed baseline estimator."
+        ),
+    )
+    parser.add_argument(
+        "--signal-processing-window-points",
+        type=_signal_processing_window_points,
+        default=DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points,
+        metavar="ODD_POINTS",
+        help="Canonical Gaussian window: odd integer 3-999 (default 15).",
+    )
+    parser.add_argument(
         "--output-level",
         choices=(
             "production",
@@ -1023,13 +1037,10 @@ def check_product_ready_preset_publication(**kwargs):
 
 def _clean_target_selective_activation_expected_diff_tsv() -> Path:
     from scripts import (
-        build_backfill_expansion_clean_target_selective_product_activation,
+        build_backfill_expansion_clean_target_selective_product_activation as module,
     )
 
-    return (
-        build_backfill_expansion_clean_target_selective_product_activation
-        .DEFAULT_FILTERED_EXPECTED_DIFF_TSV
-    )
+    return module.DEFAULT_FILTERED_EXPECTED_DIFF_TSV
 
 
 def _expect_arg(
@@ -1191,6 +1202,15 @@ def _resolver_mode(value: str) -> str:
     return parsed
 
 
+def _signal_processing_window_points(value: str) -> int:
+    try:
+        parsed = int(value)
+        resolve_signal_processing_profile(signal_processing_window_points=parsed)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    return parsed
+
+
 def _profile_output_dir(args: argparse.Namespace, output_dir: Path) -> Path:
     if args.profile_output_dir is not None:
         return args.profile_output_dir.resolve()
@@ -1275,8 +1295,10 @@ def _peak_config(
     resolver_mode: str,
     baseline_audit_method: str = "",
     baseline_integration_method: str = "asls",
+    signal_processing_profile: SignalProcessingProfile | None = None,
 ) -> ExtractionConfig:
     defaults = CANONICAL_SETTINGS_DEFAULTS
+    profile = signal_processing_profile or resolve_signal_processing_profile()
     return ExtractionConfig(
         data_dir=raw_dir,
         dll_dir=dll_dir,
@@ -1284,9 +1306,9 @@ def _peak_config(
         diagnostics_csv=output_dir / "xic_diagnostics.csv",
         smooth_window=int(defaults["smooth_window"]),
         smooth_polyorder=int(defaults["smooth_polyorder"]),
-        ms1_morphology_smoothing_window_points=int(
-            defaults["ms1_morphology_smoothing_window_points"]
-        ),
+        signal_processing_method=profile.method,
+        signal_processing_window_points=profile.window_points,
+        ms1_morphology_smoothing_window_points=profile.window_points,
         peak_rel_height=float(defaults["peak_rel_height"]),
         peak_min_prominence_ratio=float(defaults["peak_min_prominence_ratio"]),
         ms2_precursor_tol_da=float(defaults["ms2_precursor_tol_da"]),

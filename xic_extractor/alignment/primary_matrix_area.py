@@ -10,6 +10,15 @@ MISSING_MS1_MORPHOLOGY_AREA = "missing_ms1_morphology_area"
 MISSING_ASLS_PRIMARY_AREA = MISSING_MS1_MORPHOLOGY_AREA
 ASLS_PRIMARY_MATRIX_AREA_SOURCE = "asls_baseline_corrected"
 MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE = MS1_MORPHOLOGY_AREA_SOURCE
+CANONICAL_PHYSICAL_PRIMARY_MATRIX_AREA_SOURCE = (
+    "trapezoid_counts_seconds_on_canonical_signal_v1"
+)
+PRIMARY_MATRIX_AREA_SOURCES = frozenset(
+    {
+        MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE,
+        CANONICAL_PHYSICAL_PRIMARY_MATRIX_AREA_SOURCE,
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -28,17 +37,13 @@ def primary_matrix_area_from_integration(
             source="",
             reason=MISSING_MS1_MORPHOLOGY_AREA,
         )
-    if (
-        getattr(integration, "ms1_morphology_area_source", "")
-        == MS1_MORPHOLOGY_AREA_SOURCE
-    ):
-        morphology_area = _valid_area(
-            getattr(integration, "area_ms1_morphology", None)
-        )
+    area_source = getattr(integration, "ms1_morphology_area_source", "")
+    if area_source in PRIMARY_MATRIX_AREA_SOURCES:
+        morphology_area = _valid_area(getattr(integration, "area_ms1_morphology", None))
         if morphology_area is not None:
             return PrimaryMatrixAreaDecision(
                 value=morphology_area,
-                source=MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE,
+                source=area_source,
                 reason="",
             )
     if getattr(integration, "baseline_type", "") != "asls":

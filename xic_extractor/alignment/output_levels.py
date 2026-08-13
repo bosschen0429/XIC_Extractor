@@ -15,6 +15,7 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "alignment_results.xlsx",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
+        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "review_report.html",
     ),
     "machine": (
@@ -22,6 +23,7 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
+        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
     ),
     "debug": (
@@ -29,6 +31,7 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
+        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
         "alignment_matrix_status.tsv",
@@ -41,6 +44,7 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "review_report.html",
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
+        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_cells.tsv",
         "alignment_matrix_status.tsv",
@@ -51,6 +55,7 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
     "validation-minimal": (
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
+        "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
         "alignment_backfill_cell_evidence.tsv",
     ),

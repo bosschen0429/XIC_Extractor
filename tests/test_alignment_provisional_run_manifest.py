@@ -58,9 +58,12 @@ def test_manifest_binds_effective_configuration_receipts_and_artifact_bytes(
     assert payload["code_revision"] == "a" * 40
     assert payload["schema_version"] == PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION
     assert payload["preset_name"] == "dna_dr"
-    assert payload["effective_configuration"]["discovery"][
-        "neutral_loss_profiles"
-    ][0]["tag"] == "DNA_dR"
+    assert (
+        payload["effective_configuration"]["discovery"]["neutral_loss_profiles"][0][
+            "tag"
+        ]
+        == "DNA_dR"
+    )
     assert payload["runtime"]["owner_build_xic_backend"] == "raw_superwindow"
     assert payload["runtime"]["selected_family_source"] == ""
     assert payload["runtime"]["output_level"] == "validation-minimal"
@@ -76,9 +79,10 @@ def test_manifest_binds_effective_configuration_receipts_and_artifact_bytes(
     assert payload["authenticity_authority"] is False
     assert payload["semantic_replay_authority"] is False
     assert payload["inputs"]["discovery_batch_index"]["receipt_count"] == 1
-    assert payload["artifacts"]["provisional_matrix"]["byte_size"] == packet[
-        "artifacts"
-    ]["provisional_matrix"].stat().st_size
+    assert (
+        payload["artifacts"]["provisional_matrix"]["byte_size"]
+        == packet["artifacts"]["provisional_matrix"].stat().st_size
+    )
 
 
 def test_external_validator_rejects_visible_artifact_mutation(
@@ -244,12 +248,8 @@ def test_manifest_configuration_values_are_structure_bound(tmp_path: Path) -> No
         root=packet["root"],
     )
 
-    assert validated["effective_configuration"]["discovery"][
-        "nl_tolerance_ppm"
-    ] == 25.0
-    assert validated["effective_configuration"]["alignment"][
-        "preferred_ppm"
-    ] == 25.0
+    assert validated["effective_configuration"]["discovery"]["nl_tolerance_ppm"] == 25.0
+    assert validated["effective_configuration"]["alignment"]["preferred_ppm"] == 25.0
 
 
 def test_manifest_rejects_incomplete_configuration_structure(
@@ -322,9 +322,7 @@ def test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff(
         "discovery_batch_index.csv"
     ) == 2
     discovery_size = next(
-        size
-        for name, size in candidate_calls
-        if name == "discovery_batch_index.csv"
+        size for name, size in candidate_calls if name == "discovery_batch_index.csv"
     )
     assert sum(size for _name, size in baseline_calls) == 2 * (
         sum(size for _name, size in candidate_calls) - discovery_size
@@ -363,9 +361,7 @@ def test_publication_accepts_complete_real_writer_batch_with_unbound_receipts(
         outputs,
         provisional_matrix_tsv=artifacts["provisional_matrix"],
         provisional_identity_tsv=artifacts["provisional_identity"],
-        provisional_cell_provenance_tsv=(
-            artifacts["provisional_cell_provenance"]
-        ),
+        provisional_cell_provenance_tsv=(artifacts["provisional_cell_provenance"]),
         provisional_summary_json=artifacts["provisional_summary"],
     )
     matrix = _representative_matrix()
@@ -403,7 +399,7 @@ def test_publication_accepts_complete_real_writer_batch_with_unbound_receipts(
         batch,
         alignment_receipt_owner.AlignmentArtifactFingerprintBatch,
     )
-    assert len(batch.receipts) == 8
+    assert len(batch.receipts) == 9
     arguments = _publication_arguments(staging)
     arguments["alignment_artifact_fingerprints"] = batch
 
@@ -418,11 +414,7 @@ def test_publication_accepts_complete_real_writer_batch_with_unbound_receipts(
         root=tmp_path / "candidate",
     )
     assert (
-        tmp_path
-        / "candidate"
-        / "workflow"
-        / "alignment"
-        / "alignment_matrix.tsv"
+        tmp_path / "candidate" / "workflow" / "alignment" / "alignment_matrix.tsv"
     ).is_file()
 
 
@@ -704,9 +696,9 @@ def test_publication_rejects_foreign_owner_fingerprint_reuse(
     candidate_arguments = _publication_arguments(staging)
     baseline_arguments = _publication_arguments(baseline["root"])
 
-    candidate_arguments["retained_sample_metadata_fingerprint"] = (
-        baseline_arguments["retained_sample_metadata_fingerprint"]
-    )
+    candidate_arguments["retained_sample_metadata_fingerprint"] = baseline_arguments[
+        "retained_sample_metadata_fingerprint"
+    ]
     with pytest.raises(ValueError, match="metadata fingerprint was substituted"):
         publish_provisional_run_bundle_atomic(
             staging,
@@ -715,9 +707,9 @@ def test_publication_rejects_foreign_owner_fingerprint_reuse(
         )
 
     candidate_arguments = _publication_arguments(staging)
-    candidate_arguments["alignment_artifact_fingerprints"] = (
-        baseline_arguments["alignment_artifact_fingerprints"]
-    )
+    candidate_arguments["alignment_artifact_fingerprints"] = baseline_arguments[
+        "alignment_artifact_fingerprints"
+    ]
     with pytest.raises(ValueError, match="artifact path census"):
         publish_provisional_run_bundle_atomic(
             staging,

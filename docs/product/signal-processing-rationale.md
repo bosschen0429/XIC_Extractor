@@ -8,17 +8,31 @@ Doc exit rule: Keep active as the durable design rationale for trace smoothing
 and area integration choices; retire only if the pipeline abandons the
 smoothed-everywhere principle.
 
-This document records **why** the pipeline uses Gaussian-smoothed traces for all
-judgment, scoring, boundary, and area decisions. For the operational rules
+This document records **why** the canonical signal profile uses a
+Gaussian-smoothed raw trace together with an independently estimated AsLS raw
+baseline for judgment, scoring, boundary, and area decisions. For the operational rules
 themselves, see [`lc-msms-evidence-rules.md`](../lc-msms-evidence-rules.md)
 §MS1 Morphology And Area Owner.
 
 ## Design Principle
 
-All rule-based decisions — boundary detection, area integration, intensity
-measurement, confidence scoring, shape comparison, and pattern discovery — operate
-on the same Gaussian15-smoothed trace. Raw vendor trace is retained for audit and
-export only; it never participates in machine judgment.
+Within a profile-covered physical evaluation, boundary detection, area
+integration, intensity measurement, scan support, and relative-shape comparison
+operate on one canonical positive signal:
+
+```text
+baseline = AsLS(raw; lam=100000, p=0.01, n_iter=10)
+smoothed = Gaussian(raw; window_points,
+                    sigma=window_points/6,
+                    unit_sum=true,
+                    edge_policy=zero_pad_same)
+positive_signal = max(smoothed - baseline, 0)
+```
+
+AsLS estimates background; it is not a smoothing method exposed alongside
+Gaussian. Raw vendor intensity remains an input to both fixed transforms and is
+retained where required for audit/provenance, but it is not a second covered
+peak answer or compatibility area source.
 
 ## Why Smoothed-Everywhere
 
@@ -48,12 +62,14 @@ trade-offs without re-examining the premises.
 
 ### Systematic underestimation is acceptable for relative quantitation
 
-Gaussian smoothing systematically underestimates absolute area and intensity.
-This is a known, consistent bias. For relative quantitation (cross-sample
-comparison), which is the primary use case of this pipeline, a consistent bias
-cancels out — every sample is underestimated by the same mechanism. The bias
-only matters when comparing absolute values against external tools that use
-raw integration; this is documented and expected.
+Gaussian smoothing can systematically reduce absolute area and intensity. This
+quantitative difference is accepted for the canonical direction because stable
+same-feature interpretation is the higher-level requirement; the pipeline does
+not manufacture parity with legacy raw integration. Comparable processing makes
+relative quantitation the intended use, but it does not prove that bias cancels
+for every peak, sample, scan rate, or matrix. Non-default production claims and
+external absolute-value comparisons therefore require method-appropriate
+evidence.
 
 ### Stability enables automated rule-based interpretation
 
@@ -112,100 +128,67 @@ Key properties that align with the design goals:
   reducing cognitive disconnect when visually comparing pipeline output against
   vendor software.
 
-## Raw Resolver And The Smoothed-Everywhere Boundary
+## Migration Boundary
 
-The `local_minimum` resolver performs initial candidate region detection on
-the raw trace (valley detection, threshold crossing, trace-continuity scoring).
-Its role differs by pipeline path:
+`smooth_window`, `smooth_polyorder`, and `resolver_mode` belong to legacy
+resolver behavior. They are not aliases for the canonical signal profile and
+cannot change profile-covered physical facts. The only canonical public method
+is `gaussian`; its public point count is
+`signal_processing_window_points` (default 15, odd integer 3–999).
 
-### Targeted path — ChromPeakSegment as primary, raw resolver supplementary
+Untargeted Owner Backfill is the first bounded consumer of the canonical
+profile and shared physical owner. Its migration does not wait for a Targeted
+cutover and does not use Targeted parity as its acceptance oracle. Discovery,
+Alignment owner-build, Targeted, Standard Peak, and diagnostic/gallery paths
+remain separately bounded migrations; their duplicate computations are visible
+debt, not permission to retain a second answer in covered Owner Backfill work.
 
-In the targeted extraction path, `ChromPeakSegment` independently detects
-peaks on the Gaussian15 morphology trace and merges into the candidate pool.
-The raw resolver's candidates are augmented/overridden by ChromPeakSegment
-boundaries and Gaussian15 area. The raw resolver is architectural debt in
-this path and is planned for removal — ChromPeakSegment will become the sole
-detection source.
+The physical owner answers a closed stage-supplied peak question from the
+canonical signal. It does not choose a `PeakHypothesis`, group, feature row,
+Backfill status, activation, or Matrix identity. A question with zero admissible
+segments is unavailable; one with multiple admissible segments is ambiguous.
+Neither case may be resolved by nearest apex, height, area, or legacy fallback.
 
-### Discovery and alignment paths — raw resolver is sole detector (to be migrated)
+## Baseline Estimation Order
 
-Discovery (`resolver_mode="local_minimum"`) and alignment/backfill (forced
-downgrade to `"local_minimum"`) do not pass `scoring_context_builder`, so
-`ChromPeakSegment` augmentation never triggers. The raw resolver is the only
-detection mechanism in these paths.
-
-The same trace producing different boundaries and areas depending on which
-pipeline path processes it is a design defect, not a deliberate trade-off.
-These paths should converge to ChromPeakSegment after the targeted path
-migration is validated. The migration sequence is: targeted first (accumulate
-production evidence) → standardize ChromPeakSegment as a standalone detection
-API → connect to discovery/alignment using targeted parity evidence as the
-acceptance baseline.
-
-### Layered design rationale
-
-Where both paths coexist (targeted), the design is layered:
-
-1. Raw resolver proposes candidate regions (coarse detection).
-2. `ChromPeakSegment` re-determines boundaries on the Gaussian15 morphology
-   trace (fine boundary ownership).
-3. `area_ms1_morphology` integrates the Gaussian15 trace within segment
-   boundaries (area ownership).
-
-The raw resolver layer operates at a coarse granularity where noise sensitivity
-is less critical (region-level accept/reject, not point-level boundary
-placement). The subsequent Gaussian15 layers override all fine-grained boundary
-and area decisions before values reach the product matrix.
-
-## Open Question: Baseline Estimation Order
-
-The current morphology trace pipeline is:
-
-    raw intensity → AsLS baseline → residual → Gaussian15 smooth → positive clip
-
-An alternative order would be:
-
-    raw intensity → Gaussian15 smooth → AsLS baseline → residual → positive clip
-
-These are **not mathematically equivalent**. Gaussian convolution is linear
-(`smooth(raw - baseline) = smooth(raw) - smooth(baseline)`), but AsLS is
-nonlinear (iteratively reweighted least squares), so
-`AsLS(raw) ≠ AsLS(smooth(raw))`.
-
-The practical difference: AsLS with `p=0.01` gives weight 0.99 to points below
-the current baseline estimate. In raw data, a single noisy low-intensity sample
-in a valley can act as a "pin" that pulls the baseline down locally. This can
-cause the baseline to locally overestimate the true background near weak peaks,
-driving the residual negative, which positive clipping then zeros out
-irreversibly — before smoothing has a chance to recover the information.
-Pre-smoothing the input would average out single-sample noise leverage, making
-the baseline estimate more stable in valleys.
-
-With `lam=1e5` (heavy smoothness penalty), the effect is damped but not
-eliminated. No empirical comparison between the two orders exists in the
-current test suite (all morphology tests use noiseless synthetic baselines).
-The current order is an implementation artifact, not a deliberated choice.
-
-**Status**: pending empirical comparison on 8RAW data to quantify the
-practical impact before deciding whether to change the order.
+The canonical formula deliberately computes `Gaussian(raw)` and `AsLS(raw)`
+independently, then subtracts and positive-clips. It is not
+`Gaussian(raw - AsLS(raw))` and not `Gaussian(raw) - AsLS(Gaussian(raw))`.
+These alternatives are not equivalent because AsLS is nonlinear. The formula
+and all fixed mechanism versions are part of profile identity; changing the
+order requires a new profile version and evidence contract.
 
 ## Parameters
 
 | Parameter | Default | Derived | Scope |
 | --- | --- | --- | --- |
-| `ms1_morphology_smoothing_window_points` | 15 (odd, ≥3) | sigma = window / 6.0 | Morphology trace, area, scoring |
+| `signal_processing_method` | `gaussian` only | AsLS remains a fixed baseline mechanism | Canonical profile |
+| `signal_processing_window_points` | 15 (odd integer, 3–999) | sigma = window / 6.0 | Canonical signal, boundaries, area, shape |
 | `DEFAULT_OWN_MAX_SMOOTH_POINTS` | 15 | sigma = window / 6.0 | Shape-identity comparisons |
 
 Sigma is not independently configurable; it is derived from window size. The
-15-point default is scan-rate sensitive — non-default windows require
+legacy settings key `ms1_morphology_smoothing_window_points` is accepted only
+as a one-way load-time alias to `signal_processing_window_points`. Canonical
+and legacy values may coexist only when equal. Savitzky–Golay and resolver
+settings are not aliases. The 15-point default is scan-rate sensitive — non-default windows require
 `gaussian15_area_pressure_audit.py` review per
 [`lc-msms-evidence-rules.md`](../lc-msms-evidence-rules.md).
 
-## Production Evidence
+## Evidence Status And Activation
 
-- 85-sample validation: `raw_source_with_area=0`, `asls_source_with_area=0` —
-  raw and AsLS area never reach the product matrix (see `diagnostic-ledger.md`).
+- Focused synthetic/no-RAW tests can prove formula, profile propagation,
+  identity invalidation, failure semantics, and serial/process parity. They do
+  not prove production readiness.
+- Historical 85-sample evidence that raw and standalone AsLS areas did not reach
+  the product matrix predates this exact canonical formula and cannot validate
+  its qualitative peak choice.
 - PT-pattern discovery: explicit `TRACE_DECISION_BASIS =
   "gaussian15_smoothed_trace"` constant.
 - Scoring layer: `ScoringContext.intensity_array` is Gaussian15-smoothed; all
   severity and confidence computations use smoothed values.
+- Canonical area differences are an authorized quantitative expected diff.
+  Apex, boundary, height, scan-support, and relative-shape differences are
+  qualitative and require the bounded real-RAW/manual EIC gate. Selected
+  hypothesis, stage status, activation, row/cell identity, and write/blank
+  decisions must remain unchanged. Until that gate and the registered
+  selected-area authority scope pass, construction is not production-ready.

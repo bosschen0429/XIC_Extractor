@@ -6,7 +6,7 @@ from xic_extractor.configuration.hashing import (
     _compute_config_hash,
     compute_target_config_hash,
 )
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.settings import (
     _validate_settings,
     migrate_settings_dict,
@@ -26,7 +26,10 @@ def load_config(
     raw_settings = _read_settings(settings_path)
     if settings_overrides:
         raw_settings = {**raw_settings, **settings_overrides}
-    migrated, warnings = migrate_settings_dict(raw_settings)
+    try:
+        migrated, warnings = migrate_settings_dict(raw_settings)
+    except ConfigError as exc:
+        raise ConfigError(f"{settings_path}: {exc}") from exc
     for warning in warnings:
         LOGGER.warning(warning)
 
