@@ -282,11 +282,24 @@ def test_pipeline_v2_rejects_two_legal_final_cells_for_one_selected_work(
         consolidation_winner_group_hypothesis_id="WINNER-2",
     )
     second_feature = _winner_feature(live.stage, "WINNER-2")
+    second_detected = tuple(
+        replace(
+            cell,
+            cluster_id="WINNER-2",
+            group_hypothesis_id="WINNER-2",
+            public_family_id="WINNER-2",
+        )
+        for cell in matrix.cells
+        if cell.status == "detected"
+    )
     two_winner_matrix = replace(
         matrix,
         clusters=(*matrix.clusters, second_feature),
-        cells=(*matrix.cells, second),
+        cells=(*matrix.cells, second, *second_detected),
     )
+    decisions = build_production_decisions(two_winner_matrix, config)
+    assert decisions.cell("WINNER", live.stage.sample_stem).write_matrix_value
+    assert decisions.cell("WINNER-2", live.stage.sample_stem).write_matrix_value
 
     with pytest.raises(
         ValueError,
@@ -296,11 +309,50 @@ def test_pipeline_v2_rejects_two_legal_final_cells_for_one_selected_work(
             (live.observation,),
             matrix=two_winner_matrix,
             alignment_config=config,
-            production_decisions=build_production_decisions(two_winner_matrix, config),
+            production_decisions=decisions,
             feature_order=("WINNER", "WINNER-2"),
             sample_order=two_winner_matrix.sample_order,
             signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
         )
+
+
+def test_pipeline_v2_ignores_multiple_legal_nonwriting_cells_for_one_work(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    exact = live.observation.cell
+    moved = replace(
+        exact,
+        cluster_id="WINNER",
+        group_hypothesis_id="WINNER",
+        public_family_id="WINNER",
+        consolidation_state="moved_to_primary_winner",
+        consolidation_winner_group_hypothesis_id="WINNER",
+        consolidation_source_group_hypothesis_id=live.stage.group_hypothesis_id,
+    )
+    matrix = AlignmentMatrix(
+        clusters=(live.feature, _winner_feature(live.stage, "WINNER")),
+        cells=(exact, moved),
+        sample_order=(live.stage.sample_stem,),
+    )
+    config = AlignmentConfig()
+    decisions = build_production_decisions(matrix, config)
+    assert all(not decision.write_matrix_value for decision in decisions.cells.values())
+
+    batch = _owner_backfill_peak_fact_provenance(
+        (live.observation,),
+        matrix=matrix,
+        alignment_config=config,
+        production_decisions=decisions,
+        feature_order=(live.stage.public_family_id, "WINNER"),
+        sample_order=matrix.sample_order,
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    assert tuple(row.row_kind for row in batch.rows) == (
+        "run_profile",
+        "physical_question",
+    )
 
 
 def test_pipeline_v2_requires_reverse_coverage_for_every_written_rescued_cell(

@@ -977,7 +977,13 @@ def _owner_backfill_peak_fact_provenance(
         if key in final_cells:
             raise ValueError("final Matrix contains duplicate owner cell identity")
         final_cells[key] = cell
-        if cell.status != "rescued":
+        if (
+            cell.status != "rescued"
+            or not production_decisions.cell(
+                cell.cluster_id,
+                cell.sample_stem,
+            ).write_matrix_value
+        ):
             continue
         integration_id = selected_integration_authority_projection(
             cell.selected_integration
