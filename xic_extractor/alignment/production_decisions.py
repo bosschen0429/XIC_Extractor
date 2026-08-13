@@ -42,10 +42,10 @@ ProductionStatus = Literal[
 RescueTier = Literal["", "accepted_rescue", "review_rescue", "rejected_rescue"]
 
 ALIGNMENT_DECISION_CONFIG_SCHEMA_VERSION = "alignment_decision_config_projection_v1"
-PRODUCTION_CELL_DECISION_SCHEMA_VERSION = "production_cell_decision_projection_v1"
+PRODUCTION_CELL_DECISION_SCHEMA_VERSION = "production_cell_decision_projection_v2"
 ALIGNMENT_DECISION_CONFIG_ID_PREFIX = "alignment-decision-config.v1:"
-PRODUCTION_CELL_DECISION_ID_PREFIX = "production-cell-decision.v1:"
-OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX = "owner-backfill-authority-cell.v1:"
+PRODUCTION_CELL_DECISION_ID_PREFIX = "production-cell-decision.v2:"
+OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX = "owner-backfill-authority-cell.v2:"
 
 ALIGNMENT_DECISION_CONFIG_FIELDS = (
     "preferred_ppm",
@@ -123,7 +123,7 @@ class AlignmentDecisionConfigProjectionV1:
 
 
 @dataclass(frozen=True, slots=True)
-class ProductionCellDecisionProjectionV1:
+class ProductionCellDecisionProjectionV2:
     owner_backfill_cell_content_id: str
     alignment_decision_config_id: str
     feature_family_id: str
@@ -225,7 +225,7 @@ def production_cell_decision_projection(
     cell: AlignedCell,
     config: AlignmentConfig,
     owner_backfill_cell_content_id: str,
-) -> ProductionCellDecisionProjectionV1:
+) -> ProductionCellDecisionProjectionV2:
     """Mint the final cell-decision identity from live owner values.
 
     ``owner_backfill_cell_content_id`` is an explicit selected-cell binding.  This
@@ -263,7 +263,7 @@ def production_cell_decision_projection(
         )
 
     config_projection = alignment_decision_config_projection(config)
-    return ProductionCellDecisionProjectionV1(
+    return ProductionCellDecisionProjectionV2(
         owner_backfill_cell_content_id=owner_backfill_cell_content_id,
         alignment_decision_config_id=(config_projection.alignment_decision_config_id),
         feature_family_id=decision.feature_family_id,

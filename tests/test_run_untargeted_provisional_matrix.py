@@ -172,9 +172,9 @@ def test_runner_publishes_full_universe_outputs_atomically(
     )
     fingerprints = manifest["alignment_artifact_fingerprints"]
     assert len(fingerprints.receipts) == 9
-    assert "alignment_owner_backfill_peak_fact_provenance.tsv" in {
-        receipt.artifact_name for receipt in fingerprints.receipts
-    }
+    artifact_names = {receipt.artifact_name for receipt in fingerprints.receipts}
+    assert "alignment_owner_backfill_peak_fact_provenance.tsv" in artifact_names
+    assert "alignment_owner_backfill_peak_fact_provenance_v1.tsv" not in artifact_names
     assert "Validation status: diagnostic_only" in capsys.readouterr().out
     timing = json.loads((output_dir / "timing.json").read_text(encoding="utf-8"))
     assert timing["measurement_contract"]["cache_state"] == (

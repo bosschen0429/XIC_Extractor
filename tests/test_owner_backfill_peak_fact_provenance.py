@@ -32,12 +32,13 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
     OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
     SELECTED_INTEGRATION_AUTHORITY_FIELDS,
-    OwnerBackfillCellProjectionV1,
+    OwnerBackfillCellProjectionV2,
     OwnerBackfillPeakFactObservation,
     OwnerBackfillPeakFactStageProjection,
     build_owner_backfill_peak_fact_provenance_batch,
     compose_owner_backfill_peak_fact_provenance,
     owner_backfill_authority_cell_projection,
+    owner_backfill_cell_lineage_matches,
     owner_backfill_cell_projection,
     owner_backfill_peak_fact_stage_projection_from_observation,
     read_owner_backfill_peak_fact_provenance_tsv,
@@ -116,7 +117,7 @@ _OWNER_BEARING_MUTATION_CASES = (
 )
 
 
-def test_writer_round_trips_exact_58_column_three_kind_projection(
+def test_writer_round_trips_exact_61_column_three_kind_projection(
     tmp_path: Path,
 ) -> None:
     live = _live_available_inputs(tmp_path)
@@ -164,7 +165,7 @@ def test_writer_round_trips_exact_58_column_three_kind_projection(
         batch,
     )
 
-    assert len(OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS) == 58
+    assert len(OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS) == 61
     assert not path.read_bytes().startswith(b"\xef\xbb\xbf")
     assert b"\r" not in path.read_bytes()
     with path.open(encoding="utf-8", newline="") as handle:
@@ -291,6 +292,123 @@ def test_run_profile_is_mandatory_even_without_questions(tmp_path: Path) -> None
     assert batch.rows[0].row_kind == "run_profile"
     path = write_owner_backfill_peak_fact_provenance_tsv(tmp_path / "empty.tsv", batch)
     assert len(path.read_text(encoding="utf-8").splitlines()) == 2
+
+
+def test_v1_header_is_rejected_and_requires_rerun(tmp_path: Path) -> None:
+    path, _live = _write_three_kind_provenance(tmp_path)
+    header, rows = _read_projection_rows(path)
+    removed = {
+        "consolidation_state",
+        "consolidation_winner_group_hypothesis_id",
+        "consolidation_source_group_hypothesis_id",
+    }
+    legacy_header = [name for name in header if name not in removed]
+    legacy_rows = [
+        [value for name, value in zip(header, row, strict=True) if name not in removed]
+        for row in rows
+    ]
+    _write_projection_rows(path, legacy_header, legacy_rows)
+
+    with pytest.raises(ValueError, match="v1 provenance.*rerun alignment.*v2"):
+        read_owner_backfill_peak_fact_provenance_tsv(path)
+
+
+def test_moved_cell_lineage_uses_source_group_not_area(tmp_path: Path) -> None:
+    live = _live_available_inputs(tmp_path)
+    stage = live.stage
+    source = live.observation.cell
+    moved = replace(
+        source,
+        cluster_id="WINNER",
+        group_hypothesis_id="WINNER",
+        public_family_id="WINNER",
+        area=(source.area or 0.0) + 999999.0,
+        consolidation_state="moved_to_primary_winner",
+        consolidation_winner_group_hypothesis_id="WINNER",
+        consolidation_source_group_hypothesis_id=stage.group_hypothesis_id,
+    )
+    assert owner_backfill_cell_lineage_matches(stage, moved) is True
+    owner_backfill_authority_cell_projection(
+        stage=stage,
+        cell=moved,
+        profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
+        selected_fact_content_id=live.evaluation.facts.fact_content_id,
+        physical_answer_id=live.evaluation.answer.physical_answer_id,
+        physical_segment_id=live.evaluation.facts.physical_segment_id,
+    )
+
+    crossed = replace(
+        moved,
+        consolidation_source_group_hypothesis_id="OTHER-SOURCE",
+    )
+    assert owner_backfill_cell_lineage_matches(stage, crossed) is False
+    with pytest.raises(ValueError, match="cell lineage"):
+        owner_backfill_authority_cell_projection(
+            stage=stage,
+            cell=crossed,
+            profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
+            selected_fact_content_id=live.evaluation.facts.fact_content_id,
+            physical_answer_id=live.evaluation.answer.physical_answer_id,
+            physical_segment_id=live.evaluation.facts.physical_segment_id,
+        )
+
+
+def test_primary_winner_requires_complete_winner_and_source_lineage(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    stage = live.stage
+    primary = replace(
+        live.observation.cell,
+        consolidation_state="primary_winner",
+        consolidation_winner_group_hypothesis_id=stage.group_hypothesis_id,
+        consolidation_source_group_hypothesis_id=stage.group_hypothesis_id,
+    )
+    assert owner_backfill_cell_lineage_matches(stage, primary) is True
+    authority = owner_backfill_authority_cell_projection(
+        stage=stage,
+        cell=primary,
+        profile_id=DEFAULT_SIGNAL_PROCESSING_PROFILE.profile_id,
+        selected_fact_content_id=live.evaluation.facts.fact_content_id,
+        physical_answer_id=live.evaluation.answer.physical_answer_id,
+        physical_segment_id=live.evaluation.facts.physical_segment_id,
+    )
+    production = production_cell_decision_projection(
+        ProductionCellDecision(
+            feature_family_id=primary.cluster_id,
+            sample_stem=primary.sample_stem,
+            raw_status=primary.status,
+            production_status="accepted_rescue",
+            rescue_tier="accepted_rescue",
+            write_matrix_value=True,
+            matrix_value=primary.matrix_area,
+            blank_reason="",
+        ),
+        cell=primary,
+        config=AlignmentConfig(),
+        owner_backfill_cell_content_id=authority.owner_backfill_cell_content_id,
+    )
+    valid_projection = owner_backfill_cell_projection(
+        authority_cell=authority,
+        production_decision=production,
+    )
+
+    with pytest.raises(ValueError, match="invalid primary lineage"):
+        build_owner_backfill_peak_fact_provenance_batch(
+            (
+                OwnerBackfillPeakFactObservation(
+                    stage,
+                    live.evaluation,
+                ),
+            ),
+            profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+            cell_projections=(
+                replace(
+                    valid_projection,
+                    consolidation_source_group_hypothesis_id="",
+                ),
+            ),
+        )
 
 
 @pytest.mark.parametrize(
@@ -917,7 +1035,7 @@ def _reseal_projection_content_id(values: list[str]) -> None:
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
-    values[-1] = f"owner-backfill-provenance-row.v1:{digest}"
+    values[-1] = f"owner-backfill-provenance-row.v2:{digest}"
 
 
 def _column(name: str) -> int:
@@ -990,7 +1108,7 @@ def _cross_typed_id(value: str) -> str:
 
 
 def _recompute_cell_projection_id(values: list[str]) -> None:
-    projection = OwnerBackfillCellProjectionV1(
+    projection = OwnerBackfillCellProjectionV2(
         group_hypothesis_id=values[_column("group_hypothesis_id")],
         public_family_id=values[_column("public_family_id")],
         sample_stem=values[_column("sample_stem")],
@@ -1002,6 +1120,13 @@ def _recompute_cell_projection_id(values: list[str]) -> None:
         ],
         production_cell_decision_id=values[_column("production_cell_decision_id")],
         cell_status=values[_column("cell_status")],
+        consolidation_state=values[_column("consolidation_state")],
+        consolidation_winner_group_hypothesis_id=values[
+            _column("consolidation_winner_group_hypothesis_id")
+        ],
+        consolidation_source_group_hypothesis_id=values[
+            _column("consolidation_source_group_hypothesis_id")
+        ],
         matrix_value_counts_seconds=float.fromhex(
             values[_column("matrix_value_counts_seconds")]
         ),

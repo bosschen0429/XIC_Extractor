@@ -22,7 +22,7 @@ from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.production_decisions import (
     OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX,
     PRODUCTION_CELL_DECISION_ID_PREFIX,
-    ProductionCellDecisionProjectionV1,
+    ProductionCellDecisionProjectionV2,
     ProductionDecisionSet,
     build_production_decisions,
     production_cell_decision_projection,
@@ -52,22 +52,22 @@ if TYPE_CHECKING:
 
 
 OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION = (
-    "alignment_owner_backfill_peak_fact_provenance_v1"
+    "alignment_owner_backfill_peak_fact_provenance_v2"
 )
 OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION = (
-    "alignment-owner-backfill-peak-fact-provenance-writer-v1"
+    "alignment-owner-backfill-peak-fact-provenance-writer-v2"
 )
 OWNER_BACKFILL_AUTHORITY_CELL_SCHEMA_VERSION = (
-    "owner_backfill_authority_cell_projection_v1"
+    "owner_backfill_authority_cell_projection_v2"
 )
 SELECTED_INTEGRATION_AUTHORITY_SCHEMA_VERSION = (
     "selected_integration_authority_projection_v1"
 )
-OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION = "owner_backfill_cell_projection_v1"
+OWNER_BACKFILL_CELL_PROJECTION_SCHEMA_VERSION = "owner_backfill_cell_projection_v2"
 
 SELECTED_INTEGRATION_AUTHORITY_ID_PREFIX = "selected-integration-authority.v1:"
-OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX = "owner-backfill-cell-projection.v1:"
-OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX = "owner-backfill-provenance-row.v1:"
+OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX = "owner-backfill-cell-projection.v2:"
+OWNER_BACKFILL_PROVENANCE_ROW_ID_PREFIX = "owner-backfill-provenance-row.v2:"
 
 RowKind = Literal["run_profile", "physical_question", "cell_projection"]
 ClaimState = Literal["verified", "unavailable_without_live_owner"]
@@ -128,6 +128,9 @@ OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS = (
     "owner_backfill_cell_content_id",
     "production_cell_decision_id",
     "cell_status",
+    "consolidation_state",
+    "consolidation_winner_group_hypothesis_id",
+    "consolidation_source_group_hypothesis_id",
     "matrix_value_counts_seconds",
     "matrix_value_source",
     "writer_schema_version",
@@ -441,7 +444,7 @@ class SelectedIntegrationAuthorityProjectionV1:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillAuthorityCellProjectionV1:
+class OwnerBackfillAuthorityCellProjectionV2:
     work_unit_key: str
     acquisition_source_id: str
     profile_id: str
@@ -524,7 +527,7 @@ class OwnerBackfillAuthorityCellProjectionV1:
 
 
 @dataclass(frozen=True, slots=True)
-class OwnerBackfillCellProjectionV1:
+class OwnerBackfillCellProjectionV2:
     group_hypothesis_id: str
     public_family_id: str
     sample_stem: str
@@ -534,6 +537,9 @@ class OwnerBackfillCellProjectionV1:
     owner_backfill_cell_content_id: str
     production_cell_decision_id: str
     cell_status: str
+    consolidation_state: str
+    consolidation_winner_group_hypothesis_id: str
+    consolidation_source_group_hypothesis_id: str
     matrix_value_counts_seconds: float
     matrix_value_source: str
     writer_schema_version: str = OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
@@ -553,6 +559,15 @@ class OwnerBackfillCellProjectionV1:
                 ("owner_backfill_cell_content_id", self.owner_backfill_cell_content_id),
                 ("production_cell_decision_id", self.production_cell_decision_id),
                 ("cell_status", self.cell_status),
+                ("consolidation_state", self.consolidation_state),
+                (
+                    "consolidation_winner_group_hypothesis_id",
+                    self.consolidation_winner_group_hypothesis_id,
+                ),
+                (
+                    "consolidation_source_group_hypothesis_id",
+                    self.consolidation_source_group_hypothesis_id,
+                ),
                 ("matrix_value_counts_seconds", self.matrix_value_counts_seconds),
                 ("matrix_value_source", self.matrix_value_source),
                 ("writer_schema_version", self.writer_schema_version),
@@ -613,6 +628,9 @@ class OwnerBackfillPeakFactProvenanceRow:
     owner_backfill_cell_content_id: str = ""
     production_cell_decision_id: str = ""
     cell_status: str = ""
+    consolidation_state: str = ""
+    consolidation_winner_group_hypothesis_id: str = ""
+    consolidation_source_group_hypothesis_id: str = ""
     matrix_value_counts_seconds: float | None = None
     matrix_value_source: str = ""
     writer_schema_version: str = ""
@@ -724,6 +742,56 @@ def selected_integration_authority_projection(
     )
 
 
+def owner_backfill_cell_lineage_matches(
+    stage: OwnerBackfillPeakFactStageProjection,
+    cell: AlignedCell,
+) -> bool:
+    """Return whether a live final cell legally represents one owner stage.
+
+    This is identity-only validation.  It deliberately never compares areas,
+    RTs, or other selected values.  The source public-family label is an output
+    alias and is therefore only required for an un-consolidated exact match.
+    """
+
+    if not isinstance(stage, OwnerBackfillPeakFactStageProjection):
+        raise TypeError("stage must be owner-minted")
+    if not isinstance(cell, AlignedCell):
+        raise TypeError("cell must be an AlignedCell")
+    if stage.sample_stem != cell.sample_stem:
+        return False
+    state = cell.consolidation_state or "not_consolidated"
+    if state == "moved_to_primary_winner":
+        return (
+            cell.consolidation_source_group_hypothesis_id == stage.group_hypothesis_id
+            and cell.consolidation_winner_group_hypothesis_id
+            == cell.group_hypothesis_id
+        )
+    if stage.group_hypothesis_id != cell.group_hypothesis_id:
+        return False
+    if stage.public_family_id != cell.public_family_id:
+        return False
+    if state in {"not_consolidated", ""}:
+        return not (
+            cell.consolidation_winner_group_hypothesis_id
+            or cell.consolidation_source_group_hypothesis_id
+        )
+    if state == "primary_winner":
+        return (
+            cell.consolidation_winner_group_hypothesis_id == cell.group_hypothesis_id
+            and cell.consolidation_source_group_hypothesis_id
+            == stage.group_hypothesis_id
+        )
+    return False
+
+
+def _require_owner_backfill_cell_lineage(
+    stage: OwnerBackfillPeakFactStageProjection,
+    cell: AlignedCell,
+) -> None:
+    if not owner_backfill_cell_lineage_matches(stage, cell):
+        raise ValueError("selected stage crosses its live Alignment cell lineage")
+
+
 def owner_backfill_authority_cell_projection(
     *,
     stage: OwnerBackfillPeakFactStageProjection,
@@ -732,17 +800,12 @@ def owner_backfill_authority_cell_projection(
     selected_fact_content_id: str,
     physical_answer_id: str,
     physical_segment_id: str,
-) -> OwnerBackfillAuthorityCellProjectionV1:
+) -> OwnerBackfillAuthorityCellProjectionV2:
     if not isinstance(stage, OwnerBackfillPeakFactStageProjection):
         raise TypeError("stage must be owner-minted")
     if not isinstance(cell, AlignedCell):
         raise TypeError("cell must be an AlignedCell")
-    if (stage.group_hypothesis_id, stage.public_family_id, stage.sample_stem) != (
-        cell.group_hypothesis_id,
-        cell.public_family_id,
-        cell.sample_stem,
-    ):
-        raise ValueError("selected stage crosses its live Alignment cell")
+    _require_owner_backfill_cell_lineage(stage, cell)
     integration = selected_integration_authority_projection(cell.selected_integration)
     missing = tuple(
         name
@@ -761,7 +824,7 @@ def owner_backfill_authority_cell_projection(
     )
     if missing:
         raise ValueError(f"live Alignment cell lacks authority fields: {missing!r}")
-    return OwnerBackfillAuthorityCellProjectionV1(
+    return OwnerBackfillAuthorityCellProjectionV2(
         work_unit_key=stage.work_unit_key,
         acquisition_source_id=stage.acquisition_source_id,
         profile_id=profile_id,
@@ -871,9 +934,9 @@ def owner_backfill_authority_cell_projection(
 
 def owner_backfill_cell_projection(
     *,
-    authority_cell: OwnerBackfillAuthorityCellProjectionV1,
-    production_decision: ProductionCellDecisionProjectionV1,
-) -> OwnerBackfillCellProjectionV1:
+    authority_cell: OwnerBackfillAuthorityCellProjectionV2,
+    production_decision: ProductionCellDecisionProjectionV2,
+) -> OwnerBackfillCellProjectionV2:
     if (
         production_decision.owner_backfill_cell_content_id
         != authority_cell.owner_backfill_cell_content_id
@@ -890,7 +953,7 @@ def owner_backfill_cell_projection(
         or production_decision.raw_status != authority_cell.status
     ):
         raise ValueError("production decision crosses its authority cell")
-    return OwnerBackfillCellProjectionV1(
+    return OwnerBackfillCellProjectionV2(
         group_hypothesis_id=authority_cell.group_hypothesis_id,
         public_family_id=authority_cell.public_family_id,
         sample_stem=authority_cell.sample_stem,
@@ -900,6 +963,13 @@ def owner_backfill_cell_projection(
         owner_backfill_cell_content_id=authority_cell.owner_backfill_cell_content_id,
         production_cell_decision_id=production_decision.production_cell_decision_id,
         cell_status=authority_cell.status,
+        consolidation_state=authority_cell.consolidation_state,
+        consolidation_winner_group_hypothesis_id=(
+            authority_cell.consolidation_winner_group_hypothesis_id
+        ),
+        consolidation_source_group_hypothesis_id=(
+            authority_cell.consolidation_source_group_hypothesis_id
+        ),
         matrix_value_counts_seconds=production_decision.matrix_value,
         matrix_value_source=production_decision.matrix_value_source,
     )
@@ -1000,7 +1070,7 @@ def _run_profile_row(
 
 
 def _cell_projection_row(
-    projection: OwnerBackfillCellProjectionV1,
+    projection: OwnerBackfillCellProjectionV2,
     profile: SignalProcessingProfile,
 ) -> OwnerBackfillPeakFactProvenanceRow:
     if projection.profile_id != profile.profile_id:
@@ -1021,6 +1091,13 @@ def _cell_projection_row(
         owner_backfill_cell_content_id=projection.owner_backfill_cell_content_id,
         production_cell_decision_id=projection.production_cell_decision_id,
         cell_status=projection.cell_status,
+        consolidation_state=projection.consolidation_state,
+        consolidation_winner_group_hypothesis_id=(
+            projection.consolidation_winner_group_hypothesis_id
+        ),
+        consolidation_source_group_hypothesis_id=(
+            projection.consolidation_source_group_hypothesis_id
+        ),
         matrix_value_counts_seconds=projection.matrix_value_counts_seconds,
         matrix_value_source=projection.matrix_value_source,
         writer_schema_version=projection.writer_schema_version,
@@ -1032,7 +1109,7 @@ def build_owner_backfill_peak_fact_provenance_batch(
     observations: Sequence[OwnerBackfillPeakFactObservation],
     *,
     profile: SignalProcessingProfile,
-    cell_projections: Sequence[OwnerBackfillCellProjectionV1] = (),
+    cell_projections: Sequence[OwnerBackfillCellProjectionV2] = (),
 ) -> OwnerBackfillPeakFactProvenanceBatch:
     ordered_physical = sorted(
         observations,
@@ -1193,6 +1270,9 @@ _CELL_FIELDS = frozenset(
         "owner_backfill_cell_content_id",
         "production_cell_decision_id",
         "cell_status",
+        "consolidation_state",
+        "consolidation_winner_group_hypothesis_id",
+        "consolidation_source_group_hypothesis_id",
         "matrix_value_counts_seconds",
         "matrix_value_source",
         "writer_schema_version",
@@ -1376,6 +1456,7 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         "owner_backfill_cell_content_id",
         "production_cell_decision_id",
         "cell_status",
+        "consolidation_state",
         "matrix_value_source",
         "writer_schema_version",
         "cell_projection_id",
@@ -1384,6 +1465,13 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
     _required_finite_float(
         row.matrix_value_counts_seconds, field="matrix_value_counts_seconds"
     )
+    for name in (
+        "consolidation_winner_group_hypothesis_id",
+        "consolidation_source_group_hypothesis_id",
+    ):
+        value = getattr(row, name)
+        if value:
+            _required_text(value, field=name)
     if row.writer_schema_version != OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION:
         raise ValueError("unsupported provenance writer_schema_version")
     _require_typed_id(
@@ -1406,7 +1494,7 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         prefix=OWNER_BACKFILL_CELL_PROJECTION_ID_PREFIX,
         field="cell_projection_id",
     )
-    expected = OwnerBackfillCellProjectionV1(
+    expected = OwnerBackfillCellProjectionV2(
         group_hypothesis_id=row.group_hypothesis_id,
         public_family_id=row.public_family_id,
         sample_stem=row.sample_stem,
@@ -1416,6 +1504,13 @@ def _validate_cell_row(row: OwnerBackfillPeakFactProvenanceRow) -> None:
         owner_backfill_cell_content_id=row.owner_backfill_cell_content_id,
         production_cell_decision_id=row.production_cell_decision_id,
         cell_status=row.cell_status,
+        consolidation_state=row.consolidation_state,
+        consolidation_winner_group_hypothesis_id=(
+            row.consolidation_winner_group_hypothesis_id
+        ),
+        consolidation_source_group_hypothesis_id=(
+            row.consolidation_source_group_hypothesis_id
+        ),
         matrix_value_counts_seconds=cast(float, row.matrix_value_counts_seconds),
         matrix_value_source=row.matrix_value_source,
         writer_schema_version=row.writer_schema_version,
@@ -1460,12 +1555,38 @@ def _validate_batch(rows: Sequence[OwnerBackfillPeakFactProvenanceRow]) -> None:
                 raise ValueError("cell projection lacks its selected physical fact")
             if selected.state != "available":
                 raise ValueError("cell projection selects a non-available physical row")
-            if (
-                selected.group_hypothesis_id,
-                selected.public_family_id,
-                selected.sample_stem,
-            ) != (row.group_hypothesis_id, row.public_family_id, row.sample_stem):
-                raise ValueError("cell projection crosses selected work identity")
+            if selected.sample_stem != row.sample_stem:
+                raise ValueError("cell projection crosses selected work sample")
+            if row.consolidation_state == "moved_to_primary_winner":
+                if (
+                    row.consolidation_source_group_hypothesis_id
+                    != selected.group_hypothesis_id
+                    or row.consolidation_winner_group_hypothesis_id
+                    != row.group_hypothesis_id
+                ):
+                    raise ValueError("cell projection has invalid moved lineage")
+            else:
+                if (
+                    selected.group_hypothesis_id,
+                    selected.public_family_id,
+                ) != (row.group_hypothesis_id, row.public_family_id):
+                    raise ValueError("cell projection crosses selected work identity")
+                if row.consolidation_state == "not_consolidated":
+                    if (
+                        row.consolidation_winner_group_hypothesis_id
+                        or row.consolidation_source_group_hypothesis_id
+                    ):
+                        raise ValueError("unconsolidated cell must not assert lineage")
+                elif row.consolidation_state == "primary_winner":
+                    if (
+                        row.consolidation_winner_group_hypothesis_id
+                        != row.group_hypothesis_id
+                        or row.consolidation_source_group_hypothesis_id
+                        != selected.group_hypothesis_id
+                    ):
+                        raise ValueError("cell projection has invalid primary lineage")
+                else:
+                    raise ValueError("unsupported cell consolidation state")
 
 
 def _row_projection(row: OwnerBackfillPeakFactProvenanceRow) -> dict[str, str]:
@@ -1563,6 +1684,13 @@ def _row_from_projection(raw: Mapping[str, str]) -> OwnerBackfillPeakFactProvena
         owner_backfill_cell_content_id=raw["owner_backfill_cell_content_id"],
         production_cell_decision_id=raw["production_cell_decision_id"],
         cell_status=raw["cell_status"],
+        consolidation_state=raw["consolidation_state"],
+        consolidation_winner_group_hypothesis_id=(
+            raw["consolidation_winner_group_hypothesis_id"]
+        ),
+        consolidation_source_group_hypothesis_id=(
+            raw["consolidation_source_group_hypothesis_id"]
+        ),
         matrix_value_counts_seconds=_parse_optional_float(
             raw, "matrix_value_counts_seconds"
         ),
@@ -1606,6 +1734,10 @@ def _strict_projection(
 
 
 def _validate_exact_header(path: Path, header: Sequence[str] | None) -> None:
+    if len(tuple(header or ())) == 58:
+        raise ValueError(
+            f"{path}: v1 provenance is not readable; rerun alignment to emit v2"
+        )
     if tuple(header or ()) != OWNER_BACKFILL_PEAK_FACT_PROVENANCE_COLUMNS:
         raise ValueError(f"{path}: expected exact provenance schema")
 
@@ -2044,8 +2176,8 @@ __all__ = [
     "OWNER_BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION",
     "OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION",
     "SELECTED_INTEGRATION_AUTHORITY_FIELDS",
-    "OwnerBackfillAuthorityCellProjectionV1",
-    "OwnerBackfillCellProjectionV1",
+    "OwnerBackfillAuthorityCellProjectionV2",
+    "OwnerBackfillCellProjectionV2",
     "OwnerBackfillPeakFactCompositionResult",
     "OwnerBackfillPeakFactObservation",
     "OwnerBackfillPeakFactProvenanceBatch",
@@ -2056,6 +2188,7 @@ __all__ = [
     "build_owner_backfill_peak_fact_provenance_batch",
     "compose_owner_backfill_peak_fact_provenance",
     "owner_backfill_authority_cell_projection",
+    "owner_backfill_cell_lineage_matches",
     "owner_backfill_cell_projection",
     "read_owner_backfill_peak_fact_provenance_tsv",
     "render_owner_backfill_peak_fact_provenance_tsv",

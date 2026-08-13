@@ -80,8 +80,9 @@ def test_alignment_metadata_records_baseline_audit_method() -> None:
         "gaussian_raw_minus_asls_raw_positive_v1"
     )
     assert metadata["owner_backfill_peak_fact_provenance_schema_version"] == (
-        "alignment_owner_backfill_peak_fact_provenance_v1"
+        "alignment_owner_backfill_peak_fact_provenance_v2"
     )
+    assert "_v1" not in metadata["owner_backfill_peak_fact_provenance_schema_version"]
     assert metadata["owner_backfill_peak_fact_provenance_row_count"] == "0"
 
 

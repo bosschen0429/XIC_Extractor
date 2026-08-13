@@ -110,3 +110,9 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         result.alignment_outputs.owner_backfill_peak_fact_provenance_tsv
         == physical_provenance
     )
+    assert physical_provenance.name == (
+        "alignment_owner_backfill_peak_fact_provenance.tsv"
+    )
+    assert physical_provenance.name != (
+        "alignment_owner_backfill_peak_fact_provenance_v1.tsv"
+    )

@@ -39,6 +39,7 @@ from xic_extractor.alignment.edge_scoring import (
 from xic_extractor.alignment.identity_coherence.adapter import (
     run_identity_coherence_diagnostic,
 )
+from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.ms1_index_source import (
     OwnerBackfillXicBackend,
     OwnerBuildXicBackend,
@@ -58,12 +59,14 @@ from xic_extractor.alignment.owner_backfill import (
     build_owner_backfill_result,
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
-    OwnerBackfillCellProjectionV1,
+    OwnerBackfillCellProjectionV2,
     OwnerBackfillPeakFactStageProjection,
     build_owner_backfill_peak_fact_provenance_batch,
     owner_backfill_authority_cell_projection,
+    owner_backfill_cell_lineage_matches,
     owner_backfill_cell_projection,
     owner_backfill_peak_fact_stage_projection_from_observation,
+    selected_integration_authority_projection,
 )
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OwnerBackfillPeakFactObservation as ProvenanceObservation,
@@ -966,12 +969,32 @@ def _owner_backfill_peak_fact_provenance(
 ):
     feature_rank = {feature_id: index for index, feature_id in enumerate(feature_order)}
     sample_rank = {sample_stem: index for index, sample_stem in enumerate(sample_order)}
-    final_cells = {}
+    final_cells: dict[tuple[str, str, str], AlignedCell] = {}
+    rescued_cells_by_integration: dict[tuple[str, str], list[AlignedCell]] = {}
+    rescued_cells_by_source_group: dict[tuple[str, str], list[AlignedCell]] = {}
     for cell in matrix.cells:
         key = (cell.group_hypothesis_id, cell.public_family_id, cell.sample_stem)
         if key in final_cells:
             raise ValueError("final Matrix contains duplicate owner cell identity")
         final_cells[key] = cell
+        if cell.status != "rescued":
+            continue
+        integration_id = selected_integration_authority_projection(
+            cell.selected_integration
+        ).selected_integration_authority_content_id
+        rescued_cells_by_integration.setdefault(
+            (cell.sample_stem, integration_id),
+            [],
+        ).append(cell)
+        for source_group_id in {
+            cell.group_hypothesis_id,
+            cell.consolidation_source_group_hypothesis_id,
+        }:
+            if source_group_id:
+                rescued_cells_by_source_group.setdefault(
+                    (cell.sample_stem, source_group_id),
+                    [],
+                ).append(cell)
     projected: list[ProvenanceObservation] = []
     selected: list[
         tuple[
@@ -1000,7 +1023,7 @@ def _owner_backfill_peak_fact_provenance(
         if observation.selected_for_output:
             selected.append((observation, stage))
 
-    cell_projections: list[OwnerBackfillCellProjectionV1] = []
+    cell_projections: list[OwnerBackfillCellProjectionV2] = []
     selected_cell_keys: set[tuple[str, str, str]] = set()
     for observation, stage in selected:
         evaluation = observation.physical_evaluation
@@ -1011,18 +1034,40 @@ def _owner_backfill_peak_fact_provenance(
         facts = evaluation.facts
         if facts is None or evaluation.answer.physical_segment_id is None:
             continue
-        key = (
-            observation.cell.group_hypothesis_id,
-            observation.cell.public_family_id,
-            observation.cell.sample_stem,
-        )
-        final_cell = final_cells.get(key)
-        if final_cell is None or final_cell.status != "rescued":
-            continue
         if observation.facts is None:
             raise ValueError("selected physical fact lacks bounded owner receipt")
-        if final_cell.selected_integration != observation.facts.integration:
-            raise ValueError("final Matrix cell crosses its selected physical fact")
+        selected_integration_id = selected_integration_authority_projection(
+            observation.facts.integration
+        ).selected_integration_authority_content_id
+        integration_candidates = rescued_cells_by_integration.get(
+            (stage.sample_stem, selected_integration_id),
+            (),
+        )
+        lineage_candidates = tuple(
+            cell
+            for cell in rescued_cells_by_source_group.get(
+                (stage.sample_stem, stage.group_hypothesis_id),
+                (),
+            )
+            if owner_backfill_cell_lineage_matches(stage, cell)
+        )
+        candidates = tuple(
+            cell
+            for cell in integration_candidates
+            if owner_backfill_cell_lineage_matches(stage, cell)
+        )
+        if not candidates:
+            if lineage_candidates:
+                raise ValueError("selected work unit has no exact final Matrix cell")
+            continue
+        if len(candidates) != 1:
+            raise ValueError("selected work unit maps to multiple final Matrix cells")
+        final_cell = candidates[0]
+        key = (
+            final_cell.group_hypothesis_id,
+            final_cell.public_family_id,
+            final_cell.sample_stem,
+        )
         decision = production_decisions.cell(
             final_cell.cluster_id,
             final_cell.sample_stem,
@@ -1054,6 +1099,22 @@ def _owner_backfill_peak_fact_provenance(
             )
         )
         selected_cell_keys.add(key)
+    expected_written_cell_keys = {
+        (cell.group_hypothesis_id, cell.public_family_id, cell.sample_stem)
+        for cell in matrix.cells
+        if cell.status == "rescued"
+        and production_decisions.cell(
+            cell.cluster_id,
+            cell.sample_stem,
+        ).write_matrix_value
+    }
+    if selected_cell_keys != expected_written_cell_keys:
+        missing = tuple(sorted(expected_written_cell_keys - selected_cell_keys))
+        unexpected = tuple(sorted(selected_cell_keys - expected_written_cell_keys))
+        raise ValueError(
+            "final written rescued cells require exact provenance coverage; "
+            f"missing={missing!r}; unexpected={unexpected!r}"
+        )
     return build_owner_backfill_peak_fact_provenance_batch(
         projected,
         profile=signal_processing_profile,
