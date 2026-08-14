@@ -80,6 +80,7 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
             Path("tests/test_pyinstaller_spec.py"),
             Path("tests/test_peak_model_selection.py"),
             Path("tests/test_alignment_pipeline_outputs.py"),
+            Path("tests/test_processing_run_spec.py"),
             Path("tests/test_process_job_execution.py"),
             Path("tests/test_standard_peak_backfill_preset.py"),
             Path("tests/test_targeted_ms1_shape_identity.py"),
@@ -96,8 +97,12 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
     )
     assert assigned["alignment-core"] == (
         Path("tests/test_alignment_pipeline_outputs.py"),
+        Path("tests/test_processing_run_spec.py"),
         Path("tests/test_process_job_execution.py"),
     )
+    processing_run_spec_path = Path("tests/test_processing_run_spec.py")
+    assert _matching_shards(processing_run_spec_path) == ("alignment-core",)
+    assert shard_for_path(processing_run_spec_path) == "alignment-core"
     assert assigned["product-gates-activation"] == (
         Path("tests/test_standard_peak_backfill_preset.py"),
     )

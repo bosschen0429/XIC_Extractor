@@ -128,6 +128,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_pt_pattern_boundaries.py",
             "tests/test_pt_pattern_scan_proxy.py",
             "tests/test_prepare_delta_mass_detected_features.py",
+            "tests/test_processing_run_spec.py",
             "tests/test_process_job_execution.py",
             "tests/test_quantitative_projection_authority.py",
             "tests/test_run_alignment.py",
