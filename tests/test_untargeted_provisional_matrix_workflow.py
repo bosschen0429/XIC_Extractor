@@ -8,6 +8,10 @@ from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.extraction import untargeted_provisional_matrix_workflow as workflow
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    resolve_signal_processing_profile,
+)
 
 
 def test_workflow_routes_complete_discovery_universe_to_full_alignment(
@@ -32,10 +36,12 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         return SimpleNamespace(batch_index_csv=discovery_index)
 
     provisional_matrix = tmp_path / "provisional_alignment_matrix.tsv"
+    physical_provenance = tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
 
     def fake_alignment(**kwargs):
         captured["alignment"] = kwargs
         return AlignmentRunOutputs(
+            owner_backfill_peak_fact_provenance_tsv=physical_provenance,
             provisional_matrix_tsv=provisional_matrix,
             provisional_identity_tsv=tmp_path / "provisional_row_identity.tsv",
             provisional_cell_provenance_tsv=(
@@ -80,6 +86,33 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert alignment["raw_workers"] == 3
     assert alignment["raw_xic_batch_size"] == 16
     assert alignment["capture_artifact_fingerprints"] is True
+    assert "signal_processing_profile" not in alignment
+    peak_config = alignment["peak_config"]
+    resolved_profile = resolve_signal_processing_profile(
+        signal_processing_method=getattr(
+            peak_config,
+            "signal_processing_method",
+            DEFAULT_SIGNAL_PROCESSING_PROFILE.method,
+        ),
+        signal_processing_window_points=getattr(
+            peak_config,
+            "signal_processing_window_points",
+            DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points,
+        ),
+    )
+    assert resolved_profile == DEFAULT_SIGNAL_PROCESSING_PROFILE
+    assert resolved_profile.method == "gaussian"
+    assert resolved_profile.window_points == 15
     assert "precursor_mz" not in alignment
     assert result.discovery_index == discovery_index
     assert result.alignment_outputs.provisional_matrix_tsv == provisional_matrix
+    assert (
+        result.alignment_outputs.owner_backfill_peak_fact_provenance_tsv
+        == physical_provenance
+    )
+    assert physical_provenance.name == (
+        "alignment_owner_backfill_peak_fact_provenance.tsv"
+    )
+    assert physical_provenance.name != (
+        "alignment_owner_backfill_peak_fact_provenance_v1.tsv"
+    )

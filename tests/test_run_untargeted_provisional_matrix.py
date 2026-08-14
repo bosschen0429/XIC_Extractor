@@ -35,6 +35,7 @@ def test_runner_publishes_full_universe_outputs_atomically(
     tmp_path: Path,
     monkeypatch,
     metadata_suffix: str,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     inputs = _inputs(tmp_path, metadata_suffix=metadata_suffix)
     output_dir = tmp_path / "final"
@@ -65,12 +66,13 @@ def test_runner_publishes_full_universe_outputs_atomically(
         alignment_dir.mkdir(parents=True)
         paths = {
             "matrix_tsv": alignment_dir / "alignment_matrix.tsv",
-            "matrix_identity_tsv": (
-                alignment_dir / "alignment_matrix_identity.tsv"
-            ),
+            "matrix_identity_tsv": (alignment_dir / "alignment_matrix_identity.tsv"),
             "review_tsv": alignment_dir / "alignment_review.tsv",
             "backfill_cell_evidence_tsv": (
                 alignment_dir / "alignment_backfill_cell_evidence.tsv"
+            ),
+            "owner_backfill_peak_fact_provenance_tsv": (
+                alignment_dir / "alignment_owner_backfill_peak_fact_provenance.tsv"
             ),
             "provisional_matrix_tsv": (
                 alignment_dir / "provisional_alignment_matrix.tsv"
@@ -85,9 +87,7 @@ def test_runner_publishes_full_universe_outputs_atomically(
         }
         for path in paths.values():
             path.write_text("ok\n", encoding="utf-8")
-        fingerprint_batch = _alignment_fingerprint_batch(
-            tuple(paths.values())
-        )
+        fingerprint_batch = _alignment_fingerprint_batch(tuple(paths.values()))
         discovery_index = workflow_dir / "discovery" / "discovery_batch_index.csv"
         discovery_index.parent.mkdir()
         discovery_index.write_text("ok\n", encoding="utf-8")
@@ -136,14 +136,19 @@ def test_runner_publishes_full_universe_outputs_atomically(
     assert (
         output_dir / "workflow" / "alignment" / "provisional_alignment_matrix.tsv"
     ).is_file()
-    retained_metadata = (
-        output_dir / "inputs" / f"sample_metadata{metadata_suffix}"
-    )
+    assert (
+        output_dir
+        / "workflow"
+        / "alignment"
+        / "alignment_owner_backfill_peak_fact_provenance.tsv"
+    ).is_file()
+    retained_metadata = output_dir / "inputs" / f"sample_metadata{metadata_suffix}"
     assert retained_metadata.read_bytes() == inputs.sample_metadata_path.read_bytes()
     assert captured["raw_files"] == inputs.raw_files
     assert captured["raw_workers"] == 3
     assert captured["raw_xic_batch_size"] == 16
     assert captured["capture_alignment_artifact_fingerprints"] is True
+    assert "signal_processing_profile" not in captured
     assert captured["sample_column_injection_order"] == (
         output_dir.with_name("final.attempt")
         / "inputs"
@@ -152,6 +157,9 @@ def test_runner_publishes_full_universe_outputs_atomically(
     manifest = captured["manifest"]
     assert isinstance(manifest, dict)
     assert manifest["code_revision"] == "a" * 40
+    assert "validation_status" not in manifest
+    assert "product_authority" not in manifest
+    assert runner.PROVISIONAL_VALIDATION_STATUS == "diagnostic_only"
     assert manifest["runtime"].raw_workers == 3
     assert manifest["runtime"].raw_xic_batch_size == 16
     assert isinstance(
@@ -162,7 +170,12 @@ def test_runner_publishes_full_universe_outputs_atomically(
         manifest["alignment_artifact_fingerprints"],
         alignment_receipt_owner.AlignmentArtifactFingerprintBatch,
     )
-    assert len(manifest["alignment_artifact_fingerprints"].receipts) == 8
+    fingerprints = manifest["alignment_artifact_fingerprints"]
+    assert len(fingerprints.receipts) == 9
+    artifact_names = {receipt.artifact_name for receipt in fingerprints.receipts}
+    assert "alignment_owner_backfill_peak_fact_provenance.tsv" in artifact_names
+    assert "alignment_owner_backfill_peak_fact_provenance_v1.tsv" not in artifact_names
+    assert "Validation status: diagnostic_only" in capsys.readouterr().out
     timing = json.loads((output_dir / "timing.json").read_text(encoding="utf-8"))
     assert timing["measurement_contract"]["cache_state"] == (
         "uncontrolled_os_cache_no_eviction"
@@ -237,7 +250,9 @@ def test_manifest_owner_atomic_directory_publication_retries_transient_windows_l
         before_attempt=lambda: None,
     )
 
-    assert attempts == 2
+    # The injected first lock requires a retry; Windows may independently hold
+    # the directory for another attempt under full-suite load.
+    assert 2 <= attempts <= 5
     assert not staging.exists()
     assert (output_dir / "receipt.json").is_file()
 

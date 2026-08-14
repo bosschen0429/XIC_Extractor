@@ -5,13 +5,21 @@ from pathlib import Path
 import pytest
 
 from scripts.check_productization_state import (
+    CONTROL_PLANE_SCHEMA_FIELDS_V3,
     DEFAULT_AUTHORITY_MANIFEST,
     DEFAULT_CONTROL_PLANE,
     DEFAULT_HANDOFF,
     DEFAULT_PRODUCTIZATION_SUMMARY,
     DEFAULT_SCHEMA,
     DEFAULT_STATUS_INDEX,
+    DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS_V1,
+    DEPENDENT_EFFECT_LANE_ID,
+    DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT,
+    DEPENDENT_PACKAGE_AUTHORITY_SHA256,
     EXPECTED_CONTROL_PLANE_SCHEMA_VERSION,
+    EXPECTED_HOLD_ROW,
+    REQUIRED_LANE_IDS_V3,
+    STATUS_INDEX_FIELDS_V1,
     _render_compatibility_index,
     artifact_sha256,
     check_productization_state,
@@ -30,11 +38,34 @@ def test_status_schema_matches_index_header() -> None:
     assert header == schema["required_status_index_columns"]
     assert {row["lane_id"] for row in rows} == set(schema["required_lane_ids"])
     assert len(rows) == len(schema["required_lane_ids"])
-    assert DEFAULT_SCHEMA.name == "productization_control_plane_schema.v2.json"
+    assert DEFAULT_SCHEMA.name == "productization_control_plane_schema.v3.json"
     assert schema["schema_version"] == EXPECTED_CONTROL_PLANE_SCHEMA_VERSION
+    assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS_V3
+    assert tuple(header) == STATUS_INDEX_FIELDS_V1
+    assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS_V3
+    assert len(rows) == 21
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
+
+
+def test_dependent_effect_lane_is_exact_hold_package_binding() -> None:
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
+    dependent_rule = schema["dependent_effect_lane_authority"][DEPENDENT_EFFECT_LANE_ID]
+    row = next(item for item in rows if item["lane_id"] == DEPENDENT_EFFECT_LANE_ID)
+
+    assert tuple(dependent_rule) == DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS_V1
+    assert row == EXPECTED_HOLD_ROW
+    assert row["current_artifact"] == DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT
+    assert row["artifact_sha256"] == DEPENDENT_PACKAGE_AUTHORITY_SHA256
+    assert artifact_sha256(Path(__file__).parents[1] / row["current_artifact"]) == (
+        DEPENDENT_PACKAGE_AUTHORITY_SHA256
+    )
+    assert row["readiness_status"] == "production_candidate"
+    assert row["write_authority"] == "FALSE"
+    assert row["product_authority_scope"] == ""
+    assert row["row_count"] == "0"
 
 
 def test_registered_default_scopes_have_writer_authority() -> None:
@@ -302,7 +333,7 @@ def test_checker_derives_narrative_mutable_fields_from_schema(
 
 def test_checker_rejects_predecessor_control_plane_schema() -> None:
     predecessor = (
-        DEFAULT_SCHEMA.parent / "productization_control_plane_schema.v1.json"
+        DEFAULT_SCHEMA.parent / "productization_control_plane_schema.v2.json"
     )
 
     problems = check_productization_state(schema_path=predecessor)
@@ -311,6 +342,150 @@ def test_checker_rejects_predecessor_control_plane_schema() -> None:
         "unsupported productization control-plane" in problem
         for problem in problems
     )
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra", "reordered"))
+def test_checker_rejects_v3_schema_top_level_shape(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    if mutation == "missing":
+        del schema["purpose"]
+    elif mutation == "extra":
+        schema["future_state_owner"] = "forbidden"
+    else:
+        schema = {key: schema[key] for key in reversed(tuple(schema))}
+    mutated = tmp_path / f"schema-{mutation}.json"
+    mutated.write_text(json.dumps(schema), encoding="utf-8")
+
+    problems = check_productization_state(schema_path=mutated)
+
+    assert any("ordered V3 contract" in problem for problem in problems)
+
+
+def test_checker_rejects_duplicate_v3_schema_json_key(tmp_path: Path) -> None:
+    text = DEFAULT_SCHEMA.read_text(encoding="utf-8")
+    text = text.replace(
+        '  "purpose":',
+        '  "schema_version": "productization_control_plane_schema_v3",\n  "purpose":',
+        1,
+    )
+    mutated = tmp_path / "schema-duplicate.json"
+    mutated.write_text(text, encoding="utf-8")
+
+    problems = check_productization_state(schema_path=mutated)
+
+    assert any("duplicate JSON object key" in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_problem"),
+    (
+        ("missing", "rule fields must exactly match"),
+        ("extra", "rule fields must exactly match"),
+        ("reordered", "rule fields must exactly match"),
+        ("crossed", "rule values must exactly match"),
+        ("type", "rule values must exactly match"),
+    ),
+)
+def test_checker_rejects_dependent_effect_rule_drift(
+    tmp_path: Path,
+    mutation: str,
+    expected_problem: str,
+) -> None:
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    rule = schema["dependent_effect_lane_authority"][DEPENDENT_EFFECT_LANE_ID]
+    if mutation == "missing":
+        del rule["may_add_write_rows"]
+    elif mutation == "extra":
+        rule["future_authority"] = True
+    elif mutation == "reordered":
+        schema["dependent_effect_lane_authority"][DEPENDENT_EFFECT_LANE_ID] = {
+            key: rule[key] for key in reversed(tuple(rule))
+        }
+    elif mutation == "crossed":
+        rule["authority_manifest_schema_version"] = rule[
+            "package_authority_schema_version"
+        ]
+    else:
+        rule["requires_registered_writer_membership"] = 1
+    mutated = tmp_path / f"dependent-rule-{mutation}.json"
+    mutated.write_text(json.dumps(schema), encoding="utf-8")
+
+    problems = check_productization_state(schema_path=mutated)
+
+    assert any(expected_problem in problem for problem in problems)
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra", "duplicate", "reordered"))
+def test_checker_rejects_non_exact_v3_lane_registry(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    lane_ids = schema["required_lane_ids"]
+    if mutation == "missing":
+        lane_ids.pop()
+    elif mutation == "extra":
+        lane_ids.append("unregistered_future_lane")
+    elif mutation == "duplicate":
+        lane_ids.append(lane_ids[-1])
+    else:
+        lane_ids[-2], lane_ids[-1] = lane_ids[-1], lane_ids[-2]
+    mutated = tmp_path / f"lanes-{mutation}.json"
+    mutated.write_text(json.dumps(schema), encoding="utf-8")
+
+    problems = check_productization_state(schema_path=mutated)
+
+    assert any("exact ordered 21-lane" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra", "duplicate", "reordered"))
+def test_checker_rejects_non_exact_v3_anchor_registry(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
+    anchors = schema["required_control_plane_anchors"]
+    anchor_items = list(anchors.items())
+    if mutation == "missing":
+        anchors.popitem()
+    elif mutation == "extra":
+        anchors["unregistered_future_lane"] = "Unregistered Future Lane"
+    elif mutation == "duplicate":
+        last_lane_id = anchor_items[-1][0]
+        anchors[last_lane_id] = anchor_items[-2][1]
+    else:
+        anchor_items[-2], anchor_items[-1] = anchor_items[-1], anchor_items[-2]
+        schema["required_control_plane_anchors"] = dict(anchor_items)
+    mutated = tmp_path / f"anchors-{mutation}.json"
+    mutated.write_text(json.dumps(schema), encoding="utf-8")
+
+    problems = check_productization_state(schema_path=mutated)
+
+    assert any("ordered 21-anchor" in problem for problem in problems)
+
+
+def test_checker_rejects_crossed_or_active_dependent_status_row(
+    tmp_path: Path,
+) -> None:
+    crossed = _mutated_index(
+        tmp_path,
+        DEPENDENT_EFFECT_LANE_ID,
+        {
+            "current_artifact": (
+                "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+            ),
+            "artifact_sha256": artifact_sha256(DEFAULT_AUTHORITY_MANIFEST),
+            "readiness_status": "production_ready",
+        },
+    )
+
+    problems = _check_with_index(crossed)
+
+    assert any("exact 23-field HOLD contract" in problem for problem in problems)
+    assert any("ACTIVE transition is outside" in problem for problem in problems)
 
 
 @pytest.mark.parametrize(

@@ -12,6 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = (
     ROOT / "docs/superpowers/schemas/productization_authority_manifest.v1.json"
 )
+DEPENDENT_MANIFEST_PATH = (
+    ROOT
+    / "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
+)
 SCHEMA_PATH = (
     ROOT / "docs/superpowers/schemas/mechanical_adjudication_schema.v1.json"
 )
@@ -109,6 +113,32 @@ def test_manifest_freezes_current_backfill_authority() -> None:
         for scope in manifest["blocked_or_negative_evidence_scopes"]
     }
     assert NEGATIVE_SCOPE_IDS <= blocked_scope_ids
+
+
+def test_dependent_hold_does_not_change_mechanical_writer_authority() -> None:
+    writer_manifest = _read_json(MANIFEST_PATH)
+    dependent_manifest = _read_json(DEPENDENT_MANIFEST_PATH)
+    approved_scope_order = (
+        APPROVED_SCOPE,
+        CID_NL_APPROVED_SCOPE,
+        BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE,
+    )
+
+    assert tuple(
+        writer_manifest["authority_policy"]["product_writer_allowed_scopes"]
+    ) == approved_scope_order
+    assert tuple(writer_manifest["current_authority"]) == (
+        "backfill",
+        "cid_nl_default_activation",
+        "backfill_expansion_clean_target_selective_activation",
+    )
+    assert dependent_manifest["status"] == "HOLD_PENDING_VALIDATION"
+    assert tuple(dependent_manifest["allowed_registered_writer_scope_ids"]) == (
+        approved_scope_order
+    )
+    assert dependent_manifest["current_effect_cell_count"] == 0
+    assert dependent_manifest["activation_summary_artifact"] == ""
+    assert dependent_manifest["activation_summary_sha256"] == ""
 
 
 def test_mechanical_adjudication_index_covers_candidate_universe_and_schema() -> None:

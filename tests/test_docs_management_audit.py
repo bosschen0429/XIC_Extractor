@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -28,6 +29,36 @@ CLOSEOUT_SUMMARY = (
 )
 RETENTION_INVENTORY = "docs/superpowers/handoffs/RETENTION.tsv"
 PROJECT_ROOT = Path(__file__).parents[1]
+
+
+def _isolated_git_subprocess_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("GIT_")
+    }
+
+
+@pytest.fixture(autouse=True)
+def _clear_outer_git_repository_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for key in tuple(os.environ):
+        if key.startswith("GIT_"):
+            monkeypatch.delenv(key, raising=False)
+
+
+def test_isolated_git_subprocess_env_drops_outer_repository_bindings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GIT_INDEX_FILE", "outer-index")
+    monkeypatch.setenv("GIT_WORK_TREE", "outer-worktree")
+
+    env = _isolated_git_subprocess_env()
+
+    assert "GIT_INDEX_FILE" not in env
+    assert "GIT_WORK_TREE" not in env
+    assert env["PATH"] == os.environ["PATH"]
 
 
 def _write(path: Path, text: str) -> None:
@@ -1817,6 +1848,9 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     _clean_repo(root)
     _clean_vault(vault)
     authority_bound_path = "docs/superpowers/notes/backfill-bound-packet.md"
+    dependent_authority_bound_path = (
+        "docs/superpowers/notes/dependent-effect-bound-packet.md"
+    )
     exact_ref_path = "docs/superpowers/notes/backfill-oracle-note.md"
     compressible_path = "docs/superpowers/notes/backfill-archived-note.md"
     support_body = [
@@ -1828,7 +1862,12 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
         "",
         "Backfill support artifact.",
     ]
-    for path in (authority_bound_path, exact_ref_path, compressible_path):
+    for path in (
+        authority_bound_path,
+        dependent_authority_bound_path,
+        exact_ref_path,
+        compressible_path,
+    ):
         _write(root / path, "# Backfill support\n\n" + "\n".join(support_body))
     _write(
         root / "docs/superpowers/validation/productization_status_index_v1.tsv",
@@ -1837,6 +1876,11 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     _write(
         root / "docs/superpowers/schemas/productization_authority_manifest.v1.json",
         json.dumps({"decision_packet": authority_bound_path}),
+    )
+    _write(
+        root / "docs/superpowers/schemas/"
+        "quantitative_projection_authority_manifest.v1.json",
+        json.dumps({"activation_summary_artifact": dependent_authority_bound_path}),
     )
     for index in range(6):
         _write(
@@ -1857,10 +1901,11 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
         if item["topic_key"] == "backfill and quant matrix"
     )
 
-    assert "authority_or_status_anchor:1" in cluster["support_retention_counts"]
+    assert "authority_or_status_anchor:2" in cluster["support_retention_counts"]
     assert "exact_referrer_bound_support:1" in cluster["support_retention_counts"]
     assert "archived_compressible_support:1" in cluster["support_retention_counts"]
     assert authority_bound_path in cluster["bound_support_sample_paths"]
+    assert dependent_authority_bound_path in cluster["bound_support_sample_paths"]
     assert exact_ref_path in cluster["bound_support_sample_paths"]
     assert compressible_path in cluster["compressible_support_sample_paths"]
 
@@ -2193,7 +2238,14 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
     root = tmp_path / "repo"
     vault = tmp_path / "vault"
     root.mkdir()
-    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+    git_env = _isolated_git_subprocess_env()
+    subprocess.run(
+        ["git", "init"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
     _write_permanent_root_contracts(root)
     _write_registered_retirement_contract(root)
     _clean_vault(vault)
@@ -2221,6 +2273,7 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
         cwd=root,
         check=True,
         capture_output=True,
+        env=git_env,
     )
 
     result = _run_audit(root, vault)
@@ -2300,8 +2353,21 @@ def test_docs_audit_blocks_invalid_committed_retirement_packet(
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
-    subprocess.run(["git", "add", "."], cwd=root, check=True, capture_output=True)
+    git_env = _isolated_git_subprocess_env()
+    subprocess.run(
+        ["git", "init"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+    subprocess.run(
+        ["git", "add", "."],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
     subprocess.run(
         [
             "git",
@@ -2316,6 +2382,7 @@ def test_docs_audit_blocks_invalid_committed_retirement_packet(
         cwd=root,
         check=True,
         capture_output=True,
+        env=git_env,
     )
     packet_path = (
         "docs/superpowers/file-management/docs-cleanup/"
@@ -2325,7 +2392,9 @@ def test_docs_audit_blocks_invalid_committed_retirement_packet(
         root / packet_path,
         packet_text,
     )
-    subprocess.run(["git", "add", packet_path], cwd=root, check=True)
+    subprocess.run(
+        ["git", "add", packet_path], cwd=root, check=True, env=git_env
+    )
     subprocess.run(
         [
             "git",
@@ -2340,6 +2409,7 @@ def test_docs_audit_blocks_invalid_committed_retirement_packet(
         cwd=root,
         check=True,
         capture_output=True,
+        env=git_env,
     )
 
     result = _run_audit(root, vault)

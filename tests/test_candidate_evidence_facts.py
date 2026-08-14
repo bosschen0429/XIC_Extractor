@@ -1,22 +1,45 @@
+import hashlib
+from dataclasses import replace
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 import xic_extractor.peak_detection.evidence_facts as evidence_facts_module
+from xic_extractor.config import ExtractionConfig
+from xic_extractor.peak_detection.baseline import asls_baseline
 from xic_extractor.peak_detection.evidence_facts import (
+    PhysicalPeakQuestion,
+    answer_physical_peak_question,
     build_candidate_evidence_facts,
+    canonical_physical_peak_question_bytes,
     decision_semantics_from_candidate_facts,
+    enumerate_physical_segment_universe,
+    evaluate_physical_peak,
     gaussian15_trace_window_evidence,
     integration_with_trace_evidence,
+    mint_physical_peak_question,
+    mint_physical_trace_content_id,
     peak_trace_evidence,
+    prepare_physical_signal,
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
+    rehydrate_physical_peak_evaluation,
+    validate_bounded_physical_peak_evaluation,
+    validate_physical_peak_question_identity,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.ms1_morphology import (
+    gaussian15_morphology_trace,
     gaussian15_positive_asls_residual_metrics,
+    gaussian15_positive_asls_residual_trace,
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
+from xic_extractor.signal_processing import find_peak_and_area
 
 
 def test_trace_window_evidence_uses_shared_gaussian15_own_max_trace() -> None:
@@ -115,9 +138,7 @@ def test_integration_only_evidence_skips_shape_projection(monkeypatch) -> None:
     smoothing_calls = 0
     original_normalize = evidence_facts_module._normalized_precomputed_trace
     original_window = evidence_facts_module._trace_window_evidence_facts
-    original_smoothing = (
-        evidence_facts_module.gaussian15_positive_asls_residual_trace
-    )
+    original_smoothing = evidence_facts_module.gaussian15_positive_asls_residual_trace
 
     def counted_normalize(*args, **kwargs):
         projection_calls.append("normalized_shape")
@@ -213,6 +234,358 @@ def test_peak_trace_evidence_reuses_one_gaussian15_trace_for_shape_and_area(
     assert facts.normalized_shape_trace.is_usable
     assert facts.window.status == "ok"
     assert facts.window.query_apex_rt_min == 2.0
+
+
+def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> None:
+    rt = np.linspace(0.0, 2.0, 121)
+    rng = np.random.default_rng(485)
+    background = 25 + 45 * rt + 120 * (rt - 1.05) ** 2 + 18 * np.sin(4.5 * rt + 0.3)
+    peak = 145 * np.exp(-0.5 * ((rt - 0.82) / 0.075) ** 2) + 145 * np.exp(
+        -0.5 * ((rt - 1.18) / 0.075) ** 2
+    )
+    raw = background + peak + rng.normal(0, 14, len(rt))
+    baseline = asls_baseline(raw)
+    required = np.maximum(gaussian15_morphology_trace(raw) - baseline, 0.0)
+    residual_first = gaussian15_positive_asls_residual_trace(raw, baseline)
+
+    prepared_result = prepare_physical_signal(rt, raw)
+    assert prepared_result.prepared is not None
+    np.testing.assert_allclose(
+        prepared_result.prepared.baseline,
+        baseline,
+        rtol=0.0,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        prepared_result.prepared.smoothed,
+        gaussian15_morphology_trace(raw),
+        rtol=0.0,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        prepared_result.prepared.positive_signal,
+        required,
+        rtol=0.0,
+        atol=1e-12,
+    )
+    required_facts = _twenty_percent_characterization(rt, required)
+    residual_first_facts = _twenty_percent_characterization(rt, residual_first)
+    assert required_facts[:3] == (48, 41, 56)
+    assert required_facts[3] == pytest.approx(
+        1062.1744946180106,
+        rel=0.0,
+        abs=1e-12,
+    )
+    assert residual_first_facts[:3] == (4, 0, 33)
+    assert residual_first_facts[3] == pytest.approx(
+        2245.7044316702472,
+        rel=0.0,
+        abs=1e-12,
+    )
+
+    legacy = find_peak_and_area(
+        rt,
+        raw,
+        _legacy_peak_config(),
+        preferred_rt=0.8,
+    )
+    assert legacy.status == "OK"
+    assert legacy.peak is not None
+    assert (
+        legacy.peak.rt,
+        legacy.peak.peak_start,
+        legacy.peak.peak_end,
+    ) == pytest.approx(
+        (0.8, 0.0, 0.9833333333333333),
+        rel=0.0,
+        abs=1e-12,
+    )
+    assert legacy.peak.area == pytest.approx(
+        7410.08344021538,
+        rel=0.0,
+        abs=1e-12,
+    )
+
+
+def test_physical_question_containment_is_closed_complete_and_owner_derived() -> None:
+    profile = SignalProcessingProfile(window_points=3)
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.full(31, 10.0)
+    raw[7:10] += [30.0, 100.0, 30.0]
+    raw[21:24] += [25.0, 80.0, 25.0]
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    universe = enumerate_physical_segment_universe(prepared)
+    assert len(universe.segment_ids) == 2
+
+    zero = mint_physical_peak_question(
+        prepared.projection,
+        universe,
+        selection_subject_id="zero",
+        query_rt_min=1.5,
+    )
+    one = mint_physical_peak_question(
+        prepared.projection,
+        universe,
+        selection_subject_id="one",
+        query_rt_min=0.8,
+    )
+    assert zero.admissible_segment_ids == ()
+    assert one.admissible_segment_ids == (universe.segment_ids[0],)
+    assert answer_physical_peak_question(prepared, universe, zero).reason == (
+        "no_selection"
+    )
+    assert answer_physical_peak_question(prepared, universe, one).state == "available"
+
+    overlap_rt = np.linspace(0.0, 3.0, 15)
+    overlap_raw = np.zeros(15)
+    overlap_raw[6] = 100.0
+    overlap_raw[8] = 60.0
+    overlap_prepared = prepare_physical_signal(
+        overlap_rt,
+        overlap_raw,
+        profile=profile,
+    )
+    overlap_universe = enumerate_physical_segment_universe(overlap_prepared)
+    assert len(overlap_universe.segment_ids) == 2
+    shared_boundary = overlap_universe.segments[0].right_rt_min
+    assert shared_boundary == overlap_universe.segments[1].left_rt_min
+    multiple = mint_physical_peak_question(
+        overlap_prepared.projection,
+        overlap_universe,
+        selection_subject_id="multiple",
+        query_rt_min=shared_boundary,
+    )
+    assert multiple.admissible_segment_ids == overlap_universe.segment_ids
+    multiple_answer = answer_physical_peak_question(
+        overlap_prepared,
+        overlap_universe,
+        multiple,
+    )
+    assert (multiple_answer.state, multiple_answer.reason) == (
+        "unavailable",
+        "ambiguous_segment_candidates",
+    )
+
+    adversarial = (
+        (
+            overlap_universe,
+            _reseal_question(
+                multiple,
+                admissible_segment_ids=(overlap_universe.segment_ids[0],),
+            ),
+        ),
+        (
+            universe,
+            _reseal_question(
+                one,
+                admissible_segment_ids=(universe.segment_ids[1],),
+            ),
+        ),
+        (
+            overlap_universe,
+            _reseal_question(
+                multiple,
+                admissible_segment_ids=tuple(reversed(multiple.admissible_segment_ids)),
+            ),
+        ),
+    )
+    for owner_universe, forged_question in adversarial:
+        with pytest.raises(ValueError, match="owner-admissible"):
+            validate_physical_peak_question_identity(
+                forged_question,
+                universe=owner_universe,
+            )
+
+
+def test_physical_owner_mints_closed_unique_admissible_bounded_facts() -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.full(31, 10.0)
+    raw[7:10] += [30.0, 100.0, 30.0]
+    raw[21:24] += [25.0, 80.0, 25.0]
+    profile = SignalProcessingProfile(window_points=3)
+    trace_id = mint_physical_trace_content_id(rt, raw)
+    prepared = prepare_physical_signal(
+        rt,
+        raw,
+        trace_content_id=trace_id,
+        profile=profile,
+    )
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="opaque-owner-backfill-work:1",
+        query_rt_min=0.8,
+        request_context_rt_start_min=0.7,
+        request_context_rt_end_min=0.9,
+    )
+    universe = evaluation.segment_universe
+
+    assert len(universe.segments) == 2
+    assert universe.context_rt_start_min == 0.0
+    assert universe.context_rt_end_min == 3.0
+    assert evaluation.question.admissible_segment_ids == (universe.segment_ids[0],)
+    assert evaluation.state == "available"
+    assert evaluation.facts is not None
+    assert {
+        evaluation.prepared.prepared_signal_id,
+        universe.prepared_signal_id,
+        evaluation.question.prepared_signal_id,
+        evaluation.answer.prepared_signal_id,
+        evaluation.facts.prepared_signal_id,
+    } == {evaluation.prepared.prepared_signal_id}
+    assert evaluation.facts.physical_segment_id == universe.segment_ids[0]
+    assert evaluation.facts.area_counts_seconds > 0.0
+    assert evaluation.integration is not None
+    selected = universe.segments[0]
+    selected_raw = raw[selected.start_index : selected.end_index]
+    selected_rt = rt[selected.start_index : selected.end_index]
+    raw_apex_offset = int(np.argmax(selected_raw))
+    assert evaluation.integration.raw_apex_rt_min == selected_rt[raw_apex_offset]
+    assert evaluation.integration.height_raw == selected_raw[raw_apex_offset]
+    assert evaluation.integration.area_raw_counts_seconds == pytest.approx(
+        np.trapezoid(selected_raw, selected_rt) * 60.0
+    )
+    assert evaluation.integration.raw_scan_indices == ()
+    assert evaluation.operations == (
+        "trace_evaluation",
+        "asls_baseline",
+        "gaussian_smoothing",
+        "segment_enumeration",
+        "integration",
+        "normalization",
+        "raw_descriptor_projection",
+    )
+    assert not hasattr(evaluation, "rt")
+    validate_bounded_physical_peak_evaluation(evaluation)
+    assert (
+        rehydrate_physical_peak_evaluation(
+            rt,
+            raw,
+            profile=profile,
+            expected=evaluation,
+        )
+        == evaluation
+    )
+
+
+def test_physical_trace_identity_normalizes_negative_zero() -> None:
+    assert mint_physical_trace_content_id([-0.0], [-0.0]) == (
+        mint_physical_trace_content_id([0.0], [0.0])
+    )
+
+
+def test_physical_owner_excludes_noncontaining_segments_from_admissibility() -> None:
+    rt = np.linspace(0.0, 3.0, 31)
+    raw = np.full(31, 10.0)
+    raw[7:10] += [30.0, 100.0, 30.0]
+    raw[21:24] += [25.0, 80.0, 25.0]
+    prepared = prepare_physical_signal(
+        rt,
+        raw,
+        profile=SignalProcessingProfile(window_points=3),
+    )
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="opaque-subject",
+        query_rt_min=0.8,
+    )
+    universe = evaluation.segment_universe
+
+    assert len(universe.segment_ids) == 2
+    assert evaluation.question.admissible_segment_ids == (universe.segment_ids[0],)
+    assert evaluation.state == "available"
+
+
+def test_short_trace_is_unavailable_without_smoothing_or_silent_shrink() -> None:
+    prepared = prepare_physical_signal(
+        [3.0],
+        [10.0],
+        profile=SignalProcessingProfile(window_points=15),
+    )
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="opaque-short-trace",
+        query_rt_min=3.0,
+    )
+
+    assert evaluation.state == "unavailable"
+    assert evaluation.reason == "insufficient_points_for_profile"
+    assert evaluation.operations == ("trace_evaluation",)
+    assert evaluation.segment_universe.context_rt_start_min == 3.0
+    assert evaluation.segment_universe.context_rt_end_min == 3.0
+    assert prepared.prepared is None
+
+
+def test_zero_point_trace_has_terminal_question_using_live_request_bounds() -> None:
+    prepared = prepare_physical_signal(
+        [],
+        [],
+        profile=SignalProcessingProfile(window_points=15),
+    )
+
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="opaque-zero-trace",
+        query_rt_min=1.5,
+        request_context_rt_start_min=1.0,
+        request_context_rt_end_min=2.0,
+    )
+
+    assert evaluation.state == "unavailable"
+    assert evaluation.reason == "no_signal_above_baseline"
+    assert evaluation.segment_universe.context_rt_start_min == 1.0
+    assert evaluation.segment_universe.context_rt_end_min == 2.0
+    assert evaluation.question.selection_subject_id == "opaque-zero-trace"
+    assert (
+        evaluation.answer.physical_question_id
+        == evaluation.question.physical_question_id
+    )
+    assert evaluation.operations == ("trace_evaluation",)
+
+
+def test_malformed_trace_has_failed_terminal_question_and_rehydrates() -> None:
+    rt = [float("nan"), 1.0, 2.0]
+    raw = [1.0, 2.0, 1.0]
+    profile = SignalProcessingProfile(window_points=3)
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+
+    evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="opaque-malformed-trace",
+        query_rt_min=1.5,
+        request_context_rt_start_min=1.0,
+        request_context_rt_end_min=2.0,
+    )
+
+    assert evaluation.state == "failed"
+    assert evaluation.reason == "nonfinite_trace"
+    assert evaluation.segment_universe.segments == ()
+    assert evaluation.facts is None
+    assert evaluation.integration is None
+    assert evaluation.operations == ("trace_evaluation",)
+    assert (
+        rehydrate_physical_peak_evaluation(
+            rt,
+            raw,
+            profile=profile,
+            expected=evaluation,
+            request_context_rt_start_min=1.0,
+            request_context_rt_end_min=2.0,
+        )
+        == evaluation
+    )
+
+
+def test_nonpositive_trace_is_unavailable_before_asls_or_smoothing() -> None:
+    prepared = prepare_physical_signal(
+        np.arange(5.0),
+        np.zeros(5),
+        profile=SignalProcessingProfile(window_points=3),
+    )
+
+    assert prepared.projection.state == "unavailable"
+    assert prepared.projection.reason == "no_signal_above_baseline"
+    assert prepared.operations == ("trace_evaluation",)
+    assert prepared.prepared is None
 
 
 def test_build_candidate_evidence_facts_from_scoring_context() -> None:
@@ -463,6 +836,60 @@ def test_nl_fail_with_paired_istd_rt_mismatch_is_not_counted() -> None:
     assert "anchor_conflict" in semantics.conflict_reasons
     assert "paired_istd_rt_mismatch_policy" in semantics.not_counted_reasons
     assert "candidate_aligned_ms2_nl" not in semantics.support_reasons
+
+
+def _twenty_percent_characterization(
+    rt: np.ndarray,
+    signal: np.ndarray,
+) -> tuple[int, int, int, float]:
+    apex_index = int(np.argmax(signal))
+    threshold = float(signal[apex_index]) * 0.2
+    left_index = apex_index
+    right_index = apex_index
+    while left_index > 0 and signal[left_index - 1] >= threshold:
+        left_index -= 1
+    while right_index < len(signal) - 1 and signal[right_index + 1] >= threshold:
+        right_index += 1
+    area = float(
+        np.trapezoid(
+            signal[left_index : right_index + 1],
+            rt[left_index : right_index + 1],
+        )
+        * 60.0
+    )
+    return apex_index, left_index, right_index, area
+
+
+def _reseal_question(
+    question: PhysicalPeakQuestion,
+    *,
+    admissible_segment_ids: tuple[str, ...],
+) -> PhysicalPeakQuestion:
+    mutated = replace(
+        question,
+        admissible_segment_ids=admissible_segment_ids,
+        physical_question_id="",
+    )
+    question_id = (
+        "physical-question.v1:"
+        + hashlib.sha256(canonical_physical_peak_question_bytes(mutated)).hexdigest()
+    )
+    return replace(mutated, physical_question_id=question_id)
+
+
+def _legacy_peak_config() -> ExtractionConfig:
+    return ExtractionConfig(
+        data_dir=Path("raw"),
+        dll_dir=Path("dll"),
+        output_csv=Path("output/xic_results.csv"),
+        diagnostics_csv=Path("output/xic_diagnostics.csv"),
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.10,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+    )
 
 
 def _candidate(

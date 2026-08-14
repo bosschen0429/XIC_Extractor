@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import InitVar, dataclass, field, replace
 from itertools import groupby
 from time import perf_counter
 from typing import Protocol
@@ -51,18 +53,31 @@ from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.peak_detection.evidence_facts import (
     PeakTraceEvidenceFacts,
+    PhysicalPeakEvaluation,
+    PreparedSignalResult,
     TraceWindowEvidenceFacts,
+    evaluate_physical_peak,
+    mint_physical_trace_content_id,
     peak_trace_evidence,
+    prepare_physical_signal,
+    validate_bounded_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
-from xic_extractor.peak_detection.region_audit import build_peak_region_audit_summary
+from xic_extractor.peak_detection.region_audit import (
+    PeakRegionAuditSummary,
+    build_peak_region_audit_summary,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.signal_processing import find_peak_and_area
 from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 _RequestItem = OwnerBackfillRequestItem
 _RequestGroupKey = tuple[str, int | float, int | float]
+_OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +151,7 @@ class OwnerBackfillPeakFactReceipt:
     """Bounded post-decision projection of shared peak evidence."""
 
     integration: IntegrationResult
+    physical_evaluation: PhysicalPeakEvaluation | None
     normalized_shape_status: str
     normalized_shape_reason: str
     normalized_shape_point_count: int
@@ -157,6 +173,14 @@ class OwnerBackfillPeakFactReceipt:
             for value in counts
         ):
             raise ValueError("peak fact receipt counts must be non-negative integers")
+        if self.physical_evaluation is not None:
+            if self.physical_evaluation.facts is None:
+                raise ValueError("available peak fact receipt requires physical facts")
+            if (
+                self.physical_evaluation.facts.area_counts_seconds
+                != self.integration.area_ms1_morphology
+            ):
+                raise ValueError("peak fact receipt crosses canonical area")
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,8 +192,12 @@ class OwnerBackfillPeakFactObservation:
     selected_for_output: bool
     cell: AlignedCell
     facts: OwnerBackfillPeakFactReceipt | None
+    physical_evaluation: PhysicalPeakEvaluation | None
+    trace_rt_start_min: float | None
+    trace_rt_end_min: float | None
     fact_elapsed_seconds: float | None
     trace_evaluated: bool
+    _mint_token: InitVar[object] = field(kw_only=True)
 
     @property
     def evidence_authority(self) -> str:
@@ -182,35 +210,110 @@ class OwnerBackfillPeakFactObservation:
             f"{self.candidate_index}:{self.candidate_phase}"
         )
 
-    def __post_init__(self) -> None:
-        observed_binding = (
-            self.logical_request.item.sample_stem,
-            self.logical_request.group_hypothesis_id,
-            self.request_identity.sample_stem,
-            self.request_identity.request,
+    @property
+    def prepared_signal_id(self) -> str | None:
+        return (
+            self.physical_evaluation.prepared.prepared_signal_id
+            if self.physical_evaluation is not None
+            else None
         )
-        expected_binding = (
-            self.cell.sample_stem,
-            self.cell.group_hypothesis_id,
-            self.cell.sample_stem,
-            self.logical_request.item.request,
+
+    def __post_init__(self, _mint_token: object) -> None:
+        if _mint_token is not _OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN:
+            raise ValueError("peak fact observation must be minted by Owner Backfill")
+        _validate_owner_backfill_peak_fact_observation(self)
+
+
+def validate_owner_backfill_peak_fact_observation(
+    observation: OwnerBackfillPeakFactObservation,
+) -> None:
+    """Re-run every bounded live-observation invariant without minting it."""
+
+    if type(observation) is not OwnerBackfillPeakFactObservation:
+        raise TypeError("observation must be an Owner Backfill-minted value")
+    _validate_owner_backfill_peak_fact_observation(observation)
+
+
+def _validate_owner_backfill_peak_fact_observation(
+    observation: OwnerBackfillPeakFactObservation,
+) -> None:
+    if not isinstance(
+        observation.logical_request,
+        OwnerBackfillLogicalRequestMember,
+    ):
+        raise TypeError("logical_request must be owner-minted")
+    if not isinstance(observation.request_identity, OwnerBackfillRequestIdentity):
+        raise TypeError("request_identity must be owner-minted")
+    if not isinstance(observation.cell, AlignedCell):
+        raise TypeError("cell must be an AlignedCell")
+    if observation.facts is not None and not isinstance(
+        observation.facts,
+        OwnerBackfillPeakFactReceipt,
+    ):
+        raise TypeError("facts must be an Owner Backfill peak fact receipt")
+    observed_binding = (
+        observation.logical_request.item.sample_stem,
+        observation.logical_request.group_hypothesis_id,
+        observation.request_identity.sample_stem,
+        observation.request_identity.request,
+    )
+    expected_binding = (
+        observation.cell.sample_stem,
+        observation.cell.group_hypothesis_id,
+        observation.cell.sample_stem,
+        observation.logical_request.item.request,
+    )
+    if observed_binding != expected_binding:
+        raise ValueError("peak fact observation crosses sealed identity")
+    if (
+        isinstance(observation.candidate_index, bool)
+        or not isinstance(observation.candidate_index, int)
+        or observation.candidate_index < 0
+    ):
+        raise ValueError("candidate_index must be a non-negative integer")
+    if (
+        not isinstance(observation.candidate_phase, str)
+        or not observation.candidate_phase
+        or observation.candidate_phase != observation.candidate_phase.strip()
+    ):
+        raise ValueError("candidate_phase must be owner-normalized text")
+    if not isinstance(observation.selected_for_output, bool):
+        raise ValueError("selected_for_output must be boolean")
+    if not isinstance(observation.trace_evaluated, bool):
+        raise ValueError("trace_evaluated must be boolean")
+    physical_evaluation = observation.physical_evaluation
+    if physical_evaluation is not None and not isinstance(
+        physical_evaluation,
+        PhysicalPeakEvaluation,
+    ):
+        raise TypeError("physical_evaluation must be owner-minted when available")
+    if physical_evaluation is not None:
+        expected_selection_subject_id = _selection_subject_id(
+            feature=observation.logical_request.item.feature,
+            sample_stem=observation.logical_request.item.sample_stem,
+            request=observation.logical_request.item.request,
+            candidate_index=observation.candidate_index,
+            candidate_phase=observation.candidate_phase,
+            request_identity=observation.request_identity,
         )
-        if observed_binding != expected_binding:
-            raise ValueError("peak fact observation crosses sealed identity")
-        if self.candidate_index < 0:
-            raise ValueError("candidate_index must be non-negative")
-        if not self.candidate_phase:
-            raise ValueError("candidate_phase must be non-empty")
-        if not isinstance(self.trace_evaluated, bool):
-            raise ValueError("trace_evaluated must be boolean")
-        if self.facts is None:
-            if self.fact_elapsed_seconds is not None:
-                raise ValueError("elapsed fact work requires available facts")
-        elif self.fact_elapsed_seconds is not None and (
-            not math.isfinite(self.fact_elapsed_seconds)
-            or self.fact_elapsed_seconds <= 0
-        ):
-            raise ValueError("fact elapsed observation must be finite and positive")
+        question = physical_evaluation.question
+        if question.selection_subject_id != expected_selection_subject_id:
+            raise ValueError("peak fact observation crosses physical selection subject")
+        if question.query_rt_min != observation.logical_request.item.preferred_rt:
+            raise ValueError("peak fact observation crosses physical query RT")
+        validate_bounded_physical_peak_evaluation(physical_evaluation)
+    if observation.facts is not None and observation.facts.physical_evaluation != (
+        physical_evaluation
+    ):
+        raise ValueError("peak fact observation crosses physical evaluation")
+    if observation.fact_elapsed_seconds is not None and (
+        isinstance(observation.fact_elapsed_seconds, bool)
+        or not isinstance(observation.fact_elapsed_seconds, (int, float))
+        or not math.isfinite(observation.fact_elapsed_seconds)
+        or observation.fact_elapsed_seconds <= 0
+    ):
+        raise ValueError("fact elapsed observation must be finite and positive")
+
 
 @dataclass(frozen=True, slots=True)
 class OwnerBackfillRequestReuseObservation:
@@ -224,10 +327,10 @@ class OwnerBackfillRequestReuseObservation:
             raise ValueError("sample_stem must be owner-normalized text")
         if self.validation_mode not in OWNER_BACKFILL_VALIDATION_MODES:
             raise ValueError("unsupported owner Backfill validation mode")
-        for field in ("logical_request_count", "canonical_request_class_count"):
-            value = getattr(self, field)
+        for field_name in ("logical_request_count", "canonical_request_class_count"):
+            value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-                raise ValueError(f"{field} must be a non-negative integer")
+                raise ValueError(f"{field_name} must be a non-negative integer")
         if self.canonical_request_class_count > self.logical_request_count:
             raise ValueError("canonical classes cannot exceed logical requests")
 
@@ -276,6 +379,9 @@ class _OwnerBackfillCandidateRecord:
     trace_evaluated: bool = False
     peak_facts: OwnerBackfillPeakFactReceipt | None = None
     peak_fact_elapsed_seconds: float | None = None
+    physical_evaluation: PhysicalPeakEvaluation | None = None
+    trace_rt_start_min: float | None = None
+    trace_rt_end_min: float | None = None
     logical_request: OwnerBackfillLogicalRequestMember | None = None
     request_identity: OwnerBackfillRequestIdentity | None = None
 
@@ -283,8 +389,11 @@ class _OwnerBackfillCandidateRecord:
 @dataclass(frozen=True, slots=True)
 class _OwnerBackfillTraceEvaluation:
     cell: AlignedCell
-    peak_facts: PeakTraceEvidenceFacts | None
+    peak_facts: PeakTraceEvidenceFacts | OwnerBackfillPeakFactReceipt | None
     peak_fact_elapsed_seconds: float | None
+    physical_evaluation: PhysicalPeakEvaluation | None = None
+    trace_rt_start_min: float | None = None
+    trace_rt_end_min: float | None = None
 
 
 def build_owner_backfill_cells(
@@ -293,10 +402,10 @@ def build_owner_backfill_cells(
     sample_order: tuple[str, ...],
     raw_sources: Mapping[str, OwnerBackfillSource],
     validation_raw_sources: Mapping[str, OwnerBackfillSource] | None = None,
-    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
-    | None = None,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None = None,
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
+    signal_processing_profile: SignalProcessingProfile | None = None,
     raw_xic_batch_size: int = 1,
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
@@ -313,6 +422,7 @@ def build_owner_backfill_cells(
         expected_acquisition_sources=expected_acquisition_sources,
         alignment_config=alignment_config,
         peak_config=peak_config,
+        signal_processing_profile=signal_processing_profile,
         raw_xic_batch_size=raw_xic_batch_size,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
         owner_backfill_window_strategy=owner_backfill_window_strategy,
@@ -329,10 +439,10 @@ def build_owner_backfill_result(
     sample_order: tuple[str, ...],
     raw_sources: Mapping[str, OwnerBackfillSource],
     validation_raw_sources: Mapping[str, OwnerBackfillSource] | None = None,
-    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
-    | None = None,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None = None,
     alignment_config: AlignmentConfig,
     peak_config: ExtractionConfig,
+    signal_processing_profile: SignalProcessingProfile | None = None,
     raw_xic_batch_size: int = 1,
     owner_backfill_xic_backend: OwnerBackfillXicBackend = "raw",
     owner_backfill_window_strategy: OwnerBackfillWindowStrategy = "exact",
@@ -341,6 +451,11 @@ def build_owner_backfill_result(
     region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
 ) -> OwnerBackfillResult:
+    if signal_processing_profile is not None and not isinstance(
+        signal_processing_profile,
+        SignalProcessingProfile,
+    ):
+        raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
     if raw_xic_batch_size < 1:
         raise ValueError("raw_xic_batch_size must be >= 1")
     if owner_backfill_superwindow_span_factor < 1:
@@ -365,12 +480,16 @@ def build_owner_backfill_result(
     effective_emit_region_audit = emit_region_audit and audit_evidence_mode != "none"
     cells: list[AlignedCell] = []
     candidate_records: list[_OwnerBackfillCandidateRecord] = []
+    prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult] = {}
     request_reuse_observations: list[OwnerBackfillRequestReuseObservation] = []
     primary_validation_mode: OwnerBackfillValidationMode = (
         "prefilter" if validation_raw_sources is not None else "primary"
     )
+    effective_acquisition_sources = expected_acquisition_sources or (
+        _available_acquisition_sources(raw_sources)
+    )
     primary_equivalence_context = _request_equivalence_context(
-        expected_acquisition_sources=expected_acquisition_sources,
+        expected_acquisition_sources=effective_acquisition_sources,
         backend=owner_backfill_xic_backend,
         window_strategy=owner_backfill_window_strategy,
         superwindow_span_factor=owner_backfill_superwindow_span_factor,
@@ -428,6 +547,12 @@ def build_owner_backfill_result(
                     ),
                     result,
                 )
+                candidate_phase = (
+                    "prefilter_query"
+                    if validation_raw_sources is not None
+                    else "primary_query"
+                )
+                candidate_index = len(candidate_records) + 1
                 evaluation = _backfill_feature_sample_trace(
                     feature,
                     requested_sample,
@@ -435,6 +560,16 @@ def build_owner_backfill_result(
                     request=request,
                     preferred_rt=preferred_rt,
                     peak_config=peak_config,
+                    signal_processing_profile=signal_processing_profile,
+                    prepared_signal_cache=prepared_signal_cache,
+                    selection_subject_id=_selection_subject_id(
+                        feature=feature,
+                        sample_stem=requested_sample,
+                        request=request,
+                        candidate_index=candidate_index,
+                        candidate_phase=candidate_phase,
+                        request_identity=request_identity,
+                    ),
                     require_sealed_facts=logical_request is not None,
                     emit_region_audit=_emit_region_audit_for_family(
                         effective_emit_region_audit,
@@ -446,14 +581,13 @@ def build_owner_backfill_result(
                 _append_candidate_record(
                     candidate_records,
                     cell,
-                    phase=(
-                        "prefilter_query"
-                        if validation_raw_sources is not None
-                        else "primary_query"
-                    ),
+                    phase=candidate_phase,
                     trace_evaluated=True,
                     peak_facts=evaluation.peak_facts,
                     peak_fact_elapsed_seconds=evaluation.peak_fact_elapsed_seconds,
+                    physical_evaluation=evaluation.physical_evaluation,
+                    trace_rt_start_min=evaluation.trace_rt_start_min,
+                    trace_rt_end_min=evaluation.trace_rt_end_min,
                     logical_request=logical_request,
                     request_identity=request_identity,
                 )
@@ -496,7 +630,7 @@ def build_owner_backfill_result(
                 _keep_best_backfill_outcome_cell(
                     backfill_by_feature_sample,
                     cell,
-    )
+                )
     if validation_raw_sources is not None:
         for sample_stem in sample_order:
             validation_requests = validation_pending.get(sample_stem, [])
@@ -533,7 +667,10 @@ def build_owner_backfill_result(
             source = validation_raw_sources[sample_stem]
             validation_items = tuple(validation_requests)
             validation_context = _request_equivalence_context(
-                expected_acquisition_sources=expected_acquisition_sources,
+                expected_acquisition_sources=(
+                    expected_acquisition_sources
+                    or _available_acquisition_sources(validation_raw_sources)
+                ),
                 backend="raw",
                 window_strategy="exact",
                 superwindow_span_factor=owner_backfill_superwindow_span_factor,
@@ -586,6 +723,7 @@ def build_owner_backfill_result(
                         ),
                         result,
                     )
+                    candidate_index = len(candidate_records) + 1
                     evaluation = _backfill_feature_sample_trace(
                         feature,
                         requested_sample,
@@ -593,6 +731,16 @@ def build_owner_backfill_result(
                         request=_request,
                         preferred_rt=preferred_rt,
                         peak_config=peak_config,
+                        signal_processing_profile=signal_processing_profile,
+                        prepared_signal_cache=prepared_signal_cache,
+                        selection_subject_id=_selection_subject_id(
+                            feature=feature,
+                            sample_stem=requested_sample,
+                            request=_request,
+                            candidate_index=candidate_index,
+                            candidate_phase="validation_query",
+                            request_identity=request_identity,
+                        ),
                         require_sealed_facts=logical_request is not None,
                         emit_region_audit=_emit_region_audit_for_family(
                             effective_emit_region_audit,
@@ -608,6 +756,9 @@ def build_owner_backfill_result(
                         trace_evaluated=True,
                         peak_facts=evaluation.peak_facts,
                         peak_fact_elapsed_seconds=evaluation.peak_fact_elapsed_seconds,
+                        physical_evaluation=evaluation.physical_evaluation,
+                        trace_rt_start_min=evaluation.trace_rt_start_min,
+                        trace_rt_end_min=evaluation.trace_rt_end_min,
                         logical_request=logical_request,
                         request_identity=request_identity,
                     )
@@ -675,8 +826,7 @@ def build_owner_backfill_result(
 
 def _request_equivalence_context(
     *,
-    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
-    | None,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None,
     backend: OwnerBackfillXicBackend,
     window_strategy: OwnerBackfillWindowStrategy,
     superwindow_span_factor: int,
@@ -694,11 +844,29 @@ def _request_equivalence_context(
     )
 
 
+def _available_acquisition_sources(
+    sources: Mapping[str, OwnerBackfillSource],
+) -> dict[str, AcquisitionSourceIdentity] | None:
+    bindings = {
+        sample_stem: getattr(source, "acquisition_source", None)
+        for sample_stem, source in sources.items()
+    }
+    if not bindings or any(
+        not isinstance(source, AcquisitionSourceIdentity)
+        for source in bindings.values()
+    ):
+        return None
+    return {
+        sample_stem: source
+        for sample_stem, source in bindings.items()
+        if isinstance(source, AcquisitionSourceIdentity)
+    }
+
+
 def _validate_owner_bound_sources(
     sources: Mapping[str, OwnerBackfillSource],
     *,
-    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity]
-    | None,
+    expected_acquisition_sources: Mapping[str, AcquisitionSourceIdentity] | None,
     source_label: str,
 ) -> None:
     if expected_acquisition_sources is None:
@@ -729,8 +897,7 @@ def _iter_extracted_request_traces(
     *,
     window_strategy: OwnerBackfillWindowStrategy,
     superwindow_span_factor: int,
-    equivalence_classes: tuple[OwnerBackfillRequestEquivalenceClass, ...]
-    | None = None,
+    equivalence_classes: tuple[OwnerBackfillRequestEquivalenceClass, ...] | None = None,
 ):
     extraction_items = _extraction_request_items(items, equivalence_classes)
     if window_strategy == "super-window":
@@ -779,14 +946,20 @@ def _append_candidate_record(
     *,
     phase: str,
     trace_evaluated: bool = False,
-    peak_facts: PeakTraceEvidenceFacts | None = None,
+    peak_facts: PeakTraceEvidenceFacts | OwnerBackfillPeakFactReceipt | None = None,
     peak_fact_elapsed_seconds: float | None = None,
+    physical_evaluation: PhysicalPeakEvaluation | None = None,
+    trace_rt_start_min: float | None = None,
+    trace_rt_end_min: float | None = None,
     logical_request: OwnerBackfillLogicalRequestMember | None = None,
     request_identity: OwnerBackfillRequestIdentity | None = None,
 ) -> None:
     if (logical_request is None) != (request_identity is None):
         raise ValueError("logical request and request identity must stay paired")
-    peak_fact_receipt = _bounded_peak_fact_receipt(peak_facts)
+    peak_fact_receipt = _bounded_peak_fact_receipt(
+        peak_facts,
+        physical_evaluation,
+    )
     records.append(
         _OwnerBackfillCandidateRecord(
             cell=cell,
@@ -795,6 +968,9 @@ def _append_candidate_record(
             trace_evaluated=trace_evaluated,
             peak_facts=peak_fact_receipt,
             peak_fact_elapsed_seconds=peak_fact_elapsed_seconds,
+            physical_evaluation=physical_evaluation,
+            trace_rt_start_min=trace_rt_start_min,
+            trace_rt_end_min=trace_rt_end_min,
             logical_request=logical_request,
             request_identity=request_identity,
         )
@@ -802,13 +978,19 @@ def _append_candidate_record(
 
 
 def _bounded_peak_fact_receipt(
-    facts: PeakTraceEvidenceFacts | None,
+    facts: PeakTraceEvidenceFacts | OwnerBackfillPeakFactReceipt | None,
+    physical_evaluation: PhysicalPeakEvaluation | None,
 ) -> OwnerBackfillPeakFactReceipt | None:
+    if isinstance(facts, OwnerBackfillPeakFactReceipt):
+        if facts.physical_evaluation != physical_evaluation:
+            raise ValueError("peak fact receipt crosses physical evaluation")
+        return facts
     if facts is None:
         return None
     shape = facts.normalized_shape_trace
     return OwnerBackfillPeakFactReceipt(
         integration=replace(facts.integration, raw_scan_indices=()),
+        physical_evaluation=physical_evaluation,
         normalized_shape_status=shape.status,
         normalized_shape_reason=shape.reason,
         normalized_shape_point_count=len(shape.rt),
@@ -833,8 +1015,12 @@ def _peak_fact_observations(
             selected_for_output=id(record.cell) in selected_cell_ids,
             cell=record.cell,
             facts=record.peak_facts,
+            physical_evaluation=record.physical_evaluation,
+            trace_rt_start_min=record.trace_rt_start_min,
+            trace_rt_end_min=record.trace_rt_end_min,
             fact_elapsed_seconds=record.peak_fact_elapsed_seconds,
             trace_evaluated=record.trace_evaluated,
+            _mint_token=_OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN,
         )
         for record in records
         if record.logical_request is not None and record.request_identity is not None
@@ -952,9 +1138,7 @@ def _scan_window_aware_chunks(
         tuple(_ExtractionRequestItem(item) for item in items),
         chunk_size,
     )
-    return tuple(
-        tuple(item.item for item in chunk) for chunk in extraction_chunks
-    )
+    return tuple(tuple(item.item for item in chunk) for chunk in extraction_chunks)
 
 
 def _scan_window_aware_extraction_chunks(
@@ -1233,8 +1417,47 @@ def _backfill_feature_sample_trace(
     request: XICRequest,
     preferred_rt: float | None = None,
     peak_config: ExtractionConfig,
+    signal_processing_profile: SignalProcessingProfile | None,
+    selection_subject_id: str,
+    prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult],
     require_sealed_facts: bool = False,
     emit_region_audit: bool = False,
+) -> _OwnerBackfillTraceEvaluation:
+    if signal_processing_profile is None:
+        return _backfill_feature_sample_trace_legacy_audit(
+            feature,
+            sample_stem,
+            trace,
+            request=request,
+            preferred_rt=preferred_rt,
+            peak_config=peak_config,
+            require_sealed_facts=require_sealed_facts,
+            emit_region_audit=emit_region_audit,
+        )
+    return _backfill_feature_sample_trace_canonical(
+        feature,
+        sample_stem,
+        trace,
+        request=request,
+        preferred_rt=preferred_rt,
+        peak_config=peak_config,
+        emit_region_audit=emit_region_audit,
+        signal_processing_profile=signal_processing_profile,
+        selection_subject_id=selection_subject_id,
+        prepared_signal_cache=prepared_signal_cache,
+    )
+
+
+def _backfill_feature_sample_trace_legacy_audit(
+    feature: OwnerGroupDeliveryFeature,
+    sample_stem: str,
+    trace: XICTrace,
+    *,
+    request: XICRequest,
+    preferred_rt: float | None,
+    peak_config: ExtractionConfig,
+    require_sealed_facts: bool,
+    emit_region_audit: bool,
 ) -> _OwnerBackfillTraceEvaluation:
     peak_preferred_rt = (
         feature.family_center_rt if preferred_rt is None else preferred_rt
@@ -1394,6 +1617,176 @@ def _backfill_feature_sample_trace(
         cell=with_region_audit(cell, region_audit),
         peak_facts=peak_facts,
         peak_fact_elapsed_seconds=fact_elapsed_seconds,
+    )
+
+
+def _backfill_feature_sample_trace_canonical(
+    feature: OwnerGroupDeliveryFeature,
+    sample_stem: str,
+    trace: XICTrace,
+    *,
+    request: XICRequest,
+    preferred_rt: float | None,
+    peak_config: ExtractionConfig,
+    emit_region_audit: bool,
+    signal_processing_profile: SignalProcessingProfile,
+    selection_subject_id: str,
+    prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult],
+) -> _OwnerBackfillTraceEvaluation:
+    query_rt = feature.family_center_rt if preferred_rt is None else preferred_rt
+    started = perf_counter()
+    trace_content_id = mint_physical_trace_content_id(trace.rt, trace.intensity)
+    prepared_cache_key = (trace_content_id, signal_processing_profile.profile_id)
+    prepared = prepared_signal_cache.get(prepared_cache_key)
+    if prepared is None:
+        prepared = prepare_physical_signal(
+            trace.rt,
+            trace.intensity,
+            trace_content_id=trace_content_id,
+            profile=signal_processing_profile,
+        )
+        prepared_signal_cache[prepared_cache_key] = prepared
+    physical_evaluation = evaluate_physical_peak(
+        prepared,
+        selection_subject_id=selection_subject_id,
+        query_rt_min=query_rt,
+        request_context_rt_start_min=request.rt_min,
+        request_context_rt_end_min=request.rt_max,
+    )
+    elapsed = _positive_elapsed(perf_counter() - started)
+    facts = physical_evaluation.facts
+    if physical_evaluation.state != "available" or facts is None:
+        trace_quality = (
+            "owner_backfill_not_detected"
+            if physical_evaluation.reason
+            in {"no_selection", "peak_not_found", "no_signal_above_baseline"}
+            else "owner_backfill_unassessable"
+        )
+        cell = _backfill_unchecked_cell(
+            feature,
+            sample_stem,
+            request=request,
+            preferred_rt=preferred_rt,
+            trace_quality=trace_quality,
+            reason=(
+                "canonical physical owner: "
+                f"{physical_evaluation.state}/{physical_evaluation.reason}"
+            ),
+        )
+        return _OwnerBackfillTraceEvaluation(
+            cell=cell,
+            peak_facts=None,
+            peak_fact_elapsed_seconds=elapsed,
+            physical_evaluation=physical_evaluation,
+            trace_rt_start_min=(float(trace.rt[0]) if len(trace.rt) else None),
+            trace_rt_end_min=(float(trace.rt[-1]) if len(trace.rt) else None),
+        )
+
+    integration = physical_evaluation.integration
+    if integration is None:
+        raise ValueError("available physical evaluation lacks raw descriptor")
+    if emit_region_audit:
+        physical_evaluation = replace(
+            physical_evaluation,
+            operations=(*physical_evaluation.operations, "region_audit_projection"),
+        )
+    peak_fact_receipt = OwnerBackfillPeakFactReceipt(
+        integration=integration,
+        physical_evaluation=physical_evaluation,
+        normalized_shape_status="ok",
+        normalized_shape_reason="canonical_physical_owner",
+        normalized_shape_point_count=facts.relative_shape_point_count,
+        normalized_shape_max_intensity=1.0,
+        window=TraceWindowEvidenceFacts(
+            status="ok",
+            reason="canonical_closed_segment_subject",
+            query_apex_rt_min=facts.apex_rt_min,
+            query_apex_in_trace_window=True,
+            trace_apex_rt_min=facts.apex_rt_min,
+            global_trace_apex_delta_min=0.0,
+            local_apex_delta_min=0.0,
+            local_max_intensity=facts.height,
+            local_to_global_max_ratio=1.0,
+        ),
+        smoothing_count=1,
+        integration_count=1,
+    )
+    scans_target = int(getattr(peak_config, "resolver_min_scans", 1))
+    scan_support_score = (
+        min(1.0, facts.scan_support_count / scans_target) if scans_target > 0 else 0.0
+    )
+    cell = AlignedCell(
+        sample_stem=sample_stem,
+        cluster_id=feature.feature_family_id,
+        status="rescued",
+        area=facts.area_counts_seconds,
+        apex_rt=facts.apex_rt_min,
+        height=facts.height,
+        peak_start_rt=facts.left_rt_min,
+        peak_end_rt=facts.right_rt_min,
+        rt_delta_sec=(facts.apex_rt_min - feature.family_center_rt) * 60.0,
+        trace_quality="owner_backfill",
+        scan_support_score=scan_support_score,
+        source_candidate_id=None,
+        source_raw_file=None,
+        reason="owner-centered MS1 backfill",
+        selected_integration=integration,
+        backfill_seed_mz=request.mz,
+        backfill_seed_rt=preferred_rt,
+        backfill_request_rt_min=request.rt_min,
+        backfill_request_rt_max=request.rt_max,
+        backfill_request_ppm=request.ppm_tol,
+        **delivery_cell_projection(
+            feature,
+            gap_fill_state="gap_fill_rescued",
+            gap_fill_reason="group_centered_query_detected",
+            missing_observation_state="queried_and_detected",
+        ),
+    )
+    if emit_region_audit:
+        cell = with_region_audit(
+            cell,
+            _canonical_region_audit(physical_evaluation, signal_processing_profile),
+        )
+    return _OwnerBackfillTraceEvaluation(
+        cell=cell,
+        peak_facts=peak_fact_receipt,
+        peak_fact_elapsed_seconds=elapsed,
+        physical_evaluation=physical_evaluation,
+        trace_rt_start_min=(float(trace.rt[0]) if len(trace.rt) else None),
+        trace_rt_end_min=(float(trace.rt[-1]) if len(trace.rt) else None),
+    )
+
+
+def _canonical_region_audit(
+    evaluation: PhysicalPeakEvaluation,
+    profile: SignalProcessingProfile,
+) -> PeakRegionAuditSummary:
+    facts = evaluation.facts
+    if facts is None:
+        return PeakRegionAuditSummary(
+            candidate_count=len(evaluation.segment_universe.segments),
+            shadow_status="evaluated",
+            shadow_verdict=evaluation.reason,
+            review_reason="canonical physical owner returned no selected segment",
+            baseline_method=profile.baseline_method,
+        )
+    return PeakRegionAuditSummary(
+        candidate_count=len(evaluation.segment_universe.segments),
+        selected_proposal_sources=("canonical_physical_segment_v1",),
+        selected_merge_note="canonical owner; no audit merge",
+        shadow_status="evaluated",
+        shadow_verdict="canonical_selected_segment",
+        merge_suggestion_source="canonical_physical_owner",
+        selected_interval_count=1,
+        local_mixture_diagnostic="canonical_closed_segment",
+        local_mixture_reason="audit projects the selected canonical segment",
+        review_reason="diagnostic projection; no selection authority",
+        decision_status="review_only",
+        decision_class="canonical_owner_projection",
+        product_action="no_change",
+        promotion_reason="selected value remains owned by canonical physical facts",
+        baseline_method=profile.baseline_method,
     )
 
 
@@ -1582,9 +1975,7 @@ def _fan_out_typed_results(
             strict=True,
         )
     )
-    result_by_identity = {
-        result.request_identity: result for result in typed_results
-    }
+    result_by_identity = {result.request_identity: result for result in typed_results}
     if len(result_by_identity) != len(unique_identities):
         raise ValueError("typed extraction produced duplicate canonical results")
     logical_results: list[OwnerBackfillLogicalExtractionResult] = []
@@ -1690,6 +2081,52 @@ def _logical_binding_for_result(
     if isinstance(result, XICTrace):
         return None, None
     return result.logical_request, result.canonical_result.request_identity
+
+
+def _selection_subject_id(
+    *,
+    feature: OwnerGroupDeliveryFeature,
+    sample_stem: str,
+    request: XICRequest,
+    candidate_index: int,
+    candidate_phase: str,
+    request_identity: OwnerBackfillRequestIdentity | None,
+) -> str:
+    request_key = (
+        request_identity.request_identity_id
+        if request_identity is not None
+        else "unsealed:" + _canonical_request_digest(request)
+    )
+    basis = {
+        "schema_version": "owner_backfill_selection_subject_v1",
+        "request_identity_id": request_key,
+        "group_hypothesis_id": feature.group_hypothesis_id,
+        "sample_stem": sample_stem,
+        "candidate_index": candidate_index,
+        "candidate_phase": candidate_phase,
+    }
+    canonical = json.dumps(
+        basis,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "owner-backfill-subject.v1:" + hashlib.sha256(canonical).hexdigest()
+
+
+def _canonical_request_digest(request: XICRequest) -> str:
+    canonical = json.dumps(
+        {
+            "mz": float(request.mz).hex(),
+            "rt_min": float(request.rt_min).hex(),
+            "rt_max": float(request.rt_max).hex(),
+            "ppm_tol": float(request.ppm_tol).hex(),
+        },
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _positive_elapsed(value: float) -> float | None:

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import math
+import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from xic_extractor.alignment.cell_quality import (
     CellQualityDecision,
@@ -36,6 +40,126 @@ ProductionStatus = Literal[
     "blank",
 ]
 RescueTier = Literal["", "accepted_rescue", "review_rescue", "rejected_rescue"]
+
+ALIGNMENT_DECISION_CONFIG_SCHEMA_VERSION = "alignment_decision_config_projection_v1"
+PRODUCTION_CELL_DECISION_SCHEMA_VERSION = "production_cell_decision_projection_v2"
+ALIGNMENT_DECISION_CONFIG_ID_PREFIX = "alignment-decision-config.v1:"
+PRODUCTION_CELL_DECISION_ID_PREFIX = "production-cell-decision.v2:"
+OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX = "owner-backfill-authority-cell.v2:"
+
+ALIGNMENT_DECISION_CONFIG_FIELDS = (
+    "preferred_ppm",
+    "max_ppm",
+    "preferred_rt_sec",
+    "max_rt_sec",
+    "product_mz_tolerance_ppm",
+    "observed_loss_tolerance_ppm",
+    "mz_bucket_neighbor_radius",
+    "anchor_priorities",
+    "anchor_min_evidence_score",
+    "anchor_min_seed_events",
+    "anchor_min_scan_support_score",
+    "duplicate_fold_ppm",
+    "duplicate_fold_rt_sec",
+    "duplicate_fold_product_ppm",
+    "duplicate_fold_observed_loss_ppm",
+    "duplicate_fold_min_detected_overlap",
+    "duplicate_fold_min_shared_detected_count",
+    "duplicate_fold_min_detected_jaccard",
+    "duplicate_fold_min_present_overlap",
+    "owner_window_overlap_fraction",
+    "owner_apex_close_sec",
+    "owner_tail_seed_guard_sec",
+    "owner_tail_max_secondary_ratio",
+    "owner_backfill_min_detected_samples",
+    "identity_rt_candidate_window_sec",
+    "rt_unit",
+    "fragmentation_model",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class AlignmentDecisionConfigProjectionV1:
+    preferred_ppm: float
+    max_ppm: float
+    preferred_rt_sec: float
+    max_rt_sec: float
+    product_mz_tolerance_ppm: float
+    observed_loss_tolerance_ppm: float
+    mz_bucket_neighbor_radius: int
+    anchor_priorities: tuple[str, ...]
+    anchor_min_evidence_score: int
+    anchor_min_seed_events: int
+    anchor_min_scan_support_score: float
+    duplicate_fold_ppm: float
+    duplicate_fold_rt_sec: float
+    duplicate_fold_product_ppm: float
+    duplicate_fold_observed_loss_ppm: float
+    duplicate_fold_min_detected_overlap: float
+    duplicate_fold_min_shared_detected_count: int
+    duplicate_fold_min_detected_jaccard: float
+    duplicate_fold_min_present_overlap: float
+    owner_window_overlap_fraction: float
+    owner_apex_close_sec: float
+    owner_tail_seed_guard_sec: float
+    owner_tail_max_secondary_ratio: float
+    owner_backfill_min_detected_samples: int
+    identity_rt_candidate_window_sec: float
+    rt_unit: str
+    fragmentation_model: str
+
+    @property
+    def alignment_decision_config_id(self) -> str:
+        return _typed_authority_id(
+            ALIGNMENT_DECISION_CONFIG_ID_PREFIX,
+            _ordered_authority_json_bytes(
+                ALIGNMENT_DECISION_CONFIG_SCHEMA_VERSION,
+                tuple(
+                    (field, getattr(self, field))
+                    for field in ALIGNMENT_DECISION_CONFIG_FIELDS
+                ),
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ProductionCellDecisionProjectionV2:
+    owner_backfill_cell_content_id: str
+    alignment_decision_config_id: str
+    feature_family_id: str
+    sample_stem: str
+    raw_status: str
+    production_status: ProductionStatus
+    rescue_tier: RescueTier
+    write_matrix_value: bool
+    matrix_value: float | None
+    blank_reason: str
+    matrix_value_source: str
+
+    @property
+    def production_cell_decision_id(self) -> str:
+        return _typed_authority_id(
+            PRODUCTION_CELL_DECISION_ID_PREFIX,
+            _ordered_authority_json_bytes(
+                PRODUCTION_CELL_DECISION_SCHEMA_VERSION,
+                (
+                    (
+                        "owner_backfill_cell_content_id",
+                        self.owner_backfill_cell_content_id,
+                    ),
+                    ("alignment_decision_config_id", self.alignment_decision_config_id),
+                    ("feature_family_id", self.feature_family_id),
+                    ("sample_stem", self.sample_stem),
+                    ("raw_status", self.raw_status),
+                    ("production_status", self.production_status),
+                    ("rescue_tier", self.rescue_tier),
+                    ("write_matrix_value", self.write_matrix_value),
+                    ("matrix_value", self.matrix_value),
+                    ("blank_reason", self.blank_reason),
+                    ("matrix_value_source", self.matrix_value_source),
+                ),
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -83,6 +207,75 @@ class ProductionDecisionSet:
 
     def row(self, feature_family_id: str) -> ProductionRowDecision:
         return self.rows[feature_family_id]
+
+
+def alignment_decision_config_projection(
+    config: AlignmentConfig,
+) -> AlignmentDecisionConfigProjectionV1:
+    if not isinstance(config, AlignmentConfig):
+        raise TypeError("config must be an AlignmentConfig")
+    return AlignmentDecisionConfigProjectionV1(
+        **{field: getattr(config, field) for field in ALIGNMENT_DECISION_CONFIG_FIELDS}
+    )
+
+
+def production_cell_decision_projection(
+    decision: ProductionCellDecision,
+    *,
+    cell: AlignedCell,
+    config: AlignmentConfig,
+    owner_backfill_cell_content_id: str,
+) -> ProductionCellDecisionProjectionV2:
+    """Mint the final cell-decision identity from live owner values.
+
+    ``owner_backfill_cell_content_id`` is an explicit selected-cell binding.  This
+    function validates it, but never discovers a selected work item by comparing
+    numeric areas.
+    """
+
+    if not isinstance(decision, ProductionCellDecision):
+        raise TypeError("decision must be a ProductionCellDecision")
+    if not isinstance(cell, AlignedCell):
+        raise TypeError("cell must be an AlignedCell")
+    _require_typed_authority_id(
+        owner_backfill_cell_content_id,
+        prefix=OWNER_BACKFILL_AUTHORITY_CELL_ID_PREFIX,
+        field="owner_backfill_cell_content_id",
+    )
+    if (decision.feature_family_id, decision.sample_stem, decision.raw_status) != (
+        cell.cluster_id,
+        cell.sample_stem,
+        cell.status,
+    ):
+        raise ValueError("production decision crosses its live Matrix cell")
+    matrix_value_source = cell.matrix_area_source if decision.write_matrix_value else ""
+    if decision.write_matrix_value:
+        expected_value = cell.matrix_area
+        if expected_value is None or decision.matrix_value != expected_value:
+            raise ValueError(
+                "production decision value does not match its live Matrix cell"
+            )
+        if not matrix_value_source:
+            raise ValueError("written Matrix value requires a live value source")
+    elif decision.matrix_value is not None:
+        raise ValueError(
+            "non-writing production decision must not carry a Matrix value"
+        )
+
+    config_projection = alignment_decision_config_projection(config)
+    return ProductionCellDecisionProjectionV2(
+        owner_backfill_cell_content_id=owner_backfill_cell_content_id,
+        alignment_decision_config_id=(config_projection.alignment_decision_config_id),
+        feature_family_id=decision.feature_family_id,
+        sample_stem=decision.sample_stem,
+        raw_status=decision.raw_status,
+        production_status=decision.production_status,
+        rescue_tier=decision.rescue_tier,
+        write_matrix_value=decision.write_matrix_value,
+        matrix_value=decision.matrix_value,
+        blank_reason=decision.blank_reason,
+        matrix_value_source=matrix_value_source,
+    )
 
 
 def production_cell_decision_record(
@@ -367,3 +560,52 @@ def _blank(
         matrix_value=None,
         blank_reason=blank_reason,
     )
+
+
+_LOWER_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def _ordered_authority_json_bytes(
+    schema_version: str,
+    fields: tuple[tuple[str, object], ...],
+) -> bytes:
+    payload: dict[str, object] = {"schema_version": schema_version}
+    for name, value in fields:
+        payload[name] = _canonical_authority_value(value, field=name)
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _canonical_authority_value(value: object, *, field: str) -> object:
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    if type(value) is int:
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{field} must be finite")
+        return _normalized_float_text(value)
+    if isinstance(value, tuple):
+        if any(not isinstance(item, str) for item in value):
+            raise TypeError(f"{field} tuple must contain only strings")
+        return list(cast(tuple[str, ...], value))
+    raise TypeError(f"{field} has no canonical authority scalar codec")
+
+
+def _normalized_float_text(value: float) -> str:
+    return (0.0).hex() if value == 0.0 else value.hex()
+
+
+def _typed_authority_id(prefix: str, payload: bytes) -> str:
+    return f"{prefix}{hashlib.sha256(payload).hexdigest()}"
+
+
+def _require_typed_authority_id(value: str, *, prefix: str, field: str) -> None:
+    if not isinstance(value, str) or not value.startswith(prefix):
+        raise ValueError(f"{field} must use the {prefix!r} prefix")
+    if _LOWER_SHA256.fullmatch(value[len(prefix) :]) is None:
+        raise ValueError(f"{field} must contain a lowercase SHA-256 digest")

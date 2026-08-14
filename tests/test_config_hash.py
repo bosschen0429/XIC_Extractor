@@ -106,8 +106,7 @@ def test_load_config_hash_reflects_new_override_key(tmp_path: Path) -> None:
 def test_settings_override_bytes_preserve_hash_input_contract(tmp_path: Path) -> None:
     settings = tmp_path / "settings.csv"
     settings.write_text(
-        "\ufeffkey,value,description\n"
-        "existing,old,existing description\n",
+        "\ufeffkey,value,description\nexisting,old,existing description\n",
         encoding="utf-8",
     )
 
@@ -122,3 +121,48 @@ def test_settings_override_bytes_preserve_hash_input_contract(tmp_path: Path) ->
         b"existing,new,existing description\r\n"
         b"added,42,added\r\n"
     )
+
+
+def test_legacy_signal_window_alias_does_not_normalize_source_config_hash(
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "config"
+    raw_dir = tmp_path / "raw"
+    dll_dir = tmp_path / "dll"
+    raw_dir.mkdir()
+    dll_dir.mkdir()
+    config_dir.mkdir()
+    settings_path = config_dir / "settings.csv"
+    targets_path = config_dir / "targets.csv"
+    common = (
+        "\ufeffkey,value,description\n"
+        f"data_dir,{raw_dir},data_dir\n"
+        f"dll_dir,{dll_dir},dll_dir\n"
+        "smooth_window,15,smooth_window\n"
+        "smooth_polyorder,3,smooth_polyorder\n"
+        "peak_rel_height,0.95,peak_rel_height\n"
+        "peak_min_prominence_ratio,0.10,peak_min_prominence_ratio\n"
+        "ms2_precursor_tol_da,0.5,ms2_precursor_tol_da\n"
+        "nl_min_intensity_ratio,0.01,nl_min_intensity_ratio\n"
+        "count_no_ms2_as_detected,false,count_no_ms2_as_detected\n"
+    )
+    targets_path.write_text(
+        "\ufefflabel,mz,rt_min,rt_max,ppm_tol,neutral_loss_da,nl_ppm_warn,"
+        "nl_ppm_max,is_istd,istd_pair\n"
+        "Analyte,258.1085,8.0,10.0,20,116.0474,20,50,false,\n",
+        encoding="utf-8",
+    )
+    settings_path.write_text(
+        common + "signal_processing_window_points,21,canonical\n",
+        encoding="utf-8",
+    )
+    canonical_config, _ = load_config(config_dir)
+    settings_path.write_text(
+        common + "ms1_morphology_smoothing_window_points,21,legacy\n",
+        encoding="utf-8",
+    )
+    legacy_config, _ = load_config(config_dir)
+
+    assert canonical_config.signal_processing_window_points == 21
+    assert legacy_config.signal_processing_window_points == 21
+    assert canonical_config.config_hash != legacy_config.config_hash

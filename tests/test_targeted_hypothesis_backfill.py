@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import xic_extractor.alignment.owner_backfill as owner_backfill_module
 from tests.package2_no_raw_fixture import (
     build_package2_no_raw_fixture,
     package2_candidate_set,
@@ -76,6 +77,91 @@ def test_complete_cell_set_has_observed_backfill_missing_ambiguity_and_failure(
     assert by_stem["true-missing"].selected_integration is None
     assert len(eligible_source.calls) == 1
     assert len(missing_source.calls) == 1
+
+
+def test_no_profile_targeted_backfill_preserves_activation_base_compatibility(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture, inputs = _complete_inputs(tmp_path)
+    groups = align_selected_targeted_hypotheses(
+        inputs,
+        target=fixture.target,
+        config=AlignmentConfig(),
+    )
+
+    def reject_canonical_owner(*_args, **_kwargs):
+        raise AssertionError(
+            "Targeted no-profile compatibility entered canonical owner"
+        )
+
+    monkeypatch.setattr(
+        owner_backfill_module,
+        "prepare_physical_signal",
+        reject_canonical_owner,
+    )
+    monkeypatch.setattr(
+        owner_backfill_module,
+        "evaluate_physical_peak",
+        reject_canonical_owner,
+    )
+
+    cells = build_targeted_hypothesis_cells(
+        inputs,
+        groups,
+        backfill_sources={
+            "eligible-backfill": FrozenNoRawBackfillSource(
+                center=8.01,
+                height=600.0,
+            ),
+            "true-missing": FrozenNoRawBackfillSource(
+                center=8.01,
+                height=0.0,
+            ),
+        },
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+    )
+    by_stem = {cell.sample_stem: cell for cell in cells}
+
+    assert {stem: cell.status for stem, cell in by_stem.items()} == {
+        "ambiguous": "ambiguous",
+        "eligible-backfill": "backfilled",
+        "failed": "failed",
+        "observed-a": "observed",
+        "observed-b": "observed",
+        "true-missing": "true_missing",
+    }
+    backfilled = by_stem["eligible-backfill"]
+    eligible_input = next(
+        item for item in inputs if item.sample.metadata.raw_stem == "eligible-backfill"
+    )
+    assert (
+        backfilled.canonical_sample_identity_id,
+        backfilled.target_definition_id,
+        backfilled.selection_evidence_artifact_id,
+        backfilled.group_hypothesis_id,
+        backfilled.alignment_owner_ids,
+        backfilled.source_hypothesis_id,
+    ) == (
+        eligible_input.sample.identity.sample_identity_id,
+        eligible_input.target.definition.target_definition_id,
+        eligible_input.selection.artifact.evidence_artifact_id,
+        groups[0].group_hypothesis_id,
+        groups[0].owner_ids,
+        None,
+    )
+    integration = backfilled.selected_integration
+    assert integration is not None
+    assert (
+        integration.rt_left_min,
+        integration.rt_apex_min,
+        integration.rt_right_min,
+        integration.height_raw,
+        integration.area_raw_counts_seconds,
+        integration.area_ms1_morphology,
+    ) == pytest.approx((7.93, 8.01, 8.09, 600.0, 2952.0, 2835.100474933266))
+    assert integration.boundary_sources == ("owner_backfill_batch",)
 
 
 def test_backfill_source_cannot_bypass_ambiguity_or_failure(tmp_path: Path) -> None:

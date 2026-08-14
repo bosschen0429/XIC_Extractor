@@ -529,9 +529,7 @@ def test_alignment_matrix_v2_identity_binding_rejects_every_row_substitution(
         identity_columns = (*identity_columns, "unknown_identity_field")
     else:
         first_id = identity_rows[0]["peak_hypothesis_id"]
-        identity_rows[0]["peak_hypothesis_id"] = identity_rows[1][
-            "peak_hypothesis_id"
-        ]
+        identity_rows[0]["peak_hypothesis_id"] = identity_rows[1]["peak_hypothesis_id"]
         identity_rows[1]["peak_hypothesis_id"] = first_id
 
     with pytest.raises(ValueError, match="identity"):
@@ -779,6 +777,40 @@ def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
     ]
     assert rows[0]["sample-a"] == "6.66000e+01"
     assert rows[0]["sample-b"] == "2.00000e+01"
+
+
+def test_alignment_cells_tsv_renders_canonical_physical_owner_area_source(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.alignment.tsv_writer import write_alignment_cells_tsv
+
+    integration = _integration(
+        raw_area=66.6,
+        asls_area=None,
+        morphology_area=66.6,
+        morphology_area_source="trapezoid_counts_seconds_on_canonical_signal_v1",
+    )
+    matrix = AlignmentMatrix(
+        clusters=(_cluster(fold_evidence="owner_complete_link;owner_count=2"),),
+        cells=(
+            _cell(
+                "sample-a",
+                "rescued",
+                area=66.6,
+                selected_integration=integration,
+            ),
+        ),
+        sample_order=("sample-a",),
+    )
+
+    rows = _read_tsv(write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix))
+
+    assert rows[0]["area"] == "66.6"
+    assert rows[0]["primary_matrix_area"] == "66.6"
+    assert rows[0]["primary_matrix_area_source"] == (
+        "trapezoid_counts_seconds_on_canonical_signal_v1"
+    )
+    assert rows[0]["primary_matrix_area_reason"] == ""
 
 
 def test_write_alignment_matrix_tsv_blanks_duplicate_assigned_cells(tmp_path: Path):
@@ -1206,9 +1238,7 @@ def test_write_alignment_matrix_rejects_unassigned_split_product_cell(
     from xic_extractor.alignment.tsv_writer import write_alignment_matrix_tsv
 
     matrix = _split_writer_matrix(
-        (
-            _split_hypothesis("FAM_PARENT::early", ("sample-a",)),
-        )
+        (_split_hypothesis("FAM_PARENT::early", ("sample-a",)),)
     )
 
     with pytest.raises(ValueError, match="not assigned to split hypothesis"):
@@ -1419,9 +1449,7 @@ def test_direct_tier2_review_token_does_not_change_matrix_writer(
 
     sidecar_review_row = {
         **review_rows[0],
-        "independent_tier2_support_components": (
-            "validated_tier2_trace_evidence"
-        ),
+        "independent_tier2_support_components": ("validated_tier2_trace_evidence"),
     }
     decision = evaluate_production_candidate_gate(
         sidecar_review_row,
@@ -1492,10 +1520,7 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
     assert cells[0]["status"] == "detected"
     assert cells[0]["area"] == "10"
     assert cells[0]["primary_matrix_area"] == "10"
-    assert (
-        cells[0]["primary_matrix_area_source"]
-        == "gaussian15_positive_asls_residual"
-    )
+    assert cells[0]["primary_matrix_area_source"] == "gaussian15_positive_asls_residual"
     assert cells[0]["primary_matrix_area_reason"] == ""
     assert cells[0]["source_candidate_id"] == "sample-a#1"
     assert cells[0]["region_candidate_count"] == "2"
@@ -1506,9 +1531,7 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
     assert cells[0]["region_decision_status"] == "evaluated"
     assert cells[0]["region_decision_class"] == "merge_suggested"
     assert cells[0]["region_product_action"] == "safe_merge_eligible"
-    assert cells[0]["region_promotion_reason"] == (
-        "adjacent_wis_local_minimum_merge"
-    )
+    assert cells[0]["region_promotion_reason"] == ("adjacent_wis_local_minimum_merge")
     assert cells[0]["region_baseline_method"] == "asls"
     assert status[0]["sample-a"] == "detected"
     assert status[0]["sample-b"] == "unchecked"
@@ -1823,18 +1846,14 @@ def test_write_alignment_owner_backfill_candidate_audit_tsv_is_sidecar(
                     backfill_request_rt_min=7.5,
                     backfill_request_rt_max=9.5,
                     backfill_request_ppm=20.0,
-                    reason=(
-                        "owner-centered MS1 backfill query found no accepted peak"
-                    ),
+                    reason=("owner-centered MS1 backfill query found no accepted peak"),
                     selection_note="not_selected",
                 ),
             ),
         )
     )
 
-    assert list(audit[0]) == list(
-        ALIGNMENT_OWNER_BACKFILL_CANDIDATE_AUDIT_COLUMNS
-    )
+    assert list(audit[0]) == list(ALIGNMENT_OWNER_BACKFILL_CANDIDATE_AUDIT_COLUMNS)
     assert audit[0]["feature_family_id"] == "FAM000001"
     assert audit[0]["candidate_phase"] == "primary_query"
     assert audit[0]["selected_for_output"] == "FALSE"
@@ -1895,8 +1914,7 @@ def test_private_write_tsv_preserves_lf_formula_and_format_contract(
     )
 
     assert path.read_text(encoding="utf-8") == (
-        "'=formula_header\tfloat_value\tblank\n"
-        "'=formula_value\t100\t\n"
+        "'=formula_header\tfloat_value\tblank\n'=formula_value\t100\t\n"
     )
 
     empty_path = tsv_writer._write_tsv(
@@ -2092,9 +2110,7 @@ def _cell(
         region_decision_status="evaluated" if region else "",
         region_decision_class="merge_suggested" if region else "",
         region_product_action="safe_merge_eligible" if region else "",
-        region_promotion_reason=(
-            "adjacent_wis_local_minimum_merge" if region else ""
-        ),
+        region_promotion_reason=("adjacent_wis_local_minimum_merge" if region else ""),
         region_baseline_method="asls" if region else "",
         integration_audit=(
             CellIntegrationAuditSummary(
@@ -2128,6 +2144,7 @@ def _integration(
     asls_area: float | None,
     baseline_type: str = "asls",
     morphology_area: float | None = None,
+    morphology_area_source: str = "gaussian15_positive_asls_residual",
 ) -> IntegrationResult:
     return IntegrationResult(
         rt_left_min=8.4,
@@ -2143,9 +2160,7 @@ def _integration(
         boundary_sources=("test",),
         area_ms1_morphology=morphology_area,
         ms1_morphology_area_source=(
-            "gaussian15_positive_asls_residual"
-            if morphology_area is not None
-            else ""
+            morphology_area_source if morphology_area is not None else ""
         ),
     )
 

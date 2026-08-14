@@ -46,28 +46,45 @@ promotion semantics from `docs/agent/product-validation-contract.md`.
 For the first-principles design rationale behind smoothed-everywhere trace
 processing, see [`product/signal-processing-rationale.md`](product/signal-processing-rationale.md).
 
-- The active MS1 morphology trace for peak shape, noise-shape, paired area-ratio
-  review, and user-facing/final matrix area is Gaussian15-smoothed positive AsLS
-  residual (`gaussian15_positive_asls_residual`) by default. The smoothing
-  window is configurable through `ms1_morphology_smoothing_window_points`, with
-  default `15`.
-- Raw trapezoid area and AsLS baseline-corrected area remain compatibility and
-  audit evidence. They may be printed, compared, or used as fallback for legacy
-  integrations that do not yet carry morphology facts, but they must not outrank
-  typed morphology facts when those facts exist.
+- For profile-covered physical work, the canonical signal is exactly
+  `max(Gaussian(raw; window_points, sigma=window_points/6, unit_sum,
+  zero_pad_same) - AsLS(raw; lam=100000, p=0.01, n_iter=10), 0)`. Gaussian and
+  AsLS are both computed from raw independently. AsLS is fixed baseline
+  estimation, not a second smoothing method.
+- The canonical public profile fields are `signal_processing_method`
+  (`gaussian` only) and `signal_processing_window_points` (default 15; non-bool
+  odd integer 3–999). The legacy settings spelling
+  `ms1_morphology_smoothing_window_points` is a one-way load-time alias only;
+  equal canonical/legacy values migrate with a deprecation receipt and conflicts
+  fail before RAW. `smooth_window`, `smooth_polyorder`, and `resolver_mode` are
+  not aliases and cannot alter profile-covered facts.
+- Raw trapezoid area and standalone AsLS baseline-corrected area may remain
+  compatibility or audit evidence for explicitly excluded legacy consumers.
+  Covered Owner Backfill work has no raw/legacy compatibility fallback: apex,
+  boundaries, height, area, scan support, and relative shape share one profile-
+  bound canonical signal and fact identity.
 - Gaussian15 morphology improves boundary readability and MS1 shape/pattern
   evidence. It is not identity authority by itself: paired RT, target window,
   product/NL/MS2 acquisition opportunity, and untargeted identity-coherence
   guards still decide whether a candidate is accepted, not counted, ambiguous,
   or excluded.
-- Gaussian-smoothed positive AsLS residual area is the current product area
-  owner, with configured window provenance recorded in metadata and candidate
-  rows. The default 15-point smoothing is scan-rate sensitive, and non-default
+- Canonical Gaussian(raw)-AsLS(raw) positive area is the selected product
+  direction for the bounded Owner Backfill migration, with profile/fact/value
+  provenance. Numeric area differences from legacy integration are accepted
+  quantitative expected differences; parity must not be manufactured by a
+  second calculation. The default 15-point smoothing is scan-rate sensitive, and non-default
   windows must be treated as method parameters. Production-ready claims across
   batches must include a `gaussian15_area_pressure_audit.py` review of
   raw-vs-Gaussian area ratios and estimated smoothing duration. This audit is
   observational only; it must not mutate selected boundaries, selected area,
   confidence, presence, workbook output, or matrix values.
+- Formula-driven apex, boundary, height, scan-support, and relative-shape
+  differences are qualitative. They require bounded current-head real-RAW and
+  independent manual-EIC evidence before production activation. Selected
+  hypothesis, duplicate/ambiguity handling, SUPPORT/HOLD/REJECT/unavailable,
+  Backfill status, activation, row/cell identity, and write/blank decisions are
+  hard-zero expected differences. A qualitative mismatch is HOLD, never a
+  reason to restore legacy computation to force parity.
 - For accepted candidates, `ChromPeakSegment` is the active chromatographic
   boundary owner when a Gaussian15 morphology segment contains the selected
   apex. It can replace an over-wide legacy resolver interval with an explicit
@@ -94,6 +111,11 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   diagnostics, but high-risk rescue promotion must not rely on broad-window
   membership, `owner_backfill` trace labels, local apex presence, or scan support
   alone.
+- Untargeted Owner Backfill is an independent first consumer of the shared
+  physical signal owner; it does not require a Targeted-first migration or use
+  Targeted output parity as its acceptance baseline. Targeted, Discovery,
+  Alignment owner-build, Standard Peak, and gallery migrations remain separate
+  authority/evidence slices and must not redefine this Backfill gate.
 - Broad Backfill candidate universes are audit/review surfaces, not writer
   pools. Quality blockers, quality explanations, round-trip reintegration
   checks, ISTD comparisons, review packets, and lockbox membership may raise

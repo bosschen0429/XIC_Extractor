@@ -1,6 +1,10 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    resolve_signal_processing_profile,
+)
 from xic_extractor.settings_schema import CANONICAL_RESOLVER_MODE
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     EXPLICIT_SUPPORT_TSV_POLICY,
@@ -19,6 +23,9 @@ class ExtractionConfig:
     peak_min_prominence_ratio: float
     ms2_precursor_tol_da: float
     nl_min_intensity_ratio: float
+    # Compatibility field for callers outside the canonical profile migration.
+    # Settings ingestion maps the legacy spelling one-way into the canonical
+    # field; covered Owner Backfill processing does not read this field.
     ms1_morphology_smoothing_window_points: int = 15
     resolver_mode: str = CANONICAL_RESOLVER_MODE
     resolver_chrom_threshold: float = 0.05
@@ -51,6 +58,16 @@ class ExtractionConfig:
     parallel_workers: int = 1
     config_hash: str = ""
     target_config_hash: str = ""
+    signal_processing_method: str = DEFAULT_SIGNAL_PROCESSING_PROFILE.method
+    signal_processing_window_points: int = (
+        DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
+    )
+
+    def __post_init__(self) -> None:
+        resolve_signal_processing_profile(
+            signal_processing_method=self.signal_processing_method,
+            signal_processing_window_points=self.signal_processing_window_points,
+        )
 
 
 @dataclass(frozen=True)
@@ -72,4 +89,3 @@ class Target:
 
 class ConfigError(Exception):
     """Raised when settings.csv or targets.csv contains invalid values."""
-

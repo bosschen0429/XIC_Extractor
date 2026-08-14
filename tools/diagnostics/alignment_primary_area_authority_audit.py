@@ -9,7 +9,7 @@ from pathlib import Path
 
 from xic_extractor.alignment.primary_matrix_area import (
     MISSING_MS1_MORPHOLOGY_AREA,
-    MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE,
+    PRIMARY_MATRIX_AREA_SOURCES,
 )
 from xic_extractor.diagnostics.diagnostic_io import read_tsv_required, write_tsv
 
@@ -86,13 +86,10 @@ def _authority_class(row: dict[str, str]) -> str:
     source = row.get("primary_matrix_area_source", "")
     reason = row.get("primary_matrix_area_reason", "")
     if _has_nonblank_value(primary_value) and (
-        source != MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE
+        source not in PRIMARY_MATRIX_AREA_SOURCES
     ):
         return "non_gaussian_primary_area"
-    if (
-        primary_area is not None
-        and source == MS1_MORPHOLOGY_PRIMARY_MATRIX_AREA_SOURCE
-    ):
+    if primary_area is not None and source in PRIMARY_MATRIX_AREA_SOURCES:
         return "gaussian_primary_area"
     if reason == MISSING_MS1_MORPHOLOGY_AREA:
         return "fail_closed_missing_morphology"

@@ -68,13 +68,19 @@ PRODUCTIZATION_STATUS_HANDOFF_PATH = PRODUCTIZATION_STATUS_ANCHOR_PATH
 CLOSEOUT_DIR = "docs/superpowers/closeouts/"
 
 PRODUCTIZATION_SCHEMA_REL = (
-    "docs/superpowers/schemas/productization_control_plane_schema.v2.json"
+    "docs/superpowers/schemas/productization_control_plane_schema.v3.json"
 )
 PRODUCTIZATION_STATUS_INDEX_REL = (
     "docs/superpowers/validation/productization_status_index_v1.tsv"
 )
 PRODUCTIZATION_AUTHORITY_MANIFEST_REL = (
     "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+)
+QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL = (
+    "docs/superpowers/schemas/quantitative_projection_authority_manifest_schema.v1.json"
+)
+QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL = (
+    "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
 )
 PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL = (
     "docs/superpowers/file-management/docs-cleanup/"
@@ -452,6 +458,7 @@ DOC_ROUTING_AUTHORITY_REFERRER_PATHS = frozenset(
         "docs/superpowers/validation/lockbox_review_packets_v1/packet_index.tsv",
         "docs/superpowers/validation/productization_status_index_v1.tsv",
         "docs/superpowers/schemas/productization_authority_manifest.v1.json",
+        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
     }
 )
 PRIVATE_HISTORY_SIGNALS = [

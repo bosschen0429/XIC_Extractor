@@ -24,6 +24,12 @@ from xic_extractor.alignment.output_rows import (
     safe_rate,
 )
 from xic_extractor.alignment.owner_backfill import OwnerBackfillCandidateAuditRow
+from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    OwnerBackfillPeakFactProvenanceBatch,
+)
+from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    write_owner_backfill_peak_fact_provenance_tsv as _write_peak_fact_provenance,
+)
 from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
     GROUP_BACKFILL_SEED_AUDIT_COLUMNS,
@@ -514,6 +520,7 @@ def write_alignment_backfill_cell_evidence_tsv(
 
     return _write_tsv_sequences(path, ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS, rows())
 
+
 def write_alignment_cell_integration_audit_tsv(
     path: Path,
     matrix: AlignmentMatrix,
@@ -553,9 +560,7 @@ def write_alignment_cell_integration_audit_tsv(
             "neutral_loss_tag": cluster.neutral_loss_tag,
             "family_center_mz": format_value(_family_center_mz(cluster)),
             "family_center_rt": format_value(_family_center_rt(cluster)),
-            "area_baseline_corrected": format_value(
-                audit.area_baseline_corrected
-            ),
+            "area_baseline_corrected": format_value(audit.area_baseline_corrected),
             "area_uncertainty": format_value(audit.area_uncertainty),
             "area_uncertainty_formula_version": (
                 audit.area_uncertainty_formula_version
@@ -566,9 +571,7 @@ def write_alignment_cell_integration_audit_tsv(
             "baseline_score": format_value(audit.baseline_score),
             "uncertainty_fraction": format_value(audit.uncertainty_fraction),
             "baseline_fraction": format_value(audit.baseline_fraction),
-            "integration_scan_count": format_value(
-                audit.integration_scan_count
-            ),
+            "integration_scan_count": format_value(audit.integration_scan_count),
         }
         rows.append(row)
     return _write_tsv(path, columns, rows)
@@ -659,6 +662,15 @@ def write_alignment_owner_backfill_candidate_audit_tsv(
     )
 
 
+def write_alignment_owner_backfill_peak_fact_provenance_tsv(
+    path: Path,
+    batch: OwnerBackfillPeakFactProvenanceBatch,
+) -> Path:
+    """Render an already validated bounded physical-fact projection."""
+
+    return _write_peak_fact_provenance(path, batch)
+
+
 def write_alignment_status_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
     columns = (
         "feature_family_id",
@@ -738,9 +750,7 @@ def _review_rows(
                 "quantifiable_detected_count": (
                     row_decision.quantifiable_detected_count
                 ),
-                "quantifiable_rescue_count": (
-                    row_decision.quantifiable_rescue_count
-                ),
+                "quantifiable_rescue_count": (row_decision.quantifiable_rescue_count),
                 "accepted_cell_count": row_decision.accepted_cell_count,
                 "accepted_rescue_count": row_decision.accepted_rescue_count,
                 "review_rescue_count": row_decision.review_rescue_count,
@@ -918,9 +928,8 @@ def _warning(
         return "no_anchor"
     if sample_count > 0 and unchecked_count / sample_count > 0.5:
         return "high_unchecked"
-    if (
-        rescued_count > detected_count
-        and (detected_count == 0 or not _has_detected_owner_evidence(cluster))
+    if rescued_count > detected_count and (
+        detected_count == 0 or not _has_detected_owner_evidence(cluster)
     ):
         return "high_backfill_dependency"
     return ""

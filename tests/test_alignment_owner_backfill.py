@@ -1,8 +1,9 @@
 import pickle
-from dataclasses import fields, replace
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from pytest import MonkeyPatch
 
 import xic_extractor.alignment.owner_backfill as owner_backfill_module
@@ -17,19 +18,14 @@ from xic_extractor.alignment.owner_backfill_request_plan import (
     build_owner_backfill_request_plan,
 )
 from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
-from xic_extractor.alignment.process_backend import (
-    OwnerBackfillProcessOutput,
-    OwnerBackfillSampleResult,
-)
 from xic_extractor.config import ExtractionConfig
-from xic_extractor.peak_detection.evidence_facts import (
-    PeakTraceEvidenceFacts,
-    TraceWindowEvidenceFacts,
-)
-from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.ms1_shape_identity import OwnMaxTrace
 from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.processing_identity import build_acquisition_source_identity
+
+_TEST_SIGNAL_PROCESSING_PROFILE = SignalProcessingProfile(window_points=3)
 
 
 def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
@@ -63,10 +59,7 @@ def test_owner_backfill_rescues_missing_sample_from_feature_center() -> None:
     assert cell.public_family_id == "FAM000001"
     assert cell.group_construction_role == "successor_constructor"
     assert cell.group_delivery_role == "owner_aligned_feature_compatibility_facade"
-    assert (
-        cell.group_membership_source
-        == "owner_aligned_feature_successor_projection"
-    )
+    assert cell.group_membership_source == "owner_aligned_feature_successor_projection"
     assert cell.gap_fill_state == "gap_fill_rescued"
     assert cell.gap_fill_reason == "group_centered_query_detected"
     assert cell.missing_observation_state == "queried_and_detected"
@@ -91,6 +84,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
         raw_sources={"sample-b": _dense_peak_source(center=8.50, height=120.0)},
         alignment_config=AlignmentConfig(max_rt_sec=60.0),
         peak_config=replace(_peak_config(), resolver_min_scans=10),
+        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
     )
 
     candidate = build_owner_backfill_result(
@@ -100,6 +94,7 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
         expected_acquisition_sources={"sample-b": acquisition},
         alignment_config=AlignmentConfig(max_rt_sec=60.0),
         peak_config=replace(_peak_config(), resolver_min_scans=10),
+        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
     )
 
     assert candidate.cells == baseline.cells
@@ -117,6 +112,44 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
     assert observation.trace_evaluated is True
     assert observation.fact_elapsed_seconds is not None
     assert observation.fact_elapsed_seconds > 0
+    rehydrated_observation = pickle.loads(pickle.dumps(observation))
+    assert rehydrated_observation == observation
+    owner_backfill_module.validate_owner_backfill_peak_fact_observation(
+        rehydrated_observation
+    )
+    with pytest.raises(ValueError, match="must be minted by Owner Backfill"):
+        replace(observation, _mint_token=object())
+    assert observation.physical_evaluation is not None
+    forged_question = replace(
+        observation.physical_evaluation.question,
+        selection_subject_id="owner-backfill-subject.v1:" + "0" * 64,
+    )
+    with pytest.raises(ValueError, match="physical selection subject"):
+        replace(
+            observation,
+            physical_evaluation=replace(
+                observation.physical_evaluation,
+                question=forged_question,
+            ),
+            _mint_token=(
+                owner_backfill_module._OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN
+            ),
+        )
+    forged_query = replace(
+        observation.physical_evaluation.question,
+        query_rt_min=observation.physical_evaluation.question.query_rt_min + 0.01,
+    )
+    with pytest.raises(ValueError, match="physical query RT"):
+        replace(
+            observation,
+            physical_evaluation=replace(
+                observation.physical_evaluation,
+                question=forged_query,
+            ),
+            _mint_token=(
+                owner_backfill_module._OWNER_BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN
+            ),
+        )
     assert candidate.peak_fact_unsealed_evaluation_keys == ()
     assert not hasattr(candidate, "peak_fact_cost")
     assert owner_backfill_module._positive_elapsed(0.0) is None
@@ -124,60 +157,23 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
 
 
 def test_owner_backfill_fact_receipt_drops_trace_arrays_and_worker_payload() -> None:
-    point_count = 50_000
-    integration = IntegrationResult(
-        rt_left_min=8.0,
-        rt_apex_min=8.5,
-        rt_right_min=9.0,
-        raw_apex_rt_min=8.5,
-        rt_width_min=1.0,
-        height_raw=100.0,
-        height_smoothed=95.0,
-        area_raw_counts_seconds=1_000.0,
-        raw_scan_indices=tuple(range(point_count)),
+    result = build_owner_backfill_result(
+        (_feature(),),
+        sample_order=("sample-a", "sample-b"),
+        raw_sources={"sample-b": _dense_peak_source(center=8.50, height=120.0)},
+        alignment_config=AlignmentConfig(max_rt_sec=60.0),
+        peak_config=replace(_peak_config(), resolver_min_scans=10),
+        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
     )
-    window = TraceWindowEvidenceFacts(
-        status="ok",
-        reason="bounded receipt oracle",
-        query_apex_rt_min=8.5,
-        query_apex_in_trace_window=True,
-    )
-
-    def full_facts(size: int) -> PeakTraceEvidenceFacts:
-        return PeakTraceEvidenceFacts(
-            integration=integration,
-            normalized_shape_trace=OwnMaxTrace(
-                status="ok",
-                reason="bounded receipt oracle",
-                rt=tuple(float(index) for index in range(size)),
-                intensity=tuple(1.0 for _index in range(size)),
-                max_intensity=1.0,
-            ),
-            window=window,
-            smoothing_count=1,
-            integration_count=1,
-        )
-
-    small = owner_backfill_module._bounded_peak_fact_receipt(full_facts(3))
-    large = owner_backfill_module._bounded_peak_fact_receipt(
-        full_facts(point_count)
-    )
-
-    assert small.integration.raw_scan_indices == ()
-    assert large.integration.raw_scan_indices == ()
-    assert small.normalized_shape_point_count == 3
-    assert large.normalized_shape_point_count == point_count
-    assert not hasattr(small, "normalized_shape_trace")
-    assert len(pickle.dumps(large)) <= len(pickle.dumps(small)) + 16
-    assert "peak_fact_observations" not in {
-        field.name for field in fields(OwnerBackfillSampleResult)
-    }
-    assert "peak_fact_observations" not in {
-        field.name for field in fields(OwnerBackfillProcessOutput)
-    }
+    assert result.peak_fact_unsealed_evaluation_keys
+    receipt = result.candidate_audit_rows[0]
+    assert receipt.area is not None
+    cell = result.cells[0]
+    assert cell.selected_integration is not None
+    assert cell.selected_integration.raw_scan_indices == ()
 
 
-def test_owner_backfill_shared_peak_disagreement_holds_without_write(
+def test_owner_backfill_canonical_path_does_not_call_retired_local_helpers(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -185,25 +181,18 @@ def test_owner_backfill_shared_peak_disagreement_holds_without_write(
         tmp_path,
         b"owner-backfill-shadow-disagreement",
     )
-    original = owner_backfill_module.peak_trace_evidence
 
-    def disagreeing_facts(*args, **kwargs):
-        facts = original(*args, **kwargs)
-        return replace(
-            facts,
-            integration=replace(
-                facts.integration,
-                area_raw_counts_seconds=(
-                    facts.integration.area_raw_counts_seconds + 1.0
-                ),
-            ),
-        )
+    def retired(*args, **kwargs):
+        raise AssertionError("retired Owner Backfill helper was called")
 
-    monkeypatch.setattr(
-        owner_backfill_module,
+    for name in (
+        "detect_ms1_trace_peak",
+        "find_peak_and_area",
+        "integration_from_peak",
         "peak_trace_evidence",
-        disagreeing_facts,
-    )
+        "_scan_support_score",
+    ):
+        monkeypatch.setattr(owner_backfill_module, name, retired)
 
     result = build_owner_backfill_result(
         (_feature(),),
@@ -212,16 +201,16 @@ def test_owner_backfill_shared_peak_disagreement_holds_without_write(
         expected_acquisition_sources={"sample-b": acquisition},
         alignment_config=AlignmentConfig(max_rt_sec=60.0),
         peak_config=replace(_peak_config(), resolver_min_scans=10),
+        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
     )
 
     assert len(result.cells) == 1
-    assert result.cells[0].status == "unchecked"
-    assert result.cells[0].area is None
-    assert result.cells[0].selected_integration is None
-    assert result.cells[0].trace_quality == "owner_backfill_unassessable"
-    assert "disagreed" in result.cells[0].reason
+    assert result.cells[0].status == "rescued"
+    assert result.cells[0].area is not None
+    assert result.cells[0].selected_integration is not None
+    assert result.cells[0].trace_quality == "owner_backfill"
     assert result.candidate_audit_rows[0].selected_for_output is True
-    assert result.candidate_audit_rows[0].candidate_outcome == "unassessable"
+    assert result.candidate_audit_rows[0].candidate_outcome == "detected"
     assert result.peak_fact_observations[0].facts is not None
 
 
@@ -693,8 +682,7 @@ def test_owner_backfill_result_records_all_candidate_audit_rows() -> None:
     )
 
     assert [
-        (cell.cluster_id, cell.sample_stem, cell.status)
-        for cell in result.cells
+        (cell.cluster_id, cell.sample_stem, cell.status) for cell in result.cells
     ] == [("FAM000001", "sample-b", "rescued")]
     assert [
         (row.sample_stem, row.backfill_seed_mz, row.candidate_status)
@@ -1384,6 +1372,7 @@ def _peak_config() -> ExtractionConfig:
         diagnostics_csv="diagnostics.csv",
         smooth_window=3,
         smooth_polyorder=1,
+        ms1_morphology_smoothing_window_points=3,
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=1.6,

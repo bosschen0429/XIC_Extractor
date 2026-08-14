@@ -68,14 +68,24 @@ or the relevant structured productization owner.
   `ProductionAcceptanceManifest v1` contract. This defines/checks the only
   future Backfill row artifact that may grant `write_authority=true`; it does
   not activate ProductWriter or the default quant matrix.
-- `productization_authority_manifest.v1.json`: productization authority manifest
-  contract for current authority, owner, and activation state.
+- `productization_authority_manifest.v1.json`: current ProductWriter authority
+  manifest. Its registered writer scopes remain the exclusive write lanes.
 - `productization_control_plane_schema.v1.json`: retained predecessor contract
   for consumers pinned to the original field and allowed-value shape; it is not
   the current checker default.
-- `productization_control_plane_schema.v2.json`: current control-plane schema
-  for productization lane state, maturity, authority rules, and the stable
-  compatibility-anchor registry.
+- `productization_control_plane_schema.v2.json`: retained predecessor contract
+  for consumers pinned before dependent-effect lane authority was introduced;
+  it is not the current checker default.
+- `productization_control_plane_schema.v3.json`: current control-plane schema
+  for productization lane state, maturity, authority rules, the stable
+  compatibility-anchor registry, and dependent-effect lane authority.
+- `quantitative_projection_authority_manifest_schema.v1.json`: schema contract
+  for the dependent canonical quantitative projection manifest. It requires
+  exact package and activation bindings while granting no ProductWriter scope.
+- `quantitative_projection_authority_manifest.v1.json`: structured authority
+  owner for canonical Owner Backfill dependent quantitative-projection package
+  and activation bindings. Read current state from this manifest, not narrative
+  documentation.
 - `quant_matrix_version_schema.v1.json`: Phase 3 explicit
   `QuantMatrixVersion v1` activation output contract. It defines
   `quant_matrix`, `cell_provenance`, `row_summary`, expected-diff, and source

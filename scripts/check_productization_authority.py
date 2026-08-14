@@ -25,9 +25,17 @@ from scripts.check_productization_state import artifact_sha256  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     MECHANICAL_ADJUDICATION_INDEX_REL,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
+)
+from xic_extractor.alignment.quantitative_projection_authority import (  # noqa: E402
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1,
+    QuantitativeProjectionAuthorityError,
+    rehydrate_quantitative_projection_authority_manifest,
+    render_quantitative_projection_authority_manifest_bytes,
 )
 
 DEFAULT_MANIFEST = ROOT / PRODUCTIZATION_AUTHORITY_MANIFEST_REL
+DEFAULT_DEPENDENT_MANIFEST = ROOT / QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL
 DEFAULT_SCHEMA = (
     ROOT / "docs/superpowers/schemas/mechanical_adjudication_schema.v1.json"
 )
@@ -38,11 +46,42 @@ CID_NL_APPROVED_SCOPE = "cid_nl_adopt_ready_feature_inclusion_95_cells"
 BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE = (
     "backfill_expansion_clean_target_selective_activation_84_cells"
 )
-APPROVED_SCOPES = {
+APPROVED_SCOPE_ORDER = (
     APPROVED_SCOPE,
     CID_NL_APPROVED_SCOPE,
     BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE,
-}
+)
+APPROVED_SCOPES = frozenset(APPROVED_SCOPE_ORDER)
+DEPENDENT_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest_v1"
+DEPENDENT_EFFECT_ID = "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+DEPENDENT_HOLD_STATUS = "HOLD_PENDING_VALIDATION"
+DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
+    "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
+)
+DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
+    "35283f11af2dcaf6ccfafdef506c12568b38feeb070fb58670a4c649ee74e619"
+)
+WRITER_MANIFEST_FIELDS = (
+    "schema_version",
+    "status",
+    "updated",
+    "authority_policy",
+    "current_authority",
+    "parked_lanes",
+    "explanation_only_sources",
+    "blocked_or_negative_evidence_scopes",
+)
+WRITER_AUTHORITY_POLICY_FIELDS = (
+    "unregistered_scope_policy",
+    "product_writer_allowed_scopes",
+    "matrix_write_requires",
+    "forbidden_authority_sources",
+)
+WRITER_CURRENT_AUTHORITY_FIELDS = (
+    "backfill",
+    "cid_nl_default_activation",
+    "backfill_expansion_clean_target_selective_activation",
+)
 PARKED_BROAD_BACKFILL = "broad_backfill"
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
@@ -56,18 +95,24 @@ NEGATIVE_SCOPE_IDS = {
 def check_productization_authority(
     *,
     manifest_path: Path = DEFAULT_MANIFEST,
+    dependent_manifest_path: Path = DEFAULT_DEPENDENT_MANIFEST,
     schema_path: Path = DEFAULT_SCHEMA,
     index_path: Path = DEFAULT_INDEX,
     repo_root: Path = ROOT,
 ) -> list[str]:
     problems: list[str] = []
     manifest = _read_json(manifest_path, problems)
+    dependent_manifest, dependent_manifest_raw = _read_json_bytes(
+        dependent_manifest_path,
+        problems,
+    )
     schema = _read_json(schema_path, problems)
     header, rows = _read_tsv(index_path, problems)
-    if not manifest or not schema:
+    if not manifest or not dependent_manifest or not schema:
         return problems
 
     _check_manifest(manifest, problems)
+    _check_dependent_manifest(dependent_manifest, dependent_manifest_raw, problems)
     _check_schema_and_index(schema, header, rows, problems)
     _check_index_authority(manifest, rows, problems)
     _check_source_hashes(manifest, rows, repo_root, problems)
@@ -75,17 +120,123 @@ def check_productization_authority(
     return problems
 
 
+def _check_dependent_manifest(
+    manifest: dict[str, Any],
+    manifest_raw: bytes,
+    problems: list[str],
+) -> None:
+    if tuple(manifest) != QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1:
+        problems.append(
+            "dependent authority manifest fields must preserve the exact ordered "
+            "V1 contract"
+        )
+    if manifest.get("schema_version") != DEPENDENT_MANIFEST_SCHEMA_VERSION:
+        problems.append("dependent authority manifest schema_version must remain V1")
+    if manifest.get("effect_id") != DEPENDENT_EFFECT_ID:
+        problems.append("dependent authority manifest effect_id is crossed")
+    if manifest.get("status") != DEPENDENT_HOLD_STATUS:
+        problems.append(
+            "dependent authority manifest must remain HOLD_PENDING_VALIDATION; "
+            "ACTIVE is outside this ticket"
+        )
+    if manifest.get("package_authority_artifact") != (
+        DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT
+    ):
+        problems.append("dependent authority manifest package artifact is crossed")
+    if manifest.get("package_authority_sha256") != (DEPENDENT_PACKAGE_AUTHORITY_SHA256):
+        problems.append("dependent authority manifest package hash drifted")
+
+    try:
+        owner_manifest = rehydrate_quantitative_projection_authority_manifest(manifest)
+        canonical_manifest_raw = (
+            render_quantitative_projection_authority_manifest_bytes(owner_manifest)
+        )
+    except QuantitativeProjectionAuthorityError as exc:
+        problems.append(f"dependent authority owner replay failed: {exc}")
+        return
+
+    if manifest_raw != canonical_manifest_raw:
+        problems.append(
+            "dependent authority manifest must exactly match owner-rendered "
+            "canonical bytes"
+        )
+
+    if owner_manifest.schema_version != DEPENDENT_MANIFEST_SCHEMA_VERSION:
+        problems.append("owner replay returned an unexpected dependent schema")
+    if owner_manifest.effect_id != DEPENDENT_EFFECT_ID:
+        problems.append("owner replay returned an unexpected dependent effect")
+    if owner_manifest.status != DEPENDENT_HOLD_STATUS:
+        problems.append("owner replay did not return the required HOLD status")
+    if owner_manifest.package_authority_artifact != (
+        DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT
+    ):
+        problems.append("owner replay returned an unexpected package artifact")
+    if owner_manifest.package_authority_sha256 != (DEPENDENT_PACKAGE_AUTHORITY_SHA256):
+        problems.append("owner replay returned an unexpected package hash")
+    if owner_manifest.allowed_registered_writer_scope_ids != APPROVED_SCOPE_ORDER:
+        problems.append(
+            "dependent authority manifest writer scopes must equal the existing "
+            "three registered scopes in order"
+        )
+    if (
+        owner_manifest.activation_summary_artifact != ""
+        or owner_manifest.activation_summary_sha256 != ""
+        or owner_manifest.current_effect_cell_count != 0
+    ):
+        problems.append(
+            "dependent HOLD authority must have no activation summary or effect cells"
+        )
+
+    package_path = ROOT / owner_manifest.package_authority_artifact
+    if not package_path.is_file():
+        problems.append(
+            "dependent package authority artifact is missing: "
+            f"{owner_manifest.package_authority_artifact}"
+        )
+    elif artifact_sha256(package_path).lower() != (
+        owner_manifest.package_authority_sha256
+    ):
+        problems.append(
+            "dependent package authority raw hash does not match owner replay"
+        )
+
+
 def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
+    if tuple(manifest) != WRITER_MANIFEST_FIELDS:
+        problems.append(
+            "writer authority manifest fields/order changed from the frozen V1 contract"
+        )
+    if manifest.get("schema_version") != "productization_authority_manifest_v1":
+        problems.append("writer authority manifest schema_version must remain V1")
+    if manifest.get("status") != "active":
+        problems.append("writer authority manifest status must remain active")
     policy = manifest.get("authority_policy")
     if not isinstance(policy, Mapping):
         problems.append("manifest missing authority_policy object")
         return
+    if tuple(policy) != WRITER_AUTHORITY_POLICY_FIELDS:
+        problems.append(
+            "writer authority policy fields/order changed from the frozen contract"
+        )
     if policy.get("unregistered_scope_policy") != "fail_closed":
         problems.append("unregistered_scope_policy must be fail_closed")
-    if set(policy.get("product_writer_allowed_scopes", [])) != APPROVED_SCOPES:
+    raw_writer_scopes = policy.get("product_writer_allowed_scopes")
+    if (
+        not isinstance(raw_writer_scopes, list)
+        or tuple(raw_writer_scopes) != APPROVED_SCOPE_ORDER
+    ):
         problems.append(
-            "product_writer_allowed_scopes must match registered scopes: "
-            f"{sorted(APPROVED_SCOPES)!r}",
+            "product_writer_allowed_scopes must preserve the exact three registered "
+            f"scopes in order: {APPROVED_SCOPE_ORDER!r}",
+        )
+
+    current_authority = manifest.get("current_authority")
+    if not isinstance(current_authority, Mapping):
+        problems.append("manifest missing current_authority object")
+    elif tuple(current_authority) != WRITER_CURRENT_AUTHORITY_FIELDS:
+        problems.append(
+            "writer current_authority fields/order must remain the exact three "
+            "registered lanes"
         )
 
     backfill = _mapping_path(manifest, "current_authority", "backfill")
@@ -209,7 +360,16 @@ def _check_index_authority(
     problems: list[str],
 ) -> None:
     policy = manifest.get("authority_policy")
-    allowed = set(policy.get("product_writer_allowed_scopes", []))
+    if not isinstance(policy, Mapping):
+        problems.append("manifest missing authority_policy object for index check")
+        return
+    raw_allowed = policy.get("product_writer_allowed_scopes")
+    if not isinstance(raw_allowed, list) or not all(
+        isinstance(scope, str) for scope in raw_allowed
+    ):
+        problems.append("manifest product_writer_allowed_scopes must be a string list")
+        return
+    allowed = set(raw_allowed)
     authority_scope_values: set[str] = set()
     for index, row in enumerate(rows, start=2):
         write_authority = row.get("write_authority")
@@ -633,14 +793,50 @@ def _require_row_value(
         problems.append(f"row {row_number}: {field} must be {expected!r}")
 
 
+class _DuplicateJsonKeyError(ValueError):
+    pass
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    parsed: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in parsed:
+            raise _DuplicateJsonKeyError(f"duplicate JSON object key: {key!r}")
+        parsed[key] = value
+    return parsed
+
+
 def _read_json(path: Path, problems: list[str]) -> dict[str, Any]:
+    payload, _ = _read_json_bytes(path, problems)
+    return payload
+
+
+def _read_json_bytes(
+    path: Path,
+    problems: list[str],
+) -> tuple[dict[str, Any], bytes]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_bytes()
     except OSError as exc:
         problems.append(f"{path}: cannot read JSON: {exc}")
-    except json.JSONDecodeError as exc:
+        return {}, b""
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        problems.append(f"{path}: invalid UTF-8 JSON: {exc}")
+        return {}, raw
+    try:
+        payload = json.loads(
+            decoded,
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
+    except (json.JSONDecodeError, _DuplicateJsonKeyError) as exc:
         problems.append(f"{path}: invalid JSON: {exc}")
-    return {}
+        return {}, raw
+    if type(payload) is not dict:
+        problems.append(f"{path}: JSON payload must be one object")
+        return {}, raw
+    return payload, raw
 
 
 def _read_tsv(
@@ -670,6 +866,11 @@ def _parse_semicolon_pairs(value: str) -> dict[str, str]:
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument(
+        "--dependent-manifest",
+        type=Path,
+        default=DEFAULT_DEPENDENT_MANIFEST,
+    )
     parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA)
     parser.add_argument("--index", type=Path, default=DEFAULT_INDEX)
     parser.add_argument("--repo-root", type=Path, default=ROOT)
@@ -680,6 +881,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     problems = check_productization_authority(
         manifest_path=args.manifest,
+        dependent_manifest_path=args.dependent_manifest,
         schema_path=args.schema,
         index_path=args.index,
         repo_root=args.repo_root,

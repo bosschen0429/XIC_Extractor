@@ -68,6 +68,19 @@ from xic_extractor.processing_identity import (
 )
 
 
+def test_runtime_peak_fact_operation_vocabulary_is_exact() -> None:
+    assert tuple(operation.value for operation in RuntimePeakFactOperation) == (
+        "trace_evaluation",
+        "asls_baseline",
+        "gaussian_smoothing",
+        "segment_enumeration",
+        "integration",
+        "normalization",
+        "raw_descriptor_projection",
+        "region_audit_projection",
+    )
+
+
 def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
     tmp_path: Path,
 ) -> None:
@@ -124,13 +137,19 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
             sample_stem="sample-a",
             operations=(
                 RuntimePeakFactOperation.TRACE_EVALUATION,
+                RuntimePeakFactOperation.ASLS_BASELINE,
                 RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+                RuntimePeakFactOperation.SEGMENT_ENUMERATION,
                 RuntimePeakFactOperation.INTEGRATION,
+                RuntimePeakFactOperation.NORMALIZATION,
+                RuntimePeakFactOperation.RAW_DESCRIPTOR_PROJECTION,
+                RuntimePeakFactOperation.REGION_AUDIT_PROJECTION,
             ),
             identity_status=RuntimePeakFactIdentityStatus.SEALED,
             owner_request_identity="owner-request:1",
             group_hypothesis_id="GROUP:1",
             acquisition_source=source,
+            prepared_signal_id="prepared-signal.v1:" + "1" * 64,
             elapsed_seconds=0.25,
         ),
         RuntimePeakFactWorkReceipt(
@@ -156,13 +175,24 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
     assert metrics.raw_open_count == 1
     assert metrics.trace_evaluation_count == 2
     assert metrics.smoothing_count == 1
+    assert metrics.asls_baseline_count == 1
+    assert metrics.segment_enumeration_count == 1
     assert metrics.integration_count == 1
+    assert metrics.normalization_count == 1
+    assert metrics.raw_descriptor_projection_count == 1
+    assert metrics.region_audit_projection_count == 1
     assert metrics.artifact_round_trip_count == 0
     assert metrics.sealed_observation_count == 1
     assert metrics.identity_unavailable_count == 1
     assert metrics.elapsed_seconds == pytest.approx(0.25)
     assert metrics.measurement_source == "execution_runtime_owner:v1"
     assert metrics.count_scope == "owner_backfill_worker_peak_fact_runtime"
+
+    with pytest.raises(
+        RuntimeFinalizationContractError,
+        match="requires prepared_signal_id",
+    ):
+        replace(work[0], prepared_signal_id=None)
 
     with pytest.raises(RuntimeFinalizationContractError, match="duplicate"):
         derive_runtime_peak_fact_cost_metrics(
@@ -198,18 +228,48 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
             operations=(),
             identity_status=RuntimePeakFactIdentityStatus.UNAVAILABLE,
         )
+    with pytest.raises(RuntimeFinalizationContractError, match="at most once"):
+        RuntimePeakFactWorkReceipt(
+            work_unit_key="duplicate-asls",
+            sample_stem="sample-a",
+            operations=(
+                RuntimePeakFactOperation.TRACE_EVALUATION,
+                RuntimePeakFactOperation.ASLS_BASELINE,
+                RuntimePeakFactOperation.ASLS_BASELINE,
+            ),
+            identity_status=RuntimePeakFactIdentityStatus.SEALED,
+            owner_request_identity="owner-request:duplicate-asls",
+            group_hypothesis_id="GROUP:duplicate-asls",
+            acquisition_source=source,
+        )
+    with pytest.raises(RuntimeFinalizationContractError, match="canonical order"):
+        RuntimePeakFactWorkReceipt(
+            work_unit_key="out-of-order",
+            sample_stem="sample-a",
+            operations=(
+                RuntimePeakFactOperation.TRACE_EVALUATION,
+                RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+                RuntimePeakFactOperation.ASLS_BASELINE,
+            ),
+            identity_status=RuntimePeakFactIdentityStatus.SEALED,
+            owner_request_identity="owner-request:out-of-order",
+            group_hypothesis_id="GROUP:out-of-order",
+            acquisition_source=source,
+        )
     with pytest.raises(RuntimeFinalizationContractError, match="finite and positive"):
         RuntimePeakFactWorkReceipt(
             work_unit_key="non-finite",
             sample_stem="sample-a",
             operations=(
                 RuntimePeakFactOperation.TRACE_EVALUATION,
+                RuntimePeakFactOperation.ASLS_BASELINE,
                 RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
             ),
             identity_status=RuntimePeakFactIdentityStatus.SEALED,
             owner_request_identity="owner-request:non-finite",
             group_hypothesis_id="GROUP:non-finite",
             acquisition_source=source,
+            prepared_signal_id="prepared-signal.v1:" + "2" * 64,
             elapsed_seconds=float("nan"),
         )
     with pytest.raises(
@@ -220,8 +280,13 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
             raw_open_count=1,
             raw_open_unavailable_reason="",
             trace_evaluation_count=2,
+            asls_baseline_count=1,
             smoothing_count=1,
+            segment_enumeration_count=1,
             integration_count=1,
+            normalization_count=1,
+            raw_descriptor_projection_count=1,
+            region_audit_projection_count=1,
             artifact_round_trip_count=0,
             artifact_round_trip_unavailable_reason="",
             sealed_observation_count=1,
@@ -229,6 +294,119 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
             elapsed_seconds=0.25,
             elapsed_unavailable_reason="",
             _mint_token=object(),
+        )
+
+
+def test_runtime_owner_counts_preparation_once_per_prepared_signal(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "shared.raw"
+    raw_path.write_bytes(b"shared-prepared-signal")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format="thermo_raw",
+        observation_namespace="thermo_raw_file_reader:Device.MS:1",
+    )
+    shared_prepared_signal_id = "prepared-signal.v1:" + "a" * 64
+    operations = (
+        RuntimePeakFactOperation.TRACE_EVALUATION,
+        RuntimePeakFactOperation.ASLS_BASELINE,
+        RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+        RuntimePeakFactOperation.SEGMENT_ENUMERATION,
+        RuntimePeakFactOperation.INTEGRATION,
+        RuntimePeakFactOperation.NORMALIZATION,
+        RuntimePeakFactOperation.RAW_DESCRIPTOR_PROJECTION,
+        RuntimePeakFactOperation.REGION_AUDIT_PROJECTION,
+    )
+    receipts = tuple(
+        RuntimePeakFactWorkReceipt(
+            work_unit_key=f"sealed:{index}",
+            sample_stem="sample-a",
+            operations=operations,
+            identity_status=RuntimePeakFactIdentityStatus.SEALED,
+            owner_request_identity=f"owner-request:{index}",
+            group_hypothesis_id=f"GROUP:{index}",
+            acquisition_source=source,
+            prepared_signal_id=shared_prepared_signal_id,
+            elapsed_seconds=0.25,
+        )
+        for index in range(2)
+    )
+
+    metrics = derive_runtime_peak_fact_cost_metrics(
+        raw_session_capability=None,
+        raw_open_receipts=(),
+        work_receipts=receipts,
+        artifact_io=None,
+    )
+
+    assert metrics.trace_evaluation_count == 1
+    assert metrics.asls_baseline_count == 1
+    assert metrics.smoothing_count == 1
+    assert metrics.segment_enumeration_count == 2
+    assert metrics.integration_count == 2
+    assert metrics.normalization_count == 2
+    assert metrics.raw_descriptor_projection_count == 2
+    assert metrics.region_audit_projection_count == 2
+    assert metrics.sealed_observation_count == 2
+
+    distinct_metrics = derive_runtime_peak_fact_cost_metrics(
+        raw_session_capability=None,
+        raw_open_receipts=(),
+        work_receipts=(
+            receipts[0],
+            replace(
+                receipts[1],
+                prepared_signal_id="prepared-signal.v1:" + "b" * 64,
+            ),
+        ),
+        artifact_io=None,
+    )
+    assert distinct_metrics.trace_evaluation_count == 2
+    assert distinct_metrics.asls_baseline_count == 2
+    assert distinct_metrics.smoothing_count == 2
+    assert distinct_metrics.segment_enumeration_count == 2
+
+    unavailable_metrics = derive_runtime_peak_fact_cost_metrics(
+        raw_session_capability=None,
+        raw_open_receipts=(),
+        work_receipts=tuple(
+            replace(
+                receipt,
+                operations=(RuntimePeakFactOperation.TRACE_EVALUATION,),
+                elapsed_seconds=None,
+            )
+            for receipt in receipts
+        ),
+        artifact_io=None,
+    )
+    assert unavailable_metrics.trace_evaluation_count == 1
+    assert unavailable_metrics.asls_baseline_count == 0
+    assert unavailable_metrics.smoothing_count == 0
+    assert unavailable_metrics.segment_enumeration_count == 0
+    assert unavailable_metrics.integration_count == 0
+    assert unavailable_metrics.normalization_count == 0
+    assert unavailable_metrics.raw_descriptor_projection_count == 0
+
+    with pytest.raises(RuntimeFinalizationContractError, match="prepared_signal_id"):
+        replace(receipts[0], prepared_signal_id="prepared-signal.v1:not-a-digest")
+
+    with pytest.raises(
+        RuntimeFinalizationContractError,
+        match="inconsistent preparation operations",
+    ):
+        derive_runtime_peak_fact_cost_metrics(
+            raw_session_capability=None,
+            raw_open_receipts=(),
+            work_receipts=(
+                receipts[0],
+                replace(
+                    receipts[1],
+                    operations=(RuntimePeakFactOperation.TRACE_EVALUATION,),
+                    elapsed_seconds=None,
+                ),
+            ),
+            artifact_io=None,
         )
 
 
@@ -252,13 +430,18 @@ def test_runtime_owner_keeps_missing_peak_fact_timing_and_artifacts_unavailable(
                 sample_stem="sample-a",
                 operations=(
                     RuntimePeakFactOperation.TRACE_EVALUATION,
+                    RuntimePeakFactOperation.ASLS_BASELINE,
                     RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
+                    RuntimePeakFactOperation.SEGMENT_ENUMERATION,
                     RuntimePeakFactOperation.INTEGRATION,
+                    RuntimePeakFactOperation.NORMALIZATION,
+                    RuntimePeakFactOperation.RAW_DESCRIPTOR_PROJECTION,
                 ),
                 identity_status=RuntimePeakFactIdentityStatus.SEALED,
                 owner_request_identity="owner-request:missing-time",
                 group_hypothesis_id="GROUP:missing-time",
                 acquisition_source=source,
+                prepared_signal_id="prepared-signal.v1:" + "3" * 64,
             ),
         ),
         artifact_io=None,

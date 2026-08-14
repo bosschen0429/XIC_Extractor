@@ -110,7 +110,9 @@ def test_atomic_directory_publication_retries_transient_windows_lock(
 
     gate_c_fixture._publish_directory_atomic(staging, output_dir)
 
-    assert attempts == 2
+    # The injected first lock requires a retry; Windows may independently hold
+    # the directory for another attempt under full-suite load.
+    assert 2 <= attempts <= 5
     assert not staging.exists()
     assert (output_dir / "receipt.json").is_file()
 

@@ -1,4 +1,5 @@
 import math
+from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -9,8 +10,18 @@ from xic_extractor.alignment.matrix import (
     AlignmentMatrix,
     AlignmentRowLike,
 )
+from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
+    OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION,
+    OwnerBackfillCellProjectionV2,
+)
 from xic_extractor.alignment.production_decisions import (
+    ALIGNMENT_DECISION_CONFIG_FIELDS,
+    ALIGNMENT_DECISION_CONFIG_ID_PREFIX,
+    PRODUCTION_CELL_DECISION_ID_PREFIX,
+    PRODUCTION_CELL_DECISION_SCHEMA_VERSION,
+    alignment_decision_config_projection,
     build_production_decisions,
+    production_cell_decision_projection,
     production_cell_decision_record,
 )
 from xic_extractor.alignment.promotion_policy import (
@@ -25,6 +36,174 @@ from xic_extractor.alignment.promotion_policy import (
     STANDARD_PEAK_GATE_MS1_SUPPORT_REASON,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+
+_PRODUCTION_CELL_DECISION_FIELDS = (
+    "owner_backfill_cell_content_id",
+    "alignment_decision_config_id",
+    "feature_family_id",
+    "sample_stem",
+    "raw_status",
+    "production_status",
+    "rescue_tier",
+    "write_matrix_value",
+    "matrix_value",
+    "blank_reason",
+    "matrix_value_source",
+)
+_FINAL_CELL_PROJECTION_FIELDS = (
+    "group_hypothesis_id",
+    "public_family_id",
+    "sample_stem",
+    "profile_id",
+    "selected_work_unit_key",
+    "selected_fact_content_id",
+    "owner_backfill_cell_content_id",
+    "production_cell_decision_id",
+    "cell_status",
+    "consolidation_state",
+    "consolidation_winner_group_hypothesis_id",
+    "consolidation_source_group_hypothesis_id",
+    "matrix_value_counts_seconds",
+    "matrix_value_source",
+    "writer_schema_version",
+)
+_EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS = (
+    "preferred_ppm",
+    "max_ppm",
+    "preferred_rt_sec",
+    "max_rt_sec",
+    "product_mz_tolerance_ppm",
+    "observed_loss_tolerance_ppm",
+    "mz_bucket_neighbor_radius",
+    "anchor_priorities",
+    "anchor_min_evidence_score",
+    "anchor_min_seed_events",
+    "anchor_min_scan_support_score",
+    "duplicate_fold_ppm",
+    "duplicate_fold_rt_sec",
+    "duplicate_fold_product_ppm",
+    "duplicate_fold_observed_loss_ppm",
+    "duplicate_fold_min_detected_overlap",
+    "duplicate_fold_min_shared_detected_count",
+    "duplicate_fold_min_detected_jaccard",
+    "duplicate_fold_min_present_overlap",
+    "owner_window_overlap_fraction",
+    "owner_apex_close_sec",
+    "owner_tail_seed_guard_sec",
+    "owner_tail_max_secondary_ratio",
+    "owner_backfill_min_detected_samples",
+    "identity_rt_candidate_window_sec",
+    "rt_unit",
+    "fragmentation_model",
+)
+
+
+def test_alignment_decision_config_identity_covers_exact_27_fields() -> None:
+    projection = alignment_decision_config_projection(AlignmentConfig())
+
+    assert ALIGNMENT_DECISION_CONFIG_FIELDS == (
+        _EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS
+    )
+    assert tuple(field.name for field in fields(projection)) == (
+        _EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS
+    )
+    assert projection.alignment_decision_config_id.startswith(
+        ALIGNMENT_DECISION_CONFIG_ID_PREFIX
+    )
+
+    alternatives: dict[str, object] = {
+        name: (
+            ("MEDIUM",)
+            if name == "anchor_priorities"
+            else "changed"
+            if name in {"rt_unit", "fragmentation_model"}
+            else getattr(projection, name) + 1
+        )
+        for name in _EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS
+    }
+    for name, value in alternatives.items():
+        assert (
+            replace(projection, **{name: value}).alignment_decision_config_id
+            != projection.alignment_decision_config_id
+        )
+
+
+def test_production_cell_projection_binds_live_cell_config_value_and_source() -> None:
+    matrix = _matrix(
+        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
+        cells=(
+            _cell("s1", "FAM001", "detected", 100.0),
+            _cell("s2", "FAM001", "detected", 95.0),
+        ),
+        sample_order=("s1", "s2"),
+    )
+    config = AlignmentConfig()
+    decision = build_production_decisions(matrix, config).cell("FAM001", "s1")
+
+    projection = production_cell_decision_projection(
+        decision,
+        cell=matrix.cells[0],
+        config=config,
+        owner_backfill_cell_content_id=("owner-backfill-authority-cell.v2:" + "0" * 64),
+    )
+
+    assert projection.production_cell_decision_id.startswith(
+        PRODUCTION_CELL_DECISION_ID_PREFIX
+    )
+    assert PRODUCTION_CELL_DECISION_SCHEMA_VERSION == (
+        "production_cell_decision_projection_v2"
+    )
+    assert PRODUCTION_CELL_DECISION_ID_PREFIX == "production-cell-decision.v2:"
+    assert projection.matrix_value == matrix.cells[0].matrix_area
+    assert projection.matrix_value_source == matrix.cells[0].matrix_area_source
+    assert tuple(field.name for field in fields(projection)) == (
+        _PRODUCTION_CELL_DECISION_FIELDS
+    )
+    for field_name in _PRODUCTION_CELL_DECISION_FIELDS:
+        mutated = replace(
+            projection,
+            **{
+                field_name: _different_projection_value(getattr(projection, field_name))
+            },
+        )
+        assert (
+            mutated.production_cell_decision_id
+            != projection.production_cell_decision_id
+        ), field_name
+
+
+def test_final_cell_projection_identity_covers_every_field_and_writer_version() -> None:
+    projection = OwnerBackfillCellProjectionV2(
+        group_hypothesis_id="group-hypothesis:1",
+        public_family_id="public-family:1",
+        sample_stem="sample-1",
+        profile_id="signal-profile.v1:" + "1" * 64,
+        selected_work_unit_key="work-unit:1",
+        selected_fact_content_id="physical-facts.v1:" + "2" * 64,
+        owner_backfill_cell_content_id=("owner-backfill-authority-cell.v2:" + "3" * 64),
+        production_cell_decision_id="production-cell-decision.v2:" + "4" * 64,
+        cell_status="detected",
+        consolidation_state="not_consolidated",
+        consolidation_winner_group_hypothesis_id="",
+        consolidation_source_group_hypothesis_id="",
+        matrix_value_counts_seconds=123.5,
+        matrix_value_source="trapezoid_counts_seconds_on_canonical_signal_v1",
+    )
+
+    assert projection.writer_schema_version == (
+        OWNER_BACKFILL_PROVENANCE_WRITER_SCHEMA_VERSION
+    )
+    assert tuple(field.name for field in fields(projection)) == (
+        _FINAL_CELL_PROJECTION_FIELDS
+    )
+    for field_name in _FINAL_CELL_PROJECTION_FIELDS:
+        mutated = replace(
+            projection,
+            **{
+                field_name: _different_projection_value(getattr(projection, field_name))
+            },
+        )
+        assert mutated.cell_projection_id != projection.cell_projection_id, field_name
 
 
 def test_detected_and_supported_rescue_write_numeric_values():
@@ -417,10 +596,14 @@ def test_production_cell_decision_record_keeps_review_rescue_out_of_matrix() -> 
         ),
     )
 
-    record = build_production_decisions(
-        matrix,
-        AlignmentConfig(),
-    ).cell("FAM001", "rescue01").decision_record
+    record = (
+        build_production_decisions(
+            matrix,
+            AlignmentConfig(),
+        )
+        .cell("FAM001", "rescue01")
+        .decision_record
+    )
 
     assert record.decision_class == "review"
     assert record.blockers == (BACKFILL_MS1_PATTERN_BLOCKED_REASON,)
@@ -472,8 +655,7 @@ def test_weak_seed_backfill_dependency_row_is_supported_by_cell_evidence():
                 source_candidate_id="seed3#candidate",
             ),
             *tuple(
-                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i)
-                for i in range(1, 7)
+                _cell(f"rescue{i}", "FAM001", "rescued", 70.0 + i) for i in range(1, 7)
             ),
             _cell("absent", "FAM001", "absent", None),
         ),
@@ -760,9 +942,7 @@ def test_product_authorized_same_peak_wrong_hypothesis_stays_review_rescue():
 
 def test_product_authorized_claim_resolved_by_current_winner_writes_rescue():
     matrix = _matrix(
-        clusters=(
-            _feature("FAM001", evidence="owner_complete_link;owner_count=3"),
-        ),
+        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
         cells=(
             _cell("d1", "FAM001", "detected", 100.0),
             _cell("d2", "FAM001", "detected", 95.0),
@@ -841,6 +1021,16 @@ def test_bool_area_is_not_a_valid_production_matrix_area():
     assert rescued.production_status == "rejected_rescue"
     assert rescued.rescue_tier == "rejected_rescue"
     assert rescued.blank_reason == "invalid_area"
+
+
+def _different_projection_value(value: object) -> object:
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, (int, float)):
+        return value + 1
+    if isinstance(value, str):
+        return f"{value}-mutated"
+    raise AssertionError(f"unsupported projection field value: {value!r}")
 
 
 def _matrix(
@@ -930,7 +1120,9 @@ def _cell(
         source_candidate_id=(
             source_candidate_id
             if source_candidate_id is not None
-            else f"{sample_stem}#1" if status == "detected" else None
+            else f"{sample_stem}#1"
+            if status == "detected"
+            else None
         ),
         source_raw_file=Path(f"{sample_stem}.raw") if status == "detected" else None,
         reason=(

@@ -1,4 +1,5 @@
 from gui.sections.settings_section import SettingsSection
+from xic_extractor.config import migrate_settings_dict
 
 
 def _canonical_settings() -> dict[str, str]:
@@ -7,7 +8,8 @@ def _canonical_settings() -> dict[str, str]:
         "dll_dir": "C:\\dll",
         "smooth_window": "17",
         "smooth_polyorder": "2",
-        "ms1_morphology_smoothing_window_points": "15",
+        "signal_processing_method": "gaussian",
+        "signal_processing_window_points": "15",
         "peak_rel_height": "0.90",
         "peak_min_prominence_ratio": "0.15",
         "resolver_mode": "legacy_savgol",
@@ -54,7 +56,9 @@ def test_settings_section_saves_canonical_keys_after_canonical_load(qtbot) -> No
     assert migrated is False
     assert values["smooth_window"] == "17"
     assert values["smooth_polyorder"] == "2"
-    assert values["ms1_morphology_smoothing_window_points"] == "15"
+    assert values["signal_processing_method"] == "gaussian"
+    assert values["signal_processing_window_points"] == "15"
+    assert "ms1_morphology_smoothing_window_points" not in values
     assert values["peak_rel_height"] == "0.90"
     assert values["peak_min_prominence_ratio"] == "0.15"
     assert values["ms2_precursor_tol_da"] == "0.4"
@@ -86,7 +90,9 @@ def test_settings_section_migrates_legacy_smoothing_keys_on_save(qtbot) -> None:
     assert values["smooth_window"] == "19"
     assert values["smooth_polyorder"] == "3"
     assert values["peak_rel_height"] == "0.95"
-    assert values["ms1_morphology_smoothing_window_points"] == "15"
+    assert values["signal_processing_method"] == "gaussian"
+    assert values["signal_processing_window_points"] == "15"
+    assert "ms1_morphology_smoothing_window_points" not in values
     assert "smooth_points" not in values
     assert "smooth_sigma" not in values
 
@@ -109,8 +115,64 @@ def test_settings_section_exposes_new_processing_controls(qtbot) -> None:
     assert values["peak_min_prominence_ratio"] == "0.25"
     assert values["ms2_precursor_tol_da"] == "0.7"
     assert values["nl_min_intensity_ratio"] == "0.03"
-    assert values["ms1_morphology_smoothing_window_points"] == "21"
+    assert values["signal_processing_method"] == "gaussian"
+    assert values["signal_processing_window_points"] == "21"
+    assert "ms1_morphology_smoothing_window_points" not in values
     assert values["count_no_ms2_as_detected"] == "false"
+
+
+def test_settings_section_round_trips_nondefault_canonical_signal_window(qtbot) -> None:
+    section = SettingsSection()
+    qtbot.addWidget(section)
+    section.load(_canonical_settings())
+    section._ms1_morphology_smoothing_window_spin.setValue(21)
+
+    saved = section.get_values()
+    migrated, warnings = migrate_settings_dict(saved)
+    reloaded = SettingsSection()
+    qtbot.addWidget(reloaded)
+    reload_migrated = reloaded.load(migrated)
+
+    assert not any("deprecated_alias" in warning for warning in warnings)
+    assert migrated["signal_processing_window_points"] == "21"
+    assert "ms1_morphology_smoothing_window_points" not in migrated
+    assert reload_migrated is False
+    assert reloaded.get_values()["signal_processing_window_points"] == "21"
+
+
+def test_settings_section_round_trips_default_canonical_signal_window(qtbot) -> None:
+    section = SettingsSection()
+    qtbot.addWidget(section)
+    section.load(_canonical_settings())
+
+    saved = section.get_values()
+    migrated, warnings = migrate_settings_dict(saved)
+    reloaded = SettingsSection()
+    qtbot.addWidget(reloaded)
+    reload_migrated = reloaded.load(migrated)
+
+    assert not any("deprecated_alias" in warning for warning in warnings)
+    assert migrated["signal_processing_window_points"] == "15"
+    assert "ms1_morphology_smoothing_window_points" not in migrated
+    assert reload_migrated is False
+    assert reloaded.get_values()["signal_processing_window_points"] == "15"
+
+
+def test_settings_section_migrates_legacy_signal_window_one_way(qtbot) -> None:
+    legacy_settings = _canonical_settings()
+    legacy_settings.pop("signal_processing_method")
+    legacy_settings.pop("signal_processing_window_points")
+    legacy_settings["ms1_morphology_smoothing_window_points"] = "21"
+    section = SettingsSection()
+    qtbot.addWidget(section)
+
+    migrated = section.load(legacy_settings)
+    values = section.get_values()
+
+    assert migrated is True
+    assert values["signal_processing_method"] == "gaussian"
+    assert values["signal_processing_window_points"] == "21"
+    assert "ms1_morphology_smoothing_window_points" not in values
 
 
 def test_settings_section_numeric_rules_do_not_require_existing_paths(qtbot) -> None:

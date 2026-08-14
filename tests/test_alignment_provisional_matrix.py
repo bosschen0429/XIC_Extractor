@@ -200,10 +200,14 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
     payload = recorder.to_json_dict()
     observations = payload["measurement_observations"]
     expected_scopes = {
+        "alignment_owner_backfill_peak_fact_provenance",
         "provisional_alignment_matrix",
         "provisional_row_identity",
         "provisional_cell_provenance",
         "provisional_matrix_summary",
+    }
+    provisional_scopes = expected_scopes - {
+        "alignment_owner_backfill_peak_fact_provenance"
     }
     projection_records = [
         row
@@ -212,7 +216,12 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
     ]
     assert len(projection_records) == 1
     assert projection_records[0]["elapsed_sec"] >= 0.0
-    for metric in ("writer_projection_time_sec", "writer_temp_write_time_sec"):
+    for metric in ("writer_projection_time_sec",):
+        rows = [row for row in observations if row["metric"] == metric]
+        assert {row["scope"] for row in rows} == provisional_scopes
+        assert all(row["availability"] == "unavailable" for row in rows)
+        assert all(row["value"] is None for row in rows)
+    for metric in ("writer_temp_write_time_sec",):
         rows = [row for row in observations if row["metric"] == metric]
         assert {row["scope"] for row in rows} == expected_scopes
         assert all(row["availability"] == "unavailable" for row in rows)
@@ -232,7 +241,6 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
         assert all(row["value"] is not None for row in rows)
 
     byte_expectations = {
-        "writer_projection_bytes": ("unavailable", False),
         "writer_render_bytes": ("partial", True),
         "writer_temp_write_bytes": ("unavailable", False),
         "writer_rename_bytes": ("measured", True),
@@ -243,6 +251,12 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
         assert {row["scope"] for row in rows} == expected_scopes
         assert all(row["availability"] == availability for row in rows)
         assert all((row["value"] is not None) == has_value for row in rows)
+    projection_byte_rows = [
+        row for row in observations if row["metric"] == "writer_projection_bytes"
+    ]
+    assert {row["scope"] for row in projection_byte_rows} == provisional_scopes
+    assert all(row["availability"] == "unavailable" for row in projection_byte_rows)
+    assert all(row["value"] is None for row in projection_byte_rows)
 
 
 def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
@@ -311,14 +325,16 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
             "ffd670f1d95d8ea2bebaa4b4c492e765d7ea41adaf31760d6292e2f109e13f7d",
             573,
         ),
+        "alignment_owner_backfill_peak_fact_provenance.tsv": (
+            "aa8aa5dffde6f3388e562c3cd13017c14cb5d8866433ff6b5e98d4d017411c5f",
+            1666,
+        ),
     }
 
     assert streamed_outputs.provisional_matrix_tsv is not None
     assert streamed_outputs.provisional_cell_provenance_tsv is not None
     assert "\t'=sample\tsample-b\n" in (
-        streamed_outputs.provisional_matrix_tsv.read_text(
-            encoding="utf-8"
-        )
+        streamed_outputs.provisional_matrix_tsv.read_text(encoding="utf-8")
     )
     provenance_text = streamed_outputs.provisional_cell_provenance_tsv.read_text(
         encoding="utf-8"
@@ -490,6 +506,9 @@ def test_provisional_outputs_publish_as_one_atomic_set(tmp_path: Path) -> None:
 
 def test_provisional_outputs_reject_any_incomplete_bundle(tmp_path: Path) -> None:
     outputs = AlignmentRunOutputs(
+        owner_backfill_peak_fact_provenance_tsv=(
+            tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
+        ),
         provisional_identity_tsv=tmp_path / "provisional_row_identity.tsv",
     )
 
@@ -691,17 +710,19 @@ def _integration(area: float) -> IntegrationResult:
 
 def _provisional_outputs(tmp_path: Path) -> AlignmentRunOutputs:
     return AlignmentRunOutputs(
+        owner_backfill_peak_fact_provenance_tsv=(
+            tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
+        ),
         provisional_matrix_tsv=tmp_path / "provisional_alignment_matrix.tsv",
         provisional_identity_tsv=tmp_path / "provisional_row_identity.tsv",
-        provisional_cell_provenance_tsv=(
-            tmp_path / "provisional_cell_provenance.tsv"
-        ),
+        provisional_cell_provenance_tsv=(tmp_path / "provisional_cell_provenance.tsv"),
         provisional_summary_json=tmp_path / "provisional_matrix_summary.json",
     )
 
 
 def _output_paths(outputs: AlignmentRunOutputs) -> tuple[Path, ...]:
     paths = (
+        outputs.owner_backfill_peak_fact_provenance_tsv,
         outputs.provisional_matrix_tsv,
         outputs.provisional_identity_tsv,
         outputs.provisional_cell_provenance_tsv,

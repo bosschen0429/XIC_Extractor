@@ -120,6 +120,8 @@ def test_load_config_derives_output_paths_and_creates_output_dir(
     assert config.output_csv.parent.exists()
     assert config.smooth_window == 15
     assert config.smooth_polyorder == 3
+    assert config.signal_processing_method == "gaussian"
+    assert config.signal_processing_window_points == 15
     assert config.ms1_morphology_smoothing_window_points == 15
     assert config.count_no_ms2_as_detected is False
     assert config.resolver_mode == "region_first_safe_merge"
@@ -328,7 +330,7 @@ def test_load_config_accepts_region_first_safe_merge_resolver_mode(
     assert config.resolver_mode == "region_first_safe_merge"
 
 
-def test_load_config_accepts_ms1_morphology_smoothing_window_points(
+def test_load_config_migrates_ms1_morphology_smoothing_window_points(
     tmp_path: Path,
 ) -> None:
     config_dir = tmp_path / "config"
@@ -337,7 +339,100 @@ def test_load_config_accepts_ms1_morphology_smoothing_window_points(
 
     config, _ = load_config(config_dir)
 
+    assert config.signal_processing_method == "gaussian"
+    assert config.signal_processing_window_points == 21
     assert config.ms1_morphology_smoothing_window_points == 21
+
+
+def test_load_config_accepts_canonical_signal_processing_settings(
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "config"
+    _write_settings(
+        config_dir,
+        {
+            "signal_processing_method": "gaussian",
+            "signal_processing_window_points": "21",
+        },
+    )
+    _write_targets(config_dir)
+
+    config, _ = load_config(config_dir)
+
+    assert config.signal_processing_method == "gaussian"
+    assert config.signal_processing_window_points == 21
+
+
+def test_load_config_accepts_equal_canonical_and_legacy_signal_window(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    config_dir = tmp_path / "config"
+    _write_settings(
+        config_dir,
+        {
+            "signal_processing_window_points": "21",
+            "ms1_morphology_smoothing_window_points": "21",
+        },
+    )
+    _write_targets(config_dir)
+
+    config, _ = load_config(config_dir)
+
+    assert config.signal_processing_window_points == 21
+    assert "settings_migration_v1" in caplog.text
+    assert "status=deprecated_alias_equal" in caplog.text
+    assert "legacy_key=ms1_morphology_smoothing_window_points" in caplog.text
+    assert "canonical_key=signal_processing_window_points" in caplog.text
+    assert "value=21" in caplog.text
+
+
+def test_load_config_rejects_conflicting_canonical_and_legacy_signal_window(
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "config"
+    _write_settings(
+        config_dir,
+        {
+            "signal_processing_window_points": "21",
+            "ms1_morphology_smoothing_window_points": "15",
+        },
+    )
+    _write_targets(config_dir)
+
+    with pytest.raises(ConfigError) as exc_info:
+        load_config(config_dir)
+
+    _assert_error(
+        exc_info,
+        "signal_processing_window_points",
+        "ms1_morphology_smoothing_window_points",
+        "21",
+        "15",
+    )
+
+
+def test_resolver_and_savgol_settings_do_not_alias_signal_profile(
+    tmp_path: Path,
+) -> None:
+    config_dir = tmp_path / "config"
+    _write_settings(
+        config_dir,
+        {
+            "smooth_window": "21",
+            "smooth_polyorder": "5",
+            "resolver_mode": "legacy_savgol",
+        },
+    )
+    _write_targets(config_dir)
+
+    config, _ = load_config(config_dir)
+
+    assert config.smooth_window == 21
+    assert config.smooth_polyorder == 5
+    assert config.resolver_mode == "legacy_savgol"
+    assert config.signal_processing_method == "gaussian"
+    assert config.signal_processing_window_points == 15
 
 
 def test_load_config_accepts_legacy_savgol_resolver_mode(tmp_path: Path) -> None:
@@ -688,6 +783,8 @@ def test_canonical_settings_defaults_include_parallel_settings() -> None:
     )
     assert CANONICAL_SETTINGS_DEFAULTS["baseline_audit_method"] == ""
     assert CANONICAL_SETTINGS_DEFAULTS["baseline_integration_method"] == "asls"
+    assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_method"] == "gaussian"
+    assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_window_points"] == "15"
     assert CANONICAL_SETTINGS_DEFAULTS["ms1_morphology_smoothing_window_points"] == "15"
 
 
@@ -718,6 +815,37 @@ def test_extraction_config_default_resolver_mode_matches_canonical_settings() ->
     )
 
     assert config.resolver_mode == CANONICAL_SETTINGS_DEFAULTS["resolver_mode"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("signal_processing_method", "asls"),
+        ("signal_processing_window_points", True),
+        ("signal_processing_window_points", 2),
+        ("signal_processing_window_points", 1000),
+    ],
+)
+def test_extraction_config_rejects_invalid_signal_processing_profile_fields(
+    field: str,
+    value: object,
+) -> None:
+    kwargs = {
+        "data_dir": Path("raw"),
+        "dll_dir": Path("dll"),
+        "output_csv": Path("output/xic_results.csv"),
+        "diagnostics_csv": Path("output/xic_diagnostics.csv"),
+        "smooth_window": 15,
+        "smooth_polyorder": 3,
+        "peak_rel_height": 0.95,
+        "peak_min_prominence_ratio": 0.10,
+        "ms2_precursor_tol_da": 0.5,
+        "nl_min_intensity_ratio": 0.01,
+        field: value,
+    }
+
+    with pytest.raises((TypeError, ValueError)):
+        ExtractionConfig(**kwargs)
 
 
 def test_settings_example_includes_parallel_settings() -> None:
@@ -805,6 +933,11 @@ def test_settings_example_documents_region_first_safe_merge_mode() -> None:
     [
         ("smooth_window", "14"),
         ("smooth_polyorder", "15"),
+        ("signal_processing_method", "asls"),
+        ("signal_processing_window_points", "14"),
+        ("signal_processing_window_points", "1"),
+        ("signal_processing_window_points", "1001"),
+        ("signal_processing_window_points", "true"),
         ("ms1_morphology_smoothing_window_points", "14"),
         ("ms1_morphology_smoothing_window_points", "1"),
         ("peak_rel_height", "0.49"),

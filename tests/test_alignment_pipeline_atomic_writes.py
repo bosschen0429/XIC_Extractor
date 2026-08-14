@@ -13,7 +13,7 @@ from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
 
 
-def test_pipeline_keeps_stale_output_pair_when_requested_write_fails(
+def test_pipeline_rejects_stale_output_pair_before_writer_or_raw(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -48,7 +48,8 @@ def test_pipeline_keeps_stale_output_pair_when_requested_write_fails(
         fail_matrix_writer,
     )
 
-    with pytest.raises(RuntimeError, match="matrix failed"):
+    opener = FakeRawOpener()
+    with pytest.raises(FileExistsError, match="owned artifact collisions"):
         pipeline_module.run_alignment(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
@@ -56,16 +57,17 @@ def test_pipeline_keeps_stale_output_pair_when_requested_write_fails(
             output_dir=output_dir,
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
-            raw_opener=FakeRawOpener(),
+            raw_opener=opener,
         )
 
     assert review.read_text(encoding="utf-8") == "old review"
     assert matrix.read_text(encoding="utf-8") == "old matrix"
     assert not (output_dir / "alignment_review.tsv.tmp").exists()
     assert not (output_dir / "alignment_matrix.tsv.tmp").exists()
+    assert opener.calls == []
 
 
-def test_pipeline_rolls_back_stale_output_pair_when_replace_fails(
+def test_pipeline_rejects_stale_output_pair_before_replace_or_raw(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -90,7 +92,8 @@ def test_pipeline_rolls_back_stale_output_pair_when_replace_fails(
 
     monkeypatch.setattr(Path, "replace", fail_second_replace)
 
-    with pytest.raises(PermissionError, match="locked matrix"):
+    opener = FakeRawOpener()
+    with pytest.raises(FileExistsError, match="owned artifact collisions"):
         pipeline_module.run_alignment(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
@@ -98,14 +101,15 @@ def test_pipeline_rolls_back_stale_output_pair_when_replace_fails(
             output_dir=output_dir,
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
-            raw_opener=FakeRawOpener(),
+            raw_opener=opener,
         )
 
     assert review.read_text(encoding="utf-8") == "old review"
     assert matrix.read_text(encoding="utf-8") == "old matrix"
+    assert opener.calls == []
 
 
-def test_run_alignment_owner_edge_evidence_replace_failure_rolls_back(
+def test_run_alignment_rejects_stale_owner_edge_outputs_before_raw(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -145,7 +149,8 @@ def test_run_alignment_owner_edge_evidence_replace_failure_rolls_back(
 
     monkeypatch.setattr(Path, "replace", fail_edge_evidence_replace)
 
-    with pytest.raises(PermissionError, match="locked owner edge evidence"):
+    opener = FakeRawOpener()
+    with pytest.raises(FileExistsError, match="owned artifact collisions"):
         pipeline_module.run_alignment(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
@@ -154,16 +159,17 @@ def test_run_alignment_owner_edge_evidence_replace_failure_rolls_back(
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
             output_level="validation",
-            raw_opener=FakeRawOpener(),
+            raw_opener=opener,
         )
 
     assert workbook.read_text(encoding="utf-8") == "old workbook"
     assert edge_evidence.read_text(encoding="utf-8") == "old edge evidence"
     assert not (output_dir / "owner_edge_evidence.tsv.tmp").exists()
     assert not (output_dir / "owner_edge_evidence.tsv.bak").exists()
+    assert opener.calls == []
 
 
-def test_run_alignment_rolls_back_artifact_set_when_replace_fails(
+def test_run_alignment_rejects_stale_product_artifacts_before_raw(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -187,7 +193,8 @@ def test_run_alignment_rolls_back_artifact_set_when_replace_fails(
 
     monkeypatch.setattr(Path, "replace", fail_html_replace)
 
-    with pytest.raises(PermissionError, match="locked by browser"):
+    opener = FakeRawOpener()
+    with pytest.raises(FileExistsError, match="owned artifact collisions"):
         pipeline_module.run_alignment(
             discovery_batch_index=batch_index,
             raw_dir=raw_dir,
@@ -196,11 +203,12 @@ def test_run_alignment_rolls_back_artifact_set_when_replace_fails(
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
             output_level="production",
-            raw_opener=FakeRawOpener(),
+            raw_opener=opener,
         )
 
     assert workbook.read_text(encoding="utf-8") == "old workbook"
     assert html.read_text(encoding="utf-8") == "old html"
+    assert opener.calls == []
 
 
 def _empty_ownership():
@@ -222,6 +230,9 @@ def test_pipeline_passes_alignment_config_to_production_writers(monkeypatch, tmp
         workbook=tmp_path / "alignment_results.xlsx",
         matrix_tsv=tmp_path / "alignment_matrix.tsv",
         review_tsv=tmp_path / "alignment_review.tsv",
+        owner_backfill_peak_fact_provenance_tsv=(
+            tmp_path / "alignment_owner_backfill_peak_fact_provenance.tsv"
+        ),
     )
 
     def fake_xlsx(path, matrix_arg, *, metadata, alignment_config=None):

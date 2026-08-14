@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.configuration.parsing import (
     _config_error,
     _parse_bool,
@@ -11,6 +11,11 @@ from xic_extractor.configuration.parsing import (
     _parse_int,
     _parse_optional_path,
     _require_range,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    SignalProcessingProfile,
+    resolve_signal_processing_profile,
 )
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
@@ -24,8 +29,18 @@ from xic_extractor.targeted_ms1_shape_identity_policy import (
 LOGGER = logging.getLogger(__name__)
 
 _MIGRATION_DEFAULT_KEYS = tuple(
-    key for key in CANONICAL_SETTINGS_DEFAULTS if key not in {"data_dir", "dll_dir"}
+    key
+    for key in CANONICAL_SETTINGS_DEFAULTS
+    if key
+    not in {
+        "data_dir",
+        "dll_dir",
+        "ms1_morphology_smoothing_window_points",
+    }
 )
+
+_CANONICAL_SIGNAL_WINDOW_KEY = "signal_processing_window_points"
+_LEGACY_SIGNAL_WINDOW_KEY = "ms1_morphology_smoothing_window_points"
 
 
 @dataclass(frozen=True)
@@ -34,7 +49,8 @@ class _ParsedSettings:
     dll_dir: Path
     smooth_window: int
     smooth_polyorder: int
-    ms1_morphology_smoothing_window_points: int
+    signal_processing_method: str
+    signal_processing_window_points: int
     peak_rel_height: float
     peak_min_prominence_ratio: float
     resolver_mode: str
@@ -90,6 +106,54 @@ def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str
             "Dropped smooth_sigma because Savitzky-Golay smoothing has no sigma."
         )
 
+    canonical_window = migrated.get(_CANONICAL_SIGNAL_WINDOW_KEY, "").strip()
+    legacy_window = migrated.get(_LEGACY_SIGNAL_WINDOW_KEY, "").strip()
+    if legacy_window:
+        if canonical_window:
+            try:
+                values_match = int(canonical_window) == int(legacy_window)
+            except ValueError:
+                values_match = canonical_window == legacy_window
+            if not values_match:
+                raise ConfigError(
+                    "conflicting settings keys "
+                    f"{_CANONICAL_SIGNAL_WINDOW_KEY}={canonical_window!r} and "
+                    f"{_LEGACY_SIGNAL_WINDOW_KEY}={legacy_window!r}"
+                )
+            warnings.append(
+                "settings_migration_v1 status=deprecated_alias_equal "
+                f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
+                f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY} "
+                f"value={canonical_window}"
+            )
+        else:
+            try:
+                legacy_points = int(legacy_window)
+                resolve_signal_processing_profile(
+                    signal_processing_window_points=legacy_points,
+                )
+            except (TypeError, ValueError) as exc:
+                raise ConfigError(
+                    f"legacy setting {_LEGACY_SIGNAL_WINDOW_KEY}="
+                    f"{legacy_window!r} cannot migrate to "
+                    f"{_CANONICAL_SIGNAL_WINDOW_KEY}: {exc}"
+                ) from exc
+            migrated[_CANONICAL_SIGNAL_WINDOW_KEY] = legacy_window
+            warnings.append(
+                "settings_migration_v1 status=deprecated_alias_migrated "
+                f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
+                f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY} "
+                f"value={legacy_window}"
+            )
+        migrated.pop(_LEGACY_SIGNAL_WINDOW_KEY, None)
+    elif _LEGACY_SIGNAL_WINDOW_KEY in migrated:
+        migrated.pop(_LEGACY_SIGNAL_WINDOW_KEY)
+        warnings.append(
+            "settings_migration_v1 status=deprecated_alias_empty "
+            f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
+            f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY}"
+        )
+
     for key in _MIGRATION_DEFAULT_KEYS:
         default = CANONICAL_SETTINGS_DEFAULTS[key]
         if key not in migrated or migrated[key] == "":
@@ -113,6 +177,7 @@ def _validate_settings(
 def _parse_settings_values(
     settings: dict[str, str], settings_path: Path
 ) -> _ParsedSettings:
+    signal_profile = _parse_signal_processing_profile(settings, settings_path)
     return _ParsedSettings(
         data_dir=_parse_existing_dir(
             settings_path,
@@ -134,16 +199,8 @@ def _parse_settings_values(
             "smooth_polyorder",
             _setting_value(settings, settings_path, "smooth_polyorder"),
         ),
-        ms1_morphology_smoothing_window_points=_parse_int(
-            settings_path,
-            None,
-            "ms1_morphology_smoothing_window_points",
-            _setting_value(
-                settings,
-                settings_path,
-                "ms1_morphology_smoothing_window_points",
-            ),
-        ),
+        signal_processing_method=signal_profile.method,
+        signal_processing_window_points=signal_profile.window_points,
         peak_rel_height=_parse_float(
             settings_path,
             None,
@@ -331,17 +388,6 @@ def _validate_settings_ranges(
             "smooth_polyorder",
             settings["smooth_polyorder"],
             "must be >= 1 and < smooth_window",
-        )
-    if (
-        parsed.ms1_morphology_smoothing_window_points < 3
-        or parsed.ms1_morphology_smoothing_window_points % 2 == 0
-    ):
-        raise _config_error(
-            settings_path,
-            None,
-            "ms1_morphology_smoothing_window_points",
-            settings["ms1_morphology_smoothing_window_points"],
-            "must be odd and >= 3",
         )
     _require_range(
         settings_path,
@@ -557,9 +603,9 @@ def _build_config(
         diagnostics_csv=output_dir / "xic_diagnostics.csv",
         smooth_window=parsed.smooth_window,
         smooth_polyorder=parsed.smooth_polyorder,
-        ms1_morphology_smoothing_window_points=(
-            parsed.ms1_morphology_smoothing_window_points
-        ),
+        signal_processing_method=parsed.signal_processing_method,
+        signal_processing_window_points=parsed.signal_processing_window_points,
+        ms1_morphology_smoothing_window_points=(parsed.signal_processing_window_points),
         peak_rel_height=parsed.peak_rel_height,
         peak_min_prominence_ratio=parsed.peak_min_prominence_ratio,
         resolver_mode=parsed.resolver_mode,
@@ -608,3 +654,43 @@ def _setting_value(settings: dict[str, str], path: Path, column: str) -> str:
     if value == "":
         raise _config_error(path, None, column, value, "is required")
     return value
+
+
+def _parse_signal_processing_profile(
+    settings: dict[str, str], settings_path: Path
+) -> SignalProcessingProfile:
+    method = _setting_value(
+        settings,
+        settings_path,
+        "signal_processing_method",
+    )
+    window_value = _setting_value(
+        settings,
+        settings_path,
+        _CANONICAL_SIGNAL_WINDOW_KEY,
+    )
+    window_points = _parse_int(
+        settings_path,
+        None,
+        _CANONICAL_SIGNAL_WINDOW_KEY,
+        window_value,
+    )
+    try:
+        return resolve_signal_processing_profile(
+            signal_processing_method=method,
+            signal_processing_window_points=window_points,
+        )
+    except (TypeError, ValueError) as exc:
+        column = (
+            "signal_processing_method"
+            if method != DEFAULT_SIGNAL_PROCESSING_PROFILE.method
+            else _CANONICAL_SIGNAL_WINDOW_KEY
+        )
+        value = method if column == "signal_processing_method" else window_value
+        raise _config_error(
+            settings_path,
+            None,
+            column,
+            value,
+            str(exc),
+        ) from exc

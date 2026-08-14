@@ -1,18 +1,29 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from scripts.check_productization_authority import (
+    APPROVED_SCOPE_ORDER,
+    DEFAULT_DEPENDENT_MANIFEST,
     DEFAULT_INDEX,
     DEFAULT_MANIFEST,
     DEFAULT_SCHEMA,
+    DEPENDENT_HOLD_STATUS,
+    DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT,
+    DEPENDENT_PACKAGE_AUTHORITY_SHA256,
     check_productization_authority,
     main,
 )
 from scripts.check_productization_state import artifact_sha256
+from xic_extractor.alignment.quantitative_projection_authority import (
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1,
+)
 
 BACKFILL_EXTERNALIZED_SUMMARY = (
     "docs/superpowers/validation/"
@@ -22,7 +33,165 @@ BACKFILL_EXTERNALIZED_SUMMARY = (
 
 
 def test_productization_authority_checker_accepts_repo_artifacts() -> None:
+    assert check_productization_authority() == []
     assert main([]) == 0
+
+
+def test_productization_authority_checker_replays_exact_dependent_hold() -> None:
+    payload = json.loads(DEFAULT_DEPENDENT_MANIFEST.read_text(encoding="utf-8"))
+
+    assert tuple(payload) == QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1
+    assert payload["status"] == DEPENDENT_HOLD_STATUS
+    assert payload["package_authority_artifact"] == (
+        DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT
+    )
+    assert payload["package_authority_sha256"] == (DEPENDENT_PACKAGE_AUTHORITY_SHA256)
+    assert tuple(payload["allowed_registered_writer_scope_ids"]) == (
+        APPROVED_SCOPE_ORDER
+    )
+    assert payload["activation_summary_artifact"] == ""
+    assert payload["activation_summary_sha256"] == ""
+    assert payload["current_effect_cell_count"] == 0
+
+
+@pytest.mark.parametrize("mutation", ("missing", "extra", "reordered"))
+def test_productization_authority_checker_rejects_dependent_manifest_shape(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    payload = json.loads(DEFAULT_DEPENDENT_MANIFEST.read_text(encoding="utf-8"))
+    if mutation == "missing":
+        del payload["current_effect_cell_count"]
+    elif mutation == "extra":
+        payload["future_authority"] = True
+    else:
+        payload = {key: payload[key] for key in reversed(tuple(payload))}
+    manifest = tmp_path / f"dependent-{mutation}.json"
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    problems = check_productization_authority(dependent_manifest_path=manifest)
+
+    assert any("fields" in problem and "order" in problem for problem in problems)
+    assert any("owner replay failed" in problem for problem in problems)
+
+
+def test_productization_authority_checker_rejects_duplicate_json_field(
+    tmp_path: Path,
+) -> None:
+    text = DEFAULT_DEPENDENT_MANIFEST.read_text(encoding="utf-8")
+    text = text.replace(
+        '"status":"HOLD_PENDING_VALIDATION"',
+        '"status":"HOLD_PENDING_VALIDATION","status":"HOLD_PENDING_VALIDATION"',
+        1,
+    )
+    manifest = tmp_path / "dependent-duplicate.json"
+    manifest.write_text(text, encoding="utf-8")
+
+    problems = check_productization_authority(dependent_manifest_path=manifest)
+
+    assert any("duplicate JSON object key" in problem for problem in problems)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_problem"),
+    (
+        ("pretty", "owner-rendered canonical bytes"),
+        ("extra_lf", "owner-rendered canonical bytes"),
+        ("no_lf", "owner-rendered canonical bytes"),
+        ("crlf", "owner-rendered canonical bytes"),
+        ("bom", "invalid JSON"),
+    ),
+)
+def test_productization_authority_checker_rejects_noncanonical_manifest_bytes(
+    tmp_path: Path,
+    mutation: str,
+    expected_problem: str,
+) -> None:
+    canonical = DEFAULT_DEPENDENT_MANIFEST.read_bytes()
+    if mutation == "pretty":
+        payload = json.loads(canonical.decode("utf-8"))
+        raw = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
+    elif mutation == "extra_lf":
+        raw = canonical + b"\n"
+    elif mutation == "no_lf":
+        raw = canonical.removesuffix(b"\n")
+    elif mutation == "crlf":
+        raw = canonical.replace(b"\n", b"\r\n")
+    else:
+        raw = b"\xef\xbb\xbf" + canonical
+    manifest = tmp_path / f"dependent-{mutation}.json"
+    manifest.write_bytes(raw)
+
+    problems = check_productization_authority(dependent_manifest_path=manifest)
+
+    assert any(expected_problem in problem for problem in problems)
+
+
+def test_productization_authority_checker_reads_dependent_manifest_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_read_bytes = Path.read_bytes
+    dependent_read_count = 0
+
+    def tracked_read_bytes(path: Path) -> bytes:
+        nonlocal dependent_read_count
+        if path == DEFAULT_DEPENDENT_MANIFEST:
+            dependent_read_count += 1
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", tracked_read_bytes)
+
+    assert check_productization_authority() == []
+    assert dependent_read_count == 1
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_problem"),
+    (
+        ("crossed", "package artifact is crossed"),
+        ("resealed_hash", "package hash drifted"),
+        (
+            "resealed_hold_count",
+            "HOLD manifest requires current_effect_cell_count zero",
+        ),
+        ("status", "must remain HOLD_PENDING_VALIDATION"),
+        ("active", "ACTIVE is outside this ticket"),
+    ),
+)
+def test_productization_authority_checker_rejects_crossed_resealed_or_active(
+    tmp_path: Path,
+    mutation: str,
+    expected_problem: str,
+) -> None:
+    payload = json.loads(DEFAULT_DEPENDENT_MANIFEST.read_text(encoding="utf-8"))
+    if mutation == "crossed":
+        payload["package_authority_artifact"] = (
+            "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+        )
+        payload["package_authority_sha256"] = _raw_sha256(DEFAULT_MANIFEST)
+    elif mutation == "resealed_hash":
+        payload["package_authority_sha256"] = "0" * 64
+    elif mutation == "resealed_hold_count":
+        payload["current_effect_cell_count"] = 1
+    elif mutation == "status":
+        payload["status"] = "PAUSED"
+    else:
+        payload["status"] = "ACTIVE"
+        payload["activation_summary_artifact"] = (
+            "docs/superpowers/validation/"
+            "issue256_untargeted_owner_backfill_canonical_quantitative_activation_v1/"
+            "activation_summary.json"
+        )
+        payload["activation_summary_sha256"] = "a" * 64
+        payload["current_effect_cell_count"] = 1
+    _reseal_dependent_manifest(payload)
+    manifest = tmp_path / f"dependent-{mutation}.json"
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    problems = check_productization_authority(dependent_manifest_path=manifest)
+
+    assert any(expected_problem in problem for problem in problems)
+    assert any("owner replay failed" in problem for problem in problems)
 
 
 def test_productization_authority_checker_rejects_forbidden_scope(
@@ -46,6 +215,29 @@ def test_productization_authority_checker_rejects_forbidden_scope(
 
     assert any("unregistered authority scope" in problem for problem in problems)
     assert any("forbidden authority scopes present" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("mutation", ("reordered_scopes", "dependent_writer_lane"))
+def test_productization_authority_checker_keeps_writer_manifest_unchanged(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    payload = json.loads(DEFAULT_MANIFEST.read_text(encoding="utf-8"))
+    if mutation == "reordered_scopes":
+        payload["authority_policy"]["product_writer_allowed_scopes"].reverse()
+    else:
+        payload["current_authority"][
+            "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+        ] = {"authority_scope": "forbidden_dependent_writer_scope"}
+    manifest = tmp_path / f"writer-{mutation}.json"
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+
+    problems = check_productization_authority(manifest_path=manifest)
+
+    if mutation == "reordered_scopes":
+        assert any("exact three registered scopes in order" in p for p in problems)
+    else:
+        assert any("exact three registered lanes" in p for p in problems)
 
 
 def test_productization_authority_checker_rejects_stale_cid_nl_hash(
@@ -325,3 +517,25 @@ def _mutate_first_non_write_row_to_forbidden_scope(index: Path) -> None:
         )
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _raw_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _reseal_dependent_manifest(payload: dict[str, object]) -> None:
+    projected = {
+        field: payload[field]
+        for field in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1[:-1]
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            projected,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    payload["manifest_content_id"] = (
+        "quantitative-projection-authority-manifest.v1:" + digest
+    )

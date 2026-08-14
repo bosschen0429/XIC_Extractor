@@ -5,8 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
+import xic_extractor.alignment.pipeline as alignment_pipeline_module
 from scripts import run_alignment
 from xic_extractor.alignment.pipeline import AlignmentRunOutputs
+from xic_extractor.alignment.quantitative_projection_authority import (
+    QuantitativeProjectionAuthorityHoldError,
+)
 from xic_extractor.raw_reader import RawReaderError
 
 
@@ -32,9 +36,7 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
         cells = output_dir / "alignment_cells.tsv"
         integration = output_dir / "alignment_cell_integration_audit.tsv"
         backfill_seed = output_dir / "alignment_owner_backfill_seed_audit.tsv"
-        backfill_candidate = (
-            output_dir / "alignment_owner_backfill_candidate_audit.tsv"
-        )
+        backfill_candidate = output_dir / "alignment_owner_backfill_candidate_audit.tsv"
         status = output_dir / "alignment_matrix_status.tsv"
         for path in (
             review,
@@ -96,6 +98,12 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
     assert peak_config.resolver_mode == "legacy_savgol"
     assert peak_config.baseline_audit_method == "asls"
     assert peak_config.baseline_integration_method == "asls"
+    assert peak_config.signal_processing_method == "gaussian"
+    assert peak_config.signal_processing_window_points == 15
+    signal_profile = captured["signal_processing_profile"]
+    assert signal_profile.method == "gaussian"
+    assert signal_profile.window_points == 15
+    assert peak_config.signal_processing_window_points == signal_profile.window_points
     assert captured["output_level"] == "machine"
     assert captured["emit_alignment_cells"] is True
     assert captured["emit_alignment_integration_audit"] is True
@@ -119,6 +127,85 @@ def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
     assert "alignment_owner_backfill_candidate_audit.tsv" in stdout
     assert "alignment_matrix_status.tsv" in stdout
     assert "Owner edge evidence TSV:" in stdout
+
+
+def test_run_alignment_cli_passes_nondefault_signal_processing_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    captured = {}
+
+    def fake_run_alignment(**kwargs):
+        captured.update(kwargs)
+        return AlignmentRunOutputs()
+
+    monkeypatch.setattr(run_alignment, "run_alignment", fake_run_alignment)
+
+    code = run_alignment.main(
+        [
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--signal-processing-method",
+            "gaussian",
+            "--signal-processing-window-points",
+            "21",
+        ]
+    )
+
+    assert code == 0
+    profile = captured["signal_processing_profile"]
+    assert profile.method == "gaussian"
+    assert profile.window_points == 21
+    assert captured["peak_config"].signal_processing_window_points == 21
+
+
+@pytest.mark.parametrize("value", ["true", "2", "1000"])
+def test_run_alignment_cli_rejects_invalid_signal_processing_window(
+    value: str,
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        run_alignment._parse_args(
+            [
+                "--discovery-batch-index",
+                "batch.csv",
+                "--raw-dir",
+                "raw",
+                "--dll-dir",
+                "dll",
+                "--signal-processing-window-points",
+                value,
+            ]
+        )
+
+    assert exc_info.value.code == 2
+
+
+def test_run_alignment_cli_rejects_unsupported_signal_processing_method() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        run_alignment._parse_args(
+            [
+                "--discovery-batch-index",
+                "batch.csv",
+                "--raw-dir",
+                "raw",
+                "--dll-dir",
+                "dll",
+                "--signal-processing-method",
+                "asls",
+            ]
+        )
+
+    assert exc_info.value.code == 2
 
 
 def test_run_alignment_accepts_asls_baseline_integration_method_override(
@@ -2264,9 +2351,7 @@ def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n"
-        "S2,S2.raw,s2.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\nS2,S2.raw,s2.csv\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -2332,8 +2417,7 @@ def test_run_alignment_cli_normal_run_does_not_require_all_raw_paths(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\n",
         encoding="utf-8",
     )
     (tmp_path / "s1.csv").write_text("", encoding="utf-8")
@@ -2368,9 +2452,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n"
-        "S2,S2.raw,s2.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\nS2,S2.raw,s2.csv\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -2447,8 +2529,7 @@ def test_run_alignment_cli_preflight_only_uses_shared_batch_parser(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -2478,8 +2559,7 @@ def test_run_alignment_cli_preflight_only_rejects_missing_candidate_csv(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,missing.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,missing.csv\n",
         encoding="utf-8",
     )
     raw_dir = tmp_path / "raws"
@@ -2512,8 +2592,7 @@ def test_run_alignment_cli_preflight_only_rejects_missing_raw_file(
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\n",
         encoding="utf-8",
     )
     (tmp_path / "s1.csv").write_text("", encoding="utf-8")
@@ -2666,6 +2745,111 @@ def test_run_alignment_cli_returns_2_for_user_visible_errors(
     assert str(exc) in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("profile", ("none", "cprofile"))
+def test_run_alignment_cli_authority_hold_has_exact_terminal_and_zero_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    profile: str,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    output_dir = tmp_path / "alignment"
+    diagnostics_dir = tmp_path / "diagnostics"
+    profile_dir = tmp_path / "profile"
+    for directory in (output_dir, diagnostics_dir, profile_dir):
+        directory.mkdir()
+    timing_path = diagnostics_dir / "alignment_timing.json"
+    live_timing_path = diagnostics_dir / "alignment_live_timing.json"
+    sentinel_paths = (
+        output_dir / "alignment_results.xlsx",
+        output_dir / "alignment_matrix.tsv",
+        output_dir / "alignment_review.tsv",
+        output_dir / "review_report.html",
+        output_dir / "alignment_matrix.tsv.tmp",
+        output_dir / "alignment_results.xlsx.bak",
+        timing_path,
+        live_timing_path,
+        profile_dir / "profile.prof",
+        profile_dir / "profile_top.txt",
+    )
+    for index, path in enumerate(sentinel_paths):
+        path.write_bytes(f"sentinel-{index}".encode())
+    before = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    authority_calls: list[dict[str, str]] = []
+
+    def hold_product_authority(**kwargs: str) -> None:
+        authority_calls.append(kwargs)
+        raise QuantitativeProjectionAuthorityHoldError(
+            "HOLD: quantitative_projection_authority_pending_validation"
+        )
+
+    monkeypatch.setattr(
+        alignment_pipeline_module,
+        "require_product_quantitative_projection_authority",
+        hold_product_authority,
+    )
+    argv = [
+        "--discovery-batch-index",
+        str(batch_index),
+        "--raw-dir",
+        str(raw_dir),
+        "--dll-dir",
+        str(dll_dir),
+        "--output-dir",
+        str(output_dir),
+        "--backfill-scope",
+        "production-equivalent",
+        "--timing-output",
+        str(timing_path),
+        "--timing-live-output",
+        str(live_timing_path),
+    ]
+    if profile == "cprofile":
+        argv.extend(
+            [
+                "--profile",
+                "cprofile",
+                "--profile-output-dir",
+                str(profile_dir),
+            ]
+        )
+
+    code = run_alignment.main(argv)
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.out == ""
+    assert captured.err == (
+        "HOLD: quantitative_projection_authority_pending_validation\n"
+    )
+    assert authority_calls == [
+        {
+            "consumer_id": (
+                "xic_extractor.alignment.pipeline.run_alignment:production-equivalent"
+            ),
+            "signal_processing_profile_id": (
+                "signal-profile.v1:"
+                "bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
+            ),
+        }
+    ]
+    after = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
+
+
 def test_run_alignment_cli_returns_2_for_missing_candidate_csv(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2702,6 +2886,5 @@ def test_pyproject_registers_alignment_cli_script() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
     assert (
-        pyproject["project"]["scripts"]["xic-align-cli"]
-        == "scripts.run_alignment:main"
+        pyproject["project"]["scripts"]["xic-align-cli"] == "scripts.run_alignment:main"
     )
