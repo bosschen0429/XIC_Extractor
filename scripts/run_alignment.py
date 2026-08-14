@@ -20,6 +20,9 @@ from xic_extractor.alignment.drift_evidence import read_targeted_istd_drift_evid
 from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
+from xic_extractor.alignment.quantitative_projection_authority import (
+    QuantitativeProjectionAuthorityHoldError,
+)
 from xic_extractor.alignment.raw_sources import existing_raw_paths
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
@@ -327,6 +330,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             **timing_kwargs,
         }
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
+        authority_hold = False
         try:
             if profiler is None:
                 outputs = run_alignment(**run_kwargs)
@@ -387,12 +391,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                         "Product-ready preset publication check failed: "
                         f"{product_ready_publication_check_outputs.summary_json}",
                     )
+        except QuantitativeProjectionAuthorityHoldError:
+            authority_hold = True
+            raise
         finally:
-            if profiler is not None:
+            if profiler is not None and not authority_hold:
                 _write_cprofile_outputs(
                     profiler,
                     _profile_output_dir(args, output_dir),
                 )
+    except QuantitativeProjectionAuthorityHoldError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     except (
         AlignmentProcessExecutionError,
         RawReaderError,

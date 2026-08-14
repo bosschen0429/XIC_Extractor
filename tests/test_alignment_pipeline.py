@@ -18,6 +18,9 @@ from tests.alignment_pipeline_helpers import write_batch as _write_batch
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.alignment.matrix import AlignmentMatrix
+from xic_extractor.alignment.quantitative_projection_authority import (
+    QuantitativeProjectionAuthorityHoldError,
+)
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
@@ -32,6 +35,347 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
+
+
+class _RouteReachedBatch(RuntimeError):
+    pass
+
+
+class _FamilyId(str):
+    pass
+
+
+class _FamilyIds(frozenset):
+    pass
+
+
+def _allow_product_quantitative_projection_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        pipeline_module,
+        "require_product_quantitative_projection_authority",
+        lambda **_kwargs: None,
+    )
+
+
+@pytest.mark.parametrize(
+    (
+        "backfill_scope",
+        "default_profile",
+        "selected_family_ids",
+        "selected_family_source",
+        "expected_outcome",
+        "expected_authority",
+    ),
+    (
+        pytest.param("production-equivalent", True, frozenset(), "", "hold", "product"),
+        pytest.param(
+            "production-equivalent", True, frozenset(), "  ", "hold", "product"
+        ),
+        pytest.param(
+            "production-equivalent",
+            True,
+            frozenset({"FAM001"}),
+            "",
+            "reject",
+            "none",
+        ),
+        pytest.param(
+            "production-equivalent",
+            True,
+            frozenset(),
+            "families.tsv",
+            "reject",
+            "none",
+        ),
+        pytest.param("production-equivalent", False, frozenset(), "", "reject", "none"),
+        pytest.param(
+            "production-equivalent", False, frozenset(), "  ", "reject", "none"
+        ),
+        pytest.param(
+            "production-equivalent",
+            False,
+            frozenset({"FAM001"}),
+            "",
+            "reject",
+            "none",
+        ),
+        pytest.param(
+            "production-equivalent",
+            False,
+            frozenset(),
+            "families.tsv",
+            "reject",
+            "none",
+        ),
+        pytest.param("full-audit", True, frozenset(), "", "continue", "diagnostic"),
+        pytest.param("full-audit", True, frozenset(), "  ", "continue", "diagnostic"),
+        pytest.param(
+            "full-audit",
+            True,
+            frozenset({"FAM001"}),
+            "",
+            "reject",
+            "none",
+        ),
+        pytest.param(
+            "full-audit",
+            True,
+            frozenset(),
+            "families.tsv",
+            "reject",
+            "none",
+        ),
+        pytest.param("full-audit", False, frozenset(), "", "continue", "none"),
+        pytest.param("full-audit", False, frozenset(), "  ", "continue", "none"),
+        pytest.param(
+            "full-audit",
+            False,
+            frozenset({"FAM001"}),
+            "",
+            "reject",
+            "none",
+        ),
+        pytest.param(
+            "full-audit",
+            False,
+            frozenset(),
+            "families.tsv",
+            "reject",
+            "none",
+        ),
+        pytest.param("selected-families", True, frozenset(), "", "continue", "none"),
+        pytest.param("selected-families", True, frozenset(), "  ", "continue", "none"),
+        pytest.param(
+            "selected-families",
+            True,
+            frozenset({"FAM001"}),
+            "",
+            "continue",
+            "none",
+        ),
+        pytest.param(
+            "selected-families",
+            True,
+            frozenset(),
+            "families.tsv",
+            "continue",
+            "none",
+        ),
+        pytest.param("selected-families", False, frozenset(), "", "continue", "none"),
+        pytest.param("selected-families", False, frozenset(), "  ", "continue", "none"),
+        pytest.param(
+            "selected-families",
+            False,
+            frozenset({"FAM001"}),
+            "",
+            "continue",
+            "none",
+        ),
+        pytest.param(
+            "selected-families",
+            False,
+            frozenset(),
+            "families.tsv",
+            "continue",
+            "none",
+        ),
+    ),
+)
+def test_pipeline_quantitative_projection_authority_route_table(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    backfill_scope: str,
+    default_profile: bool,
+    selected_family_ids: frozenset[str],
+    selected_family_source: str,
+    expected_outcome: str,
+    expected_authority: str,
+) -> None:
+    authority_calls: list[tuple[str, dict[str, str]]] = []
+
+    def require_product_authority(**kwargs: str) -> None:
+        authority_calls.append(("product", kwargs))
+        raise QuantitativeProjectionAuthorityHoldError(
+            "HOLD: quantitative_projection_authority_pending_validation"
+        )
+
+    def load_diagnostic_authority() -> object:
+        authority_calls.append(("diagnostic", {}))
+        return object()
+
+    def stop_at_batch(*_args: object, **_kwargs: object) -> None:
+        raise _RouteReachedBatch
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "require_product_quantitative_projection_authority",
+        require_product_authority,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "load_quantitative_projection_authority_for_diagnostic",
+        load_diagnostic_authority,
+    )
+    monkeypatch.setattr(pipeline_module, "read_discovery_batch_index", stop_at_batch)
+
+    peak_config = _peak_config()
+    if not default_profile:
+        peak_config = replace(peak_config, signal_processing_window_points=21)
+
+    kwargs = {
+        "discovery_batch_index": tmp_path / "batch.csv",
+        "raw_dir": tmp_path / "raw",
+        "dll_dir": tmp_path / "dll",
+        "output_dir": tmp_path / "out",
+        "alignment_config": AlignmentConfig(),
+        "peak_config": peak_config,
+        "output_level": "debug",
+        "backfill_scope": backfill_scope,
+        "selected_family_ids": selected_family_ids,
+        "selected_family_source": selected_family_source,
+    }
+    if expected_outcome == "hold":
+        with pytest.raises(
+            QuantitativeProjectionAuthorityHoldError,
+            match="^HOLD: quantitative_projection_authority_pending_validation$",
+        ):
+            pipeline_module.run_alignment(**kwargs)
+    elif expected_outcome == "reject":
+        with pytest.raises(ValueError) as exc_info:
+            pipeline_module.run_alignment(**kwargs)
+        assert type(exc_info.value) is ValueError
+    else:
+        with pytest.raises(_RouteReachedBatch):
+            pipeline_module.run_alignment(**kwargs)
+
+    if expected_authority == "product":
+        assert authority_calls == [
+            (
+                "product",
+                {
+                    "consumer_id": (
+                        "xic_extractor.alignment.pipeline.run_alignment:"
+                        "production-equivalent"
+                    ),
+                    "signal_processing_profile_id": (
+                        resolve_signal_processing_profile().profile_id
+                    ),
+                },
+            )
+        ]
+    elif expected_authority == "diagnostic":
+        assert authority_calls == [("diagnostic", {})]
+    else:
+        assert authority_calls == []
+
+
+@pytest.mark.parametrize(
+    "selected_family_ids",
+    (
+        pytest.param(set(), id="set"),
+        pytest.param(_FamilyIds(), id="frozenset-subclass"),
+        pytest.param(frozenset({1}), id="non-string-element"),
+        pytest.param(frozenset({_FamilyId("FAM001")}), id="string-subclass"),
+    ),
+)
+def test_pipeline_rejects_non_exact_selected_family_ids_before_authority_or_io(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    selected_family_ids: object,
+) -> None:
+    def fail_if_called(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("invalid selector type must fail before authority or I/O")
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "require_product_quantitative_projection_authority",
+        fail_if_called,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "load_quantitative_projection_authority_for_diagnostic",
+        fail_if_called,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "read_discovery_batch_index",
+        fail_if_called,
+    )
+
+    with pytest.raises(
+        TypeError, match=r"^selected_family_ids must be an exact frozenset\[str\]$"
+    ):
+        pipeline_module.run_alignment(
+            discovery_batch_index=tmp_path / "batch.csv",
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            backfill_scope="production-equivalent",
+            selected_family_ids=selected_family_ids,  # type: ignore[arg-type]
+        )
+
+
+def test_pipeline_authority_hold_precedes_timing_batch_output_and_raw(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority_calls: list[dict[str, str]] = []
+
+    def hold_product_authority(**kwargs: str) -> None:
+        authority_calls.append(kwargs)
+        raise QuantitativeProjectionAuthorityHoldError(
+            "HOLD: quantitative_projection_authority_pending_validation"
+        )
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError(
+            "authority HOLD must precede timing, batch, output, and RAW"
+        )
+
+    class FailTimingRecorder:
+        @classmethod
+        def disabled(cls, *_args: object, **_kwargs: object) -> None:
+            fail_if_called()
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "require_product_quantitative_projection_authority",
+        hold_product_authority,
+    )
+    monkeypatch.setattr(pipeline_module, "TimingRecorder", FailTimingRecorder)
+    monkeypatch.setattr(pipeline_module, "read_discovery_batch_index", fail_if_called)
+    monkeypatch.setattr(pipeline_module, "_output_paths", fail_if_called)
+    monkeypatch.setattr(pipeline_module, "_existing_raw_paths", fail_if_called)
+
+    with pytest.raises(
+        QuantitativeProjectionAuthorityHoldError,
+        match="^HOLD: quantitative_projection_authority_pending_validation$",
+    ):
+        pipeline_module.run_alignment(
+            discovery_batch_index=tmp_path / "batch.csv",
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            raw_opener=fail_if_called,
+            backfill_scope="production-equivalent",
+        )
+
+    assert authority_calls == [
+        {
+            "consumer_id": (
+                "xic_extractor.alignment.pipeline.run_alignment:production-equivalent"
+            ),
+            "signal_processing_profile_id": (
+                resolve_signal_processing_profile().profile_id
+            ),
+        }
+    ]
 
 
 @pytest.mark.parametrize(
@@ -464,6 +808,7 @@ def test_pipeline_production_equivalent_scope_skips_safe_backfill_only(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    _allow_product_quantitative_projection_authority(monkeypatch)
     batch_index = _write_batch(tmp_path, ("Sample_A", "Sample_B"))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -535,6 +880,7 @@ def test_pipeline_production_equivalent_validation_does_not_enable_heavy_audit(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    _allow_product_quantitative_projection_authority(monkeypatch)
     batch_index = _write_batch(tmp_path, ("Sample_A", "Sample_B"))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -573,6 +919,7 @@ def test_pipeline_asls_flag_without_audit_destination_stays_slim(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    _allow_product_quantitative_projection_authority(monkeypatch)
     batch_index = _write_batch(tmp_path, ("Sample_A", "Sample_B"))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -610,6 +957,7 @@ def test_pipeline_rejects_selected_audit_mode_outside_selected_scope(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    _allow_product_quantitative_projection_authority(monkeypatch)
     batch_index = _write_batch(tmp_path, ("Sample_A",))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()

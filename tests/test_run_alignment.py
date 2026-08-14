@@ -5,8 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
+import xic_extractor.alignment.pipeline as alignment_pipeline_module
 from scripts import run_alignment
 from xic_extractor.alignment.pipeline import AlignmentRunOutputs
+from xic_extractor.alignment.quantitative_projection_authority import (
+    QuantitativeProjectionAuthorityHoldError,
+)
 from xic_extractor.raw_reader import RawReaderError
 
 
@@ -2739,6 +2743,111 @@ def test_run_alignment_cli_returns_2_for_user_visible_errors(
 
     assert code == 2
     assert str(exc) in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("profile", ("none", "cprofile"))
+def test_run_alignment_cli_authority_hold_has_exact_terminal_and_zero_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    profile: str,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    output_dir = tmp_path / "alignment"
+    diagnostics_dir = tmp_path / "diagnostics"
+    profile_dir = tmp_path / "profile"
+    for directory in (output_dir, diagnostics_dir, profile_dir):
+        directory.mkdir()
+    timing_path = diagnostics_dir / "alignment_timing.json"
+    live_timing_path = diagnostics_dir / "alignment_live_timing.json"
+    sentinel_paths = (
+        output_dir / "alignment_results.xlsx",
+        output_dir / "alignment_matrix.tsv",
+        output_dir / "alignment_review.tsv",
+        output_dir / "review_report.html",
+        output_dir / "alignment_matrix.tsv.tmp",
+        output_dir / "alignment_results.xlsx.bak",
+        timing_path,
+        live_timing_path,
+        profile_dir / "profile.prof",
+        profile_dir / "profile_top.txt",
+    )
+    for index, path in enumerate(sentinel_paths):
+        path.write_bytes(f"sentinel-{index}".encode())
+    before = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    authority_calls: list[dict[str, str]] = []
+
+    def hold_product_authority(**kwargs: str) -> None:
+        authority_calls.append(kwargs)
+        raise QuantitativeProjectionAuthorityHoldError(
+            "HOLD: quantitative_projection_authority_pending_validation"
+        )
+
+    monkeypatch.setattr(
+        alignment_pipeline_module,
+        "require_product_quantitative_projection_authority",
+        hold_product_authority,
+    )
+    argv = [
+        "--discovery-batch-index",
+        str(batch_index),
+        "--raw-dir",
+        str(raw_dir),
+        "--dll-dir",
+        str(dll_dir),
+        "--output-dir",
+        str(output_dir),
+        "--backfill-scope",
+        "production-equivalent",
+        "--timing-output",
+        str(timing_path),
+        "--timing-live-output",
+        str(live_timing_path),
+    ]
+    if profile == "cprofile":
+        argv.extend(
+            [
+                "--profile",
+                "cprofile",
+                "--profile-output-dir",
+                str(profile_dir),
+            ]
+        )
+
+    code = run_alignment.main(argv)
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.out == ""
+    assert captured.err == (
+        "HOLD: quantitative_projection_authority_pending_validation\n"
+    )
+    assert authority_calls == [
+        {
+            "consumer_id": (
+                "xic_extractor.alignment.pipeline.run_alignment:production-equivalent"
+            ),
+            "signal_processing_profile_id": (
+                "signal-profile.v1:"
+                "bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
+            ),
+        }
+    ]
+    after = {
+        path.relative_to(tmp_path): path.read_bytes()
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    assert after == before
 
 
 def test_run_alignment_cli_returns_2_for_missing_candidate_csv(

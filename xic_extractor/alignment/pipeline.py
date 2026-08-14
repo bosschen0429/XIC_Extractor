@@ -103,6 +103,10 @@ from xic_extractor.alignment.production_decisions import (
     build_production_decisions,
     production_cell_decision_projection,
 )
+from xic_extractor.alignment.quantitative_projection_authority import (
+    load_quantitative_projection_authority_for_diagnostic,
+    require_product_quantitative_projection_authority,
+)
 from xic_extractor.alignment.raw_sources import (
     AlignmentRawHandle as _AlignmentRawHandle,
 )
@@ -201,6 +205,16 @@ def run_alignment(
                 "signal_processing_profile conflicts with peak_config canonical fields"
             )
     signal_processing_profile = resolved_signal_processing_profile
+    if type(selected_family_ids) is not frozenset or any(
+        type(family_id) is not str for family_id in selected_family_ids
+    ):
+        raise TypeError("selected_family_ids must be an exact frozenset[str]")
+    family_selection_requested = (
+        bool(selected_family_ids) or selected_family_source.strip() != ""
+    )
+    default_signal_processing_profile = (
+        signal_processing_profile.profile_id == DEFAULT_SIGNAL_PROCESSING_PROFILE_ID
+    )
     if (
         output_level in {"production", "machine"}
         and signal_processing_profile.profile_id != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID
@@ -240,6 +254,35 @@ def run_alignment(
     ):
         raise ValueError(
             "owner-closed identity coherence diagnostics require raw_workers=1"
+        )
+    if backfill_scope == "production-equivalent":
+        if not default_signal_processing_profile:
+            raise ValueError(
+                "production-equivalent Backfill requires the approved default "
+                "signal-processing profile"
+            )
+        if family_selection_requested:
+            raise ValueError(
+                "production-equivalent Backfill does not allow a family selection"
+            )
+        require_product_quantitative_projection_authority(
+            consumer_id=(
+                "xic_extractor.alignment.pipeline.run_alignment:production-equivalent"
+            ),
+            signal_processing_profile_id=signal_processing_profile.profile_id,
+        )
+    elif backfill_scope == "full-audit":
+        if family_selection_requested:
+            raise ValueError(
+                "full-audit Backfill does not allow a family selection; "
+                "use selected-families"
+            )
+        if default_signal_processing_profile:
+            load_quantitative_projection_authority_for_diagnostic()
+    elif backfill_scope != "selected-families":
+        raise ValueError(
+            "backfill scope must be full-audit, production-equivalent, "
+            "or selected-families"
         )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     recorder.record(

@@ -15,6 +15,7 @@ import numpy as np
 import openpyxl
 import pytest
 
+import xic_extractor.alignment.pipeline as pipeline_module
 import xic_extractor.alignment.process_backend as process_backend_module
 import xic_extractor.alignment.process_execution as process_execution_module
 from scripts import run_alignment
@@ -507,7 +508,15 @@ def test_audit_projection_field_classes_are_closed_and_adversarial(
 def test_production_equivalent_metadata_audit_none_full_pair(
     _highest_entry_fixture,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Package HOLD/pre-RAW behavior has separate guard coverage; this audit-mode
+    # oracle is intentionally scoped below the product-authority seam.
+    monkeypatch.setattr(
+        pipeline_module,
+        "require_product_quantitative_projection_authority",
+        lambda **_kwargs: None,
+    )
     batch_index, raw_dir, dll_dir = _highest_entry_fixture
     audit_none = _run_cli(
         batch_index,

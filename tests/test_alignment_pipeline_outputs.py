@@ -871,6 +871,13 @@ def test_pipeline_writes_run_metadata_sidecar_for_p7_scoped_runs(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    # Package HOLD/pre-RAW behavior has separate guard coverage; this metadata
+    # oracle is intentionally scoped below the product-authority seam.
+    monkeypatch.setattr(
+        pipeline_module,
+        "require_product_quantitative_projection_authority",
+        lambda **_kwargs: None,
+    )
     batch_index = _write_batch(tmp_path, ("Sample_A", "Sample_B"))
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()

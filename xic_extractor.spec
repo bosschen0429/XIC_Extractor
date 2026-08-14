@@ -9,6 +9,10 @@ preset_datas = collect_data_files(
     "xic_extractor.presets",
     includes=["data/*.toml"],
 )
+authority_datas = collect_data_files(
+    "xic_extractor.alignment",
+    includes=["data/issue256_quantitative_projection_authority_v1.json"],
+)
 
 a = Analysis(
     ["gui/main.py"],
@@ -20,7 +24,8 @@ a = Analysis(
         ("config/targets.example.csv", "config"),
         ("scripts", "scripts"),
     ]
-    + preset_datas,
+    + preset_datas
+    + authority_datas,
     hiddenimports=[
         "PyQt6.QtCore",
         "PyQt6.QtWidgets",
