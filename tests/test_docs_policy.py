@@ -5,13 +5,19 @@ from pathlib import Path
 import pytest
 
 from tools.diagnostics.docs_policy import (
+    DOC_ROUTING_AUTHORITY_REFERRER_PATHS,
     DOC_ROUTING_SCHEMAS_INDEX_PATH,
     DOC_ROUTING_SPECS_INDEX_PATH,
     PERMANENT_ROOT_DOC_CONTRACTS,
+    PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
+    PRODUCTIZATION_SCHEMA_REL,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL,
     classify_doc,
     classify_doc_path,
     is_productization_compatibility_index_text,
 )
+from tools.diagnostics.docs_routing_review import PRODUCTIZATION_OWNER_ROUTE
 from tools.diagnostics.docs_scan import (
     normalize_repo_rel_path,
     normalized_path_dependency_census,
@@ -632,3 +638,34 @@ def test_superpowers_index_constants_match_case_sensitive_paths() -> None:
     assert DOC_ROUTING_SCHEMAS_INDEX_PATH == "docs/superpowers/schemas/README.md"
     assert Path(DOC_ROUTING_SPECS_INDEX_PATH).exists()
     assert Path(DOC_ROUTING_SCHEMAS_INDEX_PATH).exists()
+
+
+def test_productization_owner_route_uses_v3_and_dependent_manifest_contracts() -> None:
+    assert PRODUCTIZATION_SCHEMA_REL == (
+        "docs/superpowers/schemas/productization_control_plane_schema.v3.json"
+    )
+    assert PRODUCTIZATION_AUTHORITY_MANIFEST_REL == (
+        "docs/superpowers/schemas/productization_authority_manifest.v1.json"
+    )
+    assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL == (
+        "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
+    )
+    assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL == (
+        "docs/superpowers/schemas/"
+        "quantitative_projection_authority_manifest_schema.v1.json"
+    )
+    for path in (
+        PRODUCTIZATION_SCHEMA_REL,
+        PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
+        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
+        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL,
+    ):
+        assert Path(path).is_file()
+        assert path in PRODUCTIZATION_OWNER_ROUTE
+    assert (
+        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL
+        in DOC_ROUTING_AUTHORITY_REFERRER_PATHS
+    )
+    assert "productization_control_plane_schema.v2.json" not in (
+        PRODUCTIZATION_OWNER_ROUTE
+    )

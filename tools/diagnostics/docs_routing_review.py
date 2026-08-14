@@ -17,6 +17,11 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     DOC_ROUTING_AUTHORITY_REFERRER_PATHS,
     DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES,
     DOC_ROUTING_TOPIC_PREFIX,
+    PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
+    PRODUCTIZATION_SCHEMA_REL,
+    PRODUCTIZATION_STATUS_INDEX_REL,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL,
     classify_doc,
     classify_doc_path,
     doc_placement_is_non_repo,
@@ -48,9 +53,11 @@ DOC_ROUTE_REPO_PRODUCT_DOC = "repo_product_doc"
 DOC_ROUTE_NEEDS_DECISION = "needs_route_decision"
 PRODUCTIZATION_OWNER_ROUTE = (
     "docs/product/productization.md; "
-    "docs/superpowers/validation/productization_status_index_v1.tsv; "
-    "docs/superpowers/schemas/productization_authority_manifest.v1.json; "
-    "docs/superpowers/schemas/productization_control_plane_schema.v2.json; "
+    f"{PRODUCTIZATION_STATUS_INDEX_REL}; "
+    f"{PRODUCTIZATION_AUTHORITY_MANIFEST_REL}; "
+    f"{QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL}; "
+    f"{QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_SCHEMA_REL}; "
+    f"{PRODUCTIZATION_SCHEMA_REL}; "
     "docs/agent/product-validation-contract.md"
 )
 DOC_ROUTING_SIGNAL_PATTERNS = (

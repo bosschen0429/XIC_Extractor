@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import FrozenInstanceError, replace
+import pickle
+from dataclasses import FrozenInstanceError, fields, replace
 from importlib.resources import files
+from pathlib import Path
 
 import pytest
 
@@ -12,9 +14,13 @@ from xic_extractor.alignment import (
 )
 from xic_extractor.alignment.quantitative_projection_authority import (
     QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1,
     QuantitativeProjectionAuthorityError,
     QuantitativeProjectionAuthorityHoldError,
+    QuantitativeProjectionAuthorityManifestV1,
     load_quantitative_projection_authority_for_diagnostic,
+    rehydrate_quantitative_projection_authority_manifest,
+    render_quantitative_projection_authority_manifest_bytes,
     require_product_quantitative_projection_authority,
 )
 from xic_extractor.peak_detection.signal_processing_profile import (
@@ -27,6 +33,18 @@ _PROFILE_ID = (
     "signal-profile.v1:bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
 )
 _AUTHORITY_ID_PREFIX = "quantitative-projection-authority.v1:"
+_MANIFEST_ID_PREFIX = "quantitative-projection-authority-manifest.v1:"
+_PACKAGE_AUTHORITY_ARTIFACT = (
+    "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
+)
+_ACTIVATION_SUMMARY_ARTIFACT = (
+    "docs/superpowers/validation/"
+    "issue256_untargeted_owner_backfill_canonical_quantitative_activation_v1/"
+    "activation_summary.json"
+)
+_MANIFEST_PATH = Path(
+    "docs/superpowers/schemas/quantitative_projection_authority_manifest.v1.json"
+)
 
 
 def _package_bytes() -> bytes:
@@ -68,6 +86,44 @@ def _reseal(payload: dict[str, object]) -> bytes:
     ).hexdigest()
     payload["authority_id"] = f"{_AUTHORITY_ID_PREFIX}{digest}"
     return _canonical_package_bytes(payload)
+
+
+def _manifest_payload(*, package_raw: bytes | None = None) -> dict[str, object]:
+    raw = package_raw or _package_bytes()
+    payload: dict[str, object] = {
+        "schema_version": "quantitative_projection_authority_manifest_v1",
+        "effect_id": ("untargeted_owner_backfill_canonical_quantitative_projection_v1"),
+        "status": "HOLD_PENDING_VALIDATION",
+        "package_authority_artifact": _PACKAGE_AUTHORITY_ARTIFACT,
+        "package_authority_sha256": hashlib.sha256(raw).hexdigest(),
+        "allowed_registered_writer_scope_ids": [
+            "backfill_policy_write_ready_rows",
+            "cid_nl_adopt_ready_feature_inclusion_95_cells",
+            "backfill_expansion_clean_target_selective_activation_84_cells",
+        ],
+        "activation_summary_artifact": "",
+        "activation_summary_sha256": "",
+        "current_effect_cell_count": 0,
+        "manifest_content_id": "",
+    }
+    _reseal_manifest(payload)
+    return payload
+
+
+def _reseal_manifest(payload: dict[str, object]) -> None:
+    basis = {
+        field_name: payload[field_name]
+        for field_name in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1[:-1]
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            basis,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    payload["manifest_content_id"] = f"{_MANIFEST_ID_PREFIX}{digest}"
 
 
 def test_package_hold_authority_has_exact_contract() -> None:
@@ -123,7 +179,13 @@ def test_package_hold_authority_has_exact_contract() -> None:
     assert authority.may_change_selected_area is True
     assert authority.may_change_counted_detection is False
     assert authority.activation_summary_sha256 == ""
-    assert authority.authority_id.startswith(_AUTHORITY_ID_PREFIX)
+    assert authority.authority_id == (
+        "quantitative-projection-authority.v1:"
+        "4d092fb74da960fc46d083dafed25531430a680bb5a3d05e4a471b50e5d0f893"
+    )
+    assert hashlib.sha256(_package_bytes()).hexdigest() == (
+        "35283f11af2dcaf6ccfafdef506c12568b38feeb070fb58670a4c649ee74e619"
+    )
 
 
 def test_package_authority_bytes_are_canonical_utf8_lf_without_bom() -> None:
@@ -373,6 +435,320 @@ def test_invalid_package_is_rejection_not_hold(
             signal_processing_profile_id=_PROFILE_ID,
         )
     assert not isinstance(exc_info.value, QuantitativeProjectionAuthorityHoldError)
+
+
+def test_hold_manifest_rehydrates_exact_package_bound_contract() -> None:
+    manifest = rehydrate_quantitative_projection_authority_manifest(_manifest_payload())
+
+    assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1 == (
+        "schema_version",
+        "effect_id",
+        "status",
+        "package_authority_artifact",
+        "package_authority_sha256",
+        "allowed_registered_writer_scope_ids",
+        "activation_summary_artifact",
+        "activation_summary_sha256",
+        "current_effect_cell_count",
+        "manifest_content_id",
+    )
+    assert isinstance(manifest, QuantitativeProjectionAuthorityManifestV1)
+    assert tuple(field.name for field in fields(manifest)) == (
+        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1
+    )
+    assert authority_module.__all__ == (
+        "QUANTITATIVE_PROJECTION_AUTHORITY_FIELDS_V1",
+        "QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1",
+        "QuantitativeProjectionAuthorityError",
+        "QuantitativeProjectionAuthorityHoldError",
+        "QuantitativeProjectionAuthorityManifestV1",
+        "QuantitativeProjectionAuthorityV1",
+        "load_quantitative_projection_authority_for_diagnostic",
+        "rehydrate_quantitative_projection_authority_manifest",
+        "render_quantitative_projection_authority_manifest_bytes",
+        "require_product_quantitative_projection_authority",
+    )
+    assert manifest.schema_version == ("quantitative_projection_authority_manifest_v1")
+    assert manifest.effect_id == (
+        "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+    )
+    assert manifest.status == "HOLD_PENDING_VALIDATION"
+    assert manifest.package_authority_artifact == _PACKAGE_AUTHORITY_ARTIFACT
+    assert (
+        manifest.package_authority_sha256
+        == hashlib.sha256(_package_bytes()).hexdigest()
+    )
+    assert manifest.allowed_registered_writer_scope_ids == (
+        "backfill_policy_write_ready_rows",
+        "cid_nl_adopt_ready_feature_inclusion_95_cells",
+        "backfill_expansion_clean_target_selective_activation_84_cells",
+    )
+    assert manifest.activation_summary_artifact == ""
+    assert manifest.activation_summary_sha256 == ""
+    assert manifest.current_effect_cell_count == 0
+    assert manifest.manifest_content_id.startswith(_MANIFEST_ID_PREFIX)
+
+
+def test_manifest_renderer_exactly_matches_current_canonical_file() -> None:
+    raw = _MANIFEST_PATH.read_bytes()
+    payload = json.loads(raw.decode("utf-8"))
+    manifest = rehydrate_quantitative_projection_authority_manifest(payload)
+
+    rendered = render_quantitative_projection_authority_manifest_bytes(manifest)
+
+    assert rendered == raw
+    assert rendered.endswith(b"\n")
+    assert not rendered.endswith(b"\n\n")
+    assert b"\r" not in rendered
+    assert not rendered.startswith(b"\xef\xbb\xbf")
+
+
+def test_manifest_renderer_rejects_foreign_and_subclass_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="requires an owner-minted exact manifest",
+    ):
+        render_quantitative_projection_authority_manifest_bytes(
+            _manifest_payload()  # type: ignore[arg-type]
+        )
+
+    empty_exact: QuantitativeProjectionAuthorityManifestV1 = object.__new__(
+        QuantitativeProjectionAuthorityManifestV1
+    )
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="requires an owner-minted exact manifest",
+    ):
+        render_quantitative_projection_authority_manifest_bytes(empty_exact)
+
+    monkeypatch.setattr(
+        QuantitativeProjectionAuthorityManifestV1,
+        "__init_subclass__",
+        classmethod(lambda cls, **kwargs: None),
+    )
+    forged_type = type(
+        "ForgedQuantitativeProjectionAuthorityManifest",
+        (QuantitativeProjectionAuthorityManifestV1,),
+        {},
+    )
+    forged: QuantitativeProjectionAuthorityManifestV1 = object.__new__(forged_type)
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="requires an owner-minted exact manifest",
+    ):
+        render_quantitative_projection_authority_manifest_bytes(forged)
+
+
+def test_manifest_renderer_never_renders_forged_active_content() -> None:
+    payload = _manifest_payload()
+    payload["status"] = "ACTIVE"
+    payload["activation_summary_artifact"] = _ACTIVATION_SUMMARY_ARTIFACT
+    payload["activation_summary_sha256"] = "a" * 64
+    payload["current_effect_cell_count"] = 1
+    _reseal_manifest(payload)
+    forged: QuantitativeProjectionAuthorityManifestV1 = object.__new__(
+        QuantitativeProjectionAuthorityManifestV1
+    )
+    for field_name in QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_FIELDS_V1:
+        value = payload[field_name]
+        if field_name == "allowed_registered_writer_scope_ids":
+            value = tuple(value)  # type: ignore[arg-type]
+        object.__setattr__(forged, field_name, value)
+
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="^active_membership_owner_unavailable$",
+    ):
+        render_quantitative_projection_authority_manifest_bytes(forged)
+
+
+def test_manifest_renderer_revalidates_exact_typed_content() -> None:
+    manifest = rehydrate_quantitative_projection_authority_manifest(_manifest_payload())
+    object.__setattr__(
+        manifest,
+        "manifest_content_id",
+        f"{_MANIFEST_ID_PREFIX}{'0' * 64}",
+    )
+
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="manifest_content_id does not match",
+    ):
+        render_quantitative_projection_authority_manifest_bytes(manifest)
+
+
+def test_manifest_is_immutable_final_owner_minted_and_pickleable() -> None:
+    manifest = rehydrate_quantitative_projection_authority_manifest(_manifest_payload())
+
+    with pytest.raises(FrozenInstanceError):
+        manifest.status = "ACTIVE"  # type: ignore[misc]
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="manifest must be minted by its owner",
+    ):
+        replace(manifest, _mint_token=object())
+    with pytest.raises(TypeError, match="is final"):
+        type("ForgedQuantitativeAuthorityManifest", (type(manifest),), {})
+    assert pickle.loads(pickle.dumps(manifest)) == manifest
+
+
+@pytest.mark.parametrize("mutation", ["missing", "extra", "reordered"])
+def test_manifest_rejects_missing_extra_or_reordered_fields(mutation: str) -> None:
+    payload = _manifest_payload()
+    if mutation == "missing":
+        del payload["effect_id"]
+    elif mutation == "extra":
+        payload["unexpected"] = "field"
+    else:
+        payload = dict(reversed(payload.items()))
+
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="fields are missing, extra, or reordered",
+    ):
+        rehydrate_quantitative_projection_authority_manifest(payload)
+
+
+def test_manifest_rejects_generic_mapping_and_dict_subclass() -> None:
+    class PayloadDict(dict[str, object]):
+        pass
+
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="must be one ordered mapping",
+    ):
+        rehydrate_quantitative_projection_authority_manifest(
+            PayloadDict(_manifest_payload())
+        )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "invalid_value"),
+    [
+        ("schema_version", 1),
+        ("effect_id", "crossed-effect"),
+        ("status", "UNKNOWN"),
+        ("package_authority_artifact", "crossed.json"),
+        ("package_authority_sha256", "A" * 64),
+        (
+            "allowed_registered_writer_scope_ids",
+            (
+                "backfill_policy_write_ready_rows",
+                "cid_nl_adopt_ready_feature_inclusion_95_cells",
+                "backfill_expansion_clean_target_selective_activation_84_cells",
+            ),
+        ),
+        (
+            "allowed_registered_writer_scope_ids",
+            [
+                "cid_nl_adopt_ready_feature_inclusion_95_cells",
+                "backfill_policy_write_ready_rows",
+                "backfill_expansion_clean_target_selective_activation_84_cells",
+            ],
+        ),
+        ("activation_summary_artifact", "unexpected.json"),
+        ("activation_summary_sha256", "a" * 64),
+        ("current_effect_cell_count", True),
+        ("current_effect_cell_count", 1),
+        ("manifest_content_id", 1),
+    ],
+)
+def test_manifest_rejects_wrong_types_literals_scopes_and_hold_state(
+    field_name: str,
+    invalid_value: object,
+) -> None:
+    payload = _manifest_payload()
+    payload[field_name] = invalid_value
+    if field_name != "manifest_content_id":
+        _reseal_manifest(payload)
+
+    with pytest.raises(QuantitativeProjectionAuthorityError):
+        rehydrate_quantitative_projection_authority_manifest(payload)
+
+
+def test_manifest_rejects_unsealed_and_resealed_crossed_content() -> None:
+    unsealed = _manifest_payload()
+    unsealed["manifest_content_id"] = f"{_MANIFEST_ID_PREFIX}{'0' * 64}"
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="manifest_content_id does not match",
+    ):
+        rehydrate_quantitative_projection_authority_manifest(unsealed)
+
+    resealed = _manifest_payload()
+    resealed["effect_id"] = "crossed-effect"
+    _reseal_manifest(resealed)
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="invalid quantitative projection authority manifest field: effect_id",
+    ):
+        rehydrate_quantitative_projection_authority_manifest(resealed)
+
+
+def test_manifest_reloads_and_verifies_package_raw_sha256() -> None:
+    crossed = _manifest_payload()
+    crossed["package_authority_sha256"] = "0" * 64
+    _reseal_manifest(crossed)
+
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="package_authority_sha256 does not match package authority bytes",
+    ):
+        rehydrate_quantitative_projection_authority_manifest(crossed)
+
+
+def test_manifest_rejects_crossed_package_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active_package = _payload()
+    active_package["decision"] = "ACTIVE"
+    active_package["activation_summary_sha256"] = "a" * 64
+    active_raw = _reseal(active_package)
+    crossed = _manifest_payload(package_raw=active_raw)
+    monkeypatch.setattr(
+        authority_module,
+        "_read_package_authority_bytes",
+        lambda: active_raw,
+    )
+
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="manifest status does not match package authority decision",
+    ):
+        rehydrate_quantitative_projection_authority_manifest(crossed)
+
+
+def test_active_manifest_fails_closed_without_minting_or_reading_docs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    active_package = _payload()
+    active_package["decision"] = "ACTIVE"
+    active_package["activation_summary_sha256"] = "a" * 64
+    active_raw = _reseal(active_package)
+    active_manifest = _manifest_payload(package_raw=active_raw)
+    active_manifest["status"] = "ACTIVE"
+    active_manifest["activation_summary_artifact"] = _ACTIVATION_SUMMARY_ARTIFACT
+    active_manifest["activation_summary_sha256"] = "a" * 64
+    active_manifest["current_effect_cell_count"] = 1
+    _reseal_manifest(active_manifest)
+    monkeypatch.setattr(
+        authority_module,
+        "_read_package_authority_bytes",
+        lambda: active_raw,
+    )
+    monkeypatch.setattr(
+        authority_module,
+        "_mint_quantitative_projection_authority_manifest",
+        lambda _content: pytest.fail("ACTIVE manifest must never be minted"),
+    )
+
+    with pytest.raises(
+        QuantitativeProjectionAuthorityError,
+        match="^active_membership_owner_unavailable$",
+    ):
+        rehydrate_quantitative_projection_authority_manifest(active_manifest)
 
 
 def test_missing_package_resource_is_rejected(

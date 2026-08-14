@@ -34,6 +34,7 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_SCHEMA_REL,
     PRODUCTIZATION_STATUS_ANCHOR_PATH,
     PRODUCTIZATION_STATUS_INDEX_REL,
+    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
 )
 
 DEFAULT_SCHEMA = ROOT / PRODUCTIZATION_SCHEMA_REL
@@ -44,7 +45,134 @@ DEFAULT_HANDOFF = DEFAULT_PRODUCTIZATION_STATUS_ANCHOR
 DEFAULT_CONTROL_PLANE = ROOT / CONTROL_PLANE_PATH
 PRODUCTIZATION_SUMMARY_REL = "docs/product/productization.md"
 DEFAULT_PRODUCTIZATION_SUMMARY = ROOT / PRODUCTIZATION_SUMMARY_REL
-EXPECTED_CONTROL_PLANE_SCHEMA_VERSION = "productization_control_plane_schema_v2"
+EXPECTED_CONTROL_PLANE_SCHEMA_VERSION = "productization_control_plane_schema_v3"
+
+CONTROL_PLANE_SCHEMA_FIELDS_V3 = (
+    "schema_version",
+    "purpose",
+    "required_status_index_columns",
+    "allowed_readiness_statuses",
+    "required_control_plane_anchors",
+    "authority_rules",
+    "required_lane_ids",
+    "dependent_effect_lane_authority",
+)
+STATUS_INDEX_FIELDS_V1 = (
+    "schema_version",
+    "lane_id",
+    "lane_group",
+    "readiness_status",
+    "owner",
+    "current_artifact",
+    "artifact_sha256",
+    "row_count",
+    "write_authority",
+    "product_authority_scope",
+    "may_touch_matrix",
+    "may_change_quant_output",
+    "may_change_workbook",
+    "may_change_selected_peak",
+    "may_change_selected_area",
+    "may_change_counted_detection",
+    "product_effect",
+    "public_surface",
+    "control_plane_anchor",
+    "handoff_anchor",
+    "next_checkpoint",
+    "expiration_condition",
+    "notes",
+)
+ALLOWED_READINESS_STATUSES = (
+    "production_ready",
+    "production_candidate",
+    "parked",
+    "blocked",
+    "diagnostic_only",
+    "frozen",
+    "out_of_scope",
+)
+EXPECTED_SCHEMA_PURPOSE = (
+    "Machine-checkable contract for productization status fields, lane keys, "
+    "authority rules, and stable compatibility anchors. Mutable state lives in "
+    "the status index and writer scope lives in the authority manifest."
+)
+DEPENDENT_EFFECT_LANE_ID = (
+    "untargeted_owner_backfill_canonical_quantitative_projection_v1"
+)
+DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
+    "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
+)
+DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
+    "35283F11AF2DCAF6CCFAFDEF506C12568B38FEEB070FB58670A4C649EE74E619"
+)
+DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS_V1 = (
+    "lane_id",
+    "authority_manifest_schema_version",
+    "package_authority_schema_version",
+    "required_signal_processing_profile_id",
+    "requires_registered_writer_membership",
+    "may_add_write_rows",
+    "write_authority",
+    "product_authority_scope",
+    "unregistered_or_cross_cell_policy",
+)
+EXPECTED_DEPENDENT_EFFECT_LANE_AUTHORITY = {
+    "lane_id": DEPENDENT_EFFECT_LANE_ID,
+    "authority_manifest_schema_version": (
+        "quantitative_projection_authority_manifest_v1"
+    ),
+    "package_authority_schema_version": "quantitative_projection_authority_v1",
+    "required_signal_processing_profile_id": (
+        "signal-profile.v1:"
+        "bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
+    ),
+    "requires_registered_writer_membership": True,
+    "may_add_write_rows": False,
+    "write_authority": False,
+    "product_authority_scope": "",
+    "unregistered_or_cross_cell_policy": "fail_closed",
+}
+REQUIRED_CONTROL_PLANE_ANCHORS_V3 = {
+    "backfill_current_write_ready_scope": "QuantMatrix Default Product Activation v1",
+    "cid_nl_default_product_activation_v1": "CID-NL Default Product Activation v1",
+    "backfill_expansion_default_product_activation_v1": (
+        "Backfill Expansion Full Evidence Chain v1"
+    ),
+    "backfill_expansion_clean_target_selective_product_activation_v1": (
+        "Backfill Expansion Clean-Target Selective Default Activation v1"
+    ),
+    "broad_backfill_autowrite": "park_broad_backfill",
+    "productization_authority_firewall_v1": "productization_authority_manifest_v1",
+    "mechanical_adjudication_contract_v1": "mechanical_adjudication_index_v1",
+    "review_packet_workflow_v1": "Review Packet / Approval Workflow v1",
+    "peak_choice_truth_lockbox_v1": "lockbox_shadow_automation_experiment_v1",
+    "missing_overlay_evidence_recovery_v1": "Missing-Overlay Evidence Recovery v1",
+    "quality_explanation_sidecar_v1": (
+        "quality_explanations and quality_blockers are explanation and triage "
+        "inputs only"
+    ),
+    "targeted_ms1_shape_identity_limited_rescue_v1": (
+        "Targeted MS1 shape identity limited rescue remains production-ready"
+    ),
+    "targeted_ms1_shape_identity_broader_targets": (
+        "GUI and broader targets remain blocked"
+    ),
+    "sample_metadata_order_projection_v1": "sample_metadata cross-module parity",
+    "sample_metadata_role_value_behavior": "role/value behavior remains blocked",
+    "review_action_candidate_sidecar_v1": (
+        "candidate-sidecar verifier is now production_candidate"
+    ),
+    "review_action_selected_candidate_switch": (
+        "selected candidate / manual boundary writer parked"
+    ),
+    "review_action_manual_boundary_area_writer": "manual-boundary area writer parked",
+    "calibration_normalization_activation": "calibration/normalization activation",
+    "gui_replay_parity": "GUI replay / GUI parity is out of scope",
+    DEPENDENT_EFFECT_LANE_ID: (
+        "Untargeted Owner Backfill Canonical Quantitative Projection v1"
+    ),
+}
+REQUIRED_LANE_IDS_V3 = tuple(REQUIRED_CONTROL_PLANE_ANCHORS_V3)
 
 WRITER_LANE_AUTHORITY = {
     "backfill_current_write_ready_scope": {
@@ -68,7 +196,7 @@ WRITE_FORBIDDEN_STATUSES = {
     "out_of_scope",
 }
 NON_AUTHORITY_LANE_GROUPS = {"review", "truth", "evidence"}
-AUTHORITY_RULE_KEYS = {
+AUTHORITY_RULE_FIELDS_V2 = (
     "unregistered_scope_policy",
     "allowed_product_writer_scopes",
     "matrix_write_requires",
@@ -77,28 +205,62 @@ AUTHORITY_RULE_KEYS = {
     "quality_explanations_cannot_write",
     "review_truth_or_recovery_artifacts_cannot_write",
     "handoff_and_control_plane_anchor_required",
-}
+)
+AUTHORITY_RULE_KEYS = frozenset(AUTHORITY_RULE_FIELDS_V2)
 AUTHORITY_TRUE_RULES = AUTHORITY_RULE_KEYS - {
     "unregistered_scope_policy",
     "allowed_product_writer_scopes",
     "matrix_write_requires",
     "forbidden_authority_sources",
 }
-EXPECTED_MATRIX_WRITE_REQUIREMENTS = {
+EXPECTED_MATRIX_WRITE_REQUIREMENT_ORDER = (
     "registered_product_authority_scope",
     "expected_diff_acceptance",
     "focused_output_contract_tests",
-}
-EXPECTED_FORBIDDEN_AUTHORITY_SOURCES = {
+)
+EXPECTED_FORBIDDEN_AUTHORITY_SOURCE_ORDER = (
     "quality_explanations",
     "quality_blockers",
     "round_trip_oracle_as_peak_choice_truth",
     "istd_anchor_as_analyte_area_truth",
     "broad_backfill_candidate_universe",
-}
+)
 AUTHORITY_LIST_RULE_EXPECTATIONS = {
-    "matrix_write_requires": EXPECTED_MATRIX_WRITE_REQUIREMENTS,
-    "forbidden_authority_sources": EXPECTED_FORBIDDEN_AUTHORITY_SOURCES,
+    "matrix_write_requires": EXPECTED_MATRIX_WRITE_REQUIREMENT_ORDER,
+    "forbidden_authority_sources": EXPECTED_FORBIDDEN_AUTHORITY_SOURCE_ORDER,
+}
+
+EXPECTED_HOLD_ROW = {
+    "schema_version": "productization_status_index_v1",
+    "lane_id": DEPENDENT_EFFECT_LANE_ID,
+    "lane_group": "backfill",
+    "readiness_status": "production_candidate",
+    "owner": "xic_extractor.alignment.quantitative_projection_authority",
+    "current_artifact": DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT,
+    "artifact_sha256": DEPENDENT_PACKAGE_AUTHORITY_SHA256,
+    "row_count": "0",
+    "write_authority": "FALSE",
+    "product_authority_scope": "",
+    "may_touch_matrix": "FALSE",
+    "may_change_quant_output": "FALSE",
+    "may_change_workbook": "FALSE",
+    "may_change_selected_peak": "FALSE",
+    "may_change_selected_area": "FALSE",
+    "may_change_counted_detection": "FALSE",
+    "product_effect": "hold_canonical_quantitative_projection_no_public_write",
+    "public_surface": "package_hold_guard_and_full_audit_diagnostic",
+    "control_plane_anchor": (
+        "Untargeted Owner Backfill Canonical Quantitative Projection v1"
+    ),
+    "handoff_anchor": (
+        "Untargeted Owner Backfill Canonical Quantitative Projection v1"
+    ),
+    "next_checkpoint": ("rehydrate_registered_writer_v2_membership_without_new_raw"),
+    "expiration_condition": ("superseded by membership-bound ACTIVE effect or retired"),
+    "notes": (
+        "HOLD; no ProductWriter authority; no registered-writer V2 membership "
+        "owner exists"
+    ),
 }
 PRODUCT_TOPIC_BY_LANE_GROUP = {
     "backfill": "backfill.md",
@@ -203,11 +365,16 @@ def _check_schema_authority_rules(
             f"missing={sorted(AUTHORITY_RULE_KEYS - actual_keys)!r}, "
             f"extra={sorted(actual_keys - AUTHORITY_RULE_KEYS)!r}"
         )
+    if tuple(raw_rules) != AUTHORITY_RULE_FIELDS_V2:
+        problems.append(
+            "schema authority_rules field order must exactly match the V2 contract"
+        )
     if raw_rules.get("unregistered_scope_policy") != "fail_closed":
         problems.append(
             "schema authority_rules unregistered_scope_policy must be fail_closed"
         )
     raw_scopes = raw_rules.get("allowed_product_writer_scopes")
+    expected_scopes = tuple(item["scope"] for item in WRITER_LANE_AUTHORITY.values())
     if (
         not isinstance(raw_scopes, list)
         or not raw_scopes
@@ -218,6 +385,11 @@ def _check_schema_authority_rules(
             "schema authority_rules allowed_product_writer_scopes must be a "
             "non-empty unique string list"
         )
+    elif tuple(raw_scopes) != expected_scopes:
+        problems.append(
+            "schema authority_rules allowed_product_writer_scopes must preserve "
+            "the exact registered writer scope order"
+        )
     for rule in sorted(AUTHORITY_TRUE_RULES):
         if raw_rules.get(rule) is not True:
             problems.append(f"schema authority_rules {rule} must be true")
@@ -227,7 +399,7 @@ def _check_schema_authority_rules(
             not isinstance(values, list)
             or not all(isinstance(value, str) and value for value in values)
             or len(values) != len(set(values))
-            or set(values) != expected_values
+            or tuple(values) != expected_values
         ):
             problems.append(
                 f"schema authority_rules {rule} must exactly match the enforced policy"
@@ -241,21 +413,58 @@ def _check_schema_and_rows(
     rows: Sequence[Mapping[str, str]],
     problems: list[str],
 ) -> None:
+    if tuple(schema) != CONTROL_PLANE_SCHEMA_FIELDS_V3:
+        problems.append(
+            "productization control-plane schema fields must exactly match the "
+            "ordered V3 contract"
+        )
     if schema.get("schema_version") != EXPECTED_CONTROL_PLANE_SCHEMA_VERSION:
         problems.append(
             "unsupported productization control-plane schema_version; expected "
             f"{EXPECTED_CONTROL_PLANE_SCHEMA_VERSION}"
         )
+    if schema.get("purpose") != EXPECTED_SCHEMA_PURPOSE:
+        problems.append("productization control-plane schema purpose drifted from V2")
     required = schema.get("required_status_index_columns")
     if not isinstance(required, list) or not all(
         isinstance(column, str) for column in required
     ):
         problems.append("schema required_status_index_columns must be a string list")
         return
-    if list(header) != required:
+    if tuple(required) != STATUS_INDEX_FIELDS_V1:
+        problems.append(
+            "schema required_status_index_columns must preserve the exact 23-field "
+            "V1 order"
+        )
+    if tuple(header) != STATUS_INDEX_FIELDS_V1 or list(header) != required:
         problems.append("status index header must exactly match schema")
-    allowed_statuses = set(schema.get("allowed_readiness_statuses", []))
-    required_lane_ids = set(schema.get("required_lane_ids", []))
+
+    raw_allowed_statuses = schema.get("allowed_readiness_statuses")
+    if (
+        not isinstance(raw_allowed_statuses, list)
+        or tuple(raw_allowed_statuses) != ALLOWED_READINESS_STATUSES
+    ):
+        problems.append(
+            "schema allowed_readiness_statuses must preserve the exact V2 order"
+        )
+        allowed_statuses = set(ALLOWED_READINESS_STATUSES)
+    else:
+        allowed_statuses = set(raw_allowed_statuses)
+
+    raw_required_lane_ids = schema.get("required_lane_ids")
+    if not isinstance(raw_required_lane_ids, list) or not all(
+        isinstance(lane_id, str) and lane_id for lane_id in raw_required_lane_ids
+    ):
+        problems.append("schema required_lane_ids must be a non-empty string list")
+        required_lane_ids = set(REQUIRED_LANE_IDS_V3)
+    else:
+        if tuple(raw_required_lane_ids) != REQUIRED_LANE_IDS_V3:
+            problems.append(
+                "schema required_lane_ids must preserve the exact ordered 21-lane "
+                "V3 contract"
+            )
+        required_lane_ids = set(raw_required_lane_ids)
+
     raw_anchor_contract = schema.get("required_control_plane_anchors")
     if (
         not isinstance(raw_anchor_contract, Mapping)
@@ -278,6 +487,13 @@ def _check_schema_and_rows(
         anchor_contract: Mapping[str, str] = {}
     else:
         anchor_contract = raw_anchor_contract
+        if tuple(anchor_contract.items()) != tuple(
+            REQUIRED_CONTROL_PLANE_ANCHORS_V3.items()
+        ):
+            problems.append(
+                "schema required_control_plane_anchors must preserve the exact "
+                "ordered 21-anchor V3 contract"
+            )
         if set(anchor_contract) != required_lane_ids:
             problems.append(
                 "schema required_control_plane_anchors must exactly cover "
@@ -293,6 +509,7 @@ def _check_schema_and_rows(
                 "schema required_control_plane_anchors contains duplicates: "
                 + ", ".join(duplicate_anchors)
             )
+    _check_dependent_effect_lane_authority(schema, problems)
     lane_ids = [row.get("lane_id", "") for row in rows]
     duplicates = sorted(
         lane_id for lane_id, count in Counter(lane_ids).items() if count > 1
@@ -336,6 +553,61 @@ def _check_schema_and_rows(
             if row.get(field) not in {"TRUE", "FALSE"}:
                 problems.append(f"row {index}: {field} must be TRUE or FALSE")
 
+    dependent_rows = [
+        row for row in rows if row.get("lane_id") == DEPENDENT_EFFECT_LANE_ID
+    ]
+    if len(dependent_rows) == 1:
+        dependent_row = dependent_rows[0]
+        drifted_fields = [
+            field
+            for field in STATUS_INDEX_FIELDS_V1
+            if dependent_row.get(field) != EXPECTED_HOLD_ROW[field]
+        ]
+        if drifted_fields:
+            problems.append(
+                "dependent effect status row must remain the exact 23-field HOLD "
+                "contract; drifted=" + ", ".join(drifted_fields)
+            )
+        if dependent_row.get("readiness_status") == "production_ready":
+            problems.append(
+                "dependent effect ACTIVE transition is outside this HOLD contract"
+            )
+
+
+def _check_dependent_effect_lane_authority(
+    schema: Mapping[str, Any],
+    problems: list[str],
+) -> None:
+    raw_dependent = schema.get("dependent_effect_lane_authority")
+    if not isinstance(raw_dependent, Mapping):
+        problems.append("schema dependent_effect_lane_authority must be an object")
+        return
+    if tuple(raw_dependent) != (DEPENDENT_EFFECT_LANE_ID,):
+        problems.append(
+            "schema dependent_effect_lane_authority must contain exactly the "
+            "ordered Issue #256 lane"
+        )
+        return
+    raw_rule = raw_dependent.get(DEPENDENT_EFFECT_LANE_ID)
+    if not isinstance(raw_rule, Mapping):
+        problems.append("schema dependent effect lane rule must be an object")
+        return
+    if tuple(raw_rule) != DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS_V1:
+        problems.append(
+            "schema dependent effect lane rule fields must exactly match the "
+            "ordered V1 contract"
+        )
+    if any(
+        field not in raw_rule
+        or type(raw_rule[field]) is not type(expected)
+        or raw_rule[field] != expected
+        for field, expected in EXPECTED_DEPENDENT_EFFECT_LANE_AUTHORITY.items()
+    ):
+        problems.append(
+            "schema dependent effect lane rule values must exactly match the HOLD "
+            "authority contract"
+        )
+
 
 def _check_authority_boundaries(
     authority_rules: Mapping[str, Any],
@@ -356,8 +628,16 @@ def _check_authority_boundaries(
     schema_scopes = {
         scope for scope in raw_schema_scopes if isinstance(scope, str) and scope
     }
-    allowed_scopes = set(policy.get("product_writer_allowed_scopes", []))
-    if allowed_scopes != schema_scopes:
+    raw_manifest_scopes = policy.get("product_writer_allowed_scopes", [])
+    allowed_scopes = {
+        scope for scope in raw_manifest_scopes if isinstance(scope, str) and scope
+    }
+    if (
+        not isinstance(raw_manifest_scopes, list)
+        or not isinstance(raw_schema_scopes, list)
+        or tuple(raw_manifest_scopes) != tuple(raw_schema_scopes)
+        or allowed_scopes != schema_scopes
+    ):
         problems.append("authority manifest allowed scopes drifted from schema")
     for rule in AUTHORITY_LIST_RULE_EXPECTATIONS:
         schema_values = authority_rules.get(rule)
@@ -366,7 +646,7 @@ def _check_authority_boundaries(
             not isinstance(manifest_values, list)
             or len(manifest_values) != len(set(manifest_values))
             or not isinstance(schema_values, list)
-            or set(manifest_values) != set(schema_values)
+            or tuple(manifest_values) != tuple(schema_values)
         ):
             problems.append(f"authority manifest {rule} drifted from schema")
     expected_scopes = {item["scope"] for item in WRITER_LANE_AUTHORITY.values()}
@@ -571,6 +851,10 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
             "(../schemas/productization_authority_manifest.v1.json)"
         ),
         (
+            "- [Dependent quantitative-effect authority manifest]"
+            f"(../schemas/{Path(QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL).name})"
+        ),
+        (
             "- [Structured control schema]"
             f"(../schemas/{Path(PRODUCTIZATION_SCHEMA_REL).name})"
         ),
@@ -600,12 +884,20 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
         "## Lane anchor index",
         "",
     ]
-    routes = (
+    writer_routes = (
         "Routes: [state](../validation/productization_status_index_v1.tsv), "
         "[writer authority](../schemas/productization_authority_manifest.v1.json), "
         "[stable capability](../../product/productization.md)."
     )
     for row in rows:
+        routes = writer_routes
+        if row.get("lane_id") == DEPENDENT_EFFECT_LANE_ID:
+            routes = (
+                "Routes: [state](../validation/productization_status_index_v1.tsv), "
+                "[dependent-effect authority](../schemas/"
+                f"{Path(QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL).name}), "
+                "[stable capability](../../product/productization.md)."
+            )
         lines.extend(
             (
                 f"### {row.get('control_plane_anchor', '')}",
@@ -889,12 +1181,28 @@ def _mapping_path(root: Mapping[str, Any], *keys: str) -> Mapping[str, Any] | No
     return current if isinstance(current, Mapping) else None
 
 
+class _DuplicateJsonKeyError(ValueError):
+    pass
+
+
+def _reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    parsed: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in parsed:
+            raise _DuplicateJsonKeyError(f"duplicate JSON object key: {key!r}")
+        parsed[key] = value
+    return parsed
+
+
 def _read_json(path: Path, problems: list[str]) -> dict[str, Any]:
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+        )
     except OSError as exc:
         problems.append(f"failed to read {path}: {exc}")
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, _DuplicateJsonKeyError) as exc:
         problems.append(f"invalid JSON {path}: {exc}")
     return {}
 

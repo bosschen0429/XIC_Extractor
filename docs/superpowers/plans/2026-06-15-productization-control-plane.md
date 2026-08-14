@@ -19,7 +19,8 @@ owner route changes.
 
 - [Lane-state index](../validation/productization_status_index_v1.tsv)
 - [Writer-authority manifest](../schemas/productization_authority_manifest.v1.json)
-- [Structured control schema](../schemas/productization_control_plane_schema.v2.json)
+- [Dependent quantitative-effect authority manifest](../schemas/quantitative_projection_authority_manifest.v1.json)
+- [Structured control schema](../schemas/productization_control_plane_schema.v3.json)
 - [Readiness and promotion contract](../../agent/product-validation-contract.md)
 - [Stable capability map](../../product/productization.md)
 
@@ -157,3 +158,9 @@ Routes: [state](../validation/productization_status_index_v1.tsv), [writer autho
 Lane key: `gui_replay_parity`
 
 Routes: [state](../validation/productization_status_index_v1.tsv), [writer authority](../schemas/productization_authority_manifest.v1.json), [stable capability](../../product/productization.md).
+
+### Untargeted Owner Backfill Canonical Quantitative Projection v1
+
+Lane key: `untargeted_owner_backfill_canonical_quantitative_projection_v1`
+
+Routes: [state](../validation/productization_status_index_v1.tsv), [dependent-effect authority](../schemas/quantitative_projection_authority_manifest.v1.json), [stable capability](../../product/productization.md).
