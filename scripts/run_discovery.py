@@ -8,10 +8,17 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec,
+)
 from xic_extractor.discovery.tag_profiles import (
     load_feature_tag_profiles,
     resolve_selected_tag_profiles,
 )
+from xic_extractor.peak_detection.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
+from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
@@ -20,6 +27,7 @@ from xic_extractor.settings_schema import (
 )
 
 _RT_BOUND_ERROR = "RT bounds must be finite values >= 0"
+_RUN_SPEC_ERROR_TEXT_LIMIT = 400
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -44,7 +52,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     settings = _discovery_settings(args)
     data_dir = raw_path.parent if raw_path is not None else raw_dir
+    if data_dir is None:
+        raise ValueError("Discovery input directory was not resolved")
     peak_config = _peak_config(data_dir, dll_dir, output_dir, settings)
+    try:
+        run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
+    except (OSError, TypeError, ValueError) as exc:
+        print(_bounded_run_spec_error(exc), file=sys.stderr)
+        return 2
     timing_recorder = (
         TimingRecorder(
             "discovery",
@@ -53,31 +68,46 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.timing_output is not None
         else None
     )
-    timing_kwargs = (
-        {"timing_recorder": timing_recorder}
-        if timing_recorder is not None
-        else {}
-    )
     try:
         if raw_path is not None:
-            outputs = run_discovery(
-                raw_path,
-                output_dir=output_dir,
-                settings=settings,
-                peak_config=peak_config,
-                **timing_kwargs,
-            )
-            print(f"Discovery candidates CSV: {outputs.candidates_csv}")
-            print(f"Discovery review CSV: {outputs.review_csv}")
+            if timing_recorder is None:
+                single_outputs = run_discovery(
+                    raw_path,
+                    output_dir=output_dir,
+                    settings=settings,
+                    peak_config=peak_config,
+                    run_spec=run_spec,
+                )
+            else:
+                single_outputs = run_discovery(
+                    raw_path,
+                    output_dir=output_dir,
+                    settings=settings,
+                    peak_config=peak_config,
+                    run_spec=run_spec,
+                    timing_recorder=timing_recorder,
+                )
+            print(f"Discovery candidates CSV: {single_outputs.candidates_csv}")
+            print(f"Discovery review CSV: {single_outputs.review_csv}")
         else:
-            outputs = run_discovery_batch(
-                raw_paths,
-                output_dir=output_dir,
-                settings=settings,
-                peak_config=peak_config,
-                **timing_kwargs,
-            )
-            print(f"Discovery batch index: {outputs.batch_index_csv}")
+            if timing_recorder is None:
+                batch_outputs = run_discovery_batch(
+                    raw_paths,
+                    output_dir=output_dir,
+                    settings=settings,
+                    peak_config=peak_config,
+                    run_spec=run_spec,
+                )
+            else:
+                batch_outputs = run_discovery_batch(
+                    raw_paths,
+                    output_dir=output_dir,
+                    settings=settings,
+                    peak_config=peak_config,
+                    run_spec=run_spec,
+                    timing_recorder=timing_recorder,
+                )
+            print(f"Discovery batch index: {batch_outputs.batch_index_csv}")
     except RawReaderError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -88,6 +118,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Timing JSON: {timing_path}")
 
     return 0
+
+
+def _bounded_run_spec_error(exc: Exception) -> str:
+    detail = " ".join(str(exc).split()) or type(exc).__name__
+    prefix = "Discovery run specification failed: "
+    available = _RUN_SPEC_ERROR_TEXT_LIMIT - len(prefix)
+    if len(detail) > available:
+        detail = f"{detail[: available - 3]}..."
+    return f"{prefix}{detail}"
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -200,9 +239,7 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
         )
 
     selected = [
-        value.strip()
-        for value in str(args.selected_tags).split(",")
-        if value.strip()
+        value.strip() for value in str(args.selected_tags).split(",") if value.strip()
     ]
     profiles = resolve_selected_tag_profiles(
         load_feature_tag_profiles(args.feature_list),
@@ -252,6 +289,22 @@ def _peak_config(
         resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
         resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),
         resolver_min_scans=int(defaults["resolver_min_scans"]),
+    )
+
+
+def _compile_processing_run_spec(
+    raw_paths: tuple[Path, ...],
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+) -> ProcessingRunSpec:
+    profile = resolve_signal_processing_profile(
+        signal_processing_method=peak_config.signal_processing_method,
+        signal_processing_window_points=peak_config.signal_processing_window_points,
+    )
+    return compile_discovery_processing_run_spec(
+        raw_paths,
+        discovery_settings=settings,
+        signal_processing_profile=profile,
     )
 
 

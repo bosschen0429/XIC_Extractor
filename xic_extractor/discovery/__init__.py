@@ -1,23 +1,32 @@
-"""Untargeted discovery models and contracts."""
+"""Untargeted discovery models and contracts.
 
-from xic_extractor.discovery.csv_writer import (
-    write_discovery_candidates_csv,
-    write_discovery_review_csv,
-)
-from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoveryRunOutputs
-from xic_extractor.discovery.ms1_backfill import MS1XicSource, backfill_ms1_candidates
-from xic_extractor.discovery.ms2_seeds import MS2ScanSource, collect_strict_nl_seeds
-from xic_extractor.discovery.pipeline import (
-    DiscoveryRawHandle,
-    RawOpener,
-    run_discovery,
-    run_discovery_batch,
-)
-from xic_extractor.discovery.priority import (
-    assign_review_priority,
-    build_candidate_reason,
-)
+The package surface remains import-compatible, but each public value is loaded
+on first access.  Leaf domain owners such as ``processing_run_spec`` can
+therefore import Discovery value types without importing the RAW pipeline.
+"""
+
+from __future__ import annotations
+
+from importlib import import_module
+from typing import Any
+
+_EXPORT_MODULES = {
+    "write_discovery_candidates_csv": "xic_extractor.discovery.csv_writer",
+    "write_discovery_review_csv": "xic_extractor.discovery.csv_writer",
+    "group_discovery_seeds": "xic_extractor.discovery.grouping",
+    "DiscoveryBatchOutputs": "xic_extractor.discovery.models",
+    "DiscoveryRunOutputs": "xic_extractor.discovery.models",
+    "MS1XicSource": "xic_extractor.discovery.ms1_backfill",
+    "backfill_ms1_candidates": "xic_extractor.discovery.ms1_backfill",
+    "MS2ScanSource": "xic_extractor.discovery.ms2_seeds",
+    "collect_strict_nl_seeds": "xic_extractor.discovery.ms2_seeds",
+    "DiscoveryRawHandle": "xic_extractor.discovery.pipeline",
+    "RawOpener": "xic_extractor.discovery.pipeline",
+    "run_discovery": "xic_extractor.discovery.pipeline",
+    "run_discovery_batch": "xic_extractor.discovery.pipeline",
+    "assign_review_priority": "xic_extractor.discovery.priority",
+    "build_candidate_reason": "xic_extractor.discovery.priority",
+}
 
 __all__ = (
     "MS1XicSource",
@@ -36,3 +45,16 @@ __all__ = (
     "write_discovery_candidates_csv",
     "write_discovery_review_csv",
 )
+
+
+def __getattr__(name: str) -> Any:
+    module_name = _EXPORT_MODULES.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(import_module(module_name), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted((*globals(), *__all__))

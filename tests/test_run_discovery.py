@@ -21,11 +21,14 @@ def test_run_discovery_cli_passes_single_raw_settings(
     output_dir = tmp_path / "out"
     captured = {}
 
-    def _fake_run_discovery(raw_path_arg, *, output_dir, settings, peak_config):
+    def _fake_run_discovery(
+        raw_path_arg, *, output_dir, settings, peak_config, run_spec
+    ):
         captured["raw_path"] = raw_path_arg
         captured["output_dir"] = output_dir
         captured["settings"] = settings
         captured["peak_config"] = peak_config
+        captured["run_spec"] = run_spec
         output_dir.mkdir(parents=True, exist_ok=True)
         candidates_csv = output_dir / "discovery_candidates.csv"
         review_csv = output_dir / "discovery_review.csv"
@@ -73,6 +76,8 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert peak_config.resolver_mode == "local_minimum"
     assert peak_config.ms2_precursor_tol_da == pytest.approx(0.75)
     assert peak_config.nl_min_intensity_ratio == settings.nl_min_intensity_ratio
+    assert captured["run_spec"].discovery_method.settings == settings
+    assert captured["run_spec"].acquisition_inputs[0].sample_stem == raw_path.stem
     stdout = capsys.readouterr().out
     assert "Discovery candidates CSV: " in stdout
     assert "Discovery review CSV: " in stdout
@@ -91,9 +96,12 @@ def test_run_discovery_cli_accepts_region_first_safe_merge_mode(
     output_dir = tmp_path / "out"
     captured = {}
 
-    def _fake_run_discovery(raw_path_arg, *, output_dir, settings, peak_config):
+    def _fake_run_discovery(
+        raw_path_arg, *, output_dir, settings, peak_config, run_spec
+    ):
         captured["settings"] = settings
         captured["peak_config"] = peak_config
+        captured["run_spec"] = run_spec
         output_dir.mkdir(parents=True, exist_ok=True)
         return DiscoveryRunOutputs(
             candidates_csv=output_dir / "discovery_candidates.csv",
@@ -118,6 +126,7 @@ def test_run_discovery_cli_accepts_region_first_safe_merge_mode(
     assert code == 0
     assert captured["settings"].resolver_mode == "region_first_safe_merge"
     assert captured["peak_config"].resolver_mode == "region_first_safe_merge"
+    assert captured["run_spec"].discovery_method.settings == captured["settings"]
 
 
 def test_run_discovery_rejects_retired_arbitrated_resolver_mode(
@@ -154,18 +163,21 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     raw_dir.mkdir()
     first = raw_dir / "B.raw"
     second = raw_dir / "A.raw"
-    first.write_text("", encoding="utf-8")
-    second.write_text("", encoding="utf-8")
+    first.write_bytes(b"second acquisition")
+    second.write_bytes(b"first acquisition")
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     output_dir = tmp_path / "out"
     captured = {}
 
-    def _fake_run_discovery_batch(raw_paths, *, output_dir, settings, peak_config):
+    def _fake_run_discovery_batch(
+        raw_paths, *, output_dir, settings, peak_config, run_spec
+    ):
         captured["raw_paths"] = raw_paths
         captured["output_dir"] = output_dir
         captured["settings"] = settings
         captured["peak_config"] = peak_config
+        captured["run_spec"] = run_spec
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "discovery_batch_index.csv"
         sample_outputs = DiscoveryRunOutputs(
@@ -200,9 +212,64 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     assert captured["output_dir"] == output_dir.resolve()
     assert captured["peak_config"].data_dir == raw_dir.resolve()
     assert captured["settings"].resolver_mode == "local_minimum"
+    assert tuple(
+        item.sample_stem for item in captured["run_spec"].acquisition_inputs
+    ) == ("A", "B")
     stdout = capsys.readouterr().out
     assert "Discovery batch index: " in stdout
     assert "discovery_batch_index.csv" in stdout
+
+
+def test_run_discovery_main_rejects_duplicate_acquisition_content_before_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    (raw_dir / "A.raw").write_bytes(b"duplicate acquisition")
+    (raw_dir / "B.raw").write_bytes(b"duplicate acquisition")
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    pipeline_calls = 0
+
+    def unexpected_pipeline(*_args, **_kwargs):
+        nonlocal pipeline_calls
+        pipeline_calls += 1
+        pytest.fail("pipeline entered after run-spec compile failure")
+
+    monkeypatch.setattr(run_discovery, "run_discovery_batch", unexpected_pipeline)
+
+    code = run_discovery.main(
+        ["--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir)]
+    )
+
+    assert code == 2
+    assert pipeline_calls == 0
+    error = capsys.readouterr().err
+    assert error.startswith("Discovery run specification failed: ")
+    assert "duplicate ProcessingRunSpec acquisition_source_id" in error
+    assert len(error.rstrip("\n")) <= 400
+
+
+def test_run_discovery_main_propagates_unexpected_pipeline_value_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"pipeline-sentinel")
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+
+    def raise_pipeline_sentinel(*_args, **_kwargs):
+        raise ValueError("pipeline sentinel must propagate")
+
+    monkeypatch.setattr(run_discovery, "run_discovery", raise_pipeline_sentinel)
+
+    with pytest.raises(ValueError, match="^pipeline sentinel must propagate$"):
+        run_discovery.main(
+            ["--raw", str(raw_path), "--dll-dir", str(dll_dir)]
+        )
 
 
 def test_run_discovery_accepts_feature_list_selected_tags_and_union_mode() -> None:
@@ -267,8 +334,10 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
         output_dir,
         settings,
         peak_config,
+        run_spec,
         timing_recorder=None,
     ):
+        assert run_spec.discovery_method.settings == settings
         assert timing_recorder is not None
         with timing_recorder.stage(
             "discover.write_batch_index",

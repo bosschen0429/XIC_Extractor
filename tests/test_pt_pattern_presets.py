@@ -19,7 +19,13 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.presets import PresetError, list_presets, load_preset
+from xic_extractor.presets import (
+    PresetError,
+    bind_cid_nl_recipe,
+    filter_cid_nl_recipe_presets,
+    list_presets,
+    load_preset,
+)
 from xic_extractor.presets.apply import apply_to_delta_mass_discovery
 from xic_extractor.presets.models import Preset, PresetTag
 
@@ -27,6 +33,12 @@ from xic_extractor.presets.models import Preset, PresetTag
 def test_pt_pattern_preset_is_listed_as_a_builtin_preset() -> None:
     assert "pt_pattern" in list_presets()
     assert "pt_pattern_cid_nl_dr" in list_presets()
+    assert "pt_pattern" not in filter_cid_nl_recipe_presets(list_presets())
+    assert "pt_pattern_cid_nl_dr" not in filter_cid_nl_recipe_presets(list_presets())
+    with pytest.raises((PresetError, ValueError)):
+        bind_cid_nl_recipe(load_preset("pt_pattern"), "discovery_only")
+    with pytest.raises((PresetError, ValueError)):
+        bind_cid_nl_recipe(load_preset("pt_pattern_cid_nl_dr"), "discovery_only")
 
 
 def test_pt_pattern_preset_loads_with_method_label_pt_pattern() -> None:

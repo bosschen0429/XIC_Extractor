@@ -55,6 +55,7 @@ class DiscoveryMethodSection(QWidget):
         super().__init__()
         self._edited: set[str] = set()
         self._loading = False
+        self._unavailable_preset: str | None = None
         self._spins: dict[str, QDoubleSpinBox] = {}
 
         root = QVBoxLayout(self)
@@ -117,12 +118,22 @@ class DiscoveryMethodSection(QWidget):
         self._load_preset_defaults(clear_edits=True)
 
     def load(self, values: dict[str, Any]) -> None:
-        preset = values.get("preset", "")
+        preset = str(values.get("preset", "") or "")
         blocker = QSignalBlocker(self._preset)
         try:
+            sentinel_index = self._preset.findData("")
+            if sentinel_index >= 0:
+                self._preset.removeItem(sentinel_index)
+            self._unavailable_preset = None
             index = self._preset.findData(preset)
             if index >= 0:
                 self._preset.setCurrentIndex(index)
+            elif preset:
+                self._unavailable_preset = preset
+                self._preset.addItem(f"已保存但不可用：{preset}", "")
+                self._preset.setCurrentIndex(self._preset.count() - 1)
+            else:
+                self._preset.setCurrentIndex(-1)
         finally:
             del blocker
 
@@ -160,6 +171,23 @@ class DiscoveryMethodSection(QWidget):
                 return False
         return self._spins["rt_min"].value() <= self._spins["rt_max"].value()
 
+    def validation_reason(self) -> str:
+        if self._unavailable_preset is not None and not self._preset_value():
+            return (
+                f"已保存的 preset「{self._unavailable_preset}」"
+                "不支援 CID-NL Discovery"
+            )
+        if not self._preset_value():
+            return "請選擇 CID-NL Discovery preset"
+        if any(
+            self._spins[key].value() <= 0
+            for key in POSITIVE_DISCOVERY_OVERRIDE_FIELDS
+        ):
+            return "方法參數必須大於 0"
+        if self._spins["rt_min"].value() > self._spins["rt_max"].value():
+            return "RT 下界需 ≤ 上界"
+        return ""
+
     def set_enabled(self, enabled: bool) -> None:
         self.setEnabled(enabled)
 
@@ -170,7 +198,7 @@ class DiscoveryMethodSection(QWidget):
             recipe = bind_cid_nl_recipe(preset_obj, "discovery_only")
             self._update_preset_preview(preset_obj, recipe.discovery_settings)
         else:
-            self._update_preset_preview(None, None)
+            self._update_missing_preset_preview()
 
     def _set_override_value(self, key: str, value: Any) -> None:
         if key == "resolver_mode":
@@ -199,7 +227,7 @@ class DiscoveryMethodSection(QWidget):
         if not preset:
             if clear_edits:
                 self._edited.clear()
-            self._update_preset_preview(None, None)
+            self._update_missing_preset_preview()
             return
 
         preset_obj = load_preset(preset)
@@ -247,8 +275,20 @@ class DiscoveryMethodSection(QWidget):
         self._preset_preview.setVisible(True)
 
     def _on_preset_changed(self, _index: int) -> None:
+        if self._preset_value():
+            self._unavailable_preset = None
         self._load_preset_defaults(clear_edits=True)
         self.changed.emit()
+
+    def _update_missing_preset_preview(self) -> None:
+        if self._unavailable_preset is None:
+            self._update_preset_preview(None, None)
+            return
+        self._preset_preview.setText(
+            f'<span style="color:{styles.ACTIVE["danger_border"]};">'
+            f"{_escape(self.validation_reason())}</span>"
+        )
+        self._preset_preview.setVisible(True)
 
     def _on_toggle(self, checked: bool) -> None:
         self._advanced_toggle.setText(

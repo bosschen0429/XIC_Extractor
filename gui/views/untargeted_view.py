@@ -17,7 +17,7 @@ from gui.workers.discovery_worker import (
     DiscoveryRequest,
     DiscoveryWorker,
 )
-from xic_extractor.presets import list_presets
+from xic_extractor.presets import filter_cid_nl_recipe_presets, list_presets
 
 
 class UntargetedView(QWidget):
@@ -33,7 +33,9 @@ class UntargetedView(QWidget):
         layout.setSpacing(12)
 
         self._source = DiscoverySourceSection()
-        self._method = DiscoveryMethodSection(presets=tuple(list_presets()))
+        self._method = DiscoveryMethodSection(
+            presets=filter_cid_nl_recipe_presets(list_presets())
+        )
         self._run = RunSection()
         self._results = DiscoveryResultsSection()
 
@@ -79,7 +81,7 @@ class UntargetedView(QWidget):
     def _update_ready(self) -> None:
         missing = self._source.missing_fields()
         if not self._method.is_valid():
-            missing.append("方法設定（RT 下界需 ≤ 上界）")
+            missing.append(self._method.validation_reason())
         self._run.set_ready(not missing, missing)
         if missing:
             self.state_changed.emit(f"缺 {len(missing)} 項待補")
@@ -124,6 +126,8 @@ class UntargetedView(QWidget):
         worker.start()
 
     def _build_request(self, config: dict[str, Any]) -> DiscoveryRequest:
+        if not self._method.is_valid():
+            raise ValueError(self._method.validation_reason())
         return DiscoveryRequest(
             mode=cast(DiscoveryMode, str(config["mode"])),
             preset=str(config["preset"]),

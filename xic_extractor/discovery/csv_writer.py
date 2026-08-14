@@ -49,8 +49,25 @@ def _write_csv(
 
 
 def build_discovery_review_note(candidate: DiscoveryCandidate) -> str:
+    ms2_support = candidate.ms2_support
+    if ms2_support not in {"weak", "moderate", "strong"}:
+        raise ValueError(
+            "Discovery review MS2 support must be weak, moderate, or strong"
+        )
+    terminal_state = {
+        "physical_unavailable": "unavailable",
+        "physical_failed": "failed",
+    }.get(candidate.ms1_trace_quality)
+    if terminal_state is not None:
+        prefix = f"physical MS1 evaluation {terminal_state}: "
+        if not candidate.reason.startswith(prefix):
+            raise ValueError("physical Discovery review reason has the wrong prefix")
+        owner_reason = candidate.reason.removeprefix(prefix)
+        if not owner_reason.strip():
+            raise ValueError("physical Discovery review reason must be nonempty")
+        return f"physical MS1 {terminal_state}: {owner_reason}; missing RT"
     return (
-        f"{candidate.ms2_support} MS2; "
+        f"{ms2_support} MS2; "
         f"{candidate.ms1_support} MS1; "
         f"{candidate.rt_alignment} RT"
     )

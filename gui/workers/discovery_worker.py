@@ -18,12 +18,19 @@ from xic_extractor.alignment.process_backend import AlignmentProcessExecutionErr
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    resolve_signal_processing_profile,
+)
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     PresetError,
     bind_cid_nl_recipe,
     load_preset,
 )
+from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -111,11 +118,14 @@ class DiscoveryWorker(QThread):
 
         self.progress.emit(0, 3, "Discovery...")
         settings = self._build_settings(request)
+        peak_config = self._discovery_peak_config(request, settings)
+        run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
         batch_outputs = run_discovery_batch(
             raw_paths,
             output_dir=request.output_dir,
             settings=settings,
-            peak_config=self._discovery_peak_config(request, settings),
+            peak_config=peak_config,
+            run_spec=run_spec,
         )
         index_path = _batch_index_path(batch_outputs, request.output_dir)
         if self.isInterruptionRequested():
@@ -144,11 +154,15 @@ class DiscoveryWorker(QThread):
             self.progress.emit(0, 1, "Discovery...")
             settings = self._build_settings(request)
             peak_config = self._discovery_peak_config(request, settings)
+            run_spec = _compile_processing_run_spec(
+                (request.raw_file,), settings, peak_config
+            )
             outputs = run_discovery(
                 request.raw_file,
                 output_dir=request.output_dir,
                 settings=settings,
                 peak_config=peak_config,
+                run_spec=run_spec,
             )
             if self.isInterruptionRequested():
                 return None
@@ -172,11 +186,13 @@ class DiscoveryWorker(QThread):
         self.progress.emit(0, 1, "Discovery...")
         settings = self._build_settings(request)
         peak_config = self._discovery_peak_config(request, settings)
+        run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
         batch_outputs = run_discovery_batch(
             raw_paths,
             output_dir=request.output_dir,
             settings=settings,
             peak_config=peak_config,
+            run_spec=run_spec,
         )
         if self.isInterruptionRequested():
             return None
@@ -402,8 +418,12 @@ class DiscoveryWorker(QThread):
             resolver_min_search_range_min=float(
                 defaults["resolver_min_search_range_min"]
             ),
-            resolver_min_relative_height=float(defaults["resolver_min_relative_height"]),
-            resolver_min_absolute_height=float(defaults["resolver_min_absolute_height"]),
+            resolver_min_relative_height=float(
+                defaults["resolver_min_relative_height"]
+            ),
+            resolver_min_absolute_height=float(
+                defaults["resolver_min_absolute_height"]
+            ),
             resolver_min_ratio_top_edge=float(defaults["resolver_min_ratio_top_edge"]),
             resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
             resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),
@@ -507,6 +527,22 @@ def _standard_peak_output_paths(outputs: Any | None) -> dict[str, str]:
         if value is not None:
             paths[f"standard_peak_{attr}"] = str(value)
     return paths
+
+
+def _compile_processing_run_spec(
+    raw_paths: tuple[Path, ...],
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+) -> ProcessingRunSpec:
+    profile = resolve_signal_processing_profile(
+        signal_processing_method=peak_config.signal_processing_method,
+        signal_processing_window_points=peak_config.signal_processing_window_points,
+    )
+    return compile_discovery_processing_run_spec(
+        raw_paths,
+        discovery_settings=settings,
+        signal_processing_profile=profile,
+    )
 
 
 def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:

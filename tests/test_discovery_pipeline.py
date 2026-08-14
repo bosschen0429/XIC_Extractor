@@ -27,12 +27,19 @@ from xic_extractor.discovery.evidence_config import (
     DiscoveryEvidenceProfile,
 )
 from xic_extractor.discovery.models import (
+    DISCOVERY_BRIEF_COLUMNS,
+    DISCOVERY_CANDIDATE_COLUMNS,
     DiscoveryBatchOutputs,
+    DiscoveryPhysicalWorkItem,
     DiscoveryRunOutputs,
     DiscoverySettings,
     NeutralLossProfile,
 )
 from xic_extractor.discovery.ms1_backfill import _DiscoveryMs1Measurements
+from xic_extractor.discovery.physical_fact_persistence import (
+    read_discovery_physical_fact_sidecar,
+    write_discovery_physical_fact_sidecar,
+)
 from xic_extractor.discovery.pipeline import (
     _BATCH_INDEX_COLUMNS,
     _DISCOVERY_MS1_MEASUREMENT_NAMES,
@@ -45,8 +52,12 @@ from xic_extractor.discovery.pipeline import (
     _run_discovery_sample_process_job,
     _validate_discovery_ms1_observations,
     _write_batch_index,
+    _write_dual_csvs,
     run_discovery,
     run_discovery_batch,
+)
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -116,6 +127,205 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     assert "review_note" in review_rows[0]
 
 
+def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "Sample.raw"
+    raw_path.write_bytes(b"compiled acquisition")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings
+    )
+    handle_source = spec.acquisition_inputs[0].acquisition_source
+    raw = _OwnerBoundFakeRawHandle(
+        handle_source,
+        [_scan_event(scan_number=101, rt=7.80)],
+        rt=np.asarray([7.70, 7.80, 7.90]),
+        intensity=np.asarray([10.0, 600.0, 20.0]),
+    )
+    from xic_extractor.peak_detection import evidence_facts as physical_owner
+
+    physical_calls = {"prepare": 0, "evaluate": 0}
+    real_prepare = physical_owner.prepare_physical_signal
+    real_evaluate = physical_owner.evaluate_physical_peak
+
+    def counted_prepare(*args, **kwargs):
+        physical_calls["prepare"] += 1
+        return real_prepare(*args, **kwargs)
+
+    def counted_evaluate(*args, **kwargs):
+        physical_calls["evaluate"] += 1
+        return real_evaluate(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.prepare_physical_signal",
+        counted_prepare,
+    )
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.evaluate_physical_peak",
+        counted_evaluate,
+    )
+    monkeypatch.setattr(physical_owner, "prepare_physical_signal", counted_prepare)
+    monkeypatch.setattr(physical_owner, "evaluate_physical_peak", counted_evaluate)
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline._acquisition_source",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("spec-bound run fingerprinted the RAW twice")
+        ),
+    )
+    captured_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = ()
+
+    def capture_sidecar(path, **kwargs):
+        nonlocal captured_manifest
+        captured_manifest = tuple(kwargs["work_manifest"])
+        return write_discovery_physical_fact_sidecar(path, **kwargs)
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline.write_discovery_physical_fact_sidecar",
+        capture_sidecar,
+    )
+
+    outputs = run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda path, dll_dir: raw,
+        run_spec=spec,
+    )
+
+    assert outputs.physical_facts_json == (
+        tmp_path / "out" / "discovery_physical_facts.v1.json"
+    )
+    assert outputs.physical_facts_json is not None
+    assert physical_calls == {"prepare": 1, "evaluate": 1}
+    expected_work_manifest = captured_manifest
+    assert len(expected_work_manifest) == 1
+    records = read_discovery_physical_fact_sidecar(
+        outputs.physical_facts_json,
+        expected_run_spec=spec,
+        expected_acquisition_input=spec.acquisition_inputs[0],
+        expected_work_manifest=expected_work_manifest,
+    )
+    assert len(records) == 1
+    assert (
+        records[0].candidate_id == _read_csv(outputs.candidates_csv)[0]["candidate_id"]
+    )
+    assert records[0].evaluation.prepared.profile_id == spec.profile_id
+    assert physical_calls == {"prepare": 2, "evaluate": 2}
+    assert raw.raw_chromatogram_call_count == 1
+
+
+def test_run_spec_conflicts_fail_before_raw_opener(tmp_path: Path) -> None:
+    raw_path = tmp_path / "Sample.raw"
+    raw_path.write_bytes(b"compiled acquisition")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings
+    )
+    opens: list[Path] = []
+
+    def _open(path: Path, _dll_dir: Path):
+        opens.append(path)
+        return _FakeRawHandle(events=[])
+
+    with pytest.raises(ValueError, match="settings conflict"):
+        run_discovery(
+            raw_path,
+            output_dir=tmp_path / "settings-out",
+            settings=replace(settings, seed_rt_gap_min=0.33),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=_open,
+            run_spec=spec,
+        )
+    with pytest.raises(ValueError, match="peak config conflicts"):
+        run_discovery(
+            raw_path,
+            output_dir=tmp_path / "profile-out",
+            settings=settings,
+            peak_config=replace(
+                _peak_config(tmp_path),
+                signal_processing_window_points=21,
+            ),
+            raw_opener=_open,
+            run_spec=spec,
+        )
+    with pytest.raises(TypeError, match="ProcessingRunSpec"):
+        run_discovery(
+            raw_path,
+            output_dir=tmp_path / "invalid-out",
+            settings=settings,
+            peak_config=_peak_config(tmp_path),
+            raw_opener=_open,
+            run_spec=object(),  # type: ignore[arg-type]
+        )
+    assert opens == []
+
+
+@pytest.mark.parametrize("binding", ["missing", "crossed"])
+def test_spec_bound_handle_closes_source_before_ms2_or_xic(
+    tmp_path: Path,
+    binding: str,
+) -> None:
+    raw_path = tmp_path / "Sample.raw"
+    raw_path.write_bytes(b"compiled acquisition")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings
+    )
+    if binding == "missing":
+        source = None
+    else:
+        other = tmp_path / "Other.raw"
+        other.write_bytes(b"different acquisition")
+        source = build_acquisition_source_identity(
+            other,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        )
+
+    class CountingHandle:
+        acquisition_source = source
+        raw_chromatogram_call_count = 0
+
+        def __init__(self) -> None:
+            self.ms2_calls = 0
+            self.xic_calls = 0
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def iter_ms2_scans(self, *_args):
+            self.ms2_calls += 1
+            return iter(())
+
+        def extract_xic_many(self, requests):
+            self.xic_calls += 1
+            return tuple(XICTrace.empty() for _request in requests)
+
+        def scan_window_for_request(self, _request):
+            return (0, 0)
+
+    handle = CountingHandle()
+
+    with pytest.raises(ValueError, match="lacks|crosses"):
+        run_discovery(
+            raw_path,
+            output_dir=tmp_path / "out",
+            settings=settings,
+            peak_config=_peak_config(tmp_path),
+            raw_opener=lambda *_args: handle,
+            run_spec=spec,
+        )
+
+    assert handle.ms2_calls == 0
+    assert handle.xic_calls == 0
+
+
 def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -158,14 +368,8 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     candidate_ids = {row["candidate_id"] for row in rows}
     assert len(rows) == 2
     assert len(candidate_ids) == 2
-    assert (
-        "TumorBC2312_DNA#19561@mz300.160635_p184.113235"
-        in candidate_ids
-    )
-    assert (
-        "TumorBC2312_DNA#19561@mz301.164978_p185.115845"
-        in candidate_ids
-    )
+    assert "TumorBC2312_DNA#19561@mz300.160635_p184.113235" in candidate_ids
+    assert "TumorBC2312_DNA#19561@mz301.164978_p185.115845" in candidate_ids
     rows_by_product = {row["product_mz"]: row for row in rows}
     inferred = rows_by_product["184.113"]
     direct = rows_by_product["185.116"]
@@ -249,13 +453,9 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         "NormalBC2257_DNA",
     ]
     assert [row["candidate_count"] for row in index_rows] == ["1", "1"]
-    assert {row["schema_version"] for row in index_rows} == {
-        "discovery_batch_index_v2"
-    }
+    assert {row["schema_version"] for row in index_rows} == {"discovery_batch_index_v2"}
     assert all(
-        row["discovery_receipt_id"].startswith(
-            "xic.discovery-candidate-universe.v1:"
-        )
+        row["discovery_receipt_id"].startswith("xic.discovery-candidate-universe.v1:")
         for row in index_rows
     )
     assert [row["medium_count"] for row in index_rows] == ["1", "1"]
@@ -409,6 +609,93 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     assert progress == [(1, 2, "sample-b"), (2, 2, "sample-a")]
 
 
+def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_paths = (tmp_path / "sample-b.raw", tmp_path / "sample-a.raw")
+    for raw_path in raw_paths:
+        raw_path.write_bytes(raw_path.stem.encode())
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        raw_paths, discovery_settings=settings
+    )
+
+    serial_handles = {
+        path: _OwnerBoundFakeRawHandle(
+            spec.acquisition_inputs[index].acquisition_source,
+            [],
+            rt=np.asarray([], dtype=float),
+            intensity=np.asarray([], dtype=float),
+        )
+        for index, path in enumerate(raw_paths)
+    }
+    serial = run_discovery_batch(
+        raw_paths,
+        output_dir=tmp_path / "serial-spec",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda path, dll_dir: serial_handles[path],
+        run_spec=spec,
+    )
+
+    process_handles = {
+        path: _OwnerBoundFakeRawHandle(
+            spec.acquisition_inputs[index].acquisition_source,
+            [],
+            rt=np.asarray([], dtype=float),
+            intensity=np.asarray([], dtype=float),
+        )
+        for index, path in enumerate(raw_paths)
+    }
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
+        lambda acquisition_source, raw_session_capability: (
+            lambda path, dll_dir: process_handles[path]
+        ),
+    )
+
+    submitted_jobs: list[DiscoverySampleProcessJob] = []
+
+    class _SynchronousExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def submit(self, worker, job):
+            submitted_jobs.append(job)
+            future = Future()
+            future.set_result(worker(job))
+            return future
+
+        def shutdown(self, *, wait, cancel_futures=False) -> None:
+            pass
+
+    process = run_discovery_batch(
+        raw_paths,
+        output_dir=tmp_path / "process-spec",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        max_workers=2,
+        executor_factory=_SynchronousExecutor,
+        run_spec=spec,
+    )
+
+    assert tuple(job.run_spec for job in submitted_jobs) == (spec, spec)
+    assert tuple(job.acquisition_input for job in submitted_jobs) == (
+        spec.acquisition_inputs
+    )
+    assert all(pickle.loads(pickle.dumps(job)) == job for job in submitted_jobs)
+    assert _read_csv(serial.batch_index_csv) == _read_csv(process.batch_index_csv)
+    for serial_output, process_output in zip(
+        serial.per_sample, process.per_sample, strict=True
+    ):
+        assert serial_output.physical_facts_json is not None
+        assert process_output.physical_facts_json is not None
+        assert serial_output.physical_facts_json.read_bytes() == (
+            process_output.physical_facts_json.read_bytes()
+        )
+
+
 def test_parallel_batch_rejects_parent_raw_opener(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="RAW handles inside spawned workers"):
         run_discovery_batch(
@@ -498,8 +785,7 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
     assert {row["scope"] for row in request_ipc} == {"sample-0", "sample-1"}
     assert all(row["availability"] == "partial" for row in request_ipc)
     assert any(
-        record.stage == "discover.failed_worker_partial"
-        for record in recorder.records
+        record.stage == "discover.failed_worker_partial" for record in recorder.records
     )
     assert any(
         row["metric"] == "worker_retry_count" and row["scope"] == "sample-0"
@@ -719,9 +1005,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             executor_factory=_FailureExecutor,
         )
     ipc_rows = [
-        row
-        for row in recorder.measurement_observations
-        if row["metric"] == "ipc_bytes"
+        row for row in recorder.measurement_observations if row["metric"] == "ipc_bytes"
     ]
     assert len(ipc_rows) == 4
     assert all(row["availability"] == "failed" for row in ipc_rows)
@@ -865,6 +1149,349 @@ def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip(
         restored = executor.submit(pickle.loads, pickle.dumps(error)).result(timeout=30)
 
     assert restored == error
+
+
+def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"real-spawn-mismatched-job")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings
+    )
+    acquisition_input = spec.acquisition_inputs[0]
+    source = acquisition_input.acquisition_source
+    job = DiscoverySampleProcessJob(
+        sample_index=0,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        settings=replace(settings, seed_rt_gap_min=0.33),
+        peak_config=_peak_config(tmp_path),
+        acquisition_source=source,
+        raw_session_capability=mint_raw_acquisition_session_capability(source),
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+    )
+
+    context = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=1,
+        mp_context=context,
+    ) as executor:
+        result = executor.submit(_run_discovery_sample_process_job, job).result(
+            timeout=30
+        )
+
+    assert isinstance(result, DiscoverySampleProcessError)
+    assert result.message == "ValueError: Discovery process job crosses method settings"
+    assert result.run_spec_id == spec.run_spec_id
+    assert result.profile_id == spec.profile_id
+    assert result.acquisition_source_id == source.acquisition_source_id
+    assert all(
+        value.strip()
+        for value in (
+            result.run_spec_id,
+            result.profile_id,
+            result.acquisition_source_id,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("spec_bound", "replacement_position"),
+    [(False, 1), (False, 2), (True, 1), (True, 2), (True, 3)],
+)
+@pytest.mark.parametrize("prior_outputs", [False, True])
+def test_discovery_output_publication_rolls_back_every_replace_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    spec_bound: bool,
+    replacement_position: int,
+    prior_outputs: bool,
+) -> None:
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    final_paths = [
+        output_dir / "discovery_candidates.csv",
+        output_dir / "discovery_review.csv",
+        output_dir / "discovery_physical_facts.v1.json",
+    ]
+    run_spec = None
+    acquisition_input = None
+    if spec_bound:
+        raw_path = tmp_path / "sample.raw"
+        raw_path.write_bytes(b"atomic-publication")
+        run_spec = compile_discovery_processing_run_spec(
+            (raw_path,), discovery_settings=_settings()
+        )
+        acquisition_input = run_spec.acquisition_inputs[0]
+    prior = {
+        path: f"prior-{index}".encode("utf-8")
+        for index, path in enumerate(final_paths)
+    }
+    if prior_outputs:
+        for path, payload in prior.items():
+            path.write_bytes(payload)
+
+    real_replace = Path.replace
+    published = 0
+    final_names = {path.name for path in final_paths}
+
+    def fail_selected_publication(source: Path, target: Path) -> Path:
+        nonlocal published
+        target = Path(target)
+        if (
+            source.name.endswith(".tmp")
+            and target.name in final_names
+            and not target.name.endswith(".tmp")
+        ):
+            published += 1
+            if published == replacement_position:
+                raise OSError(f"publication failure {replacement_position}")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", fail_selected_publication)
+
+    with pytest.raises(OSError, match=f"publication failure {replacement_position}"):
+        _write_dual_csvs(
+            output_dir,
+            (),
+            timing_recorder=TimingRecorder.disabled("discovery"),
+            sample_stem="sample",
+            run_spec=run_spec,
+            acquisition_input=acquisition_input,
+        )
+
+    for path in final_paths:
+        if prior_outputs:
+            assert path.read_bytes() == prior[path]
+        else:
+            assert not path.exists()
+    assert not [
+        path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
+    ]
+
+
+def test_legacy_publication_removes_stale_spec_bound_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_dir = tmp_path / "out"
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"spec-to-legacy-success")
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=_settings()
+    )
+    spec_outputs = _write_dual_csvs(
+        output_dir,
+        (),
+        timing_recorder=TimingRecorder.disabled("discovery"),
+        sample_stem="sample",
+        run_spec=spec,
+        acquisition_input=spec.acquisition_inputs[0],
+    )
+    assert spec_outputs.physical_facts_json is not None
+    assert spec_outputs.physical_facts_json.exists()
+    expected_candidates = (",".join(DISCOVERY_CANDIDATE_COLUMNS) + "\n").encode()
+    expected_review = (",".join(DISCOVERY_BRIEF_COLUMNS) + "\n").encode()
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline.write_discovery_candidates_csv",
+        lambda path, _candidates: path.write_bytes(expected_candidates),
+    )
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline.write_discovery_review_csv",
+        lambda path, _candidates: path.write_bytes(expected_review),
+    )
+
+    outputs = _write_dual_csvs(
+        output_dir,
+        (),
+        timing_recorder=TimingRecorder.disabled("discovery"),
+        sample_stem="sample",
+    )
+
+    assert outputs.candidates_csv.read_bytes() == expected_candidates
+    assert outputs.review_csv.read_bytes() == expected_review
+    assert outputs.physical_facts_json is None
+    assert not (output_dir / "discovery_physical_facts.v1.json").exists()
+    assert not [
+        path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
+    ]
+
+
+@pytest.mark.parametrize("failure_point", ["backup", "publish-1", "publish-2"])
+def test_spec_to_legacy_failure_restores_complete_prior_member_set(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_point: str,
+) -> None:
+    output_dir = tmp_path / "out"
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"spec-to-legacy-rollback")
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=_settings()
+    )
+    spec_outputs = _write_dual_csvs(
+        output_dir,
+        (),
+        timing_recorder=TimingRecorder.disabled("discovery"),
+        sample_stem="sample",
+        run_spec=spec,
+        acquisition_input=spec.acquisition_inputs[0],
+    )
+    assert spec_outputs.physical_facts_json is not None
+    final_paths = (
+        spec_outputs.candidates_csv,
+        spec_outputs.review_csv,
+        spec_outputs.physical_facts_json,
+    )
+    prior = {path: path.read_bytes() for path in final_paths}
+    physical_path = spec_outputs.physical_facts_json
+    real_replace = Path.replace
+    published = 0
+
+    def fail_transition(source: Path, target: Path) -> Path:
+        nonlocal published
+        target = Path(target)
+        if (
+            failure_point == "backup"
+            and source == physical_path
+            and target.name == f"{physical_path.name}.bak"
+        ):
+            raise OSError("legacy transition backup failure")
+        if source.name.endswith(".tmp") and target in final_paths[:2]:
+            published += 1
+            if failure_point == f"publish-{published}":
+                raise OSError(f"legacy transition {failure_point} failure")
+        return real_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", fail_transition)
+
+    with pytest.raises(OSError, match="legacy transition"):
+        _write_dual_csvs(
+            output_dir,
+            (),
+            timing_recorder=TimingRecorder.disabled("discovery"),
+            sample_stem="sample",
+        )
+
+    assert {path: path.read_bytes() for path in final_paths} == prior
+    assert not [
+        path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
+    ]
+
+
+@pytest.mark.parametrize("prior_outputs", [False, True])
+def test_discovery_output_publication_rolls_back_sidecar_staging_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prior_outputs: bool,
+) -> None:
+    output_dir = tmp_path / "out"
+    output_dir.mkdir()
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"sidecar-stage-failure")
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=_settings()
+    )
+    final_paths = (
+        output_dir / "discovery_candidates.csv",
+        output_dir / "discovery_review.csv",
+        output_dir / "discovery_physical_facts.v1.json",
+    )
+    prior = {path: f"prior-{index}".encode() for index, path in enumerate(final_paths)}
+    if prior_outputs:
+        for path, payload in prior.items():
+            path.write_bytes(payload)
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline.write_discovery_physical_fact_sidecar",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            OSError("sidecar staging failed")
+        ),
+    )
+
+    with pytest.raises(OSError, match="sidecar staging failed"):
+        _write_dual_csvs(
+            output_dir,
+            (),
+            timing_recorder=TimingRecorder.disabled("discovery"),
+            sample_stem="sample",
+            run_spec=spec,
+            acquisition_input=spec.acquisition_inputs[0],
+        )
+
+    for path in final_paths:
+        if prior_outputs:
+            assert path.read_bytes() == prior[path]
+        else:
+            assert not path.exists()
+    assert not [
+        path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
+    ]
+
+
+def test_process_job_validates_binding_and_preserves_failure_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"process identity")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings
+    )
+    acquisition_input = spec.acquisition_inputs[0]
+    source = acquisition_input.acquisition_source
+    capability = mint_raw_acquisition_session_capability(source)
+    opener_requests: list[Path] = []
+
+    def _rejecting_owner_opener(_source, _capability):
+        def _open(path: Path, _dll_dir: Path):
+            opener_requests.append(path)
+            raise RuntimeError("owner boom")
+
+        return _open
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
+        _rejecting_owner_opener,
+    )
+    valid_job = DiscoverySampleProcessJob(
+        sample_index=0,
+        raw_path=raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        acquisition_source=source,
+        raw_session_capability=capability,
+        run_spec=spec,
+        acquisition_input=acquisition_input,
+    )
+
+    failure = _run_discovery_sample_process_job(valid_job)
+
+    assert isinstance(failure, DiscoverySampleProcessError)
+    assert failure.run_spec_id == spec.run_spec_id
+    assert failure.profile_id == spec.profile_id
+    assert failure.acquisition_source_id == source.acquisition_source_id
+    assert failure.message == "RuntimeError: owner boom"
+    assert opener_requests == [raw_path]
+
+    crossed_job = replace(
+        valid_job,
+        settings=replace(settings, seed_rt_gap_min=0.33),
+    )
+    crossed = _run_discovery_sample_process_job(crossed_job)
+    assert isinstance(crossed, DiscoverySampleProcessError)
+    assert (
+        crossed.message == "ValueError: Discovery process job crosses method settings"
+    )
+    assert crossed.run_spec_id == spec.run_spec_id
+    assert crossed.profile_id == spec.profile_id
+    assert crossed.acquisition_source_id == source.acquisition_source_id
+    assert opener_requests == [raw_path]
 
 
 def test_discovery_raw_failure_preserves_open_and_adapter_measurements(

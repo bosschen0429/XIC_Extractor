@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -200,12 +201,104 @@ class DiscoverySeedGroup:
     matched_tag_names: tuple[str, ...] = ()
     tag_evidence_json: str = "{}"
     precursor_mz_basis: GroupPrecursorMzBasis = "scan_precursor"
-    neutral_loss_error_basis: NeutralLossErrorBasis = (
-        "measured_scan_precursor_product"
-    )
+    neutral_loss_error_basis: NeutralLossErrorBasis = "measured_scan_precursor_product"
     scan_precursor_mz: float | None = None
     scan_precursor_delta_da: float | None = None
     max_scan_precursor_abs_delta_da: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryPhysicalWorkItem:
+    """One ordered Discovery physical question bound to its acquisition."""
+
+    work_ordinal: int
+    acquisition_source_id: str
+    sample_stem: str
+    best_ms2_scan_id: int
+    precursor_mz: float
+    product_mz: float
+    query_rt_min: float
+    context_rt_start_min: float
+    context_rt_end_min: float
+    trace_coordinate_id: str
+    acquired_trace_content_id: str
+    xic_mz: float
+    xic_rt_min: float
+    xic_rt_max: float
+    xic_ppm_tol: float
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.work_ordinal, bool)
+            or not isinstance(self.work_ordinal, int)
+            or self.work_ordinal < 0
+        ):
+            raise ValueError("work_ordinal must be a non-negative integer")
+        for field in (
+            "acquisition_source_id",
+            "sample_stem",
+            "trace_coordinate_id",
+            "acquired_trace_content_id",
+        ):
+            if not getattr(self, field):
+                raise ValueError(f"{field} must be non-empty text")
+        if (
+            isinstance(self.best_ms2_scan_id, bool)
+            or not isinstance(self.best_ms2_scan_id, int)
+            or self.best_ms2_scan_id < 0
+        ):
+            raise ValueError("best_ms2_scan_id must be a non-negative integer")
+        for field in (
+            "precursor_mz",
+            "product_mz",
+            "query_rt_min",
+            "context_rt_start_min",
+            "context_rt_end_min",
+            "xic_mz",
+            "xic_rt_min",
+            "xic_rt_max",
+            "xic_ppm_tol",
+        ):
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{field} must be numeric")
+            if not math.isfinite(float(value)):
+                raise ValueError(f"{field} must be finite")
+        if (
+            self.precursor_mz <= 0.0
+            or self.product_mz <= 0.0
+            or self.xic_mz <= 0.0
+            or self.xic_ppm_tol <= 0.0
+        ):
+            raise ValueError("physical work m/z values must be positive")
+        if self.context_rt_start_min < 0.0:
+            raise ValueError("context_rt_start_min must be non-negative")
+        if not (
+            self.context_rt_start_min
+            <= self.query_rt_min
+            <= self.context_rt_end_min
+        ):
+            raise ValueError("physical work query RT must be inside its context")
+        if self.xic_rt_min < 0.0 or self.xic_rt_min > self.xic_rt_max:
+            raise ValueError("physical work XIC request has an invalid RT window")
+
+    @property
+    def candidate_id(self) -> str:
+        return build_discovery_candidate_id(
+            sample_stem=self.sample_stem,
+            best_ms2_scan_id=self.best_ms2_scan_id,
+            precursor_mz=self.precursor_mz,
+            product_mz=self.product_mz,
+        )
+
+    @property
+    def selection_subject_id(self) -> str:
+        return build_discovery_physical_selection_subject_id(
+            sample_stem=self.sample_stem,
+            best_ms2_scan_id=self.best_ms2_scan_id,
+            precursor_mz=self.precursor_mz,
+            product_mz=self.product_mz,
+        )
 
 
 @dataclass(frozen=True)
@@ -244,9 +337,7 @@ class DiscoveryCandidate:
     ms1_height: float | None
     ms1_trace_quality: str
     ms1_scan_support_score: float | None = None
-    neutral_loss_error_basis: NeutralLossErrorBasis = (
-        "measured_scan_precursor_product"
-    )
+    neutral_loss_error_basis: NeutralLossErrorBasis = "measured_scan_precursor_product"
     precursor_mz_basis: GroupPrecursorMzBasis = "scan_precursor"
     scan_precursor_mz: float | None = None
     scan_precursor_delta_da: float | None = None
@@ -317,9 +408,9 @@ class DiscoveryCandidate:
             ms2_support="weak",
             ms1_support="missing",
             rt_alignment="missing",
-            candidate_id=_candidate_id(
+            candidate_id=build_discovery_candidate_id(
                 sample_stem=sample_stem,
-                best_seed=best_seed,
+                best_ms2_scan_id=best_seed.scan_number,
                 precursor_mz=precursor_mz,
                 product_mz=product_mz,
             ),
@@ -380,6 +471,7 @@ class DiscoveryCandidate:
 class DiscoveryRunOutputs:
     candidates_csv: Path
     review_csv: Path
+    physical_facts_json: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -388,16 +480,30 @@ class DiscoveryBatchOutputs:
     per_sample: tuple[DiscoveryRunOutputs, ...]
 
 
-def _candidate_id(
+def build_discovery_candidate_id(
     *,
     sample_stem: str,
-    best_seed: DiscoverySeed,
+    best_ms2_scan_id: int,
     precursor_mz: float,
     product_mz: float,
 ) -> str:
     return (
-        f"{sample_stem}#{best_seed.scan_number}"
+        f"{sample_stem}#{best_ms2_scan_id}"
         f"@mz{_format_id_mz(precursor_mz)}_p{_format_id_mz(product_mz)}"
+    )
+
+
+def build_discovery_physical_selection_subject_id(
+    *,
+    sample_stem: str,
+    best_ms2_scan_id: int,
+    precursor_mz: float,
+    product_mz: float,
+) -> str:
+    return (
+        "discovery-physical-work.v1:"
+        f"{sample_stem}:{best_ms2_scan_id}:"
+        f"{float(precursor_mz).hex()}:{float(product_mz).hex()}"
     )
 
 
