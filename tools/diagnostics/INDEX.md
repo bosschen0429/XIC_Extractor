@@ -1,8 +1,8 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Last refreshed:** 2026-07-14
-**Total entry-points:** 123
-**Total files (incl. helpers):** 207 Python files under `tools/diagnostics/`
+**Last refreshed:** 2026-08-16
+**Total entry-points:** 112
+**Total files (incl. helpers):** 195 Python files under `tools/diagnostics/`
 **Governing specs:** `docs/architecture-contract.md` and
 `docs/agent/script-tool-lifecycle.md`; the retired dated diagnostic lifecycle
 spec remains only as a same-path public stub.
@@ -655,11 +655,33 @@ sample order, and output TSV/JSON/Markdown schemas.
 **Purpose**: Convert shift-aware calibration rows into a machine standard-peak gate that separates supported standard-peak same-pattern cases from blocked/review-only cases.
 **Topic group**: `shift_aware_standard_peak_gate_calibration.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: Writes `shift_aware_standard_peak_gate_calibration.tsv` and summary JSON. `standard_peak_gate_supported` requires the configured shift-aware shape threshold and a Gaussian-smoothed family overlay verdict that supports standard-peak backfill. Rows without manual labels are reported as `unlabeled_machine_supported` or `unlabeled_machine_blocked`; they are valid machine-gate candidates but are not counted as manual false positives/negatives. Non-standard, missing-overlay, stale-provenance, and conflict rows remain fail-closed or review-only.
+**Status note**: Writes `shift_aware_standard_peak_gate_calibration.tsv` and summary JSON. `standard_peak_gate_supported` is now a historical offline pattern label only: T5D deleted every authority/productization consumer of this output. Rows without manual labels are reported as `unlabeled_machine_supported` or `unlabeled_machine_blocked`; neither label can become Owner SUPPORT or a Matrix value. Non-standard, missing-overlay, stale-provenance, and conflict rows remain fail-closed or review-only.
 
 ---
 
-### `standard_peak_ms1_authority_bundle.py`
+## T5D Standard Peak contraction
+
+T5D deleted the live modules and wrappers documented in the historical entries
+below: MS1 authority bundle, heldout/productization gates, activation-scope and
+reintegration product audits, shadow activation inputs, productization,
+machine/preset orchestration, chunk consolidation/formal sidecar, source
+republisher, stage replay, and publication checker. The descriptions remain as
+historical provenance for retained artifacts; none names a runnable current
+entry or current authority.
+
+The only current Standard Peak-specific package entry is
+`xic_extractor.diagnostics.standard_peak_hold_diagnostic`. It accepts a
+requested subset of a complete live `ProcessingRunSpec`/Alignment population,
+replays `build_production_decisions()`, and mints subjects only for closed
+`diagnostic_eligible` non-writing HOLD reasons. Its result contains explanation,
+contradiction, and unavailable labels plus source artifact identities; it has no
+SUPPORT/activation state, Matrix value, publication target, or writer receipt.
+The final SP-001–SP-055 map is
+`docs/superpowers/validation/standard_peak_t5d_contraction_v1/capability_disposition_v1.tsv`.
+
+---
+
+### Historical record — `standard_peak_ms1_authority_bundle.py` (retired/deleted)
 
 **Purpose**: Convert standard-peak gate rows plus overlay trace provenance into a product-authorized MS1 same-peak sidecar consumable by shadow projection.
 **Topic group**: `standard_peak_ms1_authority_bundle.py` + `xic_extractor/diagnostics/standard_peak_ms1_authority_bundle.py`
@@ -668,7 +690,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_heldout_oracle_results.py`
+### Historical record — `standard_peak_heldout_oracle_results.py` (retired/deleted)
 
 **Purpose**: Evaluate deterministic standard-peak held-out oracle manifest rows against observed boundary/area results and write `heldout_oracle_results.tsv`.
 **Topic group**: `standard_peak_shadow_activation_inputs.py` + `xic_extractor/diagnostics/standard_peak_shadow_activation_inputs.py`
@@ -677,7 +699,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_heldout_trace_oracle.py`
+### Historical record — `standard_peak_heldout_trace_oracle.py` (retired/deleted)
 
 **Purpose**: Build deterministic held-out trace reintegration oracle packets from existing standard-peak trace JSON and detected cell evidence.
 **Topic group**: `standard_peak_heldout_trace_oracle.py` + `xic_extractor/diagnostics/standard_peak_heldout_trace_oracle.py`
@@ -686,7 +708,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_activation_scope_audit.py`
+### Historical record — `standard_peak_activation_scope_audit.py` (retired/deleted)
 
 **Purpose**: Audit whether actual standard-peak `activation_value_delta.tsv` writes fall inside named trace evidence envelopes used by held-out oracles.
 **Topic group**: `standard_peak_activation_scope_audit.py` + `xic_extractor/diagnostics/standard_peak_activation_scope_audit.py`
@@ -695,7 +717,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_reintegration_stability_audit.py`
+### Historical record — `standard_peak_reintegration_stability_audit.py` (retired/deleted)
 
 **Purpose**: Audit whether standard-peak activation writes have boundary-stable stored traces under two no-RAW reintegration views.
 **Topic group**: `standard_peak_reintegration_stability_audit.py` + `xic_extractor/diagnostics/standard_peak_reintegration_stability_audit.py`
@@ -704,7 +726,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_shadow_activation_inputs.py`
+### Historical record — `standard_peak_shadow_activation_inputs.py` (retired/deleted)
 
 **Purpose**: Convert product-authorized standard-peak `shadow_production_projection_cells.tsv` accepts into `product_activation --matrix-only` input TSVs.
 **Topic group**: `standard_peak_shadow_activation_inputs.py` + `xic_extractor/diagnostics/standard_peak_shadow_activation_inputs.py`
@@ -716,7 +738,7 @@ disposable research diagnostic.
 
 ---
 
-### `standard_peak_policy_observed_oracle.py`
+### Historical record — `standard_peak_policy_observed_oracle.py` (retired/deleted)
 
 **Purpose**: Build row-specific observed-oracle packets for generated Backfill
 policy rows that are still `detected_flagged`.
@@ -746,7 +768,7 @@ after generated policy replay and writer expected-diff pass.
 
 ---
 
-### `standard_peak_backfill_productization.py`
+### Historical record — `standard_peak_backfill_productization.py` (retired/deleted)
 
 **Purpose**: Run the reviewed standard-peak backfill path end to end: convert shadow projection accepts into activation inputs, apply matrix-only product activation, and optionally render an activation-synced reconciliation gallery.
 **Topic group**: `standard_peak_backfill_productization.py` + `xic_extractor/diagnostics/standard_peak_backfill_productization.py`
@@ -767,7 +789,7 @@ productization surface and its detailed evidence/oracle options.
 
 ---
 
-### `standard_peak_backfill_machine_pipeline.py`
+### Historical record — `standard_peak_backfill_machine_pipeline.py` (retired/deleted)
 
 **Purpose**: Run the standard-peak machine-gate chain from either an existing overlay summary or a retained-backfill review queue to activated matrix and optional gallery.
 **Topic group**: `family_ms1_overlay_batch.py`, `family_ms1_alignment_experiment_batch.py`, `backfill_evidence_reconciliation_gallery.py`, `shift_aware_backfill_calibration_pack.py`, `shift_aware_standard_peak_gate_calibration.py`, `standard_peak_ms1_authority_bundle.py`, `shadow_production_projection.py`, `standard_peak_backfill_productization.py`
@@ -784,7 +806,7 @@ not authorize stale overlay summaries or bypass matrix/publication checks.
 
 ---
 
-### `standard_peak_backfill_chunk_consolidation.py`
+### Historical record — `standard_peak_backfill_chunk_consolidation.py` (retired/deleted)
 
 **Purpose**: Retained offline consolidation diagnostic for historical standard-peak machine-pipeline outputs.
 **Topic group**: `standard_peak_backfill_machine_pipeline.py` + `standard_peak_backfill_productization.py` + `xic_extractor/diagnostics/standard_peak_backfill_chunk_consolidation.py`
@@ -799,7 +821,7 @@ proof.
 
 ---
 
-#### `standard_peak_backfill_preset.py` (preset bridge, non-CLI entry)
+#### `standard_peak_backfill_preset.py` (retired/deleted)
 
 **Purpose**: Retained explicit offline Standard Peak diagnostic wrapper.
 **Topic group**: `standard_peak_backfill_machine_pipeline.py` +
@@ -814,7 +836,7 @@ authority. T5D owns its contraction/deletion and diagnostic eligibility.
 
 ---
 
-### `dna_dr_product_ready_stage_replay.py`
+### Historical record — `dna_dr_product_ready_stage_replay.py` (retired/deleted)
 
 **Purpose**: Replay a single expensive `dna_dr_product_ready` post-alignment
 stage from an existing alignment output directory for timing/parity validation.

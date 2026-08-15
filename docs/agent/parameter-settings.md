@@ -539,9 +539,13 @@ The former `standard_peak_backfill*` and `backfill_expansion*` preset keys, plus
 `--standard-peak-backfill-publication-mode` and
 `--standard-peak-evidence-cache-dir`, are retired from normal execution. The
 loader/CLI rejects them before Alignment or RAW work rather than silently
-changing science. Explicit Standard Peak tools under `tools/diagnostics/` are
-offline diagnostic/history surfaces pending T5D contraction; they are not a
-normal preset tail and cannot republish the source Matrix.
+changing science. T5D deleted the former Standard Peak preset, machine,
+authority, activation, productization, consolidation, stage-replay, and
+publication-checker entries. Explicit diagnosis now begins with the typed
+`xic_extractor.diagnostics.standard_peak_hold_diagnostic` contract over a
+complete live Owner replay; retained overlay, shift-aware, calibration, and
+gallery tools are offline falsifiers/renderers only. None is a normal preset
+tail or can publish a Matrix value.
 
 When `--timing-output` or `--timing-live-output` is supplied, normal preset
 timing covers the Alignment/Owner Backfill transaction; there is no Standard
@@ -555,18 +559,11 @@ batching/cache code: `raw_xic_locality_summary` reports stage-level
 `extract_xic_count`, `extract_xic_batch_count`, `raw_chromatogram_call_count`,
 `point_count`, and per-XIC/per-batch ratios without re-reading RAW files.
 
-The built-in `dna_dr_product_ready` preset no longer invokes the historical
-publication checker. For retained historical artifact diagnosis only, it can
-still be run explicitly:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.check_product_ready_preset_publication `
-  --alignment-dir <task-specific-output-dir>
-```
-
-This checker expects retired Standard Peak publication artifacts, so success or
-failure is not the readiness status of a current normal preset run. It writes
-diagnostic sidecars only and does not read RAW or change Matrix values.
+The built-in `dna_dr_product_ready` preset no longer invokes a publication
+checker. T5D deleted that historical checker and its stage replay because both
+encoded the retired Standard Peak publication contract. Historical publication
+artifacts remain source-sealed evidence only; do not use them to infer readiness
+for a current run.
 
 Before starting 85RAW, verify the batch index actually contains 85 samples. Do
 not reuse the historical 8RAW index by path similarity. Prefer the CLI preflight
