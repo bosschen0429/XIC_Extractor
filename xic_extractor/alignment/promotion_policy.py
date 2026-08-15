@@ -84,6 +84,7 @@ _INTERFERING_LOCAL_MIXTURE_DIAGNOSTICS = frozenset(
         "competing_boundary_model",
     },
 )
+_LOW_COVERAGE_LOCAL_MIXTURE_DIAGNOSTICS = frozenset({"insufficient_evidence"})
 _LOW_COVERAGE_MARKERS = (
     "low_scan_support",
     "skipped_low_scan_support",
@@ -319,6 +320,11 @@ class BackfillCellEvidence:
 
     @property
     def low_assessable_coverage(self) -> bool:
+        if (
+            _normalize(self.region_local_mixture_diagnostic)
+            in _LOW_COVERAGE_LOCAL_MIXTURE_DIAGNOSTICS
+        ):
+            return True
         text = " ".join(
             (
                 self.reason,
@@ -521,7 +527,7 @@ class BackfillPromotionEvidence:
     backfill_dependency: str | None
     seed_quality: SeedQualitySummary | None
     held_rescue_count: int = 0
-    unrehydrated_review_rescue_count: int = 0
+    unrehydrated_review_rescue_count: int | None = 0
     cells: tuple[BackfillCellEvidence, ...] = ()
 
 
@@ -648,7 +654,7 @@ def evidence_from_tsv_rows(
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
         seed_quality=seed_quality,
-        unrehydrated_review_rescue_count=_int_value(
+        unrehydrated_review_rescue_count=_nonnegative_int_value(
             review_row.get("review_rescue_count", ""),
         ),
         cells=tuple(_cell_from_tsv(row) for row in cell_rows),
@@ -672,8 +678,9 @@ def classify_backfill_promotion(
     )
     assessed_rescues = rescued + owner_blocked
     candidate_rescue_count = evidence.q_rescue + evidence.held_rescue_count
+    review_rescue_count = evidence.unrehydrated_review_rescue_count
     if (
-        evidence.unrehydrated_review_rescue_count > 0
+        (review_rescue_count is None or review_rescue_count > 0)
         and is_dr_neutral_loss_tag(evidence.neutral_loss_tag)
         and evidence.primary_evidence in _SUPPORTED_PRIMARY_EVIDENCE
     ):
@@ -1142,6 +1149,20 @@ def _float_value(value: object) -> float | None:
 def _int_value(value: object) -> int:
     number = _float_value(value)
     return 0 if number is None else int(number)
+
+
+def _nonnegative_int_value(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    text = str(value).strip()
+    if text.startswith("'"):
+        text = text[1:]
+    if not text or any(character not in "0123456789" for character in text):
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
 
 
 def _int_optional(value: object) -> int | None:

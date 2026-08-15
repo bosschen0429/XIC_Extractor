@@ -566,6 +566,34 @@ def test_generic_review_rescue_count_requires_owner_rehydration() -> None:
     assert decision.reason == "backfill_owner_rehydration_unavailable"
 
 
+@pytest.mark.parametrize(
+    "review_rescue_count",
+    ("", "garbage", "NaN", "0.5", "-1"),
+    ids=("empty", "nonnumeric", "nonfinite", "fractional", "negative"),
+)
+def test_invalid_review_rescue_count_keeps_promotion_unavailable(
+    review_rescue_count: str,
+) -> None:
+    evidence = evidence_from_tsv_rows(
+        {
+            "neutral_loss_tag": "DNA_dR",
+            "primary_evidence": "owner_complete_link",
+            "quantifiable_detected_count": "2",
+            "quantifiable_rescue_count": "0",
+            "review_rescue_count": review_rescue_count,
+        },
+        [_cell_row("FAM_REVIEW", "S2", status="rescued")],
+        seed_quality=None,
+        sample_count=3,
+    )
+
+    decision = classify_backfill_promotion(evidence)
+
+    assert evidence.unrehydrated_review_rescue_count is None
+    assert decision.state == "unavailable"
+    assert decision.reason == "backfill_owner_rehydration_unavailable"
+
+
 def test_naked_backfill_support_fields_without_authority_do_not_promote() -> None:
     row = {
         **_cell_row("FAM_NAKED", "S2", status="rescued"),
