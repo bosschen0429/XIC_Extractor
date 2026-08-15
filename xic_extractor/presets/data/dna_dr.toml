@@ -10,6 +10,3 @@ value = 116.0474
 [discovery]
 
 [alignment]
-standard_peak_backfill = true
-standard_peak_backfill_chunk_size = 120
-standard_peak_backfill_publication_mode = "matrix-only"

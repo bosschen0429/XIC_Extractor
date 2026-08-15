@@ -26,6 +26,10 @@ from xic_extractor.diagnostics.standard_peak_backfill_productization import (
 )
 
 SCHEMA_VERSION = "standard_peak_backfill_chunk_consolidation_v0"
+SOURCE_MATRIX_REPUBLISHER_RETIRED_MESSAGE = (
+    "Standard Peak source-Matrix republication is retired; keep diagnostic "
+    "formal output as a sidecar"
+)
 FORMAL_PRODUCT_FILENAMES = (
     "alignment_matrix.tsv",
     "alignment_matrix_identity.tsv",
@@ -109,6 +113,8 @@ def run_standard_peak_backfill_chunk_consolidation(
 ) -> StandardPeakChunkConsolidationOutputs:
     """Merge chunk projection cells and run one matrix-only activation pass."""
 
+    if emit_formal_product_output and publish_to_source_alignment_output:
+        raise ValueError(SOURCE_MATRIX_REPUBLISHER_RETIRED_MESSAGE)
     if not machine_pipeline_summary_jsons:
         raise ValueError("at least one machine pipeline summary JSON is required")
 
@@ -249,22 +255,6 @@ def run_standard_peak_backfill_chunk_consolidation(
                 source_run_id=source_run_id,
                 coverage=coverage,
             )
-            if publish_to_source_alignment_output:
-                (
-                    published_alignment_output_dir,
-                    published_alignment_manifest_json,
-                ) = _publish_formal_product_output_to_alignment_output(
-                    formal_product_output_dir=formal_output_dir,
-                    formal_product_manifest_json=formal_manifest_json,
-                    publish_alignment_matrix_tsv=(
-                        publish_alignment_matrix_tsv or alignment_matrix_tsv
-                    ),
-                    publish_alignment_matrix_identity_tsv=(
-                        publish_alignment_matrix_identity_tsv
-                        or alignment_matrix_identity_tsv
-                    ),
-                    source_run_id=source_run_id,
-                )
     elif emit_formal_product_output:
         blocked_formal_output_dir = (
             formal_product_output_dir or output_dir / "formal_product_output"
@@ -440,123 +430,7 @@ def _publish_formal_product_output_to_alignment_output(
     publish_alignment_matrix_identity_tsv: Path,
     source_run_id: str,
 ) -> tuple[Path, Path]:
-    manifest = _load_json_mapping(formal_product_manifest_json)
-    if text_value(manifest.get("status")) != "pass":
-        raise ValueError("cannot publish formal product output without pass manifest")
-    source_dir = publish_alignment_matrix_tsv.parent
-    matrix_source = formal_product_output_dir / "alignment_matrix.tsv"
-    identity_source = formal_product_output_dir / "alignment_matrix_identity.tsv"
-    activation_delta_source = formal_product_output_dir / "activation_value_delta.tsv"
-    activation_summary_source = (
-        formal_product_output_dir / "activation_application_summary.tsv"
-    )
-    activation_identity_source = (
-        formal_product_output_dir / "activation_hypothesis_identity.tsv"
-    )
-    for path in (
-        matrix_source,
-        identity_source,
-        activation_delta_source,
-        activation_summary_source,
-        activation_identity_source,
-    ):
-        if not path.exists():
-            raise FileNotFoundError(str(path))
-
-    expected_hashes = manifest.get("artifact_sha256")
-    if not isinstance(expected_hashes, Mapping):
-        raise ValueError("formal product manifest missing artifact_sha256")
-    _verify_manifest_hash(
-        expected_hashes,
-        "alignment_matrix.tsv",
-        matrix_source,
-    )
-    _verify_manifest_hash(
-        expected_hashes,
-        "alignment_matrix_identity.tsv",
-        identity_source,
-    )
-    _backup_once(publish_alignment_matrix_tsv, "pre_standard_peak_backfill")
-    _backup_once(publish_alignment_matrix_identity_tsv, "pre_standard_peak_backfill")
-    matrix_backup = _backup_path(
-        publish_alignment_matrix_tsv,
-        "pre_standard_peak_backfill",
-    )
-    identity_backup = _backup_path(
-        publish_alignment_matrix_identity_tsv,
-        "pre_standard_peak_backfill",
-    )
-
-    shutil.copy2(matrix_source, publish_alignment_matrix_tsv)
-    shutil.copy2(identity_source, publish_alignment_matrix_identity_tsv)
-    audit_copies = {
-        "standard_peak_activation_value_delta.tsv": activation_delta_source,
-        "standard_peak_activation_application_summary.tsv": activation_summary_source,
-        "standard_peak_activation_hypothesis_identity.tsv": activation_identity_source,
-    }
-    copied_audits: dict[str, str] = {}
-    for name, source in audit_copies.items():
-        target = source_dir / name
-        shutil.copy2(source, target)
-        copied_audits[name] = file_sha256(target, uppercase=False)
-
-    publish_manifest = {
-        "schema_version": "standard_peak_default_matrix_publication_v0",
-        "source_run_id": source_run_id,
-        "status": "pass",
-        "default_matrix_status": "standard_peak_backfill_applied",
-        "source_formal_product_manifest_json": str(formal_product_manifest_json),
-        "source_formal_product_output_dir": str(formal_product_output_dir),
-        "published_alignment_matrix_tsv": str(publish_alignment_matrix_tsv),
-        "published_alignment_matrix_identity_tsv": str(
-            publish_alignment_matrix_identity_tsv,
-        ),
-        "alignment_matrix_backup_tsv": str(matrix_backup),
-        "alignment_matrix_identity_backup_tsv": str(identity_backup),
-        "alignment_matrix_backup_sha256": file_sha256(
-            matrix_backup,
-            uppercase=False,
-        ),
-        "alignment_matrix_identity_backup_sha256": file_sha256(
-            identity_backup,
-            uppercase=False,
-        ),
-        "published_alignment_matrix_sha256": file_sha256(
-            publish_alignment_matrix_tsv,
-            uppercase=False,
-        ),
-        "published_alignment_matrix_identity_sha256": file_sha256(
-            publish_alignment_matrix_identity_tsv,
-            uppercase=False,
-        ),
-        "formal_manifest_schema_version": text_value(
-            manifest.get("schema_version"),
-        ),
-        "activation_output_mode": text_value(manifest.get("activation_output_mode")),
-        "activation_decision_scope": text_value(
-            manifest.get("activation_decision_scope"),
-        ),
-        "must_not_regress_basis": text_value(manifest.get("must_not_regress_basis")),
-        "matrix_cells_written": text_value(manifest.get("matrix_cells_written")),
-        "coverage_status": text_value(manifest.get("coverage_status")),
-        "queue_row_count": text_value(manifest.get("queue_row_count")),
-        "covered_queue_row_count": text_value(
-            manifest.get("covered_queue_row_count"),
-        ),
-        "duplicate_queue_rank_count": text_value(
-            manifest.get("duplicate_queue_rank_count"),
-        ),
-        "missing_queue_rank_count": text_value(
-            manifest.get("missing_queue_rank_count"),
-        ),
-        "audit_artifact_sha256": copied_audits,
-    }
-    publish_manifest_json = source_dir / "standard_peak_default_matrix_manifest.json"
-    publish_manifest_json.write_text(
-        json.dumps(publish_manifest, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-    return source_dir, publish_manifest_json
+    raise ValueError(SOURCE_MATRIX_REPUBLISHER_RETIRED_MESSAGE)
 
 
 def _verify_manifest_hash(

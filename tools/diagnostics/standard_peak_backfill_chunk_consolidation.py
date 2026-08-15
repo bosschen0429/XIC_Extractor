@@ -11,6 +11,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from xic_extractor.diagnostics.standard_peak_backfill_chunk_consolidation import (
+    SOURCE_MATRIX_REPUBLISHER_RETIRED_MESSAGE,
     run_standard_peak_backfill_chunk_consolidation,
 )
 
@@ -25,6 +26,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "--publish-alignment-matrix-identity-tsv must be supplied together",
             file=sys.stderr,
         )
+        return 2
+    if args.publish_alignment_matrix_tsv is not None:
+        print(SOURCE_MATRIX_REPUBLISHER_RETIRED_MESSAGE, file=sys.stderr)
         return 2
     summaries = _resolve_summary_paths(
         machine_pipeline_summary_jsons=tuple(
@@ -47,9 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             retained_backfill_gate_tsv=args.retained_backfill_evidence_gate_tsv,
             gallery_output_dir=args.gallery_output_dir,
             emit_formal_product_output=args.emit_formal_product_output,
-            publish_to_source_alignment_output=(
-                not args.no_publish_to_source_alignment_output
-            ),
+            publish_to_source_alignment_output=False,
             formal_product_output_dir=args.formal_product_output_dir,
             publish_alignment_matrix_tsv=args.publish_alignment_matrix_tsv,
             publish_alignment_matrix_identity_tsv=(
@@ -180,9 +182,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--no-publish-to-source-alignment-output",
         action="store_true",
         help=(
-            "When --emit-formal-product-output passes, keep the formal product "
-            "matrix as a sidecar only instead of publishing it back to the "
-            "source alignment output's default alignment_matrix.tsv."
+            "Compatibility flag. Source-Alignment republication is retired, so "
+            "formal product output is always kept as a diagnostic sidecar."
         ),
     )
     parser.add_argument(

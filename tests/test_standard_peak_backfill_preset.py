@@ -127,8 +127,8 @@ def test_standard_peak_backfill_preset_chunks_and_publishes_alignment_output(
             productization=SimpleNamespace(reconciliation_gallery_html=gallery),
             formal_product_output_dir=output / "formal",
             formal_product_manifest_json=output / "formal_manifest.json",
-            published_alignment_output_dir=alignment_dir,
-            published_alignment_manifest_json=output / "publish_manifest.json",
+            published_alignment_output_dir=None,
+            published_alignment_manifest_json=None,
         )
 
     fake_reconciliation_groups = _fake_reconciliation_groups_runner(
@@ -192,15 +192,9 @@ def test_standard_peak_backfill_preset_chunks_and_publishes_alignment_output(
         call["source_family_by_family_sample"] == {}
         for call in machine_calls
     )
-    assert consolidation_calls[0]["publish_to_source_alignment_output"] is True
-    assert (
-        consolidation_calls[0]["publish_alignment_matrix_tsv"]
-        == alignment_dir / "alignment_matrix.tsv"
-    )
-    assert (
-        consolidation_calls[0]["publish_alignment_matrix_identity_tsv"]
-        == alignment_dir / "alignment_matrix_identity.tsv"
-    )
+    assert consolidation_calls[0]["publish_to_source_alignment_output"] is False
+    assert "publish_alignment_matrix_tsv" not in consolidation_calls[0]
+    assert "publish_alignment_matrix_identity_tsv" not in consolidation_calls[0]
     summary = json.loads(outputs.summary_json.read_text(encoding="utf-8"))
     assert summary["status"] == "pass"
     assert summary["review_queue_row_count"] == "3"
@@ -209,9 +203,7 @@ def test_standard_peak_backfill_preset_chunks_and_publishes_alignment_output(
     assert summary["chunk_workers"] == "1"
     assert summary["render_dpi"] == "123"
     assert summary["matrix_cells_written"] == "3"
-    assert outputs.published_alignment_manifest_json == output_dir / (
-        "consolidated/publish_manifest.json"
-    )
+    assert outputs.published_alignment_manifest_json is None
     assert outputs.gallery_html == output_dir / "consolidated/gallery.html"
 
 
