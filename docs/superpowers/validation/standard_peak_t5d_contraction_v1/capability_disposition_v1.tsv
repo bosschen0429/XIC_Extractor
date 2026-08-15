@@ -1,0 +1,56 @@
+rule_id	final_disposition	retained_locator	rationale
+SP-001	delete	deleted_by_t5d	normal and offline preset bridge retired
+SP-002	delete	deleted_by_t5d	preset artifact resolver retired with bridge
+SP-003	owner_input	xic_extractor/alignment/promotion_policy.py	retained cheap Backfill evidence interpreted only by Owner
+SP-004	owner_input	xic_extractor/alignment/promotion_policy.py	retained cheap Backfill evidence interpreted only by Owner
+SP-005	owner_input	xic_extractor/alignment/promotion_policy.py	authority meaning absorbed by Owner; diagnostic gate grants none
+SP-006	diagnostic_renderer	tools/diagnostics/family_ms1_backfill_review_report.py	explicit review rendering only
+SP-007	delete	deleted_by_t5d	preset reconciliation orchestration retired
+SP-008	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	explicit overlay acquisition/replay only
+SP-009	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	source-sealed overlay artifact evidence only
+SP-010	diagnostic_oracle	tools/diagnostics/family_ms1_overlay_batch.py	source-sealed overlay artifact evidence only
+SP-011	owner_input	xic_extractor/peak_detection/evidence_facts.py	shared trace fact retained under physical fact owner
+SP-012	owner_input	xic_extractor/peak_detection/ms1_morphology.py	shared morphology fact retained under physical fact owner
+SP-013	owner_input	xic_extractor/peak_detection/ms1_shape_identity.py	shared shape fact retained under physical fact owner
+SP-014	owner_input	xic_extractor/alignment/promotion_policy.py	available shape evidence consumed by Backfill Owner
+SP-015	owner_input	xic_extractor/alignment/promotion_policy.py	available family evidence consumed by Backfill Owner
+SP-016	diagnostic_renderer	tools/diagnostics/family_ms1_overlay_rendering.py	manual overlay renderer only
+SP-017	delete	deleted_by_t5d	preset-owned reconciliation group assembly retired
+SP-018	diagnostic_oracle	tools/diagnostics/family_ms1_alignment_experiment_batch.py	explicit shift-aware batch evidence only
+SP-019	diagnostic_oracle	tools/diagnostics/family_ms1_alignment_experiment.py	source-sealed shift-aware falsifier
+SP-020	diagnostic_renderer	tools/diagnostics/family_ms1_alignment_experiment.py	shift-aware review rendering only
+SP-021	diagnostic_oracle	tools/diagnostics/shift_aware_backfill_calibration_pack.py	offline calibration corpus only
+SP-022	diagnostic_oracle	tools/diagnostics/shift_aware_backfill_calibration_pack.py	historical threshold experiment; never Owner predicate
+SP-023	diagnostic_oracle	tools/diagnostics/shift_aware_standard_peak_gate_calibration.py	offline pattern observation only; no downstream authority consumer
+SP-024	diagnostic_oracle	tools/diagnostics/shift_aware_standard_peak_gate_calibration.py	offline falsification only
+SP-025	delete	deleted_by_t5d	Standard Peak authority bundle retired
+SP-026	delete	deleted_by_t5d	Standard Peak authority bundle retired
+SP-027	delete	deleted_by_t5d	Standard Peak authority bundle retired
+SP-028	delete	deleted_by_t5d	Standard Peak authority bundle retired
+SP-029	delete	deleted_by_t5d	package authority mint retired
+SP-030	delete	deleted_by_t5d	shadow activation policy retired
+SP-031	delete	deleted_by_t5d	activation compatibility adapter retired
+SP-032	delete	deleted_by_t5d	activation policy retired
+SP-033	delete	deleted_by_t5d	seed guard activation policy retired
+SP-034	delete	deleted_by_t5d	heldout activation gate retired
+SP-035	delete	deleted_by_t5d	activation authority adapter retired
+SP-036	delete	deleted_by_t5d	activation artifact writer retired
+SP-037	delete	deleted_by_t5d	productization entry retired
+SP-038	delete	deleted_by_t5d	productization CLI retired
+SP-039	delete	deleted_by_t5d	productization transaction retired
+SP-040	delete	deleted_by_t5d	matrix activation behavior retired
+SP-041	delete	deleted_by_t5d	writer expected-diff bridge retired
+SP-042	delete	deleted_by_t5d	productization policy generator retired; historical artifacts remain non-authoritative
+SP-043	delete	deleted_by_t5d	productization-coupled observed oracle retired
+SP-044	delete	deleted_by_t5d	activation-scope audit generator retired
+SP-045	diagnostic_oracle	xic_extractor/diagnostics/targeted_ms1_shape_identity_expected_diff.py	Targeted oracle unchanged and outside T5 authority
+SP-046	delete	deleted_by_t5d	productization wrapper retired
+SP-047	delete	deleted_by_t5d	chunk consolidation entry retired
+SP-048	delete	deleted_by_t5d	chunk projection merge retired
+SP-049	delete	deleted_by_t5d	formal product sidecar assembly retired
+SP-050	delete	deleted_by_t5d	chunk activation authority retired
+SP-051	delete	deleted_by_t5d	formal output artifact writer retired
+SP-052	delete	deleted_by_t5d	source Matrix republisher retired
+SP-053	delete	deleted_by_t5d	source identity backup/publication retired
+SP-054	delete	deleted_by_t5d	Standard Peak stage replay retired
+SP-055	delete	deleted_by_t5d	retired publication readiness checker deleted

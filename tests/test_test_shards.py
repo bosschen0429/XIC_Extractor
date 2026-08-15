@@ -86,7 +86,7 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
             Path("tests/test_physical_peak_evaluation_persistence.py"),
             Path("tests/test_run_discovery_run_spec_cli.py"),
             Path("tests/test_process_job_execution.py"),
-            Path("tests/test_standard_peak_backfill_preset.py"),
+            Path("tests/test_standard_peak_hold_diagnostic.py"),
             Path("tests/test_targeted_ms1_shape_identity.py"),
         )
     )
@@ -125,7 +125,7 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
     assert _matching_shards(discovery_method_persistence_path) == ("gui",)
     assert shard_for_path(discovery_method_persistence_path) == "gui"
     assert assigned["product-gates-activation"] == (
-        Path("tests/test_standard_peak_backfill_preset.py"),
+        Path("tests/test_standard_peak_hold_diagnostic.py"),
     )
     assert assigned["product-gates-evidence"] == (
         Path("tests/test_targeted_ms1_shape_identity.py"),
