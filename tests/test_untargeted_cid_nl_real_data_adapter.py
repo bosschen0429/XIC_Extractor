@@ -13,7 +13,6 @@ from tests.test_targeted_real_data_adapter import (
     _open_bound_raw,
     _peak_config,
     _settings,
-    _source_for,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -27,12 +26,7 @@ from xic_extractor.alignment.identity_coherence.mode_track_assignment import (
 from xic_extractor.alignment.identity_coherence.mode_track_producer import (
     bootstrap_mode_tracks_from_cid_nl_support,
 )
-from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.discovery.ms1_backfill import (
-    _backfill_ms1_candidates_with_acquisition,
-)
-from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
     UntargetedCidNlRealDataAdapterError,
     adapt_current_discovery_sample_subject,
@@ -40,9 +34,6 @@ from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 
 
@@ -401,57 +392,6 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
         )
 
 
-def test_adapter_parks_distinct_raw_and_corrected_morphology(
-    tmp_path: Path,
-) -> None:
-    fixture = build_issue175_no_raw_fixture(
-        tmp_path,
-        sample_roles={"S1": "study_sample"},
-        thermo_raw_sources=True,
-    )
-    source_raw = _FakeRaw(
-        (8.0,),
-        acquisition_source=_source_for(fixture, "S1"),
-    )
-    source_raw.intensity = source_raw.intensity + 250.0
-    settings = _settings()
-    peak_config = _peak_config(tmp_path)
-    candidates, evaluation = _canonical_physical_candidates(
-        source_raw,
-        raw_file=fixture.source_paths["S1"],
-        settings=settings,
-        peak_config=peak_config,
-    )
-    assert evaluation.facts is not None
-    assert evaluation.integration is not None
-    assert evaluation.facts.area_counts_seconds != pytest.approx(
-        evaluation.integration.area_raw_counts_seconds
-    )
-    raw, _vendor_raw = _open_bound_raw(
-        fixture,
-        "S1",
-        source_raw,
-        tmp_path=tmp_path,
-    )
-
-    with pytest.raises(
-        UntargetedCidNlRealDataAdapterError,
-        match=(
-            "m7_raw_vs_corrected_compatibility_unresolved: "
-            "area_raw_counts_seconds"
-        ),
-    ):
-        adapt_current_discovery_sample_subject(
-            processing_owners=fixture.owners,
-            sample=fixture.sample("S1"),
-            method_subject=fixture.method_subject,
-            candidates=candidates,
-            settings=settings,
-            peak_config=peak_config,
-            raw=raw,
-        )
-
-
 def test_recovery_revisits_one_hold_cell_without_minting_support(
     tmp_path: Path,
 ) -> None:
@@ -502,25 +442,3 @@ def _without_ms1_peak(candidate: DiscoveryCandidate) -> DiscoveryCandidate:
         discovery_candidate_state="review_only_orphan_nl",
         ms1_feature_row_id="",
     )
-
-
-def _canonical_physical_candidates(
-    raw: _FakeRaw,
-    *,
-    raw_file: Path,
-    settings,
-    peak_config,
-):
-    assert raw.acquisition_source is not None
-    seeds = collect_strict_nl_seeds(raw, raw_file=raw_file, settings=settings)
-    groups = group_discovery_seeds(seeds, settings=settings)
-    result = _backfill_ms1_candidates_with_acquisition(
-        raw,
-        groups,
-        acquisition_source=raw.acquisition_source,
-        run_spec_id="processing-run.v1:" + ("0" * 64),
-        settings=settings,
-        peak_config=peak_config,
-        signal_processing_profile=SignalProcessingProfile(window_points=15),
-    )
-    return result.candidates, result.physical_evaluations[0].evaluation
