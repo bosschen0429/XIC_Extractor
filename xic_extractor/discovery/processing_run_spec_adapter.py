@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.peak_detection.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
+    resolve_signal_processing_profile,
 )
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.processing_run_spec import (
@@ -59,6 +61,26 @@ def compile_discovery_processing_run_spec(
         inputs,
         discovery_settings=discovery_settings,
         signal_processing_profile=signal_processing_profile,
+    )
+
+
+def compile_discovery_processing_run_spec_from_config(
+    raw_paths: tuple[Path, ...],
+    discovery_settings: DiscoverySettings,
+    extraction_config: ExtractionConfig,
+) -> ProcessingRunSpec:
+    """Resolve the canonical profile from config, then compile one run spec."""
+
+    profile = resolve_signal_processing_profile(
+        signal_processing_method=extraction_config.signal_processing_method,
+        signal_processing_window_points=(
+            extraction_config.signal_processing_window_points
+        ),
+    )
+    return compile_discovery_processing_run_spec(
+        raw_paths,
+        discovery_settings=discovery_settings,
+        signal_processing_profile=profile,
     )
 
 
@@ -116,6 +138,7 @@ def validate_processing_run_spec_call(
 
 __all__ = [
     "compile_discovery_processing_run_spec",
+    "compile_discovery_processing_run_spec_from_config",
     "processing_run_input_for_path",
     "validate_processing_run_spec_call",
 ]

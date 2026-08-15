@@ -47,7 +47,7 @@ from xic_extractor.discovery.ms1_backfill import (
 )
 from xic_extractor.discovery.ms2_seeds import MS2ScanSource, collect_strict_nl_seeds
 from xic_extractor.discovery.peak_anchor import assign_peak_anchors
-from xic_extractor.discovery.physical_fact_persistence import (
+from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
 )
 from xic_extractor.discovery.physical_fact_sidecar import (
@@ -836,39 +836,69 @@ def _write_dual_csvs(
         if run_spec is not None and acquisition_input is not None:
             assert physical_facts_path is not None
             physical_tmp = temp_paths[2]
-            write_discovery_physical_fact_sidecar(
-                physical_tmp,
-                run_spec=run_spec,
-                acquisition_input=acquisition_input,
-                work_manifest=physical_work_manifest,
-                records=physical_evaluations,
-            )
-        for final_path, backup_path in zip(final_paths, backup_paths, strict=True):
-            if final_path.exists():
-                final_path.replace(backup_path)
-                backups.append((final_path, backup_path))
-        for temp_path, final_path in zip(
-            temp_paths[:publish_count],
-            final_paths[:publish_count],
-            strict=True,
-        ):
-            temp_path.replace(final_path)
-        for _final_path, backup_path in backups:
-            with suppress(OSError):
-                backup_path.unlink(missing_ok=True)
+            with timing_recorder.stage(
+                "discover.write_physical_facts_sidecar",
+                sample_stem=sample_stem,
+                metrics={
+                    "work_count": len(physical_work_manifest),
+                    "record_count": len(physical_evaluations),
+                },
+            ) as stage:
+                write_discovery_physical_fact_sidecar(
+                    physical_tmp,
+                    run_spec=run_spec,
+                    acquisition_input=acquisition_input,
+                    work_manifest=physical_work_manifest,
+                    records=physical_evaluations,
+                )
+                stage.metrics["byte_size"] = physical_tmp.stat().st_size
     except Exception:
-        for final_path, backup_path in reversed(
-            tuple(zip(final_paths, backup_paths, strict=True))
-        ):
-            if backup_path.exists():
-                final_path.unlink(missing_ok=True)
-                backup_path.replace(final_path)
-            elif not existed_before[final_path]:
-                final_path.unlink(missing_ok=True)
         for path in (*temp_paths, *backup_paths):
             path.unlink(missing_ok=True)
             path.with_name(f"{path.name}.tmp").unlink(missing_ok=True)
         raise
+
+    with timing_recorder.stage(
+        "discover.publish_outputs",
+        sample_stem=sample_stem,
+        metrics={
+            "artifact_count": publish_count,
+            "replaced_existing_count": sum(
+                int(existed_before[path]) for path in final_paths[:publish_count]
+            ),
+        },
+    ):
+        try:
+            for final_path, backup_path in zip(
+                final_paths,
+                backup_paths,
+                strict=True,
+            ):
+                if final_path.exists():
+                    final_path.replace(backup_path)
+                    backups.append((final_path, backup_path))
+            for temp_path, final_path in zip(
+                temp_paths[:publish_count],
+                final_paths[:publish_count],
+                strict=True,
+            ):
+                temp_path.replace(final_path)
+            for _final_path, backup_path in backups:
+                with suppress(OSError):
+                    backup_path.unlink(missing_ok=True)
+        except Exception:
+            for final_path, backup_path in reversed(
+                tuple(zip(final_paths, backup_paths, strict=True))
+            ):
+                if backup_path.exists():
+                    final_path.unlink(missing_ok=True)
+                    backup_path.replace(final_path)
+                elif not existed_before[final_path]:
+                    final_path.unlink(missing_ok=True)
+            for path in (*temp_paths, *backup_paths):
+                path.unlink(missing_ok=True)
+                path.with_name(f"{path.name}.tmp").unlink(missing_ok=True)
+            raise
 
     return DiscoveryRunOutputs(
         candidates_csv=candidates_path,

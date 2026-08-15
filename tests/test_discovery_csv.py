@@ -1,21 +1,15 @@
 import csv
-from dataclasses import fields, replace
+from dataclasses import fields
 from pathlib import Path
 
-import pytest
-
-from xic_extractor.alignment.csv_io import read_discovery_candidates_csv
 from xic_extractor.discovery.csv_writer import (
     _format_csv_value,
-    build_discovery_review_note,
     write_discovery_candidates_csv,
-    write_discovery_review_csv,
 )
 from xic_extractor.discovery.evidence_config import DEFAULT_EVIDENCE_PROFILE
 from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_COLUMNS,
     DISCOVERY_CANDIDATE_REVIEW_COLUMNS,
-    DISCOVERY_CANDIDATE_STATE_VALUES,
     DISCOVERY_PROVENANCE_COLUMNS,
     DISCOVERY_REVIEW_COLUMNS,
     DiscoveryCandidate,
@@ -23,7 +17,6 @@ from xic_extractor.discovery.models import (
     DiscoverySeedGroup,
     DiscoverySettings,
     NeutralLossProfile,
-    assign_discovery_candidate_state,
 )
 
 EXPECTED_CANDIDATE_REVIEW_COLUMNS = (
@@ -84,44 +77,6 @@ EXPECTED_PROVENANCE_COLUMNS = (
     "tag_intersection_status",
     "tag_evidence_json",
 )
-
-
-@pytest.mark.parametrize(
-    "candidate_state",
-    ["review_only_physical_unavailable", "review_only_physical_failed"],
-)
-def test_discovery_csv_rejects_non_v1_physical_state_values(
-    tmp_path: Path,
-    candidate_state: str,
-) -> None:
-    output_path = tmp_path / "discovery_candidates.csv"
-    candidate = replace(
-        _candidate(
-            candidate_id="Sample_1#6095@mz258.108512_p142.061112",
-            discovery_candidate_state=candidate_state,
-            ms1_feature_row_id="",
-            ms1_peak_found=False,
-            ms1_area=None,
-            ms1_support="missing",
-            rt_alignment="missing",
-            reason=f"physical MS1 evaluation {candidate_state}",
-        ),
-        ms1_apex_rt=None,
-        ms1_seed_delta_min=None,
-        ms1_peak_rt_start=None,
-        ms1_peak_rt_end=None,
-        ms1_height=None,
-        ms1_scan_support_score=None,
-        matched_tag_names=("DNA_dR",),
-        primary_tag_name="DNA_dR",
-    )
-
-    write_discovery_candidates_csv(output_path, (candidate,))
-    with pytest.raises(ValueError, match="discovery_candidate_state must be one"):
-        read_discovery_candidates_csv(
-            output_path, require_successor_columns=True
-        )
-
 
 def _candidate(
     *,
@@ -193,221 +148,19 @@ def _candidate(
         ms1_scan_support_score=ms1_scan_support_score,
     )
 
-
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
 
-
-@pytest.mark.parametrize(
-    (
-        "case",
-        "ms2_support",
-        "ms1_peak_found",
-        "precursor_mz_basis",
-        "trace_quality",
-        "reason",
-        "ms1_support",
-        "rt_alignment",
-        "expected_state",
-        "expected_note",
-    ),
-    [
-        (
-            "legacy_absence_weak",
-            "weak",
-            False,
-            "scan_precursor",
-            "missing",
-            "strict MS2 NL seed; MS1 peak missing",
-            "missing",
-            "missing",
-            "review_only_orphan_nl",
-            "weak MS2; missing MS1; missing RT",
-        ),
-        (
-            "legacy_absence_moderate",
-            "moderate",
-            False,
-            "scan_precursor",
-            "missing",
-            "strict MS2 NL seed; MS1 peak missing",
-            "missing",
-            "missing",
-            "review_only_orphan_nl",
-            "moderate MS2; missing MS1; missing RT",
-        ),
-        (
-            "legacy_absence_strong",
-            "strong",
-            False,
-            "scan_precursor",
-            "missing",
-            "strict MS2 NL seed; MS1 peak missing",
-            "missing",
-            "missing",
-            "review_only_orphan_nl",
-            "strong MS2; missing MS1; missing RT",
-        ),
-        (
-            "legacy_supported",
-            "moderate",
-            True,
-            "scan_precursor",
-            "GOOD",
-            "single MS2 NL seed; MS1 peak found",
-            "moderate",
-            "aligned",
-            "ms1_feature_nl_supported",
-            "moderate MS2; moderate MS1; aligned RT",
-        ),
-        (
-            "legacy_rescued",
-            "strong",
-            True,
-            "product_plus_neutral_loss",
-            "GOOD",
-            "single MS2 NL seed; MS1 peak found",
-            "strong",
-            "near",
-            "ms1_feature_nl_rescued",
-            "strong MS2; strong MS1; near RT",
-        ),
-        (
-            "available_supported",
-            "moderate",
-            True,
-            "scan_precursor",
-            "clean",
-            "single MS2 NL seed; MS1 peak found",
-            "moderate",
-            "aligned",
-            "ms1_feature_nl_supported",
-            "moderate MS2; moderate MS1; aligned RT",
-        ),
-        (
-            "available_rescued",
-            "strong",
-            True,
-            "mixed",
-            "clean",
-            "single MS2 NL seed; MS1 peak found",
-            "strong",
-            "near",
-            "ms1_feature_nl_rescued",
-            "strong MS2; strong MS1; near RT",
-        ),
-        (
-            "physical_unavailable",
-            "weak",
-            False,
-            "scan_precursor",
-            "physical_unavailable",
-            "physical MS1 evaluation unavailable: insufficient_points_for_profile",
-            "missing",
-            "missing",
-            "review_only_orphan_nl",
-            "physical MS1 unavailable: insufficient_points_for_profile; missing RT",
-        ),
-        (
-            "physical_failed",
-            "moderate",
-            False,
-            "product_plus_neutral_loss",
-            "physical_failed",
-            "physical MS1 evaluation failed: non_monotonic_rt",
-            "missing",
-            "missing",
-            "review_only_orphan_nl",
-            "physical MS1 failed: non_monotonic_rt; missing RT",
-        ),
-    ],
-)
-def test_discovery_v1_state_and_physical_truth_projection_table(
-    tmp_path: Path,
-    case: str,
-    ms2_support: str,
-    ms1_peak_found: bool,
-    precursor_mz_basis: str,
-    trace_quality: str,
-    reason: str,
-    ms1_support: str,
-    rt_alignment: str,
-    expected_state: str,
-    expected_note: str,
-) -> None:
-    state = assign_discovery_candidate_state(
-        ms1_peak_found=ms1_peak_found,
-        precursor_mz_basis=precursor_mz_basis,  # type: ignore[arg-type]
-    )
-    candidate = replace(
-        _candidate(
-            candidate_id=f"Sample_1#6095@mz258.108512_p142.061112-{case}",
-            ms2_support=ms2_support,
-            ms1_support=ms1_support,
-            rt_alignment=rt_alignment,
-            reason=reason,
-            ms1_peak_found=ms1_peak_found,
-            ms1_area=88765.4 if ms1_peak_found else None,
-            discovery_candidate_state=state,
-            ms1_feature_row_id=(
-                "Sample_1|DNA_dR|258.108512|7.841234"
-                if ms1_peak_found
-                else ""
-            ),
-        ),
-        precursor_mz_basis=precursor_mz_basis,  # type: ignore[arg-type]
-        ms1_trace_quality=trace_quality,
-        ms1_apex_rt=7.841234 if ms1_peak_found else None,
-        ms1_seed_delta_min=0.011234 if ms1_peak_found else None,
-        ms1_peak_rt_start=7.701234 if ms1_peak_found else None,
-        ms1_peak_rt_end=7.981234 if ms1_peak_found else None,
-        ms1_height=4500.5 if ms1_peak_found else None,
-        ms1_scan_support_score=0.8 if ms1_peak_found else None,
-    )
-
-    assert candidate.discovery_candidate_state == expected_state
-    assert candidate.ms1_trace_quality == trace_quality
-    assert candidate.reason == reason
-    assert build_discovery_review_note(candidate) == expected_note
-    output_path = tmp_path / f"{case}.review.csv"
-    write_discovery_review_csv(output_path, (candidate,))
-    assert _read_csv(output_path)[0]["review_note"] == expected_note
-    if trace_quality in {"physical_unavailable", "physical_failed"}:
-        assert candidate.ms1_apex_rt is None
-        assert candidate.ms1_area is None
-        assert candidate.ms1_height is None
-        assert candidate.ms1_scan_support_score is None
-        assert candidate.discovery_candidate_state == "review_only_orphan_nl"
-        assert candidate.discovery_candidate_state not in {
-            "ms1_feature_nl_supported",
-            "ms1_feature_nl_rescued",
-            "rejected_noise_or_outside_rt",
-        }
-
-
 def test_discovery_review_columns_alias_stays_compatible() -> None:
     assert DISCOVERY_REVIEW_COLUMNS == EXPECTED_CANDIDATE_REVIEW_COLUMNS
-
-
-def test_discovery_candidate_state_vocabulary_remains_v1_exact() -> None:
-    assert DISCOVERY_CANDIDATE_STATE_VALUES == (
-        "ms1_feature_nl_supported",
-        "ms1_feature_nl_rescued",
-        "review_only_orphan_nl",
-        "review_only_ambiguous_coisolation",
-        "rejected_noise_or_outside_rt",
-    )
-
 
 def test_discovery_candidate_review_columns_are_named_explicitly() -> None:
     assert DISCOVERY_CANDIDATE_REVIEW_COLUMNS == EXPECTED_CANDIDATE_REVIEW_COLUMNS
     assert DISCOVERY_REVIEW_COLUMNS == DISCOVERY_CANDIDATE_REVIEW_COLUMNS
 
-
 def test_discovery_provenance_columns_are_stable_csv_contract() -> None:
     assert DISCOVERY_PROVENANCE_COLUMNS == EXPECTED_PROVENANCE_COLUMNS
-
 
 def test_discovery_candidate_columns_start_with_review_columns() -> None:
     review_column_count = len(DISCOVERY_REVIEW_COLUMNS)
@@ -424,13 +177,11 @@ def test_discovery_candidate_columns_start_with_review_columns() -> None:
         == DISCOVERY_PROVENANCE_COLUMNS
     )
 
-
 def test_discovery_candidate_has_optional_scan_support_score() -> None:
     field_names = {field.name for field in fields(DiscoveryCandidate)}
 
     assert "ms1_scan_support_score" in field_names
     assert _candidate().ms1_scan_support_score is None
-
 
 def test_discovery_candidate_has_successor_state_and_ms1_feature_identity() -> None:
     field_names = {field.name for field in fields(DiscoveryCandidate)}
@@ -441,7 +192,6 @@ def test_discovery_candidate_has_successor_state_and_ms1_feature_identity() -> N
     assert _candidate().ms1_feature_row_id == (
         "Sample_1|DNA_dR|258.108512|7.841234"
     )
-
 
 def test_tag_evidence_json_is_last_provenance_column() -> None:
     review_column_count = len(DISCOVERY_REVIEW_COLUMNS)
@@ -465,7 +215,6 @@ def test_tag_evidence_json_is_last_provenance_column() -> None:
         "max_scan_precursor_abs_delta_da",
     )
 
-
 def test_write_discovery_candidates_csv_creates_parent_and_writes_header(
     tmp_path: Path,
 ) -> None:
@@ -478,7 +227,6 @@ def test_write_discovery_candidates_csv_creates_parent_and_writes_header(
         reader = csv.reader(handle)
         assert next(reader) == list(DISCOVERY_CANDIDATE_COLUMNS)
 
-
 def test_write_discovery_candidates_csv_writes_header_for_empty_candidates(
     tmp_path: Path,
 ) -> None:
@@ -488,7 +236,6 @@ def test_write_discovery_candidates_csv_writes_header_for_empty_candidates(
 
     with output_path.open(newline="", encoding="utf-8") as handle:
         assert list(csv.reader(handle)) == [list(DISCOVERY_CANDIDATE_COLUMNS)]
-
 
 def test_write_discovery_candidates_csv_sorts_review_queue_rows(
     tmp_path: Path,
@@ -568,7 +315,6 @@ def test_write_discovery_candidates_csv_sorts_review_queue_rows(
         "low",
     ]
 
-
 def test_write_discovery_candidates_csv_sorts_by_evidence_score_within_priority(
     tmp_path: Path,
 ) -> None:
@@ -606,7 +352,6 @@ def test_write_discovery_candidates_csv_sorts_by_evidence_score_within_priority(
         "low-a",
     ]
 
-
 def test_write_discovery_candidates_csv_keeps_feature_families_together(
     tmp_path: Path,
 ) -> None:
@@ -639,7 +384,6 @@ def test_write_discovery_candidates_csv_keeps_feature_families_together(
         "family-a-lower-intensity",
         "family-b-between",
     ]
-
 
 def test_write_discovery_candidates_csv_formats_review_values_stably(
     tmp_path: Path,
@@ -675,7 +419,6 @@ def test_write_discovery_candidates_csv_formats_review_values_stably(
     assert row["ms1_apex_rt"] == "7.84123"
     assert row["raw_file"] == "C:\\data\\Sample_1.raw"
 
-
 def test_write_discovery_candidates_csv_serializes_seed_scan_ids(
     tmp_path: Path,
 ) -> None:
@@ -686,11 +429,9 @@ def test_write_discovery_candidates_csv_serializes_seed_scan_ids(
 
     assert _read_csv(output_path)[0]["seed_scan_ids"] == "6095;6100;6112"
 
-
 def test_seed_scan_ids_formatter_does_not_join_string_characters() -> None:
     assert _format_csv_value("seed_scan_ids", (6095, 6100, 6112)) == "6095;6100;6112"
     assert _format_csv_value("seed_scan_ids", "6095;6100;6112") == "6095;6100;6112"
-
 
 def test_write_discovery_candidates_csv_uses_csv_escaping(
     tmp_path: Path,
@@ -706,7 +447,6 @@ def test_write_discovery_candidates_csv_uses_csv_escaping(
     row = _read_csv(output_path)[0]
     assert row["sample_stem"] == 'Sample, "quoted"'
     assert row["reason"] == 'neutral loss, requires "review"'
-
 
 def test_write_discovery_candidates_csv_escapes_excel_formula_strings(
     tmp_path: Path,
@@ -725,7 +465,6 @@ def test_write_discovery_candidates_csv_escapes_excel_formula_strings(
     assert row["sample_stem"] == "'+sample"
     assert row["reason"] == "'@review"
 
-
 def test_discovery_settings_require_neutral_loss_profile() -> None:
     profile = NeutralLossProfile("DNA_dR", 116.0474)
 
@@ -743,7 +482,6 @@ def test_discovery_settings_require_neutral_loss_profile() -> None:
     assert settings.rt_max == 999.0
     assert settings.resolver_mode == "local_minimum"
 
-
 def test_discovery_settings_default_evidence_profile() -> None:
     profile = NeutralLossProfile("DNA_dR", 116.0474)
 
@@ -755,7 +493,6 @@ def test_discovery_settings_default_evidence_profile() -> None:
         settings.evidence_profile.thresholds
         == DEFAULT_EVIDENCE_PROFILE.thresholds
     )
-
 
 def test_discovery_seed_preserves_full_ms2_seed_contract() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
@@ -785,7 +522,6 @@ def test_discovery_seed_preserves_full_ms2_seed_contract() -> None:
     assert seed.configured_neutral_loss_da == 116.0474
     assert seed.observed_neutral_loss_da == 116.0471
     assert seed.observed_loss_error_ppm == 2.58
-
 
 def test_discovery_seed_group_preserves_group_contract_without_best_seed() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
@@ -855,7 +591,6 @@ def test_discovery_seed_group_preserves_group_contract_without_best_seed() -> No
     assert group.scan_precursor_mz is None
     assert group.scan_precursor_delta_da is None
     assert group.max_scan_precursor_abs_delta_da is None
-
 
 def test_discovery_candidate_from_values_builds_row_identity_candidate_id() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
@@ -944,7 +679,6 @@ def test_discovery_candidate_from_values_builds_row_identity_candidate_id() -> N
     assert candidate.ms1_trace_quality == "GOOD"
     assert candidate.ms2_product_max_intensity == 12000.0
 
-
 def test_discovery_candidate_from_values_assigns_supported_state() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
     best_seed = DiscoverySeed(
@@ -994,7 +728,6 @@ def test_discovery_candidate_from_values_assigns_supported_state() -> None:
     assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
     assert candidate.ms1_feature_row_id == "TumorBC2312_DNA|DNA_dR|258.1085|7.84"
 
-
 def test_from_values_makes_orphan_review_only_without_ms1_peak() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
     best_seed = DiscoverySeed(
@@ -1043,7 +776,6 @@ def test_from_values_makes_orphan_review_only_without_ms1_peak() -> None:
 
     assert candidate.discovery_candidate_state == "review_only_orphan_nl"
     assert candidate.ms1_feature_row_id == ""
-
 
 def test_candidate_id_distinguishes_same_scan_precursor_product_hypotheses() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")

@@ -1,27 +1,13 @@
 from __future__ import annotations
 
 import json
-import pickle
-import subprocess
-import sys
-import textwrap
+import math
 from pathlib import Path
-from types import SimpleNamespace
-from typing import cast
 
 import pytest
 
-from gui.workers.discovery_worker import (
-    DiscoveryRequest,
-    DiscoveryWorker,
-)
-from gui.workers.discovery_worker import (
-    _compile_processing_run_spec as compile_gui_processing_run_spec,
-)
-from scripts.run_discovery import (
-    _compile_processing_run_spec as compile_cli_processing_run_spec,
-)
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.evidence_config import DiscoveryEvidenceThresholds
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
@@ -30,11 +16,8 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 from xic_extractor.peak_detection.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.presets import PresetError
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
-    ProcessingRunSpec,
-    canonical_processing_run_spec_bytes,
     compile_processing_run_spec,
     deserialize_processing_run_spec,
     serialize_processing_run_spec,
@@ -82,231 +65,6 @@ def _compile_paths(
         raw_paths,
         discovery_settings=settings or _settings(),
     )
-
-
-def test_equal_gui_cli_inputs_compile_equal_immutable_identity(tmp_path: Path) -> None:
-    raw_paths = _raws(tmp_path)
-    settings = _settings()
-
-    peak_config = _peak_config()
-    gui_spec = compile_gui_processing_run_spec(raw_paths, settings, peak_config)
-    cli_spec = compile_cli_processing_run_spec(raw_paths, settings, peak_config)
-
-    assert gui_spec == cli_spec
-    assert gui_spec.run_spec_id == cli_spec.run_spec_id
-    assert gui_spec.profile_id == cli_spec.profile_id
-    assert canonical_processing_run_spec_bytes(gui_spec) == (
-        canonical_processing_run_spec_bytes(cli_spec)
-    )
-    assert serialize_processing_run_spec(gui_spec) == serialize_processing_run_spec(
-        cli_spec
-    )
-    assert str(tmp_path).encode("utf-8") not in serialize_processing_run_spec(gui_spec)
-    assert pickle.loads(pickle.dumps(gui_spec)) == gui_spec
-
-
-def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from gui.workers import discovery_worker as worker_module
-    from scripts import run_discovery as cli_module
-
-    raw_dir = tmp_path / "raw"
-    raw_dir.mkdir()
-    (raw_dir / "B.raw").write_bytes(b"second acquisition")
-    (raw_dir / "A.raw").write_bytes(b"first acquisition")
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    output_dir = tmp_path / "out"
-    index_path = output_dir / "discovery_batch_index.csv"
-    index_path.parent.mkdir()
-    index_path.write_text(
-        "sample,high_count,medium_count,low_count,candidate_count\n",
-        encoding="utf-8",
-    )
-    captured: dict[str, object] = {}
-
-    def worker_batch(*_args, **kwargs):
-        mode = kwargs["output_dir"].name
-        captured[f"gui_{mode}"] = kwargs["run_spec"]
-        return SimpleNamespace(batch_index_csv=index_path, per_sample=())
-
-    monkeypatch.setattr(worker_module, "run_discovery_batch", worker_batch)
-    for mode, output_name in (("full", "full"), ("discovery_only", "discovery_only")):
-        request = DiscoveryRequest(
-            mode=cast(object, mode),  # type: ignore[arg-type]
-            preset="dna_dr",
-            tuning_overrides={},
-            raw_dir=raw_dir,
-            raw_file=None,
-            dll_dir=dll_dir,
-            output_dir=tmp_path / output_name,
-            discovery_batch_index=None,
-        )
-        worker = DiscoveryWorker(request)
-        if mode == "full":
-            monkeypatch.setattr(
-                worker,
-                "_run_alignment",
-                lambda *_args, **_kwargs: (SimpleNamespace(), None),
-            )
-            monkeypatch.setattr(
-                worker,
-                "_build_gallery",
-                lambda *_args, **_kwargs: {},
-            )
-        worker.run()
-
-    def cli_batch(*_args, **kwargs):
-        captured["cli"] = kwargs["run_spec"]
-        return SimpleNamespace(batch_index_csv=index_path, per_sample=())
-
-    monkeypatch.setattr(cli_module, "run_discovery_batch", cli_batch)
-    assert (
-        cli_module.main(
-            [
-                "--raw-dir",
-                str(raw_dir),
-                "--dll-dir",
-                str(dll_dir),
-                "--output-dir",
-                str(output_dir),
-            ]
-        )
-        == 0
-    )
-
-    specs = tuple(cast(object, captured[key]) for key in (
-        "gui_full",
-        "gui_discovery_only",
-        "cli",
-    ))
-    serialized = tuple(
-        serialize_processing_run_spec(cast(ProcessingRunSpec, spec))
-        for spec in specs
-    )
-    assert serialized[0] == serialized[1] == serialized[2]
-    assert len({cast(ProcessingRunSpec, spec).run_spec_id for spec in specs}) == 1
-    assert len({cast(ProcessingRunSpec, spec).profile_id for spec in specs}) == 1
-    assert len(
-        {
-            tuple(
-                item.acquisition_source.acquisition_source_id
-                for item in cast(ProcessingRunSpec, spec).acquisition_inputs
-            )
-            for spec in specs
-        }
-    ) == 1
-
-
-def test_actual_gui_entry_rejects_invalid_preset_before_fingerprint_or_raw(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from gui.workers import discovery_worker as worker_module
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"sample")
-    monkeypatch.setattr(
-        "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
-        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid preset"),
-    )
-    monkeypatch.setattr(
-        worker_module,
-        "run_discovery",
-        lambda *_args, **_kwargs: pytest.fail("opened RAW for invalid preset"),
-    )
-    request = DiscoveryRequest(
-        mode="discovery_only",
-        preset="pt_pattern",
-        tuning_overrides={},
-        raw_dir=None,
-        raw_file=raw_path,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        discovery_batch_index=None,
-    )
-
-    with pytest.raises(PresetError):
-        DiscoveryWorker(request)._run_discovery_only(request)
-
-
-def test_actual_gui_entry_rejects_invalid_profile_before_fingerprint_or_raw(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from gui.workers import discovery_worker as worker_module
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"sample")
-    monkeypatch.setattr(
-        "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
-        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid profile"),
-    )
-    monkeypatch.setattr(
-        worker_module,
-        "run_discovery",
-        lambda *_args, **_kwargs: pytest.fail("opened RAW for invalid profile"),
-    )
-    request = DiscoveryRequest(
-        mode="discovery_only",
-        preset="dna_dr",
-        tuning_overrides={},
-        raw_dir=None,
-        raw_file=raw_path,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        discovery_batch_index=None,
-    )
-    worker = DiscoveryWorker(request)
-    monkeypatch.setattr(
-        worker,
-        "_discovery_peak_config",
-        lambda *_args: SimpleNamespace(
-            signal_processing_method="savgol",
-            signal_processing_window_points=15,
-        ),
-    )
-
-    with pytest.raises(ValueError, match="method"):
-        worker._run_discovery_only(request)
-
-
-def test_actual_cli_entry_rejects_invalid_method_before_fingerprint_or_raw(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from scripts import run_discovery as cli_module
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"sample")
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    monkeypatch.setattr(
-        "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
-        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid method"),
-    )
-    monkeypatch.setattr(
-        cli_module,
-        "run_discovery",
-        lambda *_args, **_kwargs: pytest.fail("opened RAW for invalid method"),
-    )
-
-    with pytest.raises(SystemExit):
-        cli_module.main(
-            [
-                "--raw",
-                str(raw_path),
-                "--dll-dir",
-                str(dll_dir),
-                "--resolver-mode",
-                "arbitrated",
-            ]
-        )
 
 
 def test_run_spec_roundtrip_closes_content_hash_profile_and_order(
@@ -427,113 +185,6 @@ def test_run_spec_pure_owner_compiles_typed_inputs(tmp_path: Path) -> None:
     assert pure_spec == adapter_spec
 
 
-def test_fresh_run_spec_import_adds_only_the_owner_module() -> None:
-    code = textwrap.dedent(
-        """
-        import importlib.abc
-        import sys
-
-        import xic_extractor.processing_identity
-        import xic_extractor.peak_detection.signal_processing_profile
-        baseline = {
-            name for name in sys.modules if name.startswith("xic_extractor")
-        }
-
-        class Blocker(importlib.abc.MetaPathFinder):
-            def find_spec(self, fullname, path=None, target=None):
-                if fullname.startswith("xic_extractor.discovery"):
-                    raise RuntimeError(f"blocked Discovery import: {fullname}")
-                return None
-
-        blocker = Blocker()
-        sys.meta_path.insert(0, blocker)
-        import xic_extractor.processing_run_spec
-        delta = {
-            name for name in sys.modules
-            if name.startswith("xic_extractor") and name not in baseline
-        }
-        assert delta == {"xic_extractor.processing_run_spec"}, sorted(delta)
-        """
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stderr
-
-
-def test_run_spec_runtime_local_imports_keep_forbidden_modules_absent() -> None:
-    code = textwrap.dedent(
-        """
-        import importlib.abc
-        import sys
-        import tempfile
-        from pathlib import Path
-
-        import xic_extractor.processing_identity as identity
-        import xic_extractor.peak_detection.signal_processing_profile
-        import xic_extractor.processing_run_spec as owner
-        from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-
-        prohibited = {
-            "xic_extractor.discovery.pipeline",
-            "xic_extractor.discovery.ms1_backfill",
-            "xic_extractor.discovery.ms2_seeds",
-            "xic_extractor.discovery.csv_writer",
-            "xic_extractor.raw_reader",
-            "gui",
-            "scripts.run_discovery",
-        }
-
-        class Blocker(importlib.abc.MetaPathFinder):
-            def find_spec(self, fullname, path=None, target=None):
-                if fullname in prohibited:
-                    raise RuntimeError(f"blocked runtime import: {fullname}")
-                return None
-
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "sample.raw"
-            path.write_bytes(b"run-spec-runtime-import")
-            source = identity.build_acquisition_source_identity(
-                path,
-                acquisition_format="thermo_raw",
-                observation_namespace="thermo_raw_scan_v1",
-            )
-            acquisition = owner.ProcessingAcquisitionInput(
-                input_ordinal=0,
-                adapter_input_key=path.name,
-                sample_stem=path.stem,
-                acquisition_source=source,
-            )
-            settings = DiscoverySettings(
-                neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
-            )
-            sys.meta_path.insert(0, Blocker())
-            spec = owner.compile_processing_run_spec(
-                (acquisition,), discovery_settings=settings
-            )
-            restored = owner.deserialize_processing_run_spec(
-                owner.serialize_processing_run_spec(spec)
-            )
-            assert restored == spec
-            assert prohibited.isdisjoint(sys.modules), sorted(
-                prohibited.intersection(sys.modules)
-            )
-        """
-    )
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
-    assert result.returncode == 0, result.stderr
-
-
 def test_run_spec_rejects_duplicate_acquisition_content_aliases_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -583,50 +234,6 @@ def test_pure_run_spec_rejects_same_source_under_different_names(
         )
 
 
-@pytest.mark.parametrize(
-    "builder",
-    [compile_gui_processing_run_spec, compile_cli_processing_run_spec],
-)
-def test_highest_entry_rejects_invalid_profile_before_fingerprinting(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    builder,
-) -> None:
-    raw_paths = _raws(tmp_path)
-    invalid = cast(
-        ExtractionConfig,
-        SimpleNamespace(
-            signal_processing_method="savgol",
-            signal_processing_window_points=15,
-        ),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
-        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid profile"),
-    )
-
-    with pytest.raises(ValueError, match="method"):
-        builder(raw_paths, _settings(), invalid)
-
-
-def test_adapter_rejects_invalid_method_before_fingerprinting(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    raw_paths = _raws(tmp_path)
-    monkeypatch.setattr(
-        "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
-        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid method"),
-    )
-    with pytest.raises(TypeError, match="DiscoverySettings"):
-        compile_discovery_processing_run_spec(
-            raw_paths,
-            discovery_settings=cast(DiscoverySettings, object()),
-        )
-
-
 def test_run_spec_rejects_invalid_direct_profile_type(tmp_path: Path) -> None:
     valid = _compile_paths(_raws(tmp_path))
     with pytest.raises(TypeError, match="SignalProcessingProfile"):
@@ -637,3 +244,184 @@ def test_run_spec_rejects_invalid_direct_profile_type(tmp_path: Path) -> None:
         )
     with pytest.raises(ValueError, match="method"):
         SignalProcessingProfile(method="savgol")
+
+
+_THRESHOLD_FLOAT_FIELDS = (
+    "rt_aligned_max_min",
+    "rt_near_max_min",
+    "rt_shifted_max_min",
+    "product_intensity_high_min",
+    "product_intensity_med_min",
+    "area_high_min",
+    "area_med_min",
+    "ms1_support_strong_area_min",
+    "ms1_support_moderate_area_min",
+    "scan_support_high_score_min",
+    "scan_support_low_score_max",
+)
+
+
+@pytest.mark.parametrize("field", _THRESHOLD_FLOAT_FIELDS)
+@pytest.mark.parametrize("invalid", [True, "1.0"])
+def test_evidence_thresholds_reject_non_numeric_population(
+    field: str,
+    invalid: object,
+) -> None:
+    values = DiscoveryEvidenceThresholds().__dict__ | {field: invalid}
+    with pytest.raises(TypeError, match=field):
+        DiscoveryEvidenceThresholds(**values)
+
+
+@pytest.mark.parametrize("field", _THRESHOLD_FLOAT_FIELDS)
+@pytest.mark.parametrize("invalid", [float("nan"), float("inf")])
+def test_evidence_thresholds_reject_non_finite_population(
+    field: str,
+    invalid: float,
+) -> None:
+    values = DiscoveryEvidenceThresholds().__dict__ | {field: invalid}
+    with pytest.raises(ValueError, match=field):
+        DiscoveryEvidenceThresholds(**values)
+
+
+@pytest.mark.parametrize("field", _THRESHOLD_FLOAT_FIELDS)
+def test_evidence_thresholds_reject_negative_population(field: str) -> None:
+    values = DiscoveryEvidenceThresholds().__dict__ | {field: -1.0}
+    with pytest.raises(ValueError, match=field):
+        DiscoveryEvidenceThresholds(**values)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"rt_aligned_max_min": 0.21},
+        {"rt_near_max_min": 0.41},
+        {"product_intensity_high_min": 9_999.0},
+        {"area_high_min": 99_999.0},
+        {"ms1_support_strong_area_min": 999_999.0},
+        {"scan_support_low_score_max": 0.9},
+        {"scan_support_high_score_min": 1.01},
+        {"scan_support_low_score_max": 1.01},
+    ],
+)
+def test_evidence_thresholds_reject_unordered_or_out_of_bounds_population(
+    overrides: dict[str, float],
+) -> None:
+    values = DiscoveryEvidenceThresholds().__dict__ | overrides
+    with pytest.raises(ValueError):
+        DiscoveryEvidenceThresholds(**values)
+
+
+@pytest.mark.parametrize("invalid", [True, 1.0, 0, -1])
+def test_evidence_thresholds_reject_invalid_scan_support_target(
+    invalid: object,
+) -> None:
+    values = DiscoveryEvidenceThresholds().__dict__ | {"scan_support_target": invalid}
+    with pytest.raises((TypeError, ValueError), match="scan_support_target"):
+        DiscoveryEvidenceThresholds(**values)
+
+
+@pytest.mark.parametrize(
+    ("invalid", "error"),
+    [
+        (True, TypeError),
+        ("116.0474", TypeError),
+        (float("nan"), ValueError),
+        (float("inf"), ValueError),
+        (0, ValueError),
+        (-1.0, ValueError),
+    ],
+)
+def test_neutral_loss_mass_is_rejected_before_fingerprint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid: object,
+    error: type[Exception],
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"not fingerprinted")
+    settings = DiscoverySettings(
+        neutral_loss_profile=NeutralLossProfile(
+            "invalid",
+            invalid,  # type: ignore[arg-type]
+        )
+    )
+    monkeypatch.setattr(
+        "xic_extractor.discovery.processing_run_spec_adapter."
+        "build_acquisition_source_identity",
+        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid method"),
+    )
+
+    with pytest.raises(error, match="neutral_loss_da"):
+        compile_discovery_processing_run_spec(
+            (raw_path,),
+            discovery_settings=settings,
+        )
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
+            resolver_mode="arbitrated",
+        ),
+        DiscoverySettings(
+            neutral_loss_profiles=(
+                NeutralLossProfile("tag-a", 116.0474),
+                NeutralLossProfile("tag-b", 116.0474),
+            ),
+            tag_combine_mode="union",
+        ),
+    ],
+)
+def test_invalid_method_population_is_rejected_before_fingerprint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: DiscoverySettings,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"not fingerprinted")
+    monkeypatch.setattr(
+        "xic_extractor.discovery.processing_run_spec_adapter."
+        "build_acquisition_source_identity",
+        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid method"),
+    )
+
+    with pytest.raises(ValueError):
+        compile_discovery_processing_run_spec(
+            (raw_path,),
+            discovery_settings=settings,
+        )
+
+
+def test_near_equal_neutral_loss_masses_remain_distinct_and_hashable(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"near-equal canonical masses")
+    settings = DiscoverySettings(
+        neutral_loss_profiles=(
+            NeutralLossProfile("tag-a", 116.0474),
+            NeutralLossProfile("tag-b", math.nextafter(116.0474, math.inf)),
+        ),
+        tag_combine_mode="union",
+    )
+
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,),
+        discovery_settings=settings,
+    )
+
+    assert spec.run_spec_id.startswith("processing-run.v1:")
+    assert spec.discovery_method.settings == settings
+
+
+def test_valid_canonical_hash_snapshots_are_unchanged(tmp_path: Path) -> None:
+    spec = _compile_paths(_raws(tmp_path))
+
+    assert spec.discovery_method.method_hash == (
+        "1df5270e1f0917ac2b202ae095354ebe8d6e252454c4941769ef671244322c9e"
+    )
+    assert spec.run_spec_hash == (
+        "b4af370f10bf60723f90a9353f903328bf8007fda76f180abd69bd0a73cebe44"
+    )

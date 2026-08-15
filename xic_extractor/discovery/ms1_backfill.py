@@ -25,9 +25,10 @@ from xic_extractor.discovery.models import (
     GroupPrecursorMzBasis,
     NeutralLossErrorBasis,
     assign_discovery_candidate_state,
+    build_discovery_physical_selection_subject_id,
     build_ms1_feature_row_id,
 )
-from xic_extractor.discovery.physical_fact_persistence import (
+from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
 )
 from xic_extractor.discovery.priority import (
@@ -165,9 +166,31 @@ def _backfill_ms1_candidates_with_acquisition(
         adapter_namespace="xic_extractor.discovery.ms1_backfill",
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
+    physical_plans: list[_DiscoveryMs1RequestPlan] = []
+    physical_index_by_question: dict[tuple[str, str, XICRequest], int] = {}
+    physical_indices: list[int] = []
+    for plan in plans:
+        best_seed = _best_seed(plan.group.seeds)
+        question = (
+            acquisition_source.acquisition_source_id,
+            build_discovery_physical_selection_subject_id(
+                sample_stem=plan.group.sample_stem,
+                best_ms2_scan_id=best_seed.scan_number,
+                precursor_mz=plan.group.precursor_mz,
+                product_mz=plan.group.product_mz,
+            ),
+            plan.request,
+        )
+        physical_index = physical_index_by_question.get(question)
+        if physical_index is None:
+            physical_index = len(physical_plans)
+            physical_index_by_question[question] = physical_index
+            physical_plans.append(plan)
+        physical_indices.append(physical_index)
+
     batches: list[TraceAcquisitionBatch] = []
     acquired_traces: list[AcquiredTrace] = []
-    for plan_chunk in _chunks(plans, _DISCOVERY_MS1_BATCH_MAX_REQUESTS):
+    for plan_chunk in _chunks(physical_plans, _DISCOVERY_MS1_BATCH_MAX_REQUESTS):
         batch = acquire_trace_batch(
             capability,
             tuple(plan.request for plan in plan_chunk),
@@ -195,32 +218,39 @@ def _backfill_ms1_candidates_with_acquisition(
     if measurement_observer is not None:
         measurement_observer(measurements)
 
-    if len(acquired_traces) != len(plans):
-        raise ValueError("Discovery MS1 acquisition lost a logical request")
+    if len(acquired_traces) != len(physical_plans):
+        raise ValueError("Discovery MS1 acquisition lost a physical request")
     prepared_signal_cache: dict[tuple[str, str], PreparedSignalResult] = {}
     physical_work_manifest: list[DiscoveryPhysicalWorkItem] = []
     physical_evaluations: list[DiscoveryPhysicalFactRecord] = []
-    candidates = tuple(
-        _candidate_from_trace(
-            plan.group,
-            acquired.trace.rt,
-            acquired.trace.intensity,
-            settings=settings,
-            peak_config=peak_config,
-            signal_processing_profile=signal_processing_profile,
-            prepared_signal_cache=prepared_signal_cache,
-            physical_work_ordinal=work_ordinal,
-            physical_acquisition_source_id=(
-                acquisition_source.acquisition_source_id
-            ),
-            physical_acquired_trace=acquired,
-            physical_work_observer=physical_work_manifest.append,
-            physical_evaluation_observer=physical_evaluations.append,
+    physical_fact_by_index: dict[int, DiscoveryPhysicalFactRecord] = {}
+    candidates: list[DiscoveryCandidate] = []
+    for plan, physical_index in zip(plans, physical_indices, strict=True):
+        acquired = acquired_traces[physical_index]
+        existing_fact = physical_fact_by_index.get(physical_index)
+        candidates.append(
+            _candidate_from_trace(
+                plan.group,
+                acquired.trace.rt,
+                acquired.trace.intensity,
+                settings=settings,
+                peak_config=peak_config,
+                signal_processing_profile=signal_processing_profile,
+                prepared_signal_cache=prepared_signal_cache,
+                physical_work_ordinal=physical_index,
+                physical_acquisition_source_id=(
+                    acquisition_source.acquisition_source_id
+                ),
+                physical_acquired_trace=acquired,
+                physical_fact_record=existing_fact,
+                physical_work_observer=physical_work_manifest.append,
+                physical_evaluation_observer=physical_evaluations.append,
+            )
         )
-        for work_ordinal, (plan, acquired) in enumerate(
-            zip(plans, acquired_traces, strict=True)
-        )
-    )
+        if signal_processing_profile is not None and existing_fact is None:
+            if len(physical_evaluations) != len(physical_fact_by_index) + 1:
+                raise ValueError("Discovery physical evaluation was not recorded once")
+            physical_fact_by_index[physical_index] = physical_evaluations[-1]
     return _DiscoveryMs1AcquisitionResult(
         candidates=merge_candidates_by_ms1_peak(candidates, settings=settings),
         measurements=measurements,
@@ -304,6 +334,7 @@ def _candidate_from_trace(
     physical_work_ordinal: int | None = None,
     physical_acquisition_source_id: str | None = None,
     physical_acquired_trace: AcquiredTrace | None = None,
+    physical_fact_record: DiscoveryPhysicalFactRecord | None = None,
     physical_work_observer: Callable[[DiscoveryPhysicalWorkItem], None] | None = None,
     physical_evaluation_observer: (
         Callable[[DiscoveryPhysicalFactRecord], None] | None
@@ -340,42 +371,73 @@ def _candidate_from_trace(
         )
         if not trace_rt_matches or not trace_intensity_matches:
             raise ValueError("physical Discovery trace arrays lost acquisition binding")
-        physical_work = DiscoveryPhysicalWorkItem(
-            work_ordinal=physical_work_ordinal,
-            acquisition_source_id=physical_acquisition_source_id,
-            sample_stem=group.sample_stem,
-            best_ms2_scan_id=best_seed.scan_number,
-            precursor_mz=group.precursor_mz,
-            product_mz=group.product_mz,
-            query_rt_min=best_seed.rt,
-            context_rt_start_min=rt_min,
-            context_rt_end_min=rt_max,
-            trace_coordinate_id=coordinate.trace_coordinate_id,
-            acquired_trace_content_id=acquired_trace_content_id(
-                physical_acquired_trace
-            ),
-            xic_mz=request.mz,
-            xic_rt_min=request.rt_min,
-            xic_rt_max=request.rt_max,
-            xic_ppm_tol=request.ppm_tol,
-        )
-        ms1_fields, physical_evaluation = _physical_ms1_peak_fields(
-            rt,
-            intensity,
-            profile=signal_processing_profile,
-            prepared_signal_cache=(
-                prepared_signal_cache if prepared_signal_cache is not None else {}
-            ),
-            work_item=physical_work,
-            settings=settings,
-        )
-        physical_work = replace(
-            physical_work,
-            context_rt_start_min=(
-                physical_evaluation.question.context_rt_start_min
-            ),
-            context_rt_end_min=physical_evaluation.question.context_rt_end_min,
-        )
+        if physical_fact_record is None:
+            physical_work = DiscoveryPhysicalWorkItem(
+                work_ordinal=physical_work_ordinal,
+                acquisition_source_id=physical_acquisition_source_id,
+                sample_stem=group.sample_stem,
+                best_ms2_scan_id=best_seed.scan_number,
+                precursor_mz=group.precursor_mz,
+                product_mz=group.product_mz,
+                query_rt_min=best_seed.rt,
+                context_rt_start_min=rt_min,
+                context_rt_end_min=rt_max,
+                trace_coordinate_id=coordinate.trace_coordinate_id,
+                acquired_trace_content_id=acquired_trace_content_id(
+                    physical_acquired_trace
+                ),
+                xic_mz=request.mz,
+                xic_rt_min=request.rt_min,
+                xic_rt_max=request.rt_max,
+                xic_ppm_tol=request.ppm_tol,
+            )
+            ms1_fields, physical_evaluation = _physical_ms1_peak_fields(
+                rt,
+                intensity,
+                profile=signal_processing_profile,
+                prepared_signal_cache=(
+                    prepared_signal_cache if prepared_signal_cache is not None else {}
+                ),
+                work_item=physical_work,
+                settings=settings,
+            )
+            physical_work = replace(
+                physical_work,
+                context_rt_start_min=(
+                    physical_evaluation.question.context_rt_start_min
+                ),
+                context_rt_end_min=physical_evaluation.question.context_rt_end_min,
+            )
+        else:
+            physical_work = physical_fact_record.work_item
+            physical_evaluation = physical_fact_record.evaluation
+            expected_selection_subject_id = (
+                build_discovery_physical_selection_subject_id(
+                    sample_stem=group.sample_stem,
+                    best_ms2_scan_id=best_seed.scan_number,
+                    precursor_mz=group.precursor_mz,
+                    product_mz=group.product_mz,
+                )
+            )
+            if (
+                physical_work.work_ordinal != physical_work_ordinal
+                or physical_work.acquisition_source_id != physical_acquisition_source_id
+                or physical_work.selection_subject_id != expected_selection_subject_id
+                or physical_fact_record.acquired_trace is not physical_acquired_trace
+                or (
+                    physical_work.xic_mz,
+                    physical_work.xic_rt_min,
+                    physical_work.xic_rt_max,
+                    physical_work.xic_ppm_tol,
+                )
+                != (request.mz, request.rt_min, request.rt_max, request.ppm_tol)
+            ):
+                raise ValueError("reused Discovery physical fact crosses its question")
+            ms1_fields = _ms1_fields_from_physical_evaluation(
+                physical_evaluation,
+                work_item=physical_work,
+                settings=settings,
+            )
     priority = assign_review_priority(
         seed_event_count=len(group.seeds),
         ms1_peak_found=ms1_fields.peak_found,
@@ -433,9 +495,13 @@ def _candidate_from_trace(
             raise ValueError("physical evaluation lost its Discovery work identity")
         if candidate.candidate_id != physical_work.candidate_id:
             raise ValueError("physical work candidate identity diverged")
-        if physical_work_observer is not None:
+        if physical_fact_record is None and physical_work_observer is not None:
             physical_work_observer(physical_work)
-    if physical_evaluation is not None and physical_evaluation_observer is not None:
+    if (
+        physical_evaluation is not None
+        and physical_fact_record is None
+        and physical_evaluation_observer is not None
+    ):
         assert physical_work is not None
         assert physical_acquired_trace is not None
         physical_evaluation_observer(
@@ -996,33 +1062,45 @@ def _physical_ms1_peak_fields(
         request_context_rt_start_min=work_item.context_rt_start_min,
         request_context_rt_end_min=work_item.context_rt_end_min,
     )
+    return (
+        _ms1_fields_from_physical_evaluation(
+            evaluation,
+            work_item=work_item,
+            settings=settings,
+        ),
+        evaluation,
+    )
+
+
+def _ms1_fields_from_physical_evaluation(
+    evaluation: PhysicalPeakEvaluation,
+    *,
+    work_item: DiscoveryPhysicalWorkItem,
+    settings: DiscoverySettings,
+) -> _Ms1Fields:
     facts = evaluation.facts
     if evaluation.state in {"unavailable", "failed"}:
-        return (
-            _missing_ms1_fields(trace_quality=f"physical_{evaluation.state}"),
-            evaluation,
-        )
+        return _missing_ms1_fields(trace_quality=f"physical_{evaluation.state}")
     if facts is None:
-        return _missing_ms1_fields(), evaluation
+        return _missing_ms1_fields()
     scan_support_score = min(
         1.0,
         float(facts.scan_support_count)
         / float(settings.evidence_profile.thresholds.scan_support_target),
     )
-    return (
-        _Ms1Fields(
-            peak_found=True,
-            apex_rt=facts.apex_rt_min,
-            area=facts.area_counts_seconds,
-            height=facts.height,
-            seed_delta_min=facts.apex_rt_min - work_item.query_rt_min,
-            peak_rt_start=facts.left_rt_min,
-            peak_rt_end=facts.right_rt_min,
-            trace_quality="clean",
-            scan_support_score=scan_support_score,
-        ),
-        evaluation,
+    return _Ms1Fields(
+        peak_found=True,
+        apex_rt=facts.apex_rt_min,
+        area=facts.area_counts_seconds,
+        height=facts.height,
+        seed_delta_min=facts.apex_rt_min - work_item.query_rt_min,
+        peak_rt_start=facts.left_rt_min,
+        peak_rt_end=facts.right_rt_min,
+        trace_quality="clean",
+        scan_support_score=scan_support_score,
     )
+
+
 def _detect_ms1_peak(
     rt: np.ndarray,
     intensity: np.ndarray,

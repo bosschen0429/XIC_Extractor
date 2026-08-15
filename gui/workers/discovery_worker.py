@@ -19,10 +19,7 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec,
-)
-from xic_extractor.peak_detection.signal_processing_profile import (
-    resolve_signal_processing_profile,
+    compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
 )
 from xic_extractor.presets import (
     BoundCidNlRecipe,
@@ -30,7 +27,6 @@ from xic_extractor.presets import (
     bind_cid_nl_recipe,
     load_preset,
 )
-from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -527,22 +523,6 @@ def _standard_peak_output_paths(outputs: Any | None) -> dict[str, str]:
         if value is not None:
             paths[f"standard_peak_{attr}"] = str(value)
     return paths
-
-
-def _compile_processing_run_spec(
-    raw_paths: tuple[Path, ...],
-    settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
-) -> ProcessingRunSpec:
-    profile = resolve_signal_processing_profile(
-        signal_processing_method=peak_config.signal_processing_method,
-        signal_processing_window_points=peak_config.signal_processing_window_points,
-    )
-    return compile_discovery_processing_run_spec(
-        raw_paths,
-        discovery_settings=settings,
-        signal_processing_profile=profile,
-    )
 
 
 def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:

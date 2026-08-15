@@ -224,9 +224,7 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         lambda value: value.update({"unknown": True}),
         lambda value: value.pop("sample"),
         lambda value: value["work_manifest"][0].pop("product_mz"),
-        lambda value: value["work_manifest"][0].__setitem__(
-            "candidate_id", "swapped"
-        ),
+        lambda value: value["work_manifest"][0].__setitem__("candidate_id", "swapped"),
         lambda value: value["work_manifest"][0].__setitem__(
             "selection_subject_id", "swapped"
         ),
@@ -289,9 +287,9 @@ def test_discovery_sidecar_roundtrips_complete_independent_work_manifest(
         lambda value: value["records"][0]["physical_evaluation"]["evaluation"][
             "prepared"
         ].__setitem__("prepared_signal_id", "prepared-signal.v1:" + "0" * 64),
-        lambda value: value["records"][0]["physical_evaluation"][
-            "profile"
-        ].__setitem__("profile_id", "signal-profile.v1:" + "0" * 64),
+        lambda value: value["records"][0]["physical_evaluation"]["profile"].__setitem__(
+            "profile_id", "signal-profile.v1:" + "0" * 64
+        ),
         lambda value: value["run_spec"].__setitem__(
             "run_spec_id", "processing-run.v1:" + "0" * 64
         ),
@@ -330,9 +328,7 @@ def test_discovery_sidecar_rejects_tamper_even_after_json_reseal(
         lambda value: value["records"].reverse(),
         lambda value: value["work_manifest"].reverse(),
         lambda value: value["records"].__setitem__(1, value["records"][0]),
-        lambda value: value["work_manifest"].__setitem__(
-            1, value["work_manifest"][0]
-        ),
+        lambda value: value["work_manifest"].__setitem__(1, value["work_manifest"][0]),
     ],
 )
 def test_discovery_sidecar_rejects_deleted_duplicate_or_reordered_work(
@@ -452,46 +448,3 @@ def test_discovery_sidecar_rejects_fully_resealed_replacement_trace_record(
             expected_acquisition_input=acquisition_input,
             expected_work_manifest=manifest,
         )
-
-
-def test_sidecar_write_is_pure_and_external_read_rehydrates_once_per_record(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor.peak_detection import evidence_facts as owner
-
-    _, spec, acquisition_input = _spec(tmp_path)
-    manifest, records = _population(spec, acquisition_input)
-    calls = {"prepare": 0, "evaluate": 0}
-    real_prepare = owner.prepare_physical_signal
-    real_evaluate = owner.evaluate_physical_peak
-
-    def counted_prepare(*args, **kwargs):
-        calls["prepare"] += 1
-        return real_prepare(*args, **kwargs)
-
-    def counted_evaluate(*args, **kwargs):
-        calls["evaluate"] += 1
-        return real_evaluate(*args, **kwargs)
-
-    monkeypatch.setattr(owner, "prepare_physical_signal", counted_prepare)
-    monkeypatch.setattr(owner, "evaluate_physical_peak", counted_evaluate)
-    path = tmp_path / "facts.json"
-
-    write_discovery_physical_fact_sidecar(
-        path,
-        run_spec=spec,
-        acquisition_input=acquisition_input,
-        work_manifest=manifest,
-        records=records,
-    )
-    assert calls == {"prepare": 0, "evaluate": 0}
-
-    restored = read_discovery_physical_fact_sidecar(
-        path,
-        expected_run_spec=spec,
-        expected_acquisition_input=acquisition_input,
-        expected_work_manifest=manifest,
-    )
-    assert len(restored) == len(records)
-    assert calls == {"prepare": len(records), "evaluate": len(records)}

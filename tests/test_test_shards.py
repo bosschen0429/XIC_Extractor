@@ -1,4 +1,3 @@
-from fnmatch import fnmatchcase
 from pathlib import Path
 
 from tools.testing import test_shards
@@ -77,10 +76,15 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
         (
             Path("tests/test_discovery_worker.py"),
             Path("tests/test_discovery_method_section.py"),
+            Path("tests/test_discovery_method_persistence.py"),
             Path("tests/test_pyinstaller_spec.py"),
             Path("tests/test_peak_model_selection.py"),
             Path("tests/test_alignment_pipeline_outputs.py"),
             Path("tests/test_processing_run_spec.py"),
+            Path("tests/test_processing_run_spec_architecture.py"),
+            Path("tests/test_processing_run_spec_entrypoints.py"),
+            Path("tests/test_physical_peak_evaluation_persistence.py"),
+            Path("tests/test_run_discovery_run_spec_cli.py"),
             Path("tests/test_process_job_execution.py"),
             Path("tests/test_standard_peak_backfill_preset.py"),
             Path("tests/test_targeted_ms1_shape_identity.py"),
@@ -90,6 +94,7 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
     assert assigned["gui"] == (
         Path("tests/test_discovery_worker.py"),
         Path("tests/test_discovery_method_section.py"),
+        Path("tests/test_discovery_method_persistence.py"),
     )
     assert assigned["docs-config"] == (
         Path("tests/test_pyinstaller_spec.py"),
@@ -98,11 +103,27 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
     assert assigned["alignment-core"] == (
         Path("tests/test_alignment_pipeline_outputs.py"),
         Path("tests/test_processing_run_spec.py"),
+        Path("tests/test_processing_run_spec_architecture.py"),
+        Path("tests/test_processing_run_spec_entrypoints.py"),
+        Path("tests/test_physical_peak_evaluation_persistence.py"),
+        Path("tests/test_run_discovery_run_spec_cli.py"),
         Path("tests/test_process_job_execution.py"),
     )
-    processing_run_spec_path = Path("tests/test_processing_run_spec.py")
-    assert _matching_shards(processing_run_spec_path) == ("alignment-core",)
-    assert shard_for_path(processing_run_spec_path) == "alignment-core"
+    exact_alignment_paths = (
+        Path("tests/test_processing_run_spec.py"),
+        Path("tests/test_processing_run_spec_architecture.py"),
+        Path("tests/test_processing_run_spec_entrypoints.py"),
+        Path("tests/test_physical_peak_evaluation_persistence.py"),
+        Path("tests/test_run_discovery_run_spec_cli.py"),
+    )
+    for path in exact_alignment_paths:
+        assert _matching_shards(path) == ("alignment-core",)
+        assert shard_for_path(path) == "alignment-core"
+    discovery_method_persistence_path = Path(
+        "tests/test_discovery_method_persistence.py"
+    )
+    assert _matching_shards(discovery_method_persistence_path) == ("gui",)
+    assert shard_for_path(discovery_method_persistence_path) == "gui"
     assert assigned["product-gates-activation"] == (
         Path("tests/test_standard_peak_backfill_preset.py"),
     )
@@ -137,9 +158,8 @@ def test_test_shards_prefer_uv_runner_when_pytest_is_not_importable(
 
 
 def _matching_shards(path: Path) -> tuple[str, ...]:
-    posix = path.as_posix()
     return tuple(
         shard
-        for shard, patterns in SHARD_PATTERNS.items()
-        if any(fnmatchcase(posix, pattern) for pattern in patterns)
+        for shard in SHARD_PATTERNS
+        if test_shards._shard_matches_path(shard, path)
     )

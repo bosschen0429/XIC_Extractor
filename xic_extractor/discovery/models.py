@@ -273,14 +273,12 @@ class DiscoveryPhysicalWorkItem:
             raise ValueError("physical work m/z values must be positive")
         if self.context_rt_start_min < 0.0:
             raise ValueError("context_rt_start_min must be non-negative")
-        if not (
-            self.context_rt_start_min
-            <= self.query_rt_min
-            <= self.context_rt_end_min
-        ):
-            raise ValueError("physical work query RT must be inside its context")
+        if self.context_rt_start_min > self.context_rt_end_min:
+            raise ValueError("physical work context has an invalid RT window")
         if self.xic_rt_min < 0.0 or self.xic_rt_min > self.xic_rt_max:
             raise ValueError("physical work XIC request has an invalid RT window")
+        if not self.xic_rt_min <= self.query_rt_min <= self.xic_rt_max:
+            raise ValueError("physical work query RT must be inside its XIC request")
 
     @property
     def candidate_id(self) -> str:

@@ -7,9 +7,9 @@ from pathlib import Path
 
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
 from xic_extractor.discovery.physical_fact_persistence import (
-    DiscoveryPhysicalFactRecord,
     write_discovery_physical_fact_sidecar,
 )
+from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,

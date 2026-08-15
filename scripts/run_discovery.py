@@ -9,16 +9,12 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec,
+    compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
 )
 from xic_extractor.discovery.tag_profiles import (
     load_feature_tag_profiles,
     resolve_selected_tag_profiles,
 )
-from xic_extractor.peak_detection.signal_processing_profile import (
-    resolve_signal_processing_profile,
-)
-from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
@@ -55,11 +51,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if data_dir is None:
         raise ValueError("Discovery input directory was not resolved")
     peak_config = _peak_config(data_dir, dll_dir, output_dir, settings)
-    try:
-        run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
-    except (OSError, TypeError, ValueError) as exc:
-        print(_bounded_run_spec_error(exc), file=sys.stderr)
-        return 2
     timing_recorder = (
         TimingRecorder(
             "discovery",
@@ -68,6 +59,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.timing_output is not None
         else None
     )
+    try:
+        if timing_recorder is None:
+            run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
+        else:
+            with timing_recorder.stage(
+                "discover.compile_run_spec",
+                metrics={"raw_count": len(raw_paths)},
+            ):
+                run_spec = _compile_processing_run_spec(
+                    raw_paths,
+                    settings,
+                    peak_config,
+                )
+    except (OSError, TypeError, ValueError) as exc:
+        print(_bounded_run_spec_error(exc), file=sys.stderr)
+        return 2
     try:
         if raw_path is not None:
             if timing_recorder is None:
@@ -289,22 +296,6 @@ def _peak_config(
         resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
         resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),
         resolver_min_scans=int(defaults["resolver_min_scans"]),
-    )
-
-
-def _compile_processing_run_spec(
-    raw_paths: tuple[Path, ...],
-    settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
-) -> ProcessingRunSpec:
-    profile = resolve_signal_processing_profile(
-        signal_processing_method=peak_config.signal_processing_method,
-        signal_processing_window_points=peak_config.signal_processing_window_points,
-    )
-    return compile_discovery_processing_run_spec(
-        raw_paths,
-        discovery_settings=settings,
-        signal_processing_profile=profile,
     )
 
 

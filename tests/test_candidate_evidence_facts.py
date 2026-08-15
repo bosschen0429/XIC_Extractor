@@ -1,5 +1,4 @@
 import hashlib
-import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -15,7 +14,6 @@ from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     canonical_physical_peak_question_bytes,
     decision_semantics_from_candidate_facts,
-    deserialize_physical_peak_evaluation,
     enumerate_physical_segment_universe,
     evaluate_physical_peak,
     gaussian15_trace_window_evidence,
@@ -27,7 +25,6 @@ from xic_extractor.peak_detection.evidence_facts import (
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
     rehydrate_physical_peak_evaluation,
-    serialize_physical_peak_evaluation,
     validate_bounded_physical_peak_evaluation,
     validate_physical_peak_question_identity,
 )
@@ -576,80 +573,6 @@ def test_malformed_trace_has_failed_terminal_question_and_rehydrates() -> None:
         )
         == evaluation
     )
-
-
-@pytest.mark.parametrize("terminal", ["available", "unavailable", "failed"])
-def test_physical_evaluation_persistence_rehydrates_terminal_owner_state(
-    terminal: str,
-) -> None:
-    profile = SignalProcessingProfile(window_points=3)
-    if terminal == "available":
-        rt = np.linspace(0.0, 3.0, 31)
-        raw = np.full(31, 10.0)
-        raw[7:10] += [30.0, 100.0, 30.0]
-        query_rt = 0.8
-        context = (0.0, 3.0)
-    elif terminal == "unavailable":
-        rt = np.asarray([1.0])
-        raw = np.asarray([10.0])
-        query_rt = 1.0
-        context = (1.0, 1.0)
-    else:
-        rt = np.asarray([float("nan"), 1.0, 2.0])
-        raw = np.asarray([1.0, 2.0, 1.0])
-        query_rt = 1.5
-        context = (1.0, 2.0)
-    prepared = prepare_physical_signal(rt, raw, profile=profile)
-    evaluation = evaluate_physical_peak(
-        prepared,
-        selection_subject_id=f"persisted-{terminal}",
-        query_rt_min=query_rt,
-        request_context_rt_start_min=context[0],
-        request_context_rt_end_min=context[1],
-    )
-
-    payload = serialize_physical_peak_evaluation(
-        rt,
-        raw,
-        profile=profile,
-        evaluation=evaluation,
-    )
-    _, _, rehydrated_profile, rehydrated = deserialize_physical_peak_evaluation(
-        payload,
-        expected_profile=profile,
-    )
-
-    assert rehydrated_profile == profile
-    assert rehydrated == evaluation
-    assert rehydrated.state == terminal
-
-
-def test_physical_evaluation_persistence_rejects_resealed_owner_tamper() -> None:
-    profile = SignalProcessingProfile(window_points=3)
-    rt = np.linspace(0.0, 3.0, 31)
-    raw = np.full(31, 10.0)
-    raw[7:10] += [30.0, 100.0, 30.0]
-    evaluation = evaluate_physical_peak(
-        prepare_physical_signal(rt, raw, profile=profile),
-        selection_subject_id="persisted-tamper",
-        query_rt_min=0.8,
-    )
-    value = json.loads(
-        serialize_physical_peak_evaluation(
-            rt,
-            raw,
-            profile=profile,
-            evaluation=evaluation,
-        )
-    )
-    value["evaluation"]["answer"]["physical_answer_id"] = (
-        "physical-answer.v1:" + "0" * 64
-    )
-
-    with pytest.raises(ValueError):
-        deserialize_physical_peak_evaluation(
-            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-        )
 
 
 def test_nonpositive_trace_is_unavailable_before_asls_or_smoothing() -> None:

@@ -618,6 +618,7 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
         DiscoveryEvidenceWeights,
     )
     from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+    from xic_extractor.settings_schema import RESOLVER_MODES
 
     if not isinstance(settings, DiscoverySettings):
         raise TypeError("settings must be DiscoverySettings")
@@ -638,8 +639,18 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
     if settings.tag_combine_mode == "single" and len(profiles) != 1:
         raise ValueError("single tag_combine_mode requires exactly one profile")
     for profile in profiles:
-        if not math.isfinite(profile.neutral_loss_da) or profile.neutral_loss_da <= 0:
+        value = profile.neutral_loss_da
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise TypeError("neutral_loss_da must be numeric")
+        if not math.isfinite(float(value)) or float(value) <= 0.0:
             raise ValueError("neutral_loss_da must be finite and positive")
+    canonical_masses = tuple(
+        float(profile.neutral_loss_da).hex() for profile in profiles
+    )
+    if len(canonical_masses) != len(set(canonical_masses)):
+        raise ValueError(
+            "neutral_loss_profiles contains distinct tags with the same canonical mass"
+        )
     positive_fields = (
         "nl_tolerance_ppm",
         "precursor_mz_tolerance_ppm",
@@ -665,6 +676,8 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
     if settings.rt_min > settings.rt_max:
         raise ValueError("rt_min must not exceed rt_max")
     _required_text(settings.resolver_mode, field="resolver_mode")
+    if settings.resolver_mode not in RESOLVER_MODES:
+        raise ValueError("unsupported resolver_mode")
     evidence = settings.evidence_profile
     if not isinstance(evidence, DiscoveryEvidenceProfile):
         raise TypeError("evidence_profile must be DiscoveryEvidenceProfile")

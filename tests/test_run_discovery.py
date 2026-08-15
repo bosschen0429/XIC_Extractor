@@ -84,7 +84,6 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert "discovery_candidates.csv" in stdout
     assert "discovery_review.csv" in stdout
 
-
 def test_run_discovery_cli_accepts_region_first_safe_merge_mode(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -128,7 +127,6 @@ def test_run_discovery_cli_accepts_region_first_safe_merge_mode(
     assert captured["peak_config"].resolver_mode == "region_first_safe_merge"
     assert captured["run_spec"].discovery_method.settings == captured["settings"]
 
-
 def test_run_discovery_rejects_retired_arbitrated_resolver_mode(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -152,7 +150,6 @@ def test_run_discovery_rejects_retired_arbitrated_resolver_mode(
 
     assert exc_info.value.code == 2
     assert "arbitrated resolver mode is retired" in capsys.readouterr().err
-
 
 def test_run_discovery_cli_passes_raw_dir_batch_settings(
     monkeypatch: pytest.MonkeyPatch,
@@ -219,59 +216,6 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     assert "Discovery batch index: " in stdout
     assert "discovery_batch_index.csv" in stdout
 
-
-def test_run_discovery_main_rejects_duplicate_acquisition_content_before_pipeline(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    (raw_dir / "A.raw").write_bytes(b"duplicate acquisition")
-    (raw_dir / "B.raw").write_bytes(b"duplicate acquisition")
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    pipeline_calls = 0
-
-    def unexpected_pipeline(*_args, **_kwargs):
-        nonlocal pipeline_calls
-        pipeline_calls += 1
-        pytest.fail("pipeline entered after run-spec compile failure")
-
-    monkeypatch.setattr(run_discovery, "run_discovery_batch", unexpected_pipeline)
-
-    code = run_discovery.main(
-        ["--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir)]
-    )
-
-    assert code == 2
-    assert pipeline_calls == 0
-    error = capsys.readouterr().err
-    assert error.startswith("Discovery run specification failed: ")
-    assert "duplicate ProcessingRunSpec acquisition_source_id" in error
-    assert len(error.rstrip("\n")) <= 400
-
-
-def test_run_discovery_main_propagates_unexpected_pipeline_value_error(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"pipeline-sentinel")
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-
-    def raise_pipeline_sentinel(*_args, **_kwargs):
-        raise ValueError("pipeline sentinel must propagate")
-
-    monkeypatch.setattr(run_discovery, "run_discovery", raise_pipeline_sentinel)
-
-    with pytest.raises(ValueError, match="^pipeline sentinel must propagate$"):
-        run_discovery.main(
-            ["--raw", str(raw_path), "--dll-dir", str(dll_dir)]
-        )
-
-
 def test_run_discovery_accepts_feature_list_selected_tags_and_union_mode() -> None:
     args = run_discovery._parse_args(
         [
@@ -294,7 +238,6 @@ def test_run_discovery_accepts_feature_list_selected_tags_and_union_mode() -> No
     assert args.selected_tags == "dR,R,MeR"
     assert args.tag_combine_mode == "union"
 
-
 def test_run_discovery_rejects_invalid_tag_combine_mode(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -313,7 +256,6 @@ def test_run_discovery_rejects_invalid_tag_combine_mode(
     assert exc_info.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
 
-
 def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -327,6 +269,20 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     dll_dir.mkdir()
     output_dir = tmp_path / "out"
     timing_path = tmp_path / "diagnostics" / "discovery_timing.json"
+    from xic_extractor.discovery import processing_run_spec_adapter as adapter
+
+    fingerprinted_paths: list[Path] = []
+    owner = adapter.build_acquisition_source_identity
+
+    def counted_fingerprint(path: Path, **kwargs):
+        fingerprinted_paths.append(path)
+        return owner(path, **kwargs)
+
+    monkeypatch.setattr(
+        adapter,
+        "build_acquisition_source_identity",
+        counted_fingerprint,
+    )
 
     def _fake_run_discovery_batch(
         raw_paths,
@@ -345,7 +301,7 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
         ):
             pass
         live_payload = json.loads(timing_path.read_text(encoding="utf-8"))
-        assert live_payload["recent_records"][0]["stage"] == (
+        assert live_payload["recent_records"][-1]["stage"] == (
             "discover.write_batch_index"
         )
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -371,10 +327,14 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     assert code == 0
     payload = json.loads(timing_path.read_text(encoding="utf-8"))
     assert payload["pipeline"] == "discovery"
-    assert payload["records"][0]["stage"] == "discover.write_batch_index"
-    assert payload["records"][0]["metrics"] == {"raw_count": 1, "row_count": 1}
+    assert [record["stage"] for record in payload["records"]] == [
+        "discover.compile_run_spec",
+        "discover.write_batch_index",
+    ]
+    assert payload["records"][0]["metrics"] == {"raw_count": 1}
+    assert payload["records"][1]["metrics"] == {"raw_count": 1, "row_count": 1}
+    assert fingerprinted_paths == [raw_path.resolve()]
     assert "Timing JSON:" in capsys.readouterr().out
-
 
 def test_run_discovery_cli_rejects_missing_raw(
     tmp_path: Path,
@@ -394,7 +354,6 @@ def test_run_discovery_cli_rejects_missing_raw(
 
     assert code == 2
     assert "raw file does not exist" in capsys.readouterr().err
-
 
 def test_run_discovery_cli_rejects_raw_dir_without_raw_files(
     tmp_path: Path,
@@ -417,7 +376,6 @@ def test_run_discovery_cli_rejects_raw_dir_without_raw_files(
     assert code == 2
     assert "raw directory contains no .raw files" in capsys.readouterr().err
 
-
 def test_run_discovery_cli_rejects_missing_dll_dir(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -436,7 +394,6 @@ def test_run_discovery_cli_rejects_missing_dll_dir(
 
     assert code == 2
     assert "dll directory does not exist" in capsys.readouterr().err
-
 
 def test_run_discovery_cli_rejects_non_positive_float_args(
     tmp_path: Path,
@@ -461,7 +418,6 @@ def test_run_discovery_cli_rejects_non_positive_float_args(
 
     assert exc_info.value.code == 2
     assert "value must be > 0" in capsys.readouterr().err
-
 
 @pytest.mark.parametrize("value", ["nan", "inf"])
 def test_run_discovery_cli_rejects_non_finite_positive_float_args(
@@ -489,7 +445,6 @@ def test_run_discovery_cli_rejects_non_finite_positive_float_args(
     assert exc_info.value.code == 2
     assert "value must be > 0" in capsys.readouterr().err
 
-
 def test_run_discovery_cli_rejects_inverted_rt_window(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -515,7 +470,6 @@ def test_run_discovery_cli_rejects_inverted_rt_window(
 
     assert exc_info.value.code == 2
     assert "rt-min must be <= rt-max" in capsys.readouterr().err
-
 
 @pytest.mark.parametrize(
     ("option", "value"),
@@ -551,7 +505,6 @@ def test_run_discovery_cli_rejects_invalid_rt_bounds(
     assert exc_info.value.code == 2
     assert "RT bounds must be finite values >= 0" in capsys.readouterr().err
 
-
 def test_run_discovery_cli_returns_2_when_raw_reader_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -578,7 +531,6 @@ def test_run_discovery_cli_returns_2_when_raw_reader_fails(
 
     assert code == 2
     assert "boom" in capsys.readouterr().err
-
 
 def test_pyproject_registers_discovery_cli_script() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))

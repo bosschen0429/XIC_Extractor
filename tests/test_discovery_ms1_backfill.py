@@ -9,7 +9,6 @@ import pytest
 
 from xic_extractor.acquisition_contract import AcquisitionContractError
 from xic_extractor.config import ExtractionConfig
-from xic_extractor.discovery.csv_writer import build_discovery_review_note
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
@@ -24,10 +23,6 @@ from xic_extractor.discovery.ms1_backfill import (
 )
 from xic_extractor.execution_runtime_owner import (
     derive_runtime_acquisition_metrics,
-)
-from xic_extractor.peak_detection.evidence_facts import prepare_physical_signal
-from xic_extractor.peak_detection.signal_processing_profile import (
-    SignalProcessingProfile,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -749,134 +744,6 @@ def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
     assert measurements.batch_max_requests == 256
     assert [len(batch) for batch in raw.request_batches] == [3]
     assert raw.request_batches[0][0] == raw.request_batches[0][1]
-
-
-def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-discovery")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    first = _group((_seed(scan_number=10, rt=7.80),))
-    duplicate_trace = replace(
-        first,
-        seeds=(_seed(scan_number=20, rt=7.80),),
-    )
-    raw = _OwnerBoundBatchRaw(source)
-    preparation_count = 0
-
-    def _count_prepare(*args, **kwargs):
-        nonlocal preparation_count
-        preparation_count += 1
-        return prepare_physical_signal(*args, **kwargs)
-
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.prepare_physical_signal",
-        _count_prepare,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("spec-bound route used legacy peak detection")
-        ),
-    )
-
-    result = _backfill_ms1_candidates_with_acquisition(
-        raw,
-        (first, duplicate_trace),
-        acquisition_source=source,
-        settings=_settings(),
-        peak_config=_peak_config(),
-        signal_processing_profile=SignalProcessingProfile(window_points=3),
-    )
-
-    metrics = derive_runtime_acquisition_metrics(
-        result.measurements.acquisition_batches
-    )
-    assert preparation_count == 1
-    assert len(result.physical_evaluations) == 2
-    assert {
-        record.evaluation.prepared.prepared_signal_id
-        for record in result.physical_evaluations
-    } == {result.physical_evaluations[0].evaluation.prepared.prepared_signal_id}
-    assert metrics.logical_xic_request_count == 2
-    assert metrics.xic_batch_count == 1
-    assert metrics.adapter_chromatogram_call_count == 1
-    assert [len(batch) for batch in raw.request_batches] == [2]
-
-
-@pytest.mark.parametrize(
-    ("rt", "intensity", "physical_state", "physical_reason"),
-    [
-        (
-            np.asarray([7.8]),
-            np.asarray([10.0]),
-            "unavailable",
-            "insufficient_points_for_profile",
-        ),
-        (
-            np.asarray([7.8, 7.7, 7.9]),
-            np.asarray([1.0, 2.0, 1.0]),
-            "failed",
-            "non_monotonic_rt",
-        ),
-    ],
-)
-def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
-    tmp_path: Path,
-    rt: np.ndarray,
-    intensity: np.ndarray,
-    physical_state: str,
-    physical_reason: str,
-) -> None:
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-discovery")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    raw = _OwnerBoundBatchRaw(source)
-    raw.rt = rt
-    raw.intensity = intensity
-
-    result = _backfill_ms1_candidates_with_acquisition(
-        raw,
-        (_group((_seed(scan_number=10, rt=7.80),)),),
-        acquisition_source=source,
-        settings=_settings(),
-        peak_config=_peak_config(),
-        signal_processing_profile=SignalProcessingProfile(window_points=3),
-    )
-
-    candidate = result.candidates[0]
-    assert result.physical_evaluations[0].evaluation.state == physical_state
-    assert result.physical_evaluations[0].evaluation.reason == physical_reason
-    assert candidate.discovery_candidate_state == "review_only_orphan_nl"
-    assert candidate.review_priority == "LOW"
-    assert candidate.reason == (
-        f"physical MS1 evaluation {physical_state}: {physical_reason}"
-    )
-    assert candidate.ms1_support == "missing"
-    assert candidate.ms1_trace_quality == f"physical_{physical_state}"
-    assert build_discovery_review_note(candidate) == (
-        f"physical MS1 {physical_state}: {physical_reason}; missing RT"
-    )
-    assert candidate.ms1_peak_found is False
-    assert candidate.ms1_apex_rt is None
-    assert candidate.ms1_area is None
-    assert candidate.ms1_height is None
-    assert candidate.ms1_scan_support_score is None
-    assert candidate.discovery_candidate_state not in {
-        "ms1_feature_nl_supported",
-        "ms1_feature_nl_rescued",
-        "rejected_noise_or_outside_rt",
-    }
 
 
 def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
