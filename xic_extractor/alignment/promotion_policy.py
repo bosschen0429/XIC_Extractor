@@ -77,6 +77,13 @@ _INTERFERENCE_NOT_ASSESSED_MARKERS = (
     "neighbor_interference_not_assessed",
     "neighboring_interference_not_assessed",
 )
+_INTERFERING_LOCAL_MIXTURE_DIAGNOSTICS = frozenset(
+    {
+        "ambiguous_adjacent_split",
+        "two_peak_supported",
+        "competing_boundary_model",
+    },
+)
 _LOW_COVERAGE_MARKERS = (
     "low_scan_support",
     "skipped_low_scan_support",
@@ -289,6 +296,11 @@ class BackfillCellEvidence:
 
     @property
     def high_neighbor_interference(self) -> bool:
+        if (
+            _normalize(self.region_local_mixture_diagnostic)
+            in _INTERFERING_LOCAL_MIXTURE_DIAGNOSTICS
+        ):
+            return True
         text = _normalize(
             " ".join(
                 (

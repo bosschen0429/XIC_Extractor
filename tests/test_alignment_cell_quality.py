@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import Callable
+
+import pytest
 
 from xic_extractor.alignment.cell_quality import (
     build_cell_quality_decisions,
@@ -103,13 +106,12 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
     assert outside.quality_reason == "rt_outside_max"
 
 
-def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix() -> None:
-    config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
-
-    decisions = (
-        decide_cell_quality(
-            _cell(
-                "claim_blocked",
+@pytest.mark.parametrize(
+    ("cell_factory", "expected_reason"),
+    (
+        (
+            lambda: _cell(
+                "hard_negative",
                 "FAM001",
                 "rescued",
                 100.0,
@@ -117,73 +119,120 @@ def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix() -> None:
                 group_claim_state="duplicate_loser",
                 claim_winner_group_hypothesis_id="HYP002",
             ),
-            config,
+            BACKFILL_HYPOTHESIS_BLOCKED_REASON,
         ),
-        decide_cell_quality(
-            _cell(
-                "neighbor_interference",
+        (
+            lambda: _cell(
+                "hard_negative",
                 "FAM001",
                 "rescued",
                 100.0,
-                region_local_mixture_diagnostic="neighbor_interference",
+                region_local_mixture_diagnostic="ambiguous_adjacent_split",
             ),
-            config,
+            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
         ),
-        decide_cell_quality(
-            _cell(
-                "low_coverage",
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
+                region_local_mixture_diagnostic="two_peak_supported",
+            ),
+            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
+        ),
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
+                region_local_mixture_diagnostic="competing_boundary_model",
+            ),
+            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
+        ),
+        (
+            lambda: _cell(
+                "hard_negative",
                 "FAM001",
                 "rescued",
                 100.0,
                 scan_support_score=0.2,
             ),
-            config,
+            LOW_MS1_COVERAGE_BLOCKED_REASON,
         ),
-    )
+    ),
+    ids=(
+        "conflicting-claim",
+        "ambiguous-adjacent-split",
+        "two-peaks-supported",
+        "competing-boundary-model",
+        "low-ms1-coverage",
+    ),
+)
+def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix(
+    cell_factory: Callable[[], AlignedCell],
+    expected_reason: str,
+) -> None:
+    config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
+    decision = decide_cell_quality(cell_factory(), config)
 
-    assert [decision.quality_status for decision in decisions] == [
-        "review_rescue",
-        "review_rescue",
-        "review_rescue",
-    ]
-    assert [decision.quality_reason for decision in decisions] == [
-        BACKFILL_HYPOTHESIS_BLOCKED_REASON,
-        NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
-        LOW_MS1_COVERAGE_BLOCKED_REASON,
-    ]
-    assert all(decision.matrix_area is None for decision in decisions)
+    assert decision.quality_status == "review_rescue"
+    assert decision.quality_reason == expected_reason
+    assert decision.matrix_area is None
 
 
-def test_moderate_scan_support_is_not_a_backfill_write_blocker() -> None:
-    decisions = (
-        decide_cell_quality(
-            _cell(
-                "moderate_scan_support",
-                "FAM001",
-                "rescued",
-                100.0,
-                scan_support_score=0.3,
+@pytest.mark.parametrize(
+    "cell_factory",
+    (
+        lambda: _cell(
+            "nonblocking",
+            "FAM001",
+            "rescued",
+            100.0,
+            scan_support_score=0.3,
+        ),
+        lambda: _cell(
+            "nonblocking",
+            "FAM001",
+            "rescued",
+            100.0,
+            region_local_mixture_diagnostic=(
+                "neighbor_interference_not_assessed;raw_trace_reread_v0_1"
             ),
-            AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0),
         ),
-        decide_cell_quality(
-            _cell(
-                "neighbor_not_assessed",
-                "FAM001",
-                "rescued",
-                100.0,
-                region_local_mixture_diagnostic=(
-                    "neighbor_interference_not_assessed;raw_trace_reread_v0_1"
-                ),
-            ),
-            AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0),
+        lambda: _cell(
+            "nonblocking",
+            "FAM001",
+            "rescued",
+            100.0,
+            region_local_mixture_diagnostic="current_single_envelope",
         ),
+        lambda: _cell(
+            "nonblocking",
+            "FAM001",
+            "rescued",
+            100.0,
+            region_local_mixture_diagnostic="one_envelope_supported",
+        ),
+    ),
+    ids=(
+        "moderate-scan-support",
+        "neighbor-interference-not-assessed",
+        "current-single-envelope",
+        "one-envelope-supported",
+    ),
+)
+def test_nonblocking_owner_facts_keep_rescue_quantifiable(
+    cell_factory: Callable[[], AlignedCell],
+) -> None:
+    decision = decide_cell_quality(
+        cell_factory(),
+        AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0),
     )
 
-    assert all(
-        decision.quality_status == "rescue_quantifiable" for decision in decisions
-    )
-    assert all(decision.matrix_area == 100.0 for decision in decisions)
+    assert decision.quality_status == "rescue_quantifiable"
+    assert decision.matrix_area == 100.0
 
 
 def test_current_claim_winner_resolves_historical_duplicate_loser() -> None:

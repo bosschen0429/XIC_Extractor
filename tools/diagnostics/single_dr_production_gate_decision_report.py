@@ -48,6 +48,7 @@ _REVIEW_REQUIRED_COLUMNS = (
     "feature_family_id",
     "neutral_loss_tag",
     "detected_count",
+    "review_rescue_count",
     "include_in_primary_matrix",
 )
 _BACKFILL_EVIDENCE_COLUMNS = (

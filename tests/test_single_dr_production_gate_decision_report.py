@@ -298,6 +298,8 @@ def test_tsv_adapter_reduces_generic_review_rescue_to_unavailable(
     assert family["risk_classification"] == "unavailable_backfill_owner_evidence"
     assert family["promotion_state"] == "unavailable"
     assert family["promotion_reason"] == "backfill_owner_rehydration_unavailable"
+    summary = {row["metric"]: row["value"] for row in result["summary"]}
+    assert summary["unavailable_backfill_owner_evidence_rows"] == "1"
     assert result["activation_decisions"] == []
     assert _read_tsv(
         output_dir / "single_dr_gate_activation_decisions.tsv"
@@ -440,6 +442,20 @@ def test_tsv_adapter_requires_backfill_evidence_schema(tmp_path: Path) -> None:
     for row in cells:
         row.pop("backfill_ms1_pattern_status")
     _write_tsv(alignment_dir / "alignment_cells.tsv", tuple(cells))
+
+    with pytest.raises(ValueError, match="missing required columns"):
+        report.build_decision_report(alignment_dir=alignment_dir)
+
+
+def test_tsv_adapter_requires_review_rescue_count(tmp_path: Path) -> None:
+    alignment_dir = tmp_path / "alignment"
+    review_row = _review_row("FAM_STALE_REVIEW", q_detected=2, q_rescue=8)
+    review_row.pop("review_rescue_count")
+    _write_tsv(alignment_dir / "alignment_review.tsv", (review_row,))
+    _write_tsv(
+        alignment_dir / "alignment_cells.tsv",
+        tuple(_cells("FAM_STALE_REVIEW", detected=2, rescued=8)),
+    )
 
     with pytest.raises(ValueError, match="missing required columns"):
         report.build_decision_report(alignment_dir=alignment_dir)
@@ -844,6 +860,7 @@ def _review_row(
         "accepted_rescue_count": str(q_rescue),
         "quantifiable_detected_count": str(q_detected),
         "quantifiable_rescue_count": str(q_rescue),
+        "review_rescue_count": "0",
         "duplicate_assigned_count": str(duplicate_assigned),
         "include_in_primary_matrix": "TRUE" if primary else "FALSE",
         "identity_decision": "production_family" if primary else "audit_family",
