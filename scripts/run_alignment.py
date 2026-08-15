@@ -18,6 +18,7 @@ from xic_extractor.alignment.csv_io import (
 )
 from xic_extractor.alignment.drift_evidence import read_targeted_istd_drift_evidence
 from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
+from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
@@ -68,7 +69,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
         _reject_retired_standard_peak_cli_options(args)
-        _preset, recipe = _resolve_preset(args)
+        preset, recipe = _resolve_preset(args)
     except PresetError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -95,6 +96,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         args,
         recipe,
     )
+    if preset is not None and preset.name == "DNA dR Owner Backfill (compat)":
+        print(
+            "Preset readiness authority: not_evaluated "
+            "(historical compatibility name only)"
+        )
     identity_coherence_output_dir = (
         args.identity_coherence_output_dir.resolve()
         if args.identity_coherence_output_dir is not None
@@ -367,7 +373,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Alignment early-loser shadow JSON: {outputs.early_loser_shadow_json}")
     if outputs.identity_coherence_output_dir is not None:
         print(f"Identity coherence diagnostic: {outputs.identity_coherence_output_dir}")
-    _print_owner_build_route_receipt(owner_build_xic_backend)
+    owner_build_route_receipt = outputs.owner_build_route_receipt
+    if not isinstance(owner_build_route_receipt, OwnerBuildRouteReceipt):
+        print("Alignment owner did not return its route receipt", file=sys.stderr)
+        return 2
+    _print_owner_build_route_receipt(owner_build_route_receipt)
     if timing_recorder is not None:
         if args.timing_live_output is not None:
             print(f"Timing live JSON: {args.timing_live_output.resolve()}")
@@ -948,7 +958,7 @@ def _print_preflight_summary(
     print(f"Performance profile: {args.performance_profile or '<none>'}")
     print(f"RAW workers: {raw_workers}")
     print(f"RAW XIC batch size: {raw_xic_batch_size}")
-    _print_owner_build_route_receipt(owner_build_xic_backend)
+    _print_owner_build_route_preflight(owner_build_xic_backend)
     print(f"Owner backfill window strategy: {args.owner_backfill_window_strategy}")
     print(
         "Owner backfill superwindow span factor: "
@@ -964,10 +974,31 @@ def _print_preflight_summary(
     )
 
 
-def _print_owner_build_route_receipt(owner_build_xic_backend: str) -> None:
-    print(f"Configured owner-build XIC backend: {owner_build_xic_backend}")
-    print(f"Effective owner-build route: configured_backend:{owner_build_xic_backend}")
+def _print_owner_build_route_receipt(receipt: OwnerBuildRouteReceipt) -> None:
+    print(
+        "Configured owner-build XIC backend: "
+        f"{receipt.configured_owner_build_xic_backend}"
+    )
+    if receipt.effective_owner_build_xic_backend is None:
+        print(f"Effective owner-build route: {receipt.effective_owner_build_route}")
+    else:
+        print(
+            "Effective owner-build route: "
+            f"{receipt.effective_owner_build_route}:"
+            f"{receipt.effective_owner_build_xic_backend}"
+        )
     print("Effective route validation: owner_validated")
+    if receipt.processing_run_spec_id is None:
+        print("ProcessingRunSpec identity: <none; generic Alignment CLI is align-only>")
+    else:
+        print(f"ProcessingRunSpec id: {receipt.processing_run_spec_id}")
+        print(f"ProcessingRunSpec hash: {receipt.processing_run_spec_hash}")
+
+
+def _print_owner_build_route_preflight(owner_build_xic_backend: str) -> None:
+    print(f"Configured owner-build XIC backend: {owner_build_xic_backend}")
+    print("Effective owner-build route: <not executed>")
+    print("Effective route validation: not_executed")
     print("ProcessingRunSpec identity: <none; generic Alignment CLI is align-only>")
 
 

@@ -699,7 +699,10 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     raw_dir.mkdir()
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     canonical_binding = object()
-    processing_run_spec = object()
+    processing_run_spec = SimpleNamespace(
+        run_spec_id="run-spec-id",
+        run_spec_hash="run-spec-hash",
+    )
     calls: dict[str, object] = {}
 
     def ordered_bindings(**kwargs):
@@ -752,7 +755,7 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
         lambda features, *, sample_order, **kwargs: _matrix(sample_order),
     )
 
-    pipeline_module.run_alignment(
+    outputs = pipeline_module.run_alignment(
         discovery_batch_index=batch_index,
         raw_dir=raw_dir,
         dll_dir=tmp_path / "dll",
@@ -770,6 +773,15 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     assert calls["processing_run_spec"] is processing_run_spec
     assert calls["bindings"] == (canonical_binding,)
     assert calls["alignment_config"] == AlignmentConfig()
+    assert outputs.owner_build_route_receipt is not None
+    assert outputs.owner_build_route_receipt.as_dict() == {
+        "configured_owner_build_xic_backend": "raw",
+        "effective_owner_build_route": "discovery_physical_bindings",
+        "effective_owner_build_xic_backend": None,
+        "effective_route_validation": "owner_validated",
+        "processing_run_spec_id": "run-spec-id",
+        "processing_run_spec_hash": "run-spec-hash",
+    }
 
 
 def test_pipeline_default_path_no_longer_uses_legacy_near_duplicate_folding() -> None:

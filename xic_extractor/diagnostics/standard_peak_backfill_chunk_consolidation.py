@@ -106,14 +106,18 @@ def run_standard_peak_backfill_chunk_consolidation(
     retained_backfill_gate_tsv: Path | None = None,
     gallery_output_dir: Path | None = None,
     emit_formal_product_output: bool = False,
-    publish_to_source_alignment_output: bool = True,
+    publish_to_source_alignment_output: bool = False,
     formal_product_output_dir: Path | None = None,
     publish_alignment_matrix_tsv: Path | None = None,
     publish_alignment_matrix_identity_tsv: Path | None = None,
 ) -> StandardPeakChunkConsolidationOutputs:
     """Merge chunk projection cells and run one matrix-only activation pass."""
 
-    if emit_formal_product_output and publish_to_source_alignment_output:
+    publication_targets_supplied = (
+        publish_alignment_matrix_tsv is not None
+        or publish_alignment_matrix_identity_tsv is not None
+    )
+    if publish_to_source_alignment_output or publication_targets_supplied:
         raise ValueError(SOURCE_MATRIX_REPUBLISHER_RETIRED_MESSAGE)
     if not machine_pipeline_summary_jsons:
         raise ValueError("at least one machine pipeline summary JSON is required")
