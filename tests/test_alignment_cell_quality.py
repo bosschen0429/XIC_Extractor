@@ -175,9 +175,9 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
     ids=(
         "conflicting-claim",
         "ambiguous-adjacent-split",
+        "insufficient-local-mixture-evidence",
         "two-peaks-supported",
         "competing-boundary-model",
-        "insufficient-local-mixture-evidence",
         "low-ms1-coverage",
     ),
 )
