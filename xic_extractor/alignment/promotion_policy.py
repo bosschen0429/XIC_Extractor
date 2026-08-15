@@ -25,6 +25,9 @@ LOW_MS1_COVERAGE_BLOCKED_REASON = "low_ms1_assessable_coverage_blocked"
 MISSING_BACKFILL_EVIDENCE_BLOCKED_REASON = (
     "missing_independent_backfill_identity_evidence"
 )
+BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON = (
+    "backfill_owner_rehydration_unavailable"
+)
 BACKFILL_RT_EXPLANATION_BLOCKED_REASON = "backfill_rt_not_explained"
 BACKFILL_MS1_PATTERN_BLOCKED_REASON = "backfill_ms1_pattern_not_supportive"
 BACKFILL_MS1_PATTERN_CONFLICT_REASON = "backfill_ms1_pattern_conflict"
@@ -43,7 +46,7 @@ ANCHOR_OWN_MAX_MS1_SUPPORT_REASON = (
 )
 STANDARD_PEAK_GATE_MS1_SUPPORT_REASON = "shift_aware_standard_peak_gate_supported"
 
-PromotionState = Literal["not_applicable", "supported", "blocked"]
+PromotionState = Literal["not_applicable", "supported", "blocked", "unavailable"]
 
 _POLICY_BACKFILL_REASONS = {
     EXTREME_BACKFILL_REASON,
@@ -497,6 +500,7 @@ class BackfillPromotionEvidence:
     backfill_dependency: str | None
     seed_quality: SeedQualitySummary | None
     held_rescue_count: int = 0
+    unrehydrated_review_rescue_count: int = 0
     cells: tuple[BackfillCellEvidence, ...] = ()
 
 
@@ -516,6 +520,10 @@ class BackfillPromotionDecision:
     @property
     def blocked(self) -> bool:
         return self.state == "blocked"
+
+    @property
+    def unavailable(self) -> bool:
+        return self.state == "unavailable"
 
 
 def evidence_from_alignment(
@@ -608,6 +616,9 @@ def evidence_from_tsv_rows(
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
         seed_quality=seed_quality,
+        unrehydrated_review_rescue_count=_int_value(
+            review_row.get("review_rescue_count", ""),
+        ),
         cells=tuple(_cell_from_tsv(row) for row in cell_rows),
     )
 
@@ -616,6 +627,18 @@ def classify_backfill_promotion(
     evidence: BackfillPromotionEvidence,
 ) -> BackfillPromotionDecision:
     rescued = tuple(cell for cell in evidence.cells if cell.is_rescued_quantifiable)
+    if (
+        evidence.unrehydrated_review_rescue_count > 0
+        and is_dr_neutral_loss_tag(evidence.neutral_loss_tag)
+        and evidence.primary_evidence in _SUPPORTED_PRIMARY_EVIDENCE
+    ):
+        return BackfillPromotionDecision(
+            state="unavailable",
+            reason=BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON,
+            confidence="review",
+            flags=("owner_rehydration_required",),
+            assessed_rescue_count=len(rescued),
+        )
     if evidence.q_rescue > 0 and any(
         cell.hypothesis_or_claim_blocked for cell in rescued
     ):

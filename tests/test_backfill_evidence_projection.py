@@ -16,6 +16,7 @@ from xic_extractor.alignment.promotion_policy import (
     ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
     BACKFILL_HYPOTHESIS_BLOCKED_REASON,
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
+    classify_backfill_promotion,
     evidence_from_tsv_rows,
 )
 
@@ -541,6 +542,28 @@ def test_backfill_projection_is_fail_closed_when_sidecars_are_missing() -> None:
     )
     assert not evidence.cells[0].supported_for_backfill
     assert evidence.cells[0].backfill_identity_block_reason != ""
+
+
+def test_generic_review_rescue_count_requires_owner_rehydration() -> None:
+    evidence = evidence_from_tsv_rows(
+        {
+            "neutral_loss_tag": "DNA_dR",
+            "primary_evidence": "owner_complete_link",
+            "quantifiable_detected_count": "2",
+            "quantifiable_rescue_count": "0",
+            "review_rescue_count": "1",
+        },
+        [_cell_row("FAM_REVIEW", "S2", status="rescued")],
+        seed_quality=None,
+        sample_count=3,
+    )
+
+    decision = classify_backfill_promotion(evidence)
+
+    assert evidence.held_rescue_count == 0
+    assert evidence.unrehydrated_review_rescue_count == 1
+    assert decision.state == "unavailable"
+    assert decision.reason == "backfill_owner_rehydration_unavailable"
 
 
 def test_naked_backfill_support_fields_without_authority_do_not_promote() -> None:
