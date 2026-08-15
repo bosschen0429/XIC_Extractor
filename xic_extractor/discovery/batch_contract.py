@@ -18,11 +18,16 @@ from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_COLUMNS,
     DiscoveryCandidate,
 )
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryCandidatePhysicalBinding,
+    validate_discovery_candidate_physical_binding,
+)
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
     fingerprint_file_content,
 )
+from xic_extractor.processing_run_spec import ProcessingRunSpec
 
 DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_v2"
 DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v1"
@@ -221,6 +226,66 @@ def discovery_candidate_payload_sha256(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def validate_discovery_candidate_physical_bindings(
+    *,
+    run_spec: ProcessingRunSpec,
+    sample_stem: str,
+    candidates: Sequence[DiscoveryCandidate],
+    bindings: Sequence[DiscoveryCandidatePhysicalBinding],
+) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
+    """Validate one ordered final-candidate binding population at Discovery."""
+
+    _required_text(sample_stem, field="sample_stem")
+    if not isinstance(run_spec, ProcessingRunSpec):
+        raise TypeError("run_spec must be a ProcessingRunSpec")
+    matching_inputs = tuple(
+        item for item in run_spec.acquisition_inputs if item.sample_stem == sample_stem
+    )
+    if len(matching_inputs) != 1:
+        raise ValueError(
+            f"{sample_stem}: processing run does not bind this sample once"
+        )
+    expected_acquisition_source = matching_inputs[0].acquisition_source
+    candidate_values = tuple(candidates)
+    binding_values = tuple(bindings)
+    if len(binding_values) != len(candidate_values):
+        raise ValueError(
+            f"{sample_stem}: candidate/physical binding cardinality mismatch"
+        )
+    for final_ordinal, (binding, candidate) in enumerate(
+        zip(binding_values, candidate_values, strict=True)
+    ):
+        if not isinstance(candidate, DiscoveryCandidate):
+            raise TypeError("candidates must contain DiscoveryCandidate values")
+        if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
+            raise TypeError(
+                "bindings must contain DiscoveryCandidatePhysicalBinding values"
+            )
+        validate_discovery_candidate_physical_binding(binding)
+        if binding.final_ordinal != final_ordinal:
+            raise ValueError(f"{sample_stem}: physical binding order is not contiguous")
+        if (
+            candidate.sample_stem != sample_stem
+            or binding.candidate.sample_stem != sample_stem
+        ):
+            raise ValueError(f"{sample_stem}: physical binding crosses sample identity")
+        if binding.run_spec_id != run_spec.run_spec_id:
+            raise ValueError(f"{sample_stem}: physical binding crosses processing run")
+        if binding.acquisition_source != expected_acquisition_source:
+            raise ValueError(
+                f"{sample_stem}: physical binding crosses acquisition source"
+            )
+        if binding.physical_evaluation.prepared.profile_id != run_spec.profile_id:
+            raise ValueError(f"{sample_stem}: physical binding crosses signal profile")
+        if discovery_candidate_payload_sha256((binding.candidate,)) != (
+            discovery_candidate_payload_sha256((candidate,))
+        ):
+            raise ValueError(
+                f"{sample_stem}: physical binding crosses candidate content"
+            )
+    return binding_values
+
+
 def discovery_receipt_index_fields(
     receipt: DiscoveryCandidateUniverseReceipt,
 ) -> dict[str, str]:
@@ -387,6 +452,7 @@ __all__ = (
     "DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION",
     "DiscoveryCandidateUniverseReceipt",
     "discovery_candidate_payload_sha256",
+    "validate_discovery_candidate_physical_bindings",
     "discovery_receipt_from_index_fields",
     "discovery_receipt_index_fields",
     "mint_discovery_candidate_universe_receipt",

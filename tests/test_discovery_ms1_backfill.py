@@ -374,6 +374,41 @@ def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
     assert merged[0].tag_evidence_json
 
 
+def test_merge_with_lineage_preserves_candidate_policy_and_source_ordinals() -> None:
+    from xic_extractor.discovery.ms1_backfill import (
+        merge_candidates_by_ms1_peak_with_lineage,
+    )
+
+    settings = _multi_tag_settings()
+    first = replace(
+        _candidate("dR"),
+        ms2_product_max_intensity=1_000.0,
+    )
+    second = replace(
+        first,
+        ms2_product_max_intensity=3_000.0,
+    )
+
+    expected_candidates = merge_candidates_by_ms1_peak(
+        (first, second),
+        settings=settings,
+    )
+    result = merge_candidates_by_ms1_peak_with_lineage(
+        (first, second),
+        settings=settings,
+    )
+
+    assert result.candidates == expected_candidates
+    assert [
+        (
+            binding.final_ordinal,
+            binding.representative_source_ordinal,
+            binding.member_source_ordinals,
+        )
+        for binding in result.bindings
+    ] == [(0, 1, (0, 1))]
+
+
 def test_merge_candidates_preserves_same_tag_evidence_details() -> None:
     settings = _multi_tag_settings()
     first = replace(

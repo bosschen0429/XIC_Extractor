@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack
 from dataclasses import replace
 from pathlib import Path
@@ -76,7 +76,10 @@ from xic_extractor.alignment.owner_clustering import (
     review_only_features_from_ambiguous_records,
 )
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
-from xic_extractor.alignment.ownership import build_sample_local_owners
+from xic_extractor.alignment.ownership import (
+    build_sample_local_owners,
+    build_sample_local_owners_from_discovery_bindings,
+)
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
@@ -121,7 +124,14 @@ from xic_extractor.alignment.raw_sources import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
+from xic_extractor.discovery.batch_contract import (
+    DiscoveryCandidateUniverseReceipt,
+    validate_discovery_candidate_physical_bindings,
+)
+from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryCandidatePhysicalBinding,
+)
 from xic_extractor.injection_rolling import (
     order_sample_columns_by_injection,
     read_injection_order,
@@ -133,6 +143,7 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.sample_metadata import (
     is_sample_metadata_source,
     load_sample_metadata,
@@ -143,6 +154,53 @@ _RawSourceTimingStats = RawSourceTimingStats
 _TimedRawSource = TimedRawSource
 AlignmentRawHandle = _AlignmentRawHandle
 RawOpener = Callable[[Path, Path], AbstractContextManager[AlignmentRawHandle]]
+
+
+def _ordered_discovery_physical_bindings(
+    *,
+    sample_order: tuple[str, ...],
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    candidate_receipts: Mapping[
+        str,
+        DiscoveryCandidateUniverseReceipt | None,
+    ],
+    run_spec: ProcessingRunSpec,
+    expected_profile_id: str,
+    bindings_by_sample: Mapping[
+        str,
+        Sequence[DiscoveryCandidatePhysicalBinding],
+    ],
+) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
+    if not isinstance(run_spec, ProcessingRunSpec):
+        raise TypeError("discovery_processing_run_spec must be a ProcessingRunSpec")
+    if run_spec.profile_id != expected_profile_id:
+        raise ValueError("Discovery processing run crosses Alignment signal profile")
+    if set(bindings_by_sample) != set(sample_order):
+        raise ValueError(
+            "Discovery physical binding samples must exactly match the batch"
+        )
+    if tuple(item.sample_stem for item in run_spec.acquisition_inputs) != sample_order:
+        raise ValueError("Discovery processing run sample order crosses the batch")
+    ordered: list[DiscoveryCandidatePhysicalBinding] = []
+    for sample_stem, acquisition_input in zip(
+        sample_order,
+        run_spec.acquisition_inputs,
+        strict=True,
+    ):
+        receipt = candidate_receipts.get(sample_stem)
+        if receipt is None:
+            raise ValueError(f"{sample_stem}: Discovery candidate receipt is required")
+        if receipt.acquisition_source != acquisition_input.acquisition_source:
+            raise ValueError(f"{sample_stem}: processing run crosses batch acquisition")
+        ordered.extend(
+            validate_discovery_candidate_physical_bindings(
+                run_spec=run_spec,
+                sample_stem=sample_stem,
+                candidates=candidates_by_sample[sample_stem],
+                bindings=bindings_by_sample[sample_stem],
+            )
+        )
+    return tuple(ordered)
 
 
 def run_alignment(
@@ -180,6 +238,10 @@ def run_alignment(
     selected_family_ids: frozenset[str] = frozenset(),
     selected_family_source: str = "",
     require_discovery_owner_closure: bool = False,
+    discovery_processing_run_spec: ProcessingRunSpec | None = None,
+    discovery_physical_bindings_by_sample: (
+        Mapping[str, Sequence[DiscoveryCandidatePhysicalBinding]] | None
+    ) = None,
     emit_provisional_matrix: bool = False,
     emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
@@ -205,6 +267,12 @@ def run_alignment(
                 "signal_processing_profile conflicts with peak_config canonical fields"
             )
     signal_processing_profile = resolved_signal_processing_profile
+    if (discovery_processing_run_spec is None) != (
+        discovery_physical_bindings_by_sample is None
+    ):
+        raise ValueError(
+            "Discovery processing run and physical bindings must be provided together"
+        )
     if type(selected_family_ids) is not frozenset or any(
         type(family_id) is not str for family_id in selected_family_ids
     ):
@@ -322,24 +390,39 @@ def run_alignment(
     )
     with recorder.stage("alignment.read_candidates") as stage:
         if require_discovery_owner_closure:
-            candidates = tuple(
-                candidate
-                for sample_stem in batch.sample_order
-                for candidate in read_owner_bound_discovery_candidates_csv(
+            candidates_by_sample = {
+                sample_stem: read_owner_bound_discovery_candidates_csv(
                     batch.candidate_csvs[sample_stem],
                     receipt=_required_candidate_receipt(batch, sample_stem),
                     require_successor_columns=True,
                 )
-            )
-        else:
-            candidates = tuple(
-                candidate
                 for sample_stem in batch.sample_order
-                for candidate in read_discovery_candidates_csv(
+            }
+        else:
+            candidates_by_sample = {
+                sample_stem: read_discovery_candidates_csv(
                     batch.candidate_csvs[sample_stem]
                 )
-            )
+                for sample_stem in batch.sample_order
+            }
+        candidates = tuple(
+            candidate
+            for sample_stem in batch.sample_order
+            for candidate in candidates_by_sample[sample_stem]
+        )
         stage.metrics["candidate_count"] = len(candidates)
+    if discovery_physical_bindings_by_sample is None:
+        discovery_physical_bindings = None
+    else:
+        assert discovery_processing_run_spec is not None
+        discovery_physical_bindings = _ordered_discovery_physical_bindings(
+            sample_order=batch.sample_order,
+            candidates_by_sample=candidates_by_sample,
+            candidate_receipts=batch.candidate_receipts,
+            run_spec=discovery_processing_run_spec,
+            expected_profile_id=signal_processing_profile.profile_id,
+            bindings_by_sample=discovery_physical_bindings_by_sample,
+        )
     opener = raw_opener or _default_raw_opener
     outputs = _output_paths(
         output_dir,
@@ -380,6 +463,8 @@ def run_alignment(
         },
     )
     emit_cell_region_audit = resolved_audit_evidence_mode in {"full", "selected"}
+    if discovery_physical_bindings is not None and emit_cell_region_audit:
+        raise ValueError("Discovery physical bindings require audit_evidence_mode=none")
     region_audit_family_ids = (
         selected_family_ids if backfill_scope == "selected-families" else None
     )
@@ -424,7 +509,12 @@ def run_alignment(
                     }
                 stage.metrics["raw_count"] = len(raw_sources)
         with recorder.stage("alignment.build_owners"):
-            if raw_workers > 1:
+            if discovery_physical_bindings is not None:
+                ownership = build_sample_local_owners_from_discovery_bindings(
+                    discovery_physical_bindings,
+                    alignment_config=alignment_config,
+                )
+            elif raw_workers > 1:
                 owner_output = run_owner_build_process(
                     candidates,
                     sample_order=batch.sample_order,

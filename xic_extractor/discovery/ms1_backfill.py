@@ -29,6 +29,7 @@ from xic_extractor.discovery.models import (
     build_ms1_feature_row_id,
 )
 from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryCandidatePhysicalBinding,
     DiscoveryPhysicalFactRecord,
 )
 from xic_extractor.discovery.priority import (
@@ -115,6 +116,20 @@ class _DiscoveryMs1AcquisitionResult:
     measurements: _DiscoveryMs1Measurements
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = ()
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = ()
+    physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryCandidateMergeBinding:
+    final_ordinal: int
+    representative_source_ordinal: int
+    member_source_ordinals: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryCandidateMergeResult:
+    candidates: tuple[DiscoveryCandidate, ...]
+    bindings: tuple[DiscoveryCandidateMergeBinding, ...]
 
 
 def backfill_ms1_candidates(
@@ -152,6 +167,7 @@ def _backfill_ms1_candidates_with_acquisition(
     groups: Iterable[DiscoverySeedGroup],
     *,
     acquisition_source: AcquisitionSourceIdentity,
+    run_spec_id: str | None = None,
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
@@ -159,6 +175,8 @@ def _backfill_ms1_candidates_with_acquisition(
 ) -> _DiscoveryMs1AcquisitionResult:
     """Acquire canonical Discovery requests in bounded owner-minted batches."""
 
+    if signal_processing_profile is not None and not run_spec_id:
+        raise ValueError("canonical physical bindings require run_spec_id")
     group_tuple = tuple(groups)
     plans = _discovery_ms1_request_plan(group_tuple, settings=settings)
     capability = mint_trace_acquisition_capability(
@@ -251,11 +269,41 @@ def _backfill_ms1_candidates_with_acquisition(
             if len(physical_evaluations) != len(physical_fact_by_index) + 1:
                 raise ValueError("Discovery physical evaluation was not recorded once")
             physical_fact_by_index[physical_index] = physical_evaluations[-1]
+    merge_result = merge_candidates_by_ms1_peak_with_lineage(
+        candidates,
+        settings=settings,
+    )
+    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
+    if signal_processing_profile is not None:
+        assert run_spec_id is not None
+        if len(physical_fact_by_index) != len(physical_plans):
+            raise ValueError("Discovery physical binding population is incomplete")
+        physical_bindings = tuple(
+            DiscoveryCandidatePhysicalBinding(
+                run_spec_id=run_spec_id,
+                acquisition_source=acquisition_source,
+                final_ordinal=binding.final_ordinal,
+                candidate=merge_result.candidates[binding.final_ordinal],
+                representative_source_ordinal=(binding.representative_source_ordinal),
+                member_source_ordinals=binding.member_source_ordinals,
+                representative_work_ordinal=physical_indices[
+                    binding.representative_source_ordinal
+                ],
+                selection_subject_id=physical_fact_by_index[
+                    physical_indices[binding.representative_source_ordinal]
+                ].selection_subject_id,
+                physical_fact_record=physical_fact_by_index[
+                    physical_indices[binding.representative_source_ordinal]
+                ],
+            )
+            for binding in merge_result.bindings
+        )
     return _DiscoveryMs1AcquisitionResult(
-        candidates=merge_candidates_by_ms1_peak(candidates, settings=settings),
+        candidates=merge_result.candidates,
         measurements=measurements,
         physical_work_manifest=tuple(physical_work_manifest),
         physical_evaluations=tuple(physical_evaluations),
+        physical_bindings=physical_bindings,
     )
 
 
@@ -533,20 +581,56 @@ def merge_candidates_by_ms1_peak(
     *,
     settings: DiscoverySettings,
 ) -> tuple[DiscoveryCandidate, ...]:
+    return merge_candidates_by_ms1_peak_with_lineage(
+        candidates,
+        settings=settings,
+    ).candidates
+
+
+def merge_candidates_by_ms1_peak_with_lineage(
+    candidates: Iterable[DiscoveryCandidate],
+    *,
+    settings: DiscoverySettings,
+) -> DiscoveryCandidateMergeResult:
     merged: list[DiscoveryCandidate] = []
-    for candidate in candidates:
+    member_source_ordinals: list[list[int]] = []
+    representative_source_ordinals: list[int] = []
+    for source_ordinal, candidate in enumerate(candidates):
         merge_index = _matching_ms1_peak_candidate_index(
             candidate, merged, settings=settings
         )
         if merge_index is None:
             merged.append(candidate)
+            member_source_ordinals.append([source_ordinal])
+            representative_source_ordinals.append(source_ordinal)
             continue
-        merged[merge_index] = _merge_candidate_pair(
-            merged[merge_index],
+        current = merged[merge_index]
+        representative = _representative_candidate(
+            current,
             candidate,
             settings=settings,
         )
-    return tuple(merged)
+        merged[merge_index] = _merge_candidate_pair(
+            current,
+            candidate,
+            settings=settings,
+        )
+        member_source_ordinals[merge_index].append(source_ordinal)
+        if representative is candidate:
+            representative_source_ordinals[merge_index] = source_ordinal
+    return DiscoveryCandidateMergeResult(
+        candidates=tuple(merged),
+        bindings=tuple(
+            DiscoveryCandidateMergeBinding(
+                final_ordinal=final_ordinal,
+                representative_source_ordinal=representative_source_ordinals[
+                    final_ordinal
+                ],
+                member_source_ordinals=tuple(member_source_ordinals[final_ordinal]),
+            )
+            for final_ordinal in range(len(merged))
+        ),
+    )
 
 
 _merge_candidates_by_ms1_peak = merge_candidates_by_ms1_peak
