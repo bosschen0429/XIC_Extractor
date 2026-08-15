@@ -55,10 +55,12 @@ The current V1 routes remain the existing entry-point modes:
 
 Generic Alignment and Owner Backfill close the Matrix loop. Standard Peak is
 not reachable from normal CLI/GUI/preset execution, and the source-Matrix
-republisher and its authority/productization chain are deleted. Explicit
-diagnosis is limited to the typed Owner-replayed HOLD contract plus retained
-offline falsifiers/renderers; none has product or writer authority. The provisional
-full-universe runner continues to stop after its
+republisher and its authority/productization chain are deleted. Retained
+Standard Peak helpers are explicit offline falsifiers/renderers only; T5D does
+not invent a new HOLD selector or product authority. The separate, registered
+bounded T5B scope remains active under its existing manifest and primary writer;
+its exact cardinality belongs to the validation artifact, not this owner doc.
+The provisional full-universe runner continues to stop after its
 existing provisional diagnostic projection, and bounded ModeTrack retains its
 precursor, metadata, injection-order, namespace, and reviewed-input owners.
 

@@ -38,7 +38,7 @@ SP-036	delete	deleted_by_t5d	activation artifact writer retired
 SP-037	delete	deleted_by_t5d	productization entry retired
 SP-038	delete	deleted_by_t5d	productization CLI retired
 SP-039	delete	deleted_by_t5d	productization transaction retired
-SP-040	delete	deleted_by_t5d	matrix activation behavior retired
+SP-040	owner_input	scripts/build_backfill_expansion_clean_target_selective_product_activation.py	registered 84-cell scope remains active under the existing manifest and primary writer
 SP-041	delete	deleted_by_t5d	writer expected-diff bridge retired
 SP-042	delete	deleted_by_t5d	productization policy generator retired; historical artifacts remain non-authoritative
 SP-043	delete	deleted_by_t5d	productization-coupled observed oracle retired

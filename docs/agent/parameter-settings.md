@@ -541,11 +541,11 @@ The former `standard_peak_backfill*` and `backfill_expansion*` preset keys, plus
 loader/CLI rejects them before Alignment or RAW work rather than silently
 changing science. T5D deleted the former Standard Peak preset, machine,
 authority, activation, productization, consolidation, stage-replay, and
-publication-checker entries. Explicit diagnosis now begins with the typed
-`xic_extractor.diagnostics.standard_peak_hold_diagnostic` contract over a
-complete live Owner replay; retained overlay, shift-aware, calibration, and
-gallery tools are offline falsifiers/renderers only. None is a normal preset
-tail or can publish a Matrix value.
+publication-checker entries. Retained overlay, shift-aware, calibration, and
+gallery tools remain explicit offline falsifiers/renderers only. There is no
+new integrated HOLD-diagnostic contract: without original-owner subject and run
+rehydration their semantic result is unavailable. None is a normal preset tail
+or can publish a Matrix value.
 
 When `--timing-output` or `--timing-live-output` is supplied, normal preset
 timing covers the Alignment/Owner Backfill transaction; there is no Standard
