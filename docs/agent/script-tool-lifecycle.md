@@ -146,9 +146,10 @@ cross-boundary surfaces require special protection:
 
 | Surface | Consumer or unique role |
 | --- | --- |
-| `standard_peak_hold_diagnostic.py` | Typed in-process explanation contract over an Owner-replayed `diagnostic_eligible` HOLD subset; no CLI, RAW owner, product decision, value, or writer receipt |
+| Retained Standard Peak overlay/shift/gallery helpers | Explicit offline falsifiers/renderers only; no integrated HOLD selector, product decision, value, or writer receipt |
 | `family_ms1_overlay_batch.py` | Imported by GUI review and full evidence-chain orchestration; owns batched RAW overlay production |
 | Retired Standard Peak authority/activation/productization/consolidation tools | Deleted by T5D; historical source-sealed artifacts remain falsification inputs only |
+| `build_backfill_expansion_clean_target_selective_product_activation.py` | Active T5B-preserved 84-cell authority scope; consumes the retained clean-target packet under its existing manifest and primary writer, and is not a Standard Peak diagnostic route |
 | `docs_policy.py` | Shared docs-governance path and classification owner used by hooks and checks |
 | `docs_management_audit.py` | CI-facing repository documentation audit |
 | `tools/testing/test_shards.py` | CI test-shard contract, not diagnostic evidence |

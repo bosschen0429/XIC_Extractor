@@ -669,14 +669,18 @@ republisher, stage replay, and publication checker. The descriptions remain as
 historical provenance for retained artifacts; none names a runnable current
 entry or current authority.
 
-The only current Standard Peak-specific package entry is
-`xic_extractor.diagnostics.standard_peak_hold_diagnostic`. It accepts a
-requested subset of a complete live `ProcessingRunSpec`/Alignment population,
-replays `build_production_decisions()`, and mints subjects only for closed
-`diagnostic_eligible` non-writing HOLD reasons. Its result contains explanation,
-contradiction, and unavailable labels plus source artifact identities; it has no
-SUPPORT/activation state, Matrix value, publication target, or writer receipt.
-The final SP-001–SP-055 map is
+T5D adds no replacement Standard Peak package entry. Retained low-level overlay,
+shift-aware, calibration, and gallery tools remain explicit offline
+falsifiers/renderers. The current Backfill owners do not mint a
+`diagnostic_eligible` HOLD subject or bind an independently supplied Matrix to a
+ProcessingRunSpec attempt, so incomplete evidence remains unavailable and
+cannot promote or write.
+
+One source-sealed packet is not historical-only: the clean-target replay remains
+active support for the T5B-preserved registered 84-cell scope consumed by
+`scripts/build_backfill_expansion_clean_target_selective_product_activation.py`
+under the existing manifest and primary writer. It is not a Standard Peak
+diagnostic route. The final SP-001–SP-055 map is
 `docs/superpowers/validation/standard_peak_t5d_contraction_v1/capability_disposition_v1.tsv`.
 
 ---
