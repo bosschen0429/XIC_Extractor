@@ -217,7 +217,10 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         )
 
     def fake_run_discovery_batch(*_args, **_kwargs):
-        return SimpleNamespace(batch_index_csv=index_path)
+        return SimpleNamespace(
+            batch_index_csv=index_path,
+            per_sample=(SimpleNamespace(physical_bindings=("binding",)),),
+        )
 
     monkeypatch.setattr(module, "run_alignment", fake_run_alignment)
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
@@ -259,6 +262,12 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert captured_alignment["emit_alignment_cells"] is True
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
     assert captured_alignment["audit_evidence_mode"] == "none"
+    if mode == "full":
+        assert captured_alignment["discovery_physical_bindings_by_sample"] == {
+            "A": ("binding",)
+        }
+    else:
+        assert captured_alignment["discovery_physical_bindings_by_sample"] is None
     assert captured_standard_peak["alignment_dir"] == output_dir
     assert captured_standard_peak["raw_dir"] == raw_dir
     assert captured_standard_peak["dll_dir"] == tmp_path / "dll"

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import AbstractContextManager, ExitStack
 from dataclasses import replace
 from pathlib import Path
@@ -76,7 +76,10 @@ from xic_extractor.alignment.owner_clustering import (
     review_only_features_from_ambiguous_records,
 )
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
-from xic_extractor.alignment.ownership import build_sample_local_owners
+from xic_extractor.alignment.ownership import (
+    build_sample_local_owners,
+    build_sample_local_owners_from_discovery_bindings,
+)
 from xic_extractor.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
@@ -121,7 +124,14 @@ from xic_extractor.alignment.raw_sources import (
 )
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
-from xic_extractor.discovery.batch_contract import DiscoveryCandidateUniverseReceipt
+from xic_extractor.discovery.batch_contract import (
+    DiscoveryCandidateUniverseReceipt,
+    discovery_candidate_payload_sha256,
+)
+from xic_extractor.discovery.models import DiscoveryCandidate
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryCandidatePhysicalBinding,
+)
 from xic_extractor.injection_rolling import (
     order_sample_columns_by_injection,
     read_injection_order,
@@ -143,6 +153,53 @@ _RawSourceTimingStats = RawSourceTimingStats
 _TimedRawSource = TimedRawSource
 AlignmentRawHandle = _AlignmentRawHandle
 RawOpener = Callable[[Path, Path], AbstractContextManager[AlignmentRawHandle]]
+
+
+def _ordered_discovery_physical_bindings(
+    *,
+    sample_order: tuple[str, ...],
+    candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    bindings_by_sample: Mapping[
+        str,
+        Sequence[DiscoveryCandidatePhysicalBinding],
+    ],
+) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
+    if set(bindings_by_sample) != set(sample_order):
+        raise ValueError(
+            "Discovery physical binding samples must exactly match the batch"
+        )
+    ordered: list[DiscoveryCandidatePhysicalBinding] = []
+    for sample_stem in sample_order:
+        candidates = tuple(candidates_by_sample[sample_stem])
+        bindings = tuple(bindings_by_sample[sample_stem])
+        if len(bindings) != len(candidates):
+            raise ValueError(
+                f"{sample_stem}: candidate/physical binding cardinality mismatch"
+            )
+        for final_ordinal, (binding, candidate) in enumerate(
+            zip(bindings, candidates, strict=True)
+        ):
+            if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
+                raise TypeError(
+                    "Discovery binding maps must contain "
+                    "DiscoveryCandidatePhysicalBinding values"
+                )
+            if binding.final_ordinal != final_ordinal:
+                raise ValueError(
+                    f"{sample_stem}: physical binding order is not contiguous"
+                )
+            if binding.candidate.sample_stem != sample_stem:
+                raise ValueError(
+                    f"{sample_stem}: physical binding crosses sample identity"
+                )
+            if discovery_candidate_payload_sha256((binding.candidate,)) != (
+                discovery_candidate_payload_sha256((candidate,))
+            ):
+                raise ValueError(
+                    f"{sample_stem}: physical binding crosses candidate content"
+                )
+            ordered.append(binding)
+    return tuple(ordered)
 
 
 def run_alignment(
@@ -180,6 +237,9 @@ def run_alignment(
     selected_family_ids: frozenset[str] = frozenset(),
     selected_family_source: str = "",
     require_discovery_owner_closure: bool = False,
+    discovery_physical_bindings_by_sample: (
+        Mapping[str, Sequence[DiscoveryCandidatePhysicalBinding]] | None
+    ) = None,
     emit_provisional_matrix: bool = False,
     emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
@@ -322,24 +382,36 @@ def run_alignment(
     )
     with recorder.stage("alignment.read_candidates") as stage:
         if require_discovery_owner_closure:
-            candidates = tuple(
-                candidate
-                for sample_stem in batch.sample_order
-                for candidate in read_owner_bound_discovery_candidates_csv(
+            candidates_by_sample = {
+                sample_stem: read_owner_bound_discovery_candidates_csv(
                     batch.candidate_csvs[sample_stem],
                     receipt=_required_candidate_receipt(batch, sample_stem),
                     require_successor_columns=True,
                 )
-            )
-        else:
-            candidates = tuple(
-                candidate
                 for sample_stem in batch.sample_order
-                for candidate in read_discovery_candidates_csv(
+            }
+        else:
+            candidates_by_sample = {
+                sample_stem: read_discovery_candidates_csv(
                     batch.candidate_csvs[sample_stem]
                 )
-            )
+                for sample_stem in batch.sample_order
+            }
+        candidates = tuple(
+            candidate
+            for sample_stem in batch.sample_order
+            for candidate in candidates_by_sample[sample_stem]
+        )
         stage.metrics["candidate_count"] = len(candidates)
+    discovery_physical_bindings = (
+        None
+        if discovery_physical_bindings_by_sample is None
+        else _ordered_discovery_physical_bindings(
+            sample_order=batch.sample_order,
+            candidates_by_sample=candidates_by_sample,
+            bindings_by_sample=discovery_physical_bindings_by_sample,
+        )
+    )
     opener = raw_opener or _default_raw_opener
     outputs = _output_paths(
         output_dir,
@@ -380,6 +452,8 @@ def run_alignment(
         },
     )
     emit_cell_region_audit = resolved_audit_evidence_mode in {"full", "selected"}
+    if discovery_physical_bindings is not None and emit_cell_region_audit:
+        raise ValueError("Discovery physical bindings require audit_evidence_mode=none")
     region_audit_family_ids = (
         selected_family_ids if backfill_scope == "selected-families" else None
     )
@@ -424,7 +498,12 @@ def run_alignment(
                     }
                 stage.metrics["raw_count"] = len(raw_sources)
         with recorder.stage("alignment.build_owners"):
-            if raw_workers > 1:
+            if discovery_physical_bindings is not None:
+                ownership = build_sample_local_owners_from_discovery_bindings(
+                    discovery_physical_bindings,
+                    alignment_config=alignment_config,
+                )
+            elif raw_workers > 1:
                 owner_output = run_owner_build_process(
                     candidates,
                     sample_order=batch.sample_order,

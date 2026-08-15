@@ -14,11 +14,14 @@ from tests.test_discovery_pipeline import (
     _OwnerBoundFakeRawHandle,
     _peak_config,
     _read_csv,
+    _scan_event,
     _settings,
 )
 from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
 )
+from xic_extractor.alignment import pipeline as alignment_pipeline
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.discovery.pipeline import (
     DiscoverySampleProcessError,
     DiscoverySampleProcessJob,
@@ -38,16 +41,14 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     for raw_path in raw_paths:
         raw_path.write_bytes(raw_path.stem.encode())
     settings = _settings()
-    spec = compile_discovery_processing_run_spec(
-        raw_paths, discovery_settings=settings
-    )
+    spec = compile_discovery_processing_run_spec(raw_paths, discovery_settings=settings)
 
     serial_handles = {
         path: _OwnerBoundFakeRawHandle(
             spec.acquisition_inputs[index].acquisition_source,
-            [],
-            rt=np.asarray([], dtype=float),
-            intensity=np.asarray([], dtype=float),
+            [_scan_event(scan_number=index + 1, rt=8.0 + index)],
+            rt=np.asarray([7.9 + index, 8.0 + index, 8.1 + index], dtype=float),
+            intensity=np.asarray([1.0, 100.0, 1.0], dtype=float),
         )
         for index, path in enumerate(raw_paths)
     }
@@ -63,9 +64,9 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     process_handles = {
         path: _OwnerBoundFakeRawHandle(
             spec.acquisition_inputs[index].acquisition_source,
-            [],
-            rt=np.asarray([], dtype=float),
-            intensity=np.asarray([], dtype=float),
+            [_scan_event(scan_number=index + 1, rt=8.0 + index)],
+            rt=np.asarray([7.9 + index, 8.0 + index, 8.1 + index], dtype=float),
+            intensity=np.asarray([1.0, 100.0, 1.0], dtype=float),
         )
         for index, path in enumerate(raw_paths)
     }
@@ -115,6 +116,98 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         assert serial_output.physical_facts_json.read_bytes() == (
             process_output.physical_facts_json.read_bytes()
         )
+        assert serial_output.physical_bindings
+        assert process_output.physical_bindings == serial_output.physical_bindings
+        assert pickle.loads(pickle.dumps(process_output.physical_bindings)) == (
+            process_output.physical_bindings
+        )
+
+    context = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(
+        max_workers=1,
+        mp_context=context,
+    ) as executor:
+        restored_output = executor.submit(
+            pickle.loads,
+            pickle.dumps(process.per_sample[0]),
+        ).result(timeout=30)
+    assert restored_output.physical_bindings == (
+        process.per_sample[0].physical_bindings
+    )
+
+    def reject_old_owner_build(*_args, **_kwargs):
+        raise AssertionError("same-run Discovery facts called the old owner builder")
+
+    monkeypatch.setattr(
+        alignment_pipeline,
+        "build_sample_local_owners",
+        reject_old_owner_build,
+    )
+    monkeypatch.setattr(
+        alignment_pipeline,
+        "run_owner_build_process",
+        reject_old_owner_build,
+    )
+    alignment_outputs = alignment_pipeline.run_alignment(
+        discovery_batch_index=serial.batch_index_csv,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "alignment",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda path, dll_dir: serial_handles[path],
+        audit_evidence_mode="none",
+        discovery_physical_bindings_by_sample={
+            raw_path.stem: sample_output.physical_bindings
+            for raw_path, sample_output in zip(
+                raw_paths,
+                serial.per_sample,
+                strict=True,
+            )
+        },
+    )
+
+    assert alignment_outputs.matrix_tsv is not None
+    assert alignment_outputs.matrix_tsv.exists()
+
+    crossed_binding = replace(
+        serial.per_sample[0].physical_bindings[0],
+        candidate=replace(
+            serial.per_sample[0].physical_bindings[0].candidate,
+            ms2_product_max_intensity=(
+                serial.per_sample[0]
+                .physical_bindings[0]
+                .candidate.ms2_product_max_intensity
+                + 1.0
+            ),
+        ),
+    )
+    crossed_bindings = {
+        raw_path.stem: sample_output.physical_bindings
+        for raw_path, sample_output in zip(
+            raw_paths,
+            serial.per_sample,
+            strict=True,
+        )
+    }
+    crossed_bindings[raw_paths[0].stem] = (crossed_binding,)
+
+    def reject_raw_open(*_args, **_kwargs):
+        raise AssertionError("crossed same-run binding opened RAW")
+
+    with pytest.raises(ValueError, match="crosses candidate content"):
+        alignment_pipeline.run_alignment(
+            discovery_batch_index=serial.batch_index_csv,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "crossed-alignment",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=reject_raw_open,
+            audit_evidence_mode="none",
+            discovery_physical_bindings_by_sample=crossed_bindings,
+        )
+
 
 def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
     tmp_path: Path,
@@ -161,6 +254,7 @@ def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
             result.acquisition_source_id,
         )
     )
+
 
 def test_process_job_validates_binding_and_preserves_failure_identity(
     tmp_path: Path,

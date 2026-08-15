@@ -690,6 +690,84 @@ def test_pipeline_loads_candidates_builds_owners_backfills_and_writes_defaults(
     assert not (tmp_path / "out" / "alignment_matrix_status.tsv").exists()
 
 
+def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    batch_index = _write_batch(tmp_path, ("Sample_A",))
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
+    canonical_binding = object()
+    calls: dict[str, object] = {}
+
+    def ordered_bindings(**kwargs):
+        calls["binding_samples"] = tuple(kwargs["bindings_by_sample"])
+        calls["candidate_samples"] = tuple(kwargs["candidates_by_sample"])
+        return (canonical_binding,)
+
+    def reject_old_owner_build(*_args, **_kwargs):
+        raise AssertionError("same-run Discovery facts called the old owner builder")
+
+    def build_from_bindings(bindings, *, alignment_config):
+        calls["bindings"] = bindings
+        calls["alignment_config"] = alignment_config
+        return SimpleNamespace(owners=(), ambiguous_records=())
+
+    monkeypatch.setattr(
+        pipeline_module,
+        "_ordered_discovery_physical_bindings",
+        ordered_bindings,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners",
+        reject_old_owner_build,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "run_owner_build_process",
+        reject_old_owner_build,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_sample_local_owners_from_discovery_bindings",
+        build_from_bindings,
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "cluster_sample_local_owners",
+        lambda owners, *, config: (),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_owner_backfill_cells",
+        lambda features, **kwargs: (),
+    )
+    monkeypatch.setattr(
+        pipeline_module,
+        "build_owner_alignment_matrix",
+        lambda features, *, sample_order, **kwargs: _matrix(sample_order),
+    )
+
+    pipeline_module.run_alignment(
+        discovery_batch_index=batch_index,
+        raw_dir=raw_dir,
+        dll_dir=tmp_path / "dll",
+        output_dir=tmp_path / "out",
+        alignment_config=AlignmentConfig(),
+        peak_config=_peak_config(),
+        raw_opener=FakeRawOpener(),
+        audit_evidence_mode="none",
+        discovery_physical_bindings_by_sample={"Sample_A": (canonical_binding,)},
+    )
+
+    assert calls["binding_samples"] == ("Sample_A",)
+    assert calls["candidate_samples"] == ("Sample_A",)
+    assert calls["bindings"] == (canonical_binding,)
+    assert calls["alignment_config"] == AlignmentConfig()
+
+
 def test_pipeline_default_path_no_longer_uses_legacy_near_duplicate_folding() -> None:
     assert not hasattr(pipeline_module, "fold_near_duplicate_clusters")
 

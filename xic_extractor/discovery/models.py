@@ -1,12 +1,17 @@
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
 )
+
+if TYPE_CHECKING:
+    from xic_extractor.discovery.physical_fact_record import (
+        DiscoveryCandidatePhysicalBinding,
+    )
 
 ReviewPriority = Literal["HIGH", "MEDIUM", "LOW"]
 PrecursorMzBasis = Literal["scan_precursor", "product_plus_neutral_loss"]
@@ -465,11 +470,38 @@ class DiscoveryCandidate:
         )
 
 
+_DISCOVERY_PRIORITY_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+
+
+def discovery_candidate_output_sort_key(
+    candidate: DiscoveryCandidate,
+) -> tuple[object, ...]:
+    """Canonical Discovery candidate order shared by outputs and handoffs."""
+
+    area_is_missing = candidate.ms1_area is None
+    area_desc = 0.0 if candidate.ms1_area is None else -candidate.ms1_area
+    return (
+        _DISCOVERY_PRIORITY_RANK.get(
+            candidate.review_priority,
+            len(_DISCOVERY_PRIORITY_RANK),
+        ),
+        -candidate.evidence_score,
+        -candidate.feature_family_size,
+        candidate.feature_family_id,
+        -candidate.seed_event_count,
+        -candidate.ms2_product_max_intensity,
+        area_is_missing,
+        area_desc,
+        candidate.best_seed_rt,
+    )
+
+
 @dataclass(frozen=True)
 class DiscoveryRunOutputs:
     candidates_csv: Path
     review_csv: Path
     physical_facts_json: Path | None = None
+    physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
 
 
 @dataclass(frozen=True)

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import (
     AcquiredTrace,
     acquired_trace_content_id,
 )
-from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
+from xic_extractor.discovery.models import (
+    DiscoveryCandidate,
+    DiscoveryPhysicalWorkItem,
+    build_discovery_physical_selection_subject_id,
+    discovery_candidate_output_sort_key,
+)
 from xic_extractor.peak_detection.evidence_facts import PhysicalPeakEvaluation
 
 
@@ -43,6 +48,88 @@ class DiscoveryPhysicalFactRecord:
     @property
     def selection_subject_id(self) -> str:
         return self.work_item.selection_subject_id
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryCandidatePhysicalBinding:
+    """Discovery-owned in-memory binding from a final candidate to peak facts."""
+
+    final_ordinal: int
+    candidate: DiscoveryCandidate
+    representative_source_ordinal: int
+    member_source_ordinals: tuple[int, ...]
+    representative_work_ordinal: int
+    selection_subject_id: str
+    physical_evaluation: PhysicalPeakEvaluation
+
+    def __post_init__(self) -> None:
+        if self.final_ordinal < 0:
+            raise ValueError("final_ordinal must be non-negative")
+        if not isinstance(self.candidate, DiscoveryCandidate):
+            raise TypeError("candidate must be a DiscoveryCandidate")
+        if (
+            not self.member_source_ordinals
+            or tuple(sorted(set(self.member_source_ordinals)))
+            != self.member_source_ordinals
+            or self.member_source_ordinals[0] < 0
+        ):
+            raise ValueError(
+                "member_source_ordinals must be unique, ordered, and non-negative"
+            )
+        if self.representative_source_ordinal not in self.member_source_ordinals:
+            raise ValueError("representative source must belong to the merged members")
+        if self.representative_work_ordinal < 0:
+            raise ValueError("representative_work_ordinal must be non-negative")
+        if not isinstance(self.physical_evaluation, PhysicalPeakEvaluation):
+            raise TypeError("physical_evaluation must be a PhysicalPeakEvaluation")
+        expected_subject_id = build_discovery_physical_selection_subject_id(
+            sample_stem=self.candidate.sample_stem,
+            best_ms2_scan_id=self.candidate.best_ms2_scan_id,
+            precursor_mz=self.candidate.precursor_mz,
+            product_mz=self.candidate.product_mz,
+        )
+        if expected_subject_id != self.selection_subject_id:
+            raise ValueError("Discovery physical binding crosses candidate identity")
+        if self.physical_evaluation.question.selection_subject_id != (
+            self.selection_subject_id
+        ):
+            raise ValueError("Discovery physical binding crosses selection subject")
+
+
+def bind_physical_facts_to_final_candidates(
+    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
+    candidates: tuple[DiscoveryCandidate, ...],
+) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
+    """Attach post-anchor/scoring candidates without changing physical authority."""
+
+    if len(bindings) != len(candidates):
+        raise ValueError("Discovery final candidate/binding cardinality mismatch")
+    rebound: list[DiscoveryCandidatePhysicalBinding] = []
+    for final_ordinal, (binding, candidate) in enumerate(
+        zip(bindings, candidates, strict=True)
+    ):
+        if binding.final_ordinal != final_ordinal:
+            raise ValueError("Discovery physical binding final order is not contiguous")
+        if (
+            binding.candidate.candidate_id != candidate.candidate_id
+            or binding.candidate.sample_stem != candidate.sample_stem
+        ):
+            raise ValueError("Discovery final candidate crosses physical binding")
+        rebound.append(replace(binding, candidate=candidate))
+    return tuple(rebound)
+
+
+def order_physical_bindings_for_candidate_csv(
+    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
+) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
+    ordered = sorted(
+        bindings,
+        key=lambda binding: discovery_candidate_output_sort_key(binding.candidate),
+    )
+    return tuple(
+        replace(binding, final_ordinal=final_ordinal)
+        for final_ordinal, binding in enumerate(ordered)
+    )
 
 
 def _validate_evaluation_work_identity(
@@ -82,4 +169,9 @@ def _validate_acquired_trace_work_identity(
         raise ValueError("acquired trace crosses Discovery XIC request")
 
 
-__all__ = ["DiscoveryPhysicalFactRecord"]
+__all__ = [
+    "DiscoveryCandidatePhysicalBinding",
+    "DiscoveryPhysicalFactRecord",
+    "bind_physical_facts_to_final_candidates",
+    "order_physical_bindings_for_candidate_csv",
+]

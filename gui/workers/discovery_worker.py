@@ -17,6 +17,9 @@ from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryCandidatePhysicalBinding,
+)
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
@@ -132,6 +135,14 @@ class DiscoveryWorker(QThread):
             request,
             index_path=index_path,
             raw_dir=raw_dir,
+            physical_bindings_by_sample={
+                raw_path.stem: sample_outputs.physical_bindings
+                for raw_path, sample_outputs in zip(
+                    raw_paths,
+                    batch_outputs.per_sample,
+                    strict=True,
+                )
+            },
         )
         if self.isInterruptionRequested():
             return None
@@ -241,6 +252,9 @@ class DiscoveryWorker(QThread):
         *,
         index_path: Path,
         raw_dir: Path,
+        physical_bindings_by_sample: (
+            dict[str, tuple[DiscoveryCandidatePhysicalBinding, ...]] | None
+        ) = None,
     ) -> tuple[AlignmentRunOutputs, Any | None]:
         recipe, source_run_id = self._alignment_runtime(request)
         outputs = run_alignment(
@@ -251,6 +265,7 @@ class DiscoveryWorker(QThread):
             alignment_config=recipe.alignment_config,
             peak_config=self._alignment_peak_config(request),
             owner_build_xic_backend=recipe.owner_build_xic_backend,
+            discovery_physical_bindings_by_sample=physical_bindings_by_sample,
             **_GALLERY_ALIGNMENT_KWARGS,
         )
         if self.isInterruptionRequested():

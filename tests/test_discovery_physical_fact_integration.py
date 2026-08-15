@@ -329,6 +329,51 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     assert [len(batch) for batch in raw.request_batches] == [2]
 
 
+def test_alignment_builds_owner_from_discovery_binding_without_resolver(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.alignment.config import AlignmentConfig
+    from xic_extractor.alignment.ownership import (
+        build_sample_local_owners_from_discovery_bindings,
+    )
+
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    raw = _OwnerBoundBatchRaw(source)
+    discovery = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (_group((_seed(scan_number=10, rt=7.80),)),),
+        acquisition_source=source,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=SignalProcessingProfile(window_points=3),
+    )
+    discovery_xic_calls = raw.raw_chromatogram_call_count
+    monkeypatch.setattr(
+        "xic_extractor.alignment.ownership._default_peak_resolver",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("canonical binding called the Alignment resolver")
+        ),
+    )
+
+    ownership = build_sample_local_owners_from_discovery_bindings(
+        discovery.physical_bindings,
+        alignment_config=AlignmentConfig(),
+    )
+
+    assert len(ownership.owners) == 1
+    assert ownership.owners[0].selected_integration is (
+        discovery.physical_bindings[0].physical_evaluation.integration
+    )
+    assert raw.raw_chromatogram_call_count == discovery_xic_calls
+
+
 @pytest.mark.parametrize(
     ("rt", "intensity", "physical_state", "physical_reason"),
     [

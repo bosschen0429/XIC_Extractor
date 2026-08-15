@@ -48,7 +48,10 @@ from xic_extractor.discovery.ms1_backfill import (
 from xic_extractor.discovery.ms2_seeds import MS2ScanSource, collect_strict_nl_seeds
 from xic_extractor.discovery.peak_anchor import assign_peak_anchors
 from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryCandidatePhysicalBinding,
     DiscoveryPhysicalFactRecord,
+    bind_physical_facts_to_final_candidates,
+    order_physical_bindings_for_candidate_csv,
 )
 from xic_extractor.discovery.physical_fact_sidecar import (
     stage_discovery_physical_fact_sidecar as write_discovery_physical_fact_sidecar,
@@ -118,6 +121,7 @@ class _DiscoveryRawFileResult:
     raw_open_receipt: RawAcquisitionSessionReceipt | None
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = ()
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = ()
+    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -260,6 +264,16 @@ def run_discovery(
         acquisition_input=acquisition_input,
         physical_work_manifest=discovery_result.physical_work_manifest,
         physical_evaluations=discovery_result.physical_evaluations,
+        physical_bindings=(
+            ()
+            if run_spec is None
+            else order_physical_bindings_for_candidate_csv(
+                bind_physical_facts_to_final_candidates(
+                    discovery_result.physical_bindings,
+                    candidates,
+                )
+            )
+        ),
     )
 
 
@@ -362,6 +376,16 @@ def run_discovery_batch(
             acquisition_input=acquisition_input,
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
+            physical_bindings=(
+                ()
+                if run_spec is None
+                else order_physical_bindings_for_candidate_csv(
+                    bind_physical_facts_to_final_candidates(
+                        discovery_result.physical_bindings,
+                        candidates,
+                    )
+                )
+            ),
         )
         per_sample.append(outputs)
         receipt = mint_discovery_candidate_universe_receipt(
@@ -677,6 +701,16 @@ def _run_discovery_sample_process_job(
             acquisition_input=job.acquisition_input,
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
+            physical_bindings=(
+                ()
+                if job.run_spec is None
+                else order_physical_bindings_for_candidate_csv(
+                    bind_physical_facts_to_final_candidates(
+                        discovery_result.physical_bindings,
+                        candidates,
+                    )
+                )
+            ),
         )
         receipt = mint_discovery_candidate_universe_receipt(
             sample_stem=sample_stem,
@@ -789,14 +823,13 @@ def _write_dual_csvs(
     acquisition_input: ProcessingAcquisitionInput | None = None,
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = (),
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
+    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
 ) -> DiscoveryRunOutputs:
     output_dir.mkdir(parents=True, exist_ok=True)
     candidates_path = output_dir / "discovery_candidates.csv"
     review_path = output_dir / "discovery_review.csv"
     physical_facts_member_path = output_dir / "discovery_physical_facts.v1.json"
-    physical_facts_path = (
-        None if run_spec is None else physical_facts_member_path
-    )
+    physical_facts_path = None if run_spec is None else physical_facts_member_path
     if (run_spec is None) != (acquisition_input is None):
         raise ValueError("Discovery physical persistence binding is partial")
     if run_spec is None and (physical_work_manifest or physical_evaluations):
@@ -904,6 +937,7 @@ def _write_dual_csvs(
         candidates_csv=candidates_path,
         review_csv=review_path,
         physical_facts_json=physical_facts_path,
+        physical_bindings=physical_bindings,
     )
 
 
@@ -1132,10 +1166,9 @@ def _discover_raw_file(
                     )
                     candidates = acquisition_result.candidates
                     ms1_measurements = acquisition_result.measurements
-                    physical_work_manifest = (
-                        acquisition_result.physical_work_manifest
-                    )
+                    physical_work_manifest = acquisition_result.physical_work_manifest
                     physical_evaluations = acquisition_result.physical_evaluations
+                    physical_bindings = acquisition_result.physical_bindings
                 elif owner_bound_source is None:
                     candidates = backfill_ms1_candidates(
                         raw,
@@ -1146,6 +1179,7 @@ def _discover_raw_file(
                     ms1_measurements = None
                     physical_work_manifest = ()
                     physical_evaluations = ()
+                    physical_bindings = ()
                 else:
                     acquisition_result = _backfill_ms1_candidates_with_acquisition(
                         cast(BatchXICAdapter, raw),
@@ -1159,6 +1193,7 @@ def _discover_raw_file(
                     ms1_measurements = acquisition_result.measurements
                     physical_work_manifest = ()
                     physical_evaluations = ()
+                    physical_bindings = ()
                 stage.metrics["candidate_count"] = len(candidates)
             completed = True
             return _DiscoveryRawFileResult(
@@ -1167,6 +1202,7 @@ def _discover_raw_file(
                 raw_open_receipt=raw_open_receipt,
                 physical_work_manifest=physical_work_manifest,
                 physical_evaluations=physical_evaluations,
+                physical_bindings=physical_bindings,
             )
         finally:
             if not completed:

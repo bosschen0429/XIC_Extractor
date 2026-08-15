@@ -2,23 +2,21 @@
 
 from collections.abc import Iterable
 from pathlib import Path, PureWindowsPath
-from typing import Any
 
 from xic_extractor.discovery.models import (
     DISCOVERY_BRIEF_COLUMNS,
     DISCOVERY_CANDIDATE_COLUMNS,
     DiscoveryCandidate,
+    discovery_candidate_output_sort_key,
 )
 from xic_extractor.tabular_io import escape_excel_formula, write_delimited_rows
-
-_PRIORITY_RANK = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 
 
 def write_discovery_candidates_csv(
     path: Path, candidates: Iterable[DiscoveryCandidate]
 ) -> Path:
     """Write review-first discovery candidates to a stable CSV contract."""
-    sorted_candidates = sorted(candidates, key=_candidate_sort_key)
+    sorted_candidates = sorted(candidates, key=discovery_candidate_output_sort_key)
     return _write_csv(
         path,
         [_candidate_row(candidate) for candidate in sorted_candidates],
@@ -30,7 +28,7 @@ def write_discovery_review_csv(
     path: Path, candidates: Iterable[DiscoveryCandidate]
 ) -> Path:
     """Write the compact human review index for discovery candidates."""
-    sorted_candidates = sorted(candidates, key=_candidate_sort_key)
+    sorted_candidates = sorted(candidates, key=discovery_candidate_output_sort_key)
     return _write_csv(
         path,
         [_brief_candidate_row(candidate) for candidate in sorted_candidates],
@@ -67,26 +65,11 @@ def build_discovery_review_note(candidate: DiscoveryCandidate) -> str:
             raise ValueError("physical Discovery review reason must be nonempty")
         return f"physical MS1 {terminal_state}: {owner_reason}; missing RT"
     return (
-        f"{ms2_support} MS2; "
-        f"{candidate.ms1_support} MS1; "
-        f"{candidate.rt_alignment} RT"
+        f"{ms2_support} MS2; {candidate.ms1_support} MS1; {candidate.rt_alignment} RT"
     )
 
 
-def _candidate_sort_key(candidate: DiscoveryCandidate) -> tuple[Any, ...]:
-    area_is_missing = candidate.ms1_area is None
-    area_desc = 0.0 if candidate.ms1_area is None else -candidate.ms1_area
-    return (
-        _PRIORITY_RANK.get(candidate.review_priority, len(_PRIORITY_RANK)),
-        -candidate.evidence_score,
-        -candidate.feature_family_size,
-        candidate.feature_family_id,
-        -candidate.seed_event_count,
-        -candidate.ms2_product_max_intensity,
-        area_is_missing,
-        area_desc,
-        candidate.best_seed_rt,
-    )
+_candidate_sort_key = discovery_candidate_output_sort_key
 
 
 def _candidate_row(candidate: DiscoveryCandidate) -> dict[str, str]:

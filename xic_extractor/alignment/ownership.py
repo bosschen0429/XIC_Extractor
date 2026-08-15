@@ -20,6 +20,9 @@ from xic_extractor.alignment.ownership_models import (
 )
 from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryCandidatePhysicalBinding,
+)
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.region_audit import (
     PeakRegionAuditSummary,
@@ -114,6 +117,65 @@ def build_sample_local_owners(
         effective_emit_region_audit,
         region_audit_family_ids,
     )
+    return _ownership_result_from_outcomes(
+        outcomes,
+        alignment_config=alignment_config,
+    )
+
+
+def build_sample_local_owners_from_discovery_bindings(
+    bindings: Sequence[DiscoveryCandidatePhysicalBinding],
+    *,
+    alignment_config: AlignmentConfig,
+) -> OwnershipBuildResult:
+    """Build owners from Discovery's canonical in-memory physical results."""
+
+    outcomes: list[_ResolutionOutcome] = []
+    for binding in bindings:
+        if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
+            raise TypeError(
+                "bindings must contain DiscoveryCandidatePhysicalBinding values"
+            )
+        candidate = binding.candidate
+        evaluation = binding.physical_evaluation
+        if evaluation.state != "available":
+            outcomes.append(
+                _unresolved_outcome(
+                    candidate,
+                    f"physical_{evaluation.state}:{evaluation.reason}",
+                )
+            )
+            continue
+        integration = evaluation.integration
+        if integration is None:
+            raise ValueError("available Discovery physical binding lost integration")
+        seed_rt = _candidate_seed_rt(candidate)
+        outcomes.append(
+            _ResolutionOutcome(
+                resolved=_ResolvedCandidate(
+                    candidate=candidate,
+                    event=_identity_event(candidate, seed_rt=seed_rt),
+                    apex_rt=integration.rt_apex_min,
+                    peak_start_rt=integration.rt_left_min,
+                    peak_end_rt=integration.rt_right_min,
+                    area=integration.area_raw_counts_seconds,
+                    height=integration.height_raw,
+                    selected_integration=integration,
+                ),
+                unresolved=None,
+            )
+        )
+    return _ownership_result_from_outcomes(
+        tuple(outcomes),
+        alignment_config=alignment_config,
+    )
+
+
+def _ownership_result_from_outcomes(
+    outcomes: Sequence[_ResolutionOutcome],
+    *,
+    alignment_config: AlignmentConfig,
+) -> OwnershipBuildResult:
     resolved = tuple(
         outcome.resolved for outcome in outcomes if outcome.resolved is not None
     )
