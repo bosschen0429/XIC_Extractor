@@ -22,6 +22,9 @@ from xic_extractor.acquisition_contract import (
 )
 from xic_extractor.alignment import pipeline as alignment_pipeline
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.discovery.batch_contract import (
+    validate_discovery_candidate_physical_bindings,
+)
 from xic_extractor.discovery.pipeline import (
     DiscoverySampleProcessError,
     DiscoverySampleProcessJob,
@@ -169,6 +172,27 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
 
     assert alignment_outputs.matrix_tsv is not None
     assert alignment_outputs.matrix_tsv.exists()
+
+    first_bindings = serial.per_sample[0].physical_bindings
+    first_candidates = tuple(binding.candidate for binding in first_bindings)
+    with pytest.raises(ValueError, match="cardinality mismatch"):
+        validate_discovery_candidate_physical_bindings(
+            sample_stem=raw_paths[0].stem,
+            candidates=first_candidates,
+            bindings=(),
+        )
+    with pytest.raises(ValueError, match="order is not contiguous"):
+        validate_discovery_candidate_physical_bindings(
+            sample_stem=raw_paths[0].stem,
+            candidates=first_candidates,
+            bindings=(replace(first_bindings[0], final_ordinal=1),),
+        )
+    with pytest.raises(ValueError, match="crosses sample identity"):
+        validate_discovery_candidate_physical_bindings(
+            sample_stem=raw_paths[1].stem,
+            candidates=first_candidates,
+            bindings=first_bindings,
+        )
 
     crossed_binding = replace(
         serial.per_sample[0].physical_bindings[0],

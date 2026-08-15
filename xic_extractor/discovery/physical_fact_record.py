@@ -14,7 +14,10 @@ from xic_extractor.discovery.models import (
     build_discovery_physical_selection_subject_id,
     discovery_candidate_output_sort_key,
 )
-from xic_extractor.peak_detection.evidence_facts import PhysicalPeakEvaluation
+from xic_extractor.peak_detection.evidence_facts import (
+    PhysicalPeakEvaluation,
+    validate_bounded_physical_peak_evaluation,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +85,7 @@ class DiscoveryCandidatePhysicalBinding:
             raise ValueError("representative_work_ordinal must be non-negative")
         if not isinstance(self.physical_evaluation, PhysicalPeakEvaluation):
             raise TypeError("physical_evaluation must be a PhysicalPeakEvaluation")
+        validate_bounded_physical_peak_evaluation(self.physical_evaluation)
         expected_subject_id = build_discovery_physical_selection_subject_id(
             sample_stem=self.candidate.sample_stem,
             best_ms2_scan_id=self.candidate.best_ms2_scan_id,

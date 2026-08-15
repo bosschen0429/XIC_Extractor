@@ -373,6 +373,16 @@ def test_alignment_builds_owner_from_discovery_binding_without_resolver(
     )
     assert raw.raw_chromatogram_call_count == discovery_xic_calls
 
+    binding = discovery.physical_bindings[0]
+    with pytest.raises(ValueError, match="crosses terminal state"):
+        replace(
+            binding,
+            physical_evaluation=replace(
+                binding.physical_evaluation,
+                reason="tampered_terminal_reason",
+            ),
+        )
+
 
 @pytest.mark.parametrize(
     ("rt", "intensity", "physical_state", "physical_reason"),

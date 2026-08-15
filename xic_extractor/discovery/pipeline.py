@@ -195,6 +195,19 @@ class DiscoveryProcessExecutionError(RuntimeError):
         super().__init__(f"{first_failure.raw_name}: {first_failure.message}")
 
 
+def _finalize_physical_bindings_for_output(
+    *,
+    run_spec: ProcessingRunSpec | None,
+    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
+    candidates: tuple[DiscoveryCandidate, ...],
+) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
+    if run_spec is None:
+        return ()
+    return order_physical_bindings_for_candidate_csv(
+        bind_physical_facts_to_final_candidates(bindings, candidates)
+    )
+
+
 def run_discovery(
     raw_path: Path,
     *,
@@ -264,15 +277,10 @@ def run_discovery(
         acquisition_input=acquisition_input,
         physical_work_manifest=discovery_result.physical_work_manifest,
         physical_evaluations=discovery_result.physical_evaluations,
-        physical_bindings=(
-            ()
-            if run_spec is None
-            else order_physical_bindings_for_candidate_csv(
-                bind_physical_facts_to_final_candidates(
-                    discovery_result.physical_bindings,
-                    candidates,
-                )
-            )
+        physical_bindings=_finalize_physical_bindings_for_output(
+            run_spec=run_spec,
+            bindings=discovery_result.physical_bindings,
+            candidates=candidates,
         ),
     )
 
@@ -376,15 +384,10 @@ def run_discovery_batch(
             acquisition_input=acquisition_input,
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
-            physical_bindings=(
-                ()
-                if run_spec is None
-                else order_physical_bindings_for_candidate_csv(
-                    bind_physical_facts_to_final_candidates(
-                        discovery_result.physical_bindings,
-                        candidates,
-                    )
-                )
+            physical_bindings=_finalize_physical_bindings_for_output(
+                run_spec=run_spec,
+                bindings=discovery_result.physical_bindings,
+                candidates=candidates,
             ),
         )
         per_sample.append(outputs)
@@ -701,15 +704,10 @@ def _run_discovery_sample_process_job(
             acquisition_input=job.acquisition_input,
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
-            physical_bindings=(
-                ()
-                if job.run_spec is None
-                else order_physical_bindings_for_candidate_csv(
-                    bind_physical_facts_to_final_candidates(
-                        discovery_result.physical_bindings,
-                        candidates,
-                    )
-                )
+            physical_bindings=_finalize_physical_bindings_for_output(
+                run_spec=job.run_spec,
+                bindings=discovery_result.physical_bindings,
+                candidates=candidates,
             ),
         )
         receipt = mint_discovery_candidate_universe_receipt(

@@ -126,7 +126,7 @@ from xic_extractor.config import ExtractionConfig
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
-    discovery_candidate_payload_sha256,
+    validate_discovery_candidate_physical_bindings,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import (
@@ -170,35 +170,13 @@ def _ordered_discovery_physical_bindings(
         )
     ordered: list[DiscoveryCandidatePhysicalBinding] = []
     for sample_stem in sample_order:
-        candidates = tuple(candidates_by_sample[sample_stem])
-        bindings = tuple(bindings_by_sample[sample_stem])
-        if len(bindings) != len(candidates):
-            raise ValueError(
-                f"{sample_stem}: candidate/physical binding cardinality mismatch"
+        ordered.extend(
+            validate_discovery_candidate_physical_bindings(
+                sample_stem=sample_stem,
+                candidates=candidates_by_sample[sample_stem],
+                bindings=bindings_by_sample[sample_stem],
             )
-        for final_ordinal, (binding, candidate) in enumerate(
-            zip(bindings, candidates, strict=True)
-        ):
-            if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
-                raise TypeError(
-                    "Discovery binding maps must contain "
-                    "DiscoveryCandidatePhysicalBinding values"
-                )
-            if binding.final_ordinal != final_ordinal:
-                raise ValueError(
-                    f"{sample_stem}: physical binding order is not contiguous"
-                )
-            if binding.candidate.sample_stem != sample_stem:
-                raise ValueError(
-                    f"{sample_stem}: physical binding crosses sample identity"
-                )
-            if discovery_candidate_payload_sha256((binding.candidate,)) != (
-                discovery_candidate_payload_sha256((candidate,))
-            ):
-                raise ValueError(
-                    f"{sample_stem}: physical binding crosses candidate content"
-                )
-            ordered.append(binding)
+        )
     return tuple(ordered)
 
 
