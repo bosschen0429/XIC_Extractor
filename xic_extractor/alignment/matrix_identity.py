@@ -165,6 +165,13 @@ def decide_matrix_identity_row(
     review_rescue = sum(
         1 for decision in cell_quality if decision.quality_status == "review_rescue"
     )
+    held_rescue = sum(
+        1
+        for decision in cell_quality
+        if decision.quality_status == "review_rescue"
+        and decision.quality_reason == "rt_outside_preferred"
+    )
+    candidate_rescue_count = q_rescue + held_rescue
     duplicate_count = sum(
         1 for decision in cell_quality if decision.quality_status == "duplicate_loser"
     )
@@ -175,7 +182,7 @@ def decide_matrix_identity_row(
     backfill_dependency, seed_quality = _single_dr_backfill_context(
         cluster,
         q_detected=q_detected,
-        q_rescue=q_rescue,
+        q_rescue=candidate_rescue_count,
         cell_count=cell_count,
         cells=cells,
     )
@@ -185,7 +192,7 @@ def decide_matrix_identity_row(
         evidence=evidence,
         primary_evidence=primary_evidence,
         q_detected=q_detected,
-        q_rescue=q_rescue,
+        q_rescue=candidate_rescue_count,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
@@ -197,6 +204,7 @@ def decide_matrix_identity_row(
         q_rescue=q_rescue,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
+        held_rescue_count=held_rescue,
         backfill_dependency=backfill_dependency,
         seed_quality=seed_quality,
         cells=cells,
@@ -213,7 +221,7 @@ def decide_matrix_identity_row(
         evidence=evidence,
         primary_evidence=primary_evidence,
         q_detected=q_detected,
-        q_rescue=q_rescue,
+        q_rescue=candidate_rescue_count,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
         policy_evidence=policy_evidence,
@@ -234,6 +242,7 @@ def decide_matrix_identity_row(
         primary_evidence=primary_evidence,
         q_detected=q_detected,
         q_rescue=q_rescue,
+        held_rescue_count=held_rescue,
         duplicate_count=duplicate_count,
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
@@ -327,6 +336,7 @@ def _promotion_decision(
     primary_evidence: str,
     q_detected: int,
     q_rescue: int,
+    held_rescue_count: int,
     duplicate_count: int,
     ambiguous_count: int,
     backfill_dependency: str | None,
@@ -336,7 +346,7 @@ def _promotion_decision(
         return False, "audit_family", "review", "review_only"
     if _is_consolidation_loser(evidence):
         return False, "audit_family", "review", "family_consolidation_loser"
-    if q_detected == 0 and q_rescue > 0:
+    if q_detected == 0 and q_rescue + held_rescue_count > 0:
         return False, "audit_family", "review", RESCUE_ONLY_BLOCKED_REASON
     if q_detected == 0 and duplicate_count > 0 and ambiguous_count == 0:
         return False, "audit_family", "review", "duplicate_only"

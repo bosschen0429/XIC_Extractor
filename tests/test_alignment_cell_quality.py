@@ -86,6 +86,12 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
         ).quality_status
         == "review_rescue"
     )
+    outside_preferred = decide_cell_quality(
+        _cell("s1", "FAM001", "rescued", 100.0, rt_delta_sec=20.0),
+        config,
+    )
+    assert outside_preferred.quality_status == "review_rescue"
+    assert outside_preferred.quality_reason == "rt_outside_preferred"
     outside = decide_cell_quality(
         _cell("s1", "FAM001", "rescued", 100.0, rt_delta_sec=31.0),
         config,
@@ -94,10 +100,10 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
     assert outside.quality_reason == "rt_outside_max"
 
 
-def test_product_authorized_same_peak_rescue_can_override_rt_cap() -> None:
+def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> None:
     config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
 
-    supported = decide_cell_quality(
+    same_peak_without_drift = decide_cell_quality(
         _cell(
             "s1",
             "FAM001",
@@ -105,6 +111,18 @@ def test_product_authorized_same_peak_rescue_can_override_rt_cap() -> None:
             100.0,
             rt_delta_sec=120.0,
             backfill_evidence=True,
+        ),
+        config,
+    )
+    drift_supported_inside_max = decide_cell_quality(
+        _cell(
+            "s1_drift",
+            "FAM001",
+            "rescued",
+            100.0,
+            rt_delta_sec=20.0,
+            backfill_evidence=True,
+            backfill_drift_supported=True,
         ),
         config,
     )
@@ -168,10 +186,12 @@ def test_product_authorized_same_peak_rescue_can_override_rt_cap() -> None:
         config,
     )
 
-    assert supported.quality_status == "rescue_quantifiable"
-    assert supported.matrix_area == 100.0
-    assert ms1_only.quality_status == "rescue_quantifiable"
-    assert ms1_only.matrix_area == 100.0
+    assert same_peak_without_drift.quality_status == "review_rescue"
+    assert same_peak_without_drift.quality_reason == "rt_outside_max"
+    assert ms1_only.quality_status == "review_rescue"
+    assert ms1_only.quality_reason == "rt_outside_max"
+    assert drift_supported_inside_max.quality_status == "rescue_quantifiable"
+    assert drift_supported_inside_max.matrix_area == 100.0
     assert drift_supported.quality_status == "rescue_quantifiable"
     assert drift_supported.matrix_area == 100.0
     assert unsupported.quality_status == "review_rescue"
@@ -180,6 +200,27 @@ def test_product_authorized_same_peak_rescue_can_override_rt_cap() -> None:
     assert incomplete.quality_reason == "incomplete_peak"
     assert missing_rt.quality_status == "review_rescue"
     assert missing_rt.quality_reason == "rt_outside_max"
+
+
+def test_drift_correction_uses_the_live_alignment_preferred_rt() -> None:
+    config = AlignmentConfig(preferred_rt_sec=120.0, max_rt_sec=180.0)
+
+    decision = decide_cell_quality(
+        _cell(
+            "s1",
+            "FAM001",
+            "rescued",
+            100.0,
+            rt_delta_sec=240.0,
+            backfill_evidence=True,
+            backfill_drift_supported=True,
+            backfill_drift_corrected_delta_sec=100.0,
+        ),
+        config,
+    )
+
+    assert decision.quality_status == "rescue_quantifiable"
+    assert decision.matrix_area == 100.0
 
 
 def test_duplicate_and_ambiguous_cells_do_not_support_identity() -> None:
@@ -212,6 +253,7 @@ def _cell(
     selected_integration: IntegrationResult | None = None,
     backfill_evidence: bool = False,
     backfill_drift_supported: bool = False,
+    backfill_drift_corrected_delta_sec: float = 4.0,
     candidate_ms2_evidence: bool = True,
 ) -> AlignedCell:
     if (
@@ -244,6 +286,7 @@ def _cell(
             status=status,
             enabled=backfill_evidence,
             drift_supported=backfill_drift_supported,
+            drift_corrected_delta_sec=backfill_drift_corrected_delta_sec,
             candidate_ms2_evidence=candidate_ms2_evidence,
         ),
     )
@@ -282,6 +325,7 @@ def _backfill_evidence_fields(
     status: str,
     enabled: bool,
     drift_supported: bool,
+    drift_corrected_delta_sec: float,
     candidate_ms2_evidence: bool,
 ) -> dict[str, object]:
     if status != "rescued" or not enabled:
@@ -327,7 +371,7 @@ def _backfill_evidence_fields(
                 "backfill_matrix_rt_drift_status": "drift_supported",
                 "backfill_drift_evidence_level": "sample_istd_aligned",
                 "backfill_drift_compatible_status": "compatible",
-                "backfill_drift_corrected_delta_sec": 4.0,
+                "backfill_drift_corrected_delta_sec": drift_corrected_delta_sec,
             },
         )
     return fields

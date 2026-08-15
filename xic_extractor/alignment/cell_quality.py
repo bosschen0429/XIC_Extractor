@@ -8,7 +8,7 @@ from typing import Literal
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.promotion_policy import (
-    cell_has_product_authorized_same_peak_backfill_support,
+    cell_has_product_authorized_drift_corrected_same_peak_backfill_support,
 )
 
 CellQualityStatus = Literal[
@@ -81,11 +81,17 @@ def decide_cell_quality(
             return _decision(cell, "review_rescue", None, "incomplete_peak")
         if cell.rt_delta_sec is None:
             return _decision(cell, "review_rescue", None, "rt_outside_max")
-        if abs(cell.rt_delta_sec) > config.max_rt_sec:
-            if cell_has_product_authorized_same_peak_backfill_support(cell):
-                return _decision(cell, "rescue_quantifiable", area, "")
+        rt_delta_sec = abs(cell.rt_delta_sec)
+        if rt_delta_sec <= config.preferred_rt_sec:
+            return _decision(cell, "rescue_quantifiable", area, "")
+        if cell_has_product_authorized_drift_corrected_same_peak_backfill_support(
+            cell,
+            preferred_rt_sec=config.preferred_rt_sec,
+        ):
+            return _decision(cell, "rescue_quantifiable", area, "")
+        if rt_delta_sec > config.max_rt_sec:
             return _decision(cell, "review_rescue", None, "rt_outside_max")
-        return _decision(cell, "rescue_quantifiable", area, "")
+        return _decision(cell, "review_rescue", None, "rt_outside_preferred")
 
     if cell.status == "duplicate_assigned":
         return _decision(cell, "duplicate_loser", None, "duplicate_loser")

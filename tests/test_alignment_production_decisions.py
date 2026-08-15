@@ -850,7 +850,7 @@ def test_rescued_outside_max_rt_is_review_only():
     assert decision.blank_reason == "rt_outside_max"
 
 
-def test_product_authorized_same_peak_rt_outside_max_rescue_writes_matrix_value():
+def test_rescued_outside_preferred_without_drift_is_review_only():
     config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
     matrix = _matrix(
         clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=3"),),
@@ -863,8 +863,8 @@ def test_product_authorized_same_peak_rt_outside_max_rescue_writes_matrix_value(
                 "FAM001",
                 "rescued",
                 80.0,
-                rt_delta_sec=120.0,
-                backfill_evidence=True,
+                rt_delta_sec=20.0,
+                backfill_evidence=False,
             ),
         ),
         sample_order=("d1", "d2", "d3", "rescued_same_peak"),
@@ -873,11 +873,12 @@ def test_product_authorized_same_peak_rt_outside_max_rescue_writes_matrix_value(
     decisions = build_production_decisions(matrix, config)
     decision = decisions.cell("FAM001", "rescued_same_peak")
 
-    assert decision.write_matrix_value is True
-    assert decision.production_status == "accepted_rescue"
-    assert decision.rescue_tier == "accepted_rescue"
-    assert decision.matrix_value == 80.0
-    assert decisions.row("FAM001").accepted_rescue_count == 1
+    assert decision.write_matrix_value is False
+    assert decision.production_status == "review_rescue"
+    assert decision.rescue_tier == "review_rescue"
+    assert decision.matrix_value is None
+    assert decision.blank_reason == "rt_outside_preferred"
+    assert decisions.row("FAM001").accepted_rescue_count == 0
 
 
 def test_product_authorized_same_peak_with_drift_evidence_writes_large_rt_delta():

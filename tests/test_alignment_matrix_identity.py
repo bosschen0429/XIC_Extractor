@@ -520,6 +520,8 @@ def test_unexplained_rt_delta_beyond_preferred_blocks_backfill_promotion() -> No
 
     assert decision.include_in_primary_matrix is True
     assert decision.identity_confidence == "review"
+    assert decision.quantifiable_rescue_count == 0
+    assert decision.review_rescue_count == 6
     assert (
         decision.identity_reason
         == PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON
