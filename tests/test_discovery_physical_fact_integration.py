@@ -381,10 +381,68 @@ def test_alignment_builds_owner_from_discovery_binding_without_resolver(
     with pytest.raises(ValueError, match="crosses terminal state"):
         replace(
             binding,
-            physical_evaluation=replace(
-                binding.physical_evaluation,
-                reason="tampered_terminal_reason",
+            physical_fact_record=replace(
+                binding.physical_fact_record,
+                evaluation=replace(
+                    binding.physical_evaluation,
+                    reason="tampered_terminal_reason",
+                ),
             ),
+        )
+
+
+def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
+    tmp_path: Path,
+) -> None:
+    current_dir = tmp_path / "current"
+    foreign_dir = tmp_path / "foreign"
+    current_dir.mkdir()
+    foreign_dir.mkdir()
+    current_path = current_dir / "sample.raw"
+    foreign_path = foreign_dir / "sample.raw"
+    current_path.write_bytes(b"current-acquisition")
+    foreign_path.write_bytes(b"foreign-acquisition")
+    current_source = build_acquisition_source_identity(
+        current_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    foreign_source = build_acquisition_source_identity(
+        foreign_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    group = _group((_seed(scan_number=10, rt=7.80),))
+    profile = SignalProcessingProfile(window_points=3)
+    current = _backfill_ms1_candidates_with_acquisition(
+        _OwnerBoundBatchRaw(current_source),
+        (group,),
+        acquisition_source=current_source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+    foreign_raw = _OwnerBoundBatchRaw(foreign_source)
+    foreign_raw.intensity = np.asarray([5.0, 500.0, 5.0], dtype=float)
+    foreign = _backfill_ms1_candidates_with_acquisition(
+        foreign_raw,
+        (group,),
+        acquisition_source=foreign_source,
+        run_spec_id="processing-run.v1:" + ("1" * 64),
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+    current_record = current.physical_evaluations[0]
+    foreign_record = foreign.physical_evaluations[0]
+
+    with pytest.raises(ValueError, match="crosses acquired trace content"):
+        replace(current_record, evaluation=foreign_record.evaluation)
+    with pytest.raises(ValueError, match="crosses acquisition record"):
+        replace(
+            current.physical_bindings[0],
+            physical_fact_record=foreign_record,
         )
 
 

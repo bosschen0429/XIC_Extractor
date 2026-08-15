@@ -22,6 +22,7 @@ from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
+    validate_discovery_candidate_physical_binding,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.region_audit import (
@@ -136,6 +137,7 @@ def build_sample_local_owners_from_discovery_bindings(
             raise TypeError(
                 "bindings must contain DiscoveryCandidatePhysicalBinding values"
             )
+        validate_discovery_candidate_physical_binding(binding)
         candidate = binding.candidate
         evaluation = binding.physical_evaluation
         if evaluation.state != "available":

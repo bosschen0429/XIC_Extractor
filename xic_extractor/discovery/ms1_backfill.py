@@ -292,9 +292,9 @@ def _backfill_ms1_candidates_with_acquisition(
                 selection_subject_id=physical_fact_by_index[
                     physical_indices[binding.representative_source_ordinal]
                 ].selection_subject_id,
-                physical_evaluation=physical_fact_by_index[
+                physical_fact_record=physical_fact_by_index[
                     physical_indices[binding.representative_source_ordinal]
-                ].evaluation,
+                ],
             )
             for binding in merge_result.bindings
         )

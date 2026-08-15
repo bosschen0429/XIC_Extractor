@@ -20,6 +20,7 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
+    validate_discovery_candidate_physical_binding,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -260,6 +261,7 @@ def validate_discovery_candidate_physical_bindings(
             raise TypeError(
                 "bindings must contain DiscoveryCandidatePhysicalBinding values"
             )
+        validate_discovery_candidate_physical_binding(binding)
         if binding.final_ordinal != final_ordinal:
             raise ValueError(f"{sample_stem}: physical binding order is not contiguous")
         if (

@@ -17,25 +17,29 @@ from xic_extractor.discovery.models import (
 from xic_extractor.peak_detection.evidence_facts import (
     PhysicalPeakEvaluation,
     validate_bounded_physical_peak_evaluation,
+    validate_physical_trace_content_id,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class DiscoveryPhysicalFactRecord:
     work_item: DiscoveryPhysicalWorkItem
     acquired_trace: AcquiredTrace
     evaluation: PhysicalPeakEvaluation
 
     def __post_init__(self) -> None:
-        if not isinstance(self.work_item, DiscoveryPhysicalWorkItem):
-            raise TypeError("work_item must be a DiscoveryPhysicalWorkItem")
-        if not isinstance(self.acquired_trace, AcquiredTrace):
-            raise TypeError("acquired_trace must be an AcquiredTrace")
-        if not isinstance(self.evaluation, PhysicalPeakEvaluation):
-            raise TypeError("evaluation must be a PhysicalPeakEvaluation")
-        _validate_evaluation_work_identity(self.evaluation, self.work_item)
-        _validate_acquired_trace_work_identity(self.acquired_trace, self.work_item)
+        validate_discovery_physical_fact_record(self)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DiscoveryPhysicalFactRecord):
+            return NotImplemented
+        return (
+            self.work_item == other.work_item
+            and acquired_trace_content_id(self.acquired_trace)
+            == acquired_trace_content_id(other.acquired_trace)
+            and self.evaluation == other.evaluation
+        )
 
     @property
     def rt(self) -> tuple[float, ...]:
@@ -66,45 +70,99 @@ class DiscoveryCandidatePhysicalBinding:
     member_source_ordinals: tuple[int, ...]
     representative_work_ordinal: int
     selection_subject_id: str
-    physical_evaluation: PhysicalPeakEvaluation
+    physical_fact_record: DiscoveryPhysicalFactRecord
 
     def __post_init__(self) -> None:
-        if not isinstance(self.run_spec_id, str) or not self.run_spec_id.strip():
-            raise ValueError("run_spec_id must be non-empty text")
-        if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
-            raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
-        if self.final_ordinal < 0:
-            raise ValueError("final_ordinal must be non-negative")
-        if not isinstance(self.candidate, DiscoveryCandidate):
-            raise TypeError("candidate must be a DiscoveryCandidate")
-        if (
-            not self.member_source_ordinals
-            or tuple(sorted(set(self.member_source_ordinals)))
-            != self.member_source_ordinals
-            or self.member_source_ordinals[0] < 0
-        ):
-            raise ValueError(
-                "member_source_ordinals must be unique, ordered, and non-negative"
-            )
-        if self.representative_source_ordinal not in self.member_source_ordinals:
-            raise ValueError("representative source must belong to the merged members")
-        if self.representative_work_ordinal < 0:
-            raise ValueError("representative_work_ordinal must be non-negative")
-        if not isinstance(self.physical_evaluation, PhysicalPeakEvaluation):
-            raise TypeError("physical_evaluation must be a PhysicalPeakEvaluation")
-        validate_bounded_physical_peak_evaluation(self.physical_evaluation)
-        expected_subject_id = build_discovery_physical_selection_subject_id(
-            sample_stem=self.candidate.sample_stem,
-            best_ms2_scan_id=self.candidate.best_ms2_scan_id,
-            precursor_mz=self.candidate.precursor_mz,
-            product_mz=self.candidate.product_mz,
+        validate_discovery_candidate_physical_binding(self)
+
+    @property
+    def physical_evaluation(self) -> PhysicalPeakEvaluation:
+        return self.physical_fact_record.evaluation
+
+
+def validate_discovery_physical_fact_record(
+    record: DiscoveryPhysicalFactRecord,
+) -> None:
+    """Re-run the complete Discovery owner invariant for one physical fact."""
+
+    if not isinstance(record, DiscoveryPhysicalFactRecord):
+        raise TypeError("record must be a DiscoveryPhysicalFactRecord")
+    if not isinstance(record.work_item, DiscoveryPhysicalWorkItem):
+        raise TypeError("work_item must be a DiscoveryPhysicalWorkItem")
+    if not isinstance(record.acquired_trace, AcquiredTrace):
+        raise TypeError("acquired_trace must be an AcquiredTrace")
+    if not isinstance(record.evaluation, PhysicalPeakEvaluation):
+        raise TypeError("evaluation must be a PhysicalPeakEvaluation")
+    validate_bounded_physical_peak_evaluation(record.evaluation)
+    _validate_evaluation_work_identity(record.evaluation, record.work_item)
+    _validate_acquired_trace_work_identity(record.acquired_trace, record.work_item)
+    try:
+        validate_physical_trace_content_id(
+            record.evaluation.prepared.trace_content_id,
+            record.acquired_trace.trace.rt,
+            record.acquired_trace.trace.intensity,
         )
-        if expected_subject_id != self.selection_subject_id:
-            raise ValueError("Discovery physical binding crosses candidate identity")
-        if self.physical_evaluation.question.selection_subject_id != (
-            self.selection_subject_id
-        ):
-            raise ValueError("Discovery physical binding crosses selection subject")
+    except ValueError as exc:
+        raise ValueError(
+            "physical evaluation crosses acquired trace content"
+        ) from exc
+
+
+def validate_discovery_candidate_physical_binding(
+    binding: DiscoveryCandidatePhysicalBinding,
+) -> None:
+    """Re-run the final-candidate projection against its complete owner record."""
+
+    if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
+        raise TypeError("binding must be a DiscoveryCandidatePhysicalBinding")
+    if not isinstance(binding.run_spec_id, str) or not binding.run_spec_id.strip():
+        raise ValueError("run_spec_id must be non-empty text")
+    if not isinstance(binding.acquisition_source, AcquisitionSourceIdentity):
+        raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
+    if binding.final_ordinal < 0:
+        raise ValueError("final_ordinal must be non-negative")
+    if not isinstance(binding.candidate, DiscoveryCandidate):
+        raise TypeError("candidate must be a DiscoveryCandidate")
+    if (
+        not binding.member_source_ordinals
+        or tuple(sorted(set(binding.member_source_ordinals)))
+        != binding.member_source_ordinals
+        or binding.member_source_ordinals[0] < 0
+    ):
+        raise ValueError(
+            "member_source_ordinals must be unique, ordered, and non-negative"
+        )
+    if binding.representative_source_ordinal not in binding.member_source_ordinals:
+        raise ValueError("representative source must belong to the merged members")
+    if binding.representative_work_ordinal < 0:
+        raise ValueError("representative_work_ordinal must be non-negative")
+    validate_discovery_physical_fact_record(binding.physical_fact_record)
+    work_item = binding.physical_fact_record.work_item
+    if (
+        work_item.acquisition_source_id
+        != binding.acquisition_source.acquisition_source_id
+    ):
+        raise ValueError("Discovery physical binding crosses acquisition record")
+    if work_item.work_ordinal != binding.representative_work_ordinal:
+        raise ValueError(
+            "Discovery physical binding crosses representative work record"
+        )
+    if work_item.sample_stem != binding.candidate.sample_stem:
+        raise ValueError("Discovery physical binding crosses record sample")
+    if work_item.selection_subject_id != binding.selection_subject_id:
+        raise ValueError("Discovery physical binding crosses record selection subject")
+    expected_subject_id = build_discovery_physical_selection_subject_id(
+        sample_stem=binding.candidate.sample_stem,
+        best_ms2_scan_id=binding.candidate.best_ms2_scan_id,
+        precursor_mz=binding.candidate.precursor_mz,
+        product_mz=binding.candidate.product_mz,
+    )
+    if expected_subject_id != binding.selection_subject_id:
+        raise ValueError("Discovery physical binding crosses candidate identity")
+    if binding.physical_evaluation.question.selection_subject_id != (
+        binding.selection_subject_id
+    ):
+        raise ValueError("Discovery physical binding crosses selection subject")
 
 
 def bind_physical_facts_to_final_candidates(
@@ -185,4 +243,6 @@ __all__ = [
     "DiscoveryPhysicalFactRecord",
     "bind_physical_facts_to_final_candidates",
     "order_physical_bindings_for_candidate_csv",
+    "validate_discovery_candidate_physical_binding",
+    "validate_discovery_physical_fact_record",
 ]

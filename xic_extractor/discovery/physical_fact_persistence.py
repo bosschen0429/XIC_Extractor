@@ -12,7 +12,10 @@ from xic_extractor.acquisition_contract import (
     serialize_acquired_trace,
 )
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem
-from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+from xic_extractor.discovery.physical_fact_record import (
+    DiscoveryPhysicalFactRecord,
+    validate_discovery_physical_fact_record,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     deserialize_physical_peak_evaluation,
     serialize_physical_peak_evaluation,
@@ -242,7 +245,7 @@ def deserialize_discovery_physical_fact_sidecar(
         physical_value = _mapping(
             record["physical_evaluation"], label="physical_evaluation"
         )
-        rt, trace_raw, profile, evaluation = deserialize_physical_peak_evaluation(
+        _, _, profile, evaluation = deserialize_physical_peak_evaluation(
             _canonical_json_bytes(physical_value),
             expected_profile=expected_run_spec.signal_processing_profile,
         )
@@ -255,10 +258,6 @@ def deserialize_discovery_physical_fact_sidecar(
                 evaluation=evaluation,
             )
         )
-        acquired_rt = tuple(float(value) for value in acquired.trace.rt)
-        acquired_raw = tuple(float(value) for value in acquired.trace.intensity)
-        if rt != acquired_rt or trace_raw != acquired_raw:
-            raise ValueError("physical evaluation crosses acquired trace content")
     result = tuple(records)
     _validate_work_population(
         persisted_manifest,
@@ -290,6 +289,7 @@ def _validate_work_population(
     if len(work_manifest) != len(records):
         raise ValueError("Discovery physical work manifest and records differ")
     for item, record in zip(work_manifest, records, strict=True):
+        validate_discovery_physical_fact_record(record)
         if record.work_item != item:
             raise ValueError("Discovery physical record crosses work identity")
 

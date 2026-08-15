@@ -313,15 +313,22 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
             discovery_physical_bindings_by_sample=foreign_bindings,
         )
 
-    acquisition_crossed_binding = replace(
-        first_bindings[0],
-        acquisition_source=foreign_spec.acquisition_inputs[0].acquisition_source,
+    with pytest.raises(ValueError, match="crosses acquisition record"):
+        replace(
+            first_bindings[0],
+            acquisition_source=foreign_spec.acquisition_inputs[0].acquisition_source,
+        )
+    acquisition_crossed_binding = pickle.loads(pickle.dumps(first_bindings[0]))
+    object.__setattr__(
+        acquisition_crossed_binding,
+        "acquisition_source",
+        foreign_spec.acquisition_inputs[0].acquisition_source,
     )
     acquisition_crossed_bindings = dict(canonical_bindings)
     acquisition_crossed_bindings[raw_paths[0].stem] = (
         acquisition_crossed_binding,
     )
-    with pytest.raises(ValueError, match="crosses acquisition source"):
+    with pytest.raises(ValueError, match="crosses acquisition record"):
         alignment_pipeline.run_alignment(
             discovery_batch_index=serial.batch_index_csv,
             raw_dir=tmp_path,
