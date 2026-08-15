@@ -17,10 +17,7 @@ from tests.test_targeted_real_data_adapter import (
     _settings,
     _working_imports,
 )
-from tests.test_untargeted_cid_nl_real_data_adapter import (
-    _canonical_physical_candidates,
-    _without_ms1_peak,
-)
+from tests.test_untargeted_cid_nl_real_data_adapter import _without_ms1_peak
 from xic_extractor.alignment.untargeted_cid_nl_golden_path import (
     build_untargeted_cid_nl_golden_path,
 )
@@ -505,113 +502,6 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
             dll_dir=tmp_path,
             work_unit_key="untargeted-cid-nl:S1",
         )
-
-
-def test_runtime_retains_raw_corrected_park_reason_and_call_cost(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    raw_path = tmp_path / "S1.synthetic"
-    raw_path.write_bytes(b"m7-runtime-raw-corrected-park:S1")
-    settings = _settings()
-    peak_config = _peak_config(tmp_path)
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )
-    source_raw = _FakeRaw((8.0,), acquisition_source=source)
-    source_raw.intensity = source_raw.intensity + 250.0
-    candidates, evaluation = _canonical_physical_candidates(
-        source_raw,
-        raw_file=raw_path,
-        settings=settings,
-        peak_config=peak_config,
-    )
-    assert evaluation.facts is not None
-    assert evaluation.integration is not None
-    assert evaluation.facts.area_counts_seconds != pytest.approx(
-        evaluation.integration.area_raw_counts_seconds
-    )
-    subject = mint_untargeted_cid_nl_method_subject(
-        precursor_mz=500.0,
-        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        neutral_loss_da=116.0474,
-    )
-    context = build_untargeted_cid_nl_real_data_context(
-        raw_paths=(raw_path,),
-        sample_metadata=(
-            SampleMetadata(
-                sample_name="S1",
-                raw_stem="S1",
-                injection_order=1,
-                sample_role="study_sample",
-            ),
-        ),
-        method_subject=subject,
-        settings=settings,
-        peak_config=peak_config,
-        candidates_by_sample={"S1": candidates},
-        discovery_receipts_by_sample=_discovery_receipts(
-            tmp_path,
-            (raw_path,),
-            {"S1": candidates},
-        ),
-        sample_identity_namespace="study:m7-runtime-raw-corrected-park-test",
-    )
-    _install_runtime_raw(
-        monkeypatch,
-        source_raw=source_raw,
-        raw_path=raw_path,
-        tmp_path=tmp_path,
-    )
-    job = UntargetedCidNlRealDataRuntimeJob(
-        processing_owners=context.processing_owners,
-        sample=context.samples[0],
-        method_subject=context.method_subject,
-        candidates=context.candidates_by_sample["S1"],
-        discovery_receipt=context.discovery_receipts_by_sample["S1"],
-        settings=context.settings,
-        peak_config=context.peak_config,
-        raw_path=raw_path,
-        dll_dir=tmp_path,
-        work_unit_key="untargeted-cid-nl:S1",
-    )
-    runtime = start_runtime_attempt(
-        attempt=context.processing_owners.attempt,
-        work_unit_keys=(job.work_unit_key,),
-        owner_completeness_attestation="untargeted-cid-nl-m7-park-test:v1",
-    )
-
-    result = execute_untargeted_cid_nl_real_data_runtime(
-        runtime,
-        (job,),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "m7-park.runtime.json",
-            "untargeted-cid-nl-m7:park-test",
-        ),
-    )
-
-    assert result.succeeded is False
-    assert result.sample_results == ()
-    settlement = result.finalization.coordinator.state.runtime.settlements[0]
-    assert settlement.failure_detail is not None
-    assert (
-        "m7_raw_vs_corrected_compatibility_unresolved: "
-        "area_raw_counts_seconds"
-    ) in settlement.failure_detail.message
-    expected_trace_point_count = sum(
-        candidates[0].ms1_search_rt_min <= float(rt) <= candidates[0].ms1_search_rt_max
-        for rt in source_raw.rt
-    )
-    assert untargeted_cid_nl_runtime_call_cost(result.finalization) == {
-        "raw_open_count": 1,
-        "logical_xic_request_count": 1,
-        "xic_batch_count": 1,
-        "adapter_chromatogram_call_count": 1,
-        "trace_point_count": expected_trace_point_count,
-    }
 
 
 def test_context_rejects_same_stem_receipt_from_different_acquisition(

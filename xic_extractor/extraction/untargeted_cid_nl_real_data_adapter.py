@@ -914,9 +914,9 @@ def _validate_candidate_integration(
             if field in {"area_raw_counts_seconds", "height_raw"}:
                 raise UntargetedCidNlRealDataAdapterError(
                     f"{candidate.candidate_id}: "
-                    "m7_raw_vs_corrected_compatibility_unresolved: "
+                    "morphology_receipt_compatibility_unresolved: "
                     f"{field} mismatches current receipt; "
-                    "M7 remains diagnostic_only"
+                    "compatibility remains diagnostic_only"
                 )
             raise UntargetedCidNlRealDataAdapterError(
                 f"{candidate.candidate_id}: reacquired {field} mismatches "
