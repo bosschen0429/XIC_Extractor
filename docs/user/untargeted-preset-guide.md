@@ -119,8 +119,8 @@ preset defaults and take precedence. They include:
 - Product search, intensity ratio, seed-gap, and MS1 padding values
 - Resolver mode
 
-Alignment and Standard Peak settings such as Backfill chunk size or
-publication mode remain preset/CLI-owned; the current GUI does not expose them
-as method override controls.
+Owner Build backend remains preset/CLI-owned. Former Standard Peak Backfill
+chunk/publication settings are retired from every normal GUI, preset, and CLI
+route; supplying their compatibility fields or flags fails closed.
 
 Overrides are stored in `config/discovery_gui.json` (machine-local, untracked).

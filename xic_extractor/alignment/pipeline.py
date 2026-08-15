@@ -73,6 +73,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
 )
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_owner_build_route_receipt,
+    _validate_owner_build_xic_backend,
 )
 from xic_extractor.alignment.owner_clustering import (
     cluster_sample_local_owners,
@@ -248,6 +249,9 @@ def run_alignment(
     emit_provisional_matrix: bool = False,
     emit_early_loser_shadow: bool = False,
 ) -> AlignmentRunOutputs:
+    owner_build_xic_backend = _validate_owner_build_xic_backend(
+        owner_build_xic_backend,
+    )
     resolved_signal_processing_profile = resolve_signal_processing_profile(
         signal_processing_method=getattr(
             peak_config,

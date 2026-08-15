@@ -39,8 +39,9 @@ they are not product authority by themselves.
 
 A CID-NL preset is bound once, before expensive work, to one immutable
 in-memory recipe. The recipe contains the existing typed Discovery and
-Alignment settings plus the preset-owned advanced post-stage and owner-build
-choices. It does not contain RAW/output paths, sample metadata, worker counts,
+Alignment settings plus the preset-owned owner-build choice. It has no
+Standard Peak or Backfill-expansion post-stage choice and does not contain
+RAW/output paths, sample metadata, worker counts,
 review inputs, a persisted recipe identity, or a second invocation schema.
 
 The current V1 routes remain the existing entry-point modes:
