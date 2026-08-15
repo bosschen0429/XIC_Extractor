@@ -286,6 +286,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert len(bound_recipes) == 1
     assert captured_alignment["alignment_config"] == AlignmentConfig()
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
+    assert captured_alignment["output_level"] == "machine"
     assert captured_alignment["emit_alignment_cells"] is True
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
     assert captured_alignment["audit_evidence_mode"] == "none"
@@ -294,6 +295,11 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"
     )
     assert "gallery_html" not in summary["alignment_outputs"]
+    assert summary["alignment_outputs"] == {
+        "review_tsv": str(output_dir / "alignment_review.tsv"),
+        "matrix_tsv": str(output_dir / "alignment_matrix.tsv"),
+        "cells_tsv": str(output_dir / "alignment_cells.tsv"),
+    }
     assert progress_events == (
         [(0, 2, "Discovery..."), (1, 2, "Alignment..."), (2, 2, "完成")]
         if mode == "full"
