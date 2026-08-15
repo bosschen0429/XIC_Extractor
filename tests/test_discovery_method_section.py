@@ -34,7 +34,7 @@ def test_discovery_method_clamps_zero_positive_overrides(
 
 
 @pytest.mark.parametrize("field", sorted(POSITIVE_DISCOVERY_OVERRIDE_FIELDS))
-def test_discovery_method_clamps_persisted_zero_positive_overrides(
+def test_discovery_method_quarantines_persisted_zero_positive_overrides(
     field: str,
     qtbot,
 ) -> None:
@@ -44,9 +44,9 @@ def test_discovery_method_clamps_persisted_zero_positive_overrides(
     section.load({"preset": "dna_dr", "overrides": {field: 0.0}})
 
     assert section.numeric_value(field) > 0
-    assert section.get_values()["overrides"][field] > 0
-    assert section.is_valid() is True
-    _assert_discovery_accepts(section)
+    assert section.get_values()["overrides"][field] == 0.0
+    assert section.is_valid() is False
+    assert "已保存的方法覆寫無效" in section.validation_reason()
 
 
 def test_discovery_method_allows_zero_rt_lower_bound(qtbot) -> None:

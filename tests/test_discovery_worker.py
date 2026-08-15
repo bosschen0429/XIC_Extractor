@@ -113,7 +113,10 @@ def test_single_file_discovery_only_summary_counts_review_priorities(
         encoding="utf-8",
     )
 
+    captured_discovery: dict[str, object] = {}
+
     def fake_run_discovery(*_args, **_kwargs):
+        captured_discovery.update(_kwargs)
         return SimpleNamespace(
             candidates_csv=candidates_csv,
             review_csv=review_csv,
@@ -145,6 +148,16 @@ def test_single_file_discovery_only_summary_counts_review_priorities(
     assert summary["discovery_candidates_csv"] == str(candidates_csv)
     assert summary["discovery_review_csv"] == str(review_csv)
     assert summary["discovery_batch_index"] is None
+    run_spec = captured_discovery["run_spec"]
+    settings = captured_discovery["settings"]
+    peak_config = captured_discovery["peak_config"]
+    assert run_spec.discovery_method.settings == settings
+    assert run_spec.acquisition_inputs[0].sample_stem == raw_file.stem
+    assert (
+        run_spec.signal_processing_profile.window_points
+        == peak_config.signal_processing_window_points
+        == 15
+    )
 
 
 @pytest.mark.parametrize("mode", ["align_only", "full"])
@@ -256,13 +269,10 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         captured_standard_peak["source_run_id"]
         == "alignment-preset:builtin:dna_dr_product_ready:standard-peak-backfill"
     )
-    assert (
-        summary["alignment_outputs"]["standard_peak_summary_json"]
-        == str(
-            output_dir
-            / "standard_peak_backfill_preset"
-            / "standard_peak_backfill_preset_summary.json",
-        )
+    assert summary["alignment_outputs"]["standard_peak_summary_json"] == str(
+        output_dir
+        / "standard_peak_backfill_preset"
+        / "standard_peak_backfill_preset_summary.json",
     )
 
 
@@ -308,8 +318,7 @@ def test_gui_full_reuses_bound_custom_preset_after_discovery(
 
     assert recipe.owner_build_xic_backend == "ms1_index"
     assert source_run_id == (
-        f"alignment-preset:{preset_path.as_posix()}:"
-        "standard-peak-backfill"
+        f"alignment-preset:{preset_path.as_posix()}:standard-peak-backfill"
     )
 
 

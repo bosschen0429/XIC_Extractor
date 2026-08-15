@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from copy import deepcopy
 from math import isfinite
 from typing import Any
 
@@ -54,7 +55,13 @@ class DiscoveryMethodSection(QWidget):
     def __init__(self, presets: tuple[str, ...]) -> None:
         super().__init__()
         self._edited: set[str] = set()
+        self._pending_quarantine_edits: set[str] = set()
+        self._quarantine_widget_values: dict[str, object] = {}
         self._loading = False
+        self._unavailable_preset: str | None = None
+        self._quarantined_bundle: dict[str, Any] | None = None
+        self._quarantine_kind: str | None = None
+        self._quarantine_reason: str | None = None
         self._spins: dict[str, QDoubleSpinBox] = {}
 
         root = QVBoxLayout(self)
@@ -97,7 +104,12 @@ class DiscoveryMethodSection(QWidget):
             spin.setDecimals(decimals)
             spin.setRange(_minimum_for_field(name, minimum, decimals), maximum)
             spin.setSingleStep(step)
-            spin.valueChanged.connect(lambda _value, key=name: self._mark_edited(key))
+            spin.valueChanged.connect(
+                lambda _value, key=name: self._on_method_value_changed(key)
+            )
+            spin.editingFinished.connect(
+                lambda key=name: self._on_method_edit_committed(key)
+            )
             advanced_layout.addWidget(spin, row, 1)
             self._spins[name] = spin
 
@@ -107,33 +119,78 @@ class DiscoveryMethodSection(QWidget):
         for mode in RESOLVER_MODES:
             self._resolver.addItem(mode, mode)
         self._resolver.currentIndexChanged.connect(
-            lambda _index: self._mark_edited("resolver_mode")
+            lambda _index: self._on_method_value_changed("resolver_mode")
+        )
+        self._resolver.activated.connect(
+            lambda _index: self._on_method_edit_committed("resolver_mode")
         )
         advanced_layout.addWidget(self._resolver, resolver_row, 1)
         self._advanced_panel.setVisible(False)
         body.addWidget(self._advanced_panel)
 
         self._preset.currentIndexChanged.connect(self._on_preset_changed)
+        self._preset.activated.connect(self._on_preset_activated)
         self._load_preset_defaults(clear_edits=True)
 
     def load(self, values: dict[str, Any]) -> None:
-        preset = values.get("preset", "")
+        if self._quarantined_bundle is not None:
+            self._update_quarantine_preview()
+            return
+
+        persisted_bundle = {
+            "preset": deepcopy(values.get("preset", "")),
+            "overrides": deepcopy(values.get("overrides", {})),
+        }
+        preset = str(persisted_bundle["preset"] or "")
         blocker = QSignalBlocker(self._preset)
         try:
+            sentinel_index = self._preset.findData("")
+            if sentinel_index >= 0:
+                self._preset.removeItem(sentinel_index)
+            self._unavailable_preset = None
             index = self._preset.findData(preset)
             if index >= 0:
                 self._preset.setCurrentIndex(index)
+            elif preset:
+                self._unavailable_preset = preset
+                self._quarantine(
+                    persisted_bundle,
+                    kind="unavailable_preset",
+                    reason=f"preset {preset!r} 不可用",
+                )
+                self._preset.addItem(f"已保存但不可用：{preset}", "")
+                self._preset.setCurrentIndex(self._preset.count() - 1)
+            else:
+                self._preset.setCurrentIndex(-1)
         finally:
             del blocker
 
         self._load_preset_defaults(clear_edits=True)
         self._edited.clear()
-        for key, value in _sanitized_persisted_overrides(
-            values.get("overrides")
-        ).items():
+        persisted_overrides = persisted_bundle["overrides"]
+        if not self._preset_value():
+            return
+        try:
+            overrides = _validated_persisted_overrides(
+                persisted_overrides,
+                preset=self._preset_value(),
+                spins=self._spins,
+            )
+        except (TypeError, ValueError) as exc:
+            self._quarantine(
+                persisted_bundle,
+                kind="invalid_overrides",
+                reason=str(exc),
+            )
+            self._edited.clear()
+            self._update_quarantine_preview()
+            return
+        for key, value in overrides.items():
             self._set_override_value(key, value)
 
     def get_values(self) -> dict[str, Any]:
+        if self._quarantined_bundle is not None:
+            return deepcopy(self._quarantined_bundle)
         overrides: dict[str, Any] = {}
         for key in ADVANCED_FIELDS:
             if key not in self._edited:
@@ -153,24 +210,46 @@ class DiscoveryMethodSection(QWidget):
         return self._spins[key].value()
 
     def is_valid(self) -> bool:
-        if not self._preset_value():
+        if self._quarantined_bundle is not None:
             return False
-        for key in POSITIVE_DISCOVERY_OVERRIDE_FIELDS:
-            if self._spins[key].value() <= 0:
-                return False
-        return self._spins["rt_min"].value() <= self._spins["rt_max"].value()
+        return self._method_values_are_valid()
+
+    def validation_reason(self) -> str:
+        if self._quarantine_kind == "invalid_overrides":
+            return (
+                "已保存的方法覆寫無效："
+                f"{self._quarantine_reason}；請重新選擇 preset 或修改參數"
+            )
+        if self._quarantine_kind == "unavailable_preset":
+            return (
+                f"已保存的 preset「{self._unavailable_preset}」"
+                "不支援 CID-NL Discovery"
+            )
+        if not self._preset_value():
+            return "請選擇 CID-NL Discovery preset"
+        if any(
+            self._spins[key].value() <= 0
+            for key in POSITIVE_DISCOVERY_OVERRIDE_FIELDS
+        ):
+            return "方法參數必須大於 0"
+        if self._spins["rt_min"].value() > self._spins["rt_max"].value():
+            return "RT 下界需 ≤ 上界"
+        return ""
 
     def set_enabled(self, enabled: bool) -> None:
         self.setEnabled(enabled)
 
     def refresh_theme(self) -> None:
+        if self._quarantined_bundle is not None:
+            self._update_quarantine_preview()
+            return
         preset = self._preset_value()
         if preset:
             preset_obj = load_preset(preset)
             recipe = bind_cid_nl_recipe(preset_obj, "discovery_only")
             self._update_preset_preview(preset_obj, recipe.discovery_settings)
         else:
-            self._update_preset_preview(None, None)
+            self._update_missing_preset_preview()
 
     def _set_override_value(self, key: str, value: Any) -> None:
         if key == "resolver_mode":
@@ -182,7 +261,8 @@ class DiscoveryMethodSection(QWidget):
                 self._resolver.setCurrentIndex(index)
             finally:
                 del blocker
-            self._edited.add(key)
+            if self._quarantined_bundle is None:
+                self._edited.add(key)
             return
 
         if key not in self._spins:
@@ -192,14 +272,15 @@ class DiscoveryMethodSection(QWidget):
             self._spins[key].setValue(float(value))
         finally:
             del blocker
-        self._edited.add(key)
+        if self._quarantined_bundle is None:
+            self._edited.add(key)
 
     def _load_preset_defaults(self, *, clear_edits: bool) -> None:
         preset = self._preset_value()
         if not preset:
             if clear_edits:
                 self._edited.clear()
-            self._update_preset_preview(None, None)
+            self._update_missing_preset_preview()
             return
 
         preset_obj = load_preset(preset)
@@ -247,8 +328,38 @@ class DiscoveryMethodSection(QWidget):
         self._preset_preview.setVisible(True)
 
     def _on_preset_changed(self, _index: int) -> None:
+        if self._quarantined_bundle is not None:
+            self._update_quarantine_preview()
+            return
+        if self._preset_value():
+            self._unavailable_preset = None
         self._load_preset_defaults(clear_edits=True)
         self.changed.emit()
+
+    def _on_preset_activated(self, _index: int) -> None:
+        if self._quarantined_bundle is None or not self._preset_value():
+            return
+        self._clear_quarantine()
+        self._unavailable_preset = None
+        self._load_preset_defaults(clear_edits=True)
+        self.changed.emit()
+
+    def _update_missing_preset_preview(self) -> None:
+        if self._unavailable_preset is None:
+            self._update_preset_preview(None, None)
+            return
+        self._preset_preview.setText(
+            f'<span style="color:{styles.ACTIVE["danger_border"]};">'
+            f"{_escape(self.validation_reason())}</span>"
+        )
+        self._preset_preview.setVisible(True)
+
+    def _update_quarantine_preview(self) -> None:
+        self._preset_preview.setText(
+            f'<span style="color:{styles.ACTIVE["danger_border"]};">'
+            f"{_escape(self.validation_reason())}</span>"
+        )
+        self._preset_preview.setVisible(True)
 
     def _on_toggle(self, checked: bool) -> None:
         self._advanced_toggle.setText(
@@ -256,10 +367,63 @@ class DiscoveryMethodSection(QWidget):
         )
         self._advanced_panel.setVisible(checked)
 
-    def _mark_edited(self, key: str) -> None:
-        if not self._loading:
-            self._edited.add(key)
-            self.changed.emit()
+    def _on_method_value_changed(self, key: str) -> None:
+        if self._loading or self._quarantined_bundle is not None:
+            return
+        self._edited.add(key)
+        self.changed.emit()
+
+    def _on_method_edit_committed(self, key: str) -> None:
+        if self._loading or self._quarantine_kind != "invalid_overrides":
+            return
+        if self._method_value(key) == self._quarantine_widget_values[key]:
+            self._pending_quarantine_edits.discard(key)
+            return
+        self._pending_quarantine_edits.add(key)
+        if not self._method_values_are_valid():
+            return
+        pending_edits = set(self._pending_quarantine_edits)
+        self._clear_quarantine()
+        self._edited.update(pending_edits)
+        self.refresh_theme()
+        self.changed.emit()
+
+    def _method_values_are_valid(self) -> bool:
+        if not self._preset_value():
+            return False
+        if any(
+            self._spins[key].value() <= 0
+            for key in POSITIVE_DISCOVERY_OVERRIDE_FIELDS
+        ):
+            return False
+        return self._spins["rt_min"].value() <= self._spins["rt_max"].value()
+
+    def _quarantine(
+        self,
+        bundle: dict[str, Any],
+        *,
+        kind: str,
+        reason: str,
+    ) -> None:
+        self._quarantined_bundle = deepcopy(bundle)
+        self._quarantine_kind = kind
+        self._quarantine_reason = reason
+        self._pending_quarantine_edits.clear()
+        self._quarantine_widget_values = {
+            key: self._method_value(key) for key in ADVANCED_FIELDS
+        }
+
+    def _clear_quarantine(self) -> None:
+        self._quarantined_bundle = None
+        self._quarantine_kind = None
+        self._quarantine_reason = None
+        self._pending_quarantine_edits.clear()
+        self._quarantine_widget_values.clear()
+
+    def _method_value(self, key: str) -> object:
+        if key == "resolver_mode":
+            return self._resolver_value()
+        return self._spins[key].value()
 
     def _preset_value(self) -> str:
         value = self._preset.currentData()
@@ -291,25 +455,44 @@ def _minimum_for_field(name: str, minimum: float, decimals: int) -> float:
     return max(minimum, 10**-decimals)
 
 
-def _sanitized_persisted_overrides(value: object) -> dict[str, object]:
+def _validated_persisted_overrides(
+    value: object,
+    *,
+    preset: str,
+    spins: Mapping[str, QDoubleSpinBox],
+) -> dict[str, object]:
     if not isinstance(value, Mapping):
-        return {}
+        raise TypeError("overrides 必須是 mapping")
 
     overrides: dict[str, object] = {}
     for raw_key, raw_value in value.items():
-        key = str(raw_key)
+        if not isinstance(raw_key, str) or raw_key not in ADVANCED_FIELDS:
+            raise ValueError(f"不支援的 override 欄位：{raw_key!r}")
+        key = raw_key
         if key == "resolver_mode":
-            mode = str(raw_value)
-            if mode in RESOLVER_MODES:
-                overrides[key] = mode
+            if not isinstance(raw_value, str) or raw_value not in RESOLVER_MODES:
+                raise ValueError(f"resolver_mode 不支援：{raw_value!r}")
+            overrides[key] = raw_value
             continue
 
-        if key not in ADVANCED_FIELDS:
-            continue
-        try:
-            numeric = float(raw_value)
-        except (TypeError, ValueError):
-            continue
-        if isfinite(numeric):
-            overrides[key] = numeric
+        if isinstance(raw_value, bool) or not isinstance(raw_value, (int, float)):
+            raise TypeError(f"{key} 必須是數值")
+        numeric = float(raw_value)
+        spin = spins[key]
+        if not isfinite(numeric):
+            raise ValueError(f"{key} 必須是有限數值")
+        if not spin.minimum() <= numeric <= spin.maximum():
+            raise ValueError(f"{key} 超出可顯示範圍")
+        if round(numeric, spin.decimals()) != numeric:
+            raise ValueError(f"{key} 無法由目前 widget 精確表示")
+        overrides[key] = numeric
+
+    try:
+        bind_cid_nl_recipe(
+            load_preset(preset),
+            "discovery_only",
+            recipe_overrides=overrides,
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
     return overrides

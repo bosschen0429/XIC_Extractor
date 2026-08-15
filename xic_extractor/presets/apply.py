@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Literal, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -9,6 +9,7 @@ from xic_extractor.discovery.detected_features import DeltaMassPatternSettings
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.presets.loader import (
     DISCOVERY_TUNING_OVERRIDE_KEYS,
+    load_preset,
     validate_delta_mass_preset_tags,
 )
 from xic_extractor.presets.models import Preset, PresetError, PresetTag
@@ -54,13 +55,10 @@ OWNER_BUILD_XIC_BACKENDS = frozenset(
 _CID_NL_RECIPE_ROUTES = frozenset(
     {"full", "discovery_only", "align_only", "bounded_mode_track"}
 )
-_CID_NL_RECIPE_OVERRIDE_KEYS = (
-    frozenset(DISCOVERY_TUNING_OVERRIDE_KEYS)
-    | {
-        "standard_peak_backfill_publication_mode",
-        "owner_build_xic_backend",
-    }
-)
+_CID_NL_RECIPE_OVERRIDE_KEYS = frozenset(DISCOVERY_TUNING_OVERRIDE_KEYS) | {
+    "standard_peak_backfill_publication_mode",
+    "owner_build_xic_backend",
+}
 
 
 def bind_cid_nl_recipe(
@@ -89,15 +87,14 @@ def bind_cid_nl_recipe(
         preset,
         explicit_tuning_overrides=discovery_overrides or None,
     )
-    if route == "bounded_mode_track" and len(
-        discovery_settings.neutral_loss_profiles
-    ) != 1:
+    if (
+        route == "bounded_mode_track"
+        and len(discovery_settings.neutral_loss_profiles) != 1
+    ):
         raise ValueError("ModeTrack runner requires a single-tag CID-NL preset")
 
     alignment_config, runtime_options = apply_to_alignment(preset)
-    standard_peak_backfill = bool(
-        runtime_options.get("standard_peak_backfill", False)
-    )
+    standard_peak_backfill = bool(runtime_options.get("standard_peak_backfill", False))
     publication_mode = cast(
         Literal["matrix-only", "review-gallery", "deep-audit"],
         runtime_options.get("standard_peak_backfill_publication_mode", "deep-audit"),
@@ -105,9 +102,7 @@ def bind_cid_nl_recipe(
     write_gallery = bool(
         runtime_options.get("standard_peak_backfill_write_gallery", True)
     )
-    publication_override = overrides.get(
-        "standard_peak_backfill_publication_mode"
-    )
+    publication_override = overrides.get("standard_peak_backfill_publication_mode")
     if publication_override is not None:
         if not standard_peak_backfill:
             raise PresetError(
@@ -192,6 +187,26 @@ def bind_cid_nl_recipe(
             preset.source == "builtin:dna_dr_product_ready"
         ),
     )
+
+
+def filter_cid_nl_recipe_presets(
+    preset_names: Iterable[str],
+    *,
+    route: CidNlRecipeRoute = "discovery_only",
+) -> tuple[str, ...]:
+    """Return only presets accepted by the package-owned CID-NL binder."""
+
+    accepted: list[str] = []
+    for preset_name in preset_names:
+        if not isinstance(preset_name, str) or not preset_name:
+            raise TypeError("preset_names must contain non-empty text")
+        preset = load_preset(preset_name)
+        try:
+            bind_cid_nl_recipe(preset, route)
+        except (PresetError, ValueError):
+            continue
+        accepted.append(preset_name)
+    return tuple(accepted)
 
 
 def _owner_build_xic_backend_projection(
@@ -499,8 +514,7 @@ def _publication_mode_setting(
     if not isinstance(value, str) or value not in STANDARD_PEAK_PUBLICATION_MODES:
         modes = ", ".join(sorted(STANDARD_PEAK_PUBLICATION_MODES))
         raise PresetError(
-            "standard_peak_backfill_publication_mode must be one of: "
-            f"{modes}"
+            f"standard_peak_backfill_publication_mode must be one of: {modes}"
         )
     return value
 

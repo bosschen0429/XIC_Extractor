@@ -18,6 +18,9 @@ from xic_extractor.alignment.process_backend import AlignmentProcessExecutionErr
 from xic_extractor.config import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
+)
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     PresetError,
@@ -111,11 +114,14 @@ class DiscoveryWorker(QThread):
 
         self.progress.emit(0, 3, "Discovery...")
         settings = self._build_settings(request)
+        peak_config = self._discovery_peak_config(request, settings)
+        run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
         batch_outputs = run_discovery_batch(
             raw_paths,
             output_dir=request.output_dir,
             settings=settings,
-            peak_config=self._discovery_peak_config(request, settings),
+            peak_config=peak_config,
+            run_spec=run_spec,
         )
         index_path = _batch_index_path(batch_outputs, request.output_dir)
         if self.isInterruptionRequested():
@@ -144,11 +150,15 @@ class DiscoveryWorker(QThread):
             self.progress.emit(0, 1, "Discovery...")
             settings = self._build_settings(request)
             peak_config = self._discovery_peak_config(request, settings)
+            run_spec = _compile_processing_run_spec(
+                (request.raw_file,), settings, peak_config
+            )
             outputs = run_discovery(
                 request.raw_file,
                 output_dir=request.output_dir,
                 settings=settings,
                 peak_config=peak_config,
+                run_spec=run_spec,
             )
             if self.isInterruptionRequested():
                 return None
@@ -172,11 +182,13 @@ class DiscoveryWorker(QThread):
         self.progress.emit(0, 1, "Discovery...")
         settings = self._build_settings(request)
         peak_config = self._discovery_peak_config(request, settings)
+        run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
         batch_outputs = run_discovery_batch(
             raw_paths,
             output_dir=request.output_dir,
             settings=settings,
             peak_config=peak_config,
+            run_spec=run_spec,
         )
         if self.isInterruptionRequested():
             return None
@@ -402,8 +414,12 @@ class DiscoveryWorker(QThread):
             resolver_min_search_range_min=float(
                 defaults["resolver_min_search_range_min"]
             ),
-            resolver_min_relative_height=float(defaults["resolver_min_relative_height"]),
-            resolver_min_absolute_height=float(defaults["resolver_min_absolute_height"]),
+            resolver_min_relative_height=float(
+                defaults["resolver_min_relative_height"]
+            ),
+            resolver_min_absolute_height=float(
+                defaults["resolver_min_absolute_height"]
+            ),
             resolver_min_ratio_top_edge=float(defaults["resolver_min_ratio_top_edge"]),
             resolver_peak_duration_min=float(defaults["resolver_peak_duration_min"]),
             resolver_peak_duration_max=float(defaults["resolver_peak_duration_max"]),

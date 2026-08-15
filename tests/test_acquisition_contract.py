@@ -1,3 +1,4 @@
+import json
 import pickle
 from pathlib import Path
 
@@ -10,8 +11,11 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     TraceCoordinateKind,
     acquire_trace_batch,
+    acquired_trace_content_id,
+    deserialize_acquired_trace,
     mint_raw_acquisition_session_capability,
     mint_trace_acquisition_capability,
+    serialize_acquired_trace,
 )
 from xic_extractor.execution_runtime_owner import (
     RuntimeAcquisitionMetrics,
@@ -101,6 +105,73 @@ def test_capability_aware_batch_trace_coordinates_are_executable_no_raw(
         trace.coordinate.acquisition_source_id == source.acquisition_source_id
         for trace in batch.traces
     )
+
+
+def test_acquired_trace_owner_roundtrip_closes_coordinate_request_and_content(
+    tmp_path: Path,
+) -> None:
+    source = _source(tmp_path)
+    capability = mint_trace_acquisition_capability(
+        source,
+        adapter_namespace="tests.acquired_trace_persistence",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    request = XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0)
+    acquired = acquire_trace_batch(
+        capability, (request,), _NoRawBatchAdapter()
+    ).traces[0]
+    payload = serialize_acquired_trace(acquired)
+
+    restored = deserialize_acquired_trace(
+        payload,
+        expected_acquisition_source_id=source.acquisition_source_id,
+        expected_trace_coordinate_id=acquired.coordinate.trace_coordinate_id,
+        expected_trace_content_id=acquired_trace_content_id(acquired),
+    )
+
+    assert restored.coordinate == acquired.coordinate
+    assert np.array_equal(restored.trace.rt, acquired.trace.rt)
+    assert np.array_equal(restored.trace.intensity, acquired.trace.intensity)
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda value: value["coordinate"].__setitem__(
+            "acquisition_source_id", "cross-source"
+        ),
+        lambda value: value["coordinate"]["request"].__setitem__(
+            "mz", float(999.0).hex()
+        ),
+        lambda value: value["coordinate"].__setitem__("trace_point_count", 1),
+        lambda value: value["trace"]["rt"].__setitem__(0, float(9.0).hex()),
+        lambda value: value.__setitem__(
+            "acquired_trace_content_id", "xic.acquired-trace-content.v1:" + "0" * 64
+        ),
+    ],
+)
+def test_acquired_trace_owner_rejects_resealed_tamper(
+    tmp_path: Path,
+    mutate,
+) -> None:
+    source = _source(tmp_path)
+    capability = mint_trace_acquisition_capability(
+        source,
+        adapter_namespace="tests.acquired_trace_tamper",
+        coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
+    )
+    acquired = acquire_trace_batch(
+        capability,
+        (XICRequest(mz=258.1085, rt_min=8.0, rt_max=10.0, ppm_tol=20.0),),
+        _NoRawBatchAdapter(),
+    ).traces[0]
+    value = json.loads(serialize_acquired_trace(acquired))
+    mutate(value)
+
+    with pytest.raises(AcquisitionContractError):
+        deserialize_acquired_trace(
+            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        )
 
 
 def test_runtime_owner_aggregates_only_typed_acquisition_receipts(

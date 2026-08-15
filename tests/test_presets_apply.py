@@ -11,9 +11,27 @@ from xic_extractor.presets import (
     apply_to_alignment,
     apply_to_discovery,
     bind_cid_nl_recipe,
+    filter_cid_nl_recipe_presets,
+    list_presets,
 )
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.presets.models import Preset, PresetTag
+
+
+def test_cid_nl_preset_filter_matches_the_package_binder() -> None:
+    available = list_presets()
+    filtered = filter_cid_nl_recipe_presets(available)
+
+    assert filtered
+    assert "dna_dr" in filtered
+    assert "dna_dr_product_ready" in filtered
+    assert "pt_pattern" not in filtered
+    assert "pt_pattern_cid_nl_dr" not in filtered
+    for name in filtered:
+        bind_cid_nl_recipe(load_preset(name), "discovery_only")
+    for name in set(available) - set(filtered):
+        with pytest.raises((PresetError, ValueError)):
+            bind_cid_nl_recipe(load_preset(name), "discovery_only")
 
 
 def test_apply_to_discovery_builds_single_dr_settings() -> None:

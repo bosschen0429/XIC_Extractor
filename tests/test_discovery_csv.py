@@ -78,7 +78,6 @@ EXPECTED_PROVENANCE_COLUMNS = (
     "tag_evidence_json",
 )
 
-
 def _candidate(
     *,
     review_priority: str = "MEDIUM",
@@ -149,24 +148,19 @@ def _candidate(
         ms1_scan_support_score=ms1_scan_support_score,
     )
 
-
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
 
-
 def test_discovery_review_columns_alias_stays_compatible() -> None:
     assert DISCOVERY_REVIEW_COLUMNS == EXPECTED_CANDIDATE_REVIEW_COLUMNS
-
 
 def test_discovery_candidate_review_columns_are_named_explicitly() -> None:
     assert DISCOVERY_CANDIDATE_REVIEW_COLUMNS == EXPECTED_CANDIDATE_REVIEW_COLUMNS
     assert DISCOVERY_REVIEW_COLUMNS == DISCOVERY_CANDIDATE_REVIEW_COLUMNS
 
-
 def test_discovery_provenance_columns_are_stable_csv_contract() -> None:
     assert DISCOVERY_PROVENANCE_COLUMNS == EXPECTED_PROVENANCE_COLUMNS
-
 
 def test_discovery_candidate_columns_start_with_review_columns() -> None:
     review_column_count = len(DISCOVERY_REVIEW_COLUMNS)
@@ -183,13 +177,11 @@ def test_discovery_candidate_columns_start_with_review_columns() -> None:
         == DISCOVERY_PROVENANCE_COLUMNS
     )
 
-
 def test_discovery_candidate_has_optional_scan_support_score() -> None:
     field_names = {field.name for field in fields(DiscoveryCandidate)}
 
     assert "ms1_scan_support_score" in field_names
     assert _candidate().ms1_scan_support_score is None
-
 
 def test_discovery_candidate_has_successor_state_and_ms1_feature_identity() -> None:
     field_names = {field.name for field in fields(DiscoveryCandidate)}
@@ -200,7 +192,6 @@ def test_discovery_candidate_has_successor_state_and_ms1_feature_identity() -> N
     assert _candidate().ms1_feature_row_id == (
         "Sample_1|DNA_dR|258.108512|7.841234"
     )
-
 
 def test_tag_evidence_json_is_last_provenance_column() -> None:
     review_column_count = len(DISCOVERY_REVIEW_COLUMNS)
@@ -224,7 +215,6 @@ def test_tag_evidence_json_is_last_provenance_column() -> None:
         "max_scan_precursor_abs_delta_da",
     )
 
-
 def test_write_discovery_candidates_csv_creates_parent_and_writes_header(
     tmp_path: Path,
 ) -> None:
@@ -237,7 +227,6 @@ def test_write_discovery_candidates_csv_creates_parent_and_writes_header(
         reader = csv.reader(handle)
         assert next(reader) == list(DISCOVERY_CANDIDATE_COLUMNS)
 
-
 def test_write_discovery_candidates_csv_writes_header_for_empty_candidates(
     tmp_path: Path,
 ) -> None:
@@ -247,7 +236,6 @@ def test_write_discovery_candidates_csv_writes_header_for_empty_candidates(
 
     with output_path.open(newline="", encoding="utf-8") as handle:
         assert list(csv.reader(handle)) == [list(DISCOVERY_CANDIDATE_COLUMNS)]
-
 
 def test_write_discovery_candidates_csv_sorts_review_queue_rows(
     tmp_path: Path,
@@ -327,7 +315,6 @@ def test_write_discovery_candidates_csv_sorts_review_queue_rows(
         "low",
     ]
 
-
 def test_write_discovery_candidates_csv_sorts_by_evidence_score_within_priority(
     tmp_path: Path,
 ) -> None:
@@ -365,7 +352,6 @@ def test_write_discovery_candidates_csv_sorts_by_evidence_score_within_priority(
         "low-a",
     ]
 
-
 def test_write_discovery_candidates_csv_keeps_feature_families_together(
     tmp_path: Path,
 ) -> None:
@@ -398,7 +384,6 @@ def test_write_discovery_candidates_csv_keeps_feature_families_together(
         "family-a-lower-intensity",
         "family-b-between",
     ]
-
 
 def test_write_discovery_candidates_csv_formats_review_values_stably(
     tmp_path: Path,
@@ -434,7 +419,6 @@ def test_write_discovery_candidates_csv_formats_review_values_stably(
     assert row["ms1_apex_rt"] == "7.84123"
     assert row["raw_file"] == "C:\\data\\Sample_1.raw"
 
-
 def test_write_discovery_candidates_csv_serializes_seed_scan_ids(
     tmp_path: Path,
 ) -> None:
@@ -445,11 +429,9 @@ def test_write_discovery_candidates_csv_serializes_seed_scan_ids(
 
     assert _read_csv(output_path)[0]["seed_scan_ids"] == "6095;6100;6112"
 
-
 def test_seed_scan_ids_formatter_does_not_join_string_characters() -> None:
     assert _format_csv_value("seed_scan_ids", (6095, 6100, 6112)) == "6095;6100;6112"
     assert _format_csv_value("seed_scan_ids", "6095;6100;6112") == "6095;6100;6112"
-
 
 def test_write_discovery_candidates_csv_uses_csv_escaping(
     tmp_path: Path,
@@ -465,7 +447,6 @@ def test_write_discovery_candidates_csv_uses_csv_escaping(
     row = _read_csv(output_path)[0]
     assert row["sample_stem"] == 'Sample, "quoted"'
     assert row["reason"] == 'neutral loss, requires "review"'
-
 
 def test_write_discovery_candidates_csv_escapes_excel_formula_strings(
     tmp_path: Path,
@@ -484,7 +465,6 @@ def test_write_discovery_candidates_csv_escapes_excel_formula_strings(
     assert row["sample_stem"] == "'+sample"
     assert row["reason"] == "'@review"
 
-
 def test_discovery_settings_require_neutral_loss_profile() -> None:
     profile = NeutralLossProfile("DNA_dR", 116.0474)
 
@@ -502,7 +482,6 @@ def test_discovery_settings_require_neutral_loss_profile() -> None:
     assert settings.rt_max == 999.0
     assert settings.resolver_mode == "local_minimum"
 
-
 def test_discovery_settings_default_evidence_profile() -> None:
     profile = NeutralLossProfile("DNA_dR", 116.0474)
 
@@ -514,7 +493,6 @@ def test_discovery_settings_default_evidence_profile() -> None:
         settings.evidence_profile.thresholds
         == DEFAULT_EVIDENCE_PROFILE.thresholds
     )
-
 
 def test_discovery_seed_preserves_full_ms2_seed_contract() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
@@ -544,7 +522,6 @@ def test_discovery_seed_preserves_full_ms2_seed_contract() -> None:
     assert seed.configured_neutral_loss_da == 116.0474
     assert seed.observed_neutral_loss_da == 116.0471
     assert seed.observed_loss_error_ppm == 2.58
-
 
 def test_discovery_seed_group_preserves_group_contract_without_best_seed() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
@@ -614,7 +591,6 @@ def test_discovery_seed_group_preserves_group_contract_without_best_seed() -> No
     assert group.scan_precursor_mz is None
     assert group.scan_precursor_delta_da is None
     assert group.max_scan_precursor_abs_delta_da is None
-
 
 def test_discovery_candidate_from_values_builds_row_identity_candidate_id() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
@@ -703,7 +679,6 @@ def test_discovery_candidate_from_values_builds_row_identity_candidate_id() -> N
     assert candidate.ms1_trace_quality == "GOOD"
     assert candidate.ms2_product_max_intensity == 12000.0
 
-
 def test_discovery_candidate_from_values_assigns_supported_state() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
     best_seed = DiscoverySeed(
@@ -753,7 +728,6 @@ def test_discovery_candidate_from_values_assigns_supported_state() -> None:
     assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
     assert candidate.ms1_feature_row_id == "TumorBC2312_DNA|DNA_dR|258.1085|7.84"
 
-
 def test_from_values_makes_orphan_review_only_without_ms1_peak() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")
     best_seed = DiscoverySeed(
@@ -802,7 +776,6 @@ def test_from_values_makes_orphan_review_only_without_ms1_peak() -> None:
 
     assert candidate.discovery_candidate_state == "review_only_orphan_nl"
     assert candidate.ms1_feature_row_id == ""
-
 
 def test_candidate_id_distinguishes_same_scan_precursor_product_hypotheses() -> None:
     raw_file = Path("C:/data/TumorBC2312_DNA.raw")

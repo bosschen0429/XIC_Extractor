@@ -12,6 +12,12 @@ from typing import Sequence
 
 ShardPatterns = OrderedDict[str, tuple[str, ...]]
 
+_ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
+    {
+        "tests/test_discovery_method_persistence.py",
+    }
+)
+
 SHARD_PATTERNS: ShardPatterns = OrderedDict(
     {
         "docs-config": (
@@ -38,6 +44,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
         "gui": (
             "tests/test_discovery_worker.py",
             "tests/test_discovery_method_section.py",
+            "tests/test_discovery_method_persistence.py",
             "tests/test_gui_*.py",
             "tests/test_main_window_layout.py",
             "tests/test_messages.py",
@@ -128,12 +135,18 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_pt_pattern_boundaries.py",
             "tests/test_pt_pattern_scan_proxy.py",
             "tests/test_prepare_delta_mass_detected_features.py",
+            "tests/test_physical_fact_contract.py",
+            "tests/test_physical_peak_evaluation_persistence.py",
+            "tests/test_processing_run_spec.py",
+            "tests/test_processing_run_spec_architecture.py",
+            "tests/test_processing_run_spec_entrypoints.py",
             "tests/test_process_job_execution.py",
             "tests/test_quantitative_projection_authority.py",
             "tests/test_run_alignment.py",
             "tests/test_run_alignment_signal_profile_integration.py",
             "tests/test_run_alignment_validation.py",
             "tests/test_run_discovery.py",
+            "tests/test_run_discovery_run_spec_cli.py",
             "tests/test_run_pt_pattern_discovery.py",
             "tests/test_run_untargeted_cid_nl_mode_track.py",
             "tests/test_run_untargeted_cid_nl_real_data.py",
@@ -233,11 +246,17 @@ def assign_shards(files: Sequence[Path]) -> dict[str, tuple[Path, ...]]:
 
 
 def shard_for_path(path: Path | str) -> str | None:
-    posix = Path(path).as_posix()
-    for shard, patterns in SHARD_PATTERNS.items():
-        if any(fnmatchcase(posix, pattern) for pattern in patterns):
+    for shard in SHARD_PATTERNS:
+        if _shard_matches_path(shard, path):
             return shard
     return None
+
+
+def _shard_matches_path(shard: str, path: Path | str) -> bool:
+    posix = Path(path).as_posix()
+    if shard == "alignment-core" and posix in _ALIGNMENT_CORE_EXCLUDED_PATHS:
+        return False
+    return any(fnmatchcase(posix, pattern) for pattern in SHARD_PATTERNS[shard])
 
 
 def shard_names(*, include_misc: bool = True) -> tuple[str, ...]:

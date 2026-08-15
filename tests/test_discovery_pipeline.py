@@ -63,7 +63,6 @@ from xic_extractor.xic_models import XICRequest, XICTrace
 
 NEUTRAL_LOSS_DA = 116.0474
 
-
 def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -115,7 +114,6 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
     )
     assert "review_note" in review_rows[0]
 
-
 def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -158,14 +156,8 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     candidate_ids = {row["candidate_id"] for row in rows}
     assert len(rows) == 2
     assert len(candidate_ids) == 2
-    assert (
-        "TumorBC2312_DNA#19561@mz300.160635_p184.113235"
-        in candidate_ids
-    )
-    assert (
-        "TumorBC2312_DNA#19561@mz301.164978_p185.115845"
-        in candidate_ids
-    )
+    assert "TumorBC2312_DNA#19561@mz300.160635_p184.113235" in candidate_ids
+    assert "TumorBC2312_DNA#19561@mz301.164978_p185.115845" in candidate_ids
     rows_by_product = {row["product_mz"]: row for row in rows}
     inferred = rows_by_product["184.113"]
     direct = rows_by_product["185.116"]
@@ -175,7 +167,6 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
     )
     assert direct["precursor_mz_basis"] == "scan_precursor"
     assert direct["neutral_loss_error_basis"] == "measured_scan_precursor_product"
-
 
 def test_pipeline_writes_header_only_csv_when_no_strict_seeds(tmp_path: Path) -> None:
     raw = _FakeRawHandle(events=[])
@@ -197,7 +188,6 @@ def test_pipeline_writes_header_only_csv_when_no_strict_seeds(tmp_path: Path) ->
     assert "candidate_id" in rows[0]
     assert len(review_rows) == 1
     assert "review_note" in review_rows[0]
-
 
 def test_batch_pipeline_writes_per_sample_csvs_and_index(
     tmp_path: Path,
@@ -249,13 +239,9 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         "NormalBC2257_DNA",
     ]
     assert [row["candidate_count"] for row in index_rows] == ["1", "1"]
-    assert {row["schema_version"] for row in index_rows} == {
-        "discovery_batch_index_v2"
-    }
+    assert {row["schema_version"] for row in index_rows} == {"discovery_batch_index_v2"}
     assert all(
-        row["discovery_receipt_id"].startswith(
-            "xic.discovery-candidate-universe.v1:"
-        )
+        row["discovery_receipt_id"].startswith("xic.discovery-candidate-universe.v1:")
         for row in index_rows
     )
     assert [row["medium_count"] for row in index_rows] == ["1", "1"]
@@ -319,7 +305,6 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     assert tuple(candidate.candidate_id for candidate in relocated_candidates) == (
         "TumorBC2312_DNA#101@mz258.1085_p142.0611",
     )
-
 
 def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     tmp_path: Path,
@@ -408,7 +393,6 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     assert all(raw.entered and raw.closed for raw in parallel_handles.values())
     assert progress == [(1, 2, "sample-b"), (2, 2, "sample-a")]
 
-
 def test_parallel_batch_rejects_parent_raw_opener(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="RAW handles inside spawned workers"):
         run_discovery_batch(
@@ -419,7 +403,6 @@ def test_parallel_batch_rejects_parent_raw_opener(tmp_path: Path) -> None:
             raw_opener=lambda path, dll_dir: _FakeRawHandle(events=[]),
             max_workers=2,
         )
-
 
 def test_parallel_batch_preserves_first_failure_and_completed_census(
     tmp_path: Path,
@@ -498,14 +481,12 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
     assert {row["scope"] for row in request_ipc} == {"sample-0", "sample-1"}
     assert all(row["availability"] == "partial" for row in request_ipc)
     assert any(
-        record.stage == "discover.failed_worker_partial"
-        for record in recorder.records
+        record.stage == "discover.failed_worker_partial" for record in recorder.records
     )
     assert any(
         row["metric"] == "worker_retry_count" and row["scope"] == "sample-0"
         for row in recorder.measurement_observations
     )
-
 
 def test_parallel_batch_preserves_every_same_batch_failure(
     tmp_path: Path,
@@ -552,7 +533,6 @@ def test_parallel_batch_preserves_every_same_batch_failure(
     assert error.in_flight_job_count == 0
     assert error.unsubmitted_job_count == 2
     assert not (tmp_path / "out" / "discovery_batch_index.csv").exists()
-
 
 def test_parallel_batch_rejects_error_caller_authored_owner_counts(
     tmp_path: Path,
@@ -601,7 +581,6 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
             max_workers=2,
             executor_factory=_ForgedErrorExecutor,
         )
-
 
 def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
     tmp_path: Path,
@@ -664,7 +643,6 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
     assert rows["raw_open_count"]["availability"] == "measured"
     assert rows["raw_open_count"]["reason"] == ""
 
-
 def test_parallel_batch_disabled_timing_skips_ipc_serialization(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -719,13 +697,10 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             executor_factory=_FailureExecutor,
         )
     ipc_rows = [
-        row
-        for row in recorder.measurement_observations
-        if row["metric"] == "ipc_bytes"
+        row for row in recorder.measurement_observations if row["metric"] == "ipc_bytes"
     ]
     assert len(ipc_rows) == 4
     assert all(row["availability"] == "failed" for row in ipc_rows)
-
 
 def test_discovery_worker_disabled_mode_omits_diagnostic_payload(
     tmp_path: Path,
@@ -769,7 +744,6 @@ def test_discovery_worker_disabled_mode_omits_diagnostic_payload(
     assert isinstance(result, DiscoverySampleProcessError)
     assert result.timing_records == ()
     assert result.measurement_observations == ()
-
 
 def test_discovery_worker_failure_carries_own_partial_diagnostics(
     tmp_path: Path,
@@ -828,7 +802,6 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
     ]
     assert result.ms1_measurements == measurements
 
-
 def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip(
     tmp_path: Path,
 ) -> None:
@@ -865,7 +838,6 @@ def test_discovery_process_error_payload_survives_spawn_pickle_roundtrip(
         restored = executor.submit(pickle.loads, pickle.dumps(error)).result(timeout=30)
 
     assert restored == error
-
 
 def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
     tmp_path: Path,
@@ -908,7 +880,6 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
         and row["availability"] == "unavailable"
         for row in rows
     )
-
 
 def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
     tmp_path: Path,
@@ -953,7 +924,6 @@ def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
     assert rows["trace_point_count"]["value"] == 3
     assert raw.closed
 
-
 def test_adapter_counter_failure_does_not_mask_discovery_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -988,7 +958,6 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
     assert adapter_row["reason"] == (
         "raw handle call counter read failed: RuntimeError: counter failed"
     )
-
 
 def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
     tmp_path: Path,
@@ -1064,7 +1033,6 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
     assert all(row["availability"] == "partial" for row in ipc_rows)
     assert {row["scope"] for row in ipc_rows} == {"sample-0", "sample-1"}
 
-
 def test_batch_pipeline_escapes_excel_formula_strings_in_index(
     tmp_path: Path,
 ) -> None:
@@ -1085,7 +1053,6 @@ def test_batch_pipeline_escapes_excel_formula_strings_in_index(
     assert Path(row["raw_file"]).name == "=cmd.raw"
     assert row["candidate_csv"].endswith("discovery_candidates.csv")
     assert row["review_csv"].endswith("discovery_review.csv")
-
 
 def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) -> None:
     timing = TimingRecorder("discovery", timer=iter([1.0, 1.25]).__next__)
@@ -1121,7 +1088,6 @@ def test_batch_index_writer_preserves_csv_and_timing_contract(tmp_path: Path) ->
         )
     ]
 
-
 def test_batch_index_writer_rejects_unexpected_columns(tmp_path: Path) -> None:
     row = dict.fromkeys(_BATCH_INDEX_COLUMNS, "")
     row["unexpected"] = "value"
@@ -1132,7 +1098,6 @@ def test_batch_index_writer_rejects_unexpected_columns(tmp_path: Path) -> None:
             [row],
             timing_recorder=TimingRecorder.disabled("discovery"),
         )
-
 
 def test_run_discovery_keeps_stale_pair_when_review_write_fails(
     tmp_path: Path,
@@ -1167,7 +1132,6 @@ def test_run_discovery_keeps_stale_pair_when_review_write_fails(
     assert stale_review.read_text(encoding="utf-8") == "stale review\n"
     assert not (output_dir / "discovery_candidates.csv.tmp").exists()
     assert not (output_dir / "discovery_review.csv.tmp").exists()
-
 
 def test_pipeline_threads_evidence_profile_into_scoring(
     tmp_path: Path,
@@ -1213,7 +1177,6 @@ def test_pipeline_threads_evidence_profile_into_scoring(
     rows = _read_csv(outputs.candidates_csv)
     assert rows[0]["evidence_score"] == "58"
 
-
 def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1255,7 +1218,6 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
     rows = _read_csv(outputs.candidates_csv)
     assert rows[0]["ms1_scan_support_score"] == "0.5"
 
-
 def test_pipeline_leaves_ms1_scan_support_blank_for_missing_ms1_peak(
     tmp_path: Path,
 ) -> None:
@@ -1276,7 +1238,6 @@ def test_pipeline_leaves_ms1_scan_support_blank_for_missing_ms1_peak(
     rows = _read_csv(outputs.candidates_csv)
     assert rows[0]["ms1_peak_found"] == "FALSE"
     assert rows[0]["ms1_scan_support_score"] == ""
-
 
 def test_single_raw_pipeline_records_discovery_timing_stages(
     tmp_path: Path,
@@ -1316,6 +1277,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         "discover.peak_anchor",
         "discover.write_candidates_csv",
         "discover.write_review_csv",
+        "discover.publish_outputs",
     }
     assert records_by_stage["discover.ms2_seeds"].sample_stem == "Sample"
     assert records_by_stage["discover.ms2_seeds"].metrics["seed_count"] == 1
@@ -1324,7 +1286,10 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.peak_anchor"].metrics["candidate_count"] == 1
     assert records_by_stage["discover.write_candidates_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.write_review_csv"].metrics["row_count"] == 1
-
+    assert records_by_stage["discover.publish_outputs"].metrics == {
+        "artifact_count": 2,
+        "replaced_existing_count": 0,
+    }
 
 def test_batch_pipeline_records_batch_index_timing(tmp_path: Path) -> None:
     raw_path = tmp_path / "Blank.raw"
@@ -1346,7 +1311,6 @@ def test_batch_pipeline_records_batch_index_timing(tmp_path: Path) -> None:
         "raw_count": 1,
         "row_count": 1,
     }
-
 
 def test_pipeline_uses_injected_raw_opener_with_dll_dir_and_closes_context(
     tmp_path: Path,
@@ -1371,7 +1335,6 @@ def test_pipeline_uses_injected_raw_opener_with_dll_dir_and_closes_context(
     assert calls == [(raw_path, peak_config.dll_dir)]
     assert raw.entered is True
     assert raw.closed is True
-
 
 def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
     tmp_path: Path,
@@ -1434,7 +1397,6 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
     assert raw_open_rows[0]["availability"] == "measured"
     assert raw.closed is True
 
-
 def test_pipeline_does_not_import_targeted_extractor_module() -> None:
     pipeline_path = (
         Path(__file__).resolve().parents[1]
@@ -1457,7 +1419,6 @@ def test_pipeline_does_not_import_targeted_extractor_module() -> None:
     }
 
     assert "xic_extractor.extractor" not in imported_modules | imported_from_modules
-
 
 def test_owner_bound_discovery_projects_complete_ms1_measurements(
     tmp_path: Path,
@@ -1519,7 +1480,6 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
         assert rows[metric]["availability"] == "unavailable"
         assert str(rows[metric]["reason"]).startswith("unsupported:")
 
-
 @pytest.mark.parametrize(
     "metric",
     (
@@ -1537,7 +1497,6 @@ def test_worker_measurement_projection_rejects_caller_authored_owner_counts(
             {"metric": metric, "value": 999}
         )
 
-
 def test_discovery_ms1_measurement_validator_rejects_duplicate_fields() -> None:
     recorder = TimingRecorder("discovery")
     for metric in _DISCOVERY_MS1_MEASUREMENT_NAMES:
@@ -1551,7 +1510,6 @@ def test_discovery_ms1_measurement_validator_rejects_duplicate_fields() -> None:
     with pytest.raises(ValueError, match="duplicate"):
         _validate_discovery_ms1_observations(recorder, "Sample")
 
-
 def test_discovery_ms1_measurement_validator_rejects_unknown_fields() -> None:
     recorder = TimingRecorder("discovery")
     for metric in _DISCOVERY_MS1_MEASUREMENT_NAMES:
@@ -1561,14 +1519,12 @@ def test_discovery_ms1_measurement_validator_rejects_unknown_fields() -> None:
     with pytest.raises(ValueError, match="unexpected=.*unowned"):
         _validate_discovery_ms1_observations(recorder, "Sample")
 
-
 def _settings(**overrides: object) -> DiscoverySettings:
     values = {
         "neutral_loss_profile": NeutralLossProfile("DNA_dR", NEUTRAL_LOSS_DA),
         **overrides,
     }
     return DiscoverySettings(**cast(Any, values))
-
 
 def _peak_config(tmp_path: Path) -> ExtractionConfig:
     return ExtractionConfig(
@@ -1584,7 +1540,6 @@ def _peak_config(tmp_path: Path) -> ExtractionConfig:
         nl_min_intensity_ratio=0.01,
         resolver_mode="local_minimum",
     )
-
 
 def _scan_event(
     *,
@@ -1612,7 +1567,6 @@ def _scan_event(
         scan_number=scan_number,
     )
 
-
 def _ok_peak(
     *,
     rt: float,
@@ -1636,11 +1590,9 @@ def _ok_peak(
         n_prominent_peaks=1,
     )
 
-
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
-
 
 class _OwnerBoundFakeRawHandle:
     def __init__(
@@ -1686,7 +1638,6 @@ class _OwnerBoundFakeRawHandle:
 
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         return int(request.rt_min * 100), int(request.rt_max * 100)
-
 
 class _FakeRawHandle:
     def __init__(
