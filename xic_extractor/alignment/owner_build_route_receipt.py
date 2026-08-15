@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
-from typing import Literal, final
+from typing import Literal, cast, final, get_args
 
 from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
 
@@ -13,6 +13,13 @@ EffectiveOwnerBuildRoute = Literal[
 ]
 
 _OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN = object()
+_OWNER_BUILD_XIC_BACKENDS = frozenset(get_args(OwnerBuildXicBackend))
+
+
+def _validate_owner_build_xic_backend(value: object) -> OwnerBuildXicBackend:
+    if type(value) is not str or value not in _OWNER_BUILD_XIC_BACKENDS:
+        raise ValueError(f"unsupported owner build XIC backend: {value}")
+    return cast(OwnerBuildXicBackend, value)
 
 
 @final
@@ -35,6 +42,9 @@ class OwnerBuildRouteReceipt:
             raise ValueError(
                 "OwnerBuildRouteReceipt must be minted by the Alignment owner"
             )
+        _validate_owner_build_xic_backend(
+            self.configured_owner_build_xic_backend,
+        )
         if self.effective_owner_build_route == "configured_backend":
             if (
                 self.effective_owner_build_xic_backend
@@ -76,6 +86,7 @@ def _mint_owner_build_route_receipt(
     processing_run_spec_id: str | None = None,
     processing_run_spec_hash: str | None = None,
 ) -> OwnerBuildRouteReceipt:
+    configured_backend = _validate_owner_build_xic_backend(configured_backend)
     uses_discovery_bindings = processing_run_spec_id is not None
     if uses_discovery_bindings != (processing_run_spec_hash is not None):
         raise ValueError("ProcessingRunSpec id and hash must be provided together")

@@ -63,7 +63,7 @@ def test_standard_peak_backfill_preset_skips_machine_pipeline_without_queue(
     assert summary["status_reasons"] == "no_standard_peak_backfill_review_rows"
 
 
-def test_standard_peak_backfill_preset_chunks_and_publishes_alignment_output(
+def test_standard_peak_backfill_preset_emits_offline_formal_sidecar_only(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -193,7 +193,7 @@ def test_standard_peak_backfill_preset_chunks_and_publishes_alignment_output(
         for call in machine_calls
     )
     assert consolidation_calls[0]["publish_to_source_alignment_output"] is False
-    assert consolidation_calls[0]["emit_formal_product_output"] is False
+    assert consolidation_calls[0]["emit_formal_product_output"] is True
     assert "publish_alignment_matrix_tsv" not in consolidation_calls[0]
     assert "publish_alignment_matrix_identity_tsv" not in consolidation_calls[0]
     summary = json.loads(outputs.summary_json.read_text(encoding="utf-8"))
