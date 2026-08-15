@@ -357,6 +357,11 @@ class BackfillCellEvidence:
             return False
         if abs(self.rt_delta_sec) <= _PREFERRED_RT_DELTA_SEC:
             return True
+        return self.drift_corrected_rt_supported(_PREFERRED_RT_DELTA_SEC)
+
+    def drift_corrected_rt_supported(self, preferred_rt_sec: float) -> bool:
+        if self.rt_delta_sec is None or not _positive(preferred_rt_sec):
+            return False
         if _normalize(self.backfill_matrix_rt_drift_status) not in (
             _DRIFT_SUPPORT_STATUSES
         ):
@@ -368,7 +373,7 @@ class BackfillCellEvidence:
         return (
             self.backfill_drift_corrected_delta_sec is not None
             and abs(self.backfill_drift_corrected_delta_sec)
-            <= _PREFERRED_RT_DELTA_SEC
+            <= preferred_rt_sec
         )
 
     @property
@@ -427,9 +432,26 @@ class BackfillCellEvidence:
 
     @property
     def product_authorized_same_peak_supported(self) -> bool:
+        return self._product_authorized_same_peak_supported(
+            rt_supported=(self.local_apex_supported or self.rt_evidence_supported),
+        )
+
+    def product_authorized_drift_corrected_same_peak_supported(
+        self,
+        preferred_rt_sec: float,
+    ) -> bool:
+        return (
+            self._product_authorized_same_peak_supported(
+                rt_supported=self.drift_corrected_rt_supported(preferred_rt_sec),
+            )
+            and not self.high_neighbor_interference
+            and not self.low_assessable_coverage
+        )
+
+    def _product_authorized_same_peak_supported(self, *, rt_supported: bool) -> bool:
         return (
             self.selected_peak_geometry_supported
-            and (self.local_apex_supported or self.rt_evidence_supported)
+            and rt_supported
             and not self.ms1_pattern_conflict
             and not self.hypothesis_or_claim_blocked
             and self.same_peak_ms1_pattern_supported
@@ -474,6 +496,7 @@ class BackfillPromotionEvidence:
     ambiguous_count: int
     backfill_dependency: str | None
     seed_quality: SeedQualitySummary | None
+    held_rescue_count: int = 0
     cells: tuple[BackfillCellEvidence, ...] = ()
 
 
@@ -503,6 +526,7 @@ def evidence_from_alignment(
     q_rescue: int,
     duplicate_count: int,
     ambiguous_count: int,
+    held_rescue_count: int,
     backfill_dependency: str | None,
     seed_quality: SeedQualitySummary | None,
     cells: Sequence[AlignedCell],
@@ -519,6 +543,7 @@ def evidence_from_alignment(
         ambiguous_count=ambiguous_count,
         backfill_dependency=backfill_dependency,
         seed_quality=seed_quality,
+        held_rescue_count=held_rescue_count,
         cells=tuple(
             _cell_from_aligned(cell, quality_by_sample.get(cell.sample_stem))
             for cell in cells
@@ -535,6 +560,17 @@ def cell_evidence_from_aligned(
 
 def cell_has_product_authorized_same_peak_backfill_support(cell: AlignedCell) -> bool:
     return cell_evidence_from_aligned(cell, None).supported_for_backfill
+
+
+def cell_has_product_authorized_drift_corrected_same_peak_backfill_support(
+    cell: AlignedCell,
+    *,
+    preferred_rt_sec: float,
+) -> bool:
+    evidence = cell_evidence_from_aligned(cell, None)
+    return evidence.product_authorized_drift_corrected_same_peak_supported(
+        preferred_rt_sec,
+    )
 
 
 def evidence_from_tsv_rows(
@@ -593,12 +629,14 @@ def classify_backfill_promotion(
     same_peak_override = _same_peak_policy_override(evidence)
     if not _in_policy_scope(evidence) and not same_peak_override:
         return BackfillPromotionDecision(state="not_applicable")
-    if evidence.q_detected <= 0 and evidence.q_rescue > 0:
+    candidate_rescue_count = evidence.q_rescue + evidence.held_rescue_count
+    if evidence.q_detected <= 0 and candidate_rescue_count > 0:
         return BackfillPromotionDecision(
             state="blocked",
             reason=RESCUE_ONLY_BLOCKED_REASON,
             confidence="review",
             flags=("rescue_only",),
+            assessed_rescue_count=candidate_rescue_count,
         )
     if evidence.q_detected < 2 and not same_peak_override:
         return BackfillPromotionDecision(state="not_applicable")
@@ -608,6 +646,17 @@ def classify_backfill_promotion(
             reason="duplicate_claim_pressure",
             confidence="review",
             flags=("duplicate_claim_pressure",),
+        )
+
+    if evidence.held_rescue_count > 0:
+        supported = tuple(cell for cell in rescued if cell.supported_for_backfill)
+        return BackfillPromotionDecision(
+            state="blocked",
+            reason=BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
+            confidence="review",
+            flags=("missing_independent_backfill_identity_evidence",),
+            supported_rescue_count=len(supported),
+            assessed_rescue_count=candidate_rescue_count,
         )
 
     if evidence.q_rescue > 0 and len(rescued) < evidence.q_rescue:
@@ -682,7 +731,7 @@ def _in_policy_scope(evidence: BackfillPromotionEvidence) -> bool:
         return False
     if evidence.primary_evidence not in _SUPPORTED_PRIMARY_EVIDENCE:
         return False
-    if evidence.q_rescue <= 0:
+    if evidence.q_rescue + evidence.held_rescue_count <= 0:
         return False
     return evidence.backfill_dependency in _POLICY_BACKFILL_REASONS
 
