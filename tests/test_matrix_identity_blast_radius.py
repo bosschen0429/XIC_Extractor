@@ -419,6 +419,7 @@ def _review_row(
         "family_center_mz": 500.0,
         "family_center_rt": 8.5,
         "has_anchor": "TRUE",
+        "review_rescue_count": 0,
     }
 
 

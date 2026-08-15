@@ -153,6 +153,7 @@ def run_blast_radius(
             ),
             "quantifiable_rescue_count": row_decision.quantifiable_rescue_count,
             "accepted_rescue_count": row_decision.quantifiable_rescue_count,
+            "review_rescue_count": row_decision.review_rescue_count,
             "duplicate_assigned_count": row_decision.duplicate_assigned_count,
             "ambiguous_ms1_owner_count": row_decision.ambiguous_ms1_owner_count,
             "row_flags": ";".join(row_decision.row_flags),
