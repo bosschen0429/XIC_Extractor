@@ -95,13 +95,15 @@ def test_align_only_summary_uses_existing_batch_index_counts(
         discovery_batch_index=index_path,
     )
     worker = DiscoveryWorker(request)
+
+    def fail_if_gallery_runs(*_args, **_kwargs):
+        raise AssertionError("parked GUI route must not build a gallery")
+
     monkeypatch.setattr(
         worker,
         "_build_gallery",
-        lambda _request, _outputs, *, raw_dir: {
-            "gallery_html": str(output_dir / "gallery.html"),
-            "gallery_error": None,
-        },
+        fail_if_gallery_runs,
+        raising=False,
     )
 
     summary = worker._run_align_only(request)
@@ -115,6 +117,10 @@ def test_align_only_summary_uses_existing_batch_index_counts(
         "total": 7,
     }
     assert summary["discovery_batch_index"] == str(index_path)
+    assert summary["gallery_html"] is None
+    assert summary["gallery_error"] == (
+        "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"
+    )
 
 
 def test_single_file_discovery_only_summary_counts_review_priorities(
@@ -254,13 +260,21 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         discovery_batch_index=index_path if mode == "align_only" else None,
     )
     worker = DiscoveryWorker(request)
+
+    def fail_if_gallery_runs(*_args, **_kwargs):
+        raise AssertionError("parked GUI route must not build a gallery")
+
     monkeypatch.setattr(
         worker,
         "_build_gallery",
-        lambda _request, _outputs, *, raw_dir: {
-            "gallery_html": str(output_dir / "gallery.html"),
-            "gallery_error": None,
-        },
+        fail_if_gallery_runs,
+        raising=False,
+    )
+    progress_events: list[tuple[int, int, str]] = []
+    worker.progress.connect(
+        lambda completed, total, message: progress_events.append(
+            (completed, total, message)
+        )
     )
 
     if mode == "align_only":
@@ -275,6 +289,16 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert captured_alignment["emit_alignment_cells"] is True
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
     assert captured_alignment["audit_evidence_mode"] == "none"
+    assert summary["gallery_html"] is None
+    assert summary["gallery_error"] == (
+        "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"
+    )
+    assert "gallery_html" not in summary["alignment_outputs"]
+    assert progress_events == (
+        [(0, 2, "Discovery..."), (1, 2, "Alignment..."), (2, 2, "完成")]
+        if mode == "full"
+        else [(0, 1, "Alignment..."), (1, 1, "完成")]
+    )
     if mode == "full":
         assert captured_alignment["discovery_physical_bindings_by_sample"] == {
             "A": ("binding",)
@@ -307,6 +331,14 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         name.startswith("standard_peak_")
         for name in summary["alignment_outputs"]
     )
+
+
+def test_discovery_worker_has_no_automatic_gallery_referrer() -> None:
+    source = Path(module.__file__).read_text(encoding="utf-8")
+
+    assert "gui.workers.backfill_gallery" not in source
+    assert "build_backfill_review_gallery" not in source
+    assert "_build_gallery" not in source
 
 
 def test_gui_full_reuses_bound_custom_preset_after_discovery(
