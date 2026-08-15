@@ -30,6 +30,7 @@ REVIEW_REQUIRED_COLUMNS = (
     "primary_evidence",
     "quantifiable_detected_count",
     "quantifiable_rescue_count",
+    "review_rescue_count",
     "duplicate_assigned_count",
     "ambiguous_ms1_owner_count",
     "row_flags",

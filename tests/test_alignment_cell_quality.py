@@ -137,6 +137,16 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
                 "FAM001",
                 "rescued",
                 100.0,
+                region_local_mixture_diagnostic="insufficient_evidence",
+            ),
+            LOW_MS1_COVERAGE_BLOCKED_REASON,
+        ),
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
                 region_local_mixture_diagnostic="two_peak_supported",
             ),
             NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
@@ -167,6 +177,7 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
         "ambiguous-adjacent-split",
         "two-peaks-supported",
         "competing-boundary-model",
+        "insufficient-local-mixture-evidence",
         "low-ms1-coverage",
     ),
 )

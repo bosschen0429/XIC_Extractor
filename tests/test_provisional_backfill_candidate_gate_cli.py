@@ -286,6 +286,23 @@ def test_cli_reports_missing_required_columns(
     assert "identity_decision" in stderr
 
 
+def test_cli_rejects_review_without_review_rescue_count(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    alignment_dir = _write_alignment_run(tmp_path / "alignment")
+    review_path = alignment_dir / "alignment_review.tsv"
+    rows = _read_tsv(review_path)
+    for row in rows:
+        row.pop("review_rescue_count")
+    _write_tsv(review_path, rows)
+
+    code = gate_cli.main(["--alignment-dir", str(alignment_dir)])
+
+    assert code == 2
+    assert "review_rescue_count" in capsys.readouterr().err
+
+
 def _write_raw_manifest(tmp_path: Path) -> Path:
     path = tmp_path / "alignment_tier2_raw_manifest.tsv"
     path.write_text(
@@ -445,6 +462,7 @@ def _review_row(
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": str(detected),
         "quantifiable_rescue_count": str(rescued),
+        "review_rescue_count": "0",
         "accepted_rescue_count": str(rescued),
         "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",
