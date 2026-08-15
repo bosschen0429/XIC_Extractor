@@ -2,16 +2,35 @@ import json
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 import xic_extractor.alignment.pipeline as alignment_pipeline_module
 from scripts import run_alignment
-from xic_extractor.alignment.pipeline import AlignmentRunOutputs
+from xic_extractor.alignment.owner_build_route_receipt import (
+    _mint_owner_build_route_receipt,
+)
+from xic_extractor.alignment.pipeline import (
+    AlignmentRunOutputs as _AlignmentRunOutputs,
+)
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
 from xic_extractor.raw_reader import RawReaderError
+
+
+def AlignmentRunOutputs(  # noqa: N802 - test factory mirrors the product type
+    *,
+    _owner_build_xic_backend: str = "raw",
+    **kwargs: Any,
+) -> _AlignmentRunOutputs:
+    return _AlignmentRunOutputs(
+        **kwargs,
+        owner_build_route_receipt=_mint_owner_build_route_receipt(
+            configured_backend=_owner_build_xic_backend,
+        ),
+    )
 
 
 def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
@@ -851,7 +870,10 @@ def test_run_alignment_cli_product_ready_preset_runs_owner_backfill_only(
         }
         for path in paths.values():
             path.write_text("x\n", encoding="utf-8")
-        return AlignmentRunOutputs(**paths)
+        return AlignmentRunOutputs(
+            **paths,
+            _owner_build_xic_backend=kwargs["owner_build_xic_backend"],
+        )
 
     def fake_standard_peak_runner(**kwargs):
         call_order.append("standard_peak")
@@ -925,6 +947,7 @@ def test_run_alignment_cli_product_ready_preset_runs_owner_backfill_only(
     assert "Effective owner-build route: configured_backend:raw_superwindow" in stdout
     assert "Effective route validation: owner_validated" in stdout
     assert "ProcessingRunSpec identity: <none" in stdout
+    assert "Preset readiness authority: not_evaluated" in stdout
 
 
 def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
@@ -1019,7 +1042,7 @@ def test_run_alignment_cli_product_ready_preset_ignores_retired_publication_chec
     dll_dir.mkdir()
     output_dir = tmp_path / "alignment"
 
-    def fake_run_alignment(**_kwargs):
+    def fake_run_alignment(**kwargs):
         output_dir.mkdir(parents=True, exist_ok=True)
         paths = {
             "review_tsv": output_dir / "alignment_review.tsv",
@@ -1034,7 +1057,10 @@ def test_run_alignment_cli_product_ready_preset_ignores_retired_publication_chec
         }
         for path in paths.values():
             path.write_text("x\n", encoding="utf-8")
-        return AlignmentRunOutputs(**paths)
+        return AlignmentRunOutputs(
+            **paths,
+            _owner_build_xic_backend=kwargs["owner_build_xic_backend"],
+        )
 
     def fake_standard_peak_runner(**_kwargs):
         return SimpleNamespace(
@@ -2469,6 +2495,9 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Audit evidence mode: none" in stdout
     assert "Performance profile: validation-fast" in stdout
     assert "Owner backfill window strategy: super-window" in stdout
+    assert "Effective owner-build route: <not executed>" in stdout
+    assert "Effective route validation: not_executed" in stdout
+    assert "owner_validated" not in stdout
     assert "85RAW canonical contract: not requested" in stdout
     assert "Python executable:" in stdout
     assert "run_alignment module:" in stdout

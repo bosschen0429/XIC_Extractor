@@ -71,6 +71,9 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
 from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OwnerBackfillPeakFactObservation as ProvenanceObservation,
 )
+from xic_extractor.alignment.owner_build_route_receipt import (
+    _mint_owner_build_route_receipt,
+)
 from xic_extractor.alignment.owner_clustering import (
     cluster_sample_local_owners,
     review_only_features_from_ambiguous_records,
@@ -413,6 +416,9 @@ def run_alignment(
         stage.metrics["candidate_count"] = len(candidates)
     if discovery_physical_bindings_by_sample is None:
         discovery_physical_bindings = None
+        owner_build_route_receipt = _mint_owner_build_route_receipt(
+            configured_backend=owner_build_xic_backend,
+        )
     else:
         assert discovery_processing_run_spec is not None
         discovery_physical_bindings = _ordered_discovery_physical_bindings(
@@ -422,6 +428,11 @@ def run_alignment(
             run_spec=discovery_processing_run_spec,
             expected_profile_id=signal_processing_profile.profile_id,
             bindings_by_sample=discovery_physical_bindings_by_sample,
+        )
+        owner_build_route_receipt = _mint_owner_build_route_receipt(
+            configured_backend=owner_build_xic_backend,
+            processing_run_spec_id=discovery_processing_run_spec.run_spec_id,
+            processing_run_spec_hash=discovery_processing_run_spec.run_spec_hash,
         )
     opener = raw_opener or _default_raw_opener
     outputs = _output_paths(
@@ -970,7 +981,10 @@ def run_alignment(
                 outputs,
                 artifact_fingerprint_batch=artifact_fingerprint_batch,
             )
-        return outputs
+        return replace(
+            outputs,
+            owner_build_route_receipt=owner_build_route_receipt,
+        )
 
 
 _existing_raw_paths = existing_raw_paths

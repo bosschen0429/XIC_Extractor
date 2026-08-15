@@ -417,6 +417,19 @@ def test_source_matrix_republisher_rejects_before_any_io(
         )
 
     with pytest.raises(ValueError, match="source-Matrix republication is retired"):
+        consolidation.run_standard_peak_backfill_chunk_consolidation(
+            machine_pipeline_summary_jsons=(),
+            alignment_matrix_tsv=tmp_path / "alignment_matrix.tsv",
+            alignment_matrix_identity_tsv=(
+                tmp_path / "alignment_matrix_identity.tsv"
+            ),
+            alignment_review_tsv=tmp_path / "alignment_review.tsv",
+            output_dir=tmp_path / "output",
+            publish_to_source_alignment_output=False,
+            publish_alignment_matrix_tsv=tmp_path / "published_matrix.tsv",
+        )
+
+    with pytest.raises(ValueError, match="source-Matrix republication is retired"):
         consolidation._publish_formal_product_output_to_alignment_output(
             formal_product_output_dir=tmp_path / "formal",
             formal_product_manifest_json=tmp_path / "formal" / "manifest.json",

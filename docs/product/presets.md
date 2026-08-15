@@ -17,11 +17,9 @@ they are not product authority by themselves.
   overwrite user intent.
 - Preset runs should be reproducible from documented CLI/config surfaces and
   metadata, not from branch-local command diaries.
-- `dna_dr_product_ready` is the CLI alignment preset for replaying the
-  registered productization tail, including the registered clean-target
-  Backfill activation when sample universe, expected-diff packet, and authority
-  scope match. It does not create GUI behavior, broaden Backfill or CID-NL
-  authority, or make candidate-only evidence publishable.
+- `dna_dr_product_ready` is a historical compatibility name for the
+  `raw_superwindow` Owner Build profile. A successful run does not assert
+  product readiness and does not invoke Standard Peak or a publication checker.
 - Discovery method or preset labels can wrap strategy families for usability.
   For example, `pt_pattern` means `delta_mass(pattern_id=pt)`. The preset layer
   must not turn that label into a separate primitive strategy or ProductWriter
@@ -54,11 +52,11 @@ The current V1 routes remain the existing entry-point modes:
 | `align_only` | Existing Discovery index -> generic Alignment -> Owner Backfill -> canonical Matrix |
 | bounded ModeTrack runner | Existing single-subject M8/M9 compatibility route |
 
-Generic Alignment and Owner Backfill close the basic Matrix loop. Standard
-Peak remains the deeper optional refinement on the CLI/GUI surfaces that
-already execute it; its RAW overlays, reconciliation, quantitation,
-activation, audit, and republication behavior are not decomposed or made a V1
-prerequisite. The provisional full-universe runner continues to stop after its
+Generic Alignment and Owner Backfill close the Matrix loop. Standard Peak is
+not reachable from normal CLI/GUI/preset execution, and the source-Matrix
+republisher is retired. Explicit offline diagnostics remain pending T5D
+contraction and have no product or writer authority. The provisional
+full-universe runner continues to stop after its
 existing provisional diagnostic projection, and bounded ModeTrack retains its
 precursor, metadata, injection-order, namespace, and reviewed-input owners.
 
@@ -80,7 +78,7 @@ Code: `xic_extractor/presets/`; built-in TOML: `xic_extractor/presets/data/`.
 | Preset | Role |
 | --- | --- |
 | `dna_dr.toml` | DNA dR alignment preset |
-| `dna_dr_product_ready.toml` | Product-readiness DNA dR preset with stronger checker expectations |
+| `dna_dr_product_ready.toml` | Historical compatibility profile selecting `raw_superwindow` Owner Build; not readiness authority |
 
 Rules:
 
@@ -88,8 +86,8 @@ Rules:
   validation.
 - Built-in product-facing presets should emit the expected seed audit and
   `alignment_backfill_cell_evidence.tsv` where required by the runner contract.
-- Backfill expansion replay is enabled only when sample universe, expected-diff,
-  and authority constraints match the documented gate.
+- Former Standard Peak and Backfill expansion preset keys are rejected from
+  normal recipes; no replacement publication choice is exposed.
 - Non-standard peaks and candidate-only evidence stay outside automatic
   publication policy unless the authority manifest says otherwise.
 

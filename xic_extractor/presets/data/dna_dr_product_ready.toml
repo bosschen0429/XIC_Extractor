@@ -1,5 +1,5 @@
-name = "DNA dR Product Ready"
-description = "CID neutral-loss discovery with super-window Owner Backfill"
+name = "DNA dR Owner Backfill (compat)"
+description = "Historical product-ready compatibility profile; Owner Backfill only; the preset name does not assert readiness"
 combine_mode = "single"
 
 [[tag]]

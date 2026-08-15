@@ -358,7 +358,7 @@ def run_standard_peak_backfill_preset(
             backfill_seed_audit_tsv=paths["seed_audit"],
             retained_backfill_gate_tsv=retained_outputs.tsv,
             gallery_output_dir=gallery_dir,
-            emit_formal_product_output=True,
+            emit_formal_product_output=False,
             publish_to_source_alignment_output=False,
         )
         scope.metrics["status"] = consolidation_outputs.status

@@ -7,17 +7,16 @@ from the GUI or passed to CLI scripts.
 For current CID-NL entry points, one preset selection is bound before execution
 to the existing route. GUI `full` runs RAW -> Discovery -> generic Alignment ->
 Owner Backfill -> the canonical Matrix writer; `align_only` starts from an
-existing Discovery index; and `discovery_only` stops at Discovery. Standard
-Peak remains an optional advanced refinement where the current CLI/GUI already
-runs it. Presets do not expose a public workflow graph or `[workflow]` TOML
-section.
+existing Discovery index; and `discovery_only` stops at Discovery. Normal
+presets do not run Standard Peak. Presets do not expose a public workflow graph
+or `[workflow]` TOML section.
 
 ## Available Presets
 
 | Name | Display name | Strategy | NL mass (Da) | Description |
 | --- | --- | --- | --- | --- |
 | `dna_dr` | DNA dR | CID neutral loss | 116.0474 | 2'-deoxyribose neutral-loss discovery |
-| `dna_dr_product_ready` | DNA dR Product Ready | CID neutral loss | 116.0474 | Same discovery with production-grade alignment |
+| `dna_dr_product_ready` | DNA dR Owner Backfill (compat) | CID neutral loss | 116.0474 | Historical compatibility profile using super-window Owner Build; the preset ID is not a readiness assertion |
 
 ---
 
@@ -39,7 +38,7 @@ value = 116.0474                 # neutral loss mass (Da)
 # nl_tolerance_ppm = 20.0
 
 [alignment]                      # optional overrides for alignment defaults
-# standard_peak_backfill = true
+# owner_build_xic_backend = "raw-super-window"
 ```
 
 ### Tag Rules
@@ -77,25 +76,11 @@ These values apply unless overridden in the `[alignment]` section.
 
 | Parameter | Default | Description |
 | --- | --- | --- |
-| `standard_peak_backfill` | false | Enable standard peak backfill |
-| `standard_peak_backfill_chunk_size` | 120 | Samples per backfill chunk |
-| `standard_peak_backfill_publication_mode` | `deep-audit` | Publication scope |
-| `standard_peak_backfill_write_gallery` | true | Write diagnostic gallery (legacy) |
-| `standard_peak_backfill_reuse_existing` | false | Reuse existing backfill results |
-| `standard_peak_backfill_min_shape_r` | 0.95 | Minimum peak shape R-squared |
 | `owner_build_xic_backend` | `raw` | XIC backend for owner construction |
-| `backfill_expansion_productization` | `off` | Expansion productization mode |
-| `backfill_expansion_reuse_existing_raw_overlay` | false | Reuse existing raw overlay |
-| `backfill_expansion_reuse_existing_shift_aware` | false | Reuse existing shift-aware data |
-| `backfill_expansion_render_shift_aware_images` | false | Render shift-aware diagnostic images |
 
-### Publication Mode Values
-
-| Value | Description |
-| --- | --- |
-| `matrix-only` | Update alignment matrix only; skip gallery and deep audit |
-| `review-gallery` | Write matrix + review HTML gallery |
-| `deep-audit` | Full output: matrix + gallery + deep audit artifacts |
+All former `standard_peak_backfill*` and `backfill_expansion*` alignment keys
+are retired from normal presets. Supplying one is an error; there is no ignored
+compatibility mode or replacement publication choice.
 
 ### XIC Backend Values
 
@@ -113,14 +98,13 @@ These values apply unless overridden in the `[alignment]` section.
 | --- | --- | --- |
 | NL mass | 116.0474 Da | 116.0474 Da |
 | Discovery overrides | none | none |
-| Backfill enabled | yes | yes |
-| Backfill chunk size | 120 | 240 |
-| Publication mode | matrix-only | matrix-only |
+| Owner Backfill | yes | yes |
+| Standard Peak product route | retired | retired |
 | XIC backend | raw (default) | raw-super-window |
 
-`dna_dr_product_ready` differs from `dna_dr` in two ways: a larger chunk
-size (240 vs 120) for higher throughput, and the `raw-super-window` backend
-for better cross-sample coverage during owner construction.
+`dna_dr_product_ready` differs from `dna_dr` only by the
+`raw-super-window` Owner Build backend. Its historical name does not run a
+readiness checker or confer publication authority.
 
 ---
 

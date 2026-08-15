@@ -36,7 +36,7 @@ def test_list_presets_works_outside_repo_cwd(
 def test_load_builtin_dna_dr_product_ready_preset_stays_sample_universe_safe() -> None:
     preset = load_preset("dna_dr_product_ready")
 
-    assert preset.name == "DNA dR Product Ready"
+    assert preset.name == "DNA dR Owner Backfill (compat)"
     assert preset.combine_mode == "single"
     assert preset.tags[0].name == "DNA_dR"
     assert preset.alignment_overrides == {

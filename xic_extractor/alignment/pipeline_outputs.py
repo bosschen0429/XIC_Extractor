@@ -45,6 +45,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
     OwnerBackfillPeakFactProvenanceBatch,
     render_owner_backfill_peak_fact_provenance_tsv,
 )
+from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.ownership import OwnershipBuildResult
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
@@ -104,6 +105,7 @@ class AlignmentRunOutputs:
     provisional_summary_json: Path | None = None
     early_loser_shadow_json: Path | None = None
     artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
+    owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
 
 
 def output_paths(

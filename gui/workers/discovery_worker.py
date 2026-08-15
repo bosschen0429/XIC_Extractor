@@ -12,6 +12,7 @@ from gui.workers.backfill_gallery import (
     BackfillGalleryInputs,
     build_backfill_review_gallery,
 )
+from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
@@ -258,7 +259,7 @@ class DiscoveryWorker(QThread):
         physical_bindings_by_sample: (
             dict[str, tuple[DiscoveryCandidatePhysicalBinding, ...]] | None
         ) = None,
-    ) -> tuple[AlignmentRunOutputs, dict[str, object]]:
+    ) -> tuple[AlignmentRunOutputs, OwnerBuildRouteReceipt]:
         recipe = self._alignment_runtime(request)
         outputs = run_alignment(
             discovery_batch_index=index_path,
@@ -272,11 +273,9 @@ class DiscoveryWorker(QThread):
             discovery_physical_bindings_by_sample=physical_bindings_by_sample,
             **_GALLERY_ALIGNMENT_KWARGS,
         )
-        owner_build_route = _owner_build_route_receipt(
-            configured_backend=recipe.owner_build_xic_backend,
-            processing_run_spec=processing_run_spec,
-            physical_bindings_by_sample=physical_bindings_by_sample,
-        )
+        owner_build_route = outputs.owner_build_route_receipt
+        if not isinstance(owner_build_route, OwnerBuildRouteReceipt):
+            raise TypeError("Alignment owner did not return its route receipt")
         return outputs, owner_build_route
 
     def _alignment_runtime(
@@ -455,7 +454,7 @@ def _batch_index_path(batch_outputs: Any, output_dir: Path) -> Path:
 
 def _alignment_summary(
     outputs: Any,
-    owner_build_route: dict[str, object],
+    owner_build_route: OwnerBuildRouteReceipt,
 ) -> dict[str, Any]:
     alignment_outputs: dict[str, str] = {}
     for attr in _ALIGNMENT_OUTPUT_ATTRS:
@@ -470,38 +469,7 @@ def _alignment_summary(
         "matrix_tsv": str(matrix) if matrix is not None else None,
         "gallery_html": str(gallery) if gallery is not None else None,
         "run_metadata_json": str(run_metadata) if run_metadata is not None else None,
-        "owner_build_route": owner_build_route,
-    }
-
-
-def _owner_build_route_receipt(
-    *,
-    configured_backend: str,
-    processing_run_spec: ProcessingRunSpec | None,
-    physical_bindings_by_sample: (
-        dict[str, tuple[DiscoveryCandidatePhysicalBinding, ...]] | None
-    ),
-) -> dict[str, object]:
-    if physical_bindings_by_sample is not None:
-        if processing_run_spec is None:
-            raise ValueError(
-                "Discovery physical bindings require their ProcessingRunSpec"
-            )
-        return {
-            "configured_owner_build_xic_backend": configured_backend,
-            "effective_owner_build_route": "discovery_physical_bindings",
-            "effective_owner_build_xic_backend": None,
-            "effective_route_validation": "owner_validated",
-            "processing_run_spec_id": processing_run_spec.run_spec_id,
-            "processing_run_spec_hash": processing_run_spec.run_spec_hash,
-        }
-    return {
-        "configured_owner_build_xic_backend": configured_backend,
-        "effective_owner_build_route": "configured_backend",
-        "effective_owner_build_xic_backend": configured_backend,
-        "effective_route_validation": "owner_validated",
-        "processing_run_spec_id": None,
-        "processing_run_spec_hash": None,
+        "owner_build_route": owner_build_route.as_dict(),
     }
 
 

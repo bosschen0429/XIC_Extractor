@@ -6,7 +6,36 @@ import pytest
 from gui.workers import discovery_worker as module
 from gui.workers.discovery_worker import DiscoveryRequest, DiscoveryWorker
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
+from xic_extractor.alignment.owner_build_route_receipt import (
+    _mint_owner_build_route_receipt,
+)
+from xic_extractor.alignment.pipeline_outputs import (
+    AlignmentRunOutputs as _AlignmentRunOutputs,
+)
+
+
+def _alignment_outputs(
+    *,
+    configured_backend: str = "raw",
+    processing_run_spec: object | None = None,
+    **kwargs: object,
+) -> _AlignmentRunOutputs:
+    return _AlignmentRunOutputs(
+        **kwargs,
+        owner_build_route_receipt=_mint_owner_build_route_receipt(
+            configured_backend=configured_backend,
+            processing_run_spec_id=(
+                getattr(processing_run_spec, "run_spec_id")
+                if processing_run_spec is not None
+                else None
+            ),
+            processing_run_spec_hash=(
+                getattr(processing_run_spec, "run_spec_hash")
+                if processing_run_spec is not None
+                else None
+            ),
+        ),
+    )
 
 
 def test_align_only_summary_uses_existing_batch_index_counts(
@@ -52,7 +81,7 @@ def test_align_only_summary_uses_existing_batch_index_counts(
     output_dir.mkdir()
 
     def fake_run_alignment(**_kwargs):
-        return AlignmentRunOutputs(matrix_tsv=output_dir / "alignment_matrix.tsv")
+        return _alignment_outputs(matrix_tsv=output_dir / "alignment_matrix.tsv")
 
     monkeypatch.setattr(module, "run_alignment", fake_run_alignment)
     request = DiscoveryRequest(
@@ -193,7 +222,9 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
 
     def fake_run_alignment(**kwargs):
         captured_alignment.update(kwargs)
-        return AlignmentRunOutputs(
+        return _alignment_outputs(
+            configured_backend=kwargs["owner_build_xic_backend"],
+            processing_run_spec=kwargs["discovery_processing_run_spec"],
             review_tsv=output_dir / "alignment_review.tsv",
             matrix_tsv=output_dir / "alignment_matrix.tsv",
             matrix_identity_tsv=output_dir / "alignment_matrix_identity.tsv",

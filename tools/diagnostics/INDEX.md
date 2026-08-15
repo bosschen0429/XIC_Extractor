@@ -772,41 +772,31 @@ not authorize stale overlay summaries or bypass matrix/publication checks.
 
 ### `standard_peak_backfill_chunk_consolidation.py`
 
-**Purpose**: Consolidate chunked standard-peak machine-pipeline outputs into one formal matrix-only activation pass.
+**Purpose**: Retained offline consolidation diagnostic for historical standard-peak machine-pipeline outputs.
 **Topic group**: `standard_peak_backfill_machine_pipeline.py` + `standard_peak_backfill_productization.py` + `xic_extractor/diagnostics/standard_peak_backfill_chunk_consolidation.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Load-bearing note**: This consolidation path is part of standard-peak
-publication when chunked RAW-backed evidence is used. It is not Bucket B and
-must not be removed during spent-gate cleanup.
-**Status note**: Consumes repeated chunk `standard_peak_backfill_machine_pipeline_summary.json` files or chunk directories, validates that all chunks passed, optionally verifies complete non-overlapping rank coverage against the full retained-backfill review queue by reading actual overlay summary `rank` values, deduplicates full-matrix chunk `shadow_projection_cells.tsv` rows into `consolidated_shadow_projection_cells.tsv`, preferring product-affecting accepted rows over context rows and failing closed on conflicting accepted values, then calls `standard_peak_backfill_productization.py` once to write the final matrix-only activated matrix. This is the product bridge for expensive 85RAW chunked overlay runs: individual chunk matrices are review artifacts only; the consolidated run is the formal matrix candidate. With `--emit-formal-product-output`, only a passing consolidated run with a supplied full review queue and complete non-duplicated rank coverage publishes a downstream-ready product output directory containing `alignment_matrix.tsv`, `alignment_matrix_identity.tsv`, `activation_hypothesis_identity.tsv`, `activation_value_delta.tsv`, `activation_application_summary.tsv`, and `standard_peak_formal_product_manifest.json`; the manifest records the activation output mode, decision scope, standard-peak gate basis, source shadow projection hash, artifact hashes, and queue coverage. By default that passing formal product is also promoted back to the source alignment output so the source `alignment_matrix.tsv` and `alignment_matrix_identity.tsv` become the standard-peak-backfilled final matrix; the original source files are preserved as `*.pre_standard_peak_backfill.tsv`, and `standard_peak_default_matrix_manifest.json` plus `standard_peak_*` audit sidecars are written beside the final matrix. Use `--no-publish-to-source-alignment-output` only for sidecar-only validation. After publication, reruns should use the `*.pre_standard_peak_backfill.tsv` files as activation input and supply `--publish-alignment-matrix-tsv` / `--publish-alignment-matrix-identity-tsv` pointing back to the default final matrix paths, so written-count semantics stay grounded in the pre-standard matrix. The CLI refuses to use the source alignment directory as the formal sidecar directory, requires publish target matrix/identity paths as a pair, and incomplete or duplicated coverage leaves only a failing consolidation summary while clearing known stale formal-product files from the target formal output directory. With `--write-gallery`, it also passes all chunk overlay and shift-aware gate TSVs to the activation-synced reconciliation gallery so evidence display and matrix writes use the same product-authorized rows.
+**Status note**: This module is not reachable from normal GUI, CLI, presets, or
+workflows. Source-Matrix/identity targets and the old publication switch fail
+closed before any I/O; source backup and republication are retired. The
+remaining explicit formal-sidecar mode is a historical diagnostic referrer
+awaiting T5D contraction/deletion and is not current product-output or Matrix
+authority. Do not feed its `status=pass` or manifest to downstream as readiness
+proof.
 
 ---
 
 #### `standard_peak_backfill_preset.py` (preset bridge, non-CLI entry)
 
-**Purpose**: Run the standard-peak publication preset after a base alignment
-finishes, using retained-gate review rows, chunked machine evidence, and formal
-chunk consolidation to publish accepted standard-peak values.
+**Purpose**: Retained explicit offline Standard Peak diagnostic wrapper.
 **Topic group**: `standard_peak_backfill_machine_pipeline.py` +
 `standard_peak_backfill_chunk_consolidation.py` +
 `standard_peak_backfill_productization.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Load-bearing note**: `scripts/run_alignment.py` calls this entry point when
-the active preset runtime options enable `standard_peak_backfill`; the built-in
-`dna_dr` preset defaults to `standard_peak_backfill_publication_mode =
-"matrix-only"`. This is the default preset publication bridge, not an optional
-research gallery.
-**Status note**: Runs the retained backfill evidence gate, reads the generated
-standard-peak review queue, dispatches chunked machine-pipeline runs, and then
-calls chunk consolidation to publish the final matrix-only standard-peak output.
-It writes `standard_peak_backfill_preset_summary.json` and records whether the
-run skipped because no review rows were present or published a consolidated
-matrix. The preset can also pass an explicit overlay `evidence_cache_dir` to
-the global matrix-only overlay evidence step; cached evidence remains a
-performance reuse layer and does not change the retained-gate queue, chunk
-rank/order, matrix authority, or publication checker requirement. It does not
-replace base alignment; it executes only after the base alignment artifacts
-exist.
+**Status note**: Normal `scripts/run_alignment.py`, GUI, workflows, and built-in
+presets no longer call this wrapper. An explicit offline caller can still run
+the retained evidence chain, but consolidation is sidecar-only and the wrapper
+does not request formal-product or source-Matrix publication. T5D owns the
+remaining diagnostic eligibility contract and deletion/referrer census.
 
 ---
 
