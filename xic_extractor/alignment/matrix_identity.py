@@ -169,7 +169,10 @@ def decide_matrix_identity_row(
         1
         for decision in cell_quality
         if decision.quality_status == "review_rescue"
-        and decision.quality_reason == "rt_outside_preferred"
+        and (
+            decision.quality_reason == "rt_outside_preferred"
+            or is_backfill_cell_only_block_reason(decision.quality_reason)
+        )
     )
     candidate_rescue_count = q_rescue + held_rescue
     duplicate_count = sum(

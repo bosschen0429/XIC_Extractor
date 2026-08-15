@@ -73,6 +73,10 @@ _CHEMICAL_MARKERS = (
     "ms2",
 )
 _INTERFERENCE_MARKERS = ("neighbor", "interference")
+_INTERFERENCE_NOT_ASSESSED_MARKERS = (
+    "neighbor_interference_not_assessed",
+    "neighboring_interference_not_assessed",
+)
 _LOW_COVERAGE_MARKERS = (
     "low_scan_support",
     "skipped_low_scan_support",
@@ -146,6 +150,7 @@ class BackfillCellEvidence:
     sample_stem: str
     status: str
     quality_status: str = ""
+    quality_reason: str = ""
     area: float | None = None
     apex_rt: float | None = None
     height: float | None = None
@@ -284,16 +289,20 @@ class BackfillCellEvidence:
 
     @property
     def high_neighbor_interference(self) -> bool:
-        text = " ".join(
-            (
-                self.reason,
-                self.region_local_mixture_diagnostic,
-                self.region_local_mixture_reason,
-                self.region_review_reason,
-                self.region_shadow_status,
-                self.region_shadow_verdict,
+        text = _normalize(
+            " ".join(
+                (
+                    self.reason,
+                    self.region_local_mixture_diagnostic,
+                    self.region_local_mixture_reason,
+                    self.region_review_reason,
+                    self.region_shadow_status,
+                    self.region_shadow_verdict,
+                ),
             ),
-        ).lower()
+        )
+        for marker in _INTERFERENCE_NOT_ASSESSED_MARKERS:
+            text = text.replace(marker, "")
         return any(marker in text for marker in _INTERFERENCE_MARKERS)
 
     @property
@@ -566,6 +575,17 @@ def cell_evidence_from_aligned(
     return _cell_from_aligned(cell, quality)
 
 
+def cell_owner_backfill_write_block_reason(cell: AlignedCell) -> str:
+    evidence = cell_evidence_from_aligned(cell, None)
+    if evidence.hypothesis_or_claim_blocked:
+        return BACKFILL_HYPOTHESIS_BLOCKED_REASON
+    if evidence.high_neighbor_interference:
+        return NEIGHBOR_INTERFERENCE_BLOCKED_REASON
+    if evidence.low_assessable_coverage:
+        return LOW_MS1_COVERAGE_BLOCKED_REASON
+    return ""
+
+
 def cell_has_product_authorized_same_peak_backfill_support(cell: AlignedCell) -> bool:
     return cell_evidence_from_aligned(cell, None).supported_for_backfill
 
@@ -627,6 +647,19 @@ def classify_backfill_promotion(
     evidence: BackfillPromotionEvidence,
 ) -> BackfillPromotionDecision:
     rescued = tuple(cell for cell in evidence.cells if cell.is_rescued_quantifiable)
+    owner_blocked = tuple(
+        cell
+        for cell in evidence.cells
+        if cell.quality_status == "review_rescue"
+        and cell.quality_reason
+        in {
+            BACKFILL_HYPOTHESIS_BLOCKED_REASON,
+            LOW_MS1_COVERAGE_BLOCKED_REASON,
+            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
+        }
+    )
+    assessed_rescues = rescued + owner_blocked
+    candidate_rescue_count = evidence.q_rescue + evidence.held_rescue_count
     if (
         evidence.unrehydrated_review_rescue_count > 0
         and is_dr_neutral_loss_tag(evidence.neutral_loss_tag)
@@ -639,20 +672,19 @@ def classify_backfill_promotion(
             flags=("owner_rehydration_required",),
             assessed_rescue_count=len(rescued),
         )
-    if evidence.q_rescue > 0 and any(
-        cell.hypothesis_or_claim_blocked for cell in rescued
+    if candidate_rescue_count > 0 and any(
+        cell.hypothesis_or_claim_blocked for cell in assessed_rescues
     ):
         return BackfillPromotionDecision(
             state="blocked",
             reason=BACKFILL_HYPOTHESIS_BLOCKED_REASON,
             confidence="review",
             flags=("missing_independent_backfill_identity_evidence",),
-            assessed_rescue_count=len(rescued),
+            assessed_rescue_count=len(assessed_rescues),
         )
     same_peak_override = _same_peak_policy_override(evidence)
     if not _in_policy_scope(evidence) and not same_peak_override:
         return BackfillPromotionDecision(state="not_applicable")
-    candidate_rescue_count = evidence.q_rescue + evidence.held_rescue_count
     if evidence.q_detected <= 0 and candidate_rescue_count > 0:
         return BackfillPromotionDecision(
             state="blocked",
@@ -671,8 +703,28 @@ def classify_backfill_promotion(
             flags=("duplicate_claim_pressure",),
         )
 
+    if any(cell.high_neighbor_interference for cell in assessed_rescues):
+        return BackfillPromotionDecision(
+            state="blocked",
+            reason=NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
+            confidence="review",
+            flags=("neighboring_ms1_interference",),
+            assessed_rescue_count=len(assessed_rescues),
+        )
+
+    if any(cell.low_assessable_coverage for cell in assessed_rescues):
+        return BackfillPromotionDecision(
+            state="blocked",
+            reason=LOW_MS1_COVERAGE_BLOCKED_REASON,
+            confidence="review",
+            flags=("low_ms1_assessable_coverage",),
+            assessed_rescue_count=len(assessed_rescues),
+        )
+
     if evidence.held_rescue_count > 0:
-        supported = tuple(cell for cell in rescued if cell.supported_for_backfill)
+        supported = tuple(
+            cell for cell in assessed_rescues if cell.supported_for_backfill
+        )
         return BackfillPromotionDecision(
             state="blocked",
             reason=BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
@@ -697,24 +749,6 @@ def classify_backfill_promotion(
             reason=LOW_MS1_COVERAGE_BLOCKED_REASON,
             confidence="review",
             flags=("low_ms1_assessable_coverage",),
-        )
-
-    if any(cell.high_neighbor_interference for cell in rescued):
-        return BackfillPromotionDecision(
-            state="blocked",
-            reason=NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
-            confidence="review",
-            flags=("neighboring_ms1_interference",),
-            assessed_rescue_count=len(rescued),
-        )
-
-    if any(cell.low_assessable_coverage for cell in rescued):
-        return BackfillPromotionDecision(
-            state="blocked",
-            reason=LOW_MS1_COVERAGE_BLOCKED_REASON,
-            confidence="review",
-            flags=("low_ms1_assessable_coverage",),
-            assessed_rescue_count=len(rescued),
         )
 
     supported = tuple(cell for cell in rescued if cell.supported_for_backfill)
@@ -811,6 +845,7 @@ def _cell_from_aligned(
         sample_stem=cell.sample_stem,
         status=cell.status,
         quality_status="" if quality is None else quality.quality_status,
+        quality_reason="" if quality is None else quality.quality_reason,
         area=cell.matrix_area,
         apex_rt=cell.apex_rt,
         height=cell.height,
