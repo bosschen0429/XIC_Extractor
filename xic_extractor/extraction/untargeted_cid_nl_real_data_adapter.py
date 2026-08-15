@@ -283,10 +283,9 @@ def adapt_current_discovery_sample_subject(
         peak_config=peak_config,
         raw=bound_raw,
         source=source,
+        _observer=_observer,
     )
     if _observer is not None:
-        if acquisition is not None:
-            _observer.record_acquisition(acquisition)
         for observation in observations:
             _observer.record_artifact(observation.artifact)
     evidence_refs: list[CidNlEvidenceRef] = []
@@ -574,6 +573,7 @@ def _reacquire_peak_observations(
     peak_config: ExtractionConfig,
     raw: UntargetedCidNlRealDataRaw,
     source,
+    _observer: _UntargetedRealDataWorkObserver | None = None,
 ) -> tuple[TraceAcquisitionBatch | None, tuple[PeakObservationRef, ...]]:
     if not candidates:
         return None, ()
@@ -592,6 +592,8 @@ def _reacquire_peak_observations(
         for candidate in candidates
     )
     acquisition = _freeze_acquisition(acquire_trace_batch(capability, requests, raw))
+    if _observer is not None:
+        _observer.record_acquisition(acquisition)
     observations: list[PeakObservationRef] = []
     for candidate, acquired in zip(candidates, acquisition.traces, strict=True):
         detection = detect_ms1_trace_peak(
@@ -909,6 +911,13 @@ def _validate_candidate_integration(
             rel_tol=_WRITER_ROUNDING_REL_TOL,
             abs_tol=_WRITER_ROUNDING_ABS_TOL,
         ):
+            if field in {"area_raw_counts_seconds", "height_raw"}:
+                raise UntargetedCidNlRealDataAdapterError(
+                    f"{candidate.candidate_id}: "
+                    "m7_raw_vs_corrected_compatibility_unresolved: "
+                    f"{field} mismatches current receipt; "
+                    "M7 remains diagnostic_only"
+                )
             raise UntargetedCidNlRealDataAdapterError(
                 f"{candidate.candidate_id}: reacquired {field} mismatches "
                 "current receipt"
