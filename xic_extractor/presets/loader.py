@@ -65,7 +65,11 @@ _DELTA_MASS_PATTERN_ID = "pt"
 _DELTA_MASS_NEUTRAL_LOSS_TAG = "DNA_dR"
 _DELTA_MASS_NEUTRAL_LOSS_DA = 116.0474
 
-ALIGNMENT_RUNTIME_OVERRIDE_KEYS = frozenset(
+STANDARD_PEAK_NORMAL_ROUTE_RETIRED_MESSAGE = (
+    "Standard Peak and backfill-expansion product routes are retired from normal "
+    "presets; retained Standard Peak capabilities are diagnostic-only"
+)
+RETIRED_STANDARD_PEAK_ALIGNMENT_KEYS = frozenset(
     {
         "standard_peak_backfill",
         "standard_peak_backfill_chunk_size",
@@ -73,7 +77,6 @@ ALIGNMENT_RUNTIME_OVERRIDE_KEYS = frozenset(
         "standard_peak_backfill_write_gallery",
         "standard_peak_backfill_reuse_existing",
         "standard_peak_backfill_min_shape_r",
-        "owner_build_xic_backend",
         "backfill_expansion_productization",
         "backfill_expansion_reuse_existing_raw_overlay",
         "backfill_expansion_reuse_existing_shift_aware",
@@ -81,6 +84,7 @@ ALIGNMENT_RUNTIME_OVERRIDE_KEYS = frozenset(
         "backfill_expansion_min_shape_r",
     }
 )
+ALIGNMENT_RUNTIME_OVERRIDE_KEYS = frozenset({"owner_build_xic_backend"})
 
 
 def list_presets() -> tuple[str, ...]:
@@ -357,9 +361,20 @@ def _parse_alignment_overrides(value: Any) -> dict[str, object]:
         raise PresetError("[alignment] must be a table")
 
     table = cast(Mapping[str, Any], value)
+    reject_retired_alignment_runtime_options(table)
     _reject_unknown_keys(
         table,
         ALIGNMENT_RUNTIME_OVERRIDE_KEYS,
         label="[alignment]",
     )
     return dict(table)
+
+
+def reject_retired_alignment_runtime_options(
+    options: Mapping[str, object],
+) -> None:
+    retired = sorted(set(options) & RETIRED_STANDARD_PEAK_ALIGNMENT_KEYS)
+    if retired:
+        raise PresetError(
+            f"{retired[0]}: {STANDARD_PEAK_NORMAL_ROUTE_RETIRED_MESSAGE}"
+        )

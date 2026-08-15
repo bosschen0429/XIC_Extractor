@@ -183,7 +183,6 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     output_dir.mkdir()
     (raw_dir / "A.raw").write_bytes(b"raw")
     captured_alignment: dict[str, object] = {}
-    captured_standard_peak: dict[str, object] = {}
     bound_recipes: list[object] = []
     real_bind = module.bind_cid_nl_recipe
 
@@ -204,18 +203,6 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
             ),
         )
 
-    def fake_standard_peak(**kwargs):
-        captured_standard_peak.update(kwargs)
-        return SimpleNamespace(
-            summary_json=output_dir
-            / "standard_peak_backfill_preset"
-            / "standard_peak_backfill_preset_summary.json",
-            published_alignment_manifest_json=(
-                output_dir / "standard_peak_publish_manifest.json"
-            ),
-            gallery_html=None,
-        )
-
     def fake_run_discovery_batch(*_args, **_kwargs):
         return SimpleNamespace(
             batch_index_csv=index_path,
@@ -225,11 +212,6 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     monkeypatch.setattr(module, "run_alignment", fake_run_alignment)
     monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
     monkeypatch.setattr(module, "bind_cid_nl_recipe", bind_once)
-    monkeypatch.setattr(
-        module,
-        "run_standard_peak_backfill_preset",
-        fake_standard_peak,
-    )
     request = DiscoveryRequest(
         mode=mode,
         preset="dna_dr_product_ready",
@@ -270,23 +252,29 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
             captured_alignment["discovery_processing_run_spec"],
             module.ProcessingRunSpec,
         )
+        run_spec = captured_alignment["discovery_processing_run_spec"]
+        assert summary["owner_build_route"] == {
+            "configured_owner_build_xic_backend": "raw_superwindow",
+            "effective_owner_build_route": "discovery_physical_bindings",
+            "effective_owner_build_xic_backend": None,
+            "effective_route_validation": "owner_validated",
+            "processing_run_spec_id": run_spec.run_spec_id,
+            "processing_run_spec_hash": run_spec.run_spec_hash,
+        }
     else:
         assert captured_alignment["discovery_physical_bindings_by_sample"] is None
         assert captured_alignment["discovery_processing_run_spec"] is None
-    assert captured_standard_peak["alignment_dir"] == output_dir
-    assert captured_standard_peak["raw_dir"] == raw_dir
-    assert captured_standard_peak["dll_dir"] == tmp_path / "dll"
-    assert captured_standard_peak["chunk_size"] == 240
-    assert captured_standard_peak["publication_mode"] == "matrix-only"
-    assert captured_standard_peak["write_gallery"] is False
-    assert (
-        captured_standard_peak["source_run_id"]
-        == "alignment-preset:builtin:dna_dr_product_ready:standard-peak-backfill"
-    )
-    assert summary["alignment_outputs"]["standard_peak_summary_json"] == str(
-        output_dir
-        / "standard_peak_backfill_preset"
-        / "standard_peak_backfill_preset_summary.json",
+        assert summary["owner_build_route"] == {
+            "configured_owner_build_xic_backend": "raw_superwindow",
+            "effective_owner_build_route": "configured_backend",
+            "effective_owner_build_xic_backend": "raw_superwindow",
+            "effective_route_validation": "owner_validated",
+            "processing_run_spec_id": None,
+            "processing_run_spec_hash": None,
+        }
+    assert not any(
+        name.startswith("standard_peak_")
+        for name in summary["alignment_outputs"]
     )
 
 
@@ -307,7 +295,6 @@ def test_gui_full_reuses_bound_custom_preset_after_discovery(
                 "value = 100.0",
                 "",
                 "[alignment]",
-                "standard_peak_backfill = true",
                 'owner_build_xic_backend = "ms1-index"',
             ],
         )
@@ -328,15 +315,12 @@ def test_gui_full_reuses_bound_custom_preset_after_discovery(
 
     worker._build_settings(request)
     preset_path.unlink()
-    recipe, source_run_id = worker._alignment_runtime(request)
+    recipe = worker._alignment_runtime(request)
 
     assert recipe.owner_build_xic_backend == "ms1_index"
-    assert source_run_id == (
-        f"alignment-preset:{preset_path.as_posix()}:standard-peak-backfill"
-    )
 
 
-def test_gui_full_rejects_backfill_expansion_before_discovery(
+def test_gui_full_rejects_retired_standard_peak_route_before_discovery(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -384,5 +368,8 @@ def test_gui_full_rejects_backfill_expansion_before_discovery(
         discovery_batch_index=None,
     )
 
-    with pytest.raises(ValueError, match="do not support backfill_expansion"):
+    with pytest.raises(
+        module.PresetError,
+        match="diagnostic-only",
+    ):
         DiscoveryWorker(request)._run_full(request)

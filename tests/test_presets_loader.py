@@ -7,7 +7,7 @@ import pytest
 from xic_extractor.presets import PresetError, list_presets, load_preset
 
 
-def test_load_builtin_dna_dr_preset_enables_standard_peak_backfill() -> None:
+def test_load_builtin_dna_dr_preset_uses_owner_backfill_only() -> None:
     preset = load_preset("dna_dr")
 
     assert preset.name == "DNA dR"
@@ -19,11 +19,7 @@ def test_load_builtin_dna_dr_preset_enables_standard_peak_backfill() -> None:
     assert tag.name == "DNA_dR"
     assert tag.value == pytest.approx(116.0474)
     assert preset.discovery_overrides == {}
-    assert preset.alignment_overrides == {
-        "standard_peak_backfill": True,
-        "standard_peak_backfill_chunk_size": 120,
-        "standard_peak_backfill_publication_mode": "matrix-only",
-    }
+    assert preset.alignment_overrides == {}
     assert preset.source == "builtin:dna_dr"
 
 
@@ -44,14 +40,11 @@ def test_load_builtin_dna_dr_product_ready_preset_stays_sample_universe_safe() -
     assert preset.combine_mode == "single"
     assert preset.tags[0].name == "DNA_dR"
     assert preset.alignment_overrides == {
-        "standard_peak_backfill": True,
-        "standard_peak_backfill_chunk_size": 240,
-        "standard_peak_backfill_publication_mode": "matrix-only",
         "owner_build_xic_backend": "raw-super-window",
     }
 
 
-def test_existing_path_toml_loads_supported_alignment_options(tmp_path: Path) -> None:
+def test_existing_path_toml_loads_owner_backend_option(tmp_path: Path) -> None:
     preset_path = tmp_path / "custom.toml"
     preset_path.write_text(
         """
@@ -68,12 +61,7 @@ value = 116.0474
 rt_max = 20.0
 
 [alignment]
-standard_peak_backfill = true
-standard_peak_backfill_chunk_size = 24
-standard_peak_backfill_publication_mode = "review-gallery"
-standard_peak_backfill_min_shape_r = 0.97
 owner_build_xic_backend = "raw-super-window"
-backfill_expansion_productization = "clean-target-selective"
 """.strip(),
         encoding="utf-8",
     )
@@ -83,13 +71,52 @@ backfill_expansion_productization = "clean-target-selective"
     assert preset.source == str(preset_path)
     assert preset.discovery_overrides == {"rt_max": 20.0}
     assert preset.alignment_overrides == {
-        "standard_peak_backfill": True,
-        "standard_peak_backfill_chunk_size": 24,
-        "standard_peak_backfill_publication_mode": "review-gallery",
-        "standard_peak_backfill_min_shape_r": 0.97,
         "owner_build_xic_backend": "raw-super-window",
-        "backfill_expansion_productization": "clean-target-selective",
     }
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "standard_peak_backfill",
+        "standard_peak_backfill_chunk_size",
+        "standard_peak_backfill_publication_mode",
+        "standard_peak_backfill_write_gallery",
+        "standard_peak_backfill_reuse_existing",
+        "standard_peak_backfill_min_shape_r",
+        "backfill_expansion_productization",
+        "backfill_expansion_reuse_existing_raw_overlay",
+        "backfill_expansion_reuse_existing_shift_aware",
+        "backfill_expansion_render_shift_aware_images",
+        "backfill_expansion_min_shape_r",
+    ],
+)
+def test_standard_peak_alignment_fields_fail_closed(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    preset_path = tmp_path / f"{field}.toml"
+    preset_path.write_text(
+        "\n".join(
+            [
+                'name = "Retired"',
+                'description = "Retired normal route"',
+                'combine_mode = "single"',
+                "",
+                "[[tag]]",
+                'strategy = "neutral_loss"',
+                'name = "NL116"',
+                "value = 116.0474",
+                "",
+                "[alignment]",
+                f"{field} = true",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PresetError, match=f"{field}.*diagnostic-only"):
+        load_preset(preset_path)
 
 
 def test_unknown_alignment_key_is_rejected(tmp_path: Path) -> None:

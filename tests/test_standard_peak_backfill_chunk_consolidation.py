@@ -4,12 +4,17 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from tests.matrix_identity_fixtures import legacy_matrix_identity_row
 from tools.diagnostics import standard_peak_backfill_chunk_consolidation as cli
 from xic_extractor.alignment.matrix_output_contract import (
     LEGACY_ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
 )
 from xic_extractor.alignment.tsv_writer import ALIGNMENT_REVIEW_COLUMNS
+from xic_extractor.diagnostics import (
+    standard_peak_backfill_chunk_consolidation as consolidation,
+)
 from xic_extractor.diagnostics.shadow_production_projection import (
     SHADOW_PRODUCTION_PROJECTION_COLUMNS,
 )
@@ -64,10 +69,8 @@ def test_chunk_consolidation_applies_one_matrix_from_two_chunks(
         / "formal_product_output"
         / "standard_peak_formal_product_manifest.json",
     )
-    assert summary["published_alignment_output_dir"] == str(tmp_path)
-    assert summary["published_alignment_manifest_json"] == str(
-        tmp_path / "standard_peak_default_matrix_manifest.json",
-    )
+    assert summary["published_alignment_output_dir"] == ""
+    assert summary["published_alignment_manifest_json"] == ""
 
     matrix_rows = _read_tsv(
         out
@@ -91,11 +94,11 @@ def test_chunk_consolidation_applies_one_matrix_from_two_chunks(
         out / "formal_product_output" / "alignment_matrix.tsv",
     )
     assert formal_matrix_rows == matrix_rows
-    assert _read_tsv(fixture["matrix"]) == matrix_rows
-    assert (
+    assert _read_tsv(fixture["matrix"]) != matrix_rows
+    assert not (
         tmp_path / "alignment_matrix.pre_standard_peak_backfill.tsv"
     ).exists()
-    assert (
+    assert not (
         tmp_path / "alignment_matrix_identity.pre_standard_peak_backfill.tsv"
     ).exists()
     manifest = json.loads(
@@ -125,21 +128,7 @@ def test_chunk_consolidation_applies_one_matrix_from_two_chunks(
         out / "formal_product_output" / "alignment_matrix.tsv",
     )
     assert "alignment_matrix.tsv" in manifest["artifact_sha256"]
-    default_manifest = json.loads(
-        (tmp_path / "standard_peak_default_matrix_manifest.json").read_text(
-            encoding="utf-8",
-        ),
-    )
-    assert default_manifest["status"] == "pass"
-    assert default_manifest["default_matrix_status"] == (
-        "standard_peak_backfill_applied"
-    )
-    assert default_manifest["matrix_cells_written"] == "2"
-    assert default_manifest["published_alignment_matrix_tsv"] == str(
-        fixture["matrix"],
-    )
-    assert default_manifest["alignment_matrix_backup_sha256"]
-    assert default_manifest["alignment_matrix_identity_backup_sha256"]
+    assert not (tmp_path / "standard_peak_default_matrix_manifest.json").exists()
 
 
 def test_chunk_consolidation_allows_formal_output_noop_when_no_activation_rows(
@@ -403,74 +392,42 @@ def test_chunk_consolidation_can_keep_formal_output_as_sidecar_only(
     assert not (tmp_path / "standard_peak_default_matrix_manifest.json").exists()
 
 
-def test_chunk_consolidation_can_rerun_from_backup_and_publish_to_final_matrix(
+def test_source_matrix_republisher_rejects_before_any_io(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fixture = _write_fixture(tmp_path)
-    out = tmp_path / "out"
-    base_args = [
-        "--chunk-dir",
-        str(fixture["chunk_a"]),
-        "--chunk-dir",
-        str(fixture["chunk_b"]),
-        "--review-queue-tsv",
-        str(fixture["queue"]),
-        "--alignment-review-tsv",
-        str(fixture["review"]),
-        "--output-dir",
-        str(out),
-        "--emit-formal-product-output",
-    ]
+    def fail_io(*_args, **_kwargs):
+        raise AssertionError("republisher performed I/O before rejection")
 
-    assert (
-        cli.main(
-            [
-                *base_args,
-                "--alignment-matrix-tsv",
-                str(fixture["matrix"]),
-                "--alignment-matrix-identity-tsv",
-                str(fixture["identity"]),
-            ],
+    monkeypatch.setattr(consolidation, "_load_json_mapping", fail_io)
+    monkeypatch.setattr(consolidation, "_backup_once", fail_io)
+    monkeypatch.setattr(consolidation.shutil, "copy2", fail_io)
+
+    with pytest.raises(ValueError, match="source-Matrix republication is retired"):
+        consolidation.run_standard_peak_backfill_chunk_consolidation(
+            machine_pipeline_summary_jsons=(),
+            alignment_matrix_tsv=tmp_path / "alignment_matrix.tsv",
+            alignment_matrix_identity_tsv=(
+                tmp_path / "alignment_matrix_identity.tsv"
+            ),
+            alignment_review_tsv=tmp_path / "alignment_review.tsv",
+            output_dir=tmp_path / "output",
+            emit_formal_product_output=True,
+            publish_to_source_alignment_output=True,
         )
-        == 0
-    )
-    backup_matrix = tmp_path / "alignment_matrix.pre_standard_peak_backfill.tsv"
-    backup_identity = (
-        tmp_path / "alignment_matrix_identity.pre_standard_peak_backfill.tsv"
-    )
-    assert backup_matrix.exists()
-    assert backup_identity.exists()
 
-    assert (
-        cli.main(
-            [
-                *base_args,
-                "--alignment-matrix-tsv",
-                str(backup_matrix),
-                "--alignment-matrix-identity-tsv",
-                str(backup_identity),
-                "--publish-alignment-matrix-tsv",
-                str(fixture["matrix"]),
-                "--publish-alignment-matrix-identity-tsv",
-                str(fixture["identity"]),
-            ],
+    with pytest.raises(ValueError, match="source-Matrix republication is retired"):
+        consolidation._publish_formal_product_output_to_alignment_output(
+            formal_product_output_dir=tmp_path / "formal",
+            formal_product_manifest_json=tmp_path / "formal" / "manifest.json",
+            publish_alignment_matrix_tsv=tmp_path / "alignment_matrix.tsv",
+            publish_alignment_matrix_identity_tsv=(
+                tmp_path / "alignment_matrix_identity.tsv"
+            ),
+            source_run_id="test",
         )
-        == 0
-    )
 
-    summary = json.loads(
-        (
-            out / "standard_peak_backfill_chunk_consolidation_summary.json"
-        ).read_text(encoding="utf-8"),
-    )
-    assert summary["status"] == "pass"
-    assert summary["matrix_cells_written"] == "2"
-    assert summary["published_alignment_manifest_json"] == str(
-        tmp_path / "standard_peak_default_matrix_manifest.json",
-    )
-    assert _read_tsv(fixture["matrix"]) == _read_tsv(
-        out / "formal_product_output" / "alignment_matrix.tsv",
-    )
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_chunk_consolidation_does_not_emit_formal_output_when_coverage_fails(

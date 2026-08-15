@@ -359,9 +359,7 @@ def run_standard_peak_backfill_preset(
             retained_backfill_gate_tsv=retained_outputs.tsv,
             gallery_output_dir=gallery_dir,
             emit_formal_product_output=True,
-            publish_to_source_alignment_output=True,
-            publish_alignment_matrix_tsv=paths["published_matrix"],
-            publish_alignment_matrix_identity_tsv=paths["published_identity"],
+            publish_to_source_alignment_output=False,
         )
         scope.metrics["status"] = consolidation_outputs.status
     summary_json = output_dir / "standard_peak_backfill_preset_summary.json"
