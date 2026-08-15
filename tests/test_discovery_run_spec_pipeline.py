@@ -34,6 +34,9 @@ from xic_extractor.discovery.pipeline import (
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 
 
 def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
@@ -160,6 +163,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         peak_config=_peak_config(tmp_path),
         raw_opener=lambda path, dll_dir: serial_handles[path],
         audit_evidence_mode="none",
+        discovery_processing_run_spec=spec,
         discovery_physical_bindings_by_sample={
             raw_path.stem: sample_output.physical_bindings
             for raw_path, sample_output in zip(
@@ -174,21 +178,28 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     assert alignment_outputs.matrix_tsv.exists()
 
     first_bindings = serial.per_sample[0].physical_bindings
+    assert first_bindings[0].run_spec_id == spec.run_spec_id
+    assert first_bindings[0].acquisition_source == (
+        spec.acquisition_inputs[0].acquisition_source
+    )
     first_candidates = tuple(binding.candidate for binding in first_bindings)
     with pytest.raises(ValueError, match="cardinality mismatch"):
         validate_discovery_candidate_physical_bindings(
+            run_spec=spec,
             sample_stem=raw_paths[0].stem,
             candidates=first_candidates,
             bindings=(),
         )
     with pytest.raises(ValueError, match="order is not contiguous"):
         validate_discovery_candidate_physical_bindings(
+            run_spec=spec,
             sample_stem=raw_paths[0].stem,
             candidates=first_candidates,
             bindings=(replace(first_bindings[0], final_ordinal=1),),
         )
     with pytest.raises(ValueError, match="crosses sample identity"):
         validate_discovery_candidate_physical_bindings(
+            run_spec=spec,
             sample_stem=raw_paths[1].stem,
             candidates=first_candidates,
             bindings=first_bindings,
@@ -219,6 +230,39 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     def reject_raw_open(*_args, **_kwargs):
         raise AssertionError("crossed same-run binding opened RAW")
 
+    canonical_bindings = {
+        raw_path.stem: sample_output.physical_bindings
+        for raw_path, sample_output in zip(
+            raw_paths,
+            serial.per_sample,
+            strict=True,
+        )
+    }
+    with pytest.raises(ValueError, match="must be provided together"):
+        alignment_pipeline.run_alignment(
+            discovery_batch_index=serial.batch_index_csv,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "bindings-without-run-spec",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=reject_raw_open,
+            audit_evidence_mode="none",
+            discovery_physical_bindings_by_sample=canonical_bindings,
+        )
+    with pytest.raises(ValueError, match="must be provided together"):
+        alignment_pipeline.run_alignment(
+            discovery_batch_index=serial.batch_index_csv,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "run-spec-without-bindings",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=reject_raw_open,
+            audit_evidence_mode="none",
+            discovery_processing_run_spec=spec,
+        )
+
     with pytest.raises(ValueError, match="crosses candidate content"):
         alignment_pipeline.run_alignment(
             discovery_batch_index=serial.batch_index_csv,
@@ -229,7 +273,106 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
             peak_config=_peak_config(tmp_path),
             raw_opener=reject_raw_open,
             audit_evidence_mode="none",
+            discovery_processing_run_spec=spec,
             discovery_physical_bindings_by_sample=crossed_bindings,
+        )
+
+    foreign_dir = tmp_path / "foreign"
+    foreign_dir.mkdir()
+    foreign_paths = tuple(foreign_dir / path.name for path in raw_paths)
+    for foreign_path in foreign_paths:
+        foreign_path.write_bytes(f"foreign-{foreign_path.stem}".encode())
+    foreign_spec = compile_discovery_processing_run_spec(
+        foreign_paths,
+        discovery_settings=settings,
+    )
+    foreign_binding = replace(
+        first_bindings[0],
+        run_spec_id=foreign_spec.run_spec_id,
+    )
+    foreign_bindings = {
+        raw_path.stem: sample_output.physical_bindings
+        for raw_path, sample_output in zip(
+            raw_paths,
+            serial.per_sample,
+            strict=True,
+        )
+    }
+    foreign_bindings[raw_paths[0].stem] = (foreign_binding,)
+    with pytest.raises(ValueError, match="crosses processing run"):
+        alignment_pipeline.run_alignment(
+            discovery_batch_index=serial.batch_index_csv,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "foreign-binding-alignment",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=reject_raw_open,
+            audit_evidence_mode="none",
+            discovery_processing_run_spec=spec,
+            discovery_physical_bindings_by_sample=foreign_bindings,
+        )
+
+    acquisition_crossed_binding = replace(
+        first_bindings[0],
+        acquisition_source=foreign_spec.acquisition_inputs[0].acquisition_source,
+    )
+    acquisition_crossed_bindings = dict(canonical_bindings)
+    acquisition_crossed_bindings[raw_paths[0].stem] = (
+        acquisition_crossed_binding,
+    )
+    with pytest.raises(ValueError, match="crosses acquisition source"):
+        alignment_pipeline.run_alignment(
+            discovery_batch_index=serial.batch_index_csv,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "foreign-acquisition-binding-alignment",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=reject_raw_open,
+            audit_evidence_mode="none",
+            discovery_processing_run_spec=spec,
+            discovery_physical_bindings_by_sample=acquisition_crossed_bindings,
+        )
+
+    foreign_profile_spec = compile_discovery_processing_run_spec(
+        raw_paths,
+        discovery_settings=settings,
+        signal_processing_profile=SignalProcessingProfile(window_points=5),
+    )
+    with pytest.raises(ValueError, match="crosses Alignment signal profile"):
+        alignment_pipeline.run_alignment(
+            discovery_batch_index=serial.batch_index_csv,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "foreign-profile-alignment",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=reject_raw_open,
+            audit_evidence_mode="none",
+            discovery_processing_run_spec=foreign_profile_spec,
+            discovery_physical_bindings_by_sample=canonical_bindings,
+        )
+
+    with pytest.raises(ValueError, match="crosses batch acquisition"):
+        alignment_pipeline.run_alignment(
+            discovery_batch_index=serial.batch_index_csv,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "foreign-run-alignment",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=reject_raw_open,
+            audit_evidence_mode="none",
+            discovery_processing_run_spec=foreign_spec,
+            discovery_physical_bindings_by_sample={
+                raw_path.stem: sample_output.physical_bindings
+                for raw_path, sample_output in zip(
+                    raw_paths,
+                    serial.per_sample,
+                    strict=True,
+                )
+            },
         )
 
 

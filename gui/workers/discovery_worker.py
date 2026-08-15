@@ -30,6 +30,7 @@ from xic_extractor.presets import (
     bind_cid_nl_recipe,
     load_preset,
 )
+from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -135,6 +136,7 @@ class DiscoveryWorker(QThread):
             request,
             index_path=index_path,
             raw_dir=raw_dir,
+            processing_run_spec=run_spec,
             physical_bindings_by_sample={
                 raw_path.stem: sample_outputs.physical_bindings
                 for raw_path, sample_outputs in zip(
@@ -252,6 +254,7 @@ class DiscoveryWorker(QThread):
         *,
         index_path: Path,
         raw_dir: Path,
+        processing_run_spec: ProcessingRunSpec | None = None,
         physical_bindings_by_sample: (
             dict[str, tuple[DiscoveryCandidatePhysicalBinding, ...]] | None
         ) = None,
@@ -265,6 +268,7 @@ class DiscoveryWorker(QThread):
             alignment_config=recipe.alignment_config,
             peak_config=self._alignment_peak_config(request),
             owner_build_xic_backend=recipe.owner_build_xic_backend,
+            discovery_processing_run_spec=processing_run_spec,
             discovery_physical_bindings_by_sample=physical_bindings_by_sample,
             **_GALLERY_ALIGNMENT_KWARGS,
         )

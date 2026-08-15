@@ -26,6 +26,7 @@ from xic_extractor.processing_identity import (
     IdentityContractError,
     fingerprint_file_content,
 )
+from xic_extractor.processing_run_spec import ProcessingRunSpec
 
 DISCOVERY_BATCH_INDEX_SCHEMA_VERSION = "discovery_batch_index_v2"
 DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION = "discovery_candidates_csv_v1"
@@ -226,6 +227,7 @@ def discovery_candidate_payload_sha256(
 
 def validate_discovery_candidate_physical_bindings(
     *,
+    run_spec: ProcessingRunSpec,
     sample_stem: str,
     candidates: Sequence[DiscoveryCandidate],
     bindings: Sequence[DiscoveryCandidatePhysicalBinding],
@@ -233,6 +235,16 @@ def validate_discovery_candidate_physical_bindings(
     """Validate one ordered final-candidate binding population at Discovery."""
 
     _required_text(sample_stem, field="sample_stem")
+    if not isinstance(run_spec, ProcessingRunSpec):
+        raise TypeError("run_spec must be a ProcessingRunSpec")
+    matching_inputs = tuple(
+        item for item in run_spec.acquisition_inputs if item.sample_stem == sample_stem
+    )
+    if len(matching_inputs) != 1:
+        raise ValueError(
+            f"{sample_stem}: processing run does not bind this sample once"
+        )
+    expected_acquisition_source = matching_inputs[0].acquisition_source
     candidate_values = tuple(candidates)
     binding_values = tuple(bindings)
     if len(binding_values) != len(candidate_values):
@@ -255,6 +267,14 @@ def validate_discovery_candidate_physical_bindings(
             or binding.candidate.sample_stem != sample_stem
         ):
             raise ValueError(f"{sample_stem}: physical binding crosses sample identity")
+        if binding.run_spec_id != run_spec.run_spec_id:
+            raise ValueError(f"{sample_stem}: physical binding crosses processing run")
+        if binding.acquisition_source != expected_acquisition_source:
+            raise ValueError(
+                f"{sample_stem}: physical binding crosses acquisition source"
+            )
+        if binding.physical_evaluation.prepared.profile_id != run_spec.profile_id:
+            raise ValueError(f"{sample_stem}: physical binding crosses signal profile")
         if discovery_candidate_payload_sha256((binding.candidate,)) != (
             discovery_candidate_payload_sha256((candidate,))
         ):

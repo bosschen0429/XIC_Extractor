@@ -167,6 +167,7 @@ def _backfill_ms1_candidates_with_acquisition(
     groups: Iterable[DiscoverySeedGroup],
     *,
     acquisition_source: AcquisitionSourceIdentity,
+    run_spec_id: str | None = None,
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
@@ -174,6 +175,8 @@ def _backfill_ms1_candidates_with_acquisition(
 ) -> _DiscoveryMs1AcquisitionResult:
     """Acquire canonical Discovery requests in bounded owner-minted batches."""
 
+    if signal_processing_profile is not None and not run_spec_id:
+        raise ValueError("canonical physical bindings require run_spec_id")
     group_tuple = tuple(groups)
     plans = _discovery_ms1_request_plan(group_tuple, settings=settings)
     capability = mint_trace_acquisition_capability(
@@ -272,10 +275,13 @@ def _backfill_ms1_candidates_with_acquisition(
     )
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
     if signal_processing_profile is not None:
+        assert run_spec_id is not None
         if len(physical_fact_by_index) != len(physical_plans):
             raise ValueError("Discovery physical binding population is incomplete")
         physical_bindings = tuple(
             DiscoveryCandidatePhysicalBinding(
+                run_spec_id=run_spec_id,
+                acquisition_source=acquisition_source,
                 final_ordinal=binding.final_ordinal,
                 candidate=merge_result.candidates[binding.final_ordinal],
                 representative_source_ordinal=(binding.representative_source_ordinal),

@@ -1157,6 +1157,7 @@ def _discover_raw_file(
                         cast(BatchXICAdapter, raw),
                         groups,
                         acquisition_source=acquisition_source,
+                        run_spec_id=run_spec.run_spec_id,
                         settings=settings,
                         peak_config=peak_config,
                         measurement_observer=_capture_acquired_measurements,

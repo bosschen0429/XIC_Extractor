@@ -266,8 +266,13 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         assert captured_alignment["discovery_physical_bindings_by_sample"] == {
             "A": ("binding",)
         }
+        assert isinstance(
+            captured_alignment["discovery_processing_run_spec"],
+            module.ProcessingRunSpec,
+        )
     else:
         assert captured_alignment["discovery_physical_bindings_by_sample"] is None
+        assert captured_alignment["discovery_processing_run_spec"] is None
     assert captured_standard_peak["alignment_dir"] == output_dir
     assert captured_standard_peak["raw_dir"] == raw_dir
     assert captured_standard_peak["dll_dir"] == tmp_path / "dll"

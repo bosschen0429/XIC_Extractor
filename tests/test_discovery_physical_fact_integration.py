@@ -54,6 +54,8 @@ from xic_extractor.raw_reader import (
 )
 from xic_extractor.xic_models import XICTrace
 
+_TEST_RUN_SPEC_ID = "processing-run.v1:" + ("0" * 64)
+
 
 def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     tmp_path: Path,
@@ -309,6 +311,7 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         raw,
         (first, duplicate_trace),
         acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_backfill_settings(),
         peak_config=_backfill_peak_config(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
@@ -350,6 +353,7 @@ def test_alignment_builds_owner_from_discovery_binding_without_resolver(
         raw,
         (_group((_seed(scan_number=10, rt=7.80),)),),
         acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_backfill_settings(),
         peak_config=_backfill_peak_config(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
@@ -423,6 +427,7 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         raw,
         (_group((_seed(scan_number=10, rt=7.80),)),),
         acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_backfill_settings(),
         peak_config=_backfill_peak_config(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
@@ -504,6 +509,7 @@ def test_physical_fact_sharing_uses_exact_owner_question(
         raw,
         (first, second),
         acquisition_source=source,
+        run_spec_id=spec.run_spec_id,
         settings=settings,
         peak_config=_backfill_peak_config(),
         signal_processing_profile=profile,

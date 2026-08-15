@@ -699,11 +699,13 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
     raw_dir.mkdir()
     (raw_dir / "Sample_A.raw").write_text("raw", encoding="utf-8")
     canonical_binding = object()
+    processing_run_spec = object()
     calls: dict[str, object] = {}
 
     def ordered_bindings(**kwargs):
         calls["binding_samples"] = tuple(kwargs["bindings_by_sample"])
         calls["candidate_samples"] = tuple(kwargs["candidates_by_sample"])
+        calls["processing_run_spec"] = kwargs["run_spec"]
         return (canonical_binding,)
 
     def reject_old_owner_build(*_args, **_kwargs):
@@ -759,11 +761,13 @@ def test_pipeline_routes_same_run_discovery_bindings_around_old_owner_build(
         peak_config=_peak_config(),
         raw_opener=FakeRawOpener(),
         audit_evidence_mode="none",
+        discovery_processing_run_spec=processing_run_spec,
         discovery_physical_bindings_by_sample={"Sample_A": (canonical_binding,)},
     )
 
     assert calls["binding_samples"] == ("Sample_A",)
     assert calls["candidate_samples"] == ("Sample_A",)
+    assert calls["processing_run_spec"] is processing_run_spec
     assert calls["bindings"] == (canonical_binding,)
     assert calls["alignment_config"] == AlignmentConfig()
 

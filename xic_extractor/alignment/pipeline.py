@@ -143,6 +143,7 @@ from xic_extractor.peak_detection.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
+from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.sample_metadata import (
     is_sample_metadata_source,
     load_sample_metadata,
@@ -159,19 +160,41 @@ def _ordered_discovery_physical_bindings(
     *,
     sample_order: tuple[str, ...],
     candidates_by_sample: Mapping[str, Sequence[DiscoveryCandidate]],
+    candidate_receipts: Mapping[
+        str,
+        DiscoveryCandidateUniverseReceipt | None,
+    ],
+    run_spec: ProcessingRunSpec,
+    expected_profile_id: str,
     bindings_by_sample: Mapping[
         str,
         Sequence[DiscoveryCandidatePhysicalBinding],
     ],
 ) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
+    if not isinstance(run_spec, ProcessingRunSpec):
+        raise TypeError("discovery_processing_run_spec must be a ProcessingRunSpec")
+    if run_spec.profile_id != expected_profile_id:
+        raise ValueError("Discovery processing run crosses Alignment signal profile")
     if set(bindings_by_sample) != set(sample_order):
         raise ValueError(
             "Discovery physical binding samples must exactly match the batch"
         )
+    if tuple(item.sample_stem for item in run_spec.acquisition_inputs) != sample_order:
+        raise ValueError("Discovery processing run sample order crosses the batch")
     ordered: list[DiscoveryCandidatePhysicalBinding] = []
-    for sample_stem in sample_order:
+    for sample_stem, acquisition_input in zip(
+        sample_order,
+        run_spec.acquisition_inputs,
+        strict=True,
+    ):
+        receipt = candidate_receipts.get(sample_stem)
+        if receipt is None:
+            raise ValueError(f"{sample_stem}: Discovery candidate receipt is required")
+        if receipt.acquisition_source != acquisition_input.acquisition_source:
+            raise ValueError(f"{sample_stem}: processing run crosses batch acquisition")
         ordered.extend(
             validate_discovery_candidate_physical_bindings(
+                run_spec=run_spec,
                 sample_stem=sample_stem,
                 candidates=candidates_by_sample[sample_stem],
                 bindings=bindings_by_sample[sample_stem],
@@ -215,6 +238,7 @@ def run_alignment(
     selected_family_ids: frozenset[str] = frozenset(),
     selected_family_source: str = "",
     require_discovery_owner_closure: bool = False,
+    discovery_processing_run_spec: ProcessingRunSpec | None = None,
     discovery_physical_bindings_by_sample: (
         Mapping[str, Sequence[DiscoveryCandidatePhysicalBinding]] | None
     ) = None,
@@ -243,6 +267,12 @@ def run_alignment(
                 "signal_processing_profile conflicts with peak_config canonical fields"
             )
     signal_processing_profile = resolved_signal_processing_profile
+    if (discovery_processing_run_spec is None) != (
+        discovery_physical_bindings_by_sample is None
+    ):
+        raise ValueError(
+            "Discovery processing run and physical bindings must be provided together"
+        )
     if type(selected_family_ids) is not frozenset or any(
         type(family_id) is not str for family_id in selected_family_ids
     ):
@@ -381,15 +411,18 @@ def run_alignment(
             for candidate in candidates_by_sample[sample_stem]
         )
         stage.metrics["candidate_count"] = len(candidates)
-    discovery_physical_bindings = (
-        None
-        if discovery_physical_bindings_by_sample is None
-        else _ordered_discovery_physical_bindings(
+    if discovery_physical_bindings_by_sample is None:
+        discovery_physical_bindings = None
+    else:
+        assert discovery_processing_run_spec is not None
+        discovery_physical_bindings = _ordered_discovery_physical_bindings(
             sample_order=batch.sample_order,
             candidates_by_sample=candidates_by_sample,
+            candidate_receipts=batch.candidate_receipts,
+            run_spec=discovery_processing_run_spec,
+            expected_profile_id=signal_processing_profile.profile_id,
             bindings_by_sample=discovery_physical_bindings_by_sample,
         )
-    )
     opener = raw_opener or _default_raw_opener
     outputs = _output_paths(
         output_dir,

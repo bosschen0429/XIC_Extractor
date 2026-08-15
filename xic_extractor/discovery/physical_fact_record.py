@@ -18,6 +18,7 @@ from xic_extractor.peak_detection.evidence_facts import (
     PhysicalPeakEvaluation,
     validate_bounded_physical_peak_evaluation,
 )
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,8 @@ class DiscoveryPhysicalFactRecord:
 class DiscoveryCandidatePhysicalBinding:
     """Discovery-owned in-memory binding from a final candidate to peak facts."""
 
+    run_spec_id: str
+    acquisition_source: AcquisitionSourceIdentity
     final_ordinal: int
     candidate: DiscoveryCandidate
     representative_source_ordinal: int
@@ -66,6 +69,10 @@ class DiscoveryCandidatePhysicalBinding:
     physical_evaluation: PhysicalPeakEvaluation
 
     def __post_init__(self) -> None:
+        if not isinstance(self.run_spec_id, str) or not self.run_spec_id.strip():
+            raise ValueError("run_spec_id must be non-empty text")
+        if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
+            raise TypeError("acquisition_source must be an AcquisitionSourceIdentity")
         if self.final_ordinal < 0:
             raise ValueError("final_ordinal must be non-negative")
         if not isinstance(self.candidate, DiscoveryCandidate):
