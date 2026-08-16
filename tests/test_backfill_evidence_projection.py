@@ -548,7 +548,7 @@ def test_generic_review_rescue_count_requires_owner_rehydration() -> None:
     evidence = evidence_from_tsv_rows(
         {
             "neutral_loss_tag": "DNA_dR",
-            "primary_evidence": "owner_complete_link",
+            "primary_evidence": "legacy_unrehydrated_primary_evidence",
             "quantifiable_detected_count": "2",
             "quantifiable_rescue_count": "0",
             "review_rescue_count": "1",

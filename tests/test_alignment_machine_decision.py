@@ -57,7 +57,7 @@ def test_generic_review_rescue_is_unavailable_not_primary_use() -> None:
         decision="production_family",
         confidence="high",
         reason="owner_complete_link",
-        primary_evidence="owner_complete_link",
+        primary_evidence="legacy_unrehydrated_primary_evidence",
         detected=2,
         rescued=0,
     )

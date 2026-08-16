@@ -682,7 +682,6 @@ def classify_backfill_promotion(
     if (
         (review_rescue_count is None or review_rescue_count > 0)
         and is_dr_neutral_loss_tag(evidence.neutral_loss_tag)
-        and evidence.primary_evidence in _SUPPORTED_PRIMARY_EVIDENCE
     ):
         return BackfillPromotionDecision(
             state="unavailable",

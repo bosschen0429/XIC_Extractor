@@ -676,10 +676,11 @@ falsifiers/renderers. The current Backfill owners do not mint a
 ProcessingRunSpec attempt, so incomplete evidence remains unavailable and
 cannot promote or write.
 
-The clean-target replay remains source-sealed historical diagnostic/oracle
-evidence only. T5D retired its ownerless writer and registered authority scope;
-the retained counts and hashes cannot mint current authority. The final
-SP-001–SP-055 map is
+The clean-target replay is a retained historical diagnostic/oracle packet. Its
+checker proves current-file self-consistency only; it does not authenticate the
+packet's historical origin or immutability. T5D retired its ownerless writer and
+registered authority scope, and the retained counts and hashes cannot mint
+current authority. The final SP-001–SP-055 map is
 `docs/superpowers/validation/standard_peak_t5d_contraction_v1/capability_disposition_v1.tsv`.
 
 ---
@@ -831,11 +832,12 @@ proof.
 `standard_peak_backfill_chunk_consolidation.py` +
 `standard_peak_backfill_productization.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: Normal `scripts/run_alignment.py`, GUI, workflows, and built-in
-presets no longer call this wrapper. An explicit offline caller can still run
-the retained evidence chain and request its historical formal sidecar, but it
-cannot publish to the source Matrix and the sidecar is not current product
-authority. T5D owns its contraction/deletion and diagnostic eligibility.
+**Status note**: Before T5D, normal `scripts/run_alignment.py`, GUI, workflows,
+and built-in presets no longer called this wrapper, while an explicit offline
+caller could still run the retained evidence chain and request its historical
+formal sidecar. T5D deleted this wrapper; no current entry point can run that
+chain or publish its sidecar. The historical sidecar never became current
+product authority.
 
 ---
 
@@ -845,15 +847,13 @@ authority. T5D owns its contraction/deletion and diagnostic eligibility.
 stage from an existing alignment output directory for timing/parity validation.
 **Topic group**: `standard_peak_backfill_preset.py` +
 `scripts.check_product_ready_preset_publication`
-**Status note**: Currently supports `--stage standard_peak`. It copies the
-required source alignment artifacts into a fresh output directory, records input
-artifact SHA/size/row-counts in
-`dna_dr_product_ready_stage_replay_manifest.json`, reruns the standard-peak
-publication preset, and then runs the product-ready publication checker. The
-runner is diagnostic/incremental validation infrastructure: it is not a second
-preset runner, does not alter default CLI behavior, and any public artifact hash
-diff must be treated as a failed exact-safe replay unless an expected-diff plan
-approved it.
+**Status note**: Before T5D, this supported `--stage standard_peak`. It copied
+the required source alignment artifacts into a fresh output directory, recorded
+input artifact SHA/size/row-counts in
+`dna_dr_product_ready_stage_replay_manifest.json`, reran the standard-peak
+publication preset, and then ran the product-ready publication checker. T5D
+deleted the replay and publication checker; no current `standard_peak` stage
+entry point remains.
 
 ---
 
