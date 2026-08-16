@@ -1,5 +1,9 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
+**Total entry-points:** 111
+**Total files (incl. helpers):** 194 Python files under `tools/diagnostics/`
+**Count method:** top-level `### *.py` entry headings for entry-points;
+top-level `tools/diagnostics/*.py` files for total files.
 **Governing contracts:** `docs/architecture-contract.md` and
 `docs/agent/script-tool-lifecycle.md`.
 **Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
