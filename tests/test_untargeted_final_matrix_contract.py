@@ -6,16 +6,15 @@ from openpyxl import load_workbook
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
-from xic_extractor.alignment.production_decisions import build_production_decisions
-from xic_extractor.alignment.tsv_writer import (
-    write_alignment_matrix_identity_tsv as _write_alignment_matrix_identity_tsv,
+from xic_extractor.alignment.production_decisions import (
+    ProductionDecisionSet,
+    build_production_decisions,
 )
 from xic_extractor.alignment.tsv_writer import (
-    write_alignment_matrix_tsv as _write_alignment_matrix_tsv,
+    write_alignment_matrix_identity_tsv,
+    write_alignment_matrix_tsv,
 )
-from xic_extractor.alignment.xlsx_writer import (
-    write_alignment_results_xlsx as _write_alignment_results_xlsx,
-)
+from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 FORBIDDEN_PRIMARY_STATUSES = {
@@ -31,42 +30,10 @@ FORBIDDEN_PRIMARY_STATUSES = {
 }
 
 
-def write_alignment_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
-    config = AlignmentConfig()
-    return _write_alignment_matrix_tsv(
-        path,
+def _production_decisions(matrix: AlignmentMatrix) -> ProductionDecisionSet:
+    return build_production_decisions(
         matrix,
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
-    )
-
-
-def write_alignment_matrix_identity_tsv(
-    path: Path,
-    matrix: AlignmentMatrix,
-) -> Path:
-    config = AlignmentConfig()
-    return _write_alignment_matrix_identity_tsv(
-        path,
-        matrix,
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
-    )
-
-
-def write_alignment_results_xlsx(
-    path: Path,
-    matrix: AlignmentMatrix,
-    *,
-    metadata: dict[str, str],
-) -> Path:
-    config = AlignmentConfig()
-    return _write_alignment_results_xlsx(
-        path,
-        matrix,
-        metadata=metadata,
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
+        AlignmentConfig(),
     )
 
 
@@ -107,11 +74,13 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     matrix_tsv = write_alignment_matrix_tsv(
         tmp_path / "alignment_matrix.tsv",
         matrix,
+        production_decisions=_production_decisions(matrix),
     )
     workbook_path = write_alignment_results_xlsx(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     tsv_rows = _read_tsv(matrix_tsv)
@@ -132,10 +101,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     assert matrix_rows[0]["s2"] == 90.0
     assert matrix_rows[0]["s3"] == 115.0
     assert FORBIDDEN_PRIMARY_STATUSES.isdisjoint(
-        str(value)
-        for row in matrix_rows
-        for value in row.values()
-        if value is not None
+        str(value) for row in matrix_rows for value in row.values() if value is not None
     )
 
     audit_rows = _worksheet_records(workbook["Audit"])
@@ -166,6 +132,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     )
     assert len(identity_rows) == len(tsv_rows)
@@ -174,8 +141,7 @@ def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(
     assert identity_rows[0]["source_feature_family_ids"] == "FAM001"
     assert identity_rows[0]["row_identity_basis"] == "no_split_peak_hypothesis"
     assert (
-        identity_rows[0]["split_evaluation_status"]
-        == "complete_no_product_ready_split"
+        identity_rows[0]["split_evaluation_status"] == "complete_no_product_ready_split"
     )
     assert identity_rows[0]["projection_status"] == "not_projection"
 
@@ -200,12 +166,17 @@ def test_identity_sidecar_uses_group_hypothesis_as_product_identity(
     )
 
     matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix),
+        write_alignment_matrix_tsv(
+            tmp_path / "alignment_matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        ),
     )
     identity_rows = _read_tsv(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         ),
     )
 
@@ -244,6 +215,7 @@ def test_product_writer_rejects_no_split_multi_family_hypothesis_collapse(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     except ValueError as exc:
         assert "cannot collapse multiple source families" in str(exc)
@@ -265,10 +237,7 @@ def test_istd_fixture_records_explicit_matching_fields():
     assert all(row["targeted_confidence"] == "HIGH" for row in rows)
     assert all(row["targeted_nl"] == "✓" for row in rows)
     assert all(row["sample_mapping_rule"] for row in rows)
-    assert {
-        (row["old_row_coordinate"], row["targeted_identity"])
-        for row in rows
-    } == {
+    assert {(row["old_row_coordinate"], row["targeted_identity"]) for row in rows} == {
         ("245.1332/12.28", "d3-5-medC"),
         ("261.1283/8.97", "d3-5-hmdC"),
     }
@@ -362,9 +331,7 @@ def _integration(
         boundary_sources=("test",),
         area_ms1_morphology=morphology_area,
         ms1_morphology_area_source=(
-            "gaussian15_positive_asls_residual"
-            if morphology_area is not None
-            else ""
+            "gaussian15_positive_asls_residual" if morphology_area is not None else ""
         ),
     )
 

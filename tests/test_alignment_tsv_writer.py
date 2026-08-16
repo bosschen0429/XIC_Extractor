@@ -10,7 +10,10 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.owner_group_delivery import GROUP_REVIEW_PROJECTION_COLUMNS
-from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.alignment.production_decisions import (
+    ProductionDecisionSet,
+    build_production_decisions,
+)
 from xic_extractor.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.integration_audit import CellIntegrationAuditSummary
@@ -56,46 +59,14 @@ REVIEW_COLUMNS = [
 ]
 
 
-@pytest.fixture(autouse=True)
-def _supply_owner_decisions_to_legacy_renderer_calls(monkeypatch) -> None:
-    from xic_extractor.alignment import tsv_writer
-
-    for name in (
-        "write_alignment_review_tsv",
-        "write_alignment_matrix_tsv",
-        "write_alignment_matrix_identity_tsv",
-        "write_alignment_backfill_cell_evidence_tsv",
-    ):
-        renderer = getattr(tsv_writer, name)
-
-        def render_with_owner_decisions(
-            path,
-            matrix,
-            *,
-            alignment_config=None,
-            production_decisions=None,
-            _name=name,
-            _renderer=renderer,
-        ):
-            config = alignment_config or AlignmentConfig()
-            decisions = production_decisions or build_production_decisions(
-                matrix,
-                config,
-            )
-            if _name == "write_alignment_backfill_cell_evidence_tsv":
-                return _renderer(
-                    path,
-                    matrix,
-                    production_decisions=decisions,
-                )
-            return _renderer(
-                path,
-                matrix,
-                alignment_config=config,
-                production_decisions=decisions,
-            )
-
-        monkeypatch.setattr(tsv_writer, name, render_with_owner_decisions)
+def _production_decisions(
+    matrix: AlignmentMatrix,
+    alignment_config: AlignmentConfig | None = None,
+) -> ProductionDecisionSet:
+    return build_production_decisions(
+        matrix,
+        alignment_config or AlignmentConfig(),
+    )
 
 
 def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Path):
@@ -112,7 +83,11 @@ def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Pa
         sample_order=("sample-a", "sample-b", "sample-c", "sample-d"),
     )
 
-    path = write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
+    path = write_alignment_review_tsv(
+        tmp_path / "alignment_review.tsv",
+        matrix,
+        production_decisions=_production_decisions(matrix),
+    )
     rows = _read_tsv(path)
 
     assert list(rows[0]) == REVIEW_COLUMNS
@@ -201,7 +176,13 @@ def test_write_alignment_review_tsv_warning_precedence(tmp_path: Path):
         sample_order=("sample-a", "sample-b"),
     )
 
-    rows = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert [row["warning"] for row in rows] == [
         "no_anchor",
@@ -226,7 +207,13 @@ def test_write_alignment_review_tsv_reports_duplicate_assigned_cells(tmp_path: P
         sample_order=("sample-a", "sample-b", "sample-c"),
     )
 
-    rows = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert rows[0]["reason"] == (
         "no anchor; 0/3 present; 0 MS1 backfilled; 2 duplicate-assigned"
@@ -249,7 +236,13 @@ def test_write_alignment_review_tsv_counts_duplicate_assigned_separately(
         sample_order=("sample-a", "sample-b", "sample-c", "sample-d"),
     )
 
-    rows = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert rows[0]["detected_count"] == "1"
     assert rows[0]["absent_count"] == "1"
@@ -274,7 +267,13 @@ def test_write_alignment_review_tsv_reports_ambiguous_ms1_owner_cells(
         sample_order=("sample-a", "sample-b", "sample-c"),
     )
 
-    rows = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert rows[0]["detected_count"] == "1"
     assert rows[0]["present_rate"] == "0.333333"
@@ -304,7 +303,13 @@ def test_write_alignment_review_tsv_reports_folded_clusters(tmp_path: Path):
         sample_order=("sample-a", "sample-b"),
     )
 
-    rows = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert rows[0]["event_cluster_count"] == "3"
     assert rows[0]["event_cluster_ids"] == "ALN000001;ALN000002;ALN000003"
@@ -344,7 +349,13 @@ def test_write_alignment_matrix_tsv_blanks_missing_and_invalid_areas(tmp_path: P
         ),
     )
 
-    rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert list(rows[0]) == [
         "Mz",
@@ -387,7 +398,13 @@ def test_write_alignment_matrix_tsv_uses_stable_numeric_text_without_value_drift
         sample_order=("small", "large", "blank"),
     )
 
-    row = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))[0]
+    row = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )[0]
 
     assert row["Mz"] == "500.1230"
     assert row["RT"] == "8.49"
@@ -425,16 +442,25 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     )
 
     matrix_row = _read_tsv(
-        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "alignment_matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
     )[0]
     identity_row = _read_tsv(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     )[0]
     review_row = _read_tsv(
-        write_alignment_review_tsv(tmp_path / "alignment_review.tsv", matrix)
+        write_alignment_review_tsv(
+            tmp_path / "alignment_review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
     )[0]
 
     assert matrix_row["Mz"] == "500.1235"
@@ -466,12 +492,17 @@ def test_alignment_matrix_mz_format_is_display_only_for_small_mz(
     )
 
     matrix_row = _read_tsv(
-        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "alignment_matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
     )[0]
     identity_row = _read_tsv(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     )[0]
 
@@ -490,12 +521,17 @@ def test_alignment_matrix_display_collision_does_not_merge_identity_rows(
     matrix = _display_collision_matrix()
 
     matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "alignment_matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
     )
     identity_rows = _read_tsv(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     )
 
@@ -537,12 +573,17 @@ def test_alignment_matrix_v2_identity_binding_rejects_every_row_substitution(
 
     matrix = _display_collision_matrix()
     matrix_rows = _read_tsv(
-        write_alignment_matrix_tsv(tmp_path / "alignment_matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "alignment_matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
     )
     identity_rows = _read_tsv(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     )
     matrix_header = tuple(matrix_rows[0])
@@ -725,10 +766,15 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
         ),
         sample_order=("+sample", "safe"),
     )
-    matrix_path = write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+    matrix_path = write_alignment_matrix_tsv(
+        tmp_path / "matrix.tsv",
+        matrix,
+        production_decisions=_production_decisions(matrix),
+    )
     identity_path = write_alignment_matrix_identity_tsv(
         tmp_path / "identity.tsv",
         matrix,
+        production_decisions=_production_decisions(matrix),
     )
 
     with matrix_path.open(encoding="utf-8", newline="") as handle:
@@ -783,7 +829,13 @@ def test_alignment_matrix_mz_format_preserves_nonfinite_blank_semantics(
         sample_order=("sample-a", "sample-b"),
     )
 
-    row = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))[0]
+    row = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )[0]
 
     assert row["Mz"] == ""
 
@@ -811,7 +863,13 @@ def test_write_alignment_matrix_tsv_prefers_ms1_morphology_area(
         sample_order=("sample-a", "sample-b"),
     )
 
-    rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert list(rows[0]) == [
         "Mz",
@@ -875,7 +933,13 @@ def test_write_alignment_matrix_tsv_blanks_duplicate_assigned_cells(tmp_path: Pa
         sample_order=("sample-a", "sample-b", "sample-c"),
     )
 
-    rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert rows[0]["sample-a"] == ""
     assert rows[0]["sample-b"] == "2.00000e+02"
@@ -902,7 +966,13 @@ def test_write_alignment_matrix_tsv_blanks_ambiguous_ms1_owner_cells(
         sample_order=("sample-a", "sample-b", "sample-c"),
     )
 
-    rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert rows[0]["sample-a"] == ""
     assert rows[0]["sample-b"] == "2.00000e+02"
@@ -940,7 +1010,13 @@ def test_write_alignment_matrix_tsv_excludes_rows_without_accepted_cells(
         sample_order=("sample-a", "sample-b"),
     )
 
-    rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert [(row["Mz"], row["RT"]) for row in rows] == [("500.1230", "8.49")]
     assert rows[0]["sample-a"] == "1.00000e+02"
@@ -965,11 +1041,18 @@ def test_write_alignment_matrix_identity_tsv_maps_product_rows(
         sample_order=("sample-a", "sample-b"),
     )
 
-    matrix_rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    matrix_rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
     identity_rows = _read_tsv(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     )
 
@@ -1035,7 +1118,11 @@ def test_write_alignment_matrix_rejects_family_projection_identity(
     )
 
     with pytest.raises(ValueError, match="family_projection_no_split_evidence"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
@@ -1075,6 +1162,7 @@ def test_write_alignment_matrix_identity_tsv_records_split_hypothesis(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     )
 
@@ -1140,11 +1228,18 @@ def test_write_alignment_matrix_uses_explicit_peak_hypotheses_as_rows(
         sample_order=("sample-a", "sample-b"),
     )
 
-    matrix_rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    matrix_rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
     identity_rows = _read_tsv(
         write_alignment_matrix_identity_tsv(
             tmp_path / "alignment_matrix_identity.tsv",
             matrix,
+            production_decisions=_production_decisions(matrix),
         )
     )
 
@@ -1199,7 +1294,11 @@ def test_write_alignment_matrix_rejects_parent_aggregate_product_row(
     )
 
     with pytest.raises(ValueError, match="parent aggregate"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
@@ -1241,7 +1340,11 @@ def test_write_alignment_matrix_rejects_split_hypothesis_without_identity(
     )
 
     with pytest.raises(ValueError, match="requires peak_hypothesis_id"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_matrix_rejects_duplicate_split_hypothesis_id(
@@ -1257,7 +1360,11 @@ def test_write_alignment_matrix_rejects_duplicate_split_hypothesis_id(
     )
 
     with pytest.raises(ValueError, match="duplicate product peak_hypothesis_id"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_matrix_rejects_overlapping_split_sample_claims(
@@ -1273,7 +1380,11 @@ def test_write_alignment_matrix_rejects_overlapping_split_sample_claims(
     )
 
     with pytest.raises(ValueError, match="claimed by multiple peak_hypothesis_id"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_matrix_rejects_unassigned_split_product_cell(
@@ -1286,7 +1397,11 @@ def test_write_alignment_matrix_rejects_unassigned_split_product_cell(
     )
 
     with pytest.raises(ValueError, match="not assigned to split hypothesis"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_matrix_rejects_split_hypothesis_missing_source_family(
@@ -1310,7 +1425,11 @@ def test_write_alignment_matrix_rejects_split_hypothesis_missing_source_family(
     )
 
     with pytest.raises(ValueError, match="requires source_feature_family_ids"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_matrix_rejects_multi_family_product_identity(
@@ -1342,7 +1461,11 @@ def test_write_alignment_matrix_rejects_multi_family_product_identity(
     )
 
     with pytest.raises(ValueError, match="exactly one source_feature_family_id"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
@@ -1383,7 +1506,11 @@ def test_write_alignment_matrix_rejects_duplicate_source_candidate_writes(
     )
 
     with pytest.raises(ValueError, match="source peak cannot contribute"):
-        write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix)
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
 
 
 def test_write_alignment_review_tsv_includes_production_decision_columns(
@@ -1397,7 +1524,13 @@ def test_write_alignment_review_tsv_includes_production_decision_columns(
         sample_order=("sample-a",),
     )
 
-    rows = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
+    rows = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert rows[0]["identity_decision"] == "audit_family"
     assert rows[0]["identity_confidence"] == "review"
@@ -1434,8 +1567,20 @@ def test_one_detected_provisional_retention_stays_out_of_primary_matrix(
         sample_order=("sample-a", "sample-b", "sample-c"),
     )
 
-    review_rows = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
-    matrix_rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    review_rows = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
+    matrix_rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert list(review_rows[0]) == REVIEW_COLUMNS
     assert review_rows[0]["identity_decision"] == "provisional_discovery"
@@ -1479,6 +1624,7 @@ def test_direct_tier2_review_token_does_not_change_matrix_writer(
     review_path = write_alignment_review_tsv(
         tmp_path / "alignment_review.tsv",
         matrix,
+        production_decisions=_production_decisions(matrix),
     )
     cells_path = write_alignment_cells_tsv(
         tmp_path / "alignment_cells.tsv",
@@ -1487,6 +1633,7 @@ def test_direct_tier2_review_token_does_not_change_matrix_writer(
     matrix_path = write_alignment_matrix_tsv(
         tmp_path / "alignment_matrix.tsv",
         matrix,
+        production_decisions=_production_decisions(matrix),
     )
     review_rows = _read_tsv(review_path)
     cell_rows = _read_tsv(cells_path)
@@ -1627,6 +1774,7 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     evidence_path = write_alignment_backfill_cell_evidence_tsv(
         tmp_path / "alignment_backfill_cell_evidence.tsv",
         matrix,
+        production_decisions=_production_decisions(matrix),
     )
     rows = _read_tsv(evidence_path)
 
@@ -1937,8 +2085,20 @@ def test_tsv_writers_escape_formula_like_text(tmp_path: Path):
         sample_order=("=sample", "+sample-2"),
     )
 
-    review = _read_tsv(write_alignment_review_tsv(tmp_path / "review.tsv", matrix))
-    matrix_rows = _read_tsv(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    review = _read_tsv(
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
+    matrix_rows = _read_tsv(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=_production_decisions(matrix),
+        )
+    )
 
     assert review[0]["feature_family_id"] == "'=cluster"
     assert review[0]["neutral_loss_tag"] == "'+NL"

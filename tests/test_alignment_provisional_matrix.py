@@ -26,25 +26,6 @@ from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
 
-_WRITE_OUTPUTS_ATOMIC = pipeline_outputs.write_outputs_atomic
-
-
-@pytest.fixture(autouse=True)
-def _supply_owner_decisions_to_writer_calls(monkeypatch) -> None:
-    def write_outputs_with_owner_decisions(outputs, matrix, **kwargs):
-        config = kwargs["alignment_config"]
-        kwargs.setdefault(
-            "production_decisions",
-            build_production_decisions(matrix, config),
-        )
-        return _WRITE_OUTPUTS_ATOMIC(outputs, matrix, **kwargs)
-
-    monkeypatch.setattr(
-        pipeline_outputs,
-        "write_outputs_atomic",
-        write_outputs_with_owner_decisions,
-    )
-
 
 def test_projection_keeps_full_group_breadth_and_cell_provenance() -> None:
     matrix = _representative_matrix()
@@ -207,13 +188,16 @@ def test_provisional_writer_timing_reports_only_owner_supported_phases(
 ) -> None:
     outputs = _provisional_outputs(tmp_path)
     recorder = TimingRecorder("alignment", instrument_writers=True)
+    matrix = _representative_matrix()
+    config = AlignmentConfig()
 
     pipeline_outputs.write_outputs_atomic(
         outputs,
-        _representative_matrix(),
+        matrix,
         metadata=_provisional_metadata(),
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
         timing_recorder=recorder,
     )
 
@@ -315,12 +299,14 @@ def test_streamed_pipeline_matches_frozen_formula_and_unquantified_bytes(
         sample_order=("=sample", "sample-b"),
     )
     streamed_outputs = _provisional_outputs(tmp_path / "streamed")
+    config = AlignmentConfig()
     pipeline_outputs.write_outputs_atomic(
         streamed_outputs,
         matrix,
         metadata=_provisional_metadata(),
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
         timing_recorder=TimingRecorder("alignment", instrument_writers=True),
     )
 
@@ -505,13 +491,15 @@ def test_provisional_outputs_publish_as_one_atomic_set(tmp_path: Path) -> None:
         sample_order=("sample-a",),
     )
     outputs = _provisional_outputs(tmp_path)
+    config = AlignmentConfig()
 
     pipeline_outputs.write_outputs_atomic(
         outputs,
         matrix,
         metadata=_provisional_metadata(),
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
     )
 
     assert outputs.provisional_matrix_tsv is not None
@@ -531,14 +519,17 @@ def test_provisional_outputs_reject_any_incomplete_bundle(tmp_path: Path) -> Non
         ),
         provisional_identity_tsv=tmp_path / "provisional_row_identity.tsv",
     )
+    matrix = AlignmentMatrix(clusters=(), cells=(), sample_order=())
+    config = AlignmentConfig()
 
     with pytest.raises(ValueError, match="must be emitted atomically"):
         pipeline_outputs.write_outputs_atomic(
             outputs,
-            AlignmentMatrix(clusters=(), cells=(), sample_order=()),
+            matrix,
             metadata=_provisional_metadata(),
             ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-            alignment_config=AlignmentConfig(),
+            alignment_config=config,
+            production_decisions=build_production_decisions(matrix, config),
         )
 
 
@@ -570,6 +561,7 @@ def test_provisional_output_failure_leaves_no_partial_final_set(
         "write_provisional_summary_json",
         fail_summary,
     )
+    config = AlignmentConfig()
 
     with pytest.raises(OSError, match="summary write failed"):
         pipeline_outputs.write_outputs_atomic(
@@ -577,7 +569,8 @@ def test_provisional_output_failure_leaves_no_partial_final_set(
             matrix,
             metadata=_provisional_metadata(),
             ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-            alignment_config=AlignmentConfig(),
+            alignment_config=config,
+            production_decisions=build_production_decisions(matrix, config),
         )
 
     assert not any(path.exists() for path in _output_paths(outputs))
