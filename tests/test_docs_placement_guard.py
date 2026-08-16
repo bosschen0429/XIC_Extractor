@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -23,6 +26,12 @@ from tools.diagnostics.docs_scan import (
     LOCAL_PATH_SCAN_TEXT_FILENAMES,
     LOCAL_PATH_SCAN_TEXT_SUFFIXES,
 )
+
+
+@pytest.fixture
+def tmp_path() -> Iterator[Path]:
+    with tempfile.TemporaryDirectory(prefix="xic-docs-placement-") as directory:
+        yield Path(directory)
 
 
 def _write(root: Path, path: str, text: str) -> None:
@@ -58,6 +67,66 @@ def _stage_delete(root: Path, path: str) -> None:
         check=True,
         capture_output=True,
     )
+
+
+def _stage(root: Path, *paths: str) -> None:
+    subprocess.run(
+        ["git", "add", "--", *paths],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+
+
+def test_staged_markdown_ignores_inherited_alternate_index(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    main_path = "docs/main.md"
+    alternate_path = "docs/alternate.md"
+    _write(tmp_path, main_path, "# Main\n")
+    _stage(tmp_path, main_path)
+    alternate_index = tmp_path / "alternate.index"
+    alternate_env = os.environ.copy()
+    alternate_env["GIT_INDEX_FILE"] = str(alternate_index)
+    subprocess.run(
+        ["git", "read-tree", "--empty"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        env=alternate_env,
+    )
+    _write(tmp_path, alternate_path, "# Alternate\n")
+    subprocess.run(
+        ["git", "add", "--", alternate_path],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        env=alternate_env,
+    )
+    monkeypatch.setenv("GIT_INDEX_FILE", str(alternate_index))
+
+    entries, ignored = staged_markdown(tmp_path)
+
+    assert ignored == 0
+    assert [(entry.path, entry.staged_text) for entry in entries] == [
+        (main_path, "# Main\n")
+    ]
+
+
+def test_staged_markdown_decodes_non_ascii_path_as_utf8(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    path = "docs/測試.md"
+    _write(tmp_path, path, "# 測試\n")
+    _stage(tmp_path, path)
+
+    entries, ignored = staged_markdown(tmp_path)
+
+    assert ignored == 0
+    assert [(entry.path, entry.staged_text) for entry in entries] == [
+        (path, "# 測試\n")
+    ]
 
 
 def _source_hash(text: str) -> str:
@@ -852,6 +921,7 @@ def test_registered_retirement_packet_shallow_review_rejects_semantic_tampering(
     else:
         packet["claims"][0][field] = value
     _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    _stage(tmp_path, evidence_path)
     contract = _packet_contract(tmp_path, evidence_path)
     monkeypatch.setattr(
         docs_placement_guard,
@@ -876,6 +946,7 @@ def test_registered_retirement_packet_shallow_review_rejects_referrer_mismatch(
     packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
     packet["exact_referrers"] = ["docs/referrer.md"]
     _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    _stage(tmp_path, evidence_path)
     contract = _packet_contract(tmp_path, evidence_path)
     monkeypatch.setattr(
         docs_placement_guard,
@@ -942,6 +1013,11 @@ def test_registered_retirement_packet_shallow_review_resolves_owner_locators(
     packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
     packet["claims"][0]["owner_locator"] = owner_locator
     _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    _stage(
+        tmp_path,
+        evidence_path,
+        *([owner_path] if owner_text else []),
+    )
     contract = _packet_contract(tmp_path, evidence_path)
     monkeypatch.setattr(
         docs_placement_guard,
@@ -966,6 +1042,7 @@ def test_registered_retirement_packet_rejects_transaction_tampering(
     packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
     packet["transaction"] = "renamed_transaction"
     _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    _stage(tmp_path, evidence_path)
 
     problems = committed_same_path_retirement_packet_problems(
         tmp_path,
@@ -1025,6 +1102,7 @@ def test_registered_retirement_packet_rejects_self_pinned_source_copy_locator(
     packet[field] = value
     packet["entries"][0][field] = value
     _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    _stage(tmp_path, evidence_path)
     contract = _packet_contract(tmp_path, evidence_path)
 
     problems = committed_same_path_retirement_packet_problems(
@@ -1053,6 +1131,7 @@ def test_committed_retirement_replay_rejects_format_valid_wrong_source_hash(
     packet = json.loads((tmp_path / evidence_path).read_text(encoding="utf-8"))
     packet[target][0][field] = "0" * 64
     _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    _stage(tmp_path, evidence_path)
 
     problems = committed_same_path_retirement_packet_problems(
         tmp_path,
@@ -1097,6 +1176,7 @@ def test_committed_retirement_replays_historical_exact_referrers(
     packet["exact_referrers"] = []
     packet["entries"][0]["exact_referrers"] = []
     _write(tmp_path, evidence_path, json.dumps(packet, indent=2) + "\n")
+    _stage(tmp_path, evidence_path)
     contract = _packet_contract(tmp_path, evidence_path)
 
     problems = committed_same_path_retirement_packet_problems(
@@ -1443,6 +1523,32 @@ def test_same_path_replacement_rejects_residual_dependency(tmp_path: Path) -> No
     )
 
     assert any("dependency/referrer census" in p.reason for p in result.problems)
+
+
+def test_same_path_dependency_census_uses_staged_referrer_text(
+    tmp_path: Path,
+) -> None:
+    source_path, evidence_path, replacement, packet = _same_path_fixture(tmp_path)
+    referrer_path = "scripts/referrer.py"
+    _write(tmp_path, referrer_path, f"REFERENCE = {source_path!r}\n")
+    _stage(tmp_path, referrer_path)
+    _write(tmp_path, referrer_path, "REFERENCE = None\n")
+    packet["dependencies"] = {
+        "literal_path_referrers": [referrer_path],
+        "relative_markdown_links": [],
+        "relative_html_links": [],
+        "control_plane_constant_consumers": [],
+    }
+
+    result = _same_path_result(
+        tmp_path,
+        source_path,
+        evidence_path,
+        replacement,
+        packet,
+    )
+
+    assert not any("dependency/referrer census" in p.reason for p in result.problems)
 
 
 def test_high_risk_dated_implementation_plan_without_marker_fails(

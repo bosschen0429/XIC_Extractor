@@ -53,9 +53,6 @@ from tools.diagnostics.handoff_retention_audit import (  # noqa: E402
     run_handoff_retention_audit,
 )
 
-_fallback_local_path_scan_paths = _docs_scan.fallback_local_path_scan_paths
-_git_visible_paths = _docs_scan.git_visible_paths
-_is_local_path_scan_target = _docs_scan.is_local_path_scan_target
 _read_text = _docs_scan.read_text
 
 DEFAULT_CONFIG = Path.home() / ".obsidian-wiki" / "config"
@@ -178,32 +175,26 @@ def resolve_vault(root: Path, explicit: Path | None) -> Path | None:
 def audit_repo(
     root: Path,
     *,
-    allow_filesystem_handoff_fallback: bool = False,
     fail_on_completed_transient: bool = False,
     require_retirement_history: bool = True,
 ) -> tuple[list[AuditMessage], dict[str, object]]:
     messages: list[AuditMessage] = []
-    docs = sorted((root / "docs").rglob("*.md"))
+    repository_view = _docs_scan.load_repository_text_view(root)
+    docs = tuple(
+        rel_path
+        for rel_path in repository_view.paths
+        if rel_path.startswith("docs/") and is_markdown_path(rel_path)
+    )
     docs_by_top = Counter(
-        path.relative_to(root / "docs").parts[0]
-        if path.relative_to(root / "docs").parts
-        else "."
-        for path in docs
+        rel_path.removeprefix("docs/").split("/", 1)[0] or "."
+        for rel_path in docs
     )
 
     local_path_counts: Counter[str] = Counter()
-    visible_paths = _git_visible_paths(root) or _fallback_local_path_scan_paths(root)
-    # ``git ls-files --cached`` includes worktree deletions until they are
-    # staged. A repo-state audit must describe the current filesystem, not
-    # report already-removed construction records as live docs.
-    scan_paths = tuple(
-        rel_path for rel_path in visible_paths if (root / rel_path).is_file()
-    )
-    for rel_path in scan_paths:
-        path = root / rel_path
-        if not _is_local_path_scan_target(path, rel_path):
+    for rel_path in repository_view.text_paths:
+        if not _docs_scan.is_local_path_scan_rel_path(rel_path):
             continue
-        text = _read_text(path)
+        text = repository_view.read_text(rel_path)
         count = sum(len(pattern.findall(text)) for pattern in LOCAL_PATH_PATTERNS)
         if count:
             local_path_counts[rel_path] = count
@@ -225,24 +216,26 @@ def audit_repo(
             )
         )
 
-    routing_review = docs_routing_review(root, scan_paths)
-    structure_review = docs_structure_review_for_repo(scan_paths)
-    completed_transient_review = completed_transient_review_for_repo(root, scan_paths)
-    canonical_metadata_review = canonical_metadata_review_for_repo(root)
+    routing_review = docs_routing_review(repository_view)
+    structure_review = docs_structure_review_for_repo(repository_view.paths)
+    completed_transient_review = completed_transient_review_for_repo(
+        repository_view
+    )
+    canonical_metadata_review = canonical_metadata_review_for_repo(repository_view)
     retirement_packet_review = committed_retirement_packet_review_for_repo(
-        root,
-        scan_paths,
+        repository_view,
         require_historical_replay=require_retirement_history,
     )
-    governance_path = root / "docs/agent/codex-operating-system.md"
+    governance_rel_path = "docs/agent/codex-operating-system.md"
     governance_problems = (
         list(
             _docs_scan.governance_index_problems(
                 root,
-                _read_text(governance_path),
+                repository_view.read_text(governance_rel_path),
+                repository_view=repository_view,
             )
         )
-        if governance_path.is_file()
+        if repository_view.contains(governance_rel_path)
         else []
     )
     routing_candidates = int(routing_review["candidate_files"])
@@ -417,7 +410,7 @@ def audit_repo(
 
     handoff_result = run_handoff_retention_audit(
         root,
-        allow_filesystem_fallback=allow_filesystem_handoff_fallback,
+        repository_view=repository_view,
     )
     messages.extend(
         AuditMessage(
@@ -449,12 +442,11 @@ def audit_repo(
 
 
 def completed_transient_review_for_repo(
-    root: Path,
-    scan_paths: Sequence[str],
+    repository_view: _docs_scan.RepositoryTextView,
 ) -> dict[str, object]:
     completed_files: list[dict[str, str]] = []
     allowed_stubs: list[dict[str, str]] = []
-    for raw_path in sorted(scan_paths):
+    for raw_path in repository_view.paths:
         rel_path = raw_path.replace("\\", "/")
         if not rel_path.startswith(COMPLETED_TRANSIENT_SCAN_PREFIXES):
             continue
@@ -462,11 +454,10 @@ def completed_transient_review_for_repo(
             continue
         if Path(rel_path).name.lower() == "readme.md":
             continue
-        path = root / rel_path
-        if not path.is_file():
-            continue
-
-        classification = classify_doc(rel_path, _read_text(path))
+        classification = classify_doc(
+            rel_path,
+            repository_view.read_text(rel_path),
+        )
         if classification.doc_lifecycle not in COMPLETED_TRANSIENT_LIFECYCLES:
             continue
 
@@ -523,15 +514,16 @@ def docs_structure_review_for_repo(scan_paths: Sequence[str]) -> dict[str, objec
     }
 
 
-def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
+def canonical_metadata_review_for_repo(
+    repository_view: _docs_scan.RepositoryTextView,
+) -> dict[str, object]:
     rows: list[dict[str, object]] = []
     for rel_path in sorted(DOC_CANONICAL_OWNER_FILES):
         if not is_markdown_path(rel_path):
             continue
         if rel_path.startswith(CANONICAL_METADATA_REVIEW_EXCLUDE_PREFIXES):
             continue
-        path = root / rel_path
-        if not path.exists() or not path.is_file():
+        if not repository_view.contains(rel_path):
             if rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
                 rows.append(
                     {
@@ -545,12 +537,13 @@ def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
                     }
                 )
             continue
-        text = _read_text(path)
+        text = repository_view.read_text(rel_path)
         if rel_path in PERMANENT_ROOT_DOC_CONTRACTS:
             contract_problems = _docs_scan.permanent_root_contract_problems(
-                root,
+                repository_view.root,
                 rel_path,
                 text,
+                repository_view=repository_view,
             )
             if not contract_problems:
                 continue
@@ -591,21 +584,20 @@ def canonical_metadata_review_for_repo(root: Path) -> dict[str, object]:
 
 
 def committed_retirement_packet_review_for_repo(
-    root: Path,
-    scan_paths: Sequence[str],
+    repository_view: _docs_scan.RepositoryTextView,
     *,
     require_historical_replay: bool = True,
 ) -> dict[str, object]:
     checked_paths: list[str] = []
     problems: list[dict[str, str]] = []
     normalized_scan_paths = {
-        _docs_scan.normalize_repo_rel_path(path) for path in scan_paths
+        _docs_scan.normalize_repo_rel_path(path) for path in repository_view.paths
     }
     registered_paths_checked: set[str] = set()
     for rel_path, contract in sorted(COMMITTED_RETIREMENT_PACKET_CONTRACTS.items()):
         registered_paths_checked.add(rel_path)
         checked_paths.append(rel_path)
-        if rel_path not in normalized_scan_paths or not (root / rel_path).is_file():
+        if rel_path not in normalized_scan_paths:
             problems.append(
                 {
                     "path": rel_path,
@@ -614,22 +606,22 @@ def committed_retirement_packet_review_for_repo(
             )
             continue
         for problem in committed_same_path_retirement_packet_problems(
-            root,
+            repository_view.root,
             rel_path,
             contract=contract,
             require_historical_replay=require_historical_replay,
+            repository_view=repository_view,
         ):
             problems.append({"path": rel_path, "problem": problem})
 
-    for rel_path in sorted(scan_paths):
+    for rel_path in repository_view.paths:
         if not is_retirement_evidence_path(rel_path):
             continue
         if rel_path in registered_paths_checked:
             continue
-        path = root / rel_path
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except OSError as exc:
+            data = json.loads(repository_view.read_text(rel_path))
+        except _docs_scan.RepositoryViewError as exc:
             checked_paths.append(rel_path)
             problems.append(
                 {
@@ -671,9 +663,10 @@ def committed_retirement_packet_review_for_repo(
             }
         )
         for problem in committed_same_path_retirement_packet_problems(
-            root,
+            repository_view.root,
             rel_path,
             require_historical_replay=require_historical_replay,
+            repository_view=repository_view,
         ):
             problems.append({"path": rel_path, "problem": problem})
     return {
@@ -918,14 +911,12 @@ def run_audit(
     root: Path = ROOT,
     vault: Path | None = None,
     *,
-    allow_filesystem_handoff_fallback: bool = False,
     include_vault: bool = True,
     fail_on_completed_transient: bool = False,
     require_retirement_history: bool = True,
 ) -> AuditResult:
     repo_messages, repo_summary = audit_repo(
         root,
-        allow_filesystem_handoff_fallback=allow_filesystem_handoff_fallback,
         fail_on_completed_transient=fail_on_completed_transient,
         require_retirement_history=require_retirement_history,
     )

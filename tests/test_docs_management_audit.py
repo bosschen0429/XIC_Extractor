@@ -207,6 +207,17 @@ def _clean_repo(root: Path) -> None:
     )
 
 
+def _init_and_stage_repo(root: Path) -> dict[str, str]:
+    git_env = _isolated_git_subprocess_env()
+    subprocess.run(
+        ["git", "init"], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    subprocess.run(
+        ["git", "add", "."], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    return git_env
+
+
 def _clean_vault(vault: Path) -> None:
     _write(
         vault / "index.md",
@@ -247,13 +258,26 @@ def _run_audit(
     repo_only: bool = False,
     fail_on_completed_transient: bool = False,
     require_retirement_history: bool = False,
+    preserve_index: bool = False,
 ):
+    if root.resolve() != PROJECT_ROOT:
+        if preserve_index:
+            assert (root / ".git").exists()
+        elif not (root / ".git").exists():
+            _init_and_stage_repo(root)
+        else:
+            subprocess.run(
+                ["git", "add", "--all"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                env=_isolated_git_subprocess_env(),
+            )
     return run_audit(
         root,
         vault,
         include_vault=not repo_only,
         fail_on_completed_transient=fail_on_completed_transient,
-        allow_filesystem_handoff_fallback=True,
         require_retirement_history=require_retirement_history,
     )
 
@@ -545,6 +569,20 @@ def test_local_machine_path_is_reported_as_warning(tmp_path: Path) -> None:
         msg.severity == "warning" and "local/private path exposure" in msg.message
         for msg in result.messages
     )
+
+
+def test_local_machine_path_warning_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    rel_path = "config/env.example"
+    _write(root / rel_path, "XIC_RAW_ROOT=C:\\Xcalibur\\data\n")
+    _init_and_stage_repo(root)
+    _write(root / rel_path, "XIC_RAW_ROOT=portable\n")
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    top_hits = result.summary["repo"]["top_local_path_files"]
+    assert any(item["path"] == rel_path for item in top_hits)
 
 
 def test_docs_structure_review_reports_root_scatter(tmp_path: Path) -> None:
@@ -2170,6 +2208,206 @@ def test_docs_structure_review_reports_non_markdown_specs_payload(
     )
 
 
+def test_docs_audit_uses_staged_payload_missing_from_worktree(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _isolated_git_subprocess_env()
+    subprocess.run(
+        ["git", "init"], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    subprocess.run(
+        ["git", "add", "."], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    payload_path = "docs/superpowers/specs/rogue.json"
+    _write(root / payload_path, "{}\n")
+    subprocess.run(
+        ["git", "add", payload_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+    (root / payload_path).unlink()
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    structure = result.summary["repo"]["docs_structure_review"]
+    assert structure["invalid_spec_payloads"] == [payload_path]
+    assert any(
+        message.severity == "blocker"
+        and "non-Markdown payloads" in message.message
+        for message in result.messages
+    )
+
+
+def test_docs_audit_ignores_staged_deletion_with_worktree_copy(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _isolated_git_subprocess_env()
+    subprocess.run(
+        ["git", "init"], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    subprocess.run(
+        ["git", "add", "."], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    retired_path = "docs/superpowers/specs/staged-deletion.md"
+    _write(root / retired_path, "# Staged deletion\n")
+    subprocess.run(
+        ["git", "add", retired_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+    subprocess.run(
+        ["git", "rm", "--cached", "--force", retired_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    structure = result.summary["repo"]["docs_structure_review"]
+    assert structure["retired_lane_files"] == 0
+    assert retired_path not in structure["retired_lanes"]
+
+
+def test_docs_audit_routes_from_staged_text_not_later_worktree_text(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = "docs/superpowers/notes/index-routing.md"
+    staged_text = "\n".join(
+        (
+            "# Index routing",
+            "",
+            "Doc placement: private_obsidian_note",
+            "Doc kind: note",
+            "Doc lifecycle: active",
+            "Repo owner: docs/notes/index-routing.md",
+        )
+    )
+    _write(root / path, staged_text + "\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(
+        root / path,
+        staged_text.replace("private_obsidian_note", "formal_repo_doc") + "\n",
+    )
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    candidates = result.summary["repo"]["docs_routing_review"]["candidates"]
+    assert any(
+        row["path"] == path and row["disposition"] == "invalid_repo_placement"
+        for row in candidates
+    )
+
+
+def test_docs_audit_completed_lifecycle_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = "docs/superpowers/plans/index-completed.md"
+    staged_text = "\n".join(
+        (
+            "# Index completed",
+            "",
+            "Doc placement: repo_support_doc",
+            "Doc kind: plan",
+            "Doc lifecycle: implemented",
+            "Repo owner: docs/product/backfill.md",
+            "Doc exit rule: retire after owner absorption.",
+        )
+    )
+    _write(root / path, staged_text + "\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(root / path, staged_text.replace("implemented", "active") + "\n")
+
+    result = _run_audit(
+        root,
+        repo_only=True,
+        fail_on_completed_transient=True,
+        preserve_index=True,
+    )
+
+    completed = result.summary["repo"]["completed_transient_review"]
+    assert path in {row["path"] for row in completed["top_completed_files"]}
+
+
+def test_docs_audit_permanent_root_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = "README.md"
+    valid_worktree_text = (root / path).read_text(encoding="utf-8")
+    _write(root / path, "# Broken staged README\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(root / path, valid_worktree_text)
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    assert any(
+        message.severity == "blocker" and message.path == path
+        for message in result.messages
+    )
+
+
+def test_docs_audit_governance_index_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = "docs/agent/codex-operating-system.md"
+    valid_worktree_text = (root / path).read_text(encoding="utf-8")
+    _write(root / path, "# Broken staged governance index\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(root / path, valid_worktree_text)
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    assert any(
+        message.severity == "blocker"
+        and "governance index must contain" in message.message
+        for message in result.messages
+    )
+
+
+def test_docs_audit_retirement_packet_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL
+    valid_worktree_text = (root / path).read_text(encoding="utf-8")
+    _write(root / path, "{\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(root / path, valid_worktree_text)
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    problems = result.summary["repo"]["committed_retirement_packet_review"][
+        "problems"
+    ]
+    assert any(
+        row["path"] == path and "retirement packet cannot be read" in row["problem"]
+        for row in problems
+    )
+
+
 def test_repo_owner_marker_controls_topic_before_body_keywords(
     tmp_path: Path,
 ) -> None:
@@ -2285,14 +2523,7 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
         "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
     )
     subprocess.run(
-        [
-            "git",
-            "add",
-            ".gitignore",
-            RETENTION_INVENTORY,
-            CONTROL_PLANE_PATH,
-            PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
-        ],
+        ["git", "add", "."],
         cwd=root,
         check=True,
         capture_output=True,
