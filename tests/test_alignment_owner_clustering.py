@@ -15,6 +15,7 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
@@ -417,13 +418,24 @@ def test_owner_family_construction_is_writer_visible(tmp_path: Path) -> None:
         ambiguous_by_sample={},
         rescued_cells=(),
     )
+    decisions = build_production_decisions(matrix, AlignmentConfig())
 
-    matrix_rows = _tsv_rows(write_alignment_matrix_tsv(tmp_path / "matrix.tsv", matrix))
+    matrix_rows = _tsv_rows(
+        write_alignment_matrix_tsv(
+            tmp_path / "matrix.tsv",
+            matrix,
+            production_decisions=decisions,
+        )
+    )
     cell_rows = _rows_by_feature_sample(
         write_alignment_cells_tsv(tmp_path / "cells.tsv", matrix),
     )
     review_rows = _rows_by_feature(
-        write_alignment_review_tsv(tmp_path / "review.tsv", matrix),
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            matrix,
+            production_decisions=decisions,
+        ),
     )
 
     assert len(matrix_rows) == 1

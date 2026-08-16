@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -7,10 +8,9 @@ from typing import Any
 from openpyxl import Workbook
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
-    count_status,
     escape_excel_formula,
     row_id,
 )
@@ -22,7 +22,6 @@ from xic_extractor.alignment.owner_group_delivery import (
 from xic_extractor.alignment.product_matrix import build_product_matrix_rows
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
-    build_production_decisions,
 )
 from xic_extractor.alignment.quant_matrix_version import (
     CELL_PROVENANCE_COLUMNS,
@@ -37,20 +36,32 @@ def write_alignment_results_xlsx(
     matrix: AlignmentMatrix,
     *,
     metadata: dict[str, str],
+    production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
 ) -> Path:
+    if not isinstance(production_decisions, ProductionDecisionSet):
+        raise TypeError("production_decisions must be owner-minted")
     path.parent.mkdir(parents=True, exist_ok=True)
     config = alignment_config or AlignmentConfig()
-    decisions = build_production_decisions(
-        matrix,
-        config,
-    )
     workbook = Workbook()
     matrix_sheet = workbook.active
     matrix_sheet.title = "Matrix"
-    _write_matrix_sheet(matrix_sheet, matrix, alignment_config=config)
-    _write_review_sheet(workbook.create_sheet("Review"), matrix, decisions)
-    _write_audit_sheet(workbook.create_sheet("Audit"), matrix, decisions)
+    _write_matrix_sheet(
+        matrix_sheet,
+        matrix,
+        alignment_config=config,
+        production_decisions=production_decisions,
+    )
+    _write_review_sheet(
+        workbook.create_sheet("Review"),
+        matrix,
+        production_decisions,
+    )
+    _write_audit_sheet(
+        workbook.create_sheet("Audit"),
+        matrix,
+        production_decisions,
+    )
     _write_metadata_sheet(workbook.create_sheet("Metadata"), metadata)
     workbook.save(path)
     return path
@@ -116,13 +127,16 @@ def _write_mapping_rows(
 def _write_matrix_sheet(
     sheet: Any,
     matrix: AlignmentMatrix,
+    *,
     alignment_config: AlignmentConfig,
+    production_decisions: ProductionDecisionSet,
 ) -> None:
     headers = ["Mz", "RT", *matrix.sample_order]
     _append_xlsx_row(sheet, headers)
     for product_row in build_product_matrix_rows(
         matrix,
         alignment_config=alignment_config,
+        production_decisions=production_decisions,
     ):
         _append_xlsx_row(
             sheet,
@@ -177,6 +191,9 @@ def _write_review_sheet(
         cluster_id = row_id(cluster)
         cells = grouped_cells.get(cluster_id, ())
         row_decision = decisions.row(cluster_id)
+        raw_status_counts = Counter(
+            decisions.cell(cluster_id, cell.sample_stem).raw_status for cell in cells
+        )
         group_projection = dict(delivery_group_projection(cluster))
         _append_xlsx_row(
             sheet,
@@ -187,8 +204,8 @@ def _write_review_sheet(
                     for column in GROUP_REVIEW_PROJECTION_COLUMNS
                 ],
                 cluster.neutral_loss_tag,
-                count_status(cells, "detected"),
-                count_status(cells, "rescued"),
+                raw_status_counts["detected"],
+                raw_status_counts["rescued"],
                 row_decision.identity_decision,
                 row_decision.identity_confidence,
                 row_decision.primary_evidence,
@@ -198,10 +215,10 @@ def _write_review_sheet(
                 row_decision.accepted_cell_count,
                 row_decision.accepted_rescue_count,
                 row_decision.review_rescue_count,
-                count_status(cells, "absent"),
-                count_status(cells, "unchecked"),
-                count_status(cells, "duplicate_assigned"),
-                count_status(cells, "ambiguous_ms1_owner"),
+                raw_status_counts["absent"],
+                raw_status_counts["unchecked"],
+                raw_status_counts["duplicate_assigned"],
+                raw_status_counts["ambiguous_ms1_owner"],
                 row_decision.include_in_primary_matrix,
                 ";".join(row_decision.row_flags),
                 _optional_attr(cluster, "artificial_adduct_role"),
@@ -273,6 +290,10 @@ def _write_audit_sheet(
             )
         decision = decisions.cell(cell.cluster_id, cell.sample_stem)
         row_decision = decisions.row(cell.cluster_id)
+        audit_matrix_area = (
+            decision.matrix_value if decision.write_matrix_value else cell.matrix_area
+        )
+        audit_area_matches_cell = audit_matrix_area == cell.matrix_area
         _append_xlsx_row(
             sheet,
             [
@@ -288,12 +309,12 @@ def _write_audit_sheet(
                 decision.write_matrix_value,
                 decision.blank_reason,
                 cell.area,
-                cell.matrix_area,
-                cell.matrix_area_source,
-                cell.matrix_area_missing_reason,
+                audit_matrix_area,
+                cell.matrix_area_source if audit_area_matches_cell else "",
+                cell.matrix_area_missing_reason if audit_area_matches_cell else "",
                 cell.apex_rt,
                 cell.rt_delta_sec,
-                _claim_state(cell),
+                _claim_state(decision.raw_status),
                 ";".join(row_decision.row_flags),
                 row_decision.identity_decision,
                 row_decision.identity_confidence,
@@ -345,10 +366,10 @@ def _xlsx_quant_matrix_value(value: object) -> float | None:
     return float(str(value)) if value != "" else None
 
 
-def _claim_state(cell: AlignedCell) -> str:
-    if cell.status == "duplicate_assigned":
+def _claim_state(raw_status: str) -> str:
+    if raw_status == "duplicate_assigned":
         return "loser"
-    if cell.status in {"detected", "rescued"}:
+    if raw_status in {"detected", "rescued"}:
         return "winner_or_unclaimed"
     return ""
 

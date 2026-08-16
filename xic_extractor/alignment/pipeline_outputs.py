@@ -47,10 +47,7 @@ from xic_extractor.alignment.owner_backfill_peak_fact_provenance import (
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.ownership import OwnershipBuildResult
-from xic_extractor.alignment.production_decisions import (
-    ProductionDecisionSet,
-    build_production_decisions,
-)
+from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.provisional_matrix import (
     build_provisional_matrix_projection,
     write_provisional_identity_tsv,
@@ -346,7 +343,7 @@ def write_outputs_atomic(
     owner_backfill_peak_fact_provenance: OwnerBackfillPeakFactProvenanceBatch = (
         EMPTY_OWNER_BACKFILL_PEAK_FACT_PROVENANCE_BATCH
     ),
-    production_decisions: ProductionDecisionSet | None = None,
+    production_decisions: ProductionDecisionSet,
     baseline_integration_method: str = "asls",
     baseline_audit_method: str = "",
     timing_recorder: TimingRecorder | None = None,
@@ -362,10 +359,7 @@ def write_outputs_atomic(
         metadata,
         row_count=len(owner_backfill_peak_fact_provenance.rows),
     )
-    if production_decisions is not None and not isinstance(
-        production_decisions,
-        ProductionDecisionSet,
-    ):
+    if not isinstance(production_decisions, ProductionDecisionSet):
         raise TypeError("production_decisions must be owner-minted")
     if (
         outputs.owner_backfill_peak_fact_provenance_tsv is None
@@ -433,13 +427,6 @@ def write_outputs_atomic(
             if timing_recorder is not None and timing_recorder.instrument_writers
             else TimingRecorder.disabled("writer")
         )
-    if (
-        outputs.review_tsv is not None
-        or outputs.matrix_tsv is not None
-        or outputs.matrix_identity_tsv is not None
-        or outputs.backfill_cell_evidence_tsv is not None
-    ) and production_decisions is None:
-        production_decisions = build_production_decisions(matrix, alignment_config)
     if outputs.workbook is not None:
         output_paths_and_writers.append(
             (
@@ -448,6 +435,7 @@ def write_outputs_atomic(
                     path,
                     matrix,
                     metadata=metadata,
+                    production_decisions=production_decisions,
                     alignment_config=alignment_config,
                 ),
             ),
@@ -456,7 +444,11 @@ def write_outputs_atomic(
         output_paths_and_writers.append(
             (
                 outputs.review_html,
-                lambda path: write_alignment_review_html(path, matrix),
+                lambda path: write_alignment_review_html(
+                    path,
+                    matrix,
+                    production_decisions=production_decisions,
+                ),
             ),
         )
     if outputs.matrix_tsv is not None:
@@ -506,7 +498,6 @@ def write_outputs_atomic(
                 lambda path: write_alignment_backfill_cell_evidence_tsv(
                     path,
                     matrix,
-                    alignment_config=alignment_config,
                     production_decisions=production_decisions,
                 ),
             ),

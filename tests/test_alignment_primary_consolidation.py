@@ -513,8 +513,13 @@ def test_consolidation_loser_audit_is_review_tsv_visible(tmp_path: Path):
     )
 
     consolidated = consolidate_primary_family_rows(matrix, AlignmentConfig())
+    decisions = build_production_decisions(consolidated, AlignmentConfig())
     rows = _review_rows_by_feature(
-        write_alignment_review_tsv(tmp_path / "review.tsv", consolidated),
+        write_alignment_review_tsv(
+            tmp_path / "review.tsv",
+            consolidated,
+            production_decisions=decisions,
+        ),
     )
 
     assert rows["FAM001"]["include_in_primary_matrix"] == "FALSE"

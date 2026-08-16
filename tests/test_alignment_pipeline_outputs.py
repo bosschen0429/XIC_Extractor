@@ -22,6 +22,7 @@ from xic_extractor.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintReceipt,
 )
 from xic_extractor.alignment.pipeline_outputs import alignment_metadata, output_paths
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.processing_identity import (
     FileContentFingerprint,
@@ -198,50 +199,6 @@ def test_validation_minimal_outputs_keep_gate_artifacts_without_debug_surfaces(
     assert outputs.run_metadata_json == tmp_path / "alignment_run_metadata.json"
 
 
-def test_write_outputs_reuses_production_decisions(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    original = pipeline_outputs_module.build_production_decisions
-    calls = 0
-
-    def counted_build_production_decisions(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(
-        pipeline_outputs_module,
-        "build_production_decisions",
-        counted_build_production_decisions,
-    )
-    outputs = output_paths(
-        tmp_path,
-        output_level="validation-minimal",
-        emit_alignment_cells=False,
-        emit_alignment_status_matrix=False,
-    )
-
-    pipeline_outputs_module.write_outputs_atomic(
-        outputs,
-        _matrix(("Sample_A", "Sample_B")),
-        metadata={},
-        ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-        alignment_config=AlignmentConfig(),
-    )
-
-    assert calls == 1
-    assert outputs.matrix_tsv is not None and outputs.matrix_tsv.exists()
-    assert (
-        outputs.matrix_identity_tsv is not None and outputs.matrix_identity_tsv.exists()
-    )
-    assert outputs.review_tsv is not None and outputs.review_tsv.exists()
-    assert (
-        outputs.backfill_cell_evidence_tsv is not None
-        and outputs.backfill_cell_evidence_tsv.exists()
-    )
-
-
 def test_writer_timing_observations_are_truthful_with_live_output(
     tmp_path: Path,
 ) -> None:
@@ -258,13 +215,16 @@ def test_writer_timing_observations_are_truthful_with_live_output(
         instrument_writers=True,
         timer=_Timer([0.0, 1.0] * 200),
     )
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
-        _matrix(("Sample_A", "Sample_B")),
+        matrix,
         metadata={},
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
         timing_recorder=recorder,
     )
 
@@ -314,13 +274,16 @@ def test_writer_hashing_requires_instrumentation_opt_in(
         "fingerprint_file_content",
         reject_fingerprint,
     )
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
-        _matrix(("Sample_A", "Sample_B")),
+        matrix,
         metadata={},
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
         timing_recorder=timing_recorder,
     )
 
@@ -336,12 +299,15 @@ def test_writer_mints_exact_fingerprint_receipts_without_timing_instrumentation(
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
     batch = pipeline_outputs_module.write_outputs_atomic(
         outputs,
-        _matrix(("Sample_A", "Sample_B")),
+        matrix,
         metadata={},
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
         capture_artifact_fingerprints=True,
     )
 
@@ -373,20 +339,23 @@ def test_writer_fingerprint_batch_rejects_missing_duplicate_or_foreign_receipts(
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
     writer_kwargs = {
         "metadata": {},
         "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
-        "alignment_config": AlignmentConfig(),
+        "alignment_config": config,
+        "production_decisions": build_production_decisions(matrix, config),
         "capture_artifact_fingerprints": True,
     }
     first_batch = pipeline_outputs_module.write_outputs_atomic(
         first_outputs,
-        _matrix(("Sample_A", "Sample_B")),
+        matrix,
         **writer_kwargs,
     )
     second_batch = pipeline_outputs_module.write_outputs_atomic(
         second_outputs,
-        _matrix(("Sample_A", "Sample_B")),
+        matrix,
         **writer_kwargs,
     )
     assert isinstance(first_batch, AlignmentArtifactFingerprintBatch)
@@ -425,11 +394,14 @@ def test_writer_receipt_capture_reuses_instrumented_hashes_without_output_change
         emit_alignment_cells=False,
         emit_alignment_status_matrix=False,
     )
-    writer_args = (_matrix(("Sample_A", "Sample_B")),)
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
+    writer_args = (matrix,)
     writer_kwargs = {
         "metadata": {},
         "ownership": SimpleNamespace(assignments=(), ambiguous_records=()),
-        "alignment_config": AlignmentConfig(),
+        "alignment_config": config,
+        "production_decisions": build_production_decisions(matrix, config),
     }
     pipeline_outputs_module.write_outputs_atomic(
         baseline_outputs,
@@ -510,14 +482,17 @@ def test_writer_fingerprint_failure_rolls_back_without_returning_receipts(
         "fingerprint_file_content",
         fail_second_fingerprint,
     )
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
 
     with pytest.raises(RuntimeError, match="fingerprint failed"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
-            _matrix(("Sample_A", "Sample_B")),
+            matrix,
             metadata={},
             ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-            alignment_config=AlignmentConfig(),
+            alignment_config=config,
+            production_decisions=build_production_decisions(matrix, config),
             capture_artifact_fingerprints=True,
         )
 
@@ -537,13 +512,16 @@ def test_writer_binds_provenance_row_count_into_persisted_metadata(
         ),
         run_metadata_json=output_dir / "alignment_run_metadata.json",
     )
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
 
     pipeline_outputs_module.write_outputs_atomic(
         outputs,
-        _matrix(("Sample_A", "Sample_B")),
+        matrix,
         metadata={},
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
     )
 
     assert outputs.run_metadata_json is not None
@@ -578,14 +556,17 @@ def test_writer_rejects_provenance_row_count_mismatch_before_final_writes(
         assert path is not None
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"prior output")
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
 
     with pytest.raises(ValueError, match="does not match the typed provenance batch"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
-            _matrix(("Sample_A", "Sample_B")),
+            matrix,
             metadata={"owner_backfill_peak_fact_provenance_row_count": "0"},
             ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-            alignment_config=AlignmentConfig(),
+            alignment_config=config,
+            production_decisions=build_production_decisions(matrix, config),
         )
 
     assert all(
@@ -629,14 +610,17 @@ def test_provenance_outer_transaction_never_nests_or_leaks_temp_files(
         "write_alignment_status_matrix_tsv",
         fail_later_writer,
     )
+    matrix = _matrix(("Sample_A", "Sample_B"))
+    config = AlignmentConfig()
 
     with pytest.raises(RuntimeError, match="injected status writer failure"):
         pipeline_outputs_module.write_outputs_atomic(
             outputs,
-            _matrix(("Sample_A", "Sample_B")),
+            matrix,
             metadata={},
             ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
-            alignment_config=AlignmentConfig(),
+            alignment_config=config,
+            production_decisions=build_production_decisions(matrix, config),
         )
 
     assert nested_temp_attempts == []

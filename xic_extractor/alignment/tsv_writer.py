@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,6 @@ from xic_extractor.alignment.matrix_output_contract import (
 )
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
-    count_status,
     escape_excel_formula,
     format_value,
     row_id,
@@ -43,7 +43,6 @@ from xic_extractor.alignment.product_matrix import (
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
-    build_production_decisions,
 )
 from xic_extractor.peak_detection.baseline import LINEAR_EDGE_RETIRED_MESSAGE
 
@@ -240,13 +239,20 @@ ALIGNMENT_OWNER_BACKFILL_CANDIDATE_AUDIT_COLUMNS = (
 )
 
 
+def _require_production_decisions(value: object) -> ProductionDecisionSet:
+    if not isinstance(value, ProductionDecisionSet):
+        raise TypeError("production_decisions must be owner-minted")
+    return value
+
+
 def write_alignment_review_tsv(
     path: Path,
     matrix: AlignmentMatrix,
     *,
+    production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
+    decisions = _require_production_decisions(production_decisions)
     config = alignment_config or AlignmentConfig()
     return _write_tsv(
         path,
@@ -255,7 +261,7 @@ def write_alignment_review_tsv(
             _review_rows(
                 matrix,
                 alignment_config=config,
-                production_decisions=production_decisions,
+                production_decisions=decisions,
             )
         ),
     )
@@ -265,13 +271,14 @@ def write_alignment_matrix_tsv(
     path: Path,
     matrix: AlignmentMatrix,
     *,
+    production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
+    decisions = _require_production_decisions(production_decisions)
     rows = product_matrix_tsv_rows(
         matrix,
         alignment_config=alignment_config,
-        production_decisions=production_decisions,
+        production_decisions=decisions,
     )
     table = serialize_public_matrix_table(
         rows,
@@ -295,16 +302,17 @@ def write_alignment_matrix_identity_tsv(
     path: Path,
     matrix: AlignmentMatrix,
     *,
+    production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
+    decisions = _require_production_decisions(production_decisions)
     return _write_tsv(
         path,
         ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         formatted_identity_rows(
             matrix,
             alignment_config=alignment_config,
-            production_decisions=production_decisions,
+            production_decisions=decisions,
         ),
     )
 
@@ -463,14 +471,12 @@ def write_alignment_backfill_cell_evidence_tsv(
     path: Path,
     matrix: AlignmentMatrix,
     *,
-    alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
+    production_decisions: ProductionDecisionSet,
 ) -> Path:
     """Write the compact cell ledger needed by backfill evidence review surfaces."""
 
-    config = alignment_config or AlignmentConfig()
+    decisions = _require_production_decisions(production_decisions)
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
-    decisions = production_decisions or build_production_decisions(matrix, config)
     backfill_family_ids = _backfill_evidence_family_ids(matrix, decisions)
 
     def rows() -> Iterable[tuple[object, ...]]:
@@ -702,25 +708,25 @@ def _review_rows(
     matrix: AlignmentMatrix,
     *,
     alignment_config: AlignmentConfig,
-    production_decisions: ProductionDecisionSet | None = None,
+    production_decisions: ProductionDecisionSet,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     grouped_cells = cells_by_cluster(matrix)
     sample_count = len(matrix.sample_order)
-    decisions = production_decisions or build_production_decisions(
-        matrix,
-        alignment_config,
-    )
+    decisions = production_decisions
     for cluster in matrix.clusters:
         cluster_id = row_id(cluster)
         cells = grouped_cells.get(cluster_id, ())
         row_decision = decisions.row(cluster_id)
-        detected_count = count_status(cells, "detected")
-        rescued_count = count_status(cells, "rescued")
-        absent_count = count_status(cells, "absent")
-        unchecked_count = count_status(cells, "unchecked")
-        duplicate_assigned_count = count_status(cells, "duplicate_assigned")
-        ambiguous_owner_count = count_status(cells, "ambiguous_ms1_owner")
+        raw_status_counts = Counter(
+            decisions.cell(cluster_id, cell.sample_stem).raw_status for cell in cells
+        )
+        detected_count = raw_status_counts["detected"]
+        rescued_count = raw_status_counts["rescued"]
+        absent_count = raw_status_counts["absent"]
+        unchecked_count = raw_status_counts["unchecked"]
+        duplicate_assigned_count = raw_status_counts["duplicate_assigned"]
+        ambiguous_owner_count = raw_status_counts["ambiguous_ms1_owner"]
         present_count = detected_count + rescued_count
         rows.append(
             {
@@ -771,7 +777,7 @@ def _review_rows(
                 "artificial_adduct_rt_delta_min": _optional_attr(
                     cluster, "artificial_adduct_rt_delta_min"
                 ),
-                "representative_samples": _representative_samples(cells),
+                "representative_samples": _representative_samples(cells, decisions),
                 "family_evidence": _family_evidence(cluster),
                 "warning": _warning(
                     cluster,
@@ -893,20 +899,16 @@ def _write_tsv_sequences(
     return path
 
 
-def _representative_samples(cells: tuple[AlignedCell, ...]) -> str:
+def _representative_samples(
+    cells: tuple[AlignedCell, ...], decisions: ProductionDecisionSet
+) -> str:
     samples = [
-        cell.sample_stem for cell in cells if cell.status in {"detected", "rescued"}
+        cell.sample_stem
+        for cell in cells
+        if decisions.cell(cell.cluster_id, cell.sample_stem).raw_status
+        in {"detected", "rescued"}
     ]
     return _cap_semicolon(samples)
-
-
-def _representative_candidate_ids(cells: tuple[AlignedCell, ...]) -> str:
-    candidate_ids = [
-        cell.source_candidate_id
-        for cell in cells
-        if cell.status == "detected" and cell.source_candidate_id
-    ]
-    return _cap_semicolon(candidate_ids)
 
 
 def _cap_semicolon(values: list[str]) -> str:

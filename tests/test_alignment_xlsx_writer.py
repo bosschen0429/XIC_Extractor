@@ -4,10 +4,15 @@ from types import SimpleNamespace
 import pytest
 from openpyxl import load_workbook
 
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
     GROUP_REVIEW_PROJECTION_COLUMNS,
+)
+from xic_extractor.alignment.production_decisions import (
+    ProductionDecisionSet,
+    build_production_decisions,
 )
 from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
@@ -23,6 +28,7 @@ def test_alignment_results_xlsx_has_matrix_review_metadata_sheets(tmp_path: Path
             "schema_version": "alignment-results-v3",
             "resolver_mode": "local_minimum",
         },
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -139,6 +145,7 @@ def test_alignment_results_xlsx_audit_projects_region_decision_fields(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -173,6 +180,7 @@ def test_alignment_results_xlsx_blanks_duplicate_assigned_matrix_area(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -210,6 +218,7 @@ def test_alignment_results_xlsx_prefers_ms1_morphology_area(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -239,6 +248,7 @@ def test_alignment_results_xlsx_excludes_review_only_rows_from_matrix(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -275,6 +285,7 @@ def test_alignment_results_xlsx_audit_explains_duplicate_blank(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -318,6 +329,7 @@ def test_alignment_results_xlsx_escapes_formula_like_external_strings(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "@metadata value"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=False)
@@ -344,7 +356,18 @@ def test_alignment_results_xlsx_rejects_orphan_audit_cell(tmp_path: Path):
             tmp_path / "alignment_results.xlsx",
             matrix,
             metadata={"schema_version": "alignment-results-v3"},
+            production_decisions=_production_decisions(matrix),
         )
+
+
+def _production_decisions(
+    matrix: AlignmentMatrix,
+    alignment_config: AlignmentConfig | None = None,
+) -> ProductionDecisionSet:
+    return build_production_decisions(
+        matrix,
+        alignment_config or AlignmentConfig(),
+    )
 
 
 def _sheet_headers(sheet) -> list[str]:
@@ -445,9 +468,7 @@ def sample_cell(
         region_decision_status="evaluated" if region else "",
         region_decision_class="merge_suggested" if region else "",
         region_product_action="safe_merge_eligible" if region else "",
-        region_promotion_reason=(
-            "adjacent_wis_local_minimum_merge" if region else ""
-        ),
+        region_promotion_reason=("adjacent_wis_local_minimum_merge" if region else ""),
         region_baseline_method="asls" if region else "",
         selected_integration=selected_integration,
     )
@@ -474,9 +495,7 @@ def sample_integration(
         boundary_sources=("test",),
         area_ms1_morphology=morphology_area,
         ms1_morphology_area_source=(
-            "gaussian15_positive_asls_residual"
-            if morphology_area is not None
-            else ""
+            "gaussian15_positive_asls_residual" if morphology_area is not None else ""
         ),
     )
 

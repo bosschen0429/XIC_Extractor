@@ -10,6 +10,7 @@ from tools.diagnostics import single_dr_production_gate_decision_report as repor
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_identity import build_matrix_identity_decisions
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.alignment.promotion_policy import (
     ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
     CELL_EVIDENCE_SUPPORTED_REASON,
@@ -216,9 +217,7 @@ def test_gate_candidates_preserve_classification_bucket_order(monkeypatch) -> No
 
     def capture_gate_candidate(**kwargs):
         gate_id = kwargs["gate_candidate_id"]
-        captured[gate_id] = [
-            row["feature_family_id"] for row in kwargs["families"]
-        ]
+        captured[gate_id] = [row["feature_family_id"] for row in kwargs["families"]]
         return {"gate_candidate_id": gate_id}
 
     monkeypatch.setattr(report, "_gate_candidate", capture_gate_candidate)
@@ -301,9 +300,7 @@ def test_tsv_adapter_reduces_generic_review_rescue_to_unavailable(
     summary = {row["metric"]: row["value"] for row in result["summary"]}
     assert summary["unavailable_backfill_owner_evidence_rows"] == "1"
     assert result["activation_decisions"] == []
-    assert _read_tsv(
-        output_dir / "single_dr_gate_activation_decisions.tsv"
-    ) == []
+    assert _read_tsv(output_dir / "single_dr_gate_activation_decisions.tsv") == []
     assert _read_tsv(output_dir / "single_dr_gate_changed_row_bundle.tsv") == []
 
 
@@ -373,8 +370,7 @@ def test_gate_writes_activation_decisions_for_implemented_primary_blocks(
             ),
             "required_review_reason": "",
             "source_evidence_tokens": (
-                "single_dr_gate;"
-                "missing_independent_backfill_identity_evidence"
+                "single_dr_gate;missing_independent_backfill_identity_evidence"
             ),
             "diagnostic_only": "FALSE",
         }
@@ -584,9 +580,7 @@ def test_high_detected_rescue_heavy_row_remains_strong(
     result = report.build_decision_report(alignment_dir=alignment_dir)
 
     assert result["families"][0]["risk_classification"] == "strong"
-    candidates = {
-        row["gate_candidate_id"]: row for row in result["gate_candidates"]
-    }
+    candidates = {row["gate_candidate_id"]: row for row in result["gate_candidates"]}
     assert candidates["dr_extreme_backfill_dependency"]["affected_primary_rows"] == 0
     assert candidates["dr_weak_seed_backfill_dependency"]["affected_primary_rows"] == 0
     assert candidates["dr_weak_seed_tolerated_watch"]["affected_primary_rows"] == 0
@@ -782,10 +776,12 @@ def test_diagnostic_tsv_adapter_matches_production_policy(tmp_path: Path) -> Non
     production = build_matrix_identity_decisions(matrix, AlignmentConfig()).row(
         "FAM_PARITY",
     )
+    config = AlignmentConfig()
     write_alignment_review_tsv(
         alignment_dir / "alignment_review.tsv",
         matrix,
-        alignment_config=AlignmentConfig(),
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
     )
     write_alignment_cells_tsv(alignment_dir / "alignment_cells.tsv", matrix)
 
@@ -825,6 +821,7 @@ def test_rt_held_owner_decision_is_unavailable_after_tsv_roundtrip(
         alignment_dir / "alignment_review.tsv",
         matrix,
         alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
     )
     write_alignment_cells_tsv(alignment_dir / "alignment_cells.tsv", matrix)
 
