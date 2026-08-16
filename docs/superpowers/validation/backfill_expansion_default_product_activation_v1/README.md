@@ -19,6 +19,7 @@ candidate manifest, and expected-diff TSV stay externalized under
 `output/validation/`. Version control keeps only this compact summary,
 checks, and row manifest.
 
-Before this can become public writer authority, a checker must join
-shift-aware standard-peak support and MS1 own-max evidence by stable
-row/cell keys. Missing or unjoinable evidence must keep the cell held.
+This retained packet is a historical integrity oracle only. The current checker
+validates its stored counts and hashes; it cannot regenerate the classification
+or grant writer authority. Any future authority requires a separate,
+current original-owner rehydration contract plus an explicit expected-diff spec.
