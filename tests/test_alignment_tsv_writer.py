@@ -6,9 +6,11 @@ from typing import TypeGuard
 
 import pytest
 
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.owner_group_delivery import GROUP_REVIEW_PROJECTION_COLUMNS
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.integration_audit import CellIntegrationAuditSummary
@@ -52,6 +54,48 @@ REVIEW_COLUMNS = [
     "warning",
     "reason",
 ]
+
+
+@pytest.fixture(autouse=True)
+def _supply_owner_decisions_to_legacy_renderer_calls(monkeypatch) -> None:
+    from xic_extractor.alignment import tsv_writer
+
+    for name in (
+        "write_alignment_review_tsv",
+        "write_alignment_matrix_tsv",
+        "write_alignment_matrix_identity_tsv",
+        "write_alignment_backfill_cell_evidence_tsv",
+    ):
+        renderer = getattr(tsv_writer, name)
+
+        def render_with_owner_decisions(
+            path,
+            matrix,
+            *,
+            alignment_config=None,
+            production_decisions=None,
+            _name=name,
+            _renderer=renderer,
+        ):
+            config = alignment_config or AlignmentConfig()
+            decisions = production_decisions or build_production_decisions(
+                matrix,
+                config,
+            )
+            if _name == "write_alignment_backfill_cell_evidence_tsv":
+                return _renderer(
+                    path,
+                    matrix,
+                    production_decisions=decisions,
+                )
+            return _renderer(
+                path,
+                matrix,
+                alignment_config=config,
+                production_decisions=decisions,
+            )
+
+        monkeypatch.setattr(tsv_writer, name, render_with_owner_decisions)
 
 
 def test_write_alignment_review_tsv_columns_counts_rates_and_reason(tmp_path: Path):

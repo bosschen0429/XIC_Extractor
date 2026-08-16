@@ -22,7 +22,6 @@ from xic_extractor.alignment.owner_group_delivery import (
 from xic_extractor.alignment.product_matrix import build_product_matrix_rows
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
-    build_production_decisions,
 )
 from xic_extractor.alignment.quant_matrix_version import (
     CELL_PROVENANCE_COLUMNS,
@@ -37,20 +36,32 @@ def write_alignment_results_xlsx(
     matrix: AlignmentMatrix,
     *,
     metadata: dict[str, str],
+    production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     config = alignment_config or AlignmentConfig()
-    decisions = build_production_decisions(
-        matrix,
-        config,
-    )
+    if not isinstance(production_decisions, ProductionDecisionSet):
+        raise TypeError("production_decisions must be owner-minted")
     workbook = Workbook()
     matrix_sheet = workbook.active
     matrix_sheet.title = "Matrix"
-    _write_matrix_sheet(matrix_sheet, matrix, alignment_config=config)
-    _write_review_sheet(workbook.create_sheet("Review"), matrix, decisions)
-    _write_audit_sheet(workbook.create_sheet("Audit"), matrix, decisions)
+    _write_matrix_sheet(
+        matrix_sheet,
+        matrix,
+        alignment_config=config,
+        production_decisions=production_decisions,
+    )
+    _write_review_sheet(
+        workbook.create_sheet("Review"),
+        matrix,
+        production_decisions,
+    )
+    _write_audit_sheet(
+        workbook.create_sheet("Audit"),
+        matrix,
+        production_decisions,
+    )
     _write_metadata_sheet(workbook.create_sheet("Metadata"), metadata)
     workbook.save(path)
     return path
@@ -116,13 +127,16 @@ def _write_mapping_rows(
 def _write_matrix_sheet(
     sheet: Any,
     matrix: AlignmentMatrix,
+    *,
     alignment_config: AlignmentConfig,
+    production_decisions: ProductionDecisionSet,
 ) -> None:
     headers = ["Mz", "RT", *matrix.sample_order]
     _append_xlsx_row(sheet, headers)
     for product_row in build_product_matrix_rows(
         matrix,
         alignment_config=alignment_config,
+        production_decisions=production_decisions,
     ):
         _append_xlsx_row(
             sheet,

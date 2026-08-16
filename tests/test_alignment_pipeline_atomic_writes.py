@@ -222,6 +222,9 @@ def test_pipeline_passes_alignment_config_to_production_writers(monkeypatch, tmp
     from xic_extractor.alignment import pipeline_outputs
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.matrix import AlignmentMatrix
+    from xic_extractor.alignment.production_decisions import (
+        build_production_decisions,
+    )
 
     seen = {"xlsx": None, "matrix_tsv": None, "review_tsv": None}
     matrix = AlignmentMatrix(clusters=(), cells=(), sample_order=())
@@ -235,7 +238,14 @@ def test_pipeline_passes_alignment_config_to_production_writers(monkeypatch, tmp
         ),
     )
 
-    def fake_xlsx(path, matrix_arg, *, metadata, alignment_config=None):
+    def fake_xlsx(
+        path,
+        matrix_arg,
+        *,
+        metadata,
+        production_decisions,
+        alignment_config=None,
+    ):
         seen["xlsx"] = alignment_config
         path.write_text("xlsx", encoding="utf-8")
         return path
@@ -280,6 +290,7 @@ def test_pipeline_passes_alignment_config_to_production_writers(monkeypatch, tmp
         metadata={"schema_version": "alignment-results-v3"},
         ownership=_empty_ownership(),
         alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
     )
 
     assert seen == {"xlsx": config, "matrix_tsv": config, "review_tsv": config}
