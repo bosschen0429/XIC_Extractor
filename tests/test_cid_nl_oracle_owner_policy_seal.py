@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -11,6 +12,17 @@ SEAL = (
     / "docs/superpowers/validation/cid_nl_oracle_packet_preflight_v1/"
     "cid_nl_oracle_owner_policy_seal_v1.json"
 )
+SUMMARY = SEAL.with_name("cid_nl_oracle_packet_preflight_summary.json")
+
+
+def test_packet_summary_binds_current_owner_policy_seal_bytes() -> None:
+    summary = json.loads(SUMMARY.read_text(encoding="utf-8"))
+    owner_policy = summary["owner_policy"]
+
+    assert owner_policy["policy_seal"] == SEAL.name
+    assert owner_policy["policy_seal_sha256"] == hashlib.sha256(
+        SEAL.read_bytes()
+    ).hexdigest()
 
 
 def test_owner_policy_seal_binds_scope_rationale_and_decision_hashes() -> None:

@@ -62,7 +62,7 @@
     "automated_coverage_min": 0.9,
     "unassessable_is_separate_from_machine_hold": true,
     "policy_seal": "cid_nl_oracle_owner_policy_seal_v1.json",
-    "policy_seal_sha256": "9f41c565fbe93ae572af01e87bed83b5dc2235983744a3cf19cb7c026a998bd4"
+    "policy_seal_sha256": "fa53f5c602f588c29d210409590398cc2961c8026b84d21e36702f406807a705"
   },
   "library_comparison_boundary": {
     "status": "available_sources_not_yet_mapped_or_frozen",
