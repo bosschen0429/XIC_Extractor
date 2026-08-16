@@ -122,7 +122,7 @@ def test_registered_default_scopes_have_writer_authority() -> None:
         "backfill_expansion_default_product_activation_v1/"
         "backfill_expansion_default_product_activation_summary.json"
     )
-    assert expansion["readiness_status"] == "production_candidate"
+    assert expansion["readiness_status"] == "diagnostic_only"
     assert expansion["write_authority"] == "FALSE"
     assert expansion["product_authority_scope"] == ""
     assert expansion["row_count"] == "666"
@@ -138,6 +138,8 @@ def test_registered_default_scopes_have_writer_authority() -> None:
         == "backfill_expansion_default_product_activation_v1"
     )
     assert "374/666 pass and 292 held" in expansion["notes"]
+    assert "cannot regenerate classification" in expansion["notes"]
+
 
 def test_peak_choice_lockbox_status_points_to_shadow_automation_design() -> None:
     _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
@@ -435,7 +437,7 @@ def test_checker_rejects_non_exact_v3_anchor_registry(
 
     problems = check_productization_state(schema_path=mutated)
 
-    assert any("ordered 21-anchor" in problem for problem in problems)
+    assert any("ordered 20-anchor" in problem for problem in problems)
 
 
 def test_checker_rejects_crossed_or_active_dependent_status_row(

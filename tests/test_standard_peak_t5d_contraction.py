@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import csv
+import hashlib
 import json
 from pathlib import Path
 
@@ -41,6 +42,18 @@ _RETIRED_PRODUCT_AUTHORITY_MODULES = tuple(
     for path in _RETIRED_PRODUCT_AUTHORITY_PATHS
 )
 _PRODUCTION_SOURCE_ROOTS = ("gui", "scripts", "tools", "xic_extractor")
+_T0_PACKET_HASHES = {
+    "README.md": "930974E273028E1E01A683407971581BFC8A77674E3BCFB68C8FE535E943D8B6",
+    "call_cost_baseline_v1.tsv": (
+        "8D4193F2A822BF8809FC8B4B7BB2C02D957E698A8316A129E09B44CA1E92671B"
+    ),
+    "historical_failure_matrix_v1.tsv": (
+        "C1607516B50D4BB28A198FEB4E9D4816C4DCE7996184114B3541F201218B773B"
+    ),
+    "rule_disposition_v1.tsv": (
+        "5BBE71176329C20DACF7D303AFAE58B9676D3C21A11A298D078899D9EBD97CC9"
+    ),
+}
 
 
 def test_retired_standard_peak_product_authority_modules_are_absent() -> None:
@@ -136,6 +149,23 @@ def test_historical_84_cell_packet_is_validation_only() -> None:
         row["scope_id"]
         for row in authority_manifest["blocked_or_negative_evidence_scopes"]
     }
+
+
+def test_retained_t0_packet_is_an_immutable_historical_oracle() -> None:
+    packet = (
+        Path(__file__).resolve().parents[1]
+        / "docs/superpowers/validation/standard_peak_shared_evidence_t0_v1"
+    )
+    actual_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        for path in packet.iterdir()
+        if path.is_file()
+    }
+
+    assert actual_hashes == _T0_PACKET_HASHES
+    readme = (packet / "README.md").read_text(encoding="utf-8")
+    assert "- Evidence label: `diagnostic_only`." in readme
+    assert "- Write authority: `none`." in readme
 
 
 def test_sp001_through_sp055_have_one_final_t5d_disposition() -> None:

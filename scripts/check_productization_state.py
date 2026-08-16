@@ -485,7 +485,7 @@ def _check_schema_and_rows(
         ):
             problems.append(
                 "schema required_control_plane_anchors must preserve the exact "
-                "ordered 21-anchor V3 contract"
+                f"ordered {len(REQUIRED_CONTROL_PLANE_ANCHORS_V3)}-anchor V3 contract"
             )
         if set(anchor_contract) != required_lane_ids:
             problems.append(
