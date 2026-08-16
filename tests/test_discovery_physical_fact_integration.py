@@ -408,6 +408,50 @@ def test_single_seed_discovery_acquires_complete_physical_context(
     )
 
 
+def test_product_inferred_single_seed_keeps_bounded_review_context(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(
+        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
+    )
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    group = _group(
+        (
+            replace(
+                _seed(scan_number=10, rt=12.063),
+                precursor_mz_basis="product_plus_neutral_loss",
+            ),
+        )
+    )
+    assert group.precursor_mz_basis == "product_plus_neutral_loss"
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+
+    assert result.measurements.reacquisition_request_count == 0
+    candidate = result.candidates[0]
+    assert candidate.ms1_peak_found is False
+    assert candidate.ms1_trace_quality == "physical_unavailable"
+    assert candidate.ms1_search_rt_min == pytest.approx(11.863)
+    assert candidate.ms1_search_rt_max == pytest.approx(12.263)
+
+
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

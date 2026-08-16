@@ -389,11 +389,13 @@ def _discovery_ms1_request_plan(
     settings: DiscoverySettings,
     minimum_padding_min: float = 0.0,
 ) -> tuple[_DiscoveryMs1RequestPlan, ...]:
-    padding_min = max(settings.ms1_search_padding_min, minimum_padding_min)
     plans: list[_DiscoveryMs1RequestPlan] = []
     for input_ordinal, group in enumerate(groups):
         if not group.seeds:
             continue
+        padding_min = settings.ms1_search_padding_min
+        if group.precursor_mz_basis in {"scan_precursor", "mixed"}:
+            padding_min = max(padding_min, minimum_padding_min)
         plans.append(
             _DiscoveryMs1RequestPlan(
                 input_ordinal=input_ordinal,
@@ -418,6 +420,8 @@ def _expanded_physical_request_plan(
     *,
     profile: SignalProcessingProfile,
 ) -> _DiscoveryMs1RequestPlan | None:
+    if plan.group.precursor_mz_basis not in {"scan_precursor", "mixed"}:
+        return None
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     point_count = len(rt)
