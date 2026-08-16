@@ -89,6 +89,64 @@ def test_pipeline_v2_persists_and_replays_source_to_winner_lineage(
     assert composed.cell_claims[0].cell_projection_claim == "verified"
 
 
+def test_pipeline_v2_accepts_pre_backfill_winner_with_multi_source_lineage(
+    tmp_path: Path,
+) -> None:
+    live = _live_available_inputs(tmp_path)
+    source_group_id = live.stage.group_hypothesis_id
+    winner = replace(
+        live.observation.cell,
+        consolidation_state="primary_winner",
+        consolidation_winner_group_hypothesis_id=source_group_id,
+        consolidation_source_group_hypothesis_id=(
+            f"{source_group_id};SOURCE-GROUP-2"
+        ),
+    )
+    matrix = AlignmentMatrix(
+        clusters=(_production_feature(live.stage),),
+        cells=(
+            winner,
+            _detected_cell("detected-1", live.evaluation.integration, stage=live.stage),
+            _detected_cell("detected-2", live.evaluation.integration, stage=live.stage),
+        ),
+        sample_order=(live.stage.sample_stem, "detected-1", "detected-2"),
+    )
+    config = AlignmentConfig()
+    decisions = build_production_decisions(matrix, config)
+
+    batch = _owner_backfill_peak_fact_provenance(
+        (live.observation,),
+        matrix=matrix,
+        alignment_config=config,
+        production_decisions=decisions,
+        feature_order=(source_group_id,),
+        sample_order=matrix.sample_order,
+        signal_processing_profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+    )
+
+    cell = next(row for row in batch.rows if row.row_kind == "cell_projection")
+    assert cell.group_hypothesis_id == source_group_id
+    assert cell.consolidation_state == "primary_winner"
+    assert cell.consolidation_source_group_hypothesis_id == (
+        f"{source_group_id};SOURCE-GROUP-2"
+    )
+    path = write_owner_backfill_peak_fact_provenance_tsv(
+        tmp_path / "pre-backfill-winner-v2.tsv",
+        batch,
+    )
+    composed = compose_owner_backfill_peak_fact_provenance(
+        read_owner_backfill_peak_fact_provenance_tsv(path),
+        live_observation_by_work={live.stage.work_unit_key: live.observation},
+        live_extraction_by_work={live.stage.work_unit_key: live.extraction},
+        profile=DEFAULT_SIGNAL_PROCESSING_PROFILE,
+        live_matrix=matrix,
+        alignment_config=config,
+        production_decisions=decisions,
+    )
+    assert composed.physical_claims[0].physical_claim == "verified"
+    assert composed.cell_claims[0].cell_projection_claim == "verified"
+
+
 def test_pipeline_v2_replays_lineage_minted_by_primary_consolidation(
     tmp_path: Path,
 ) -> None:

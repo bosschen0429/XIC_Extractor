@@ -778,8 +778,8 @@ def owner_backfill_cell_lineage_matches(
     if state == "primary_winner":
         return (
             cell.consolidation_winner_group_hypothesis_id == cell.group_hypothesis_id
-            and cell.consolidation_source_group_hypothesis_id
-            == stage.group_hypothesis_id
+            and stage.group_hypothesis_id
+            in cell.consolidation_source_group_hypothesis_id.split(";")
         )
     return False
 
@@ -1581,10 +1581,12 @@ def _validate_batch(rows: Sequence[OwnerBackfillPeakFactProvenanceRow]) -> None:
                     if (
                         row.consolidation_winner_group_hypothesis_id
                         != row.group_hypothesis_id
-                        or row.consolidation_source_group_hypothesis_id
-                        != selected.group_hypothesis_id
+                        or selected.group_hypothesis_id
+                        not in row.consolidation_source_group_hypothesis_id.split(";")
                     ):
-                        raise ValueError("cell projection has invalid primary lineage")
+                        raise ValueError(
+                            "cell projection has invalid primary lineage"
+                        )
                 else:
                     raise ValueError("unsupported cell consolidation state")
 
