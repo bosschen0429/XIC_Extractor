@@ -1,0 +1,309 @@
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+from typing import cast
+
+import pytest
+
+from tests.issue175_no_raw_fixture import build_issue175_no_raw_fixture
+from tests.runtime_telemetry_fixtures import (
+    build_runtime_telemetry_samples_from_coordinator,
+)
+from tests.test_targeted_real_data_adapter import (
+    _current_candidates,
+    _FakeRaw,
+    _open_bound_raw,
+    _peak_config,
+    _settings,
+    _source_for,
+)
+from tests.test_untargeted_cid_nl_real_data_runtime import (
+    _discovery_receipts,
+    _install_runtime_raw,
+)
+from xic_extractor.acquisition_contract import BatchXICAdapter
+from xic_extractor.discovery.grouping import group_discovery_seeds
+from xic_extractor.discovery.ms1_backfill import (
+    _backfill_ms1_candidates_with_acquisition,
+)
+from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.execution_runtime_marker import OwnerPathRuntimeMarker
+from xic_extractor.execution_runtime_owner import start_runtime_attempt
+from xic_extractor.extraction.untargeted_cid_nl_real_data_adapter import (
+    UntargetedCidNlRealDataAdapterError,
+    adapt_current_discovery_sample_subject,
+)
+from xic_extractor.extraction.untargeted_cid_nl_real_data_inputs import (
+    build_untargeted_cid_nl_real_data_context,
+)
+from xic_extractor.extraction.untargeted_cid_nl_real_data_runtime import (
+    UntargetedCidNlRealDataRuntimeJob,
+    execute_untargeted_cid_nl_real_data_runtime,
+    untargeted_cid_nl_runtime_call_cost,
+)
+from xic_extractor.peak_detection.cid_nl_method_subject import (
+    mint_untargeted_cid_nl_method_subject,
+)
+from xic_extractor.peak_detection.signal_processing_profile import (
+    SignalProcessingProfile,
+)
+from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.raw_reader import (
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
+)
+from xic_extractor.sample_metadata import SampleMetadata
+
+
+@pytest.mark.parametrize(
+    ("candidate_field", "receipt_field"),
+    (
+        ("ms1_area", "area_raw_counts_seconds"),
+        ("ms1_height", "height_raw"),
+    ),
+)
+@pytest.mark.parametrize("mutation", ("missing", "drift"))
+def test_adapter_parks_unresolved_morphology_receipt_compatibility(
+    tmp_path: Path,
+    candidate_field: str,
+    receipt_field: str,
+    mutation: str,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw((8.0,))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidate = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )[0]
+    current_value = getattr(candidate, candidate_field)
+    assert current_value is not None
+    replacement = None if mutation == "missing" else current_value * 1.1
+    unresolved = replace(candidate, **{candidate_field: replacement})
+    raw, _vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        source_raw,
+        tmp_path=tmp_path,
+    )
+
+    with pytest.raises(
+        UntargetedCidNlRealDataAdapterError,
+        match=(
+            "morphology_receipt_compatibility_unresolved: "
+            f"{receipt_field}"
+        ),
+    ):
+        adapt_current_discovery_sample_subject(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            candidates=(unresolved,),
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+        )
+
+
+@pytest.mark.parametrize(
+    ("candidate_field", "receipt_field", "integration_field"),
+    (
+        ("ms1_area", "area_raw_counts_seconds", "area_raw_counts_seconds"),
+        ("ms1_height", "height_raw", "height_raw"),
+    ),
+)
+def test_adapter_parks_owner_observed_morphology_divergence(
+    tmp_path: Path,
+    candidate_field: str,
+    receipt_field: str,
+    integration_field: str,
+) -> None:
+    fixture = build_issue175_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    source_raw = _FakeRaw(
+        (8.0,),
+        acquisition_source=_source_for(fixture, "S1"),
+    )
+    source_raw.intensity = source_raw.intensity + 250.0
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates, evaluation = _canonical_physical_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert evaluation.facts is not None
+    assert evaluation.integration is not None
+    candidate = candidates[0]
+    assert getattr(candidate, candidate_field) != pytest.approx(
+        getattr(evaluation.integration, integration_field)
+    )
+    if receipt_field == "height_raw":
+        candidate = replace(
+            candidate,
+            ms1_area=evaluation.integration.area_raw_counts_seconds,
+        )
+    raw, _vendor_raw = _open_bound_raw(
+        fixture,
+        "S1",
+        source_raw,
+        tmp_path=tmp_path,
+    )
+
+    with pytest.raises(
+        UntargetedCidNlRealDataAdapterError,
+        match=(
+            "morphology_receipt_compatibility_unresolved: "
+            f"{receipt_field}"
+        ),
+    ):
+        adapt_current_discovery_sample_subject(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            candidates=(candidate,),
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+        )
+
+
+def test_runtime_retains_morphology_park_reason_and_call_cost(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_path = tmp_path / "S1.synthetic"
+    raw_path.write_bytes(b"morphology-compatibility-park:S1")
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    source_raw = _FakeRaw((8.0,), acquisition_source=source)
+    source_raw.intensity = source_raw.intensity + 250.0
+    candidates, evaluation = _canonical_physical_candidates(
+        source_raw,
+        raw_file=raw_path,
+        settings=settings,
+        peak_config=peak_config,
+    )
+    assert evaluation.facts is not None
+    assert evaluation.integration is not None
+    assert evaluation.facts.area_counts_seconds != pytest.approx(
+        evaluation.integration.area_raw_counts_seconds
+    )
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        neutral_loss_da=116.0474,
+    )
+    context = build_untargeted_cid_nl_real_data_context(
+        raw_paths=(raw_path,),
+        sample_metadata=(
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=1,
+                sample_role="study_sample",
+            ),
+        ),
+        method_subject=subject,
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample={"S1": candidates},
+        discovery_receipts_by_sample=_discovery_receipts(
+            tmp_path,
+            (raw_path,),
+            {"S1": candidates},
+        ),
+        sample_identity_namespace="study:morphology-compatibility-park-test",
+    )
+    _install_runtime_raw(
+        monkeypatch,
+        source_raw=source_raw,
+        raw_path=raw_path,
+        tmp_path=tmp_path,
+    )
+    job = UntargetedCidNlRealDataRuntimeJob(
+        processing_owners=context.processing_owners,
+        sample=context.samples[0],
+        method_subject=context.method_subject,
+        candidates=context.candidates_by_sample["S1"],
+        discovery_receipt=context.discovery_receipts_by_sample["S1"],
+        settings=context.settings,
+        peak_config=context.peak_config,
+        raw_path=raw_path,
+        dll_dir=tmp_path,
+        work_unit_key="untargeted-cid-nl:S1",
+    )
+    runtime = start_runtime_attempt(
+        attempt=context.processing_owners.attempt,
+        work_unit_keys=(job.work_unit_key,),
+        owner_completeness_attestation="untargeted-cid-nl-morphology-park-test:v1",
+    )
+
+    result = execute_untargeted_cid_nl_real_data_runtime(
+        runtime,
+        (job,),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "morphology-park.runtime.json",
+            "untargeted-cid-nl-morphology:park-test",
+        ),
+    )
+
+    assert result.succeeded is False
+    assert result.sample_results == ()
+    settlement = result.finalization.coordinator.state.runtime.settlements[0]
+    assert settlement.failure_detail is not None
+    assert (
+        "morphology_receipt_compatibility_unresolved: "
+        "area_raw_counts_seconds"
+    ) in settlement.failure_detail.message
+    expected_trace_point_count = sum(
+        candidates[0].ms1_search_rt_min <= float(rt) <= candidates[0].ms1_search_rt_max
+        for rt in source_raw.rt
+    )
+    assert untargeted_cid_nl_runtime_call_cost(result.finalization) == {
+        "raw_open_count": 1,
+        "logical_xic_request_count": 1,
+        "xic_batch_count": 1,
+        "adapter_chromatogram_call_count": 1,
+        "trace_point_count": expected_trace_point_count,
+    }
+
+
+def _canonical_physical_candidates(
+    raw: _FakeRaw,
+    *,
+    raw_file: Path,
+    settings,
+    peak_config,
+):
+    assert raw.acquisition_source is not None
+    seeds = collect_strict_nl_seeds(raw, raw_file=raw_file, settings=settings)
+    groups = group_discovery_seeds(seeds, settings=settings)
+    result = _backfill_ms1_candidates_with_acquisition(
+        cast(BatchXICAdapter, raw),
+        groups,
+        acquisition_source=raw.acquisition_source,
+        run_spec_id="processing-run.v1:" + ("0" * 64),
+        settings=settings,
+        peak_config=peak_config,
+        signal_processing_profile=SignalProcessingProfile(window_points=15),
+    )
+    return result.candidates, result.physical_evaluations[0].evaluation

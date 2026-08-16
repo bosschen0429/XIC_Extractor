@@ -368,8 +368,8 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
         settings=settings,
         peak_config=peak_config,
     )[0]
-    assert candidate.ms1_area is not None
-    drifted = replace(candidate, ms1_area=candidate.ms1_area * 1.1)
+    assert candidate.ms1_apex_rt is not None
+    drifted = replace(candidate, ms1_apex_rt=candidate.ms1_apex_rt + 0.1)
     raw, _vendor_raw = _open_bound_raw(
         fixture,
         "S1",
@@ -379,7 +379,7 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
 
     with pytest.raises(
         UntargetedCidNlRealDataAdapterError,
-        match="area_raw_counts_seconds mismatches current receipt",
+        match="rt_apex_min mismatches current receipt",
     ):
         adapt_current_discovery_sample_subject(
             processing_owners=fixture.owners,

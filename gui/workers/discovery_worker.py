@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 import csv
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from gui.workers.backfill_gallery import (
-    BackfillGalleryInputs,
-    build_backfill_review_gallery,
-)
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
@@ -37,23 +32,23 @@ from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 DiscoveryMode = Literal["full", "discovery_only", "align_only"]
 
-# Alignment flags needed for the backfill review gallery. ``machine`` is a
-# superset of ``production`` (it adds alignment_review.tsv); the emit flags add
-# cells + seed audit the gallery reads. ``audit_evidence_mode="none"`` keeps the
-# cheap path: the gallery's required cell columns are all core attributes, so we
-# skip the heavy per-cell region audit that "auto" would switch on once cells
-# are emitted.
-_GALLERY_ALIGNMENT_KWARGS: dict[str, Any] = {
+# Preserve the GUI's existing primary Alignment artifact contract while the
+# automatic gallery / overlay route is parked. Changing these flags belongs to
+# a separate Output-contract decision, not this route-retirement child.
+_GUI_ALIGNMENT_KWARGS: dict[str, Any] = {
     "output_level": "machine",
     "emit_alignment_cells": True,
     "emit_alignment_backfill_seed_audit": True,
     "audit_evidence_mode": "none",
 }
 
+_GALLERY_PARK_REASON = (
+    "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"
+)
+
 _ALIGNMENT_OUTPUT_ATTRS = (
     "workbook",
     "review_html",
-    "gallery_html",
     "review_tsv",
     "matrix_tsv",
     "cells_tsv",
@@ -117,7 +112,7 @@ class DiscoveryWorker(QThread):
         if not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
 
-        self.progress.emit(0, 3, "Discovery...")
+        self.progress.emit(0, 2, "Discovery...")
         settings = self._build_settings(request)
         peak_config = self._discovery_peak_config(request, settings)
         run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
@@ -132,7 +127,7 @@ class DiscoveryWorker(QThread):
         if self.isInterruptionRequested():
             return None
 
-        self.progress.emit(1, 3, "Alignment...")
+        self.progress.emit(1, 2, "Alignment...")
         outputs, owner_build_route = self._run_alignment(
             request,
             index_path=index_path,
@@ -150,13 +145,11 @@ class DiscoveryWorker(QThread):
         if self.isInterruptionRequested():
             return None
 
-        self.progress.emit(2, 3, "Backfill gallery...")
-        gallery = self._build_gallery(request, outputs, raw_dir=raw_dir)
-        self.progress.emit(3, 3, "完成")
+        self.progress.emit(2, 2, "完成")
 
         summary = self._discovery_summary(request, index_path=index_path)
         summary.update(_alignment_summary(outputs, owner_build_route))
-        summary.update(gallery)
+        summary.update(_parked_gallery_summary())
         return summary
 
     def _run_discovery_only(self, request: DiscoveryRequest) -> dict[str, Any] | None:
@@ -220,7 +213,7 @@ class DiscoveryWorker(QThread):
             raise ValueError("align-only 需要 raw_dir 來定位 RAW 檔案")
         candidate_counts, sample_count = _read_batch_counts(index_path)
 
-        self.progress.emit(0, 2, "Alignment...")
+        self.progress.emit(0, 1, "Alignment...")
         outputs, owner_build_route = self._run_alignment(
             request,
             index_path=index_path,
@@ -229,9 +222,7 @@ class DiscoveryWorker(QThread):
         if self.isInterruptionRequested():
             return None
 
-        self.progress.emit(1, 2, "Backfill gallery...")
-        gallery = self._build_gallery(request, outputs, raw_dir=request.raw_dir)
-        self.progress.emit(2, 2, "完成")
+        self.progress.emit(1, 1, "完成")
 
         summary: dict[str, Any] = {
             "mode": "align_only",
@@ -246,7 +237,7 @@ class DiscoveryWorker(QThread):
             "gallery_html": None,
         }
         summary.update(_alignment_summary(outputs, owner_build_route))
-        summary.update(gallery)
+        summary.update(_parked_gallery_summary())
         return summary
 
     def _run_alignment(
@@ -271,7 +262,7 @@ class DiscoveryWorker(QThread):
             owner_build_xic_backend=recipe.owner_build_xic_backend,
             discovery_processing_run_spec=processing_run_spec,
             discovery_physical_bindings_by_sample=physical_bindings_by_sample,
-            **_GALLERY_ALIGNMENT_KWARGS,
+            **_GUI_ALIGNMENT_KWARGS,
         )
         owner_build_route = outputs.owner_build_route_receipt
         if not isinstance(owner_build_route, OwnerBuildRouteReceipt):
@@ -290,55 +281,6 @@ class DiscoveryWorker(QThread):
             self._recipe_binding = binding
         recipe, _preset_source = binding
         return recipe
-
-    def _build_gallery(
-        self,
-        request: DiscoveryRequest,
-        outputs: AlignmentRunOutputs,
-        *,
-        raw_dir: Path | None,
-    ) -> dict[str, Any]:
-        """Build the backfill review gallery; never fatal to the run.
-
-        The matrix/review TSVs are the primary deliverable, so a gallery failure
-        degrades to a disabled button plus a recorded reason rather than failing
-        the whole run (and losing the already-written matrix from the UI).
-        """
-        review = outputs.review_tsv
-        cells = outputs.cells_tsv
-        matrix = outputs.matrix_tsv
-        if raw_dir is None or review is None or cells is None or matrix is None:
-            missing = [
-                name
-                for name, value in (
-                    ("raw_dir", raw_dir),
-                    ("alignment_review.tsv", review),
-                    ("alignment_cells.tsv", cells),
-                    ("alignment_matrix.tsv", matrix),
-                )
-                if value is None
-            ]
-            return {
-                "gallery_html": None,
-                "gallery_error": f"缺少 gallery 輸入：{', '.join(missing)}",
-            }
-        try:
-            gallery_html = build_backfill_review_gallery(
-                BackfillGalleryInputs(
-                    alignment_review_tsv=review,
-                    alignment_cells_tsv=cells,
-                    alignment_matrix_tsv=matrix,
-                    raw_dir=raw_dir,
-                    dll_dir=request.dll_dir,
-                    backfill_seed_audit_tsv=outputs.backfill_seed_audit_tsv,
-                ),
-                output_dir=request.output_dir / "backfill_gallery",
-                dpi=140,
-                workers=_render_workers(),
-            )
-        except (OSError, ValueError, KeyError, RawReaderError) as exc:
-            return {"gallery_html": None, "gallery_error": str(exc)}
-        return {"gallery_html": str(gallery_html), "gallery_error": None}
 
     def _build_settings(self, request: DiscoveryRequest) -> DiscoverySettings:
         preset = load_preset(request.preset)
@@ -437,11 +379,6 @@ class DiscoveryWorker(QThread):
         }
 
 
-def _render_workers() -> int:
-    """Parallel workers for overlay render: leave 2 cores for the UI / OS."""
-    return max(1, (os.cpu_count() or 2) - 2)
-
-
 def _batch_index_path(batch_outputs: Any, output_dir: Path) -> Path:
     return Path(
         getattr(
@@ -462,14 +399,19 @@ def _alignment_summary(
         if value is not None:
             alignment_outputs[attr] = str(value)
     matrix = getattr(outputs, "matrix_tsv", None)
-    gallery = getattr(outputs, "gallery_html", None)
     run_metadata = getattr(outputs, "run_metadata_json", None)
     return {
         "alignment_outputs": alignment_outputs,
         "matrix_tsv": str(matrix) if matrix is not None else None,
-        "gallery_html": str(gallery) if gallery is not None else None,
         "run_metadata_json": str(run_metadata) if run_metadata is not None else None,
         "owner_build_route": owner_build_route.as_dict(),
+    }
+
+
+def _parked_gallery_summary() -> dict[str, Any]:
+    return {
+        "gallery_html": None,
+        "gallery_error": _GALLERY_PARK_REASON,
     }
 
 

@@ -106,11 +106,6 @@ def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
                 "_run_alignment",
                 lambda *_args, **_kwargs: (SimpleNamespace(), None),
             )
-            monkeypatch.setattr(
-                worker,
-                "_build_gallery",
-                lambda *_args, **_kwargs: {},
-            )
         worker.run()
 
     def cli_batch(*_args, **kwargs):

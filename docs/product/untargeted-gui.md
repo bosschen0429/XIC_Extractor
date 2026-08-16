@@ -17,17 +17,18 @@ does not create a separate product-authority lane.
 - Advanced values are explicit user overrides layered on the selected preset.
 - Stop requests cancellation, then waits for the current worker stage to
   yield.
-- Backfill gallery generation is best-effort. Gallery failure must not hide
-  primary discovery or alignment outputs.
+- Automatic Backfill gallery / MS1 overlay generation is parked outside the
+  normal GUI route. The retained helper remains available to explicit
+  diagnostic callers and cannot change the Matrix.
 - Frozen builds must bundle preset TOMLs, because GUI startup loads presets.
 
 ## Modes
 
 | Mode | GUI input | Runs |
 | --- | --- | --- |
-| `full` | RAW directory, DLL directory, output directory | Batch discovery, alignment, gallery |
+| `full` | RAW directory, DLL directory, output directory | Batch discovery, alignment |
 | `discovery_only` | Single RAW file, DLL directory, output directory | Single-file discovery |
-| `align_only` | RAW directory, `discovery_batch_index.csv`, DLL directory, output directory | Alignment, gallery |
+| `align_only` | RAW directory, `discovery_batch_index.csv`, DLL directory, output directory | Alignment |
 
 Batch discovery-only remains a CLI surface. Use `full` when the GUI should
 run directory-level discovery plus alignment.
@@ -40,7 +41,8 @@ run directory-level discovery plus alignment.
 | `gui/sections/discovery_source_section.py` | RAW, DLL, output, mode, and batch-index inputs |
 | `gui/sections/discovery_method_section.py` | Preset selection and advanced overrides |
 | `gui/sections/discovery_results_section.py` | Output links and run summary |
-| `gui/workers/discovery_worker.py` | Threaded mode dispatch and gallery orchestration |
+| `gui/workers/discovery_worker.py` | Threaded mode dispatch; reports the gallery route as parked |
+| `gui/workers/backfill_gallery.py` | Retained explicit diagnostic composition helper; not a normal GUI caller |
 | `gui/discovery_config_io.py` | Local persisted Untargeted settings |
 | `xic_extractor.spec` | Frozen-release resource bundle contract |
 
@@ -51,7 +53,7 @@ User-visible outputs surfaced by the GUI:
 - `discovery_batch_index.csv`
 - `alignment_matrix.tsv`
 - `alignment_review.tsv`
-- review HTML and gallery HTML
+- review HTML
 
 ## Boundaries
 
@@ -74,7 +76,8 @@ User-visible outputs surfaced by the GUI:
 | Untargeted run/stop behavior | `tests/test_untargeted_view.py` |
 | Worker mode dispatch | `tests/test_discovery_worker.py` |
 | Shared run controls | `tests/test_pipeline_worker.py` |
-| Gallery contract | `tests/test_backfill_gallery.py` |
+| Parked GUI gallery route | `tests/test_discovery_worker.py` |
+| Retained diagnostic gallery contract | `tests/test_backfill_gallery.py` |
 | Alignment output surfaces | `tests/test_alignment_output_levels.py`, `tests/test_alignment_pipeline_outputs.py` |
 | Frozen preset bundling | `tests/test_pyinstaller_spec.py` |
 
@@ -98,8 +101,7 @@ $env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards diagno
 
 - Adding a preset but forgetting the PyInstaller data bundle.
 - Committing machine-specific GUI state.
-- Treating optional gallery failure as total run failure after primary
-  outputs were written.
+- Reattaching the diagnostic gallery / overlay helper to an automatic GUI run.
 - Re-enabling controls immediately after Stop while the worker is still
   alive.
 - Letting the GUI recompute domain evidence or override Discovery/Alignment
