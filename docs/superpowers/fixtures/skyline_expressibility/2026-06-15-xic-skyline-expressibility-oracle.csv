@@ -1,7 +1,0 @@
-Target,ISTD Pair,Role,Neutral Loss Da,XIC Expected Product State,XIC Expected Counted Detection,XIC Expected Review Surface,Reason To Preserve
-5-hmdC,d3-5-hmdC,Analyte,116.0474,accepted,true,XIC Results/Summary,strict NL OK plus paired ISTD context should remain counted when evidence is clean
-d3-5-hmdC,,ISTD,116.0474,accepted,true,XIC Results/Summary,ISTD row should quantify independently and support paired analyte interpretation
-5-medC,d3-5-medC,Analyte,116.0474,accepted,true,XIC Results/Summary,positive control from 8RAW targeted GT audit should remain counted
-d3-5-medC,,ISTD,116.0474,accepted,true,XIC Results/Summary,ISTD row should quantify independently and support paired analyte interpretation
-8-oxo-Guo,"[13C,15N2]-8-oxo-Guo",Analyte,132.0423,not_counted,false,Review Queue/Diagnostics,"area may exist, but NL fail must remain review-only/not-counted"
-"[13C,15N2]-8-oxo-Guo",,ISTD,132.0423,accepted,true,XIC Results/Summary,heavy ISTD can be accepted while paired analyte remains not counted

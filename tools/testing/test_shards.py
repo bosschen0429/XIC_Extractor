@@ -200,7 +200,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_compare_alignment_workbooks.py",
             "tests/test_cross_report_evidence_consistency.py",
             "tests/test_diagnostic_*.py",
-            "tests/test_generate_stubs.py",
             "tests/test_instrument_qc_*.py",
             "tests/test_low_ms1_assessable_coverage_audit.py",
             "tests/test_multi_tag_adduct_audit.py",

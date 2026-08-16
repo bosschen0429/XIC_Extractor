@@ -57,20 +57,11 @@ _fallback_local_path_scan_paths = _docs_scan.fallback_local_path_scan_paths
 _git_visible_paths = _docs_scan.git_visible_paths
 _is_local_path_scan_target = _docs_scan.is_local_path_scan_target
 _read_text = _docs_scan.read_text
-_repo_rel = _docs_scan.repo_rel
 
 DEFAULT_CONFIG = Path.home() / ".obsidian-wiki" / "config"
 LOCAL_ENV_FILES = (".env.xic-local", ".env")
 CANONICAL_METADATA_REVIEW_EXCLUDE_PREFIXES = ("docs/superpowers/",)
 
-STALE_HANDOFF_PATTERNS = (
-    "no commit has been made",
-    "the branch is not committed",
-    "staged deletions",
-    "staged for removal",
-    "review staged diff",
-    "before commit review",
-)
 LOCAL_PATH_PATTERNS = (
     re.compile(r"C:\\Users\\user\\", re.IGNORECASE),
     re.compile(r"C:/Users/user/", re.IGNORECASE),
@@ -85,6 +76,7 @@ COMPLETED_TRANSIENT_SCAN_PREFIXES = (
     "docs/superpowers/plans/",
     "docs/superpowers/specs/",
     "docs/superpowers/notes/",
+    "docs/superpowers/productization/evidence/",
 )
 COMPLETED_TRANSIENT_LIFECYCLES = {
     "implemented",
@@ -93,10 +85,7 @@ COMPLETED_TRANSIENT_LIFECYCLES = {
     "archived",
     "retired",
 }
-COMPLETED_TRANSIENT_ALLOWED_STUB_PLACEMENTS = {
-    "repo_stub_plus_obsidian",
-    "repo_stub_plus_formal_doc",
-}
+COMPLETED_TRANSIENT_ALLOWED_STUB_PLACEMENTS: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -202,34 +191,14 @@ def audit_repo(
         for path in docs
     )
 
-    stale_targets = [
-        root
-        / (
-            "docs/superpowers/handoffs/current/"
-            "codex-docs-cleanup-official-docs-and-handoff.md"
-        ),
-        root
-        / (
-            "docs/superpowers/closeouts/"
-            "2026-06-26_codex-docs-cleanup_branch-closeout-summary.md"
-        ),
-    ]
-    for path in stale_targets:
-        if not path.exists():
-            continue
-        text = _read_text(path).lower()
-        for pattern in STALE_HANDOFF_PATTERNS:
-            if pattern in text:
-                messages.append(
-                    AuditMessage(
-                        "blocker",
-                        _repo_rel(path, root),
-                        f"stale branch-state phrase after commit: {pattern!r}",
-                    )
-                )
-
     local_path_counts: Counter[str] = Counter()
-    scan_paths = _git_visible_paths(root) or _fallback_local_path_scan_paths(root)
+    visible_paths = _git_visible_paths(root) or _fallback_local_path_scan_paths(root)
+    # ``git ls-files --cached`` includes worktree deletions until they are
+    # staged. A repo-state audit must describe the current filesystem, not
+    # report already-removed construction records as live docs.
+    scan_paths = tuple(
+        rel_path for rel_path in visible_paths if (root / rel_path).is_file()
+    )
     for rel_path in scan_paths:
         path = root / rel_path
         if not _is_local_path_scan_target(path, rel_path):
@@ -390,7 +359,7 @@ def audit_repo(
     if retired_lane_count:
         messages.append(
             AuditMessage(
-                "warning",
+                "blocker",
                 "docs",
                 (
                     "retired docs lanes contain repo-visible files; inspect "
@@ -423,7 +392,7 @@ def audit_repo(
                 "docs",
                 (
                     "completed transient docs remain in repo; retire with "
-                    "evidence or keep only an allowed same-path stub "
+                    "owner absorption, evidence, and a clean referrer scan "
                     f"({completed_transient_count} file(s))"
                 ),
             )
@@ -530,10 +499,6 @@ def docs_structure_review_for_repo(scan_paths: Sequence[str]) -> dict[str, objec
         if is_invalid_superpowers_spec_payload_path(rel_path):
             invalid_spec_payloads.append(rel_path)
         classification = classify_doc_path(rel_path)
-        if not classification.is_repo_doc:
-            continue
-        if classification.is_docs_root_scatter:
-            root_scatter.append(rel_path)
         if classification.is_retired_tracked_dir:
             retired_lanes.append(
                 {
@@ -541,6 +506,10 @@ def docs_structure_review_for_repo(scan_paths: Sequence[str]) -> dict[str, objec
                     "retired_dir": classification.retired_tracked_dir,
                 }
             )
+        if not classification.is_repo_doc:
+            continue
+        if classification.is_docs_root_scatter:
+            root_scatter.append(rel_path)
     return {
         "root_scatter_files": len(root_scatter),
         "root_scatter": root_scatter,
@@ -1046,8 +1015,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--fail-on-completed-transient",
         action="store_true",
         help=(
-            "Fail when implemented/superseded/archived transient docs remain "
-            "outside allowed same-path stub states."
+            "Fail when implemented/superseded/archived transient docs remain."
         ),
     )
     parser.add_argument(

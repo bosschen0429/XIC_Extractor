@@ -6,9 +6,8 @@
   "owner_role": "repository_domain_owner",
   "captured_by": "codex_from_explicit_owner_instructions",
   "captured_at_utc": "2026-07-25T04:12:08Z",
-  "decision_source": "docs/superpowers/plans/2026-07-25-cid-nl-oracle-owner-decisions.md",
-  "decision_source_hash_mode": "utf8_text_normalized_to_lf",
-  "decision_source_sha256": "80ad9c3cd4bbdadaed8abdfd0ae19e605ce8cb0767f56792e290f79d6be0bad9",
+  "decision_source": "captured_in_policy_seal",
+  "decision_context": "https://github.com/Chao-hu-Lab/XIC_Extractor/issues/125",
   "decisions": [
     {
       "decision_record_id": "CIDNL-OWNER-20260725-01",

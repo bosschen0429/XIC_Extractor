@@ -40,7 +40,9 @@ def test_missing_retention_row_is_blocker(tmp_path: Path) -> None:
     assert any("no retention inventory row" in msg.message for msg in result.blockers)
 
 
-def test_complete_inventory_passes_and_reports_candidates(tmp_path: Path) -> None:
+def test_complete_legacy_inventory_is_blocked_and_reports_candidates(
+    tmp_path: Path,
+) -> None:
     _write(tmp_path / CURRENT, "# Current\n\nBranch: `codex/example`\n")
     _write(tmp_path / ARCHIVE, "# Archive\n\nCompleted review narrative.\n")
     _inventory(
@@ -57,7 +59,10 @@ def test_complete_inventory_passes_and_reports_candidates(tmp_path: Path) -> Non
 
     result = _audit(tmp_path)
 
-    assert result.blockers == ()
+    assert any(
+        "tracked handoff state is forbidden" in m.message for m in result.blockers
+    )
+    assert any("must remain header-only" in m.message for m in result.blockers)
     assert result.summary["move_to_obsidian_after_pr"] == [ARCHIVE]
 
 
@@ -84,7 +89,9 @@ def test_default_audit_does_not_report_due_event_warnings(tmp_path: Path) -> Non
 
     result = _audit(tmp_path)
 
-    assert result.blockers == ()
+    assert any(
+        "tracked handoff state is forbidden" in m.message for m in result.blockers
+    )
     assert not any("due for event" in msg.message for msg in result.messages)
     assert "due_event" not in result.summary
 
@@ -108,7 +115,7 @@ def test_public_manifest_under_handoff_archive_is_blocker(tmp_path: Path) -> Non
     assert any("not handoffs" in msg.message for msg in result.blockers)
 
 
-def test_branch_named_productization_current_handoff_is_not_public_record(
+def test_branch_named_productization_current_handoff_is_still_forbidden(
     tmp_path: Path,
 ) -> None:
     path = "docs/superpowers/handoffs/current/codex-productization.md"
@@ -123,7 +130,9 @@ def test_branch_named_productization_current_handoff_is_not_public_record(
 
     result = _audit(tmp_path)
 
-    assert result.blockers == ()
+    assert any(
+        "tracked handoff state is forbidden" in m.message for m in result.blockers
+    )
 
 
 def test_git_ignored_local_handoff_does_not_need_inventory(tmp_path: Path) -> None:
@@ -267,7 +276,9 @@ def test_due_event_reports_post_merge_cleanup_warnings(tmp_path: Path) -> None:
         due_event="pr_merge_or_close",
     )
 
-    assert result.blockers == ()
+    assert any(
+        "tracked handoff state is forbidden" in m.message for m in result.blockers
+    )
     assert result.summary["due_event"] == "pr_merge_or_close"
     assert result.summary["due_paths"] == [ARCHIVE, removal, CURRENT]
     assert result.summary["due_retention_decisions"] == {
@@ -301,7 +312,7 @@ def test_current_handoff_with_archive_decision_is_blocker(tmp_path: Path) -> Non
     )
 
 
-def test_long_current_handoff_is_warning_not_blocker(tmp_path: Path) -> None:
+def test_long_tracked_current_handoff_is_blocker_and_warning(tmp_path: Path) -> None:
     _write(
         tmp_path / CURRENT,
         "# Current\n" + "\n".join(f"line {index}" for index in range(205)),
@@ -316,5 +327,7 @@ def test_long_current_handoff_is_warning_not_blocker(tmp_path: Path) -> None:
 
     result = _audit(tmp_path)
 
-    assert result.blockers == ()
+    assert any(
+        "tracked handoff state is forbidden" in m.message for m in result.blockers
+    )
     assert any("target is <=" in msg.message for msg in result.messages)

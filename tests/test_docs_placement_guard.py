@@ -1424,10 +1424,10 @@ def test_high_risk_dated_implementation_plan_without_marker_fails(
 
     problems = _problems(tmp_path, "A", path)
 
-    assert any("lacks placement marker" in problem for problem in problems)
+    assert any("retired docs lane" in problem for problem in problems)
 
 
-def test_repo_active_stub_with_required_fields_passes(tmp_path: Path) -> None:
+def test_repo_active_stub_is_rejected_as_tracked_history(tmp_path: Path) -> None:
     path = "docs/superpowers/plans/2026-07-01-active-work-stub.md"
     _write(
         tmp_path,
@@ -1455,7 +1455,7 @@ def test_repo_active_stub_with_required_fields_passes(tmp_path: Path) -> None:
 
     result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
 
-    assert result.problems == ()
+    assert any("retired" in problem.reason for problem in result.problems)
 
 
 def test_new_lifecycle_managed_doc_requires_kind_lifecycle_and_exit_rule(
@@ -1474,7 +1474,7 @@ def test_new_lifecycle_managed_doc_requires_kind_lifecycle_and_exit_rule(
     assert any("missing Doc lifecycle" in problem for problem in problems)
 
 
-def test_new_lifecycle_managed_plan_with_metadata_passes(tmp_path: Path) -> None:
+def test_new_lifecycle_managed_plan_with_metadata_still_fails(tmp_path: Path) -> None:
     path = "docs/superpowers/plans/2026-07-01-example-contract.md"
     _write(
         tmp_path,
@@ -1496,7 +1496,7 @@ def test_new_lifecycle_managed_plan_with_metadata_passes(tmp_path: Path) -> None
 
     result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
 
-    assert result.problems == ()
+    assert any("retired docs lane" in problem.reason for problem in result.problems)
 
 
 def test_product_formal_source_of_truth_passes_without_marker(tmp_path: Path) -> None:
@@ -1582,7 +1582,7 @@ def test_canonical_doc_can_document_marker_schema_without_false_positive(
     assert result.problems == ()
 
 
-def test_transient_superpowers_specs_markdown_with_metadata_passes(
+def test_superpowers_specs_markdown_with_metadata_still_fails(
     tmp_path: Path,
 ) -> None:
     path = "docs/superpowers/specs/2026-07-01-example-contract.md"
@@ -1606,7 +1606,7 @@ def test_transient_superpowers_specs_markdown_with_metadata_passes(
 
     result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
 
-    assert result.problems == ()
+    assert any("retired docs lane" in problem.reason for problem in result.problems)
 
 
 def test_superpowers_specs_non_markdown_payload_fails(
@@ -1617,7 +1617,7 @@ def test_superpowers_specs_non_markdown_payload_fails(
 
     problems = _problems(tmp_path, "A", path)
 
-    assert any("Markdown-only" in problem for problem in problems)
+    assert any("specs is retired" in problem for problem in problems)
 
 
 def test_parse_name_status_keeps_specs_non_markdown_payloads() -> None:
@@ -1646,7 +1646,7 @@ def test_parse_name_status_treats_rename_source_as_deletion() -> None:
 
 
 def test_repo_support_doc_requires_owner_and_passes(tmp_path: Path) -> None:
-    path = "docs/superpowers/file-management/docs-cleanup/example-support-note.md"
+    path = "docs/superpowers/validation/example-support-note.md"
     _write(
         tmp_path,
         path,
@@ -1670,7 +1670,7 @@ def test_repo_support_doc_requires_owner_and_passes(tmp_path: Path) -> None:
 
 
 def test_repo_support_doc_without_owner_fails(tmp_path: Path) -> None:
-    path = "docs/superpowers/file-management/docs-cleanup/example-support-note.md"
+    path = "docs/superpowers/validation/example-support-note.md"
     _write(
         tmp_path,
         path,
@@ -1741,7 +1741,9 @@ def test_repo_subcontract_doc_without_owner_fails(tmp_path: Path) -> None:
     assert any("requires a repo owner" in problem for problem in problems)
 
 
-def test_branch_closeout_summary_with_pr_body_seed_passes(tmp_path: Path) -> None:
+def test_branch_closeout_summary_is_rejected_even_with_pr_body_seed(
+    tmp_path: Path,
+) -> None:
     path = (
         "docs/superpowers/closeouts/2026-07-01_codex-example_branch-closeout-summary.md"
     )
@@ -1769,10 +1771,10 @@ def test_branch_closeout_summary_with_pr_body_seed_passes(tmp_path: Path) -> Non
 
     result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
 
-    assert result.problems == ()
+    assert any("retired docs lane" in problem.reason for problem in result.problems)
 
 
-def test_file_management_cleanup_evidence_passes_without_marker(tmp_path: Path) -> None:
+def test_file_management_cleanup_history_is_rejected(tmp_path: Path) -> None:
     path = (
         "docs/superpowers/file-management/docs-cleanup/"
         "2026-07-01_codex-docs-cleanup_git-rm-candidate-manifest.md"
@@ -1785,7 +1787,7 @@ def test_file_management_cleanup_evidence_passes_without_marker(tmp_path: Path) 
 
     result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
 
-    assert result.problems == ()
+    assert any("retired docs lane" in problem.reason for problem in result.problems)
 
 
 def test_handoff_archive_cleanup_evidence_without_marker_fails(tmp_path: Path) -> None:
@@ -1814,7 +1816,7 @@ def test_handoff_archive_private_diary_without_marker_fails(tmp_path: Path) -> N
 
     problems = _problems(tmp_path, "A", path)
 
-    assert any("lacks placement marker" in problem for problem in problems)
+    assert any("retired docs lane" in problem for problem in problems)
 
 
 def test_force_added_local_handoff_without_marker_fails(tmp_path: Path) -> None:
@@ -1827,10 +1829,10 @@ def test_force_added_local_handoff_without_marker_fails(tmp_path: Path) -> None:
 
     problems = _problems(tmp_path, "A", path)
 
-    assert any("lacks placement marker" in problem for problem in problems)
+    assert any("retired docs lane" in problem for problem in problems)
 
 
-def test_branch_named_productization_active_stub_is_not_misplaced_record(
+def test_branch_named_productization_active_stub_is_rejected(
     tmp_path: Path,
 ) -> None:
     path = "docs/superpowers/handoffs/current/codex-productization.md"
@@ -1857,7 +1859,7 @@ def test_branch_named_productization_active_stub_is_not_misplaced_record(
 
     result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
 
-    assert result.problems == ()
+    assert any("retired migration vocabulary" in p.reason for p in result.problems)
 
 
 def test_productization_status_handoff_remains_canonical(tmp_path: Path) -> None:
@@ -1872,7 +1874,9 @@ def test_productization_status_handoff_remains_canonical(tmp_path: Path) -> None
     assert result.problems == ()
 
 
-def test_branch_closeout_summary_still_requires_pr_body_seed(tmp_path: Path) -> None:
+def test_branch_closeout_summary_is_rejected_without_pr_body_seed(
+    tmp_path: Path,
+) -> None:
     path = (
         "docs/superpowers/closeouts/2026-07-01_codex-example_branch-closeout-summary.md"
     )
@@ -1880,7 +1884,7 @@ def test_branch_closeout_summary_still_requires_pr_body_seed(tmp_path: Path) -> 
 
     problems = _problems(tmp_path, "A", path)
 
-    assert any("missing PR Body Seed" in problem for problem in problems)
+    assert any("retired docs lane" in problem for problem in problems)
 
 
 def test_private_obsidian_note_staged_under_repo_docs_fails(tmp_path: Path) -> None:
@@ -1954,7 +1958,7 @@ def test_new_tracked_deepresearch_lane_fails(tmp_path: Path) -> None:
     assert any("retired docs lane" in problem for problem in problems)
 
 
-def test_sanitized_stub_plus_obsidian_passes(tmp_path: Path) -> None:
+def test_sanitized_stub_plus_obsidian_is_rejected(tmp_path: Path) -> None:
     path = "docs/superpowers/plans/2026-07-01-private-review-note.md"
     _write(
         tmp_path,
@@ -1975,7 +1979,7 @@ def test_sanitized_stub_plus_obsidian_passes(tmp_path: Path) -> None:
 
     result = check_doc_placement(tmp_path, [StagedMarkdown("A", path)])
 
-    assert result.problems == ()
+    assert any("retired" in problem.reason for problem in result.problems)
 
 
 def test_non_allowlisted_docs_root_markdown_fails(tmp_path: Path) -> None:
@@ -2015,41 +2019,37 @@ def test_non_lifecycle_deletions_are_ignored_by_placement_guard() -> None:
     assert result.problems == ()
 
 
-def test_lifecycle_managed_deletion_requires_retirement_evidence() -> None:
+def test_retired_construction_deletion_needs_no_committed_packet(
+    tmp_path: Path,
+) -> None:
     path = "docs/superpowers/plans/2026-04-07-old-plan.md"
     entries, ignored_deletions = parse_name_status(f"D\t{path}\n")
 
     result = check_doc_placement(
-        Path("."),
+        tmp_path,
         entries,
         ignored_deletions=ignored_deletions,
     )
 
     assert result.checked_count == 1
     assert result.ignored_deletions == 0
-    assert any(
-        problem.path == path
-        and "deletion requires staged retirement evidence" in problem.reason
-        for problem in result.problems
-    )
+    assert result.problems == ()
 
 
-def test_lifecycle_managed_rename_source_requires_retirement_evidence() -> None:
+def test_retired_construction_rename_source_needs_no_committed_packet(
+    tmp_path: Path,
+) -> None:
     source = "docs/superpowers/plans/2026-04-07-old-plan.md"
     destination = "docs/product/old-plan.md"
     entries, ignored_deletions = parse_name_status(f"R100\t{source}\t{destination}\n")
 
     result = check_doc_placement(
-        Path("."),
+        tmp_path,
         entries,
         ignored_deletions=ignored_deletions,
     )
 
-    assert any(
-        problem.path == source
-        and "deletion requires staged retirement evidence" in problem.reason
-        for problem in result.problems
-    )
+    assert not any(problem.path == source for problem in result.problems)
 
 
 def test_lifecycle_managed_deletion_with_retirement_evidence_passes(
@@ -2075,7 +2075,9 @@ def test_lifecycle_managed_deletion_with_retirement_evidence_passes(
     assert result.problems == ()
 
 
-def test_lifecycle_managed_deletion_rejects_hash_mismatch() -> None:
+def test_retired_construction_deletion_ignores_obsolete_committed_packet_hash(
+    tmp_path: Path,
+) -> None:
     path = "docs/superpowers/plans/2026-04-07-old-plan.md"
     old_text = "# Old plan\n\nRetired source text.\n"
     evidence_path = (
@@ -2088,9 +2090,9 @@ def test_lifecycle_managed_deletion_rejects_hash_mismatch() -> None:
         StagedMarkdown("A", evidence_path, json.dumps(evidence)),
     ]
 
-    result = check_doc_placement(Path("."), entries)
+    result = check_doc_placement(tmp_path, entries)
 
-    assert any("source_hash mismatch" in problem.reason for problem in result.problems)
+    assert result.problems == ()
 
 
 def test_lifecycle_managed_deletion_rejects_remaining_referrers(
@@ -2113,7 +2115,7 @@ def test_lifecycle_managed_deletion_rejects_remaining_referrers(
     result = check_doc_placement(tmp_path, entries)
 
     assert any(
-        "exact repo referrers require retargeting" in problem.reason
+        "retired docs lane deletion still has exact repo referrers" in problem.reason
         for problem in result.problems
     )
 
@@ -2159,5 +2161,5 @@ def test_cli_reads_staged_blob_not_worktree_after_divergence(tmp_path: Path) -> 
     )
 
     assert any(
-        "lacks placement marker" in problem.reason for problem in result.problems
+        "retired docs lane" in problem.reason for problem in result.problems
     )

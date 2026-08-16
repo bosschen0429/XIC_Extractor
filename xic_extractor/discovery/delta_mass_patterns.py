@@ -8,9 +8,8 @@ The matcher consumes typed, sample-local detected MS1 features
 hard m/z and RT gates and has local signal support. No partial or base-only
 candidates are ever emitted.
 
-See ``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``
-Global Constraints for the binding numeric/behavioral rules this module
-implements.
+See ``docs/product/discovery.md`` for the binding numeric, evidence, and
+authority rules this module implements.
 """
 
 from __future__ import annotations

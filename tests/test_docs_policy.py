@@ -7,7 +7,6 @@ import pytest
 from tools.diagnostics.docs_policy import (
     DOC_ROUTING_AUTHORITY_REFERRER_PATHS,
     DOC_ROUTING_SCHEMAS_INDEX_PATH,
-    DOC_ROUTING_SPECS_INDEX_PATH,
     PERMANENT_ROOT_DOC_CONTRACTS,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_SCHEMA_REL,
@@ -536,12 +535,13 @@ def test_docs_policy_marks_deepresearch_as_retired_lane() -> None:
     assert classification.retired_tracked_dir == "docs/deepresearch/"
 
 
-def test_docs_policy_marks_specs_as_transient_markdown_lane() -> None:
+def test_docs_policy_marks_specs_as_retired_construction_lane() -> None:
     classification = classify_doc_path(
         "docs/superpowers/specs/2026-07-01-example-contract.md"
     )
 
-    assert not classification.is_retired_tracked_dir
+    assert classification.is_retired_tracked_dir
+    assert classification.retired_tracked_dir == "docs/superpowers/specs/"
     assert classification.is_high_risk_repo_doc
     assert classification.is_lifecycle_managed
     assert classification.inferred_kind == "spec"
@@ -633,10 +633,8 @@ def test_lifecycle_managed_not_overridden_by_metadata() -> None:
     assert classification.is_lifecycle_managed
 
 
-def test_superpowers_index_constants_match_case_sensitive_paths() -> None:
-    assert DOC_ROUTING_SPECS_INDEX_PATH == "docs/superpowers/specs/README.md"
+def test_superpowers_schema_index_constant_matches_case_sensitive_path() -> None:
     assert DOC_ROUTING_SCHEMAS_INDEX_PATH == "docs/superpowers/schemas/README.md"
-    assert Path(DOC_ROUTING_SPECS_INDEX_PATH).exists()
     assert Path(DOC_ROUTING_SCHEMAS_INDEX_PATH).exists()
 
 

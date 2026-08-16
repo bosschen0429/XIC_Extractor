@@ -94,15 +94,13 @@ def test_selected_handoff_peak_call_surface_remains_targeted_only() -> None:
     assert unexpected == []
 
 
-def test_obsidian_handoff_contract_defines_branch_closeout_guardrails() -> None:
+def test_documentation_contract_routes_construction_history_out_of_repo() -> None:
     text = OBSIDIAN_HANDOFF_CONTRACT.read_text(encoding="utf-8")
 
-    assert "public contract" in text
-    assert "docs governance" in text
-    assert "approved file moves" in text
     assert "normal durable closeout surface" in text
-    assert "The PR body seed must be short" in text
-    assert "entire closeout summary" in text
+    assert "GitHub Issues and PRs own construction history" in text
+    assert "Do not create a tracked" in text
+    assert "Git history and closed Issues/PRs" in text
 
 
 def test_obsidian_handoff_contract_defines_doc_placement_taxonomy() -> None:
@@ -113,29 +111,19 @@ def test_obsidian_handoff_contract_defines_doc_placement_taxonomy() -> None:
     assert "Repo owner:" in text
     for placement in (
         "formal_repo_doc",
-        "repo_active_stub",
-        "branch_closeout_summary",
-        "repo_stub_plus_obsidian",
+        "repo_subcontract_doc",
+        "repo_support_doc",
         "private_obsidian_note",
         "ignored_artifact",
         "throwaway_scratch",
     ):
         assert placement in text
-    for field in (
-        "repo: XIC_Extractor",
-        "branch: <branch-name>",
-        "source_type:",
-        "visibility: internal",
-        "status: draft",
-        "repo_owner:",
-        "active_stub:",
-        "source_hash:",
-        "created_at:",
-    ):
-        assert field in text
-    assert "Staged lifecycle-managed Markdown deletions are guarded" in text
+    assert "are retired migration vocabulary" in text
+    assert "Every tracked deletion requires an exact repo-referrer scan" in text
     assert "pass_can_retire" in text
-    assert "*retirement-evidence*.json" in text
+    assert "discard_git_history" in text
+    assert "obsidian_source_copy" in text
+    assert "generated under ignored `output/`" in text
     assert "## Daily document routing" in text
 
 

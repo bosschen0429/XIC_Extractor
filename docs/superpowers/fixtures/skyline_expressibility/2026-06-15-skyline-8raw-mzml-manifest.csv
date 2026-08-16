@@ -1,9 +1,0 @@
-Sample,Path,Exists,Scope Note
-BenignfatBC1055_DNA,<mzML fixture dir>\BenignfatBC1055_DNA.mzML,true,Same sample name as XIC reference workbook; mzML path tests expressibility not RAW fidelity
-BenignfatBC1151_DNA,<mzML fixture dir>\BenignfatBC1151_DNA.mzML,true,Same sample name as XIC reference workbook; mzML path tests expressibility not RAW fidelity
-Breast_Cancer_Tissue_pooled_QC3,<mzML fixture dir>\Breast_Cancer_Tissue_pooled_QC3.mzML,true,Same sample name as XIC reference workbook; mzML path tests expressibility not RAW fidelity
-Breast_Cancer_Tissue_pooled_QC5,<mzML fixture dir>\Breast_Cancer_Tissue_pooled_QC5.mzML,true,Same sample name as XIC reference workbook; mzML path tests expressibility not RAW fidelity
-NormalBC2263_DNA,<mzML fixture dir>\NormalBC2263_DNA.mzML,true,Same sample name as XIC reference workbook; mzML path tests expressibility not RAW fidelity
-NormalBC2312_DNA,<mzML fixture dir>\NormalBC2312_DNA.mzML,true,Same sample name as XIC reference workbook; mzML path tests expressibility not RAW fidelity
-TumorBC2263_DNA,<mzML fixture dir>\TumorBC2263_DNA.mzML,true,Same sample name as XIC reference workbook; mzML path tests expressibility not RAW fidelity
-TumorBC2312_DNA,<mzML fixture dir>\TumorBC2312_DNA.mzML,true,Same sample name as XIC reference workbook; mzML path tests expressibility not RAW fidelity

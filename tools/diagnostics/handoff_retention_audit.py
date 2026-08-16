@@ -268,6 +268,25 @@ def run_handoff_retention_audit(
         messages.append(
             RetentionMessage("blocker", RETENTION_INVENTORY.as_posix(), error)
         )
+    for path in sorted(handoff_files):
+        messages.append(
+            RetentionMessage(
+                "blocker",
+                path,
+                (
+                    "tracked handoff state is forbidden; move durable claims "
+                    "to an owner or PR body and keep active context ignored"
+                ),
+            )
+        )
+    if rows:
+        messages.append(
+            RetentionMessage(
+                "blocker",
+                RETENTION_INVENTORY.as_posix(),
+                "RETENTION.tsv must remain header-only",
+            )
+        )
 
     rows_by_path: dict[str, dict[str, str]] = {}
     duplicate_paths: set[str] = set()
@@ -350,10 +369,9 @@ def run_handoff_retention_audit(
                     "blocker",
                     path,
                     (
-                        "public productization/file-management/closeout record "
-                        "belongs under docs/superpowers/productization/, "
-                        "docs/superpowers/file-management/, or "
-                        "docs/superpowers/closeouts/, not handoffs"
+                        "public productization or file-management record belongs "
+                        "in its canonical owner; branch closeout belongs in the "
+                        "PR body, not handoffs"
                     ),
                 )
             )

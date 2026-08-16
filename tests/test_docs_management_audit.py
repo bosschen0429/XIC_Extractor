@@ -23,10 +23,6 @@ from tools.diagnostics.docs_policy import (
 CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
 )
-CLOSEOUT_SUMMARY = (
-    "docs/superpowers/closeouts/"
-    "2026-06-26_codex-docs-cleanup_branch-closeout-summary.md"
-)
 RETENTION_INVENTORY = "docs/superpowers/handoffs/RETENTION.tsv"
 PROJECT_ROOT = Path(__file__).parents[1]
 
@@ -206,25 +202,8 @@ def _clean_repo(root: Path) -> None:
     _write_permanent_root_contracts(root)
     _write_registered_retirement_contract(root)
     _write(
-        root / CURRENT_HANDOFF,
-        "# Current handoff\n\nStatus: committed.\n",
-    )
-    _write(
-        root / CLOSEOUT_SUMMARY,
-        "# Closeout\n\nStatus: committed.\n\n## PR Body Seed\n\nProblem: x.\n",
-    )
-    _write(
         root / RETENTION_INVENTORY,
-        "\n".join(
-            [
-                "path\tretention_decision\trepo_owner\tnext_review_event\trationale",
-                (
-                    f"{CURRENT_HANDOFF}\tactive_current\tPR #1\t"
-                    "pr_merge_or_close\tActive branch stub."
-                ),
-            ]
-        )
-        + "\n",
+        "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
     )
 
 
@@ -348,6 +327,48 @@ def test_repo_only_completed_transient_spec_is_blocker(
     )
 
 
+def test_repo_only_archived_productization_phase_summary_is_blocker(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    summary_path = (
+        "docs/superpowers/productization/evidence/"
+        "2026-07-01-framework-phase-summary.md"
+    )
+    _write(
+        root / summary_path,
+        "\n".join(
+            [
+                "# Productization phase summary",
+                "",
+                "Doc placement: repo_support_doc",
+                "Doc kind: report",
+                "Doc lifecycle: archived",
+                "Repo owner: docs/product/productization.md",
+                "Doc exit rule: remove after owner absorption.",
+                "",
+                "Completed branch history.",
+            ]
+        ),
+    )
+
+    result = _run_audit(
+        root,
+        repo_only=True,
+        fail_on_completed_transient=True,
+    )
+
+    review = result.summary["repo"]["completed_transient_review"]
+    assert review["completed_files"] == 1
+    assert review["top_completed_files"][0]["path"] == summary_path
+    assert any(
+        msg.severity == "blocker"
+        and "completed transient docs remain in repo" in msg.message
+        for msg in result.messages
+    )
+
+
 def test_repo_only_active_transient_spec_is_not_completed_blocker(
     tmp_path: Path,
 ) -> None:
@@ -384,7 +405,7 @@ def test_repo_only_active_transient_spec_is_not_completed_blocker(
     )
 
 
-def test_repo_only_completed_transient_stub_state_is_allowed(
+def test_repo_only_completed_transient_stub_state_is_blocker(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -414,10 +435,9 @@ def test_repo_only_completed_transient_stub_state_is_allowed(
     )
 
     review = result.summary["repo"]["completed_transient_review"]
-    assert review["completed_files"] == 0
-    assert review["allowed_stub_files"] == 1
-    assert review["top_allowed_stubs"][0]["path"] == stub_path
-    assert not any(
+    assert review["completed_files"] == 1
+    assert review["allowed_stub_files"] == 0
+    assert any(
         "completed transient docs remain in repo" in msg.message
         for msg in result.messages
     )
@@ -466,7 +486,7 @@ def test_repo_only_completed_active_stub_state_is_blocker(
     )
 
 
-def test_stale_handoff_state_is_a_blocker(tmp_path: Path) -> None:
+def test_tracked_current_handoff_is_a_retired_lane_blocker(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     vault = tmp_path / "vault"
     _clean_vault(vault)
@@ -490,7 +510,7 @@ def test_stale_handoff_state_is_a_blocker(tmp_path: Path) -> None:
 
     result = _run_audit(root, vault)
 
-    assert any("stale branch-state phrase" in msg.message for msg in result.blockers)
+    assert any("retired docs lanes" in msg.message for msg in result.blockers)
 
 
 def test_manifest_stats_mismatch_is_a_blocker(tmp_path: Path) -> None:
@@ -569,7 +589,7 @@ def test_docs_structure_review_reports_retired_lanes(tmp_path: Path) -> None:
         }
     ]
     assert any(
-        msg.severity == "warning" and "retired docs lanes" in msg.message
+        msg.severity == "blocker" and "retired docs lanes" in msg.message
         for msg in result.messages
     )
 
@@ -896,7 +916,7 @@ def test_write_routing_manifest_tsv_includes_retained_followup_rows(
     _clean_repo(root)
     _clean_vault(vault)
     support_path = "docs/superpowers/validation/backfill-run.md"
-    referrer_path = "docs/superpowers/plans/README.md"
+    referrer_path = "docs/superpowers/schemas/README.md"
     _write(
         root / support_path,
         "\n".join(
@@ -917,7 +937,7 @@ def test_write_routing_manifest_tsv_includes_retained_followup_rows(
         root / referrer_path,
         "\n".join(
             [
-                "# Plans",
+                "# Schemas",
                 "",
                 "Doc placement: repo_support_doc",
                 "Doc kind: manifest",
@@ -1504,7 +1524,7 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
     _clean_repo(root)
     _clean_vault(vault)
     support_path = "docs/superpowers/validation/backfill-run.md"
-    referrer_path = "docs/superpowers/plans/README.md"
+    referrer_path = "docs/superpowers/schemas/README.md"
     _write(
         root / support_path,
         "\n".join(
@@ -1525,7 +1545,7 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
         root / referrer_path,
         "\n".join(
             [
-                "# Plans",
+                "# Schemas",
                 "",
                 "Doc placement: repo_support_doc",
                 "Doc kind: manifest",
@@ -2098,7 +2118,7 @@ def test_repo_subcontract_doc_is_not_counted_as_topic_owner(
     assert cluster["subcontract_claims"] == "docs/product/backfill.md"
 
 
-def test_unmarked_superpowers_specs_path_is_transient_specs_lane(
+def test_unmarked_superpowers_specs_path_is_retired_lane(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -2121,7 +2141,10 @@ def test_unmarked_superpowers_specs_path_is_transient_specs_lane(
 
     review = result.summary["repo"]["docs_routing_review"]
     structure = result.summary["repo"]["docs_structure_review"]
-    assert structure["retired_lane_files"] == 0
+    assert structure["retired_lane_files"] == 1
+    assert structure["retired_lanes"] == [
+        {"path": spec_path, "retired_dir": "docs/superpowers/specs/"}
+    ]
     assert structure["invalid_spec_payload_files"] == 0
     assert any(item for item in review["top_candidates"] if item["path"] == spec_path)
 
@@ -2595,5 +2618,5 @@ def test_clean_repo_and_vault_have_no_blockers(tmp_path: Path) -> None:
     result = _run_audit(root, vault)
 
     assert result.blockers == ()
-    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 3
+    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 1
     assert result.summary["repo"]["docs_routing_review"]["candidate_files"] == 0

@@ -26,6 +26,7 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     DOC_PLACEMENT_MARKER,
     DOC_PLACEMENT_VALUES,
     DOC_REPO_OWNER_MARKER,
+    DOC_RETIRED_PLACEMENT_VALUES,
     DOC_RETIRED_TRACKED_DIRS,
     PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
@@ -47,14 +48,6 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     source_copy_note_title,
 )
 
-ACTIVE_STUB_FIELDS = {
-    "objective": "objective",
-    "scope": "scope",
-    "constraints": "constraints",
-    "next": "next 1-3 actions",
-    "verification": "verification",
-    "stop rule": "stop rule",
-}
 NEWLY_STAGED_STATUSES = {"A", "C", "R"}
 RETIREMENT_EVIDENCE_DIR = "docs/superpowers/file-management/docs-cleanup/"
 RETIREMENT_EVIDENCE_TOKENS = ("retirement-evidence", "retirement_evidence")
@@ -176,13 +169,6 @@ def required_marker_text(*placements: str) -> str:
         f"{DOC_PLACEMENT_MARKER} {placement_text}; "
         f"{DOC_REPO_OWNER_MARKER} <path-or-topic>"
     )
-
-
-def missing_active_stub_fields(text: str) -> list[str]:
-    lowered = text.lower()
-    return [
-        label for needle, label in ACTIVE_STUB_FIELDS.items() if needle not in lowered
-    ]
 
 
 def is_retirement_evidence_path(path: str) -> bool:
@@ -1749,9 +1735,29 @@ def check_entry(
         if not (
             is_markdown_path(path)
             and path_classification.is_repo_doc
-            and path_classification.is_lifecycle_managed
+            and (
+                path_classification.is_lifecycle_managed
+                or path_classification.is_retired_tracked_dir
+            )
         ):
             return []
+        if path_classification.is_retired_tracked_dir:
+            referrers = _exact_referrers(root, path, entries)
+            if not referrers:
+                return []
+            return [
+                PlacementProblem(
+                    path=path,
+                    reason=(
+                        "retired docs lane deletion still has exact repo "
+                        "referrers: " + ", ".join(referrers)
+                    ),
+                    required_marker=(
+                        "Retarget every exact repo referrer to a durable owner "
+                        "before deleting this disposable construction record."
+                    ),
+                )
+            ]
         problem = deletion_retirement_problem(
             root,
             entry,
@@ -1765,12 +1771,13 @@ def check_entry(
             PlacementProblem(
                 path=path,
                 reason=(
-                    "docs/superpowers/specs is Markdown-only; move JSON "
-                    "contracts to docs/superpowers/schemas and non-doc "
-                    "artifacts to validation, ignored output, or Obsidian"
+                    "docs/superpowers/specs is retired; move JSON contracts "
+                    "to docs/superpowers/schemas and non-doc artifacts to "
+                    "validation or ignored output"
                 ),
                 required_marker=(
-                    "Use docs/superpowers/specs/*.md for transient specs only."
+                    "Use GitHub Issues for construction specs and canonical "
+                    "repo owners for durable contracts."
                 ),
             )
         ]
@@ -1790,8 +1797,7 @@ def check_entry(
                 reason=f"staged Markdown file could not be read: {exc}",
                 required_marker=required_marker_text(
                     "formal_repo_doc",
-                    "repo_active_stub",
-                    "repo_stub_plus_obsidian",
+                    "repo_support_doc",
                 ),
             )
         ]
@@ -1898,6 +1904,21 @@ def check_entry(
         )
         return [*problems, *lifecycle_problems]
 
+    if placement in DOC_RETIRED_PLACEMENT_VALUES:
+        problems.append(
+            PlacementProblem(
+                path=path,
+                reason=(
+                    f"{placement} is retired migration vocabulary and cannot "
+                    "be added or refreshed as tracked documentation"
+                ),
+                required_marker=(
+                    "Route active work to a GitHub Issue or ignored handoff, "
+                    "closeout to the PR body, and durable claims to an owner."
+                ),
+            )
+        )
+
     if placement and doc_placement_is_non_repo(placement):
         problems.append(
             PlacementProblem(
@@ -1906,7 +1927,7 @@ def check_entry(
                     f"{placement} is not a repo-trackable placement; write it "
                     "to Obsidian staged draft or ignored scratch instead"
                 ),
-                required_marker=required_marker_text("repo_stub_plus_obsidian"),
+                required_marker=required_marker_text("formal_repo_doc"),
             )
         )
 
@@ -1958,40 +1979,13 @@ def check_entry(
             PlacementProblem(
                 path=path,
                 reason=(
-                    "public productization/file-management/closeout records "
-                    "do not belong under handoffs/current or handoffs/archive"
+                    "public productization or file-management records do not "
+                    "belong under handoffs/current or handoffs/archive"
                 ),
                 required_marker=(
                     "Move to docs/superpowers/productization/, "
-                    "docs/superpowers/file-management/, or "
-                    "docs/superpowers/closeouts/."
+                    "a canonical file-management owner, or the PR body."
                 ),
-            )
-        )
-
-    if placement == "repo_active_stub":
-        missing = missing_active_stub_fields(text)
-        if missing:
-            problems.append(
-                PlacementProblem(
-                    path=path,
-                    reason="repo_active_stub is missing fields: " + ", ".join(missing),
-                    required_marker=(
-                        "Include objective, scope, constraints, next 1-3 actions, "
-                        "verification, and stop rule."
-                    ),
-                )
-            )
-
-    if (
-        placement == "branch_closeout_summary"
-        or classification.is_branch_closeout_summary
-    ) and "pr body seed" not in text.lower():
-        problems.append(
-            PlacementProblem(
-                path=path,
-                reason="branch closeout summary is missing PR Body Seed",
-                required_marker="Add a PR Body Seed section.",
             )
         )
 
@@ -2011,8 +2005,7 @@ def check_entry(
                     ),
                     required_marker=required_marker_text(
                         "formal_repo_doc",
-                        "repo_active_stub",
-                        "repo_stub_plus_obsidian",
+                        "repo_support_doc",
                     ),
                 )
             )
@@ -2026,8 +2019,7 @@ def check_entry(
                     ),
                     required_marker=required_marker_text(
                         "formal_repo_doc",
-                        "repo_active_stub",
-                        "repo_stub_plus_obsidian",
+                        "repo_support_doc",
                     ),
                 )
             )
@@ -2045,8 +2037,8 @@ def check_entry(
                     "but lacks placement marker"
                 ),
                 required_marker=required_marker_text(
-                    "repo_stub_plus_obsidian",
                     "formal_repo_doc",
+                    "repo_support_doc",
                 ),
             )
         )
@@ -2073,7 +2065,10 @@ def check_doc_placement(
             if not (
                 is_markdown_path(path)
                 and path_classification.is_repo_doc
-                and path_classification.is_lifecycle_managed
+                and (
+                    path_classification.is_lifecycle_managed
+                    or path_classification.is_retired_tracked_dir
+                )
             ):
                 skipped_deletions += 1
                 continue

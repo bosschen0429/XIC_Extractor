@@ -644,7 +644,8 @@ def _digestion_next_action(status: str) -> str:
     if status == "support_surface_review":
         return (
             "verify the support surface points at the owner and does not redefine "
-            "the topic; demote/archive/stub if it only preserves history"
+            "the topic; remove it after owner absorption and a clean referrer "
+            "scan if it only preserves history"
         )
     if status == "canonical_owner_with_support_review":
         return (
@@ -654,7 +655,7 @@ def _digestion_next_action(status: str) -> str:
     if status == "generated_index":
         return "regenerate from docs_management_audit; do not hand-author authority"
     if status == "delegated_handoff_retention":
-        return "use handoff_retention_audit for lifecycle and retention decisions"
+        return "move active context to ignored handoff storage; do not track it"
     if status == "support_surface_retained":
         return "keep only while it remains a support surface with a clear owner"
     if status == "canonical_owner":
@@ -1324,12 +1325,13 @@ def _classify_docs_routing_candidate(
         return DocsRoutingCandidate(
             path=normalized,
             disposition="delegated_handoff_retention",
-            reason="handoff files are classified by handoff_retention_audit",
+            reason="tracked handoff state is a migration error",
             placement=placement,
             repo_owner=repo_owner,
             **_routing_metadata(normalized, text, "delegated_handoff_retention"),
             required_before_move=(
-                "use handoff_retention_audit before changing tracked handoff files"
+                "move durable claims to owners or the PR body, then remove the "
+                "tracked handoff"
             ),
             candidate=False,
         )

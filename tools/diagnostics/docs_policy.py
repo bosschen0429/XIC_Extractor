@@ -148,6 +148,12 @@ DOC_PLACEMENT_VALUES = {
     "ignored_artifact",
     "throwaway_scratch",
 }
+DOC_RETIRED_PLACEMENT_VALUES = {
+    "repo_active_stub",
+    "branch_closeout_summary",
+    "repo_stub_plus_obsidian",
+    "repo_stub_plus_formal_doc",
+}
 DOC_PLACEMENTS_REQUIRING_REPO_OWNER = {
     "formal_repo_doc",
     "repo_subcontract_doc",
@@ -341,8 +347,8 @@ DOC_RETIRED_TRACKED_DIRS = {
         "into docs/product/ or another canonical owner"
     ),
     "docs/superpowers/goals/": (
-        "goals are productization plans or control-plane entries now; use "
-        "docs/superpowers/plans/ or a product doc owner"
+        "construction goals belong in GitHub Issues; durable decisions belong "
+        "in a canonical repo owner"
     ),
     "docs/superpowers/notes/": (
         "generic notes are private-first now; use ignored handoff, output/, "
@@ -356,12 +362,39 @@ DOC_RETIRED_TRACKED_DIRS = {
         "reports is too broad; route public HTML, fixtures, probes, and "
         "validation evidence to their explicit owner lanes"
     ),
+    "docs/superpowers/handoffs/current/": (
+        "active handoffs are ignored local state and must not be force-added"
+    ),
+    "docs/superpowers/handoffs/archive/": (
+        "handoff archives are private or disposable history and must not be tracked"
+    ),
+    "docs/superpowers/plans/": (
+        "construction plans and PRDs belong in GitHub Issues; only the "
+        "checker-bound productization compatibility index is exempt"
+    ),
+    "docs/superpowers/specs/": (
+        "construction specs belong in GitHub Issues; durable contracts belong "
+        "in product, agent, architecture, schema, or validation owners"
+    ),
+    "docs/superpowers/closeouts/": (
+        "branch and PR closeout history belongs in the GitHub PR body"
+    ),
+    "docs/superpowers/file-management/docs-cleanup/": (
+        "one-off cleanup inventories and approval records are generated under "
+        "ignored output; only checker-bound retirement evidence is exempt"
+    ),
     "docs/superpowers/topics/": (
         "topics duplicated docs/product; generate temporary indexes under "
         "ignored output/docs-topic-indexes/"
     ),
 }
 DOC_RETIRED_TRACKED_DIR_PREFIXES = tuple(DOC_RETIRED_TRACKED_DIRS)
+DOC_RETIRED_TRACKED_EXEMPTIONS = frozenset(
+    {
+        CONTROL_PLANE_PATH,
+        PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
+    }
+)
 
 DOC_CANONICAL_OWNER_DIRS = [
     "docs/product/",
@@ -373,8 +406,6 @@ DOC_CANONICAL_OWNER_DIRS = [
     "docs/superpowers/validation/",
     "docs/superpowers/fixtures/",
     "docs/superpowers/productization/",
-    "docs/superpowers/file-management/",
-    "docs/superpowers/closeouts/",
     "docs/validation/",
     "tests/fixtures/",
 ]
@@ -387,9 +418,10 @@ DOC_CANONICAL_OWNER_FILES = {
     "docs/product/domain-glossary.md",
     "docs/project-layout.md",
     "docs/superpowers/README.md",
+    "docs/superpowers/handoffs/README.md",
     PRODUCTIZATION_STATUS_HANDOFF_PATH,
-    "docs/superpowers/plans/2026-06-15-productization-control-plane.md",
-    "docs/superpowers/plans/README.md",
+    CONTROL_PLANE_PATH,
+    PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
 }
 HIGH_RISK_DOC_DIRS = [
     "docs/deepresearch/",
@@ -450,7 +482,6 @@ DOC_ROUTING_MECHANICAL_REFERRER_PREFIXES = (
 # keep the classifier so historical manifests or local scratch indexes do not
 # accidentally become candidate referrers or topic owners.
 DOC_ROUTING_TOPIC_PREFIX = "docs/superpowers/topics/"
-DOC_ROUTING_SPECS_INDEX_PATH = "docs/superpowers/specs/README.md"
 DOC_ROUTING_SCHEMAS_INDEX_PATH = "docs/superpowers/schemas/README.md"
 DOC_ROUTING_AUTHORITY_REFERRER_PATHS = frozenset(
     {
@@ -693,6 +724,8 @@ def is_invalid_superpowers_spec_payload_path(path: str) -> bool:
 
 def retired_tracked_dir_for_path(path: str) -> str:
     normalized = normalize_path_text(path).lstrip("./")
+    if normalized in DOC_RETIRED_TRACKED_EXEMPTIONS:
+        return ""
     for root in DOC_RETIRED_TRACKED_DIR_PREFIXES:
         if path_is_under(normalized, root):
             return root
@@ -735,10 +768,7 @@ def classify_doc_path(path: str) -> DocPathClassification:
     normalized = normalize_path_text(path).lstrip("./")
     normalized_lower = normalized.lower()
     is_topic_index = normalized_lower.startswith(DOC_ROUTING_TOPIC_PREFIX)
-    is_specs_index = normalized_lower in {
-        DOC_ROUTING_SPECS_INDEX_PATH,
-        DOC_ROUTING_SCHEMAS_INDEX_PATH,
-    }
+    is_specs_index = normalized_lower == DOC_ROUTING_SCHEMAS_INDEX_PATH
     is_superpowers_spec = (
         normalized_lower.startswith(SUPERPOWERS_SPEC_DIR) and not is_specs_index
     )
@@ -757,7 +787,10 @@ def classify_doc_path(path: str) -> DocPathClassification:
             is_misplaced_handoff_public_record_path(normalized)
         ),
         is_docs_routing_scan_target=is_docs_routing_scan_target(normalized),
-        is_docs_routing_handoff=normalized.startswith(DOC_ROUTING_HANDOFF_PREFIX),
+        is_docs_routing_handoff=(
+            normalized.startswith(DOC_ROUTING_HANDOFF_PREFIX)
+            and normalized != "docs/superpowers/handoffs/README.md"
+        ),
         is_validation_or_fixture=path_startswith_any(
             normalized, DOC_ROUTING_VALIDATION_PREFIXES
         ),
