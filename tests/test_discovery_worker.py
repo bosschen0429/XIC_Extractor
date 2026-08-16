@@ -195,6 +195,54 @@ def test_single_file_discovery_only_summary_counts_review_priorities(
     )
 
 
+def test_gui_batch_discovery_uses_bounded_parallel_workers(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    raw_dir = tmp_path / "raw"
+    output_dir = tmp_path / "out"
+    raw_dir.mkdir()
+    output_dir.mkdir()
+    raw_paths = tuple(raw_dir / f"Sample_{index}.raw" for index in range(8))
+    for index, raw_path in enumerate(raw_paths):
+        raw_path.write_bytes(f"raw-{index}".encode("utf-8"))
+    index_path = output_dir / "discovery_batch_index.csv"
+    index_path.write_text(
+        "sample,high_count,medium_count,low_count,candidate_count\n"
+        + "\n".join(f"{raw_path.name},0,0,0,0" for raw_path in raw_paths)
+        + "\n",
+        encoding="utf-8",
+    )
+    captured_discovery: dict[str, object] = {}
+
+    def fake_run_discovery_batch(*_args, **kwargs):
+        captured_discovery.update(kwargs)
+        return SimpleNamespace(batch_index_csv=index_path, per_sample=())
+
+    monkeypatch.setattr(module, "run_discovery_batch", fake_run_discovery_batch)
+    monkeypatch.setattr(
+        module,
+        "default_parallel_workers",
+        lambda: 8,
+    )
+    request = DiscoveryRequest(
+        mode="discovery_only",
+        preset="dna_dr",
+        tuning_overrides={},
+        raw_dir=raw_dir,
+        raw_file=None,
+        dll_dir=tmp_path / "dll",
+        output_dir=output_dir,
+        discovery_batch_index=None,
+    )
+
+    summary = DiscoveryWorker(request)._run_discovery_only(request)
+
+    assert summary is not None
+    assert summary["sample_count"] == 8
+    assert captured_discovery["max_workers"] == 8
+
+
 @pytest.mark.parametrize("mode", ["align_only", "full"])
 def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     mode: str,
@@ -218,6 +266,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     output_dir.mkdir()
     (raw_dir / "A.raw").write_bytes(b"raw")
     captured_alignment: dict[str, object] = {}
+    captured_discovery_batch: dict[str, object] = {}
     bound_recipes: list[object] = []
     real_bind = module.bind_cid_nl_recipe
 
@@ -240,7 +289,8 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
             ),
         )
 
-    def fake_run_discovery_batch(*_args, **_kwargs):
+    def fake_run_discovery_batch(*_args, **kwargs):
+        captured_discovery_batch.update(kwargs)
         return SimpleNamespace(
             batch_index_csv=index_path,
             per_sample=(SimpleNamespace(physical_bindings=("binding",)),),
@@ -290,6 +340,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
     assert captured_alignment["emit_alignment_cells"] is True
     assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
     assert captured_alignment["audit_evidence_mode"] == "none"
+    assert captured_alignment["require_discovery_owner_closure"] is (mode == "full")
     assert summary["gallery_html"] is None
     assert summary["gallery_error"] == (
         "Backfill gallery / MS1 overlay 已退出一般 GUI 流程；保留為診斷工具。"
@@ -306,6 +357,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
         else [(0, 1, "Alignment..."), (1, 1, "完成")]
     )
     if mode == "full":
+        assert captured_discovery_batch["max_workers"] == 1
         assert captured_alignment["discovery_physical_bindings_by_sample"] == {
             "A": ("binding",)
         }
@@ -323,6 +375,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
             "processing_run_spec_hash": run_spec.run_spec_hash,
         }
     else:
+        assert captured_discovery_batch == {}
         assert captured_alignment["discovery_physical_bindings_by_sample"] is None
         assert captured_alignment["discovery_processing_run_spec"] is None
         assert summary["owner_build_route"] == {
@@ -334,8 +387,7 @@ def test_gui_alignment_modes_apply_product_ready_preset_alignment_runtime(
             "processing_run_spec_hash": None,
         }
     assert not any(
-        name.startswith("standard_peak_")
-        for name in summary["alignment_outputs"]
+        name.startswith("standard_peak_") for name in summary["alignment_outputs"]
     )
 
 

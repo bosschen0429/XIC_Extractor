@@ -28,7 +28,10 @@ from xic_extractor.presets import (
 )
 from xic_extractor.processing_run_spec import ProcessingRunSpec
 from xic_extractor.raw_reader import RawReaderError
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+from xic_extractor.settings_schema import (
+    CANONICAL_SETTINGS_DEFAULTS,
+    default_parallel_workers,
+)
 
 DiscoveryMode = Literal["full", "discovery_only", "align_only"]
 
@@ -122,6 +125,7 @@ class DiscoveryWorker(QThread):
             settings=settings,
             peak_config=peak_config,
             run_spec=run_spec,
+            max_workers=_batch_discovery_workers(raw_paths),
         )
         index_path = _batch_index_path(batch_outputs, request.output_dir)
         if self.isInterruptionRequested():
@@ -196,6 +200,7 @@ class DiscoveryWorker(QThread):
             settings=settings,
             peak_config=peak_config,
             run_spec=run_spec,
+            max_workers=_batch_discovery_workers(raw_paths),
         )
         if self.isInterruptionRequested():
             return None
@@ -262,6 +267,10 @@ class DiscoveryWorker(QThread):
             owner_build_xic_backend=recipe.owner_build_xic_backend,
             discovery_processing_run_spec=processing_run_spec,
             discovery_physical_bindings_by_sample=physical_bindings_by_sample,
+            require_discovery_owner_closure=(
+                processing_run_spec is not None
+                or physical_bindings_by_sample is not None
+            ),
             **_GUI_ALIGNMENT_KWARGS,
         )
         owner_build_route = outputs.owner_build_route_receipt
@@ -428,6 +437,12 @@ def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:
             key=lambda path: path.name.lower(),
         )
     )
+
+
+def _batch_discovery_workers(raw_paths: tuple[Path, ...]) -> int:
+    if not raw_paths:
+        raise ValueError("batch Discovery requires at least one RAW path")
+    return min(len(raw_paths), default_parallel_workers())
 
 
 def _read_batch_counts(index_path: Path) -> tuple[dict[str, int] | None, int]:
