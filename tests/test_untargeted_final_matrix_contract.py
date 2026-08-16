@@ -4,12 +4,18 @@ from types import SimpleNamespace
 
 from openpyxl import load_workbook
 
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.alignment.tsv_writer import (
-    write_alignment_matrix_identity_tsv,
-    write_alignment_matrix_tsv,
+    write_alignment_matrix_identity_tsv as _write_alignment_matrix_identity_tsv,
 )
-from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
+from xic_extractor.alignment.tsv_writer import (
+    write_alignment_matrix_tsv as _write_alignment_matrix_tsv,
+)
+from xic_extractor.alignment.xlsx_writer import (
+    write_alignment_results_xlsx as _write_alignment_results_xlsx,
+)
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 FORBIDDEN_PRIMARY_STATUSES = {
@@ -23,6 +29,45 @@ FORBIDDEN_PRIMARY_STATUSES = {
     "absent",
     "unchecked",
 }
+
+
+def write_alignment_matrix_tsv(path: Path, matrix: AlignmentMatrix) -> Path:
+    config = AlignmentConfig()
+    return _write_alignment_matrix_tsv(
+        path,
+        matrix,
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
+    )
+
+
+def write_alignment_matrix_identity_tsv(
+    path: Path,
+    matrix: AlignmentMatrix,
+) -> Path:
+    config = AlignmentConfig()
+    return _write_alignment_matrix_identity_tsv(
+        path,
+        matrix,
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
+    )
+
+
+def write_alignment_results_xlsx(
+    path: Path,
+    matrix: AlignmentMatrix,
+    *,
+    metadata: dict[str, str],
+) -> Path:
+    config = AlignmentConfig()
+    return _write_alignment_results_xlsx(
+        path,
+        matrix,
+        metadata=metadata,
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
+    )
 
 
 def test_primary_outputs_hide_status_strings_and_keep_audit_reasons(

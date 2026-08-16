@@ -1,8 +1,21 @@
 from pathlib import Path
 
 from tests.test_alignment_xlsx_writer import sample_alignment_matrix, sample_cell
-from xic_extractor.alignment.html_report import write_alignment_review_html
+from xic_extractor.alignment import AlignmentConfig
+from xic_extractor.alignment.html_report import (
+    write_alignment_review_html as _write_alignment_review_html,
+)
 from xic_extractor.alignment.matrix import AlignmentMatrix
+from xic_extractor.alignment.production_decisions import build_production_decisions
+
+
+def write_alignment_review_html(path: Path, matrix: AlignmentMatrix) -> Path:
+    decisions = build_production_decisions(matrix, AlignmentConfig())
+    return _write_alignment_review_html(
+        path,
+        matrix,
+        production_decisions=decisions,
+    )
 
 
 def test_alignment_review_html_contains_visual_summary_not_full_cell_table(

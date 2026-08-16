@@ -43,7 +43,6 @@ from xic_extractor.alignment.product_matrix import (
 )
 from xic_extractor.alignment.production_decisions import (
     ProductionDecisionSet,
-    build_production_decisions,
 )
 from xic_extractor.peak_detection.baseline import LINEAR_EDGE_RETIRED_MESSAGE
 
@@ -244,8 +243,8 @@ def write_alignment_review_tsv(
     path: Path,
     matrix: AlignmentMatrix,
     *,
+    production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
     config = alignment_config or AlignmentConfig()
     return _write_tsv(
@@ -265,8 +264,8 @@ def write_alignment_matrix_tsv(
     path: Path,
     matrix: AlignmentMatrix,
     *,
+    production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
     rows = product_matrix_tsv_rows(
         matrix,
@@ -295,8 +294,8 @@ def write_alignment_matrix_identity_tsv(
     path: Path,
     matrix: AlignmentMatrix,
     *,
+    production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
 ) -> Path:
     return _write_tsv(
         path,
@@ -463,14 +462,12 @@ def write_alignment_backfill_cell_evidence_tsv(
     path: Path,
     matrix: AlignmentMatrix,
     *,
-    alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
+    production_decisions: ProductionDecisionSet,
 ) -> Path:
     """Write the compact cell ledger needed by backfill evidence review surfaces."""
 
-    config = alignment_config or AlignmentConfig()
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
-    decisions = production_decisions or build_production_decisions(matrix, config)
+    decisions = production_decisions
     backfill_family_ids = _backfill_evidence_family_ids(matrix, decisions)
 
     def rows() -> Iterable[tuple[object, ...]]:
@@ -702,15 +699,12 @@ def _review_rows(
     matrix: AlignmentMatrix,
     *,
     alignment_config: AlignmentConfig,
-    production_decisions: ProductionDecisionSet | None = None,
+    production_decisions: ProductionDecisionSet,
 ) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     grouped_cells = cells_by_cluster(matrix)
     sample_count = len(matrix.sample_order)
-    decisions = production_decisions or build_production_decisions(
-        matrix,
-        alignment_config,
-    )
+    decisions = production_decisions
     for cluster in matrix.clusters:
         cluster_id = row_id(cluster)
         cells = grouped_cells.get(cluster_id, ())

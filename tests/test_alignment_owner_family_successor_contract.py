@@ -26,6 +26,7 @@ from xic_extractor.alignment.owner_family_successor_contract import (
 )
 from xic_extractor.alignment.owner_matrix import build_owner_alignment_matrix
 from xic_extractor.alignment.ownership_models import AmbiguousOwnerRecord
+from xic_extractor.alignment.production_decisions import build_production_decisions
 
 
 def test_owner_family_successor_mapping_names_all_required_invariants() -> None:
@@ -590,15 +591,18 @@ def test_compact_owner_family_tsv_triad_keeps_primary_and_full_delivery_rows(
         ambiguous_by_sample={},
         rescued_cells=(),
     )
+    decisions = build_production_decisions(matrix, AlignmentConfig())
 
     matrix_path = write_alignment_matrix_tsv(
         tmp_path / "alignment_matrix.tsv",
         matrix,
+        production_decisions=decisions,
     )
     cells_path = write_alignment_cells_tsv(tmp_path / "alignment_cells.tsv", matrix)
     review_path = write_alignment_review_tsv(
         tmp_path / "alignment_review.tsv",
         matrix,
+        production_decisions=decisions,
     )
 
     assert _tsv_rows(matrix_path) == [

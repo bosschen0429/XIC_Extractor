@@ -20,6 +20,7 @@ from tests.test_alignment_provisional_matrix import (
     _representative_matrix,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
@@ -393,6 +394,10 @@ def test_publication_accepts_complete_real_writer_batch_with_unbound_receipts(
         },
         ownership=SimpleNamespace(assignments=(), ambiguous_records=()),
         alignment_config=AlignmentConfig(),
+        production_decisions=build_production_decisions(
+            writer_matrix,
+            AlignmentConfig(),
+        ),
         capture_artifact_fingerprints=True,
     )
     assert isinstance(

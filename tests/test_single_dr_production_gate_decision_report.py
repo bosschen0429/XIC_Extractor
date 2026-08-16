@@ -10,6 +10,7 @@ from tools.diagnostics import single_dr_production_gate_decision_report as repor
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.matrix_identity import build_matrix_identity_decisions
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.alignment.promotion_policy import (
     ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
     CELL_EVIDENCE_SUPPORTED_REASON,
@@ -17,9 +18,26 @@ from xic_extractor.alignment.promotion_policy import (
 )
 from xic_extractor.alignment.tsv_writer import (
     write_alignment_cells_tsv,
-    write_alignment_review_tsv,
+)
+from xic_extractor.alignment.tsv_writer import (
+    write_alignment_review_tsv as _write_alignment_review_tsv,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+
+
+def write_alignment_review_tsv(
+    path: Path,
+    matrix: AlignmentMatrix,
+    *,
+    alignment_config: AlignmentConfig | None = None,
+) -> Path:
+    config = alignment_config or AlignmentConfig()
+    return _write_alignment_review_tsv(
+        path,
+        matrix,
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
+    )
 
 
 def test_extreme_dr_backfill_row_becomes_supported_capped_warning(

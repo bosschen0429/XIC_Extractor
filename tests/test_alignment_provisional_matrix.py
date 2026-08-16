@@ -13,6 +13,7 @@ import xic_extractor.alignment.pipeline_outputs as pipeline_outputs
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
+from xic_extractor.alignment.production_decisions import build_production_decisions
 from xic_extractor.alignment.provisional_matrix import (
     PROVISIONAL_VALIDATION_STATUS,
     build_provisional_matrix_projection,
@@ -24,6 +25,25 @@ from xic_extractor.alignment.provisional_matrix import (
 from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.ms1_morphology import MS1_MORPHOLOGY_AREA_SOURCE
+
+_WRITE_OUTPUTS_ATOMIC = pipeline_outputs.write_outputs_atomic
+
+
+@pytest.fixture(autouse=True)
+def _supply_owner_decisions_to_writer_calls(monkeypatch) -> None:
+    def write_outputs_with_owner_decisions(outputs, matrix, **kwargs):
+        config = kwargs["alignment_config"]
+        kwargs.setdefault(
+            "production_decisions",
+            build_production_decisions(matrix, config),
+        )
+        return _WRITE_OUTPUTS_ATOMIC(outputs, matrix, **kwargs)
+
+    monkeypatch.setattr(
+        pipeline_outputs,
+        "write_outputs_atomic",
+        write_outputs_with_owner_decisions,
+    )
 
 
 def test_projection_keeps_full_group_breadth_and_cell_provenance() -> None:

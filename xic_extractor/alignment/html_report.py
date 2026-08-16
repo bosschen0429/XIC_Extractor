@@ -4,11 +4,19 @@ import html
 from pathlib import Path
 
 from xic_extractor.alignment.matrix import AlignmentMatrix
+from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 
 
-def write_alignment_review_html(path: Path, matrix: AlignmentMatrix) -> Path:
+def write_alignment_review_html(
+    path: Path,
+    matrix: AlignmentMatrix,
+    *,
+    production_decisions: ProductionDecisionSet,
+) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    counts = _status_counts(matrix)
+    if not isinstance(production_decisions, ProductionDecisionSet):
+        raise TypeError("production_decisions must be owner-minted")
+    counts = _status_counts(production_decisions)
     max_count = max(counts.values(), default=1)
     sample_count = len(matrix.sample_order)
     bars = "\n".join(
@@ -70,7 +78,7 @@ body {{
     return path
 
 
-def _status_counts(matrix: AlignmentMatrix) -> dict[str, int]:
+def _status_counts(production_decisions: ProductionDecisionSet) -> dict[str, int]:
     counts = {
         "detected": 0,
         "rescued": 0,
@@ -79,8 +87,8 @@ def _status_counts(matrix: AlignmentMatrix) -> dict[str, int]:
         "absent": 0,
         "unchecked": 0,
     }
-    for cell in matrix.cells:
-        counts[cell.status] = counts.get(cell.status, 0) + 1
+    for decision in production_decisions.cells.values():
+        counts[decision.raw_status] = counts.get(decision.raw_status, 0) + 1
     return counts
 
 

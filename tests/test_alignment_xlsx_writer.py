@@ -4,13 +4,34 @@ from types import SimpleNamespace
 import pytest
 from openpyxl import load_workbook
 
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
     GROUP_REVIEW_PROJECTION_COLUMNS,
 )
-from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
+from xic_extractor.alignment.production_decisions import build_production_decisions
+from xic_extractor.alignment.xlsx_writer import (
+    write_alignment_results_xlsx as _write_alignment_results_xlsx,
+)
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+
+
+def write_alignment_results_xlsx(
+    path: Path,
+    matrix: AlignmentMatrix,
+    *,
+    metadata: dict[str, str],
+    alignment_config: AlignmentConfig | None = None,
+) -> Path:
+    config = alignment_config or AlignmentConfig()
+    return _write_alignment_results_xlsx(
+        path,
+        matrix,
+        metadata=metadata,
+        alignment_config=config,
+        production_decisions=build_production_decisions(matrix, config),
+    )
 
 
 def test_alignment_results_xlsx_has_matrix_review_metadata_sheets(tmp_path: Path):
