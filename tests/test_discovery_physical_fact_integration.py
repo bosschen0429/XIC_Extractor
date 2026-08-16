@@ -144,7 +144,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     )
     assert records[0].evaluation.prepared.profile_id == spec.profile_id
     assert physical_calls == {"prepare": 2, "evaluate": 2}
-    assert raw.raw_chromatogram_call_count == 2
+    assert raw.raw_chromatogram_call_count == 1
 
 
 @pytest.mark.parametrize("binding", ["missing", "crossed"])
@@ -309,9 +309,13 @@ def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
     group = _group(
         (
             _seed(scan_number=10, rt=12.063),
-            _seed(scan_number=11, rt=12.181),
+            replace(
+                _seed(scan_number=11, rt=12.181),
+                precursor_mz_basis="product_plus_neutral_loss",
+            ),
         )
     )
+    assert group.precursor_mz_basis == "mixed"
 
     result = _backfill_ms1_candidates_with_acquisition(
         raw,

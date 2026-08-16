@@ -407,6 +407,11 @@ def _expanded_physical_request_plan(
     *,
     profile: SignalProcessingProfile,
 ) -> _DiscoveryMs1RequestPlan | None:
+    if len(plan.group.seeds) < 2 or plan.group.precursor_mz_basis not in {
+        "scan_precursor",
+        "mixed",
+    }:
+        return None
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     point_count = len(rt)
