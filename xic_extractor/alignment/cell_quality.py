@@ -9,6 +9,7 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.promotion_policy import (
     cell_has_product_authorized_drift_corrected_same_peak_backfill_support,
+    cell_owner_backfill_write_block_reason,
 )
 
 CellQualityStatus = Literal[
@@ -79,6 +80,9 @@ def decide_cell_quality(
             )
         if not _has_complete_peak(cell):
             return _decision(cell, "review_rescue", None, "incomplete_peak")
+        owner_block_reason = cell_owner_backfill_write_block_reason(cell)
+        if owner_block_reason:
+            return _decision(cell, "review_rescue", None, owner_block_reason)
         if cell.rt_delta_sec is None:
             return _decision(cell, "review_rescue", None, "rt_outside_max")
         rt_delta_sec = abs(cell.rt_delta_sec)

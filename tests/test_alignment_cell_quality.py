@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import Callable
+
+import pytest
 
 from xic_extractor.alignment.cell_quality import (
     build_cell_quality_decisions,
@@ -11,6 +14,9 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.promotion_policy import (
     ANCHOR_OWN_MAX_MS1_SUPPORT_REASON,
+    BACKFILL_HYPOTHESIS_BLOCKED_REASON,
+    LOW_MS1_COVERAGE_BLOCKED_REASON,
+    NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
@@ -98,6 +104,165 @@ def test_rescue_requires_complete_peak_and_rt_inside_alignment_window() -> None:
     )
     assert outside.quality_status == "review_rescue"
     assert outside.quality_reason == "rt_outside_max"
+
+
+@pytest.mark.parametrize(
+    ("cell_factory", "expected_reason"),
+    (
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
+                group_hypothesis_id="HYP001",
+                group_claim_state="duplicate_loser",
+                claim_winner_group_hypothesis_id="HYP002",
+            ),
+            BACKFILL_HYPOTHESIS_BLOCKED_REASON,
+        ),
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
+                region_local_mixture_diagnostic="ambiguous_adjacent_split",
+            ),
+            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
+        ),
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
+                region_local_mixture_diagnostic="insufficient_evidence",
+            ),
+            LOW_MS1_COVERAGE_BLOCKED_REASON,
+        ),
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
+                region_local_mixture_diagnostic="two_peak_supported",
+            ),
+            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
+        ),
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
+                region_local_mixture_diagnostic="competing_boundary_model",
+            ),
+            NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
+        ),
+        (
+            lambda: _cell(
+                "hard_negative",
+                "FAM001",
+                "rescued",
+                100.0,
+                scan_support_score=0.2,
+            ),
+            LOW_MS1_COVERAGE_BLOCKED_REASON,
+        ),
+    ),
+    ids=(
+        "conflicting-claim",
+        "ambiguous-adjacent-split",
+        "insufficient-local-mixture-evidence",
+        "two-peaks-supported",
+        "competing-boundary-model",
+        "low-ms1-coverage",
+    ),
+)
+def test_owner_hard_negative_backfill_facts_hold_rescue_out_of_matrix(
+    cell_factory: Callable[[], AlignedCell],
+    expected_reason: str,
+) -> None:
+    config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
+    decision = decide_cell_quality(cell_factory(), config)
+
+    assert decision.quality_status == "review_rescue"
+    assert decision.quality_reason == expected_reason
+    assert decision.matrix_area is None
+
+
+@pytest.mark.parametrize(
+    "cell_factory",
+    (
+        lambda: _cell(
+            "nonblocking",
+            "FAM001",
+            "rescued",
+            100.0,
+            scan_support_score=0.3,
+        ),
+        lambda: _cell(
+            "nonblocking",
+            "FAM001",
+            "rescued",
+            100.0,
+            region_local_mixture_diagnostic=(
+                "neighbor_interference_not_assessed;raw_trace_reread_v0_1"
+            ),
+        ),
+        lambda: _cell(
+            "nonblocking",
+            "FAM001",
+            "rescued",
+            100.0,
+            region_local_mixture_diagnostic="current_single_envelope",
+        ),
+        lambda: _cell(
+            "nonblocking",
+            "FAM001",
+            "rescued",
+            100.0,
+            region_local_mixture_diagnostic="one_envelope_supported",
+        ),
+    ),
+    ids=(
+        "moderate-scan-support",
+        "neighbor-interference-not-assessed",
+        "current-single-envelope",
+        "one-envelope-supported",
+    ),
+)
+def test_nonblocking_owner_facts_keep_rescue_quantifiable(
+    cell_factory: Callable[[], AlignedCell],
+) -> None:
+    decision = decide_cell_quality(
+        cell_factory(),
+        AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0),
+    )
+
+    assert decision.quality_status == "rescue_quantifiable"
+    assert decision.matrix_area == 100.0
+
+
+def test_current_claim_winner_resolves_historical_duplicate_loser() -> None:
+    decision = decide_cell_quality(
+        _cell(
+            "resolved_claim",
+            "FAM001",
+            "rescued",
+            100.0,
+            group_hypothesis_id="HYP001",
+            group_claim_state="duplicate_loser",
+            claim_winner_group_hypothesis_id="HYP001",
+            consolidation_state="moved_to_primary_winner",
+        ),
+        AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0),
+    )
+
+    assert decision.quality_status == "rescue_quantifiable"
+    assert decision.matrix_area == 100.0
 
 
 def test_only_owner_authorized_drift_correction_can_override_preferred_rt() -> None:
@@ -255,6 +420,12 @@ def _cell(
     backfill_drift_supported: bool = False,
     backfill_drift_corrected_delta_sec: float = 4.0,
     candidate_ms2_evidence: bool = True,
+    scan_support_score: float | None = 0.8,
+    region_local_mixture_diagnostic: str = "",
+    group_hypothesis_id: str = "",
+    group_claim_state: str = "",
+    claim_winner_group_hypothesis_id: str = "",
+    consolidation_state: str = "",
 ) -> AlignedCell:
     if (
         selected_integration is None
@@ -277,10 +448,15 @@ def _cell(
         peak_end_rt=peak_end_rt,
         rt_delta_sec=rt_delta_sec,
         trace_quality="clean",
-        scan_support_score=0.8,
+        scan_support_score=scan_support_score,
         source_candidate_id=f"{sample_stem}#{cluster_id}",
         source_raw_file=Path(f"{sample_stem}.raw"),
         reason=status,
+        region_local_mixture_diagnostic=region_local_mixture_diagnostic,
+        group_hypothesis_id=group_hypothesis_id,
+        group_claim_state=group_claim_state,
+        claim_winner_group_hypothesis_id=claim_winner_group_hypothesis_id,
+        consolidation_state=consolidation_state,
         selected_integration=selected_integration,
         **_backfill_evidence_fields(
             status=status,

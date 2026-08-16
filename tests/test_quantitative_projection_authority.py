@@ -99,7 +99,6 @@ def _manifest_payload(*, package_raw: bytes | None = None) -> dict[str, object]:
         "allowed_registered_writer_scope_ids": [
             "backfill_policy_write_ready_rows",
             "cid_nl_adopt_ready_feature_inclusion_95_cells",
-            "backfill_expansion_clean_target_selective_activation_84_cells",
         ],
         "activation_summary_artifact": "",
         "activation_summary_sha256": "",
@@ -168,7 +167,6 @@ def test_package_hold_authority_has_exact_contract() -> None:
     assert authority.allowed_registered_writer_scope_ids == (
         "backfill_policy_write_ready_rows",
         "cid_nl_adopt_ready_feature_inclusion_95_cells",
-        "backfill_expansion_clean_target_selective_activation_84_cells",
     )
     assert authority.may_add_write_rows is False
     assert authority.may_change_write_decision is False
@@ -181,10 +179,10 @@ def test_package_hold_authority_has_exact_contract() -> None:
     assert authority.activation_summary_sha256 == ""
     assert authority.authority_id == (
         "quantitative-projection-authority.v1:"
-        "4d092fb74da960fc46d083dafed25531430a680bb5a3d05e4a471b50e5d0f893"
+        "347886afda48b948f4b6dbdfafad6a70c4902a161b7d422ecd62c8d62be46f97"
     )
     assert hashlib.sha256(_package_bytes()).hexdigest() == (
-        "35283f11af2dcaf6ccfafdef506c12568b38feeb070fb58670a4c649ee74e619"
+        "d35e3783cea171acf67b69bca04c1ba848e07810c11526617bab6087ea2a7e89"
     )
 
 
@@ -481,7 +479,6 @@ def test_hold_manifest_rehydrates_exact_package_bound_contract() -> None:
     assert manifest.allowed_registered_writer_scope_ids == (
         "backfill_policy_write_ready_rows",
         "cid_nl_adopt_ready_feature_inclusion_95_cells",
-        "backfill_expansion_clean_target_selective_activation_84_cells",
     )
     assert manifest.activation_summary_artifact == ""
     assert manifest.activation_summary_sha256 == ""

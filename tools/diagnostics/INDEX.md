@@ -1,8 +1,8 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Last refreshed:** 2026-07-14
-**Total entry-points:** 123
-**Total files (incl. helpers):** 207 Python files under `tools/diagnostics/`
+**Last refreshed:** 2026-08-16
+**Total entry-points:** 112
+**Total files (incl. helpers):** 195 Python files under `tools/diagnostics/`
 **Governing specs:** `docs/architecture-contract.md` and
 `docs/agent/script-tool-lifecycle.md`; the retired dated diagnostic lifecycle
 spec remains only as a same-path public stub.
@@ -655,11 +655,37 @@ sample order, and output TSV/JSON/Markdown schemas.
 **Purpose**: Convert shift-aware calibration rows into a machine standard-peak gate that separates supported standard-peak same-pattern cases from blocked/review-only cases.
 **Topic group**: `shift_aware_standard_peak_gate_calibration.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: Writes `shift_aware_standard_peak_gate_calibration.tsv` and summary JSON. `standard_peak_gate_supported` requires the configured shift-aware shape threshold and a Gaussian-smoothed family overlay verdict that supports standard-peak backfill. Rows without manual labels are reported as `unlabeled_machine_supported` or `unlabeled_machine_blocked`; they are valid machine-gate candidates but are not counted as manual false positives/negatives. Non-standard, missing-overlay, stale-provenance, and conflict rows remain fail-closed or review-only.
+**Status note**: Writes `shift_aware_standard_peak_gate_calibration.tsv` and summary JSON. `standard_peak_gate_supported` is now a historical offline pattern label only: T5D deleted every authority/productization consumer of this output. Rows without manual labels are reported as `unlabeled_machine_supported` or `unlabeled_machine_blocked`; neither label can become Owner SUPPORT or a Matrix value. Non-standard, missing-overlay, stale-provenance, and conflict rows remain fail-closed or review-only.
 
 ---
 
-### `standard_peak_ms1_authority_bundle.py`
+## T5D Standard Peak contraction
+
+T5D deleted the live modules and wrappers documented in the historical entries
+below: MS1 authority bundle, heldout/productization gates, activation-scope and
+reintegration product audits, shadow activation inputs, productization,
+machine/preset orchestration, chunk consolidation/formal sidecar, source
+republisher, stage replay, and publication checker. The descriptions remain as
+historical provenance for retained artifacts; none names a runnable current
+entry or current authority.
+
+T5D adds no replacement Standard Peak package entry. Retained low-level overlay,
+shift-aware, calibration, and gallery tools remain explicit offline
+falsifiers/renderers. The current Backfill owners do not mint a
+`diagnostic_eligible` HOLD subject or bind an independently supplied Matrix to a
+ProcessingRunSpec attempt, so incomplete evidence remains unavailable and
+cannot promote or write.
+
+The clean-target replay is a retained historical diagnostic/oracle packet. Its
+checker proves current-file self-consistency only; it does not authenticate the
+packet's historical origin or immutability. T5D retired its ownerless writer and
+registered authority scope, and the retained counts and hashes cannot mint
+current authority. The final SP-001–SP-055 map is
+`docs/superpowers/validation/standard_peak_t5d_contraction_v1/capability_disposition_v1.tsv`.
+
+---
+
+### Historical record — `standard_peak_ms1_authority_bundle.py` (retired/deleted)
 
 **Purpose**: Convert standard-peak gate rows plus overlay trace provenance into a product-authorized MS1 same-peak sidecar consumable by shadow projection.
 **Topic group**: `standard_peak_ms1_authority_bundle.py` + `xic_extractor/diagnostics/standard_peak_ms1_authority_bundle.py`
@@ -668,7 +694,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_heldout_oracle_results.py`
+### Historical record — `standard_peak_heldout_oracle_results.py` (retired/deleted)
 
 **Purpose**: Evaluate deterministic standard-peak held-out oracle manifest rows against observed boundary/area results and write `heldout_oracle_results.tsv`.
 **Topic group**: `standard_peak_shadow_activation_inputs.py` + `xic_extractor/diagnostics/standard_peak_shadow_activation_inputs.py`
@@ -677,7 +703,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_heldout_trace_oracle.py`
+### Historical record — `standard_peak_heldout_trace_oracle.py` (retired/deleted)
 
 **Purpose**: Build deterministic held-out trace reintegration oracle packets from existing standard-peak trace JSON and detected cell evidence.
 **Topic group**: `standard_peak_heldout_trace_oracle.py` + `xic_extractor/diagnostics/standard_peak_heldout_trace_oracle.py`
@@ -686,7 +712,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_activation_scope_audit.py`
+### Historical record — `standard_peak_activation_scope_audit.py` (retired/deleted)
 
 **Purpose**: Audit whether actual standard-peak `activation_value_delta.tsv` writes fall inside named trace evidence envelopes used by held-out oracles.
 **Topic group**: `standard_peak_activation_scope_audit.py` + `xic_extractor/diagnostics/standard_peak_activation_scope_audit.py`
@@ -695,7 +721,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_reintegration_stability_audit.py`
+### Historical record — `standard_peak_reintegration_stability_audit.py` (retired/deleted)
 
 **Purpose**: Audit whether standard-peak activation writes have boundary-stable stored traces under two no-RAW reintegration views.
 **Topic group**: `standard_peak_reintegration_stability_audit.py` + `xic_extractor/diagnostics/standard_peak_reintegration_stability_audit.py`
@@ -704,7 +730,7 @@ sample order, and output TSV/JSON/Markdown schemas.
 
 ---
 
-### `standard_peak_shadow_activation_inputs.py`
+### Historical record — `standard_peak_shadow_activation_inputs.py` (retired/deleted)
 
 **Purpose**: Convert product-authorized standard-peak `shadow_production_projection_cells.tsv` accepts into `product_activation --matrix-only` input TSVs.
 **Topic group**: `standard_peak_shadow_activation_inputs.py` + `xic_extractor/diagnostics/standard_peak_shadow_activation_inputs.py`
@@ -716,7 +742,7 @@ disposable research diagnostic.
 
 ---
 
-### `standard_peak_policy_observed_oracle.py`
+### Historical record — `standard_peak_policy_observed_oracle.py` (retired/deleted)
 
 **Purpose**: Build row-specific observed-oracle packets for generated Backfill
 policy rows that are still `detected_flagged`.
@@ -746,85 +772,88 @@ after generated policy replay and writer expected-diff pass.
 
 ---
 
-### `standard_peak_backfill_productization.py`
+### Historical record — `standard_peak_backfill_productization.py` (retired/deleted)
 
 **Purpose**: Run the reviewed standard-peak backfill path end to end: convert shadow projection accepts into activation inputs, apply matrix-only product activation, and optionally render an activation-synced reconciliation gallery.
 **Topic group**: `standard_peak_backfill_productization.py` + `xic_extractor/diagnostics/standard_peak_backfill_productization.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Load-bearing note**: The `dna_dr` preset can reach this path after
-`scripts/run_alignment.py` finishes base alignment. It can publish accepted
-standard-peak values into the default alignment matrix outputs.
-**Status note**: Requires `shadow_production_projection_cells.tsv`, `alignment_matrix.tsv`, `alignment_matrix_identity.tsv`, and `alignment_review.tsv`. It writes `standard_peak_backfill_productization_summary.tsv/json`, nests the converter output under `standard_peak_activation_inputs/`, and writes matrix-only activation outputs under `activated_matrix/`. It uses the same fail-closed standard-peak row gate as `standard_peak_shadow_activation_inputs.py`; rows without `same_peak_reason:shift_aware_standard_peak_gate_supported`, rows already written in the current matrix, context/block rows, rows without positive projected values, and standard-path rows failing the N-banded seed guard are not activated. The seed guard derives `total_N` from the pre-backfill matrix sample columns and `detected_count` from `alignment_review.tsv`, writes `seed_guard_decisions.tsv` for every standard-path candidate, and after matrix activation joins actual writes back from `activation_value_delta.tsv` by `peak_hypothesis_id/sample_stem`. Before activation, the orchestrator checks `current_matrix_written=TRUE` claims against the actual public matrix via `alignment_matrix.tsv` + `alignment_matrix_identity.tsv`; stale projection rows that claim an already-written current cell while the public matrix is blank fail fast and must be regenerated. With `--high-signal-clean-activation-scope-audit-tsv`, it fail-closed filters the writer to audit rows with `high_signal_clean_status=eligible`; the current real no-RAW 85RAW scoped writer has 72/72 expected-diff pass and `readiness_tier=production_ready`. With `--low-scan-clean-activation-scope-audit-tsv`, it filters to `low_scan_clean_status=eligible`; the current real no-RAW 85RAW scoped writer has 42/42 expected-diff pass and `readiness_tier=production_ready`. With `--low-height-clean-activation-scope-audit-tsv`, it filters to `low_height_clean_status=eligible`; the current real no-RAW 85RAW scoped writer has 57/57 expected-diff pass and `readiness_tier=production_ready`. With `--low-height-low-scan-clean-activation-scope-audit-tsv`, it filters to `low_height_low_scan_clean_status=eligible`; the current real no-RAW 85RAW scoped writer has 69/69 expected-diff pass and `readiness_tier=production_ready`. With `--low-height-reintegration-stable-activation-scope-audit-tsv` plus `--reintegration-stability-audit-tsv`, it derives `low_height_reintegration_stable_status=eligible` only for rows that are reintegration-stability eligible, still written in the activation scope audit, and below 2e6 height; the current real no-RAW 85RAW scoped writer has 220/220 expected-diff pass, records the stability audit path/SHA in both summary and expected-diff artifacts, and has `readiness_tier=production_ready`. With `--backfill-policy-source-audit-tsv`, the orchestrator generates `standard_peak_backfill_policy.tsv` and `standard_peak_backfill_policy_summary.json` over the supplied candidate universe, optionally using `--reintegration-stability-audit-tsv` and the paired `--policy-observed-oracle-tsv` / `--policy-observed-oracle-summary-json` evidence packet, then applies only generated `backfill_policy_decision=write_ready` rows with `expected_scope=backfill_policy_write_ready_rows`; generated `detected_flagged` and `blocked` rows remain audit-only. The generated policy source audit must carry `apex_aligned_shape_similarity`, so shape-clean stability can be recorded as candidate evidence without becoming writer authority; this tag also requires `matrix_value_effect=written`, trace match, family match, and shape similarity `>=0.95`. The observed-oracle TSV must be generated `standard_peak_policy_observed_oracle_v1` evidence with companion summary JSON; accepted rows must pass full-trace reintegration, have `included_in_product_acceptance=TRUE`, keep matching row SHA/family/sample, still be written/trace matched, and the summary must bind the oracle TSV to the source audit SHA and base generated-policy SHA. The generated policy TSV is a replay/audit artifact, not a manual allowlist, and malformed `write_ready` rows fail closed. Current generated policy schema is `standard_peak_backfill_policy_v2`; every row must carry nonblank `backfill_policy_reason`, `backfill_policy_decision_basis`, and `backfill_policy_next_evidence`, with `backfill_policy_candidate_evidence_class` showing candidate evidence even when writer authority is blocked. The latest real no-RAW 85RAW generated-policy replay over the 4613-row consolidated source audit produced 511 `write_ready`, 0 `detected_flagged`, and 4102 `blocked` rows, wrote exactly 511 matrix cells, passed writer expected-diff with zero blockers, and records 72 accepted `policy_observed_full_trace_reintegration` rows. The prior shape-clean explanation replay tags 104 rows with `shape_clean_reintegration_stable` candidate evidence: by authority/decision, 30 remain `review_only` / `detected_flagged` before observed-oracle promotion and 74 are already `writer_approved` / `write_ready`; by candidate-evidence string, 76 are `shape_clean_reintegration_stable,reintegration_stable`, 21 overlap `low_height_clean`, and 7 overlap `high_signal_clean`. This makes policy replay production-ready for current approved evidence classes plus accepted observed-oracle rows, not for broad 4613-row activation. Only one scoped audit or generated policy path may be supplied at a time. In scoped/policy mode it emits `narrow_product_writer_expected_diff_acceptance.tsv/json` and may claim `production_ready` only for that explicit writer scope when acceptance passes; it does not authorize the broad 4613-row activation set or the all-stability 299-row pool. There is no apex-delta, width-only, shape-margin, or shape-clean reintegration-stable writer flag; those diagnostic/evidence probes must remain candidate-only until they have reviewed oracle evidence plus explicit writer expected-diff approval on rows that actually change product output. With `--write-gallery`, it also consumes optional gallery artifacts and passes the generated `activation_application_summary.tsv` / `activation_value_delta.tsv` into `backfill_evidence_reconciliation_gallery.py`, so the HTML distinguishes existing accepted-rescue writes from newly activated matrix writes. This orchestrator does not generate upstream evidence, rerun RAW, loosen nonstandard-peak policy, or mutate source alignment artifacts.
+**Load-bearing note**: Normal presets and `scripts/run_alignment.py` cannot
+reach this path. It is an explicit offline historical/productization referrer
+pending the T5D contraction census and cannot publish into source Alignment
+Matrix outputs.
+**Status note**: This retained offline tool reads historical shadow projection
+and Alignment sidecars and writes activation projections only beneath its
+explicit output directory; it cannot mutate or republish the source Alignment
+Matrix. Retained 85RAW packets record scoped `production_ready` labels for the
+old high-signal, low-scan, low-height, low-height/low-scan, and reintegration-
+stable writer experiments. Those labels are historical artifact evidence, not
+current normal-route or ProductWriter authority, and must not be consumed as
+preset readiness. T5D owns deletion or diagnostic-only contraction of this
+productization surface and its detailed evidence/oracle options.
 
 ---
 
-### `standard_peak_backfill_machine_pipeline.py`
+### Historical record — `standard_peak_backfill_machine_pipeline.py` (retired/deleted)
 
 **Purpose**: Run the standard-peak machine-gate chain from either an existing overlay summary or a retained-backfill review queue to activated matrix and optional gallery.
 **Topic group**: `family_ms1_overlay_batch.py`, `family_ms1_alignment_experiment_batch.py`, `backfill_evidence_reconciliation_gallery.py`, `shift_aware_backfill_calibration_pack.py`, `shift_aware_standard_peak_gate_calibration.py`, `standard_peak_ms1_authority_bundle.py`, `shadow_production_projection.py`, `standard_peak_backfill_productization.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Status note**: This orchestrator can start from an existing `family_ms1_overlay_batch_summary.tsv` or from `alignment_retained_backfill_overlay_review_queue.tsv` plus RAW/DLL paths. The two source modes are mutually exclusive so stale overlay evidence is not silently reused when RAW queue inputs are supplied. In queue mode it runs `family_ms1_overlay_batch.py` with resumable PNG-only defaults unless `--evidence-only` is supplied; evidence-only writes compact trace TSV/JSON plus summary rows with blank PNG/PDF paths and is the default path used by the `dna_dr` matrix-only publication mode. Omitting `--limit` processes all remaining queue rows from `--start-rank` instead of inheriting the overlay-batch default top-N chunk size. It builds a fresh reconciliation group index when `--reconciliation-groups-tsv` is omitted, runs shift-aware source-family best-shift evidence, builds the calibration pack with the product default `min_shape_r=0.95`, evaluates the standard-peak machine gate, creates the machine-gate MS1 authority bundle, regenerates shadow projection grounded in `alignment_matrix.tsv` + `alignment_matrix_identity.tsv`, applies matrix-only product activation, and optionally writes the activation-synced gallery. In `publication_mode=matrix-only`, shift-aware evidence writes the machine summary TSVs needed by downstream gates without rendering PNG review images; review image rendering remains enabled for `review-gallery` and `deep-audit`. It writes `standard_peak_backfill_machine_pipeline_summary.json` plus subdirectories for each stage. The final summary records `publication_mode`, evidence source mode, rendered image count, queue row count, start rank, requested/effective limit, whether shift-aware images were rendered, overlay/shift status counts, activation counts, and `status_reasons`; `status=pass` is reserved for the requested scope with successful RAW-backed evidence, shift-aware evidence, and productization. Full 85RAW use remains intentionally chunkable with `--start-rank`, `--limit`, and `--reuse-existing` so expensive RAW-backed evidence generation can resume without hand-splicing downstream inputs.
+**Status note**: This explicit offline orchestrator can start from an existing
+`family_ms1_overlay_batch_summary.tsv` or from a retained-backfill review queue
+plus RAW/DLL paths. Normal presets and `scripts/run_alignment.py` have no
+referrer to it. Historical `publication_mode` values control offline evidence
+and rendering only; they are not normal-route choices or source-Matrix
+authority. Its `status=pass` describes only the requested offline scope.
 It can pass an opt-in `--evidence-cache-dir` to the overlay batch producer for
 `evidence-only` runs; this reuses exact cached trace TSV/JSON evidence and does
 not authorize stale overlay summaries or bypass matrix/publication checks.
 
 ---
 
-### `standard_peak_backfill_chunk_consolidation.py`
+### Historical record — `standard_peak_backfill_chunk_consolidation.py` (retired/deleted)
 
-**Purpose**: Consolidate chunked standard-peak machine-pipeline outputs into one formal matrix-only activation pass.
+**Purpose**: Retained offline consolidation diagnostic for historical standard-peak machine-pipeline outputs.
 **Topic group**: `standard_peak_backfill_machine_pipeline.py` + `standard_peak_backfill_productization.py` + `xic_extractor/diagnostics/standard_peak_backfill_chunk_consolidation.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Load-bearing note**: This consolidation path is part of standard-peak
-publication when chunked RAW-backed evidence is used. It is not Bucket B and
-must not be removed during spent-gate cleanup.
-**Status note**: Consumes repeated chunk `standard_peak_backfill_machine_pipeline_summary.json` files or chunk directories, validates that all chunks passed, optionally verifies complete non-overlapping rank coverage against the full retained-backfill review queue by reading actual overlay summary `rank` values, deduplicates full-matrix chunk `shadow_projection_cells.tsv` rows into `consolidated_shadow_projection_cells.tsv`, preferring product-affecting accepted rows over context rows and failing closed on conflicting accepted values, then calls `standard_peak_backfill_productization.py` once to write the final matrix-only activated matrix. This is the product bridge for expensive 85RAW chunked overlay runs: individual chunk matrices are review artifacts only; the consolidated run is the formal matrix candidate. With `--emit-formal-product-output`, only a passing consolidated run with a supplied full review queue and complete non-duplicated rank coverage publishes a downstream-ready product output directory containing `alignment_matrix.tsv`, `alignment_matrix_identity.tsv`, `activation_hypothesis_identity.tsv`, `activation_value_delta.tsv`, `activation_application_summary.tsv`, and `standard_peak_formal_product_manifest.json`; the manifest records the activation output mode, decision scope, standard-peak gate basis, source shadow projection hash, artifact hashes, and queue coverage. By default that passing formal product is also promoted back to the source alignment output so the source `alignment_matrix.tsv` and `alignment_matrix_identity.tsv` become the standard-peak-backfilled final matrix; the original source files are preserved as `*.pre_standard_peak_backfill.tsv`, and `standard_peak_default_matrix_manifest.json` plus `standard_peak_*` audit sidecars are written beside the final matrix. Use `--no-publish-to-source-alignment-output` only for sidecar-only validation. After publication, reruns should use the `*.pre_standard_peak_backfill.tsv` files as activation input and supply `--publish-alignment-matrix-tsv` / `--publish-alignment-matrix-identity-tsv` pointing back to the default final matrix paths, so written-count semantics stay grounded in the pre-standard matrix. The CLI refuses to use the source alignment directory as the formal sidecar directory, requires publish target matrix/identity paths as a pair, and incomplete or duplicated coverage leaves only a failing consolidation summary while clearing known stale formal-product files from the target formal output directory. With `--write-gallery`, it also passes all chunk overlay and shift-aware gate TSVs to the activation-synced reconciliation gallery so evidence display and matrix writes use the same product-authorized rows.
+**Status note**: This module is not reachable from normal GUI, CLI, presets, or
+workflows. Source-Matrix/identity targets and the old publication switch fail
+closed before any I/O; source backup and republication are retired. The
+remaining explicit formal-sidecar mode is a historical diagnostic referrer
+awaiting T5D contraction/deletion and is not current product-output or Matrix
+authority. Do not feed its `status=pass` or manifest to downstream as readiness
+proof.
 
 ---
 
-#### `standard_peak_backfill_preset.py` (preset bridge, non-CLI entry)
+#### `standard_peak_backfill_preset.py` (retired/deleted)
 
-**Purpose**: Run the standard-peak publication preset after a base alignment
-finishes, using retained-gate review rows, chunked machine evidence, and formal
-chunk consolidation to publish accepted standard-peak values.
+**Purpose**: Retained explicit offline Standard Peak diagnostic wrapper.
 **Topic group**: `standard_peak_backfill_machine_pipeline.py` +
 `standard_peak_backfill_chunk_consolidation.py` +
 `standard_peak_backfill_productization.py`
 **Originating spec/goal/plan**: `goals/standard-peak-backfill-productization`
-**Load-bearing note**: `scripts/run_alignment.py` calls this entry point when
-the active preset runtime options enable `standard_peak_backfill`; the built-in
-`dna_dr` preset defaults to `standard_peak_backfill_publication_mode =
-"matrix-only"`. This is the default preset publication bridge, not an optional
-research gallery.
-**Status note**: Runs the retained backfill evidence gate, reads the generated
-standard-peak review queue, dispatches chunked machine-pipeline runs, and then
-calls chunk consolidation to publish the final matrix-only standard-peak output.
-It writes `standard_peak_backfill_preset_summary.json` and records whether the
-run skipped because no review rows were present or published a consolidated
-matrix. The preset can also pass an explicit overlay `evidence_cache_dir` to
-the global matrix-only overlay evidence step; cached evidence remains a
-performance reuse layer and does not change the retained-gate queue, chunk
-rank/order, matrix authority, or publication checker requirement. It does not
-replace base alignment; it executes only after the base alignment artifacts
-exist.
+**Status note**: Before T5D, normal `scripts/run_alignment.py`, GUI, workflows,
+and built-in presets no longer called this wrapper, while an explicit offline
+caller could still run the retained evidence chain and request its historical
+formal sidecar. T5D deleted this wrapper; no current entry point can run that
+chain or publish its sidecar. The historical sidecar never became current
+product authority.
 
 ---
 
-### `dna_dr_product_ready_stage_replay.py`
+### Historical record — `dna_dr_product_ready_stage_replay.py` (retired/deleted)
 
 **Purpose**: Replay a single expensive `dna_dr_product_ready` post-alignment
 stage from an existing alignment output directory for timing/parity validation.
 **Topic group**: `standard_peak_backfill_preset.py` +
 `scripts.check_product_ready_preset_publication`
-**Status note**: Currently supports `--stage standard_peak`. It copies the
-required source alignment artifacts into a fresh output directory, records input
-artifact SHA/size/row-counts in
-`dna_dr_product_ready_stage_replay_manifest.json`, reruns the standard-peak
-publication preset, and then runs the product-ready publication checker. The
-runner is diagnostic/incremental validation infrastructure: it is not a second
-preset runner, does not alter default CLI behavior, and any public artifact hash
-diff must be treated as a failed exact-safe replay unless an expected-diff plan
-approved it.
+**Status note**: Before T5D, this supported `--stage standard_peak`. It copied
+the required source alignment artifacts into a fresh output directory, recorded
+input artifact SHA/size/row-counts in
+`dna_dr_product_ready_stage_replay_manifest.json`, reran the standard-peak
+publication preset, and then ran the product-ready publication checker. T5D
+deleted the replay and publication checker; no current `standard_peak` stage
+entry point remains.
 
 ---
 

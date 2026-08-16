@@ -235,9 +235,9 @@ def test_productization_authority_checker_keeps_writer_manifest_unchanged(
     problems = check_productization_authority(manifest_path=manifest)
 
     if mutation == "reordered_scopes":
-        assert any("exact three registered scopes in order" in p for p in problems)
+        assert any("exact two registered scopes in order" in p for p in problems)
     else:
-        assert any("exact three registered lanes" in p for p in problems)
+        assert any("exact two registered lanes" in p for p in problems)
 
 
 def test_productization_authority_checker_rejects_stale_cid_nl_hash(
@@ -267,7 +267,7 @@ def test_productization_authority_checker_rejects_stale_cid_nl_hash(
     )
 
 
-def test_productization_authority_checker_rejects_stale_clean_target_hash(
+def test_productization_authority_checker_rejects_retired_clean_target_scope(
     tmp_path: Path,
 ) -> None:
     manifest = tmp_path / DEFAULT_MANIFEST.name
@@ -277,9 +277,16 @@ def test_productization_authority_checker_rejects_stale_clean_target_hash(
     shutil.copyfile(DEFAULT_SCHEMA, schema)
     shutil.copyfile(DEFAULT_INDEX, index)
     payload = json.loads(manifest.read_text(encoding="utf-8"))
+    payload["authority_policy"]["product_writer_allowed_scopes"].append(
+        "backfill_expansion_clean_target_selective_activation_84_cells"
+    )
     payload["current_authority"][
         "backfill_expansion_clean_target_selective_activation"
-    ]["artifact_sha256"] = "STALE"
+    ] = {
+        "authority_scope": (
+            "backfill_expansion_clean_target_selective_activation_84_cells"
+        )
+    }
     manifest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     problems = check_productization_authority(
@@ -288,10 +295,8 @@ def test_productization_authority_checker_rejects_stale_clean_target_hash(
         index_path=index,
     )
 
-    assert any(
-        "Backfill clean-target artifact hash does not match manifest" in problem
-        for problem in problems
-    )
+    assert any("exact two registered scopes" in problem for problem in problems)
+    assert any("exact two registered lanes" in problem for problem in problems)
 
 
 def test_productization_authority_checker_requires_compact_artifact(

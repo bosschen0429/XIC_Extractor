@@ -69,26 +69,13 @@ def test_apply_to_discovery_merges_preset_then_explicit_tuning() -> None:
     assert settings.ms2_precursor_tol_da == pytest.approx(0.75)
 
 
-def test_apply_to_alignment_returns_runtime_standard_peak_options() -> None:
+def test_apply_to_alignment_returns_owner_backend_only() -> None:
     preset = load_preset("dna_dr")
 
     alignment_config, run_overrides = apply_to_alignment(preset)
 
     assert alignment_config == AlignmentConfig()
-    assert run_overrides == {
-        "standard_peak_backfill": True,
-        "standard_peak_backfill_chunk_size": 120,
-        "standard_peak_backfill_publication_mode": "matrix-only",
-        "standard_peak_backfill_write_gallery": False,
-        "standard_peak_backfill_reuse_existing": False,
-        "standard_peak_backfill_min_shape_r": pytest.approx(0.95),
-        "owner_build_xic_backend": "raw",
-        "backfill_expansion_productization": "off",
-        "backfill_expansion_reuse_existing_raw_overlay": False,
-        "backfill_expansion_reuse_existing_shift_aware": False,
-        "backfill_expansion_render_shift_aware_images": False,
-        "backfill_expansion_min_shape_r": pytest.approx(0.95),
-    }
+    assert run_overrides == {"owner_build_xic_backend": "raw"}
 
 
 def test_apply_to_alignment_returns_product_ready_runtime_options() -> None:
@@ -97,124 +84,13 @@ def test_apply_to_alignment_returns_product_ready_runtime_options() -> None:
     alignment_config, run_overrides = apply_to_alignment(preset)
 
     assert alignment_config == AlignmentConfig()
-    assert run_overrides["standard_peak_backfill"] is True
-    assert run_overrides["standard_peak_backfill_chunk_size"] == 240
-    assert run_overrides["standard_peak_backfill_publication_mode"] == "matrix-only"
-    assert run_overrides["owner_build_xic_backend"] == "raw-super-window"
-    assert run_overrides["backfill_expansion_productization"] == "off"
-    assert run_overrides["backfill_expansion_reuse_existing_raw_overlay"] is False
-    assert run_overrides["backfill_expansion_reuse_existing_shift_aware"] is False
-    assert run_overrides["backfill_expansion_render_shift_aware_images"] is False
-    assert run_overrides["backfill_expansion_min_shape_r"] == pytest.approx(0.95)
-
-
-def test_apply_to_alignment_maps_legacy_gallery_to_deep_audit() -> None:
-    preset = Preset(
-        name="Legacy gallery",
-        description="Legacy gallery",
-        tags=(PresetTag(strategy="neutral_loss", name="DNA_dR", value=116.0474),),
-        combine_mode="single",
-        discovery_overrides={},
-        alignment_overrides={
-            "standard_peak_backfill": True,
-            "standard_peak_backfill_write_gallery": True,
-        },
-        source="test",
-    )
-
-    _, run_overrides = apply_to_alignment(preset)
-
-    assert run_overrides["standard_peak_backfill_publication_mode"] == "deep-audit"
-    assert run_overrides["standard_peak_backfill_write_gallery"] is True
-
-
-def test_apply_to_alignment_publication_mode_overrides_legacy_gallery() -> None:
-    preset = Preset(
-        name="Explicit mode",
-        description="Explicit mode",
-        tags=(PresetTag(strategy="neutral_loss", name="DNA_dR", value=116.0474),),
-        combine_mode="single",
-        discovery_overrides={},
-        alignment_overrides={
-            "standard_peak_backfill": True,
-            "standard_peak_backfill_publication_mode": "matrix-only",
-            "standard_peak_backfill_write_gallery": True,
-        },
-        source="test",
-    )
-
-    _, run_overrides = apply_to_alignment(preset)
-
-    assert run_overrides["standard_peak_backfill_publication_mode"] == "matrix-only"
-    assert run_overrides["standard_peak_backfill_write_gallery"] is False
-
-
-def test_apply_to_alignment_review_gallery_keeps_gallery_surface_enabled() -> None:
-    preset = Preset(
-        name="Review gallery",
-        description="Review gallery",
-        tags=(PresetTag(strategy="neutral_loss", name="DNA_dR", value=116.0474),),
-        combine_mode="single",
-        discovery_overrides={},
-        alignment_overrides={
-            "standard_peak_backfill": True,
-            "standard_peak_backfill_publication_mode": "review-gallery",
-        },
-        source="test",
-    )
-
-    _, run_overrides = apply_to_alignment(preset)
-
-    assert run_overrides["standard_peak_backfill_publication_mode"] == "review-gallery"
-    assert run_overrides["standard_peak_backfill_write_gallery"] is True
+    assert run_overrides == {"owner_build_xic_backend": "raw-super-window"}
 
 
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
-        ("standard_peak_backfill", "yes", "standard_peak_backfill"),
-        ("standard_peak_backfill_chunk_size", 0, "standard_peak_backfill_chunk_size"),
-        (
-            "standard_peak_backfill_write_gallery",
-            "no",
-            "standard_peak_backfill_write_gallery",
-        ),
-        (
-            "standard_peak_backfill_min_shape_r",
-            1.5,
-            "standard_peak_backfill_min_shape_r",
-        ),
-        (
-            "standard_peak_backfill_publication_mode",
-            "gallery",
-            "standard_peak_backfill_publication_mode",
-        ),
         ("owner_build_xic_backend", "fast-ish", "owner_build_xic_backend"),
-        (
-            "backfill_expansion_productization",
-            "all",
-            "backfill_expansion_productization",
-        ),
-        (
-            "backfill_expansion_reuse_existing_raw_overlay",
-            "yes",
-            "backfill_expansion_reuse_existing_raw_overlay",
-        ),
-        (
-            "backfill_expansion_reuse_existing_shift_aware",
-            "yes",
-            "backfill_expansion_reuse_existing_shift_aware",
-        ),
-        (
-            "backfill_expansion_render_shift_aware_images",
-            "yes",
-            "backfill_expansion_render_shift_aware_images",
-        ),
-        (
-            "backfill_expansion_min_shape_r",
-            -0.1,
-            "backfill_expansion_min_shape_r",
-        ),
     ],
 )
 def test_apply_to_alignment_rejects_invalid_runtime_options(
@@ -236,24 +112,38 @@ def test_apply_to_alignment_rejects_invalid_runtime_options(
         apply_to_alignment(preset)
 
 
-def test_apply_to_alignment_requires_standard_peak_for_backfill_expansion() -> None:
+@pytest.mark.parametrize(
+    "field",
+    [
+        "standard_peak_backfill",
+        "standard_peak_backfill_chunk_size",
+        "standard_peak_backfill_publication_mode",
+        "standard_peak_backfill_write_gallery",
+        "standard_peak_backfill_reuse_existing",
+        "standard_peak_backfill_min_shape_r",
+        "backfill_expansion_productization",
+        "backfill_expansion_reuse_existing_raw_overlay",
+        "backfill_expansion_reuse_existing_shift_aware",
+        "backfill_expansion_render_shift_aware_images",
+        "backfill_expansion_min_shape_r",
+    ],
+)
+def test_apply_to_alignment_rejects_retired_normal_route_fields(field: str) -> None:
     preset = Preset(
-        name="Invalid backfill expansion",
-        description="Invalid backfill expansion",
+        name="Retired route",
+        description="Retired route",
         tags=(PresetTag(strategy="neutral_loss", name="DNA_dR", value=116.0474),),
         combine_mode="single",
         discovery_overrides={},
-        alignment_overrides={
-            "backfill_expansion_productization": "clean-target-selective",
-        },
+        alignment_overrides={field: True},
         source="test",
     )
 
-    with pytest.raises(PresetError, match="requires standard_peak_backfill"):
+    with pytest.raises(PresetError, match=f"{field}.*diagnostic-only"):
         apply_to_alignment(preset)
 
 
-def test_bind_cid_nl_recipe_preserves_owner_backend_without_standard_peak() -> None:
+def test_bind_cid_nl_recipe_preserves_owner_backend() -> None:
     preset = Preset(
         name="Indexed owner construction",
         description="Owner construction is independent of Standard Peak",
@@ -261,7 +151,6 @@ def test_bind_cid_nl_recipe_preserves_owner_backend_without_standard_peak() -> N
         combine_mode="single",
         discovery_overrides={},
         alignment_overrides={
-            "standard_peak_backfill": False,
             "owner_build_xic_backend": "ms1-index",
         },
         source="test",
@@ -270,11 +159,7 @@ def test_bind_cid_nl_recipe_preserves_owner_backend_without_standard_peak() -> N
     _, runtime_options = apply_to_alignment(preset)
     recipe = bind_cid_nl_recipe(preset, "full")
 
-    assert runtime_options == {
-        "standard_peak_backfill": False,
-        "owner_build_xic_backend": "ms1-index",
-    }
-    assert recipe.standard_peak_backfill is False
+    assert runtime_options == {"owner_build_xic_backend": "ms1-index"}
     assert recipe.owner_build_xic_backend == "ms1_index"
 
 
@@ -284,36 +169,12 @@ def test_bind_cid_nl_recipe_closes_the_generic_matrix_method_surface() -> None:
     assert recipe.route == "full"
     assert recipe.discovery_settings == apply_to_discovery(load_preset("dna_dr"))
     assert recipe.alignment_config == AlignmentConfig()
-    assert recipe.standard_peak_backfill is True
-    assert recipe.standard_peak_backfill_chunk_size == 120
-    assert recipe.standard_peak_backfill_publication_mode == "matrix-only"
-    assert recipe.standard_peak_backfill_write_gallery is False
-    assert recipe.standard_peak_backfill_reuse_existing is False
-    assert recipe.standard_peak_backfill_min_shape_r == pytest.approx(0.95)
     assert recipe.owner_build_xic_backend == "raw"
-    assert recipe.backfill_expansion_productization == "off"
-    assert recipe.backfill_expansion_reuse_existing_raw_overlay is False
-    assert recipe.backfill_expansion_reuse_existing_shift_aware is False
-    assert recipe.backfill_expansion_render_shift_aware_images is False
-    assert recipe.backfill_expansion_min_shape_r == pytest.approx(0.95)
-    assert recipe.product_ready_publication_check is False
     assert {item.name for item in fields(recipe)} == {
         "route",
         "discovery_settings",
         "alignment_config",
-        "standard_peak_backfill",
-        "standard_peak_backfill_chunk_size",
-        "standard_peak_backfill_publication_mode",
-        "standard_peak_backfill_write_gallery",
-        "standard_peak_backfill_reuse_existing",
-        "standard_peak_backfill_min_shape_r",
         "owner_build_xic_backend",
-        "backfill_expansion_productization",
-        "backfill_expansion_reuse_existing_raw_overlay",
-        "backfill_expansion_reuse_existing_shift_aware",
-        "backfill_expansion_render_shift_aware_images",
-        "backfill_expansion_min_shape_r",
-        "product_ready_publication_check",
     }
     with pytest.raises(FrozenInstanceError):
         setattr(recipe, "route", "discovery_only")
@@ -325,16 +186,12 @@ def test_bind_cid_nl_recipe_applies_only_recipe_owned_overrides() -> None:
         "align_only",
         recipe_overrides={
             "rt_max": 20.0,
-            "standard_peak_backfill_publication_mode": "deep-audit",
             "owner_build_xic_backend": "ms1-index",
         },
     )
 
     assert recipe.discovery_settings.rt_max == pytest.approx(20.0)
-    assert recipe.standard_peak_backfill_publication_mode == "deep-audit"
-    assert recipe.standard_peak_backfill_write_gallery is True
     assert recipe.owner_build_xic_backend == "ms1_index"
-    assert recipe.product_ready_publication_check is True
 
     with pytest.raises(PresetError, match="unknown CID-NL recipe override"):
         bind_cid_nl_recipe(

@@ -23,7 +23,6 @@ Promotion requirements belong to
 - `backfill_current_write_ready_scope`
 - `cid_nl_default_product_activation_v1`
 - `backfill_expansion_default_product_activation_v1`
-- `backfill_expansion_clean_target_selective_product_activation_v1`
 - `broad_backfill_autowrite`
 - `productization_authority_firewall_v1`
 - `mechanical_adjudication_contract_v1`

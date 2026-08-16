@@ -43,13 +43,9 @@ DEFAULT_INDEX = ROOT / MECHANICAL_ADJUDICATION_INDEX_REL
 
 APPROVED_SCOPE = "backfill_policy_write_ready_rows"
 CID_NL_APPROVED_SCOPE = "cid_nl_adopt_ready_feature_inclusion_95_cells"
-BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE = (
-    "backfill_expansion_clean_target_selective_activation_84_cells"
-)
 APPROVED_SCOPE_ORDER = (
     APPROVED_SCOPE,
     CID_NL_APPROVED_SCOPE,
-    BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE,
 )
 APPROVED_SCOPES = frozenset(APPROVED_SCOPE_ORDER)
 DEPENDENT_MANIFEST_SCHEMA_VERSION = "quantitative_projection_authority_manifest_v1"
@@ -59,7 +55,7 @@ DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
     "xic_extractor/alignment/data/issue256_quantitative_projection_authority_v1.json"
 )
 DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
-    "35283f11af2dcaf6ccfafdef506c12568b38feeb070fb58670a4c649ee74e619"
+    "d35e3783cea171acf67b69bca04c1ba848e07810c11526617bab6087ea2a7e89"
 )
 WRITER_MANIFEST_FIELDS = (
     "schema_version",
@@ -80,7 +76,6 @@ WRITER_AUTHORITY_POLICY_FIELDS = (
 WRITER_CURRENT_AUTHORITY_FIELDS = (
     "backfill",
     "cid_nl_default_activation",
-    "backfill_expansion_clean_target_selective_activation",
 )
 PARKED_BROAD_BACKFILL = "broad_backfill"
 NEGATIVE_SCOPE_IDS = {
@@ -89,6 +84,7 @@ NEGATIVE_SCOPE_IDS = {
     "width_only_clean",
     "shape_margin_clean",
     "shape_clean_reintegration_stable_writer_probe",
+    "backfill_expansion_clean_target_selective_activation_84_cells",
 }
 
 
@@ -176,7 +172,7 @@ def _check_dependent_manifest(
     if owner_manifest.allowed_registered_writer_scope_ids != APPROVED_SCOPE_ORDER:
         problems.append(
             "dependent authority manifest writer scopes must equal the existing "
-            "three registered scopes in order"
+            "two registered scopes in order"
         )
     if (
         owner_manifest.activation_summary_artifact != ""
@@ -226,7 +222,7 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
         or tuple(raw_writer_scopes) != APPROVED_SCOPE_ORDER
     ):
         problems.append(
-            "product_writer_allowed_scopes must preserve the exact three registered "
+            "product_writer_allowed_scopes must preserve the exact two registered "
             f"scopes in order: {APPROVED_SCOPE_ORDER!r}",
         )
 
@@ -235,7 +231,7 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
         problems.append("manifest missing current_authority object")
     elif tuple(current_authority) != WRITER_CURRENT_AUTHORITY_FIELDS:
         problems.append(
-            "writer current_authority fields/order must remain the exact three "
+            "writer current_authority fields/order must remain the exact two "
             "registered lanes"
         )
 
@@ -267,31 +263,6 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
         for key, value in expected_cid_nl.items():
             if cid_nl.get(key) != value:
                 problems.append(f"manifest CID-NL {key} must be {value!r}")
-
-    clean_target = _mapping_path(
-        manifest,
-        "current_authority",
-        "backfill_expansion_clean_target_selective_activation",
-    )
-    if clean_target is None:
-        problems.append(
-            "manifest missing current_authority."
-            "backfill_expansion_clean_target_selective_activation",
-        )
-    else:
-        expected_clean_target = {
-            "current_product_authority_rows": 84,
-            "candidate_peak_rows": 7,
-            "projected_held_cell_rows": 28,
-            "boundary_review_excluded_cell_rows": 37,
-            "off_target_hold_or_remap_excluded_cell_rows": 29,
-            "authority_scope": BACKFILL_EXPANSION_CLEAN_TARGET_SCOPE,
-        }
-        for key, value in expected_clean_target.items():
-            if clean_target.get(key) != value:
-                problems.append(
-                    f"manifest Backfill clean-target {key} must be {value!r}",
-                )
 
     parked = _mapping_path(manifest, "parked_lanes", PARKED_BROAD_BACKFILL)
     if parked is None:
@@ -499,11 +470,6 @@ def _check_retained_authority_source_hashes(
             manifest,
             "current_authority",
             "cid_nl_default_activation",
-        ),
-        "Backfill clean-target": _mapping_path(
-            manifest,
-            "current_authority",
-            "backfill_expansion_clean_target_selective_activation",
         ),
     }
     artifact_fields = {

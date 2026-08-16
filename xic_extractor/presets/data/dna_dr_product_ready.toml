@@ -1,5 +1,5 @@
-name = "DNA dR Product Ready"
-description = "CID neutral-loss discovery and current-run standard-peak publication"
+name = "DNA dR Owner Backfill (compat)"
+description = "Historical product-ready compatibility profile; Owner Backfill only; the preset name does not assert readiness"
 combine_mode = "single"
 
 [[tag]]
@@ -10,7 +10,4 @@ value = 116.0474
 [discovery]
 
 [alignment]
-standard_peak_backfill = true
-standard_peak_backfill_chunk_size = 240
-standard_peak_backfill_publication_mode = "matrix-only"
 owner_build_xic_backend = "raw-super-window"

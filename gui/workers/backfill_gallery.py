@@ -14,11 +14,10 @@ overlay — is built by three further steps:
 Keeping this composition in one testable place lets the worker call it after
 alignment without embedding multi-step orchestration in a ``QThread``.
 
-This is the lightweight "Tier A" review gallery: it deliberately does *not* run
-the shift-aware experiment batch, shadow projection, or matrix activation (the
-heavier "deep-audit" / production-contract layers in
-``standard_peak_backfill_machine_pipeline``). Those change the matrix and carry a
-second render pass; they are a separate concern from visual review.
+This review gallery deliberately does *not* run the shift-aware experiment batch.
+The former Standard Peak shadow/productization/matrix-activation pipeline was
+retired in T5D; retained overlay and shift-aware tools are diagnostic-only and
+cannot change the Matrix.
 """
 
 from __future__ import annotations

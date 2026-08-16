@@ -506,9 +506,8 @@ manual rendering. For product publication that needs compact RAW-backed evidence
 but not images, use `family_ms1_overlay_batch.py --evidence-only`; this writes
 trace TSV/JSON and summary rows with blank PNG/PDF fields.
 
-For DNA dR production-style runs, prefer the preset surface instead of manually
-stitching the retained gate, machine pipeline, chunk consolidation, and final
-matrix publication:
+For normal DNA dR runs, use the preset surface to bind Discovery and Alignment
+settings to the single Owner Backfill/Matrix transaction:
 
 ```powershell
 .venv\Scripts\python.exe -m scripts.run_alignment `
@@ -529,42 +528,28 @@ matrix publication:
   --timing-live-output <task-specific-output-dir>\timing.live.json
 ```
 
-Use `--preset dna_dr_product_ready` for the current-run safe DNA dR product
-path. It runs the same base alignment and standard-peak publication path as
-`dna_dr`, but it must not depend on the fixed 85RAW-derived 84-cell Backfill
-expansion activation packet. That retained packet is an authority replay /
-regression artifact only; invoke the Backfill expansion clean-target selective
-wrapper or an explicit custom preset only when the current alignment matrix
-sample universe matches the packet expected-diff sample universe.
+Both built-ins now stop after generic Alignment, Owner Backfill, and the
+canonical Matrix writer. `--preset dna_dr` uses the configured `raw` Owner Build
+backend. `--preset dna_dr_product_ready` is a historical compatibility name for
+the `raw_superwindow` Owner Build profile; selecting it does not evaluate or
+assert product readiness. Neither built-in runs Standard Peak RAW/XIC,
+productization, consolidation, activation, or source-Matrix republication.
 
-`--preset dna_dr` loads `xic_extractor.presets.data\dna_dr.toml`; it also stops
-after the standard-peak publication runner. Both built-in presets force the
-lightweight seed audit and use
-`alignment_backfill_cell_evidence.tsv` on `validation-minimal`; non-minimal
-output levels may still emit `alignment_cells.tsv` for debug/deep-audit review.
-The built-in `dna_dr` preset defaults to
-`standard_peak_backfill_publication_mode = "matrix-only"`: it extracts compact
-trace/evidence artifacts, runs the existing authority/projection/product
-activation chain, publishes accepted values back into `alignment_matrix.tsv`, and
-does not render full PNG/gallery evidence. The shift-aware stage still writes the
-machine-readable best-shift summary TSVs required by the calibration pack and
-standard-peak gate, but review PNGs are reserved for gallery modes. Use
-`--standard-peak-backfill-publication-mode deep-audit` to preserve the legacy
-full overlay/gallery behavior. `review-gallery` keeps RAW overlay evidence
-compact, but renders shift-aware review evidence and the activation-synced HTML
-review surface without changing the standard-peak acceptance policy.
-Non-standard peaks remain outside this preset's automatic publication policy.
-For repeated method-development reruns, `--standard-peak-evidence-cache-dir`
-can point at a cache seeded from matching overlay evidence; this is an opt-in
-accelerator for the standard-peak matrix-only overlay evidence path, not a
-default one-shot production setting. Cache hits require the current per-sample
-RAW identity to match the cached trace provenance; missing or mismatched RAW
-identity falls back to normal RAW extraction instead of reusing stale evidence.
+The former `standard_peak_backfill*` and `backfill_expansion*` preset keys, plus
+`--standard-peak-backfill-publication-mode` and
+`--standard-peak-evidence-cache-dir`, are retired from normal execution. The
+loader/CLI rejects them before Alignment or RAW work rather than silently
+changing science. T5D deleted the former Standard Peak preset, machine,
+authority, activation, productization, consolidation, stage-replay, and
+publication-checker entries. Retained overlay, shift-aware, calibration, and
+gallery tools remain explicit offline falsifiers/renderers only. There is no
+new integrated HOLD-diagnostic contract: without original-owner subject and run
+rehydration their semantic result is unavailable. None is a normal preset tail
+or can publish a Matrix value.
 
-When `--timing-output` or `--timing-live-output` is supplied, timing spans include
-the base alignment plus the post-alignment preset stages. Backfill expansion
-productization is included only for an explicit clean-target replay/custom
-preset, not for the built-in sample-universe-safe `dna_dr_product_ready` path.
+When `--timing-output` or `--timing-live-output` is supplied, normal preset
+timing covers the Alignment/Owner Backfill transaction; there is no Standard
+Peak post-alignment preset stage.
 Use this shape for HEARTBEAT monitoring; older artifacts may only contain the base `pipeline:
 alignment` timing and therefore under-report preset-tail bottlenecks.
 Timing JSON now keeps the raw `records` list and also emits derived
@@ -574,21 +559,11 @@ batching/cache code: `raw_xic_locality_summary` reports stage-level
 `extract_xic_count`, `extract_xic_batch_count`, `raw_chromatogram_call_count`,
 `point_count`, and per-XIC/per-batch ratios without re-reading RAW files.
 
-The built-in `dna_dr_product_ready` alignment preset automatically runs the
-current-run publication checker before returning success. To re-check an
-existing output directory manually, run:
-
-```powershell
-.venv\Scripts\python.exe -m scripts.check_product_ready_preset_publication `
-  --alignment-dir <task-specific-output-dir>
-```
-
-This checker reads `standard_peak_backfill_preset_summary.json` and
-`standard_peak_default_matrix_manifest.json`, confirms manifest coverage and
-published matrix paths, and fails if `backfill_expansion_productization_preset`
-exists in the built-in run output. It is a verifier only: it writes compact
-checks/summary sidecars and does not read RAW, change matrix values, or grant
-Backfill expansion replay authority.
+The built-in `dna_dr_product_ready` preset no longer invokes a publication
+checker. T5D deleted that historical checker and its stage replay because both
+encoded the retired Standard Peak publication contract. Historical publication
+artifacts remain retained diagnostic context only; their packet-local checks do
+not authenticate historical origin or readiness for a current run.
 
 Before starting 85RAW, verify the batch index actually contains 85 samples. Do
 not reuse the historical 8RAW index by path similarity. Prefer the CLI preflight

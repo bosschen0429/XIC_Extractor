@@ -8,9 +8,11 @@ from xic_extractor.alignment.promotion_policy import (
     BACKFILL_HYPOTHESIS_BLOCKED_REASON,
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
     BACKFILL_MS1_PATTERN_CONFLICT_REASON,
+    BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON,
     BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
     LOW_MS1_COVERAGE_BLOCKED_REASON,
     NEIGHBOR_INTERFERENCE_BLOCKED_REASON,
+    BackfillPromotionDecision,
     BackfillPromotionEvidence,
     classify_backfill_promotion,
     evidence_from_tsv_rows,
@@ -34,6 +36,7 @@ _AUDIT_BLOCKERS = {
     BACKFILL_HYPOTHESIS_BLOCKED_REASON,
     BACKFILL_MS1_PATTERN_BLOCKED_REASON,
     BACKFILL_MS1_PATTERN_CONFLICT_REASON,
+    BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON,
     BACKFILL_RT_EXPLANATION_BLOCKED_REASON,
     "duplicate_claim_pressure",
     "low_ms1_assessable_coverage",
@@ -96,17 +99,19 @@ def project_machine_decision(
         seed_quality=None,
         sample_count=len(cells),
     )
+    promotion = classify_backfill_promotion(evidence)
     include_primary = _is_trueish(review.get("include_in_primary_matrix"))
     identity_decision = _text(review.get("identity_decision"))
     identity_reason = _text(review.get("identity_reason"))
     confidence = _confidence(review.get("identity_confidence"))
     flags = _split_tokens(review.get("row_flags"))
-    support_reasons = _support_reasons(review, evidence)
+    support_reasons = _support_reasons(review, evidence, promotion=promotion)
     blockers = _blockers(
         identity_decision=identity_decision,
         identity_reason=identity_reason,
         flags=flags,
         evidence=evidence,
+        promotion=promotion,
     )
     matrix_role = _matrix_role(
         include_primary=include_primary,
@@ -140,16 +145,19 @@ def machine_decision_as_row(
 def _support_reasons(
     review_row: Mapping[str, str],
     evidence: BackfillPromotionEvidence,
+    *,
+    promotion: BackfillPromotionDecision,
 ) -> tuple[str, ...]:
     reasons: list[str] = []
     primary_evidence = _text(review_row.get("primary_evidence"))
     if evidence.q_detected > 0:
         reasons.append("detected_seed")
-    if _all_rescue_cells_supported(evidence):
-        reasons.append("ms1_backfill_supported")
-        reasons.append("rt_coherent")
-    elif _has_rt_coherent_cell(evidence):
-        reasons.append("rt_coherent")
+    if not promotion.unavailable:
+        if _all_rescue_cells_supported(evidence):
+            reasons.append("ms1_backfill_supported")
+            reasons.append("rt_coherent")
+        elif _has_rt_coherent_cell(evidence):
+            reasons.append("rt_coherent")
     if primary_evidence in _SUPPORT_PRIMARY_EVIDENCE:
         reasons.append(primary_evidence)
     return _ordered_unique(reasons)
@@ -161,9 +169,11 @@ def _blockers(
     identity_reason: str,
     flags: tuple[str, ...],
     evidence: BackfillPromotionEvidence,
+    promotion: BackfillPromotionDecision,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
-    promotion = classify_backfill_promotion(evidence)
+    if promotion.unavailable:
+        blockers.append(promotion.reason)
     single_detected_supported = evidence.q_detected == 1 and promotion.supported
     same_peak_backfill_supported = promotion.supported
     if evidence.q_detected == 1 and not single_detected_supported:
@@ -255,6 +265,8 @@ def _matrix_role(
     identity_decision: str,
     blockers: tuple[str, ...],
 ) -> MatrixRole:
+    if BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON in blockers:
+        return "audit"
     if include_primary:
         return "primary"
     blocker_set = set(blockers)

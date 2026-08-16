@@ -40,7 +40,11 @@ detection. The full cell map and generated sidecars stay externalized under
 `output/validation/backfill_expansion_full_evidence_chain_v1/`; git keeps only
 the compact summary, checks, row manifest, and this README.
 
-Use `python -m scripts.check_backfill_expansion_full_evidence_chain --check-only`
-for artifact integrity. Use
-`python -m scripts.check_backfill_expansion_full_evidence_chain --check-only --require-full-chain`
-as the product gate; it must remain non-zero until all `666/666` cells pass.
+Use `python -m scripts.check_backfill_expansion_full_evidence_chain` for
+historical artifact integrity. Use
+`python -m scripts.check_backfill_expansion_full_evidence_chain --require-full-chain`
+to prove that the retained packet remains incomplete.
+
+The checker no longer regenerates `full_chain_status` or product-authority
+sidecars. Those historical classifications are validation/oracle context only;
+they cannot mint current authority.

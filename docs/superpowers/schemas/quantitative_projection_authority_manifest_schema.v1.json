@@ -24,8 +24,7 @@
     "package_authority_sha256_format": "lowercase_sha256_of_raw_canonical_package_bytes",
     "allowed_registered_writer_scope_ids": [
       "backfill_policy_write_ready_rows",
-      "cid_nl_adopt_ready_feature_inclusion_95_cells",
-      "backfill_expansion_clean_target_selective_activation_84_cells"
+      "cid_nl_adopt_ready_feature_inclusion_95_cells"
     ],
     "hold_activation_summary_artifact": "",
     "hold_activation_summary_sha256": "",

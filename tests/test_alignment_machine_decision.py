@@ -51,6 +51,30 @@ def test_primary_review_row_projects_to_use() -> None:
     }
 
 
+def test_generic_review_rescue_is_unavailable_not_primary_use() -> None:
+    review_row = _review_row(
+        include="TRUE",
+        decision="production_family",
+        confidence="high",
+        reason="owner_complete_link",
+        primary_evidence="legacy_unrehydrated_primary_evidence",
+        detected=2,
+        rescued=0,
+    )
+    review_row["review_rescue_count"] = "1"
+
+    vector = project_machine_decision(
+        review_row,
+        _cell_rows(detected=2, rescued=1, rescue_typed_backfill_support=True),
+    )
+
+    assert vector.matrix_role == "audit"
+    assert vector.recommended_action == "review"
+    assert vector.blockers == ("backfill_owner_rehydration_unavailable",)
+    assert "ms1_backfill_supported" not in vector.support_reasons
+    assert "rt_coherent" not in vector.support_reasons
+
+
 def test_one_detected_seed_supported_rescue_projects_keep_provisional() -> None:
     vector = project_machine_decision(
         _review_row(
@@ -356,6 +380,7 @@ def _review_row(
         "neutral_loss_tag": "DNA_dR",
         "quantifiable_detected_count": str(detected),
         "quantifiable_rescue_count": str(rescued),
+        "review_rescue_count": "0",
         "accepted_rescue_count": str(rescued),
         "duplicate_assigned_count": str(duplicate),
         "ambiguous_ms1_owner_count": str(ambiguous),

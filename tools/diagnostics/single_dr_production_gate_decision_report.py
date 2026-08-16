@@ -48,6 +48,7 @@ _REVIEW_REQUIRED_COLUMNS = (
     "feature_family_id",
     "neutral_loss_tag",
     "detected_count",
+    "review_rescue_count",
     "include_in_primary_matrix",
 )
 _BACKFILL_EVIDENCE_COLUMNS = (
@@ -255,7 +256,9 @@ def _classify_family(
     dependency = policy_evidence.backfill_dependency
     promotion = classify_backfill_promotion(policy_evidence)
 
-    if promotion.supported:
+    if promotion.unavailable:
+        classification = "unavailable_backfill_owner_evidence"
+    elif promotion.supported:
         classification = "supported_backfill_capped"
     elif promotion.reason == NEIGHBOR_INTERFERENCE_BLOCKED_REASON:
         classification = "blocked_neighboring_ms1_interference"
@@ -727,6 +730,7 @@ def _summary_rows(
         "blocked_low_ms1_assessable_coverage",
         "blocked_missing_backfill_identity_evidence",
         "blocked_rescue_only",
+        "unavailable_backfill_owner_evidence",
         "watch_duplicate_rescue",
         "watch_weak_seed_tolerated",
     ):

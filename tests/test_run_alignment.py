@@ -2,16 +2,35 @@ import json
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 import xic_extractor.alignment.pipeline as alignment_pipeline_module
 from scripts import run_alignment
-from xic_extractor.alignment.pipeline import AlignmentRunOutputs
+from xic_extractor.alignment.owner_build_route_receipt import (
+    _mint_owner_build_route_receipt,
+)
+from xic_extractor.alignment.pipeline import (
+    AlignmentRunOutputs as _AlignmentRunOutputs,
+)
 from xic_extractor.alignment.quantitative_projection_authority import (
     QuantitativeProjectionAuthorityHoldError,
 )
 from xic_extractor.raw_reader import RawReaderError
+
+
+def AlignmentRunOutputs(  # noqa: N802 - test factory mirrors the product type
+    *,
+    _owner_build_xic_backend: str = "raw",
+    **kwargs: Any,
+) -> _AlignmentRunOutputs:
+    return _AlignmentRunOutputs(
+        **kwargs,
+        owner_build_route_receipt=_mint_owner_build_route_receipt(
+            configured_backend=_owner_build_xic_backend,
+        ),
+    )
 
 
 def test_run_alignment_cli_passes_paths_settings_and_debug_flags(
@@ -746,7 +765,7 @@ def test_run_alignment_cli_accepts_validation_minimal_output_level(
     assert captured["output_level"] == "validation-minimal"
 
 
-def test_run_alignment_cli_dna_dr_preset_runs_standard_peak_backfill(
+def test_run_alignment_cli_dna_dr_preset_runs_owner_backfill_only(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -793,6 +812,7 @@ def test_run_alignment_cli_dna_dr_preset_runs_standard_peak_backfill(
         run_alignment,
         "run_standard_peak_backfill_preset",
         fake_preset_runner,
+        raising=False,
     )
 
     code = run_alignment.main(
@@ -811,22 +831,12 @@ def test_run_alignment_cli_dna_dr_preset_runs_standard_peak_backfill(
     )
 
     assert code == 0
-    assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
-    assert captured_alignment["emit_alignment_cells"] is True
-    assert captured_preset["alignment_dir"] == output_dir.resolve()
-    assert captured_preset["raw_dir"] == raw_dir.resolve()
-    assert captured_preset["dll_dir"] == dll_dir.resolve()
-    assert captured_preset["chunk_size"] == 120
-    assert captured_preset["publication_mode"] == "matrix-only"
-    assert captured_preset["write_gallery"] is False
-    assert captured_preset["reuse_existing"] is False
-    assert captured_preset["render_workers"] == 1
-    assert captured_preset["chunk_workers"] == 1
-    assert captured_preset["evidence_cache_dir"] is None
-    assert captured_preset["min_shape_r"] == pytest.approx(0.95)
+    assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
+    assert captured_alignment["emit_alignment_cells"] is False
+    assert captured_preset == {}
 
 
-def test_run_alignment_cli_product_ready_preset_does_not_run_fixed_backfill_replay(
+def test_run_alignment_cli_product_ready_preset_runs_owner_backfill_only(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -860,7 +870,10 @@ def test_run_alignment_cli_product_ready_preset_does_not_run_fixed_backfill_repl
         }
         for path in paths.values():
             path.write_text("x\n", encoding="utf-8")
-        return AlignmentRunOutputs(**paths)
+        return AlignmentRunOutputs(
+            **paths,
+            _owner_build_xic_backend=kwargs["owner_build_xic_backend"],
+        )
 
     def fake_standard_peak_runner(**kwargs):
         call_order.append("standard_peak")
@@ -888,16 +901,19 @@ def test_run_alignment_cli_product_ready_preset_does_not_run_fixed_backfill_repl
         run_alignment,
         "run_standard_peak_backfill_preset",
         fake_standard_peak_runner,
+        raising=False,
     )
     monkeypatch.setattr(
         run_alignment,
         "run_backfill_expansion_clean_target_selective_preset_from_alignment",
         fail_backfill_expansion_runner,
+        raising=False,
     )
     monkeypatch.setattr(
         run_alignment,
         "check_product_ready_preset_publication",
         fake_product_ready_check,
+        raising=False,
     )
 
     code = run_alignment.main(
@@ -918,18 +934,20 @@ def test_run_alignment_cli_product_ready_preset_does_not_run_fixed_backfill_repl
     )
 
     assert code == 0
-    assert call_order == ["alignment", "standard_peak", "product_ready_check"]
-    assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
+    assert call_order == ["alignment"]
+    assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["emit_alignment_cells"] is False
     assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
-    assert captured_standard_peak["chunk_size"] == 240
-    assert captured_standard_peak["publication_mode"] == "matrix-only"
-    assert captured_standard_peak["render_workers"] == 1
-    assert captured_standard_peak["chunk_workers"] == 1
-    assert captured_product_ready_check["alignment_dir"] == output_dir.resolve()
+    assert captured_standard_peak == {}
+    assert captured_product_ready_check == {}
     stdout = capsys.readouterr().out
     assert "Backfill expansion productization summary JSON:" not in stdout
-    assert "Product-ready preset publication summary JSON:" in stdout
+    assert "Product-ready preset publication summary JSON:" not in stdout
+    assert "Configured owner-build XIC backend: raw_superwindow" in stdout
+    assert "Effective owner-build route: configured_backend:raw_superwindow" in stdout
+    assert "Effective route validation: owner_validated" in stdout
+    assert "ProcessingRunSpec identity: <none" in stdout
+    assert "Preset readiness authority: not_evaluated" in stdout
 
 
 def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
@@ -981,11 +999,13 @@ def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
         run_alignment,
         "run_standard_peak_backfill_preset",
         fake_standard_peak_runner,
+        raising=False,
     )
     monkeypatch.setattr(
         run_alignment,
         "check_product_ready_preset_publication",
         fake_product_ready_check,
+        raising=False,
     )
 
     code = run_alignment.main(
@@ -1009,7 +1029,7 @@ def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
     assert captured_alignment["owner_build_xic_backend"] == "raw"
 
 
-def test_run_alignment_cli_product_ready_preset_fails_when_publication_check_fails(
+def test_run_alignment_cli_product_ready_preset_ignores_retired_publication_check(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1022,7 +1042,7 @@ def test_run_alignment_cli_product_ready_preset_fails_when_publication_check_fai
     dll_dir.mkdir()
     output_dir = tmp_path / "alignment"
 
-    def fake_run_alignment(**_kwargs):
+    def fake_run_alignment(**kwargs):
         output_dir.mkdir(parents=True, exist_ok=True)
         paths = {
             "review_tsv": output_dir / "alignment_review.tsv",
@@ -1037,7 +1057,10 @@ def test_run_alignment_cli_product_ready_preset_fails_when_publication_check_fai
         }
         for path in paths.values():
             path.write_text("x\n", encoding="utf-8")
-        return AlignmentRunOutputs(**paths)
+        return AlignmentRunOutputs(
+            **paths,
+            _owner_build_xic_backend=kwargs["owner_build_xic_backend"],
+        )
 
     def fake_standard_peak_runner(**_kwargs):
         return SimpleNamespace(
@@ -1058,11 +1081,13 @@ def test_run_alignment_cli_product_ready_preset_fails_when_publication_check_fai
         run_alignment,
         "run_standard_peak_backfill_preset",
         fake_standard_peak_runner,
+        raising=False,
     )
     monkeypatch.setattr(
         run_alignment,
         "check_product_ready_preset_publication",
         fake_product_ready_check,
+        raising=False,
     )
 
     code = run_alignment.main(
@@ -1082,11 +1107,12 @@ def test_run_alignment_cli_product_ready_preset_fails_when_publication_check_fai
         ]
     )
 
-    assert code == 2
-    assert "Product-ready preset publication check failed" in capsys.readouterr().err
+    assert code == 0
+    stderr = capsys.readouterr().err
+    assert "Product-ready preset publication check failed" not in stderr
 
 
-def test_run_alignment_cli_explicit_backfill_replay_preset_runs_wrapper(
+def test_run_alignment_cli_rejects_explicit_retired_backfill_replay_preset(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1178,16 +1204,19 @@ backfill_expansion_productization = "clean-target-selective"
         run_alignment,
         "run_standard_peak_backfill_preset",
         fake_standard_peak_runner,
+        raising=False,
     )
     monkeypatch.setattr(
         run_alignment,
         "run_backfill_expansion_clean_target_selective_preset_from_alignment",
         fake_backfill_expansion_runner,
+        raising=False,
     )
     monkeypatch.setattr(
         run_alignment,
         "check_product_ready_preset_publication",
         fail_product_ready_check,
+        raising=False,
     )
 
     code = run_alignment.main(
@@ -1207,22 +1236,13 @@ backfill_expansion_productization = "clean-target-selective"
         ]
     )
 
-    assert code == 0
-    assert call_order == ["alignment", "standard_peak", "backfill_expansion"]
-    assert captured_backfill_expansion["alignment_dir"] == output_dir.resolve()
-    assert captured_backfill_expansion["output_dir"] == (
-        output_dir.resolve() / "backfill_expansion_productization_preset"
-    )
-    assert (
-        Path(captured_backfill_expansion["activation_scope_expected_diff_tsv"]).name
-        == "expected_diff.tsv"
-    )
-    stdout = capsys.readouterr().out
-    assert "Backfill expansion productization summary JSON:" in stdout
-    assert "backfill_expansion_clean_target_selective_activation_84_cells" in stdout
+    assert code == 2
+    assert call_order == []
+    assert captured_backfill_expansion == {}
+    assert "diagnostic-only" in capsys.readouterr().err
 
 
-def test_run_alignment_cli_publication_mode_overrides_preset(
+def test_run_alignment_cli_rejects_retired_publication_mode_and_cache(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1264,6 +1284,7 @@ def test_run_alignment_cli_publication_mode_overrides_preset(
         run_alignment,
         "run_standard_peak_backfill_preset",
         fake_preset_runner,
+        raising=False,
     )
 
     code = run_alignment.main(
@@ -1285,10 +1306,8 @@ def test_run_alignment_cli_publication_mode_overrides_preset(
         ]
     )
 
-    assert code == 0
-    assert captured_preset["publication_mode"] == "deep-audit"
-    assert captured_preset["write_gallery"] is True
-    assert captured_preset["evidence_cache_dir"] == cache_dir.resolve()
+    assert code == 2
+    assert captured_preset == {}
 
 
 def test_run_alignment_cli_rejects_standard_peak_cache_without_standard_peak_preset(
@@ -1316,7 +1335,9 @@ def test_run_alignment_cli_rejects_standard_peak_cache_without_standard_peak_pre
     )
 
     assert code == 2
-    assert "--standard-peak-evidence-cache-dir requires" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert "--standard-peak-evidence-cache-dir" in stderr
+    assert "diagnostic-only" in stderr
 
 
 def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal(
@@ -1359,6 +1380,7 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
             published_alignment_manifest_json=None,
             gallery_html=None,
         ),
+        raising=False,
     )
 
     code = run_alignment.main(
@@ -1379,7 +1401,7 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
     )
 
     assert code == 0
-    assert captured_alignment["emit_alignment_backfill_seed_audit"] is True
+    assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
     assert captured_alignment["emit_alignment_cells"] is False
 
 
@@ -1416,48 +1438,6 @@ def test_run_alignment_cli_passes_raw_workers(
 
     assert code == 0
     assert captured["raw_workers"] == 4
-
-
-@pytest.mark.parametrize(
-    ("raw_workers", "cpu_count", "expected"),
-    [
-        (11, 32, 3),
-        (11, 4, 3),
-        (11, None, 1),
-        (3, 32, 3),
-    ],
-)
-def test_standard_peak_render_workers_uses_conservative_cap(
-    monkeypatch: pytest.MonkeyPatch,
-    raw_workers: int,
-    cpu_count: int | None,
-    expected: int,
-) -> None:
-    monkeypatch.setattr(run_alignment.os, "cpu_count", lambda: cpu_count)
-
-    assert run_alignment._standard_peak_render_workers(raw_workers) == expected
-
-
-@pytest.mark.parametrize(
-    ("raw_workers", "cpu_count", "expected"),
-    [
-        (11, 32, 2),
-        (11, 8, 2),
-        (11, 4, 1),
-        (11, None, 1),
-        (2, 32, 2),
-        (1, 32, 1),
-    ],
-)
-def test_standard_peak_chunk_workers_uses_conservative_cap(
-    monkeypatch: pytest.MonkeyPatch,
-    raw_workers: int,
-    cpu_count: int | None,
-    expected: int,
-) -> None:
-    monkeypatch.setattr(run_alignment.os, "cpu_count", lambda: cpu_count)
-
-    assert run_alignment._standard_peak_chunk_workers(raw_workers) == expected
 
 
 def test_run_alignment_cli_passes_raw_xic_batch_size(
@@ -2515,6 +2495,9 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     assert "Audit evidence mode: none" in stdout
     assert "Performance profile: validation-fast" in stdout
     assert "Owner backfill window strategy: super-window" in stdout
+    assert "Effective owner-build route: <not executed>" in stdout
+    assert "Effective route validation: not_executed" in stdout
+    assert "owner_validated" not in stdout
     assert "85RAW canonical contract: not requested" in stdout
     assert "Python executable:" in stdout
     assert "run_alignment module:" in stdout

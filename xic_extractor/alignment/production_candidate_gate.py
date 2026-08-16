@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Literal
 
 from xic_extractor.alignment.machine_decision import project_machine_decision
+from xic_extractor.alignment.promotion_policy import (
+    BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON,
+)
 
 CandidateGateStatus = Literal[
     "production_candidate",
@@ -321,6 +324,11 @@ def evaluate_production_candidate_gate(
     )
     blockers = _ordered_unique(
         (
+            *(
+                blocker
+                for blocker in machine.blockers
+                if blocker == BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON
+            ),
             *_challenge_blockers(rescued),
             *_tier2_blockers(
                 tier2_evidence,

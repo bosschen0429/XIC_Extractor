@@ -18,6 +18,7 @@ from xic_extractor.alignment.csv_io import (
 )
 from xic_extractor.alignment.drift_evidence import read_targeted_istd_drift_evidence
 from xic_extractor.alignment.ms1_index_source import OwnerBuildXicBackend
+from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
 from xic_extractor.alignment.quantitative_projection_authority import (
@@ -36,6 +37,9 @@ from xic_extractor.presets import (
     PresetError,
     bind_cid_nl_recipe,
     load_preset,
+)
+from xic_extractor.presets.loader import (
+    STANDARD_PEAK_NORMAL_ROUTE_RETIRED_MESSAGE,
 )
 from xic_extractor.presets.models import Preset
 from xic_extractor.raw_reader import RawReaderError
@@ -64,24 +68,10 @@ _STANDARD_PEAK_PUBLICATION_MODES = (
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
+        _reject_retired_standard_peak_cli_options(args)
         preset, recipe = _resolve_preset(args)
     except PresetError as exc:
         print(str(exc), file=sys.stderr)
-        return 2
-    standard_peak_backfill_enabled = (
-        recipe.standard_peak_backfill if recipe is not None else False
-    )
-    backfill_expansion_productization_mode = (
-        recipe.backfill_expansion_productization if recipe is not None else "off"
-    )
-    if args.standard_peak_evidence_cache_dir is not None and not (
-        standard_peak_backfill_enabled
-    ):
-        print(
-            "--standard-peak-evidence-cache-dir requires a preset that enables "
-            "standard_peak_backfill",
-            file=sys.stderr,
-        )
         return 2
     if (args.sample_info is None) != (args.targeted_istd_workbook is None):
         print(
@@ -97,11 +87,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_dir = args.raw_dir.resolve()
     dll_dir = args.dll_dir.resolve()
     output_dir = args.output_dir.resolve()
-    standard_peak_evidence_cache_dir = (
-        args.standard_peak_evidence_cache_dir.resolve()
-        if args.standard_peak_evidence_cache_dir is not None
-        else None
-    )
     raw_workers, raw_xic_batch_size = _resolve_raw_execution_settings(args)
     signal_processing_profile = resolve_signal_processing_profile(
         signal_processing_method=args.signal_processing_method,
@@ -111,6 +96,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         args,
         recipe,
     )
+    if preset is not None and preset.name == "DNA dR Owner Backfill (compat)":
+        print(
+            "Preset readiness authority: not_evaluated "
+            "(historical compatibility name only)"
+        )
     identity_coherence_output_dir = (
         args.identity_coherence_output_dir.resolve()
         if args.identity_coherence_output_dir is not None
@@ -251,9 +241,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     timing_kwargs = (
         {"timing_recorder": timing_recorder} if timing_recorder is not None else {}
     )
-    standard_peak_outputs = None
-    backfill_expansion_outputs = None
-    product_ready_publication_check_outputs = None
     try:
         drift_lookup = (
             read_targeted_istd_drift_evidence(
@@ -286,18 +273,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             ),
             "signal_processing_profile": signal_processing_profile,
             "output_level": args.output_level,
-            "emit_alignment_cells": (
-                args.emit_alignment_cells
-                or _standard_peak_backfill_requires_full_cells(
-                    standard_peak_backfill_enabled=standard_peak_backfill_enabled,
-                    output_level=args.output_level,
-                )
-            ),
+            "emit_alignment_cells": args.emit_alignment_cells,
             "emit_alignment_status_matrix": args.emit_alignment_status_matrix,
             "emit_alignment_integration_audit": args.emit_alignment_integration_audit,
             "emit_alignment_backfill_seed_audit": (
                 args.emit_alignment_backfill_seed_audit
-                or standard_peak_backfill_enabled
             ),
             "emit_alignment_backfill_candidate_audit": (
                 args.emit_alignment_backfill_candidate_audit
@@ -336,61 +316,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 outputs = run_alignment(**run_kwargs)
             else:
                 outputs = profiler.runcall(run_alignment, **run_kwargs)
-            if recipe is not None and recipe.standard_peak_backfill:
-                standard_peak_outputs = run_standard_peak_backfill_preset(
-                    alignment_dir=output_dir,
-                    raw_dir=raw_dir,
-                    dll_dir=dll_dir,
-                    source_run_id=_preset_source_run_id(preset),
-                    chunk_size=recipe.standard_peak_backfill_chunk_size,
-                    reuse_existing=recipe.standard_peak_backfill_reuse_existing,
-                    write_gallery=recipe.standard_peak_backfill_write_gallery,
-                    publication_mode=(recipe.standard_peak_backfill_publication_mode),
-                    min_shape_r=recipe.standard_peak_backfill_min_shape_r,
-                    render_workers=_standard_peak_render_workers(raw_workers),
-                    chunk_workers=_standard_peak_chunk_workers(raw_workers),
-                    evidence_cache_dir=standard_peak_evidence_cache_dir,
-                    timing_recorder=timing_recorder,
-                )
-            if (
-                recipe is not None
-                and backfill_expansion_productization_mode == "clean-target-selective"
-            ):
-                backfill_expansion_outputs = (
-                    run_backfill_expansion_clean_target_selective_preset_from_alignment(
-                        alignment_dir=output_dir,
-                        raw_dir=raw_dir,
-                        dll_dir=dll_dir,
-                        output_dir=(
-                            output_dir / "backfill_expansion_productization_preset"
-                        ),
-                        reuse_existing_raw_overlay=(
-                            recipe.backfill_expansion_reuse_existing_raw_overlay
-                        ),
-                        reuse_existing_shift_aware=(
-                            recipe.backfill_expansion_reuse_existing_shift_aware
-                        ),
-                        render_shift_aware_images=(
-                            recipe.backfill_expansion_render_shift_aware_images
-                        ),
-                        min_shape_r=recipe.backfill_expansion_min_shape_r,
-                        timing_recorder=timing_recorder,
-                        activation_scope_expected_diff_tsv=(
-                            _clean_target_selective_activation_expected_diff_tsv()
-                        ),
-                    )
-                )
-            if recipe is not None and recipe.product_ready_publication_check:
-                product_ready_publication_check_outputs = (
-                    check_product_ready_preset_publication(
-                        alignment_dir=output_dir,
-                    )
-                )
-                if product_ready_publication_check_outputs.status != "pass":
-                    raise ValueError(
-                        "Product-ready preset publication check failed: "
-                        f"{product_ready_publication_check_outputs.summary_json}",
-                    )
         except QuantitativeProjectionAuthorityHoldError:
             authority_hold = True
             raise
@@ -448,43 +373,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Alignment early-loser shadow JSON: {outputs.early_loser_shadow_json}")
     if outputs.identity_coherence_output_dir is not None:
         print(f"Identity coherence diagnostic: {outputs.identity_coherence_output_dir}")
-    if standard_peak_outputs is not None:
-        print(
-            "Standard-peak backfill preset summary JSON: "
-            f"{standard_peak_outputs.summary_json}"
-        )
-        published_manifest = getattr(
-            standard_peak_outputs,
-            "published_alignment_manifest_json",
-            None,
-        )
-        if published_manifest is not None:
-            print(f"Standard-peak backfill publication manifest: {published_manifest}")
-        gallery_html = getattr(standard_peak_outputs, "gallery_html", None)
-        if gallery_html is not None:
-            print(f"Standard-peak backfill gallery HTML: {gallery_html}")
-    if product_ready_publication_check_outputs is not None:
-        print(
-            "Product-ready preset publication summary JSON: "
-            f"{product_ready_publication_check_outputs.summary_json}"
-        )
-        print(
-            "Product-ready preset publication checks TSV: "
-            f"{product_ready_publication_check_outputs.checks_tsv}"
-        )
-    if backfill_expansion_outputs is not None:
-        print(
-            "Backfill expansion productization summary JSON: "
-            f"{backfill_expansion_outputs.summary_json}"
-        )
-        print(
-            "Backfill expansion clean-target activation summary JSON: "
-            f"{backfill_expansion_outputs.clean_target_activation_summary_json}"
-        )
-        print(
-            "Backfill expansion product authority scope: "
-            f"{backfill_expansion_outputs.product_authority_scope}"
-        )
+    owner_build_route_receipt = outputs.owner_build_route_receipt
+    if not isinstance(owner_build_route_receipt, OwnerBuildRouteReceipt):
+        print("Alignment owner did not return its route receipt", file=sys.stderr)
+        return 2
+    _print_owner_build_route_receipt(owner_build_route_receipt)
     if timing_recorder is not None:
         if args.timing_live_output is not None:
             print(f"Timing live JSON: {args.timing_live_output.resolve()}")
@@ -526,29 +419,24 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--preset",
         help=(
-            "Built-in preset name or TOML path. Alignment presets may enable "
-            "post-alignment standard-peak backfill publication."
+            "Built-in preset name or TOML path. Normal Alignment routes use "
+            "Owner Backfill only."
         ),
     )
     parser.add_argument(
         "--standard-peak-backfill-publication-mode",
         choices=_STANDARD_PEAK_PUBLICATION_MODES,
         help=(
-            "Override the preset standard-peak publication mode. matrix-only "
-            "publishes the formal matrix from compact evidence without PNG "
-            "gallery rendering; deep-audit preserves the legacy full overlay "
-            "and gallery behavior. review-gallery keeps RAW overlay evidence "
-            "compact while rendering shift-aware review evidence and the "
-            "activation-synced review gallery."
+            "Retired normal-route option. Passing it fails closed; retained "
+            "Standard Peak capabilities are diagnostic-only."
         ),
     )
     parser.add_argument(
         "--standard-peak-evidence-cache-dir",
         type=Path,
         help=(
-            "Optional content-keyed cache for standard-peak matrix-only overlay "
-            "trace evidence. Use only for repeated method-development reruns; "
-            "default one-shot runs do not use this cache."
+            "Retired normal-route option. Passing it fails closed; retained "
+            "Standard Peak capabilities are diagnostic-only."
         ),
     )
     parser.add_argument(
@@ -974,18 +862,9 @@ def _resolve_preset(
     args: argparse.Namespace,
 ) -> tuple[Preset | None, BoundCidNlRecipe | None]:
     if args.preset is None:
-        if args.standard_peak_backfill_publication_mode is not None:
-            raise PresetError(
-                "--standard-peak-backfill-publication-mode requires a preset "
-                "that enables standard_peak_backfill"
-            )
         return None, None
     preset = load_preset(args.preset)
     recipe_overrides: dict[str, object] = {}
-    if args.standard_peak_backfill_publication_mode is not None:
-        recipe_overrides["standard_peak_backfill_publication_mode"] = (
-            args.standard_peak_backfill_publication_mode
-        )
     if args.owner_build_xic_backend is not None:
         recipe_overrides["owner_build_xic_backend"] = args.owner_build_xic_backend
     return preset, bind_cid_nl_recipe(
@@ -995,62 +874,17 @@ def _resolve_preset(
     )
 
 
-def _preset_source_run_id(preset: Preset | None) -> str:
-    if preset is None:
-        return "alignment-preset:standard-peak-backfill"
-    safe_source = preset.source.replace("\\", "/")
-    return f"alignment-preset:{safe_source}:standard-peak-backfill"
-
-
-def _standard_peak_backfill_requires_full_cells(
-    *,
-    standard_peak_backfill_enabled: bool,
-    output_level: str,
-) -> bool:
-    if not standard_peak_backfill_enabled:
-        return False
-    return output_level != "validation-minimal"
-
-
-def _standard_peak_render_workers(raw_workers: int) -> int:
-    return max(1, min(raw_workers, os.cpu_count() or 1, 3))
-
-
-def _standard_peak_chunk_workers(raw_workers: int) -> int:
-    cpu_count = os.cpu_count() or 1
-    return max(1, min(raw_workers, max(1, cpu_count // 4), 2))
-
-
-def run_standard_peak_backfill_preset(**kwargs):
-    from tools.diagnostics.standard_peak_backfill_preset import (
-        run_standard_peak_backfill_preset as runner,
-    )
-
-    return runner(**kwargs)
-
-
-def run_backfill_expansion_clean_target_selective_preset_from_alignment(**kwargs):
-    from scripts.run_backfill_expansion_full_evidence_chain import (
-        run_backfill_expansion_clean_target_selective_preset_from_alignment as runner,
-    )
-
-    return runner(**kwargs)
-
-
-def check_product_ready_preset_publication(**kwargs):
-    from xic_extractor.diagnostics.product_ready_preset_publication_check import (
-        check_product_ready_preset_publication as checker,
-    )
-
-    return checker(**kwargs)
-
-
-def _clean_target_selective_activation_expected_diff_tsv() -> Path:
-    from scripts import (
-        build_backfill_expansion_clean_target_selective_product_activation as module,
-    )
-
-    return module.DEFAULT_FILTERED_EXPECTED_DIFF_TSV
+def _reject_retired_standard_peak_cli_options(args: argparse.Namespace) -> None:
+    if args.standard_peak_backfill_publication_mode is not None:
+        raise PresetError(
+            "--standard-peak-backfill-publication-mode: "
+            + STANDARD_PEAK_NORMAL_ROUTE_RETIRED_MESSAGE
+        )
+    if args.standard_peak_evidence_cache_dir is not None:
+        raise PresetError(
+            "--standard-peak-evidence-cache-dir: "
+            + STANDARD_PEAK_NORMAL_ROUTE_RETIRED_MESSAGE
+        )
 
 
 def _expect_arg(
@@ -1124,7 +958,7 @@ def _print_preflight_summary(
     print(f"Performance profile: {args.performance_profile or '<none>'}")
     print(f"RAW workers: {raw_workers}")
     print(f"RAW XIC batch size: {raw_xic_batch_size}")
-    print(f"Owner build XIC backend: {owner_build_xic_backend}")
+    _print_owner_build_route_preflight(owner_build_xic_backend)
     print(f"Owner backfill window strategy: {args.owner_backfill_window_strategy}")
     print(
         "Owner backfill superwindow span factor: "
@@ -1138,6 +972,34 @@ def _print_preflight_summary(
         "Timing live JSON: "
         f"{args.timing_live_output.resolve() if args.timing_live_output else '<none>'}"
     )
+
+
+def _print_owner_build_route_receipt(receipt: OwnerBuildRouteReceipt) -> None:
+    print(
+        "Configured owner-build XIC backend: "
+        f"{receipt.configured_owner_build_xic_backend}"
+    )
+    if receipt.effective_owner_build_xic_backend is None:
+        print(f"Effective owner-build route: {receipt.effective_owner_build_route}")
+    else:
+        print(
+            "Effective owner-build route: "
+            f"{receipt.effective_owner_build_route}:"
+            f"{receipt.effective_owner_build_xic_backend}"
+        )
+    print("Effective route validation: owner_validated")
+    if receipt.processing_run_spec_id is None:
+        print("ProcessingRunSpec identity: <none; generic Alignment CLI is align-only>")
+    else:
+        print(f"ProcessingRunSpec id: {receipt.processing_run_spec_id}")
+        print(f"ProcessingRunSpec hash: {receipt.processing_run_spec_hash}")
+
+
+def _print_owner_build_route_preflight(owner_build_xic_backend: str) -> None:
+    print(f"Configured owner-build XIC backend: {owner_build_xic_backend}")
+    print("Effective owner-build route: <not executed>")
+    print("Effective route validation: not_executed")
+    print("ProcessingRunSpec identity: <none; generic Alignment CLI is align-only>")
 
 
 def _resolve_raw_execution_settings(args: argparse.Namespace) -> tuple[int, int]:

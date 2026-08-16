@@ -5,6 +5,8 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.diagnostics import provisional_backfill_candidate_gate as gate_cli
 
 
@@ -112,6 +114,65 @@ def test_cli_accepts_valid_tier2_sidecar(tmp_path: Path) -> None:
     assert payload["production_candidate_count"] == 1
     assert payload["production_ready"] is False
     assert payload["matrix_contract_changed"] is False
+
+
+@pytest.mark.parametrize(
+    "review_rescue_count",
+    ("", "garbage", "NaN", "0.5", "-1"),
+    ids=("empty", "nonnumeric", "nonfinite", "fractional", "negative"),
+)
+def test_cli_keeps_invalid_review_rescue_count_out_of_production_candidates(
+    tmp_path: Path,
+    review_rescue_count: str,
+) -> None:
+    alignment_dir = _write_alignment_run(tmp_path / "alignment")
+    review_path = alignment_dir / "alignment_review.tsv"
+    review_rows = _read_tsv(review_path)
+    for row in review_rows:
+        if row["feature_family_id"] == "FAM_CAND":
+            row["review_rescue_count"] = review_rescue_count
+    _write_tsv(review_path, review_rows)
+
+    matrix_path = alignment_dir / "alignment_matrix.tsv"
+    output_dir = tmp_path / "gate"
+    raw_manifest_path = _write_raw_manifest(tmp_path)
+    source_context = gate_cli.source_context_for_artifacts(
+        review_path=review_path,
+        cell_path=alignment_dir / "alignment_cells.tsv",
+        matrix_path=matrix_path,
+    )
+    candidate_rows = [
+        row for row in review_rows if gate_cli.is_candidate_gate_scope(row)
+    ]
+    sidecar_path = _write_tier2_sidecar(
+        tmp_path,
+        family_id="FAM_CAND",
+        candidate_rows=candidate_rows,
+        source_context=source_context,
+        raw_manifest_path=raw_manifest_path,
+    )
+
+    code = gate_cli.main(
+        [
+            "--alignment-dir",
+            str(alignment_dir),
+            "--output-dir",
+            str(output_dir),
+            "--tier2-trace-evidence-tsv",
+            str(sidecar_path),
+            "--tier2-raw-manifest-tsv",
+            str(raw_manifest_path),
+        ],
+    )
+
+    assert code == 0
+    rows = _read_tsv(output_dir / "alignment_production_candidate_gate.tsv")
+    family = next(row for row in rows if row["feature_family_id"] == "FAM_CAND")
+    assert family["candidate_gate_status"] == "audit"
+    assert (
+        "backfill_owner_rehydration_unavailable"
+        in family["challenge_blockers"]
+    )
 
 
 def test_cli_stale_tier2_hash_emits_machine_readable_blocker(
@@ -286,6 +347,23 @@ def test_cli_reports_missing_required_columns(
     assert "identity_decision" in stderr
 
 
+def test_cli_rejects_review_without_review_rescue_count(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    alignment_dir = _write_alignment_run(tmp_path / "alignment")
+    review_path = alignment_dir / "alignment_review.tsv"
+    rows = _read_tsv(review_path)
+    for row in rows:
+        row.pop("review_rescue_count")
+    _write_tsv(review_path, rows)
+
+    code = gate_cli.main(["--alignment-dir", str(alignment_dir)])
+
+    assert code == 2
+    assert "review_rescue_count" in capsys.readouterr().err
+
+
 def _write_raw_manifest(tmp_path: Path) -> Path:
     path = tmp_path / "alignment_tier2_raw_manifest.tsv"
     path.write_text(
@@ -445,6 +523,7 @@ def _review_row(
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": str(detected),
         "quantifiable_rescue_count": str(rescued),
+        "review_rescue_count": "0",
         "accepted_rescue_count": str(rescued),
         "duplicate_assigned_count": "0",
         "ambiguous_ms1_owner_count": "0",

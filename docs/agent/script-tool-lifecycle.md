@@ -146,9 +146,10 @@ cross-boundary surfaces require special protection:
 
 | Surface | Consumer or unique role |
 | --- | --- |
-| `standard_peak_backfill_preset.py` | Imported by Alignment CLI and GUI workflows; not merely a standalone diagnostic |
+| Retained Standard Peak overlay/shift/gallery helpers | Explicit offline falsifiers/renderers only; no integrated HOLD selector, product decision, value, or writer receipt |
 | `family_ms1_overlay_batch.py` | Imported by GUI review and full evidence-chain orchestration; owns batched RAW overlay production |
-| CID-NL inclusion/copy/adopt gates | Consume and emit productization activation artifacts; no deletion without reowning the activation chain |
+| Retired Standard Peak authority/activation/productization/consolidation tools | Deleted by T5D; retained historical artifacts remain diagnostic context only and do not authenticate their own origin |
+| Historical clean-target 84-cell packet | Current-file self-consistency checks only; no independent historical seal; its ownerless writer and registered authority scope were retired by T5D |
 | `docs_policy.py` | Shared docs-governance path and classification owner used by hooks and checks |
 | `docs_management_audit.py` | CI-facing repository documentation audit |
 | `tools/testing/test_shards.py` | CI test-shard contract, not diagnostic evidence |

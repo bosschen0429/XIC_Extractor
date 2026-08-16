@@ -12,7 +12,8 @@ def test_builtin_dna_dr_toml_is_packaged_resource() -> None:
     assert 'name = "DNA dR"' in text
     assert 'name = "DNA_dR"' in text
     assert "116.0474" in text
-    assert "standard_peak_backfill = true" in text
+    assert "standard_peak_backfill" not in text
+    assert tomllib.loads(text)["alignment"] == {}
 
 
 def test_dna_dr_value_matches_deoxyribose_neutral_loss_residue_mass() -> None:

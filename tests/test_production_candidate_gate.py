@@ -994,6 +994,7 @@ def _review_row(
         "primary_evidence": "owner_complete_link",
         "quantifiable_detected_count": str(detected),
         "quantifiable_rescue_count": str(rescued),
+        "review_rescue_count": "0",
         "accepted_rescue_count": str(rescued),
         "duplicate_assigned_count": str(duplicate),
         "ambiguous_ms1_owner_count": str(ambiguous),

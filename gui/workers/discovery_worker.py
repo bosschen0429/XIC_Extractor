@@ -12,6 +12,7 @@ from gui.workers.backfill_gallery import (
     BackfillGalleryInputs,
     build_backfill_review_gallery,
 )
+from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.alignment.pipeline import run_alignment
 from xic_extractor.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.alignment.process_backend import AlignmentProcessExecutionError
@@ -132,7 +133,7 @@ class DiscoveryWorker(QThread):
             return None
 
         self.progress.emit(1, 3, "Alignment...")
-        outputs, standard_peak_outputs = self._run_alignment(
+        outputs, owner_build_route = self._run_alignment(
             request,
             index_path=index_path,
             raw_dir=raw_dir,
@@ -154,7 +155,7 @@ class DiscoveryWorker(QThread):
         self.progress.emit(3, 3, "完成")
 
         summary = self._discovery_summary(request, index_path=index_path)
-        summary.update(_alignment_summary(outputs, standard_peak_outputs))
+        summary.update(_alignment_summary(outputs, owner_build_route))
         summary.update(gallery)
         return summary
 
@@ -220,7 +221,7 @@ class DiscoveryWorker(QThread):
         candidate_counts, sample_count = _read_batch_counts(index_path)
 
         self.progress.emit(0, 2, "Alignment...")
-        outputs, standard_peak_outputs = self._run_alignment(
+        outputs, owner_build_route = self._run_alignment(
             request,
             index_path=index_path,
             raw_dir=request.raw_dir,
@@ -244,7 +245,7 @@ class DiscoveryWorker(QThread):
             "matrix_tsv": None,
             "gallery_html": None,
         }
-        summary.update(_alignment_summary(outputs, standard_peak_outputs))
+        summary.update(_alignment_summary(outputs, owner_build_route))
         summary.update(gallery)
         return summary
 
@@ -258,8 +259,8 @@ class DiscoveryWorker(QThread):
         physical_bindings_by_sample: (
             dict[str, tuple[DiscoveryCandidatePhysicalBinding, ...]] | None
         ) = None,
-    ) -> tuple[AlignmentRunOutputs, Any | None]:
-        recipe, source_run_id = self._alignment_runtime(request)
+    ) -> tuple[AlignmentRunOutputs, OwnerBuildRouteReceipt]:
+        recipe = self._alignment_runtime(request)
         outputs = run_alignment(
             discovery_batch_index=index_path,
             raw_dir=raw_dir,
@@ -272,51 +273,23 @@ class DiscoveryWorker(QThread):
             discovery_physical_bindings_by_sample=physical_bindings_by_sample,
             **_GALLERY_ALIGNMENT_KWARGS,
         )
-        if self.isInterruptionRequested():
-            return outputs, None
-        standard_peak_outputs = self._run_standard_peak_backfill_if_enabled(
-            request,
-            raw_dir=raw_dir,
-            recipe=recipe,
-            source_run_id=source_run_id,
-        )
-        return outputs, standard_peak_outputs
+        owner_build_route = outputs.owner_build_route_receipt
+        if not isinstance(owner_build_route, OwnerBuildRouteReceipt):
+            raise TypeError("Alignment owner did not return its route receipt")
+        return outputs, owner_build_route
 
     def _alignment_runtime(
         self,
         request: DiscoveryRequest,
-    ) -> tuple[BoundCidNlRecipe, str]:
+    ) -> BoundCidNlRecipe:
         binding = self._recipe_binding
         if binding is None:
             preset = load_preset(request.preset)
             recipe = bind_cid_nl_recipe(preset, request.mode)
-            _validate_gui_alignment_recipe(recipe)
             binding = (recipe, str(preset.source))
             self._recipe_binding = binding
-        recipe, preset_source = binding
-        return recipe, _standard_peak_source_run_id(preset_source)
-
-    def _run_standard_peak_backfill_if_enabled(
-        self,
-        request: DiscoveryRequest,
-        *,
-        raw_dir: Path,
-        recipe: BoundCidNlRecipe,
-        source_run_id: str,
-    ) -> Any | None:
-        if not recipe.standard_peak_backfill:
-            return None
-        return run_standard_peak_backfill_preset(
-            alignment_dir=request.output_dir,
-            raw_dir=raw_dir,
-            dll_dir=request.dll_dir,
-            source_run_id=source_run_id,
-            chunk_size=recipe.standard_peak_backfill_chunk_size,
-            reuse_existing=recipe.standard_peak_backfill_reuse_existing,
-            write_gallery=recipe.standard_peak_backfill_write_gallery,
-            publication_mode=recipe.standard_peak_backfill_publication_mode,
-            min_shape_r=recipe.standard_peak_backfill_min_shape_r,
-        )
+        recipe, _preset_source = binding
+        return recipe
 
     def _build_gallery(
         self,
@@ -374,8 +347,6 @@ class DiscoveryWorker(QThread):
             request.mode,
             recipe_overrides=request.tuning_overrides,
         )
-        if request.mode != "discovery_only":
-            _validate_gui_alignment_recipe(recipe)
         self._recipe_binding = (recipe, str(preset.source))
         return recipe.discovery_settings
 
@@ -481,39 +452,15 @@ def _batch_index_path(batch_outputs: Any, output_dir: Path) -> Path:
     )
 
 
-def run_standard_peak_backfill_preset(**kwargs: Any) -> Any:
-    from tools.diagnostics.standard_peak_backfill_preset import (
-        run_standard_peak_backfill_preset as runner,
-    )
-
-    return runner(**kwargs)
-
-
-def _standard_peak_source_run_id(preset_source: str) -> str:
-    safe_source = preset_source.replace("\\", "/")
-    return f"alignment-preset:{safe_source}:standard-peak-backfill"
-
-
-def _validate_gui_alignment_recipe(recipe: BoundCidNlRecipe) -> None:
-    if recipe.backfill_expansion_productization != "off":
-        raise ValueError(
-            "GUI untargeted presets do not support "
-            "backfill_expansion_productization yet; use scripts.run_alignment "
-            "for this preset",
-        )
-
-
 def _alignment_summary(
     outputs: Any,
-    standard_peak_outputs: Any | None = None,
+    owner_build_route: OwnerBuildRouteReceipt,
 ) -> dict[str, Any]:
     alignment_outputs: dict[str, str] = {}
     for attr in _ALIGNMENT_OUTPUT_ATTRS:
         value = getattr(outputs, attr, None)
         if value is not None:
             alignment_outputs[attr] = str(value)
-    alignment_outputs.update(_standard_peak_output_paths(standard_peak_outputs))
-
     matrix = getattr(outputs, "matrix_tsv", None)
     gallery = getattr(outputs, "gallery_html", None)
     run_metadata = getattr(outputs, "run_metadata_json", None)
@@ -522,26 +469,8 @@ def _alignment_summary(
         "matrix_tsv": str(matrix) if matrix is not None else None,
         "gallery_html": str(gallery) if gallery is not None else None,
         "run_metadata_json": str(run_metadata) if run_metadata is not None else None,
+        "owner_build_route": owner_build_route.as_dict(),
     }
-
-
-def _standard_peak_output_paths(outputs: Any | None) -> dict[str, str]:
-    if outputs is None:
-        return {}
-    paths: dict[str, str] = {}
-    for attr in (
-        "summary_json",
-        "retained_gate_tsv",
-        "review_queue_tsv",
-        "consolidated_output_dir",
-        "consolidation_summary_json",
-        "published_alignment_manifest_json",
-        "gallery_html",
-    ):
-        value = getattr(outputs, attr, None)
-        if value is not None:
-            paths[f"standard_peak_{attr}"] = str(value)
-    return paths
 
 
 def _raw_paths_from_dir(raw_dir: Path | None) -> tuple[Path, ...]:
