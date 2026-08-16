@@ -18,16 +18,6 @@ from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
-def _production_decisions(
-    matrix: AlignmentMatrix,
-    alignment_config: AlignmentConfig | None = None,
-) -> ProductionDecisionSet:
-    return build_production_decisions(
-        matrix,
-        alignment_config or AlignmentConfig(),
-    )
-
-
 def test_alignment_results_xlsx_has_matrix_review_metadata_sheets(tmp_path: Path):
     matrix = sample_alignment_matrix()
 
@@ -370,6 +360,16 @@ def test_alignment_results_xlsx_rejects_orphan_audit_cell(tmp_path: Path):
         )
 
 
+def _production_decisions(
+    matrix: AlignmentMatrix,
+    alignment_config: AlignmentConfig | None = None,
+) -> ProductionDecisionSet:
+    return build_production_decisions(
+        matrix,
+        alignment_config or AlignmentConfig(),
+    )
+
+
 def _sheet_headers(sheet) -> list[str]:
     return [cell.value for cell in sheet[1]]
 
@@ -468,9 +468,7 @@ def sample_cell(
         region_decision_status="evaluated" if region else "",
         region_decision_class="merge_suggested" if region else "",
         region_product_action="safe_merge_eligible" if region else "",
-        region_promotion_reason=(
-            "adjacent_wis_local_minimum_merge" if region else ""
-        ),
+        region_promotion_reason=("adjacent_wis_local_minimum_merge" if region else ""),
         region_baseline_method="asls" if region else "",
         selected_integration=selected_integration,
     )
@@ -497,9 +495,7 @@ def sample_integration(
         boundary_sources=("test",),
         area_ms1_morphology=morphology_area,
         ms1_morphology_area_source=(
-            "gaussian15_positive_asls_residual"
-            if morphology_area is not None
-            else ""
+            "gaussian15_positive_asls_residual" if morphology_area is not None else ""
         ),
     )
 

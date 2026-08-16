@@ -66,75 +66,68 @@ def test_output_transaction_requires_owner_minted_decisions_before_writes(
     )
 
 
+@pytest.mark.parametrize(
+    ("renderer_name", "relative_path"),
+    (
+        ("review", "review/review.tsv"),
+        ("matrix", "matrix/matrix.tsv"),
+        ("identity", "identity/identity.tsv"),
+        ("backfill", "backfill/evidence.tsv"),
+        ("xlsx", "xlsx/results.xlsx"),
+        ("html", "html/review.html"),
+    ),
+    ids=("review-tsv", "matrix-tsv", "identity-tsv", "backfill-tsv", "xlsx", "html"),
+)
 def test_activated_renderers_reject_wrong_decision_type_before_writes(
     tmp_path: Path,
+    renderer_name: str,
+    relative_path: str,
 ) -> None:
     matrix = _matrix(("Sample_A", "Sample_B"))
     config = AlignmentConfig()
     wrong_decisions = {}  # falsey input exercised the retired rebuild fallback
-    renderers = (
-        (
-            "review/review.tsv",
-            lambda path: write_alignment_review_tsv(
-                path,
-                matrix,
-                alignment_config=config,
-                production_decisions=wrong_decisions,  # type: ignore[arg-type]
-            ),
+    renderers = {
+        "review": lambda path: write_alignment_review_tsv(
+            path,
+            matrix,
+            alignment_config=config,
+            production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
-        (
-            "matrix/matrix.tsv",
-            lambda path: write_alignment_matrix_tsv(
-                path,
-                matrix,
-                alignment_config=config,
-                production_decisions=wrong_decisions,  # type: ignore[arg-type]
-            ),
+        "matrix": lambda path: write_alignment_matrix_tsv(
+            path,
+            matrix,
+            alignment_config=config,
+            production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
-        (
-            "identity/identity.tsv",
-            lambda path: write_alignment_matrix_identity_tsv(
-                path,
-                matrix,
-                alignment_config=config,
-                production_decisions=wrong_decisions,  # type: ignore[arg-type]
-            ),
+        "identity": lambda path: write_alignment_matrix_identity_tsv(
+            path,
+            matrix,
+            alignment_config=config,
+            production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
-        (
-            "backfill/evidence.tsv",
-            lambda path: write_alignment_backfill_cell_evidence_tsv(
-                path,
-                matrix,
-                production_decisions=wrong_decisions,  # type: ignore[arg-type]
-            ),
+        "backfill": lambda path: write_alignment_backfill_cell_evidence_tsv(
+            path,
+            matrix,
+            production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
-        (
-            "xlsx/results.xlsx",
-            lambda path: write_alignment_results_xlsx(
-                path,
-                matrix,
-                metadata={},
-                alignment_config=config,
-                production_decisions=wrong_decisions,  # type: ignore[arg-type]
-            ),
+        "xlsx": lambda path: write_alignment_results_xlsx(
+            path,
+            matrix,
+            metadata={},
+            alignment_config=config,
+            production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
-        (
-            "html/review.html",
-            lambda path: write_alignment_review_html(
-                path,
-                matrix,
-                production_decisions=wrong_decisions,  # type: ignore[arg-type]
-            ),
+        "html": lambda path: write_alignment_review_html(
+            path,
+            matrix,
+            production_decisions=wrong_decisions,  # type: ignore[arg-type]
         ),
-    )
+    }
 
-    for relative_path, render in renderers:
-        path = tmp_path / relative_path
-        with pytest.raises(
-            TypeError, match="production_decisions must be owner-minted"
-        ):
-            render(path)
-        assert not path.parent.exists()
+    path = tmp_path / relative_path
+    with pytest.raises(TypeError, match="production_decisions must be owner-minted"):
+        renderers[renderer_name](path)
+    assert not path.parent.exists()
 
 
 def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
@@ -160,10 +153,10 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     )
 
     assert outputs.matrix_tsv is not None
-    assert outputs.matrix_tsv.read_text(encoding="utf-8").splitlines() == [
-        "Mz\tRT\tSample_A\tSample_B",
-        "500.0000\t8.5\t1.00000e+02\t1.00000e+02",
-    ]
+    with outputs.matrix_tsv.open(encoding="utf-8", newline="") as handle:
+        matrix_row = next(csv.DictReader(handle, delimiter="\t"))
+    assert float(matrix_row["Sample_A"]) == pytest.approx(987.654)
+    assert float(matrix_row["Sample_B"]) == pytest.approx(987.654)
     assert outputs.review_tsv is not None
     with outputs.review_tsv.open(encoding="utf-8", newline="") as handle:
         review_row = next(csv.DictReader(handle, delimiter="\t"))
@@ -173,14 +166,22 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     assert outputs.workbook is not None
     workbook = load_workbook(outputs.workbook, read_only=True, data_only=True)
     try:
-        assert workbook["Matrix"].max_row == 2
+        matrix_rows = list(workbook["Matrix"].iter_rows(values_only=True))
         review_rows = list(workbook["Review"].iter_rows(values_only=True))
+        audit_rows = list(workbook["Audit"].iter_rows(values_only=True))
     finally:
         workbook.close()
+    matrix_result = dict(zip(matrix_rows[0], matrix_rows[1], strict=True))
+    assert matrix_result["Sample_A"] == pytest.approx(987.654)
+    assert matrix_result["Sample_B"] == pytest.approx(987.654)
     review = dict(zip(review_rows[0], review_rows[1], strict=True))
     assert review["detected_count"] == 0
     assert review["rescued_count"] == 0
     assert review["absent_count"] == 2
+    audit = [dict(zip(audit_rows[0], row, strict=True)) for row in audit_rows[1:]]
+    assert {row["raw_status"] for row in audit} == {"absent"}
+    assert {row["production_status"] for row in audit} == {"detected"}
+    assert {row["write_matrix_value"] for row in audit} == {True}
 
     assert outputs.review_html is not None
     html = outputs.review_html.read_text(encoding="utf-8")
@@ -232,7 +233,7 @@ def _divergent_owner_decisions(
                 production_status="detected",
                 rescue_tier="",
                 write_matrix_value=True,
-                matrix_value=100.0,
+                matrix_value=987.654,
                 blank_reason="",
             )
             for key, decision in rebuilt.cells.items()
