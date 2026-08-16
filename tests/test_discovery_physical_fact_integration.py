@@ -144,7 +144,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     )
     assert records[0].evaluation.prepared.profile_id == spec.profile_id
     assert physical_calls == {"prepare": 2, "evaluate": 2}
-    assert raw.raw_chromatogram_call_count == 1
+    assert raw.raw_chromatogram_call_count == 2
 
 
 @pytest.mark.parametrize("binding", ["missing", "crossed"])
@@ -270,6 +270,76 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
     assert records[0].evaluation.state == "unavailable"
     assert records[0].evaluation.facts is None
     assert raw.raw_chromatogram_call_count == 1
+
+
+def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.08) ** 2)
+
+    class CadenceBoundRaw:
+        acquisition_source = source
+
+        def __init__(self) -> None:
+            self.raw_chromatogram_call_count = 0
+            self.request_batches = []
+
+        def extract_xic_many(self, requests):
+            self.request_batches.append(tuple(requests))
+            self.raw_chromatogram_call_count += 1
+            traces = []
+            for request in requests:
+                mask = (full_rt >= request.rt_min) & (full_rt <= request.rt_max)
+                traces.append(XICTrace.from_arrays(full_rt[mask], full_intensity[mask]))
+            return tuple(traces)
+
+        def scan_window_for_request(self, request):
+            return (int(request.rt_min * 100), int(request.rt_max * 100))
+
+    raw = CadenceBoundRaw()
+    profile = SignalProcessingProfile(window_points=15)
+    group = _group(
+        (
+            _seed(scan_number=10, rt=12.063),
+            _seed(scan_number=11, rt=12.181),
+        )
+    )
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+
+    assert len(result.measurements.acquisition_batches) == 2
+    assert result.measurements.initial_request_count == 1
+    assert result.measurements.reacquisition_request_count == 1
+    first, reacquired = result.measurements.acquisition_batches
+    assert first.traces[0].coordinate.trace_point_count < profile.window_points
+    assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
+    assert result.physical_evaluations[0].evaluation.state == "available"
+    assert (
+        result.physical_evaluations[0].evaluation.prepared.profile_id
+        == profile.profile_id
+    )
+    candidate = result.candidates[0]
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
+    final_request = reacquired.traces[0].coordinate.request
+    assert candidate.ms1_search_rt_min == final_request.rt_min
+    assert candidate.ms1_search_rt_max == final_request.rt_max
 
 
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(

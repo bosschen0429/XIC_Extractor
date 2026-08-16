@@ -81,20 +81,24 @@ class _DiscoveryMs1Measurements:
     predicted_chunked_call_count: int
     batch_max_requests: int
     acquisition_batches: tuple[TraceAcquisitionBatch, ...]
+    initial_request_count: int = 0
+    reacquisition_request_count: int = 0
 
     def __post_init__(self) -> None:
-        values = (
+        count_values = (
             self.input_group_count,
             self.empty_group_count,
             self.exact_scan_window_count,
             self.predicted_chunked_call_count,
-            self.batch_max_requests,
+            self.initial_request_count,
+            self.reacquisition_request_count,
         )
         if any(
-            isinstance(value, bool) or not isinstance(value, int) for value in values
+            isinstance(value, bool) or not isinstance(value, int)
+            for value in (*count_values, self.batch_max_requests)
         ):
             raise ValueError("Discovery MS1 measurements must be integral")
-        if any(value < 0 for value in values[:-1]) or self.batch_max_requests < 1:
+        if any(value < 0 for value in count_values) or self.batch_max_requests < 1:
             raise ValueError("Discovery MS1 measurements must be non-negative")
         if any(
             not isinstance(batch, TraceAcquisitionBatch)
@@ -104,9 +108,22 @@ class _DiscoveryMs1Measurements:
         nonempty_group_count = self.input_group_count - self.empty_group_count
         if nonempty_group_count < 0:
             raise ValueError("Discovery MS1 input population is incomplete")
-        if self.exact_scan_window_count > nonempty_group_count:
+        logical_request_count = sum(
+            batch.logical_xic_request_count for batch in self.acquisition_batches
+        )
+        if self.initial_request_count > nonempty_group_count:
+            raise ValueError("Discovery MS1 acquisition request population is invalid")
+        if self.reacquisition_request_count > self.initial_request_count:
+            raise ValueError(
+                "Discovery MS1 reacquisition exceeds its initial population"
+            )
+        if logical_request_count != (
+            self.initial_request_count + self.reacquisition_request_count
+        ):
+            raise ValueError("Discovery MS1 acquisition receipts are incomplete")
+        if self.exact_scan_window_count > logical_request_count:
             raise ValueError("exact scan-window count exceeds logical requests")
-        if self.predicted_chunked_call_count > nonempty_group_count:
+        if self.predicted_chunked_call_count > logical_request_count:
             raise ValueError("predicted call count exceeds logical requests")
 
 
@@ -218,20 +235,70 @@ def _backfill_ms1_candidates_with_acquisition(
         batches.append(batch)
         acquired_traces.extend(batch.traces)
 
-    scan_windows = tuple(
-        _native_scan_window(
-            acquired.coordinate.first_scan,
-            acquired.coordinate.last_scan,
+    if signal_processing_profile is not None:
+        reacquisition_plans = tuple(
+            (physical_index, expanded_plan)
+            for physical_index, (plan, acquired) in enumerate(
+                zip(physical_plans, acquired_traces, strict=True)
+            )
+            if (
+                expanded_plan := _expanded_physical_request_plan(
+                    plan,
+                    acquired,
+                    profile=signal_processing_profile,
+                )
+            )
+            is not None
         )
-        for acquired in acquired_traces
+        for indexed_chunk in _chunks(
+            reacquisition_plans,
+            _DISCOVERY_MS1_BATCH_MAX_REQUESTS,
+        ):
+            plan_chunk = tuple(plan for _physical_index, plan in indexed_chunk)
+            batch = acquire_trace_batch(
+                capability,
+                tuple(plan.request for plan in plan_chunk),
+                raw,
+            )
+            _validate_acquired_plan_chunk(plan_chunk, batch)
+            batches.append(batch)
+            for (physical_index, expanded_plan), acquired in zip(
+                indexed_chunk,
+                batch.traces,
+                strict=True,
+            ):
+                physical_plans[physical_index] = expanded_plan
+                acquired_traces[physical_index] = acquired
+
+    scan_windows_by_batch = tuple(
+        tuple(
+            _native_scan_window(
+                acquired.coordinate.first_scan,
+                acquired.coordinate.last_scan,
+            )
+            for acquired in batch.traces
+        )
+        for batch in batches
+    )
+    scan_windows = tuple(
+        scan_window
+        for batch_scan_windows in scan_windows_by_batch
+        for scan_window in batch_scan_windows
     )
     measurements = _DiscoveryMs1Measurements(
         input_group_count=len(group_tuple),
         empty_group_count=sum(not group.seeds for group in group_tuple),
         exact_scan_window_count=len(set(scan_windows)),
-        predicted_chunked_call_count=_predicted_chunked_call_count(scan_windows),
+        predicted_chunked_call_count=sum(
+            _predicted_chunked_call_count(batch_scan_windows)
+            for batch_scan_windows in scan_windows_by_batch
+        ),
         batch_max_requests=_DISCOVERY_MS1_BATCH_MAX_REQUESTS,
         acquisition_batches=tuple(batches),
+        initial_request_count=len(physical_plans),
+        reacquisition_request_count=len(reacquisition_plans)
+        if signal_processing_profile is not None
+        else 0,
     )
     if measurement_observer is not None:
         measurement_observer(measurements)
@@ -334,6 +401,49 @@ def _discovery_ms1_request_plan(
     return tuple(plans)
 
 
+def _expanded_physical_request_plan(
+    plan: _DiscoveryMs1RequestPlan,
+    acquired: AcquiredTrace,
+    *,
+    profile: SignalProcessingProfile,
+) -> _DiscoveryMs1RequestPlan | None:
+    rt = acquired.trace.rt
+    intensity = acquired.trace.intensity
+    point_count = len(rt)
+    if point_count < 2 or point_count >= profile.window_points:
+        return None
+    if (
+        rt.ndim != 1
+        or intensity.ndim != 1
+        or rt.shape != intensity.shape
+        or not np.all(np.isfinite(rt))
+        or not np.all(np.isfinite(intensity))
+    ):
+        return None
+    deltas = np.diff(rt)
+    if not np.all(deltas > 0.0):
+        return None
+    cadence_min = float(np.median(deltas))
+    if not math.isfinite(cadence_min) or cadence_min <= 0.0:
+        return None
+
+    extra_point_count = profile.window_points - point_count + 2
+    extra_span_min = cadence_min * extra_point_count
+    left_span_min = cadence_min * (extra_point_count // 2)
+    expanded_rt_min = max(0.0, plan.request.rt_min - left_span_min)
+    actual_left_span_min = plan.request.rt_min - expanded_rt_min
+    expanded_rt_max = plan.request.rt_max + (extra_span_min - actual_left_span_min)
+    return replace(
+        plan,
+        request=XICRequest(
+            mz=plan.request.mz,
+            rt_min=expanded_rt_min,
+            rt_max=expanded_rt_max,
+            ppm_tol=plan.request.ppm_tol,
+        ),
+    )
+
+
 def _validate_acquired_plan_chunk(
     plans: Sequence[_DiscoveryMs1RequestPlan],
     batch: TraceAcquisitionBatch,
@@ -410,6 +520,8 @@ def _candidate_from_trace(
             raise ValueError("physical Discovery work identity is incomplete")
         coordinate = physical_acquired_trace.coordinate
         request = coordinate.request
+        rt_min = request.rt_min
+        rt_max = request.rt_max
         if coordinate.acquisition_source_id != physical_acquisition_source_id:
             raise ValueError("physical Discovery trace crosses acquisition source")
         trace_rt_matches = np.array_equal(rt, physical_acquired_trace.trace.rt)
