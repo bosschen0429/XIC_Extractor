@@ -514,9 +514,6 @@ def retire_files(
     result = RetireResult()
     vault_archive = vault_path / VAULT_ARCHIVE_DIR if vault_path else None
     evidence_by_path = _retirement_evidence_by_path(evidence)
-    batch_paths = frozenset(
-        fpath.relative_to(repo_root).as_posix() for fpath in files
-    )
 
     for fpath in files:
         rel = fpath.relative_to(repo_root).as_posix()
@@ -539,7 +536,7 @@ def retire_files(
         referrers = _exact_referrers(
             repo_root,
             rel,
-            excluded_paths=batch_paths,
+            excluded_paths=frozenset(result.retired),
         )
         if referrers:
             result.referrer_bound.append((rel, referrers))

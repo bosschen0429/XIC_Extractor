@@ -336,6 +336,69 @@ def test_discard_batch_ignores_refs_between_approved_batch_members(
     assert result.referrer_bound == []
 
 
+@pytest.mark.parametrize(
+    "blocking_state",
+    ("active_lifecycle", "missing_evidence", "hash_mismatch", "vault_copy_failure"),
+)
+def test_batch_member_not_retired_remains_a_referrer(
+    tmp_path: Path,
+    blocking_state: str,
+) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    referrer_rel = "docs/superpowers/plans/2026-07-01-referrer.md"
+    target_rel = "docs/superpowers/specs/2026-07-01-target.md"
+    referrer = repo / referrer_rel
+    target = repo / target_rel
+    referrer_text = _completed_spec() + f"\n\nSee `{target_rel}`.\n"
+    target_text = _completed_spec()
+    evidence_entries: list[object] = []
+
+    if blocking_state == "active_lifecycle":
+        referrer_text = referrer_text.replace(
+            "Doc lifecycle: implemented",
+            "Doc lifecycle: active",
+        )
+    elif blocking_state == "hash_mismatch":
+        referrer_entry = _discard_evidence(referrer_rel, referrer_text)["entries"][0]
+        assert isinstance(referrer_entry, dict)
+        referrer_entry["source_hash"] = "not-the-real-hash"
+        evidence_entries.append(referrer_entry)
+    elif blocking_state == "vault_copy_failure":
+        referrer_entry = _retirement_evidence(referrer_rel, referrer_text)["entries"][0]
+        evidence_entries.append(referrer_entry)
+        source_hash = _sha256(referrer_text)
+        archive_destination = vault / VAULT_ARCHIVE_DIR / referrer.name
+        for collision_path in (
+            archive_destination,
+            archive_destination.with_name(
+                f"{archive_destination.stem}-{source_hash[:12]}.md"
+            ),
+            archive_destination.with_name(
+                f"{archive_destination.stem}-{source_hash}.md"
+            ),
+        ):
+            _write(collision_path, "# Different archived note\n")
+
+    target_entry = _discard_evidence(target_rel, target_text)["entries"][0]
+    evidence_entries.append(target_entry)
+    _write(referrer, referrer_text)
+    _write(target, target_text)
+
+    result = retire_files(
+        [referrer, target],
+        repo,
+        vault,
+        execute=True,
+        evidence={"entries": evidence_entries},
+    )
+
+    assert target_rel not in result.retired
+    assert result.referrer_bound == [(target_rel, (referrer_rel,))]
+    assert referrer.exists()
+    assert target.exists()
+
+
 def test_retirement_reuses_existing_vault_copy_only_when_source_matches(
     tmp_path: Path,
 ) -> None:
