@@ -8,7 +8,7 @@ from typing import Any
 from openpyxl import Workbook
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
+from xic_extractor.alignment.matrix import AlignmentMatrix
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
     escape_excel_formula,
@@ -290,6 +290,10 @@ def _write_audit_sheet(
             )
         decision = decisions.cell(cell.cluster_id, cell.sample_stem)
         row_decision = decisions.row(cell.cluster_id)
+        audit_matrix_area = (
+            decision.matrix_value if decision.write_matrix_value else cell.matrix_area
+        )
+        audit_area_matches_cell = audit_matrix_area == cell.matrix_area
         _append_xlsx_row(
             sheet,
             [
@@ -305,12 +309,12 @@ def _write_audit_sheet(
                 decision.write_matrix_value,
                 decision.blank_reason,
                 cell.area,
-                cell.matrix_area,
-                cell.matrix_area_source,
-                cell.matrix_area_missing_reason,
+                audit_matrix_area,
+                cell.matrix_area_source if audit_area_matches_cell else "",
+                cell.matrix_area_missing_reason if audit_area_matches_cell else "",
                 cell.apex_rt,
                 cell.rt_delta_sec,
-                _claim_state(cell),
+                _claim_state(decision.raw_status),
                 ";".join(row_decision.row_flags),
                 row_decision.identity_decision,
                 row_decision.identity_confidence,
@@ -362,10 +366,10 @@ def _xlsx_quant_matrix_value(value: object) -> float | None:
     return float(str(value)) if value != "" else None
 
 
-def _claim_state(cell: AlignedCell) -> str:
-    if cell.status == "duplicate_assigned":
+def _claim_state(raw_status: str) -> str:
+    if raw_status == "duplicate_assigned":
         return "loser"
-    if cell.status in {"detected", "rescued"}:
+    if raw_status in {"detected", "rescued"}:
         return "winner_or_unclaimed"
     return ""
 

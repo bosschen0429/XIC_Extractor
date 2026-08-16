@@ -182,6 +182,12 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     assert {row["raw_status"] for row in audit} == {"absent"}
     assert {row["production_status"] for row in audit} == {"detected"}
     assert {row["write_matrix_value"] for row in audit} == {True}
+    assert all(
+        row["primary_matrix_area"] == pytest.approx(987.654) for row in audit
+    )
+    assert {row["primary_matrix_area_source"] for row in audit} == {None}
+    assert {row["primary_matrix_area_reason"] for row in audit} == {None}
+    assert {row["claim_state"] for row in audit} == {None}
 
     assert outputs.review_html is not None
     html = outputs.review_html.read_text(encoding="utf-8")
