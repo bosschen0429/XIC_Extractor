@@ -57,6 +57,29 @@ from xic_extractor.xic_models import XICTrace
 _TEST_RUN_SPEC_ID = "processing-run.v1:" + ("0" * 64)
 
 
+class _CadenceBoundRaw:
+    def __init__(self, source, rt: np.ndarray, intensity: np.ndarray) -> None:
+        self.acquisition_source = source
+        self.rt = rt
+        self.intensity = intensity
+        self.raw_chromatogram_call_count = 0
+        self.request_batches = []
+
+    def extract_xic_many(self, requests):
+        self.request_batches.append(tuple(requests))
+        self.raw_chromatogram_call_count += 1
+        traces = []
+        for request in requests:
+            mask = (self.rt >= request.rt_min) & (self.rt <= request.rt_max)
+            traces.append(
+                XICTrace.from_arrays(self.rt[mask], self.intensity[mask])
+            )
+        return tuple(traces)
+
+    def scan_window_for_request(self, request):
+        return (int(request.rt_min * 100), int(request.rt_max * 100))
+
+
 def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -68,11 +91,12 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         (raw_path,), discovery_settings=settings
     )
     handle_source = spec.acquisition_inputs[0].acquisition_source
+    trace_rt = np.linspace(7.20, 8.40, 25)
     raw = _OwnerBoundFakeRawHandle(
         handle_source,
         [_scan_event(scan_number=101, rt=7.80)],
-        rt=np.asarray([7.70, 7.80, 7.90]),
-        intensity=np.asarray([10.0, 600.0, 20.0]),
+        rt=trace_rt,
+        intensity=100.0 + 500.0 * np.exp(-0.5 * ((trace_rt - 7.80) / 0.08) ** 2),
     )
     from xic_extractor.peak_detection import evidence_facts as physical_owner
 
@@ -282,29 +306,10 @@ def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
-    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_rt = np.arange(11.55, 13.25, 0.10, dtype=float)
     full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.08) ** 2)
 
-    class CadenceBoundRaw:
-        acquisition_source = source
-
-        def __init__(self) -> None:
-            self.raw_chromatogram_call_count = 0
-            self.request_batches = []
-
-        def extract_xic_many(self, requests):
-            self.request_batches.append(tuple(requests))
-            self.raw_chromatogram_call_count += 1
-            traces = []
-            for request in requests:
-                mask = (full_rt >= request.rt_min) & (full_rt <= request.rt_max)
-                traces.append(XICTrace.from_arrays(full_rt[mask], full_intensity[mask]))
-            return tuple(traces)
-
-        def scan_window_for_request(self, request):
-            return (int(request.rt_min * 100), int(request.rt_max * 100))
-
-    raw = CadenceBoundRaw()
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
     group = _group(
         (
@@ -344,6 +349,63 @@ def test_short_discovery_request_reacquires_enough_points_for_physical_owner(
     final_request = reacquired.traces[0].coordinate.request
     assert candidate.ms1_search_rt_min == final_request.rt_min
     assert candidate.ms1_search_rt_max == final_request.rt_max
+
+
+def test_single_seed_discovery_acquires_complete_physical_context(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.50, 12.80, 0.04, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(
+        -0.5 * ((full_rt - 12.15) / 0.15) ** 2
+    )
+
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    group = _group((_seed(scan_number=10, rt=12.063),))
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,),
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+    )
+
+    assert result.measurements.reacquisition_request_count == 0
+    candidate = result.candidates[0]
+    assert candidate.ms1_peak_found is True
+    assert candidate.ms1_apex_rt == pytest.approx(12.15, abs=0.04)
+    assert candidate.ms1_peak_rt_end is not None
+    assert candidate.ms1_search_rt_max - candidate.ms1_peak_rt_end >= 0.04
+    full_trace_evaluation = evaluate_physical_peak(
+        prepare_physical_signal(full_rt, full_intensity, profile=profile),
+        selection_subject_id="full-trace-oracle",
+        query_rt_min=12.063,
+        request_context_rt_start_min=float(full_rt[0]),
+        request_context_rt_end_min=float(full_rt[-1]),
+    )
+    assert full_trace_evaluation.facts is not None
+    assert candidate.ms1_peak_rt_start == pytest.approx(
+        full_trace_evaluation.facts.left_rt_min,
+        abs=0.04,
+    )
+    assert candidate.ms1_peak_rt_end == pytest.approx(
+        full_trace_evaluation.facts.right_rt_min,
+        abs=0.04,
+    )
+    assert candidate.ms1_area == pytest.approx(
+        full_trace_evaluation.facts.area_counts_seconds,
+        rel=0.10,
+    )
 
 
 def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(

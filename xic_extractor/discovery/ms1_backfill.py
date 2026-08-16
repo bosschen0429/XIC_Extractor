@@ -54,6 +54,7 @@ from xic_extractor.xic_models import XICRequest
 _TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]
 _DISCOVERY_MS1_BATCH_MAX_REQUESTS = 256
 _DISCOVERY_MS1_PREDICTION_MAX_REQUESTS = 256
+_DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN = 0.60
 
 
 class MS1XicSource(Protocol):
@@ -195,7 +196,15 @@ def _backfill_ms1_candidates_with_acquisition(
     if signal_processing_profile is not None and not run_spec_id:
         raise ValueError("canonical physical bindings require run_spec_id")
     group_tuple = tuple(groups)
-    plans = _discovery_ms1_request_plan(group_tuple, settings=settings)
+    plans = _discovery_ms1_request_plan(
+        group_tuple,
+        settings=settings,
+        minimum_padding_min=(
+            _DISCOVERY_PHYSICAL_CONTEXT_HALF_WINDOW_MIN
+            if signal_processing_profile is not None
+            else 0.0
+        ),
+    )
     capability = mint_trace_acquisition_capability(
         acquisition_source,
         adapter_namespace="xic_extractor.discovery.ms1_backfill",
@@ -378,7 +387,9 @@ def _discovery_ms1_request_plan(
     groups: Iterable[DiscoverySeedGroup],
     *,
     settings: DiscoverySettings,
+    minimum_padding_min: float = 0.0,
 ) -> tuple[_DiscoveryMs1RequestPlan, ...]:
+    padding_min = max(settings.ms1_search_padding_min, minimum_padding_min)
     plans: list[_DiscoveryMs1RequestPlan] = []
     for input_ordinal, group in enumerate(groups):
         if not group.seeds:
@@ -391,9 +402,9 @@ def _discovery_ms1_request_plan(
                     mz=group.precursor_mz,
                     rt_min=max(
                         0.0,
-                        group.rt_seed_min - settings.ms1_search_padding_min,
+                        group.rt_seed_min - padding_min,
                     ),
-                    rt_max=group.rt_seed_max + settings.ms1_search_padding_min,
+                    rt_max=group.rt_seed_max + padding_min,
                     ppm_tol=settings.precursor_mz_tolerance_ppm,
                 ),
             )
@@ -407,11 +418,6 @@ def _expanded_physical_request_plan(
     *,
     profile: SignalProcessingProfile,
 ) -> _DiscoveryMs1RequestPlan | None:
-    if len(plan.group.seeds) < 2 or plan.group.precursor_mz_basis not in {
-        "scan_precursor",
-        "mixed",
-    }:
-        return None
     rt = acquired.trace.rt
     intensity = acquired.trace.intensity
     point_count = len(rt)
