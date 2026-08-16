@@ -1,7 +1,0 @@
-Molecule List Name,Molecule Name,Label Type,Note,Precursor m/z,Precursor Charge,Product m/z,Product Charge,Cone Voltage,Explicit Collision Energy,Explicit Retention Time
-XIC Skyline Expressibility,5-hmdC,light,5-hmdC analyte; NL 116.0474,258.1085,1,142.0611,1,,,9.0
-XIC Skyline Expressibility,5-hmdC,heavy,d3-5-hmdC ISTD; NL 116.0474,261.127276,1,145.079876,1,,,9.0
-XIC Skyline Expressibility,5-medC,light,5-medC analyte; NL 116.0474,242.1136,1,126.0662,1,,,12.0
-XIC Skyline Expressibility,5-medC,heavy,d3-5-medC ISTD; NL 116.0474,245.132362,1,129.084962,1,,,12.0
-XIC Skyline Expressibility,8-oxo-Guo,light,8-oxo-Guo analyte; NL 132.0423,300.0939,1,168.0516,1,,,14.0
-XIC Skyline Expressibility,8-oxo-Guo,heavy,"[13C,15N2]-8-oxo-Guo ISTD; NL 132.0423",303.0913,1,171.0490,1,,,14.0

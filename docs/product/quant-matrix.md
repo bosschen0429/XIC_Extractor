@@ -24,6 +24,12 @@ The quant matrix is the product-facing numeric matrix. It separates detected val
 - Approved activation packets may write a versioned matrix bundle without re-reading the full `alignment_cells.tsv` ledger, provided the productization status index and authority manifest define the exact accepted scope.
 - Matrix-only activation still requires explicit provenance and replay artifacts: acceptance manifest or expected-diff packet, `QuantMatrixVersion`, cell provenance, row/source summary, value-delta record, and application summary.
 - Identity, row-basis, source, evidence, and review details belong in sidecars unless an explicit public schema says otherwise.
+- Within one activated Alignment run, the owner-minted
+  `ProductionDecisionSet` is the single live semantic input for TSV, XLSX, and
+  HTML projections. Renderers may format it but cannot rebuild competing
+  values, statuses, counts, or row inclusion from raw cells. This in-process
+  handoff does not by itself define a durable decision carrier or replace the
+  separate file-backed activation contracts below.
 - Historical AsLS primary-matrix policy is superseded by LC-MS/MS evidence rules and morphology-aware area policy.
 - Row-completion confidence and downstream-impact benchmarks are readiness evidence; they do not change default matrix authority without a separate activation decision.
 - The M6 Untargeted CID-NL no-RAW golden path prepares one deterministic raw-area
@@ -62,6 +68,7 @@ themselves.
 | `row_summary.tsv` | Matrix row identity and summary sidecar |
 | `expected_diff_summary` | Review gate for behavior-changing activation |
 | `ProductionAcceptanceManifest` | Accepted Backfill authority record |
+| `ProductionDecisionSet` | One live Alignment-owned decision set consumed by all activated renderers |
 | `QuantMatrixVersion` | Versioned activation bundle |
 | Productization status index / authority manifest | Current state and writer scope |
 

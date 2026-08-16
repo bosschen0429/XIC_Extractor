@@ -3,11 +3,10 @@
 Re-exports the Detected Features CSV v1 loader owned by
 ``xic_extractor.discovery.detected_features`` and implements the Pt Candidate /
 Pt Review CSV v1, Pt Discovery Evidence CSV v2, and Pt Sidecar JSON v3 writers
-described in the Public Contract Details section of
-``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``.
+described by the current Discovery contract in ``docs/product/discovery.md``.
 
-Column tuples and field rules are copied verbatim from that plan and are
-pinned by the approved contract tests in ``tests/test_delta_mass_csv.py``.
+Column tuples and field rules are pinned by the approved contract tests in
+``tests/test_delta_mass_csv.py``.
 """
 
 from __future__ import annotations

@@ -1,106 +1,77 @@
-# Superpowers Documentation Layout
+# Superpowers Artifact Layout
 
-Doc placement: repo_support_doc
-Doc kind: manifest
+Doc placement: formal_repo_doc
+Doc kind: product_doc
 Doc lifecycle: active
-Repo owner: docs/project-layout.md
-Doc exit rule: Update when docs/superpowers directory routing or repo/Obsidian boundary rules change.
+Repo owner: docs/superpowers/README.md
+Doc exit rule: replace only when another durable artifact-layout owner absorbs this contract.
 
-Status: `routing_index`
-
-`docs/superpowers/` keeps public, repo-readable planning and evidence artifacts
-that are still useful to future agents and reviewers. It is not a dumping ground
-for private branch history. Long development diaries, command narratives,
-discarded reasoning, and local context belong in Obsidian or ignored local
-storage after their stable public claims are represented in formal repo docs.
+This directory contains durable, repo-readable machine contracts and compact
+evidence. It is not an implementation-planning or project-history archive.
 
 ## Directory Map
 
-| Directory | Purpose | Do not put here |
-| --- | --- | --- |
-| `plans/` | active control planes, named roadmaps, and intentionally retained public plans | private implementation diary or branch scratch |
-| `specs/` | short-lived Markdown development specs with explicit owner and exit rule | JSON schemas, HTML stories, workbooks, validation packets, or permanent product authority |
-| `schemas/` | checker-readable JSON Schema contracts and authority manifests | design narratives, command transcripts, validation chronology, or review-story galleries |
-| `validation/` | checker-readable validation packets, inventories, summaries, lockbox artifacts, and compact evidence | unbounded generated dumps or private reviewer rationale |
-| `fixtures/` | small test/checker fixtures and expected-output oracles | full validation bundles |
-| `productization/status/` | checker-facing stable productization lane-key registries | mutable lane state or branch handoff state |
-| `productization/evidence/` | compact public productization evidence summaries | active branch handoff or private diary |
-| `file-management/` | approved cleanup manifests, referrer audits, migration queues, and placement evidence | product behavior specs or handoff logs |
-| `closeouts/` | intentionally public branch closeout summaries and PR-body seeds | active handoff next actions |
-| `handoffs/` | ignored local active handoff workspace plus rare tracked compatibility stubs | productization anchors, file-management manifests, or closeout summaries |
-
-Retired tracked lanes:
-
-| Retired lane | Replacement |
+| Directory | Durable role |
 | --- | --- |
-| `../deepresearch/`, `deepresearch/` | `docs/product/` authority pages, Obsidian research notes, or ignored local output |
-| `notes/` | ignored handoff, ignored `output/`, Obsidian, or a formal owner/support artifact |
-| `topics/` | `docs/product/` plus generated ignored `output/docs-topic-indexes/` |
-| `goals/` | `plans/` for executable public plans, or productization control-plane/product docs |
-| `pulse-reports/` | ignored `output/` or Obsidian; promote durable summaries to `productization/evidence/` |
-| `reports/` | product/user doc, validation/fixture lane, ignored `output/`, or Obsidian depending on role |
+| `schemas/` | Versioned JSON schemas and authority manifests. |
+| `validation/` | Checker-readable validation packets, inventories, compact summaries, and retained evidence. |
+| `fixtures/` | Small test/checker fixtures and expected-output oracles. |
+| `productization/status/` | Stable compatibility keys and productization routing anchors. |
+| `productization/evidence/` | Compact machine evidence required by a current productization contract; not phase summaries or handoff archives. |
+| `file-management/` | Current machine-readable file-management contracts only. |
+| `handoffs/` | Ignored local continuation workspace; tracked historical handoffs are not retained. |
+
+One legacy path remains intentionally stable:
+`plans/2026-06-15-productization-control-plane.md`. Despite its location and
+dated name, it is a compact compatibility index consumed by current checkers,
+not an implementation plan. It may move only through a checker-aware path
+migration.
+
+## Construction Work
+
+GitHub Issues own active PRDs, implementation plans, acceptance criteria, and
+work decomposition. Pull requests own delivered change narratives and review
+history. Ignored local handoffs may record the next one to three actions while
+work is in progress.
+
+Do not add tracked Markdown under `plans/`, `specs/`, or `closeouts/` for new
+construction work. A durable decision must be written into its canonical
+`docs/product/`, `docs/agent/`, architecture, evidence, schema, or validation
+owner. A temporary plan has no permanent repo role after that absorption.
 
 ## Public Repo Boundary
 
-The public repo should keep:
+Keep only artifacts that remain useful without reconstructing a past branch:
 
-- formal source-of-truth docs under `docs/product/`, `docs/agent/`, and the
-  top-level architecture/evidence contracts;
-- compact public evidence, closeout summaries, and migration indexes that are
-  safe for public review;
-- schema contracts, test fixtures, validation inventories, and small summaries
-  when code or tests still depend on them;
-- product/user-facing HTML reading artifacts when they are still useful as
-  complete public documentation.
+- current product, user, architecture, validation, and agent contracts;
+- machine-readable schemas, authority manifests, fixtures, and retained
+  regression evidence;
+- compact evidence summaries that a current checker or decision still consumes.
 
-The public repo should not keep hundreds of same-path private-history stubs as
-the final state. Those stubs are temporary compatibility surfaces while repo
-referrers, tests, and diagnostic provenance are audited.
-For completed transient specs, plans, notes, and handoffs, the normal exit is
-product-owner absorption, Obsidian source-copy, and repo removal. Keep a stub
-only when the work is still active or an exact path referrer cannot yet move to
-the owner.
+Do not retain command chronology, branch sequencing, review diaries, dated
+cleanup snapshots, superseded routing manifests, or completed implementation
+checklists. Git history and closed GitHub Issues/PRs already preserve delivery
+history.
 
-Branch-story or worktree-report HTML belongs to the same cleanup decision as
-handoff history; it should not block private-history stub removal unless the
-repo deliberately keeps it as a public artifact.
+Validation artifacts are classified by consumer, not age. A versioned fixture
+or policy seal may remain when a current test/checker consumes it. A narrative
+README or report tied only to a past run must be absorbed into its durable owner
+or removed.
 
-## Current Cleanup Evidence
+A date in a machine artifact name is allowed only when it identifies the input,
+oracle, or immutable evidence version consumed by a current checker. A date must
+not be used to preserve construction chronology or an otherwise ownerless file.
 
-The current docs-cleanup control surface lives under
-`docs/superpowers/file-management/docs-cleanup/`. Tracked topic indexes were
-retired because `docs/product/` is the durable topic layer. If a cleanup pass
-needs browsable topic pages, generate them to ignored `output/docs-topic-indexes/`.
+## Retirement
 
-Generic tracked deepresearch, notes, goals, pulse reports, and reports are also
-retired as new destinations. Existing historical references may still mention
-those paths, but new public repo files must route to a named owner lane instead
-of recreating the broad bucket. `specs/` is intentionally not retired, but it is
-Markdown-only and transient: durable decisions move to product owners, and
-long-form originals move to Obsidian after implementation.
+Before removing a tracked document:
 
-Retained cleanup evidence:
+1. move every still-valid claim to its canonical owner;
+2. retarget every exact repo referrer;
+3. keep machine-bound artifacts only when a current consumer is named;
+4. record an ignored local retirement review when useful;
+5. remove the obsolete source without replacing it with a permanent history
+   stub.
 
-- `docs/superpowers/file-management/docs-cleanup/2026-06-29_docs-superpowers-routing-manifest.md`
-- `docs/superpowers/file-management/docs-cleanup/2026-06-29_docs-superpowers-topic-clusters.tsv`
-- optional ignored topic indexes under `output/docs-topic-indexes/`
-
-Completed or archived support:
-
-- `docs/superpowers/file-management/docs-cleanup/2026-06-29_obsidian-source-copy-stub-batch.md`
-- `docs/superpowers/file-management/docs-cleanup/audits/2026-06-25_codex-docs-cleanup_public-surface-stub-audit.md`
-- `docs/superpowers/file-management/docs-cleanup/2026-06-25_codex-docs-cleanup_git-rm-candidate-manifest.md`
-- `docs/superpowers/file-management/docs-cleanup/2026-06-25_codex-docs-cleanup_file-management-approval-plan.md`
-
-The 6/25 files are archived approval and audit evidence. They are not the
-current routing queue, and they do not authorize additional deletion. Any
-removal still requires an exact approved path set and a separate
-file-management patch.
-
-## Validation Layout Debt
-
-`validation/` remains intentionally mixed for now because scripts, tests,
-hashes, inventories, and productization status artifacts reference many exact
-paths. Do not move the validation tree wholesale. A validation relocation must
-be a focused checker-aware migration that updates referrers, retention rows,
-hashes, schemas, tests, and docs in the same patch.
+The detailed gate is owned by
+[`docs/agent/obsidian-handoff-contract.md`](../agent/obsidian-handoff-contract.md).

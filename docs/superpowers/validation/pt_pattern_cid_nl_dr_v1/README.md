@@ -11,9 +11,9 @@ seed-first search path). Keep this file (archived) until Discovery product docs
 or a newer validation artifact covers the same Pt pattern + CID-NL(dR)
 composite real-sample diagnostic lane.
 
-Status: Task 9 (Composite DDMS2 Diagnostic Gate) of
-`docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
-has run the neutral-loss discovery CLI and the scan-level Pt pattern proxy
+Status: the diagnostic composite gate described by
+`docs/product/discovery.md` has run the neutral-loss discovery CLI and the
+scan-level Pt pattern proxy
 end-to-end against the real-sample DDMS2 RAW file, then ran the composite Pt
 pattern + CID-NL(dR) Discovery CLI. A follow-up fix made the composite path
 CID-NL seed-first instead of "global Pt match then intersect", and fixed the

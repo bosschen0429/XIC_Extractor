@@ -54,16 +54,12 @@ root `AGENTS.md`. Keep the root file limited to high-frequency guardrails.
   transcripts, local absolute paths, sample-level investigation detail, or
   private data placement back into the repo.
 - PR body is the normal durable closeout surface. Condense the branch handoff
-  into the PR body instead of treating the current handoff as the final record;
-  add compact completed phase summaries under `docs/superpowers/closeouts/`
-  only when they must remain in repo.
-- Handoff retention is inventory-driven only for git-tracked handoff files.
-  Ignored local handoffs do not need `RETENTION.tsv` rows. Any force-added file
-  under `docs/superpowers/handoffs/current/` or
-  `docs/superpowers/handoffs/archive/` must also be recorded in
-  `docs/superpowers/handoffs/RETENTION.tsv`. Use
-  `tools/diagnostics/handoff_retention_audit.py` before PR closeout only when
-  tracked handoff files changed. The audit is not deletion approval.
+  into the PR body instead of treating the current handoff as the final record.
+  Do not add a tracked closeout summary or force-add local handoff state.
+- `docs/superpowers/handoffs/RETENTION.tsv` is a zero-record compatibility
+  sentinel for the read-only audit. Any tracked file under `current/` or
+  `archive/` is a placement error; move its durable claim to an owner or PR body
+  and keep execution context ignored.
 - Status labels such as `[active]`, `[blocked]`, `[done]`, and `[superseded]`
   are useful in open-work sections. Remove `[done]` and `[superseded]` items
   from the active handoff during the next prune unless they prevent repeated

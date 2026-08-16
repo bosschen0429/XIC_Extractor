@@ -7,9 +7,8 @@ Task 4 preset stack (``xic_extractor.presets``) into a single
 CID-NL(dR) candidates CSV for the composite strategy) in, Pt Candidate CSV,
 Pt Review CSV, Pt Discovery Evidence CSV, and Pt Sidecar JSON out.
 
-See ``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``
-Task 5 (pipeline steps + CID-NL base join predicate) for the binding contract
-this module implements.
+See ``docs/product/discovery.md`` for the current pipeline, CID-NL base-join,
+and authority contract this module implements.
 """
 
 from __future__ import annotations

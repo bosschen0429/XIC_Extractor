@@ -10,9 +10,9 @@ review status). Keep this file (archived) until Discovery product docs or a
 newer validation artifact covers the same Pt pattern real-sample diagnostic
 lane.
 
-Status: Task 8 (Diagnostic Real-Sample Candidate Generation) of
-`docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
-has run the scan-level proxy and the Pt pattern Discovery CLI end-to-end
+Status: the diagnostic real-sample gate described by
+`docs/product/discovery.md` has run the scan-level proxy and the Pt pattern
+Discovery CLI end-to-end
 against the real-sample Fullscan RAW file. A follow-up bug/performance pass
 fixed two proxy-path problems: scan-proxy rows now satisfy the diagnostic local
 support gate, and scan-proxy labels cannot be reused as shifted base anchors.

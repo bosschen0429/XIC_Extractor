@@ -26,6 +26,7 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     DOC_PLACEMENT_MARKER,
     DOC_PLACEMENT_VALUES,
     DOC_REPO_OWNER_MARKER,
+    DOC_RETIRED_PLACEMENT_VALUES,
     DOC_RETIRED_TRACKED_DIRS,
     PERMANENT_ROOT_DOC_CONTRACTS,
     classify_doc,
@@ -47,14 +48,6 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     source_copy_note_title,
 )
 
-ACTIVE_STUB_FIELDS = {
-    "objective": "objective",
-    "scope": "scope",
-    "constraints": "constraints",
-    "next": "next 1-3 actions",
-    "verification": "verification",
-    "stop rule": "stop rule",
-}
 NEWLY_STAGED_STATUSES = {"A", "C", "R"}
 RETIREMENT_EVIDENCE_DIR = "docs/superpowers/file-management/docs-cleanup/"
 RETIREMENT_EVIDENCE_TOKENS = ("retirement-evidence", "retirement_evidence")
@@ -120,14 +113,33 @@ def parse_name_status(output: str) -> tuple[list[StagedMarkdown], int]:
     return entries, ignored_deletions
 
 
-def staged_markdown(root: Path) -> tuple[list[StagedMarkdown], int]:
+def staged_markdown(
+    root: Path,
+    *,
+    repository_view: _docs_scan.RepositoryTextView | None = None,
+) -> tuple[list[StagedMarkdown], int]:
+    view = _docs_scan.require_repository_text_view(
+        root,
+        repository_view or _docs_scan.load_repository_text_view(root),
+    )
     result = subprocess.run(
-        ["git", "diff", "--cached", "--name-status", "--diff-filter=AMRCD"],
+        [
+            "git",
+            "-c",
+            "core.quotepath=false",
+            "diff",
+            "--cached",
+            "--name-status",
+            "--diff-filter=AMRCD",
+        ],
         cwd=root,
         check=False,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="strict",
         timeout=10,
+        env=_docs_scan.repository_git_env(),
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "git diff --cached failed")
@@ -139,35 +151,11 @@ def staged_markdown(root: Path) -> tuple[list[StagedMarkdown], int]:
             staged_text=(
                 None
                 if normalize_status(entry.status) == "D"
-                else read_staged_text(root, entry.path)
+                else view.read_text(entry.path)
             ),
         )
         for entry in entries
     ], ignored_deletions
-
-
-def read_text(root: Path, path: str) -> str:
-    return (root / path).read_text(encoding="utf-8")
-
-
-def read_staged_text(root: Path, path: str) -> str:
-    staged_path = path.replace("\\", "/")
-    result = subprocess.run(
-        ["git", "show", f":{staged_path}"],
-        cwd=root,
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=10,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            result.stderr.strip()
-            or f"git show failed for staged Markdown file: {path}",
-        )
-    return result.stdout
 
 
 def required_marker_text(*placements: str) -> str:
@@ -176,13 +164,6 @@ def required_marker_text(*placements: str) -> str:
         f"{DOC_PLACEMENT_MARKER} {placement_text}; "
         f"{DOC_REPO_OWNER_MARKER} <path-or-topic>"
     )
-
-
-def missing_active_stub_fields(text: str) -> list[str]:
-    lowered = text.lower()
-    return [
-        label for needle, label in ACTIVE_STUB_FIELDS.items() if needle not in lowered
-    ]
 
 
 def is_retirement_evidence_path(path: str) -> bool:
@@ -216,12 +197,6 @@ def _source_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _scan_paths(root: Path) -> tuple[str, ...]:
-    return _docs_scan.git_visible_paths(
-        root
-    ) or _docs_scan.fallback_local_path_scan_paths(root)
-
-
 def _staged_text_by_path(entries: Sequence[StagedMarkdown]) -> dict[str, str]:
     return {
         _docs_scan.normalize_repo_rel_path(entry.path): entry.staged_text
@@ -242,11 +217,23 @@ def _exact_referrers(
     root: Path,
     rel_path: str,
     entries: Sequence[StagedMarkdown],
+    *,
+    repository_view: _docs_scan.RepositoryTextView,
 ) -> tuple[str, ...]:
     normalized = _docs_scan.normalize_repo_rel_path(rel_path)
+    if repository_view.source == "git_index":
+        return tuple(
+            sorted(
+                scan_rel
+                for scan_rel in repository_view.text_paths
+                if scan_rel != normalized
+                and not is_retirement_evidence_path(scan_rel)
+                and normalized in repository_view.read_text(scan_rel)
+            )
+        )
     deleted_paths = _deleted_paths(entries)
     staged_text_by_path = _staged_text_by_path(entries)
-    scan_paths = set(_scan_paths(root))
+    scan_paths = set(repository_view.paths)
     scan_paths.update(staged_text_by_path)
     referrers: list[str] = []
     for scan_rel in sorted(scan_paths):
@@ -290,7 +277,15 @@ def _owner_paths_exist(
     root: Path,
     owner_paths: list[str],
     entries: Sequence[StagedMarkdown],
+    *,
+    repository_view: _docs_scan.RepositoryTextView,
 ) -> bool:
+    if repository_view.source == "git_index":
+        return all(
+            (normalized := _normalized_evidence_path(owner_path)) is not None
+            and repository_view.contains(normalized)
+            for owner_path in owner_paths
+        )
     staged_text_by_path = _staged_text_by_path(entries)
     for owner_path in owner_paths:
         normalized = _normalized_evidence_path(owner_path)
@@ -527,6 +522,8 @@ def _owner_locator_problem(
     root: Path,
     locator: object,
     staged_text_by_path: dict[str, str],
+    *,
+    repository_view: _docs_scan.RepositoryTextView | None = None,
 ) -> str:
     if not isinstance(locator, dict):
         return "owner locator must be a typed object"
@@ -538,6 +535,14 @@ def _owner_locator_problem(
         return "owner locator path must be repository-relative"
     if path in staged_text_by_path:
         text = staged_text_by_path[path]
+    elif repository_view is not None:
+        _docs_scan.require_repository_text_view(root, repository_view)
+        if not repository_view.contains(path):
+            return f"owner path is missing: {path}"
+        try:
+            text = repository_view.read_text(path)
+        except _docs_scan.RepositoryViewError:
+            return f"owner path is not UTF-8 text: {path}"
     else:
         try:
             owner_path = _docs_scan.resolve_repo_path(root, path)
@@ -592,6 +597,7 @@ def same_path_replacement_problems(
     entries: Sequence[StagedMarkdown],
     source_bytes_override: bytes | None = None,
     validate_dependencies: bool = True,
+    repository_view: _docs_scan.RepositoryTextView | None = None,
 ) -> list[PlacementProblem]:
     path = _docs_scan.normalize_repo_rel_path(entry.path)
     problems: list[PlacementProblem] = []
@@ -803,6 +809,7 @@ def same_path_replacement_problems(
             root,
             claim.get("owner_locator"),
             staged_text_by_path,
+            repository_view=repository_view,
         )
         if locator_problem:
             add(f"claim {claim_id}: {locator_problem}")
@@ -872,9 +879,21 @@ def same_path_replacement_problems(
         census = _docs_scan.normalized_path_dependency_census(
             root,
             path,
-            scan_paths=tuple(set(_scan_paths(root)) | set(staged_text_by_path)),
+            scan_paths=tuple(
+                set(
+                    (
+                        repository_view
+                        or _docs_scan.load_repository_text_view(
+                            root,
+                            allow_filesystem_fallback=True,
+                        )
+                    ).paths
+                )
+                | set(staged_text_by_path)
+            ),
             overrides=staged_text_by_path,
             excluded_paths=(evidence_path,) if evidence_path else (),
+            repository_view=repository_view,
         )
         if packet.get("dependencies") != census:
             add(
@@ -1221,6 +1240,8 @@ def _committed_packet_semantic_problems(
 def _current_owner_locator_problems(
     root: Path,
     packet: Mapping[str, object],
+    *,
+    repository_view: _docs_scan.RepositoryTextView,
 ) -> tuple[str, ...]:
     problems: list[str] = []
     claims = packet.get("claims")
@@ -1232,7 +1253,12 @@ def _current_owner_locator_problems(
         owner = claim.get("owner_locator")
         if not isinstance(owner, Mapping):
             continue
-        owner_problem = _owner_locator_problem(root, dict(owner), {})
+        owner_problem = _owner_locator_problem(
+            root,
+            dict(owner),
+            {},
+            repository_view=repository_view,
+        )
         if owner_problem:
             problems.append(
                 f"retirement packet claim {claim.get('claim_id')}: {owner_problem}"
@@ -1297,6 +1323,7 @@ def committed_same_path_retirement_packet_problems(
     *,
     contract: Mapping[str, object] | None = None,
     require_historical_replay: bool = True,
+    repository_view: _docs_scan.RepositoryTextView | None = None,
 ) -> tuple[str, ...]:
     """Validate a committed same-path retirement packet from a clean checkout.
 
@@ -1314,15 +1341,19 @@ def committed_same_path_retirement_packet_problems(
     """
 
     normalized_packet_path = _docs_scan.normalize_repo_rel_path(packet_path)
+    view = _docs_scan.require_repository_text_view(
+        root,
+        repository_view or _docs_scan.load_repository_text_view(root),
+    )
     registered_contract = (
         contract
         if contract is not None
         else COMMITTED_RETIREMENT_PACKET_CONTRACTS.get(normalized_packet_path)
     )
     try:
-        packet_text = (root / normalized_packet_path).read_text(encoding="utf-8")
+        packet_text = view.read_text(normalized_packet_path)
         packet = json.loads(packet_text)
-    except (OSError, json.JSONDecodeError) as exc:
+    except (_docs_scan.RepositoryViewError, json.JSONDecodeError) as exc:
         return (f"retirement packet cannot be read: {exc}",)
     if not isinstance(packet, dict):
         return ("retirement packet must be a JSON object",)
@@ -1378,10 +1409,9 @@ def committed_same_path_retirement_packet_problems(
         problems.append("retirement packet activation_end_sha must be a full Git SHA")
         return tuple(problems)
 
-    replacement_path = root / source_path
     try:
-        current_replacement_text = replacement_path.read_text(encoding="utf-8")
-    except OSError as exc:
+        current_replacement_text = view.read_text(source_path)
+    except _docs_scan.RepositoryViewError as exc:
         problems.append(f"retirement packet replacement cannot be read: {exc}")
         return tuple(problems)
     if not is_productization_compatibility_index_text(current_replacement_text):
@@ -1400,7 +1430,13 @@ def committed_same_path_retirement_packet_problems(
         return tuple(problems)
     if not (head_available and base_available):
         if head_available:
-            problems.extend(_current_owner_locator_problems(root, packet))
+            problems.extend(
+                _current_owner_locator_problems(
+                    root,
+                    packet,
+                    repository_view=view,
+                )
+            )
         if require_historical_replay:
             problems.append(
                 "retirement packet historical replay is unavailable; fetch the "
@@ -1605,6 +1641,7 @@ def deletion_retirement_problem(
     *,
     evidence_by_path: dict[str, dict[str, object]],
     entries: Sequence[StagedMarkdown],
+    repository_view: _docs_scan.RepositoryTextView,
 ) -> PlacementProblem | None:
     path = _docs_scan.normalize_repo_rel_path(entry.path)
     evidence = evidence_by_path.get(path)
@@ -1637,7 +1674,10 @@ def deletion_retirement_problem(
 
     owner_paths = _string_list(evidence.get("owner_paths"))
     if owner_paths is None or not owner_paths or not _owner_paths_exist(
-        root, owner_paths, entries
+        root,
+        owner_paths,
+        entries,
+        repository_view=repository_view,
     ):
         return PlacementProblem(
             path=path,
@@ -1647,7 +1687,12 @@ def deletion_retirement_problem(
             ),
         )
 
-    referrers = _exact_referrers(root, path, entries)
+    referrers = _exact_referrers(
+        root,
+        path,
+        entries,
+        repository_view=repository_view,
+    )
     raw_evidence_referrers = _string_list(evidence.get("exact_referrers"))
     if raw_evidence_referrers is None:
         return PlacementProblem(
@@ -1741,6 +1786,7 @@ def check_entry(
     evidence_by_path: dict[str, dict[str, object]] | None = None,
     packet_candidates: dict[str, list[dict[str, object]]] | None = None,
     entries: Sequence[StagedMarkdown] = (),
+    repository_view: _docs_scan.RepositoryTextView,
 ) -> list[PlacementProblem]:
     path = entry.path.replace("\\", "/")
     status = normalize_status(entry.status)
@@ -1749,14 +1795,40 @@ def check_entry(
         if not (
             is_markdown_path(path)
             and path_classification.is_repo_doc
-            and path_classification.is_lifecycle_managed
+            and (
+                path_classification.is_lifecycle_managed
+                or path_classification.is_retired_tracked_dir
+            )
         ):
             return []
+        if path_classification.is_retired_tracked_dir:
+            referrers = _exact_referrers(
+                root,
+                path,
+                entries,
+                repository_view=repository_view,
+            )
+            if not referrers:
+                return []
+            return [
+                PlacementProblem(
+                    path=path,
+                    reason=(
+                        "retired docs lane deletion still has exact repo "
+                        "referrers: " + ", ".join(referrers)
+                    ),
+                    required_marker=(
+                        "Retarget every exact repo referrer to a durable owner "
+                        "before deleting this disposable construction record."
+                    ),
+                )
+            ]
         problem = deletion_retirement_problem(
             root,
             entry,
             evidence_by_path=evidence_by_path or {},
             entries=entries,
+            repository_view=repository_view,
         )
         return [] if problem is None else [problem]
 
@@ -1765,12 +1837,13 @@ def check_entry(
             PlacementProblem(
                 path=path,
                 reason=(
-                    "docs/superpowers/specs is Markdown-only; move JSON "
-                    "contracts to docs/superpowers/schemas and non-doc "
-                    "artifacts to validation, ignored output, or Obsidian"
+                    "docs/superpowers/specs is retired; move JSON contracts "
+                    "to docs/superpowers/schemas and non-doc artifacts to "
+                    "validation or ignored output"
                 ),
                 required_marker=(
-                    "Use docs/superpowers/specs/*.md for transient specs only."
+                    "Use GitHub Issues for construction specs and canonical "
+                    "repo owners for durable contracts."
                 ),
             )
         ]
@@ -1781,17 +1854,16 @@ def check_entry(
         text = (
             entry.staged_text
             if entry.staged_text is not None
-            else read_text(root, path)
+            else repository_view.read_text(path)
         )
-    except OSError as exc:
+    except _docs_scan.RepositoryViewError as exc:
         return [
             PlacementProblem(
                 path=path,
                 reason=f"staged Markdown file could not be read: {exc}",
                 required_marker=required_marker_text(
                     "formal_repo_doc",
-                    "repo_active_stub",
-                    "repo_stub_plus_obsidian",
+                    "repo_support_doc",
                 ),
             )
         ]
@@ -1802,12 +1874,13 @@ def check_entry(
         head_text = read_deleted_text(root, StagedMarkdown("D", path)) or ""
         if not is_productization_compatibility_index_text(head_text):
             problems.extend(
-                same_path_replacement_problems(
-                    root,
-                    entry,
-                    packet_candidates=packet_candidates or {},
-                    entries=entries,
-                )
+        same_path_replacement_problems(
+            root,
+            entry,
+            packet_candidates=packet_candidates or {},
+            entries=entries,
+            repository_view=repository_view,
+        )
             )
     if path in PERMANENT_ROOT_DOC_CONTRACTS:
         overrides = _staged_text_by_path(entries)
@@ -1817,6 +1890,7 @@ def check_entry(
             path,
             text,
             overrides=overrides,
+            repository_view=repository_view,
         ):
             problems.append(
                 PlacementProblem(
@@ -1898,6 +1972,21 @@ def check_entry(
         )
         return [*problems, *lifecycle_problems]
 
+    if placement in DOC_RETIRED_PLACEMENT_VALUES:
+        problems.append(
+            PlacementProblem(
+                path=path,
+                reason=(
+                    f"{placement} is retired migration vocabulary and cannot "
+                    "be added or refreshed as tracked documentation"
+                ),
+                required_marker=(
+                    "Route active work to a GitHub Issue or ignored handoff, "
+                    "closeout to the PR body, and durable claims to an owner."
+                ),
+            )
+        )
+
     if placement and doc_placement_is_non_repo(placement):
         problems.append(
             PlacementProblem(
@@ -1906,7 +1995,7 @@ def check_entry(
                     f"{placement} is not a repo-trackable placement; write it "
                     "to Obsidian staged draft or ignored scratch instead"
                 ),
-                required_marker=required_marker_text("repo_stub_plus_obsidian"),
+                required_marker=required_marker_text("formal_repo_doc"),
             )
         )
 
@@ -1958,40 +2047,13 @@ def check_entry(
             PlacementProblem(
                 path=path,
                 reason=(
-                    "public productization/file-management/closeout records "
-                    "do not belong under handoffs/current or handoffs/archive"
+                    "public productization or file-management records do not "
+                    "belong under handoffs/current or handoffs/archive"
                 ),
                 required_marker=(
                     "Move to docs/superpowers/productization/, "
-                    "docs/superpowers/file-management/, or "
-                    "docs/superpowers/closeouts/."
+                    "a canonical file-management owner, or the PR body."
                 ),
-            )
-        )
-
-    if placement == "repo_active_stub":
-        missing = missing_active_stub_fields(text)
-        if missing:
-            problems.append(
-                PlacementProblem(
-                    path=path,
-                    reason="repo_active_stub is missing fields: " + ", ".join(missing),
-                    required_marker=(
-                        "Include objective, scope, constraints, next 1-3 actions, "
-                        "verification, and stop rule."
-                    ),
-                )
-            )
-
-    if (
-        placement == "branch_closeout_summary"
-        or classification.is_branch_closeout_summary
-    ) and "pr body seed" not in text.lower():
-        problems.append(
-            PlacementProblem(
-                path=path,
-                reason="branch closeout summary is missing PR Body Seed",
-                required_marker="Add a PR Body Seed section.",
             )
         )
 
@@ -2011,8 +2073,7 @@ def check_entry(
                     ),
                     required_marker=required_marker_text(
                         "formal_repo_doc",
-                        "repo_active_stub",
-                        "repo_stub_plus_obsidian",
+                        "repo_support_doc",
                     ),
                 )
             )
@@ -2026,8 +2087,7 @@ def check_entry(
                     ),
                     required_marker=required_marker_text(
                         "formal_repo_doc",
-                        "repo_active_stub",
-                        "repo_stub_plus_obsidian",
+                        "repo_support_doc",
                     ),
                 )
             )
@@ -2045,8 +2105,8 @@ def check_entry(
                     "but lacks placement marker"
                 ),
                 required_marker=required_marker_text(
-                    "repo_stub_plus_obsidian",
                     "formal_repo_doc",
+                    "repo_support_doc",
                 ),
             )
         )
@@ -2059,7 +2119,16 @@ def check_doc_placement(
     entries: Sequence[StagedMarkdown],
     *,
     ignored_deletions: int = 0,
+    repository_view: _docs_scan.RepositoryTextView | None = None,
 ) -> PlacementResult:
+    view = _docs_scan.require_repository_text_view(
+        root,
+        repository_view
+        or _docs_scan.load_repository_text_view(
+            root,
+            allow_filesystem_fallback=True,
+        ),
+    )
     problems: list[PlacementProblem] = []
     checked_count = 0
     skipped_deletions = ignored_deletions
@@ -2073,7 +2142,10 @@ def check_doc_placement(
             if not (
                 is_markdown_path(path)
                 and path_classification.is_repo_doc
-                and path_classification.is_lifecycle_managed
+                and (
+                    path_classification.is_lifecycle_managed
+                    or path_classification.is_retired_tracked_dir
+                )
             ):
                 skipped_deletions += 1
                 continue
@@ -2085,6 +2157,7 @@ def check_doc_placement(
                     evidence_by_path=evidence_by_path,
                     packet_candidates=packet_candidates,
                     entries=entries,
+                    repository_view=view,
                 )
             )
             continue
@@ -2102,6 +2175,7 @@ def check_doc_placement(
                 evidence_by_path=evidence_by_path,
                 packet_candidates=packet_candidates,
                 entries=entries,
+                repository_view=view,
             )
         )
     return PlacementResult(
@@ -2149,11 +2223,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not args.staged:
         raise SystemExit("docs_placement_guard.py requires --staged")
     root = args.root.resolve()
-    entries, ignored_deletions = staged_markdown(root)
+    repository_view = _docs_scan.load_repository_text_view(root)
+    entries, ignored_deletions = staged_markdown(
+        root,
+        repository_view=repository_view,
+    )
     result = check_doc_placement(
         root,
         entries,
         ignored_deletions=ignored_deletions,
+        repository_view=repository_view,
     )
     print(format_result(result))
     return 1 if result.problems else 0

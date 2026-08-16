@@ -23,10 +23,6 @@ from tools.diagnostics.docs_policy import (
 CURRENT_HANDOFF = (
     "docs/superpowers/handoffs/current/codex-docs-cleanup-official-docs-and-handoff.md"
 )
-CLOSEOUT_SUMMARY = (
-    "docs/superpowers/closeouts/"
-    "2026-06-26_codex-docs-cleanup_branch-closeout-summary.md"
-)
 RETENTION_INVENTORY = "docs/superpowers/handoffs/RETENTION.tsv"
 PROJECT_ROOT = Path(__file__).parents[1]
 
@@ -206,26 +202,20 @@ def _clean_repo(root: Path) -> None:
     _write_permanent_root_contracts(root)
     _write_registered_retirement_contract(root)
     _write(
-        root / CURRENT_HANDOFF,
-        "# Current handoff\n\nStatus: committed.\n",
-    )
-    _write(
-        root / CLOSEOUT_SUMMARY,
-        "# Closeout\n\nStatus: committed.\n\n## PR Body Seed\n\nProblem: x.\n",
-    )
-    _write(
         root / RETENTION_INVENTORY,
-        "\n".join(
-            [
-                "path\tretention_decision\trepo_owner\tnext_review_event\trationale",
-                (
-                    f"{CURRENT_HANDOFF}\tactive_current\tPR #1\t"
-                    "pr_merge_or_close\tActive branch stub."
-                ),
-            ]
-        )
-        + "\n",
+        "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
     )
+
+
+def _init_and_stage_repo(root: Path) -> dict[str, str]:
+    git_env = _isolated_git_subprocess_env()
+    subprocess.run(
+        ["git", "init"], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    subprocess.run(
+        ["git", "add", "."], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    return git_env
 
 
 def _clean_vault(vault: Path) -> None:
@@ -268,13 +258,26 @@ def _run_audit(
     repo_only: bool = False,
     fail_on_completed_transient: bool = False,
     require_retirement_history: bool = False,
+    preserve_index: bool = False,
 ):
+    if root.resolve() != PROJECT_ROOT:
+        if preserve_index:
+            assert (root / ".git").exists()
+        elif not (root / ".git").exists():
+            _init_and_stage_repo(root)
+        else:
+            subprocess.run(
+                ["git", "add", "--all"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                env=_isolated_git_subprocess_env(),
+            )
     return run_audit(
         root,
         vault,
         include_vault=not repo_only,
         fail_on_completed_transient=fail_on_completed_transient,
-        allow_filesystem_handoff_fallback=True,
         require_retirement_history=require_retirement_history,
     )
 
@@ -348,6 +351,48 @@ def test_repo_only_completed_transient_spec_is_blocker(
     )
 
 
+def test_repo_only_archived_productization_phase_summary_is_blocker(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    summary_path = (
+        "docs/superpowers/productization/evidence/"
+        "2026-07-01-framework-phase-summary.md"
+    )
+    _write(
+        root / summary_path,
+        "\n".join(
+            [
+                "# Productization phase summary",
+                "",
+                "Doc placement: repo_support_doc",
+                "Doc kind: report",
+                "Doc lifecycle: archived",
+                "Repo owner: docs/product/productization.md",
+                "Doc exit rule: remove after owner absorption.",
+                "",
+                "Completed branch history.",
+            ]
+        ),
+    )
+
+    result = _run_audit(
+        root,
+        repo_only=True,
+        fail_on_completed_transient=True,
+    )
+
+    review = result.summary["repo"]["completed_transient_review"]
+    assert review["completed_files"] == 1
+    assert review["top_completed_files"][0]["path"] == summary_path
+    assert any(
+        msg.severity == "blocker"
+        and "completed transient docs remain in repo" in msg.message
+        for msg in result.messages
+    )
+
+
 def test_repo_only_active_transient_spec_is_not_completed_blocker(
     tmp_path: Path,
 ) -> None:
@@ -384,7 +429,7 @@ def test_repo_only_active_transient_spec_is_not_completed_blocker(
     )
 
 
-def test_repo_only_completed_transient_stub_state_is_allowed(
+def test_repo_only_completed_transient_stub_state_is_blocker(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -414,10 +459,9 @@ def test_repo_only_completed_transient_stub_state_is_allowed(
     )
 
     review = result.summary["repo"]["completed_transient_review"]
-    assert review["completed_files"] == 0
-    assert review["allowed_stub_files"] == 1
-    assert review["top_allowed_stubs"][0]["path"] == stub_path
-    assert not any(
+    assert review["completed_files"] == 1
+    assert review["allowed_stub_files"] == 0
+    assert any(
         "completed transient docs remain in repo" in msg.message
         for msg in result.messages
     )
@@ -466,7 +510,7 @@ def test_repo_only_completed_active_stub_state_is_blocker(
     )
 
 
-def test_stale_handoff_state_is_a_blocker(tmp_path: Path) -> None:
+def test_tracked_current_handoff_is_a_retired_lane_blocker(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     vault = tmp_path / "vault"
     _clean_vault(vault)
@@ -490,7 +534,7 @@ def test_stale_handoff_state_is_a_blocker(tmp_path: Path) -> None:
 
     result = _run_audit(root, vault)
 
-    assert any("stale branch-state phrase" in msg.message for msg in result.blockers)
+    assert any("retired docs lanes" in msg.message for msg in result.blockers)
 
 
 def test_manifest_stats_mismatch_is_a_blocker(tmp_path: Path) -> None:
@@ -525,6 +569,20 @@ def test_local_machine_path_is_reported_as_warning(tmp_path: Path) -> None:
         msg.severity == "warning" and "local/private path exposure" in msg.message
         for msg in result.messages
     )
+
+
+def test_local_machine_path_warning_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    rel_path = "config/env.example"
+    _write(root / rel_path, "XIC_RAW_ROOT=C:\\Xcalibur\\data\n")
+    _init_and_stage_repo(root)
+    _write(root / rel_path, "XIC_RAW_ROOT=portable\n")
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    top_hits = result.summary["repo"]["top_local_path_files"]
+    assert any(item["path"] == rel_path for item in top_hits)
 
 
 def test_docs_structure_review_reports_root_scatter(tmp_path: Path) -> None:
@@ -569,7 +627,7 @@ def test_docs_structure_review_reports_retired_lanes(tmp_path: Path) -> None:
         }
     ]
     assert any(
-        msg.severity == "warning" and "retired docs lanes" in msg.message
+        msg.severity == "blocker" and "retired docs lanes" in msg.message
         for msg in result.messages
     )
 
@@ -896,7 +954,7 @@ def test_write_routing_manifest_tsv_includes_retained_followup_rows(
     _clean_repo(root)
     _clean_vault(vault)
     support_path = "docs/superpowers/validation/backfill-run.md"
-    referrer_path = "docs/superpowers/plans/README.md"
+    referrer_path = "docs/superpowers/schemas/README.md"
     _write(
         root / support_path,
         "\n".join(
@@ -917,7 +975,7 @@ def test_write_routing_manifest_tsv_includes_retained_followup_rows(
         root / referrer_path,
         "\n".join(
             [
-                "# Plans",
+                "# Schemas",
                 "",
                 "Doc placement: repo_support_doc",
                 "Doc kind: manifest",
@@ -1504,7 +1562,7 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
     _clean_repo(root)
     _clean_vault(vault)
     support_path = "docs/superpowers/validation/backfill-run.md"
-    referrer_path = "docs/superpowers/plans/README.md"
+    referrer_path = "docs/superpowers/schemas/README.md"
     _write(
         root / support_path,
         "\n".join(
@@ -1525,7 +1583,7 @@ def test_exact_referrer_bound_support_counts_as_followup_queue(
         root / referrer_path,
         "\n".join(
             [
-                "# Plans",
+                "# Schemas",
                 "",
                 "Doc placement: repo_support_doc",
                 "Doc kind: manifest",
@@ -2098,7 +2156,7 @@ def test_repo_subcontract_doc_is_not_counted_as_topic_owner(
     assert cluster["subcontract_claims"] == "docs/product/backfill.md"
 
 
-def test_unmarked_superpowers_specs_path_is_transient_specs_lane(
+def test_unmarked_superpowers_specs_path_is_retired_lane(
     tmp_path: Path,
 ) -> None:
     root = tmp_path / "repo"
@@ -2121,7 +2179,10 @@ def test_unmarked_superpowers_specs_path_is_transient_specs_lane(
 
     review = result.summary["repo"]["docs_routing_review"]
     structure = result.summary["repo"]["docs_structure_review"]
-    assert structure["retired_lane_files"] == 0
+    assert structure["retired_lane_files"] == 1
+    assert structure["retired_lanes"] == [
+        {"path": spec_path, "retired_dir": "docs/superpowers/specs/"}
+    ]
     assert structure["invalid_spec_payload_files"] == 0
     assert any(item for item in review["top_candidates"] if item["path"] == spec_path)
 
@@ -2144,6 +2205,206 @@ def test_docs_structure_review_reports_non_markdown_specs_payload(
     assert any(
         msg.severity == "blocker" and "non-Markdown payloads" in msg.message
         for msg in result.messages
+    )
+
+
+def test_docs_audit_uses_staged_payload_missing_from_worktree(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _isolated_git_subprocess_env()
+    subprocess.run(
+        ["git", "init"], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    subprocess.run(
+        ["git", "add", "."], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    payload_path = "docs/superpowers/specs/rogue.json"
+    _write(root / payload_path, "{}\n")
+    subprocess.run(
+        ["git", "add", payload_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+    (root / payload_path).unlink()
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    structure = result.summary["repo"]["docs_structure_review"]
+    assert structure["invalid_spec_payloads"] == [payload_path]
+    assert any(
+        message.severity == "blocker"
+        and "non-Markdown payloads" in message.message
+        for message in result.messages
+    )
+
+
+def test_docs_audit_ignores_staged_deletion_with_worktree_copy(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _isolated_git_subprocess_env()
+    subprocess.run(
+        ["git", "init"], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    subprocess.run(
+        ["git", "add", "."], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    retired_path = "docs/superpowers/specs/staged-deletion.md"
+    _write(root / retired_path, "# Staged deletion\n")
+    subprocess.run(
+        ["git", "add", retired_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+    subprocess.run(
+        ["git", "rm", "--cached", "--force", retired_path],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        env=git_env,
+    )
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    structure = result.summary["repo"]["docs_structure_review"]
+    assert structure["retired_lane_files"] == 0
+    assert retired_path not in structure["retired_lanes"]
+
+
+def test_docs_audit_routes_from_staged_text_not_later_worktree_text(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = "docs/superpowers/notes/index-routing.md"
+    staged_text = "\n".join(
+        (
+            "# Index routing",
+            "",
+            "Doc placement: private_obsidian_note",
+            "Doc kind: note",
+            "Doc lifecycle: active",
+            "Repo owner: docs/notes/index-routing.md",
+        )
+    )
+    _write(root / path, staged_text + "\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(
+        root / path,
+        staged_text.replace("private_obsidian_note", "formal_repo_doc") + "\n",
+    )
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    candidates = result.summary["repo"]["docs_routing_review"]["candidates"]
+    assert any(
+        row["path"] == path and row["disposition"] == "invalid_repo_placement"
+        for row in candidates
+    )
+
+
+def test_docs_audit_completed_lifecycle_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = "docs/superpowers/plans/index-completed.md"
+    staged_text = "\n".join(
+        (
+            "# Index completed",
+            "",
+            "Doc placement: repo_support_doc",
+            "Doc kind: plan",
+            "Doc lifecycle: implemented",
+            "Repo owner: docs/product/backfill.md",
+            "Doc exit rule: retire after owner absorption.",
+        )
+    )
+    _write(root / path, staged_text + "\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(root / path, staged_text.replace("implemented", "active") + "\n")
+
+    result = _run_audit(
+        root,
+        repo_only=True,
+        fail_on_completed_transient=True,
+        preserve_index=True,
+    )
+
+    completed = result.summary["repo"]["completed_transient_review"]
+    assert path in {row["path"] for row in completed["top_completed_files"]}
+
+
+def test_docs_audit_permanent_root_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = "README.md"
+    valid_worktree_text = (root / path).read_text(encoding="utf-8")
+    _write(root / path, "# Broken staged README\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(root / path, valid_worktree_text)
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    assert any(
+        message.severity == "blocker" and message.path == path
+        for message in result.messages
+    )
+
+
+def test_docs_audit_governance_index_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = "docs/agent/codex-operating-system.md"
+    valid_worktree_text = (root / path).read_text(encoding="utf-8")
+    _write(root / path, "# Broken staged governance index\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(root / path, valid_worktree_text)
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    assert any(
+        message.severity == "blocker"
+        and "governance index must contain" in message.message
+        for message in result.messages
+    )
+
+
+def test_docs_audit_retirement_packet_uses_staged_text(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    _clean_repo(root)
+    git_env = _init_and_stage_repo(root)
+    path = PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL
+    valid_worktree_text = (root / path).read_text(encoding="utf-8")
+    _write(root / path, "{\n")
+    subprocess.run(
+        ["git", "add", path], cwd=root, check=True, capture_output=True, env=git_env
+    )
+    _write(root / path, valid_worktree_text)
+
+    result = _run_audit(root, repo_only=True, preserve_index=True)
+
+    problems = result.summary["repo"]["committed_retirement_packet_review"][
+        "problems"
+    ]
+    assert any(
+        row["path"] == path and "retirement packet cannot be read" in row["problem"]
+        for row in problems
     )
 
 
@@ -2262,14 +2523,7 @@ def test_ignored_local_handoff_is_not_a_docs_management_problem(
         "path\tretention_decision\trepo_owner\tnext_review_event\trationale\n",
     )
     subprocess.run(
-        [
-            "git",
-            "add",
-            ".gitignore",
-            RETENTION_INVENTORY,
-            CONTROL_PLANE_PATH,
-            PRODUCTIZATION_CONTROL_PLANE_RETIREMENT_PACKET_REL,
-        ],
+        ["git", "add", "."],
         cwd=root,
         check=True,
         capture_output=True,
@@ -2595,5 +2849,5 @@ def test_clean_repo_and_vault_have_no_blockers(tmp_path: Path) -> None:
     result = _run_audit(root, vault)
 
     assert result.blockers == ()
-    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 3
+    assert result.summary["repo"]["docs_routing_review"]["scanned_files"] == 1
     assert result.summary["repo"]["docs_routing_review"]["candidate_files"] == 0

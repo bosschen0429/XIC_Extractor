@@ -13,13 +13,17 @@ import argparse
 import csv
 import json
 import re
-import subprocess
+import sys
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
+
 HANDOFF_ROOT = Path("docs/superpowers/handoffs")
 CURRENT_DIR = HANDOFF_ROOT / "current"
 ARCHIVE_DIR = HANDOFF_ROOT / "archive"
@@ -74,10 +78,6 @@ MISPLACED_PUBLIC_RECORD_PATTERNS = (
 )
 
 
-class HandoffDiscoveryError(RuntimeError):
-    """Raised when tracked handoff discovery would be ambiguous."""
-
-
 @dataclass(frozen=True)
 class RetentionMessage:
     severity: str
@@ -95,100 +95,48 @@ class RetentionResult:
         return tuple(msg for msg in self.messages if msg.severity == "blocker")
 
 
-def _repo_rel(path: Path, root: Path) -> str:
-    try:
-        return path.relative_to(root).as_posix()
-    except ValueError:
-        return path.as_posix()
-
-
-def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8", errors="ignore")
-
-
-def _filesystem_handoff_files(root: Path) -> tuple[str, ...]:
-    paths: list[str] = []
-    for directory in (root / CURRENT_DIR, root / ARCHIVE_DIR):
-        if not directory.exists():
-            continue
-        paths.extend(
-            _repo_rel(path, root)
-            for path in sorted(directory.rglob("*"))
-            if path.is_file()
-        )
-    return tuple(paths)
-
-
 def _tracked_handoff_files(
-    root: Path,
-    *,
-    allow_filesystem_fallback: bool = False,
+    repository_view: _docs_scan.RepositoryTextView,
 ) -> tuple[str, ...]:
-    try:
-        top_level = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-        )
-    except (OSError, subprocess.CalledProcessError):
-        return _filesystem_handoff_files(root)
-
-    git_root = Path(top_level.stdout.strip()).resolve()
-    if git_root != root:
-        if allow_filesystem_fallback:
-            return _filesystem_handoff_files(root)
-        raise HandoffDiscoveryError(
-            (
-                "handoff retention audit root must be the git worktree root "
-                f"for tracked-only mode: root={root}, git_top_level={git_root}"
-            )
-        )
-
-    completed = subprocess.run(
-        [
-            "git",
-            "-C",
-            str(root),
-            "ls-files",
-            CURRENT_DIR.as_posix(),
-            ARCHIVE_DIR.as_posix(),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
+    prefixes = (
+        CURRENT_DIR.as_posix() + "/",
+        ARCHIVE_DIR.as_posix() + "/",
     )
     return tuple(
-        line.strip().replace("\\", "/")
-        for line in completed.stdout.splitlines()
-        if line.strip()
+        path for path in repository_view.paths if path.startswith(prefixes)
     )
 
 
-def _read_inventory(path: Path) -> tuple[list[dict[str, str]], list[str]]:
-    if not path.exists():
+def _read_inventory(
+    repository_view: _docs_scan.RepositoryTextView,
+) -> tuple[list[dict[str, str]], list[str]]:
+    rel_path = RETENTION_INVENTORY.as_posix()
+    if not repository_view.contains(rel_path):
         return [], ["retention inventory is missing"]
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle, delimiter="\t")
-        fieldnames = tuple(reader.fieldnames or ())
-        missing = [column for column in REQUIRED_COLUMNS if column not in fieldnames]
-        if missing:
-            return [], [f"retention inventory is missing columns: {', '.join(missing)}"]
-        rows = [
-            {
-                key: (value or "").strip()
-                for key, value in row.items()
-                if key is not None
-            }
-            for row in reader
-        ]
+    reader = csv.DictReader(
+        repository_view.read_text(rel_path).splitlines(),
+        delimiter="\t",
+    )
+    fieldnames = tuple(reader.fieldnames or ())
+    missing = [column for column in REQUIRED_COLUMNS if column not in fieldnames]
+    if missing:
+        return [], [f"retention inventory is missing columns: {', '.join(missing)}"]
+    rows = [
+        {
+            key: (value or "").strip()
+            for key, value in row.items()
+            if key is not None
+        }
+        for row in reader
+    ]
     return rows, []
 
 
-def _line_count(root: Path, rel_path: str) -> int:
-    return len(_read_text(root / rel_path).splitlines())
+def _line_count(
+    repository_view: _docs_scan.RepositoryTextView,
+    rel_path: str,
+) -> int:
+    return len(repository_view.read_text(rel_path).splitlines())
 
 
 def _is_markdown(rel_path: str) -> bool:
@@ -247,26 +195,61 @@ def run_handoff_retention_audit(
     *,
     due_event: str | None = None,
     allow_filesystem_fallback: bool = False,
+    repository_view: _docs_scan.RepositoryTextView | None = None,
 ) -> RetentionResult:
     root = root.resolve()
     messages: list[RetentionMessage] = []
     try:
-        handoff_files = set(
-            _tracked_handoff_files(
+        view = _docs_scan.require_repository_text_view(
+            root,
+            repository_view
+            or _docs_scan.load_repository_text_view(
                 root,
+                required_text_paths=(RETENTION_INVENTORY.as_posix(),),
                 allow_filesystem_fallback=allow_filesystem_fallback,
-            )
+            ),
         )
-    except HandoffDiscoveryError as exc:
-        handoff_files = set()
+    except _docs_scan.RepositoryViewError as exc:
         messages.append(
             RetentionMessage("blocker", HANDOFF_ROOT.as_posix(), str(exc))
         )
-    inventory_path = root / RETENTION_INVENTORY
-    rows, inventory_errors = _read_inventory(inventory_path)
+        return RetentionResult(
+            tuple(messages),
+            {
+                "handoff_files": 0,
+                "current_files": 0,
+                "archive_files": 0,
+                "inventory_rows": 0,
+                "retention_decisions": {},
+                "next_review_events": {},
+                "move_to_obsidian_after_pr": [],
+                "cleanup_after_approval": [],
+            },
+        )
+    handoff_files = set(_tracked_handoff_files(view))
+    rows, inventory_errors = _read_inventory(view)
     for error in inventory_errors:
         messages.append(
             RetentionMessage("blocker", RETENTION_INVENTORY.as_posix(), error)
+        )
+    for path in sorted(handoff_files):
+        messages.append(
+            RetentionMessage(
+                "blocker",
+                path,
+                (
+                    "tracked handoff state is forbidden; move durable claims "
+                    "to an owner or PR body and keep active context ignored"
+                ),
+            )
+        )
+    if rows:
+        messages.append(
+            RetentionMessage(
+                "blocker",
+                RETENTION_INVENTORY.as_posix(),
+                "RETENTION.tsv must remain header-only",
+            )
         )
 
     rows_by_path: dict[str, dict[str, str]] = {}
@@ -309,21 +292,6 @@ def run_handoff_retention_audit(
             )
         )
 
-    missing_tracked_files = {
-        path for path in handoff_files if not (root / path).exists()
-    }
-    for path in sorted(missing_tracked_files):
-        messages.append(
-            RetentionMessage(
-                "blocker",
-                path,
-                (
-                    "git-tracked handoff file is missing from the working tree; "
-                    "restore it or remove it only through the explicit approval flow"
-                ),
-            )
-        )
-
     decision_counts: Counter[str] = Counter()
     next_review_counts: Counter[str] = Counter()
     transfer_candidates: list[str] = []
@@ -340,7 +308,6 @@ def run_handoff_retention_audit(
         review_event = row.get("next_review_event", "")
         repo_owner = row.get("repo_owner", "")
         rationale = row.get("rationale", "")
-        path_exists = path not in missing_tracked_files
         decision_counts[decision or "(missing)"] += 1
         next_review_counts[review_event or "(missing)"] += 1
 
@@ -350,10 +317,9 @@ def run_handoff_retention_audit(
                     "blocker",
                     path,
                     (
-                        "public productization/file-management/closeout record "
-                        "belongs under docs/superpowers/productization/, "
-                        "docs/superpowers/file-management/, or "
-                        "docs/superpowers/closeouts/, not handoffs"
+                        "public productization or file-management record belongs "
+                        "in its canonical owner; branch closeout belongs in the "
+                        "PR body, not handoffs"
                     ),
                 )
             )
@@ -407,31 +373,30 @@ def run_handoff_retention_audit(
                     )
                 )
             if _is_markdown(path):
-                if path_exists:
-                    line_count = _line_count(root, path)
-                    if line_count > MAX_CURRENT_LINES:
-                        messages.append(
-                            RetentionMessage(
-                                "warning",
-                                path,
-                                (
-                                    f"current handoff has {line_count} lines; "
-                                    f"target is <= {MAX_CURRENT_LINES}"
-                                ),
-                            )
+                line_count = _line_count(view, path)
+                if line_count > MAX_CURRENT_LINES:
+                    messages.append(
+                        RetentionMessage(
+                            "warning",
+                            path,
+                            (
+                                f"current handoff has {line_count} lines; "
+                                f"target is <= {MAX_CURRENT_LINES}"
+                            ),
                         )
-                    signal = _stale_current_signal(_read_text(root / path))
-                    if signal:
-                        messages.append(
-                            RetentionMessage(
-                                "warning",
-                                path,
-                                (
-                                    "current handoff may be stale after closeout: "
-                                    f"{signal!r}"
-                                ),
-                            )
+                    )
+                signal = _stale_current_signal(view.read_text(path))
+                if signal:
+                    messages.append(
+                        RetentionMessage(
+                            "warning",
+                            path,
+                            (
+                                "current handoff may be stale after closeout: "
+                                f"{signal!r}"
+                            ),
                         )
+                    )
         elif _is_archive(path):
             archive_files.append(path)
             if decision == "active_current":

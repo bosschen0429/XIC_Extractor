@@ -267,7 +267,6 @@ PRODUCT_TOPIC_BY_LANE_GROUP = {
     "truth": "review-roundtrip.md",
 }
 ADDITIONAL_PRODUCTIZATION_NARRATIVE_OWNER_PATHS = (
-    "docs/superpowers/plans/2026-06-19-backfill-quant-matrix-productization-roadmap.md",
     "docs/superpowers/validation/evidence_chain_source_of_truth.md",
 )
 READINESS_IDENTITY_STOP_WORDS = {

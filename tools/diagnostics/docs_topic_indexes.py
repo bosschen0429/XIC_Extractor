@@ -116,12 +116,8 @@ def _topic_index_markdown(cluster: dict[str, object]) -> str:
         "## Source",
         "",
         "- Generated from `tools/diagnostics/docs_management_audit.py`.",
-        "- File-level manifest: "
-        "`docs/superpowers/file-management/docs-cleanup/"
-        "2026-06-29_docs-superpowers-routing-manifest.tsv`",
-        "- Topic-cluster manifest: "
-        "`docs/superpowers/file-management/docs-cleanup/"
-        "2026-06-29_docs-superpowers-topic-clusters.tsv`",
+        "- Inputs are the current checkout and the audit invocation that "
+        "generated this ignored index.",
         "",
     ]
     if not slug:

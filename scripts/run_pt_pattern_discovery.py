@@ -2,9 +2,8 @@
 
 Unlike ``scripts.run_discovery``, this CLI consumes a Detected Features CSV
 (not a RAW file / DLL directory), so it has no ``--raw``/``--dll-dir``
-requirement. See
-``docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md``
-for the CLI contract.
+requirement. See ``docs/product/discovery.md`` for the current CLI and product
+boundary contract.
 """
 
 from __future__ import annotations

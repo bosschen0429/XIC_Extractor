@@ -1,10 +1,10 @@
-"""Retire completed transient documents from repo to vault.
+"""Retire disposable tracked documents after owner and referrer checks.
 
 This tool is intentionally mechanical. Product-absorption review happens before
-calling it; this script only checks lifecycle metadata, vault backup, and exact
-repo referrers. Completed transient docs with no exact referrers leave the repo.
-Referrer-bound docs can be converted to short same-path stubs with
-``--stub-bound``; otherwise they are kept for a referrer rewrite pass.
+calling it; this script checks evidence, history disposition, and exact repo
+referrers. Disposable construction records may use ``discard_git_history``;
+material private history still uses an exact vault source copy. Exact repo
+referrers always block retirement; the tool never creates compatibility stubs.
 
 Usage examples:
     uv run python tools/diagnostics/retire_docs.py --sweep
@@ -30,6 +30,7 @@ from tools.diagnostics import docs_scan as _docs_scan  # noqa: E402
 from tools.diagnostics.docs_policy import (  # noqa: E402
     classify_doc,
     normalize_path_text,
+    retired_tracked_dir_for_path,
     source_copy_locator_note_title,
     source_copy_locator_sha256,
     source_copy_locator_text,
@@ -104,7 +105,6 @@ class RetireResult:
     already_in_vault: list[tuple[str, Path]] = field(default_factory=list)
     copied_to_vault: list[tuple[str, Path]] = field(default_factory=list)
     retired: list[str] = field(default_factory=list)
-    stubbed: list[tuple[str, str]] = field(default_factory=list)
     referrer_bound: list[tuple[str, tuple[str, ...]]] = field(default_factory=list)
     kept: list[tuple[str, str]] = field(default_factory=list)
     errors: list[tuple[str, str]] = field(default_factory=list)
@@ -141,12 +141,19 @@ def _scan_paths(repo_root: Path) -> tuple[str, ...]:
     ) or _docs_scan.fallback_local_path_scan_paths(repo_root)
 
 
-def _exact_referrers(repo_root: Path, rel_path: str) -> tuple[str, ...]:
+def _exact_referrers(
+    repo_root: Path,
+    rel_path: str,
+    *,
+    excluded_paths: frozenset[str] = frozenset(),
+) -> tuple[str, ...]:
     normalized = _docs_scan.normalize_repo_rel_path(rel_path)
     referrers: list[str] = []
     for scan_rel in _scan_paths(repo_root):
         scan_rel = _docs_scan.normalize_repo_rel_path(scan_rel)
         if scan_rel == normalized:
+            continue
+        if scan_rel in excluded_paths:
             continue
         if _is_retirement_evidence_path(scan_rel):
             continue
@@ -359,8 +366,6 @@ def _retirement_evidence_blocker(
     text: str,
     evidence_by_path: dict[str, dict[str, object]],
     referrers: tuple[str, ...],
-    *,
-    stub_bound: bool,
 ) -> str:
     entry = evidence_by_path.get(rel_path)
     if entry is None:
@@ -376,8 +381,22 @@ def _retirement_evidence_blocker(
         values = _string_list(entry.get(field_name))
         if values is None or not values:
             return f"retirement evidence missing {field_name}"
-    if entry.get("source_copy_readback_verified") is not True:
-        return "retirement evidence source copy readback is not verified"
+    history_disposition = entry.get(
+        "history_disposition", "obsidian_source_copy"
+    )
+    if history_disposition == "discard_git_history":
+        discard_reason = entry.get("discard_reason")
+        if not isinstance(discard_reason, str) or not discard_reason.strip():
+            return "discard_git_history requires a discard_reason"
+        if entry.get("operator_approved_temporal_retirement") is not True:
+            return "discard_git_history requires operator approval"
+        if not retired_tracked_dir_for_path(rel_path):
+            return "discard_git_history is limited to retired tracked docs lanes"
+    elif history_disposition == "obsidian_source_copy":
+        if entry.get("source_copy_readback_verified") is not True:
+            return "retirement evidence source copy readback is not verified"
+    else:
+        return "unknown retirement history_disposition"
     if entry.get("source_hash") != _source_hash(text):
         return "retirement evidence source_hash mismatch"
     active_followups = _string_list(entry.get("active_followups"))
@@ -391,10 +410,7 @@ def _retirement_evidence_blocker(
         return "retirement evidence exact_referrers must be a string list"
     evidence_referrers = tuple(sorted(raw_evidence_referrers))
     if referrers:
-        if not stub_bound:
-            return "exact repo referrers require retargeting or --stub-bound"
-        if evidence_referrers != tuple(sorted(referrers)):
-            return "retirement evidence exact_referrers mismatch"
+        return "exact repo referrers require retargeting"
     elif evidence_referrers:
         return "retirement evidence exact_referrers mismatch"
     return ""
@@ -460,37 +476,18 @@ def _ensure_vault_copy(
     return dest
 
 
-def _stub_text(rel_path: str, text: str) -> str:
-    classification = classify_doc(rel_path, text)
-    owner = classification.repo_owner or classification.path
-    kind = classification.doc_kind if classification.doc_kind != "unknown" else "note"
-    return "\n".join(
-        [
-            "# Retired Document Stub",
-            "",
-            "Doc placement: repo_stub_plus_obsidian",
-            f"Doc kind: {kind}",
-            "Doc lifecycle: archived",
-            f"Repo owner: {owner}",
-            (
-                "Doc exit rule: delete this stub after exact repo referrers move "
-                f"to {owner}."
-            ),
-            "",
-            "Status: retired_original_in_obsidian",
-            "",
-            f"Original repo path: `{rel_path}`",
-            f"Current repo authority: `{owner}`",
-            f"Obsidian source hint: `source_repo_path:{rel_path}`",
-            "",
-            "The long-form original is private history. This stub only preserves",
-            "compatibility for remaining exact path references.",
-            "",
-        ]
-    )
-
-
-def _retirement_blocker(rel_path: str, text: str) -> str:
+def _retirement_blocker(
+    rel_path: str,
+    text: str,
+    evidence_entry: dict[str, object] | None,
+) -> str:
+    if (
+        evidence_entry is not None
+        and evidence_entry.get("history_disposition") == "discard_git_history"
+        and evidence_entry.get("operator_approved_temporal_retirement") is True
+        and retired_tracked_dir_for_path(rel_path)
+    ):
+        return ""
     classification = classify_doc(rel_path, text)
     if classification.placement == "repo_active_stub":
         return "active repo stub"
@@ -509,14 +506,13 @@ def _retirement_blocker(rel_path: str, text: str) -> str:
 def retire_files(
     files: list[Path],
     repo_root: Path,
-    vault_path: Path,
+    vault_path: Path | None,
     *,
     execute: bool = False,
-    stub_bound: bool = False,
     evidence: dict[str, object] | None = None,
 ) -> RetireResult:
     result = RetireResult()
-    vault_archive = vault_path / VAULT_ARCHIVE_DIR
+    vault_archive = vault_path / VAULT_ARCHIVE_DIR if vault_path else None
     evidence_by_path = _retirement_evidence_by_path(evidence)
 
     for fpath in files:
@@ -531,18 +527,23 @@ def retire_files(
             continue
 
         text = fpath.read_text(encoding="utf-8", errors="ignore")
-        blocker = _retirement_blocker(rel, text)
+        evidence_entry = evidence_by_path.get(rel)
+        blocker = _retirement_blocker(rel, text, evidence_entry)
         if blocker:
             result.kept.append((rel, blocker))
             continue
 
-        referrers = _exact_referrers(repo_root, rel)
-        if referrers and not stub_bound:
+        referrers = _exact_referrers(
+            repo_root,
+            rel,
+            excluded_paths=frozenset(result.retired),
+        )
+        if referrers:
             result.referrer_bound.append((rel, referrers))
             result.kept.append(
                 (
                     rel,
-                    "exact repo referrers; rerun with --stub-bound or retarget refs",
+                    "exact repo referrers require retargeting",
                 )
             )
             continue
@@ -552,37 +553,32 @@ def retire_files(
             text,
             evidence_by_path,
             referrers,
-            stub_bound=stub_bound,
         )
         if evidence_blocker:
             result.kept.append((rel, evidence_blocker))
             continue
 
-        vault_copy = _ensure_vault_copy(
-            fpath,
-            rel,
-            vault_path,
-            vault_archive,
-            result,
-            execute=execute,
-        )
-        if vault_copy is None:
-            continue
-
-        if referrers and stub_bound:
-            owner = classify_doc(rel, text).repo_owner
-            if not owner:
-                result.kept.append(
-                    (rel, "exact repo referrers but no Repo owner for stub target")
-                )
+        history_disposition = (
+            evidence_entry or {}
+        ).get("history_disposition", "obsidian_source_copy")
+        if history_disposition == "obsidian_source_copy":
+            if vault_path is None or vault_archive is None:
+                result.errors.append((rel, "vault path required for source copy"))
                 continue
-            if execute:
-                fpath.write_text(_stub_text(rel, text), encoding="utf-8")
-            result.stubbed.append((rel, owner))
-        else:
-            if execute:
-                fpath.unlink()
-            result.retired.append(rel)
+            vault_copy = _ensure_vault_copy(
+                fpath,
+                rel,
+                vault_path,
+                vault_archive,
+                result,
+                execute=execute,
+            )
+            if vault_copy is None:
+                continue
+
+        if execute:
+            fpath.unlink()
+        result.retired.append(rel)
 
     return result
 
@@ -615,14 +611,6 @@ def main(argv: list[str] | None = None) -> int:
         help="actually retire (default: dry-run)",
     )
     parser.add_argument(
-        "--stub-bound",
-        action="store_true",
-        help=(
-            "Replace completed docs that still have exact repo referrers with "
-            "same-path compatibility stubs instead of keeping them."
-        ),
-    )
-    parser.add_argument(
         "--source-copy-only",
         action="store_true",
         help=(
@@ -641,24 +629,32 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    repo_root = args.repo_root.resolve()
+    evidence = None
+    if args.evidence is not None:
+        evidence = json.loads(args.evidence.read_text(encoding="utf-8"))
+    evidence_entries = list(_retirement_evidence_by_path(evidence).values())
+    discard_only = bool(evidence_entries) and all(
+        entry.get("history_disposition") == "discard_git_history"
+        for entry in evidence_entries
+    )
     vault_path = args.vault_path or _resolve_vault_path()
-    if not vault_path:
+    if not vault_path and not discard_only:
         print(
             (
                 "ERROR: Cannot find vault path. Set OBSIDIAN_VAULT_PATH in "
-                "~/.obsidian-wiki/config"
+                "~/.obsidian-wiki/config, or use approved discard_git_history "
+                "evidence for disposable construction records."
             ),
             file=sys.stderr,
         )
         return 1
 
-    repo_root = args.repo_root.resolve()
-
     if args.source_copy_only:
-        if args.sweep or args.stub_bound or len(args.files) != 1:
+        if args.sweep or len(args.files) != 1:
             parser.error(
                 "--source-copy-only requires exactly one file and cannot use "
-                "--sweep or --stub-bound"
+                "--sweep"
             )
             return 1
         if args.evidence is None:
@@ -724,16 +720,11 @@ def main(argv: list[str] | None = None) -> int:
 
     mode = "EXECUTE" if args.execute else "DRY-RUN"
     print(f"Mode: {mode}\n")
-    evidence = None
-    if args.evidence is not None:
-        evidence = json.loads(args.evidence.read_text(encoding="utf-8"))
-
     result = retire_files(
         files,
         repo_root,
         vault_path,
         execute=args.execute,
-        stub_bound=args.stub_bound,
         evidence=evidence,
     )
 
@@ -755,13 +746,6 @@ def main(argv: list[str] | None = None) -> int:
         for rel in result.retired:
             print(f"  {rel}")
 
-    if result.stubbed:
-        print(
-            f"\n{'Stubbed' if args.execute else 'Would stub'} ({len(result.stubbed)}):"
-        )
-        for rel, owner in result.stubbed:
-            print(f"  {rel} -> {owner}")
-
     if result.referrer_bound:
         print(f"\nReferrer-bound kept ({len(result.referrer_bound)}):")
         for rel, referrers in result.referrer_bound:
@@ -778,7 +762,7 @@ def main(argv: list[str] | None = None) -> int:
         for rel, reason in result.errors:
             print(f"  {rel} ({reason})")
 
-    total = len(result.retired) + len(result.stubbed)
+    total = len(result.retired)
     summary_label = "repo action(s)" if args.execute else "repo action(s) available"
     print(
         f"\nSummary: {total} {summary_label}, "

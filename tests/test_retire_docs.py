@@ -71,6 +71,21 @@ def _retirement_evidence(
     }
 
 
+def _discard_evidence(rel: str, text: str) -> dict[str, object]:
+    evidence = _retirement_evidence(rel, text)
+    entry = evidence["entries"][0]
+    assert isinstance(entry, dict)
+    entry.pop("source_copy_readback_verified")
+    entry.update(
+        {
+            "history_disposition": "discard_git_history",
+            "discard_reason": "Disposable construction record.",
+            "operator_approved_temporal_retirement": True,
+        }
+    )
+    return evidence
+
+
 def _same_path_copy_evidence(rel: str, text: str) -> dict[str, object]:
     source_hash = _sha256(text)
     return {
@@ -250,6 +265,138 @@ def test_completed_unreferenced_spec_with_pass_can_retire_evidence_retires(
     assert result.retired == [rel]
     assert not spec.exists()
     assert (vault / VAULT_ARCHIVE_DIR / "2026-07-01-backfill-spec.md").exists()
+
+
+def test_approved_discard_retires_unmarked_plan_without_vault(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    rel = "docs/superpowers/plans/2026-07-01-unmarked-plan.md"
+    plan = repo / rel
+    text = "# Historical construction plan\n"
+    _write(plan, text)
+
+    result = retire_files(
+        [plan],
+        repo,
+        None,
+        execute=True,
+        evidence=_discard_evidence(rel, text),
+    )
+
+    assert result.retired == [rel]
+    assert result.errors == []
+    assert not plan.exists()
+
+
+def test_discard_requires_explicit_reason_and_operator_approval(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    rel = "docs/superpowers/specs/2026-07-01-example.md"
+    spec = repo / rel
+    text = _completed_spec()
+    _write(spec, text)
+    evidence = _discard_evidence(rel, text)
+    entry = evidence["entries"][0]
+    assert isinstance(entry, dict)
+    entry["discard_reason"] = ""
+
+    result = retire_files([spec], repo, None, execute=True, evidence=evidence)
+
+    assert result.kept == [(rel, "discard_git_history requires a discard_reason")]
+    assert spec.exists()
+
+
+def test_discard_batch_ignores_refs_between_approved_batch_members(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    first_rel = "docs/superpowers/plans/2026-07-01-first.md"
+    second_rel = "docs/superpowers/specs/2026-07-01-second.md"
+    first = repo / first_rel
+    second = repo / second_rel
+    first_text = f"# First\n\nSee `{second_rel}`.\n"
+    second_text = "# Second\n"
+    _write(first, first_text)
+    _write(second, second_text)
+    first_entry = _discard_evidence(first_rel, first_text)["entries"][0]
+    second_entry = _discard_evidence(second_rel, second_text)["entries"][0]
+    evidence = {"entries": [first_entry, second_entry]}
+
+    result = retire_files(
+        [first, second],
+        repo,
+        None,
+        execute=True,
+        evidence=evidence,
+    )
+
+    assert result.retired == [first_rel, second_rel]
+    assert result.referrer_bound == []
+
+
+@pytest.mark.parametrize(
+    "blocking_state",
+    ("active_lifecycle", "missing_evidence", "hash_mismatch", "vault_copy_failure"),
+)
+def test_batch_member_not_retired_remains_a_referrer(
+    tmp_path: Path,
+    blocking_state: str,
+) -> None:
+    repo = tmp_path / "repo"
+    vault = tmp_path / "vault"
+    referrer_rel = "docs/superpowers/plans/2026-07-01-referrer.md"
+    target_rel = "docs/superpowers/specs/2026-07-01-target.md"
+    referrer = repo / referrer_rel
+    target = repo / target_rel
+    referrer_text = _completed_spec() + f"\n\nSee `{target_rel}`.\n"
+    target_text = _completed_spec()
+    evidence_entries: list[object] = []
+
+    if blocking_state == "active_lifecycle":
+        referrer_text = referrer_text.replace(
+            "Doc lifecycle: implemented",
+            "Doc lifecycle: active",
+        )
+    elif blocking_state == "hash_mismatch":
+        referrer_entry = _discard_evidence(referrer_rel, referrer_text)["entries"][0]
+        assert isinstance(referrer_entry, dict)
+        referrer_entry["source_hash"] = "not-the-real-hash"
+        evidence_entries.append(referrer_entry)
+    elif blocking_state == "vault_copy_failure":
+        referrer_entry = _retirement_evidence(referrer_rel, referrer_text)["entries"][0]
+        evidence_entries.append(referrer_entry)
+        source_hash = _sha256(referrer_text)
+        archive_destination = vault / VAULT_ARCHIVE_DIR / referrer.name
+        for collision_path in (
+            archive_destination,
+            archive_destination.with_name(
+                f"{archive_destination.stem}-{source_hash[:12]}.md"
+            ),
+            archive_destination.with_name(
+                f"{archive_destination.stem}-{source_hash}.md"
+            ),
+        ):
+            _write(collision_path, "# Different archived note\n")
+
+    target_entry = _discard_evidence(target_rel, target_text)["entries"][0]
+    evidence_entries.append(target_entry)
+    _write(referrer, referrer_text)
+    _write(target, target_text)
+
+    result = retire_files(
+        [referrer, target],
+        repo,
+        vault,
+        execute=True,
+        evidence={"entries": evidence_entries},
+    )
+
+    assert target_rel not in result.retired
+    assert result.referrer_bound == [(target_rel, (referrer_rel,))]
+    assert referrer.exists()
+    assert target.exists()
 
 
 def test_retirement_reuses_existing_vault_copy_only_when_source_matches(
@@ -530,7 +677,7 @@ def test_referrer_bound_spec_is_kept_without_stub_option(tmp_path: Path) -> None
     assert spec.exists()
 
 
-def test_referrer_bound_spec_can_be_replaced_with_short_stub(
+def test_referrer_bound_spec_cannot_be_replaced_with_short_stub(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -546,7 +693,6 @@ def test_referrer_bound_spec_can_be_replaced_with_short_stub(
         repo,
         vault,
         execute=True,
-        stub_bound=True,
         evidence=_retirement_evidence(
             rel,
             text,
@@ -555,18 +701,15 @@ def test_referrer_bound_spec_can_be_replaced_with_short_stub(
     )
 
     assert result.retired == []
-    assert result.stubbed == [(rel, "docs/product/backfill.md")]
-    text = spec.read_text(encoding="utf-8")
-    assert "# Retired Document Stub" in text
-    assert "Current repo authority: `docs/product/backfill.md`" in text
-    assert "source_repo_path:docs/superpowers/specs/2026-07-01-backfill-spec.md" in text
+    assert result.referrer_bound == [(rel, ("docs/product/backfill.md",))]
+    assert spec.read_text(encoding="utf-8") == text
 
 
 def test_sweep_finds_markdown_transient_candidates_only(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     spec = repo / "docs/superpowers/specs/2026-07-01-backfill-spec.md"
     schema = repo / "docs/superpowers/specs/not-a-spec.json"
-    readme = repo / "docs/superpowers/specs/README.md"
+    readme = repo / "docs/superpowers/notes/README.md"
     _write(spec, _completed_spec())
     _write(schema, "{}\n")
     _write(readme, "# Specs\n")

@@ -42,6 +42,25 @@ contracts for review and downstream product decisions.
   grouping, ownership, identity, writer, and sidecar behavior belongs in
   package modules or explicit specs.
 
+## One Decision Set Across Activated Outputs
+
+For one current Alignment run, `run_alignment` builds one owner-minted
+`ProductionDecisionSet` after final matrix authority is available and supplies
+that exact typed result to `write_outputs_atomic`. Activated TSV, XLSX, and HTML
+renderers require the supplied set and consume its values, statuses, counts,
+and inclusion decisions. They may format and serialize those decisions; they
+must not rebuild them from raw `AlignedCell` values or create a renderer-local
+fallback owner.
+
+The existing multi-file temp-write, replace, fingerprint, and rollback
+transaction remains the publication seam. This live in-process handoff does not
+invent run/attempt identity, a durable decision carrier, persisted owner
+rehydration, cross-version replay, or a second Output owner. Those capabilities
+remain deferred until a stable consumer can state an exact schema and
+compatibility need. Diagnostic evidence sidecars may preserve their own raw
+evidence population, but they do not become a competing production decision
+set.
+
 ## Shadow Identity Settlement
 
 Issue #163 adds a no-write comparison layer after the existing cross-sample
@@ -265,7 +284,7 @@ configuration, or defaults.
 
 | Area | Owns | Does not own |
 | --- | --- | --- |
-| Alignment | Cross-sample grouping, owner construction, primary consolidation, sidecar emission | Discovery seed creation, workbook rendering, product writer authority |
+| Alignment | Cross-sample grouping, owner construction, primary consolidation, one production decision set, and atomic Alignment-output composition | Discovery seed creation, renderer-local semantic rebuilding, or a second product writer authority |
 | Discovery | Candidate generation and per-sample review surfaces | Cross-sample matrix authority |
 | Output | Rendering TSV/XLSX/HTML artifacts from domain decisions | Recomputing evidence or selecting authority |
 | Diagnostics | Audits and observability | Product behavior unless promoted through public contract |

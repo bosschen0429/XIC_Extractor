@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import os
 import posixpath
 import re
 import subprocess
+import weakref
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 
 LOCAL_PATH_SCAN_EXCLUSIONS = {"tools/diagnostics/docs_management_audit.py"}
 LOCAL_PATH_SCAN_FALLBACK_DIRS = (
@@ -80,6 +84,306 @@ def resolve_repo_path(root: Path, path: str) -> Path:
 
 def read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
+
+
+class RepositoryViewError(RuntimeError):
+    """Raised when one authoritative repository snapshot cannot be constructed."""
+
+
+@dataclass(frozen=True)
+class RepositoryIndexEntry:
+    path: str
+    mode: str
+    oid: str
+    stage: int
+
+
+@dataclass(frozen=True, eq=False)
+class RepositoryTextView:
+    """Immutable path and UTF-8 text view of one Git-index or fixture snapshot."""
+
+    root: Path
+    source: str
+    entries: Mapping[str, RepositoryIndexEntry]
+    texts: Mapping[str, str]
+
+    @property
+    def paths(self) -> tuple[str, ...]:
+        return tuple(self.entries)
+
+    @property
+    def text_paths(self) -> tuple[str, ...]:
+        return tuple(self.texts)
+
+    def contains(self, path: str) -> bool:
+        return normalize_repo_rel_path(path) in self.entries
+
+    def contains_path_or_prefix(self, path: str) -> bool:
+        normalized = normalize_repo_rel_path(path)
+        prefix = normalized.rstrip("/") + "/"
+        return normalized in self.entries or any(
+            candidate.startswith(prefix) for candidate in self.entries
+        )
+
+    def read_text(self, path: str) -> str:
+        normalized = normalize_repo_rel_path(path)
+        if normalized not in self.entries:
+            raise RepositoryViewError(
+                f"repository snapshot path is missing: {normalized}"
+            )
+        try:
+            return self.texts[normalized]
+        except KeyError as exc:
+            raise RepositoryViewError(
+                f"repository snapshot path is not available as UTF-8 text: {normalized}"
+            ) from exc
+
+
+_OWNED_REPOSITORY_TEXT_VIEWS: weakref.WeakSet[RepositoryTextView] = weakref.WeakSet()
+
+
+def _register_repository_text_view(view: RepositoryTextView) -> RepositoryTextView:
+    _OWNED_REPOSITORY_TEXT_VIEWS.add(view)
+    return view
+
+
+def require_repository_text_view(
+    root: Path,
+    view: RepositoryTextView,
+) -> RepositoryTextView:
+    """Reject caller-fabricated or cross-root repository authority."""
+
+    if view not in _OWNED_REPOSITORY_TEXT_VIEWS:
+        raise RepositoryViewError("repository view must be owner-created")
+    expected_root = root.resolve()
+    if view.root != expected_root:
+        raise RepositoryViewError(
+            "repository view root mismatch: "
+            f"expected={expected_root}, actual={view.root}"
+        )
+    return view
+
+
+def repository_git_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("GIT_")
+    }
+
+
+def _parse_index_entries(data: bytes) -> dict[str, RepositoryIndexEntry]:
+    if data and not data.endswith(b"\0"):
+        raise RepositoryViewError("malformed Git index record")
+    entries: dict[str, RepositoryIndexEntry] = {}
+    for raw_record in data.split(b"\0"):
+        if not raw_record:
+            continue
+        try:
+            metadata, raw_path = raw_record.split(b"\t", 1)
+            mode_bytes, oid_bytes, stage_bytes = metadata.split(b" ")
+            mode = mode_bytes.decode("ascii")
+            oid = oid_bytes.decode("ascii")
+            stage = int(stage_bytes.decode("ascii"))
+            path = normalize_repo_rel_path(raw_path.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise RepositoryViewError("malformed Git index record") from exc
+        if not re.fullmatch(r"[0-7]{6}", mode) or not re.fullmatch(
+            r"[0-9a-fA-F]+", oid
+        ):
+            raise RepositoryViewError("malformed Git index record")
+        if stage != 0:
+            raise RepositoryViewError(
+                f"Git index contains non-zero stage {stage}: {path}"
+            )
+        if path in entries:
+            raise RepositoryViewError(
+                f"Git index contains duplicate normalized path: {path}"
+            )
+        entries[path] = RepositoryIndexEntry(path, mode, oid.lower(), stage)
+    return entries
+
+
+def _parse_batch_blobs(
+    data: bytes,
+    requested_oids: Sequence[str],
+) -> dict[str, bytes]:
+    offset = 0
+    blobs: dict[str, bytes] = {}
+    for requested_oid in requested_oids:
+        header_end = data.find(b"\n", offset)
+        if header_end < 0:
+            raise RepositoryViewError("malformed git cat-file batch response")
+        try:
+            header = data[offset:header_end].decode("ascii")
+            returned_oid, object_type, raw_size = header.split(" ")
+            size = int(raw_size)
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise RepositoryViewError(
+                "malformed git cat-file batch response"
+            ) from exc
+        if size < 0:
+            raise RepositoryViewError("malformed git cat-file batch byte count")
+        if returned_oid.lower() != requested_oid.lower() or object_type != "blob":
+            raise RepositoryViewError(
+                f"git cat-file returned an unexpected object for {requested_oid}"
+            )
+        content_start = header_end + 1
+        content_end = content_start + size
+        if content_end >= len(data) or data[content_end : content_end + 1] != b"\n":
+            raise RepositoryViewError("malformed git cat-file batch byte count")
+        blobs[requested_oid.lower()] = data[content_start:content_end]
+        offset = content_end + 1
+    if data[offset:]:
+        raise RepositoryViewError("git cat-file batch returned trailing data")
+    return blobs
+
+
+def _has_git_marker_at_or_above(root: Path) -> bool:
+    resolved = root.resolve()
+    candidates = (resolved, *resolved.parents)
+    return any((candidate / ".git").exists() for candidate in candidates)
+
+
+def _filesystem_repository_text_view(
+    root: Path,
+    *,
+    required_text_paths: Sequence[str],
+) -> RepositoryTextView:
+    required = {normalize_repo_rel_path(path) for path in required_text_paths}
+    paths = tuple(
+        sorted(
+            repo_rel(path, root)
+            for path in root.rglob("*")
+            if path.is_file()
+        )
+    )
+    entries = {
+        path: RepositoryIndexEntry(path, "filesystem", "filesystem", 0)
+        for path in paths
+    }
+    texts: dict[str, str] = {}
+    for path in paths:
+        if path not in required and not is_local_path_scan_rel_path(path):
+            continue
+        try:
+            texts[path] = (root / path).read_text(encoding="utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise RepositoryViewError(
+                f"repository snapshot text is not UTF-8: {path}"
+            ) from exc
+    return _register_repository_text_view(
+        RepositoryTextView(
+            root=root.resolve(),
+            source="filesystem_fallback",
+            entries=MappingProxyType(entries),
+            texts=MappingProxyType(texts),
+        )
+    )
+
+
+def load_repository_text_view(
+    root: Path,
+    *,
+    required_text_paths: Sequence[str] = (),
+    allow_filesystem_fallback: bool = False,
+) -> RepositoryTextView:
+    """Load one owner-created result-tree view without mixing worktree bytes."""
+
+    requested_root = root.resolve()
+    env = repository_git_env()
+    try:
+        top_level = subprocess.run(
+            ["git", "-C", str(requested_root), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            timeout=10,
+            env=env,
+        )
+    except (OSError, subprocess.CalledProcessError, UnicodeError) as exc:
+        if allow_filesystem_fallback and not _has_git_marker_at_or_above(
+            requested_root
+        ):
+            return _filesystem_repository_text_view(
+                requested_root,
+                required_text_paths=required_text_paths,
+            )
+        raise RepositoryViewError(
+            f"Git worktree root cannot be resolved: {requested_root}"
+        ) from exc
+    git_root = Path(top_level.stdout.strip()).resolve()
+    if git_root != requested_root:
+        if allow_filesystem_fallback and not _has_git_marker_at_or_above(
+            requested_root
+        ):
+            return _filesystem_repository_text_view(
+                requested_root,
+                required_text_paths=required_text_paths,
+            )
+        raise RepositoryViewError(
+            "repository audit root must equal the Git worktree root: "
+            f"root={requested_root}, git_top_level={git_root}"
+        )
+
+    try:
+        listed = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(requested_root),
+                "ls-files",
+                "--cached",
+                "--stage",
+                "-z",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=30,
+            env=env,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise RepositoryViewError("Git index cannot be enumerated") from exc
+    entries = _parse_index_entries(listed.stdout)
+    required = {normalize_repo_rel_path(path) for path in required_text_paths}
+    text_paths = tuple(
+        path
+        for path in sorted(entries)
+        if path in required or is_local_path_scan_rel_path(path)
+    )
+    requested_oids = tuple(sorted({entries[path].oid for path in text_paths}))
+    blobs: dict[str, bytes] = {}
+    if requested_oids:
+        try:
+            batched = subprocess.run(
+                ["git", "-C", str(requested_root), "cat-file", "--batch"],
+                check=True,
+                input=("\n".join(requested_oids) + "\n").encode("ascii"),
+                capture_output=True,
+                timeout=60,
+                env=env,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise RepositoryViewError("Git index text blobs cannot be read") from exc
+        blobs = _parse_batch_blobs(batched.stdout, requested_oids)
+    texts: dict[str, str] = {}
+    for path in text_paths:
+        try:
+            texts[path] = blobs[entries[path].oid].decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise RepositoryViewError(
+                f"repository snapshot text is not UTF-8: {path}"
+            ) from exc
+    return _register_repository_text_view(
+        RepositoryTextView(
+            root=requested_root,
+            source="git_index",
+            entries=MappingProxyType(dict(sorted(entries.items()))),
+            texts=MappingProxyType(texts),
+        )
+    )
 
 
 def git_visible_paths(root: Path) -> tuple[str, ...] | None:
@@ -502,6 +806,7 @@ def permanent_root_contract_problems(
     text: str,
     *,
     overrides: Mapping[str, str] | None = None,
+    repository_view: RepositoryTextView | None = None,
 ) -> tuple[str, ...]:
     from tools.diagnostics.docs_policy import (  # local import avoids a cycle
         PERMANENT_ROOT_DOC_CONTRACTS,
@@ -509,6 +814,8 @@ def permanent_root_contract_problems(
         repo_owner_value,
     )
 
+    if repository_view is not None:
+        require_repository_text_view(root, repository_view)
     contract = PERMANENT_ROOT_DOC_CONTRACTS.get(rel_path)
     if contract is None:
         return ()
@@ -529,12 +836,26 @@ def permanent_root_contract_problems(
     for route in contract["required_routes"]:
         if resolved_routes.count(route) < 1:
             problems.append(f"required route must resolve: {route}")
-        if route not in overrides and not (root / route).exists():
+        route_exists = route in overrides or (
+            repository_view.contains_path_or_prefix(route)
+            if repository_view is not None
+            else (root / route).exists()
+        )
+        if not route_exists:
             problems.append(f"required route target is missing: {route}")
 
     for referrer in contract["required_referrers"]:
         if referrer in overrides:
             referrer_text = overrides[referrer]
+        elif repository_view is not None:
+            if not repository_view.contains(referrer):
+                problems.append(f"required referrer is missing: {referrer}")
+                continue
+            try:
+                referrer_text = repository_view.read_text(referrer)
+            except RepositoryViewError:
+                problems.append(f"required referrer is not UTF-8 text: {referrer}")
+                continue
         else:
             referrer_path = root / referrer
             if not referrer_path.is_file():
@@ -562,14 +883,20 @@ def normalized_path_dependency_census(
     scan_paths: Sequence[str] | None = None,
     overrides: Mapping[str, str] | None = None,
     excluded_paths: Sequence[str] = (),
+    repository_view: RepositoryTextView | None = None,
 ) -> dict[str, object]:
     from tools.diagnostics.docs_policy import is_productization_control_plane_path
 
+    if repository_view is not None:
+        require_repository_text_view(root, repository_view)
     normalized_target = normalize_repo_rel_path(target_path)
     overrides = overrides or {}
     excluded = {normalize_repo_rel_path(path) for path in excluded_paths}
     paths = set(
-        scan_paths or git_visible_paths(root) or fallback_local_path_scan_paths(root)
+        scan_paths
+        or (repository_view.paths if repository_view is not None else ())
+        or git_visible_paths(root)
+        or fallback_local_path_scan_paths(root)
     )
     paths.update(overrides)
     literal: list[str] = []
@@ -584,6 +911,10 @@ def normalized_path_dependency_census(
         path = root / normalized
         if normalized in overrides:
             text = overrides[normalized]
+        elif repository_view is not None:
+            if normalized not in repository_view.texts:
+                continue
+            text = repository_view.read_text(normalized)
         elif is_local_path_scan_target(path, normalized):
             text = read_text(path)
         else:
@@ -633,12 +964,15 @@ def governance_index_problems(
     text: str,
     *,
     overrides: Mapping[str, str] | None = None,
+    repository_view: RepositoryTextView | None = None,
 ) -> tuple[str, ...]:
     from tools.diagnostics.docs_policy import (
         GOVERNANCE_MECHANISM_VALUES,
         GOVERNANCE_RULE_FAMILY_CONTRACTS,
     )
 
+    if repository_view is not None:
+        require_repository_text_view(root, repository_view)
     overrides = overrides or {}
     text = markdown_without_html_comments(markdown_without_block_code(text))
     rows: list[list[str]] = []
@@ -715,9 +1049,18 @@ def governance_index_problems(
             problems.append(f"governance row {rule_id} owner locator is incomplete")
         else:
             owner_text = overrides.get(owner_path)
+            if owner_text is None and repository_view is not None:
+                try:
+                    owner_text = repository_view.read_text(owner_path)
+                except RepositoryViewError:
+                    owner_text = None
             if owner_text is None:
                 owner_file = root / owner_path
-                owner_text = read_text(owner_file) if owner_file.is_file() else None
+                owner_text = (
+                    read_text(owner_file)
+                    if repository_view is None and owner_file.is_file()
+                    else None
+                )
             if owner_text is None:
                 problems.append(
                     f"governance row {rule_id} owner path is missing: {owner_path}"
@@ -735,7 +1078,12 @@ def governance_index_problems(
         for field, locator in (("executable", executable), ("readback", readback)):
             if locator == "none":
                 continue
-            if locator not in overrides and not (root / locator).is_file():
+            locator_exists = locator in overrides or (
+                repository_view.contains(locator)
+                if repository_view is not None
+                else (root / locator).is_file()
+            )
+            if not locator_exists:
                 problems.append(
                     f"governance row {rule_id} {field} locator is missing: {locator}"
                 )

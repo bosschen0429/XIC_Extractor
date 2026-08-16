@@ -603,18 +603,14 @@ Manual fallback:
 ```
 
 If this prints `8`, stop and locate the current 85RAW discovery artifact from
-the active spec or validation note before running alignment.
+the named validation owner or live GitHub Issue before running alignment.
 
-## Validated Command Profiles
+## 85RAW Command Contract
 
-| Profile | Status | Reusable parameters | Evidence |
-| --- | --- | --- | --- |
-| 85RAW validation-minimal super-window | Verified foreground run, exit code `0`, wall-clock `620.9 s` | `.venv\Scripts\python.exe`, 85RAW RAW root, `--output-level validation-minimal`, `--backfill-scope production-equivalent`, `--audit-evidence-mode none`, `--performance-profile validation-fast`, `--raw-workers 11`, `--owner-backfill-window-strategy super-window`, `--owner-backfill-superwindow-span-factor 2`, timing output + live heartbeat | `docs\diagnostic-ledger.md` section "2026-05-26 P8b 85RAW Super-Window Acceptance" |
-| 85RAW primary-delivery validation | Verified historical foreground run, exit code `0`, wall-clock `596.6 s`; that run used the now-retired worktree `.venv` junction workflow, which must not be reproduced | same canonical 85RAW shape plus `--expected-sample-count 85`; current runs use the per-worktree bootstrap above; output hashes and diagnostics fixed in durable fixtures | `docs\diagnostic-ledger.md` section "2026-05-28 Qualitative Selection / Owner-Backfill Scan Support Gate"; `docs\superpowers\fixtures\diagnostic_ledger_2026_05_28\85raw_primary_delivery_fix_summary.tsv` |
-
-The cited `620.9 s` run predates the `--expected-sample-count 85` guard. The
-guard is a later test-covered launch safety check and should be included in new
-85RAW commands, but it is not part of that historical runtime evidence.
+Historical runtime and acceptance receipts belong in `docs/diagnostic-ledger.md`
+and checker-consumed fixtures. This operating contract owns only the reusable
+launch shape below; it does not copy elapsed-time snapshots or retired
+worktree procedures.
 
 Do not treat `--performance-profile validation-fast` alone as the full 85RAW
 validation profile. It sets RAW worker count and XIC batch size, and new 85RAW

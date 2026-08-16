@@ -38,6 +38,28 @@ or candidate tables into the matrix.
   lesson and focused evidence are retained in
   [`raw-backed-evidence-cache-identity.md`](../solutions/validation/raw-backed-evidence-cache-identity.md).
 
+## Current Untargeted Owner Route
+
+Normal Untargeted GUI `full`, GUI `align_only`, generic Alignment CLI, and
+built-in preset runs enter the existing Owner Backfill transaction through
+`run_alignment`. Candidate observation and product write authorization are
+separate: a physical peak found inside the broad owner-authorized RT context is
+not same-peak or cell-identity proof by itself.
+
+The current promotion path reuses owner-validated geometry, identity,
+provenance, and replay truth. Missing, conflicting, or unrehydratable owner
+evidence remains unavailable or audit-only; a persisted legacy evidence label
+cannot promote it. Current write scope still comes from the status index and
+authority manifest, not from this route description.
+
+The former Standard Peak preset, machine pipeline, productization transaction,
+authority bundle, source-Matrix republisher, and separate writer scope are
+retired. Retained Standard Peak shape/overlay helpers and packets are explicit
+offline diagnostics, falsifiers, calibration context, or historical
+self-consistency evidence only. They cannot mint Backfill `SUPPORT`, promote a
+cell, or publish Matrix values. Normal preset/config/CLI entry points reject the
+retired route and publication fields before expensive work.
+
 ## Conservative Eligibility Kernel
 
 Issue #162 adds a bounded `shadow_ready / no-write` policy owner over M1's

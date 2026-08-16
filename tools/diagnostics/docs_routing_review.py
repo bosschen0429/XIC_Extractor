@@ -32,9 +32,6 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     repo_owner_value,
 )
 
-_is_local_path_scan_target = _docs_scan.is_local_path_scan_target
-_read_text = _docs_scan.read_text
-
 DOC_ROUTING_REFERRER_EXCLUDE_PATTERNS = (
     re.compile(r"docs/superpowers/file-management/docs-cleanup/.*routing-manifest\.md$"),
     re.compile(r"docs/superpowers/file-management/docs-cleanup/.*routing-manifest\.tsv$"),
@@ -644,7 +641,8 @@ def _digestion_next_action(status: str) -> str:
     if status == "support_surface_review":
         return (
             "verify the support surface points at the owner and does not redefine "
-            "the topic; demote/archive/stub if it only preserves history"
+            "the topic; remove it after owner absorption and a clean referrer "
+            "scan if it only preserves history"
         )
     if status == "canonical_owner_with_support_review":
         return (
@@ -654,7 +652,7 @@ def _digestion_next_action(status: str) -> str:
     if status == "generated_index":
         return "regenerate from docs_management_audit; do not hand-author authority"
     if status == "delegated_handoff_retention":
-        return "use handoff_retention_audit for lifecycle and retention decisions"
+        return "move active context to ignored handoff storage; do not track it"
     if status == "support_surface_retained":
         return "keep only while it remains a support surface with a clear owner"
     if status == "canonical_owner":
@@ -971,43 +969,37 @@ def _routing_metadata(path: str, text: str, disposition: str) -> dict[str, objec
     }
 
 
-def _is_referrer_scan_target(root: Path, rel_path: str) -> bool:
+def _is_referrer_scan_target(rel_path: str) -> bool:
     if any(
         pattern.match(rel_path)
         for pattern in DOC_ROUTING_REFERRER_EXCLUDE_PATTERNS
     ):
         return False
-    path = root / rel_path
-    return _is_local_path_scan_target(path, rel_path)
+    return _docs_scan.is_local_path_scan_rel_path(rel_path)
 
 
 def _exact_referrer_paths(
-    root: Path,
-    scan_paths: Sequence[str],
+    repository_view: _docs_scan.RepositoryTextView,
     candidate_path: str,
 ) -> list[str]:
     referrers: list[str] = []
-    for rel_path in scan_paths:
+    for rel_path in repository_view.text_paths:
         normalized = rel_path.replace("\\", "/")
         if normalized == candidate_path:
             continue
-        if not _is_referrer_scan_target(root, normalized):
+        if not _is_referrer_scan_target(normalized):
             continue
-        try:
-            text = _read_text(root / normalized)
-        except OSError:
-            continue
+        text = repository_view.read_text(normalized)
         if candidate_path in text:
             referrers.append(normalized)
     return sorted(set(referrers))
 
 
 def _with_referrer_status(
-    root: Path,
-    scan_paths: Sequence[str],
+    repository_view: _docs_scan.RepositoryTextView,
     candidate: DocsRoutingCandidate,
 ) -> DocsRoutingCandidate:
-    referrers = _exact_referrer_paths(root, scan_paths, candidate.path)
+    referrers = _exact_referrer_paths(repository_view, candidate.path)
     if not referrers:
         return replace(
             candidate,
@@ -1252,15 +1244,16 @@ def _topic_cluster_rows(
 
 
 def _classify_docs_routing_candidate(
-    root: Path,
+    repository_view: _docs_scan.RepositoryTextView,
     rel_path: str,
 ) -> DocsRoutingCandidate | None:
     normalized = rel_path.replace("\\", "/")
-    path = root / normalized
-    if not path.is_file() or not _is_docs_routing_scan_target(normalized):
+    if not repository_view.contains(normalized) or not _is_docs_routing_scan_target(
+        normalized
+    ):
         return None
 
-    text = _read_text(path)
+    text = repository_view.read_text(normalized)
     classification = classify_doc(normalized, text)
     placement = classification.placement
     repo_owner = classification.repo_owner
@@ -1324,12 +1317,13 @@ def _classify_docs_routing_candidate(
         return DocsRoutingCandidate(
             path=normalized,
             disposition="delegated_handoff_retention",
-            reason="handoff files are classified by handoff_retention_audit",
+            reason="tracked handoff state is a migration error",
             placement=placement,
             repo_owner=repo_owner,
             **_routing_metadata(normalized, text, "delegated_handoff_retention"),
             required_before_move=(
-                "use handoff_retention_audit before changing tracked handoff files"
+                "move durable claims to owners or the PR body, then remove the "
+                "tracked handoff"
             ),
             candidate=False,
         )
@@ -1440,14 +1434,20 @@ def _classify_docs_routing_candidate(
     )
 
 
-def docs_routing_review(root: Path, scan_paths: Sequence[str]) -> dict[str, object]:
+def docs_routing_review(
+    repository_view: _docs_scan.RepositoryTextView,
+) -> dict[str, object]:
+    _docs_scan.require_repository_text_view(repository_view.root, repository_view)
     records = _with_topic_cluster_status([
         record
-        for rel_path in scan_paths
-        if (record := _classify_docs_routing_candidate(root, rel_path)) is not None
+        for rel_path in repository_view.paths
+        if (
+            record := _classify_docs_routing_candidate(repository_view, rel_path)
+        )
+        is not None
     ])
     records = [
-        _with_referrer_status(root, scan_paths, record)
+        _with_referrer_status(repository_view, record)
         for record in records
     ]
     records = _with_support_retention(records)

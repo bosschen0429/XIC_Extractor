@@ -43,9 +43,8 @@ progress-report.snapshot.json
 progress-report.server-info.json
 
 # Local/private handoff workspace.
-# Transient branch handoffs and completed phase diaries should stay local or move
-# to Obsidian by default. Force-add only compact public summaries that are meant
-# to remain in repo history.
+# Transient branch handoffs and completed phase diaries stay local or move to
+# Obsidian. Do not force-add them; durable claims go to owners and PR bodies.
 docs/superpowers/handoffs/current/*
 docs/superpowers/handoffs/archive/*
 

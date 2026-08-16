@@ -1,21 +1,16 @@
 # tools/diagnostics/ — Diagnostic Tool Index
 
-**Last refreshed:** 2026-08-16
-**Total entry-points:** 112
-**Total files (incl. helpers):** 195 Python files under `tools/diagnostics/`
-**Governing specs:** `docs/architecture-contract.md` and
-`docs/agent/script-tool-lifecycle.md`; the retired dated diagnostic lifecycle
-spec remains only as a same-path public stub.
-**Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
-name historical implementation identifiers. After the docs-cleanup migration,
-they are not current source-of-truth links and should not by themselves keep a
-private-history same-path stub in version control. Current governing owners live
-in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
-`docs/lc-msms-evidence-rules.md`, and validation/control-plane artifacts.
-Opaque `retired-provenance:*` values mark private-history development inputs
-that were intentionally removed from the public repo surface.
+**Total entry-points:** 111
+**Total files (incl. helpers):** 194 Python files under `tools/diagnostics/`
 **Count method:** top-level `### *.py` entry headings for entry-points;
 top-level `tools/diagnostics/*.py` files for total files.
+**Governing contracts:** `docs/architecture-contract.md` and
+`docs/agent/script-tool-lifecycle.md`.
+**Provenance note:** `Originating spec/plan`, `Recent doc`, and similar fields
+are navigation labels, not current source-of-truth links or retention reasons.
+Current governing owners live
+in the entry status text, `docs/product/`, `docs/architecture-contract.md`,
+`docs/lc-msms-evidence-rules.md`, and validation/control-plane artifacts.
 
 ---
 
@@ -1756,7 +1751,7 @@ to be re-run only when the underlying data shape changes.
 ## Delta Mass / Pt Pattern Discovery
 
 Diagnostics-only bridge tooling for the `delta_mass(pattern_id=pt)` Discovery
-lane (`docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`).
+lane owned by `docs/product/discovery.md`.
 This group must stay diagnostics-only: no Alignment, Backfill, ProductWriter,
 or workbook Matrix imports (enforced by `tests/test_pt_pattern_boundaries.py`
 for the core `xic_extractor.discovery` / `scripts.run_pt_pattern_discovery`
@@ -1773,7 +1768,7 @@ provenance file, so the Pt pattern CLI
 (`scripts/run_pt_pattern_discovery.py`) has something to run against for a
 first diagnostic look at a real Fullscan sample.
 **Topic group**: `pt_pattern_scan_proxy.py` (single-file)
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md` (Task 7)
+**Product owner**: `docs/product/discovery.md` (Task 7)
 **Status note**: This is explicitly **not** a product feature detector — no
 chromatographic peak-shape modeling, no smoothing, no deconvolution. Its own
 scan-level m/z lookup window (`--lookup-ppm`, default 20 ppm) matches the Pt
@@ -1804,7 +1799,7 @@ instead of choosing the nearest or strongest peak.
 **Topic group**: `pt_pattern_trace_diagnosis.py` +
 `xic_extractor.discovery.pt_pattern_trace_evidence` +
 `xic_extractor.discovery.pt_pattern_trace_batch`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only evidence probe. It does not create Pt
 candidates, mutate Discovery outputs, read Alignment/Backfill state, or write
 Matrix/workbook artifacts. The summary separates `scan_pattern_seed_status`
@@ -1840,7 +1835,7 @@ small CSV with blank
 uncertain adjudication work plus a JSON sidecar.
 **Topic group**: `pt_pattern_review_packet.py` +
 `xic_extractor.discovery.pt_pattern_review_packet`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only review-surface builder. It does not open RAW,
 create candidates, mutate Discovery outputs, read Alignment/Backfill state, or
 write Matrix/workbook artifacts. The sidecar records
@@ -1871,7 +1866,7 @@ visual call before opening the sealed machine-call CSV.
 `xic_extractor.discovery.pt_pattern_blind_overlay` +
 `xic_extractor.discovery.pt_pattern_blind_overlay_call` +
 `xic_extractor.discovery.pt_pattern_blind_overlay_writer`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only human-review surface. It reads existing
 review-packet and trace-points CSVs, writes an HTML gallery, a sealed machine
 call CSV, and a summary JSON with no call distribution. It does not open RAW,
@@ -1907,7 +1902,7 @@ reviewed packet and blind-overlay artifact bundle, then write a historically
 named bounded adjudication packet.
 **Topic group**: `pt_pattern_oracle_promotion.py` +
 `xic_extractor.discovery.pt_pattern_oracle_promotion`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only despite the historical `oracle` names in its
 schema and paths. Promotion schema v2 requires each adjudicated row to carry a
 fresh human `accept` or `reject`, the SHA-256 of its review-packet CSV, and the
@@ -1936,7 +1931,7 @@ draft, a pending human-review worklist, stale old-oracle rows, and a summary
 JSON with input SHA-256 provenance.
 **Topic group**: `pt_pattern_oracle_refresh.py` +
 `xic_extractor.discovery.pt_pattern_oracle_refresh`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only adjudication-maintenance surface. It does not
 open RAW, create candidates, recompute trace evidence, mutate Discovery outputs,
 read Alignment/Backfill state, or write Matrix/workbook artifacts. It retains
@@ -1966,7 +1961,7 @@ a case-level audit CSV, and a summary JSON.
 **Topic group**: `pt_pattern_oracle_thresholds.py` +
 `xic_extractor.discovery.pt_pattern_oracle_thresholds` +
 `xic_extractor.discovery.pt_pattern_oracle_replay_contract`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only threshold calibration surface. It does not
 open RAW, create candidates, recompute trace evidence, mutate Discovery
 outputs, read Alignment state, or write Matrix/workbook artifacts. The
@@ -1991,7 +1986,7 @@ static HTML review page, and a summary JSON without opening RAW or recalculating
 trace evidence.
 **Topic group**: `pt_pattern_ratio_profile.py` +
 `xic_extractor.discovery.pt_pattern_ratio_profile`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only ratio observation surface. It separates
 FeatureHunter-compatible `base/+N` ratios from derived `+1/base`, `+1/+2`, and
 `+1/+4` review ratios, and uses only data-driven distribution-tail flags. These
@@ -2006,7 +2001,7 @@ export authority, selected-area authority, or Matrix-writing authority.
 and inclusion-list assembly diagnostics into a compact no-RAW hypothesis report.
 **Topic group**: `pt_pattern_hypothesis_synthesis.py` +
 `xic_extractor.discovery.pt_pattern_hypothesis_synthesis`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only synthesis surface. It consumes already-produced
 CSV/JSON artifacts, writes summary JSON, Markdown, assembly-layer CSV, and known
 miss examples, and does not open RAW, create candidates, mutate Discovery
@@ -2022,7 +2017,7 @@ against the canonical local MS1 feature table, then identify the first failed
 mass, quality, RT, or matcher-emission condition.
 **Topic group**: `pt_pattern_candidate_assembly_replay.py` +
 `xic_extractor.discovery.pt_pattern_candidate_assembly_replay`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only no-RAW replay. It reuses the current Pt
 candidate matcher and shared mass-accuracy helpers, writes row-level CSV, summary JSON,
 and chart-first HTML, and does not change detector rules, counted detection,
@@ -2039,7 +2034,7 @@ core-with-conditional-+4 window-occupancy evidence.
 **Topic group**: `pt_pattern_same_scan_replay.py` +
 `xic_extractor.discovery.pt_pattern_same_scan_evidence` +
 `xic_extractor.discovery.pt_pattern_same_scan_replay`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only RAW-backed replay. It loads or builds one MS1
 index per run, never reopens RAW per candidate, preserves below-noise +4 as
 censored evidence, and reports shared-feature conflict components. Replay v3
@@ -2064,7 +2059,7 @@ with the pairwise incompatibility structure represented by those rows.
 **Topic group**: `pt_pattern_conflict_graph_replay.py` +
 `xic_extractor.discovery.pt_pattern_conflict_graph` +
 `xic_extractor.discovery.pt_pattern_conflict_graph_replay`
-**Originating plan**: `docs/superpowers/plans/2026-07-15-pt-pattern-event-component-contract.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only no-RAW replay. It verifies candidate and
 detected-feature provenance, rejects unknown source schema versions, validates
 legacy resolution/preferred-candidate consistency, and writes versioned vertex,
@@ -2087,7 +2082,7 @@ feature table to inspect whether the DDMS2 run contains matching base/+1/+2/+4
 support near the Fullscan seed.
 **Topic group**: `pt_pattern_ddms2_support_replay.py` +
 `xic_extractor.discovery.pt_pattern_ddms2_support_replay`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only support replay. It does not open RAW, create
 Fullscan seeds, recompute trace evidence, decide DDMS2 targeting opportunity,
 mutate Discovery outputs, read Alignment/Backfill state, or write
@@ -2108,7 +2103,7 @@ row-level gate calls plus a summary JSON.
 `xic_extractor.discovery.pt_pattern_diagnostic_gate` +
 `xic_extractor.discovery.pt_pattern_evidence_rule` +
 `xic_extractor.discovery.pt_pattern_oracle_replay_contract`
-**Originating plan**: `docs/superpowers/plans/2026-07-01-pt-pattern-discovery-implementation-plan.md`
+**Product owner**: `docs/product/discovery.md`
 **Status note**: Diagnostic-only replay surface. It does not open RAW, create
 candidates, recompute trace evidence, mutate Discovery outputs, read Alignment
 state, or write Matrix/workbook artifacts. The reusable Pt full-pattern
@@ -2178,8 +2173,7 @@ Use `--routing-manifest-tsv` for file-level cleanup rows and
 `--topic-index-dir output/docs-topic-indexes` to generate temporary,
 ignored index-only topic README files from the current cluster summary.
 Use `--repo-only --fail-on-completed-transient` in CI/PR closeout to fail when
-completed transient originals remain outside allowed stub states without reading
-the private Obsidian vault.
+completed transient originals remain, without reading the private Obsidian vault.
 **Topic group**: `docs_management_audit.py` + `docs_placement_guard.py` +
 `handoff_retention_audit.py`
 **Governing doc**: `docs/agent/obsidian-handoff-contract.md`
@@ -2200,48 +2194,32 @@ docs cleanup and before PR closeout when the repo/vault split changed.
 
 **Purpose**: Audit repo-tracked handoff retention state. It checks that every
 git-tracked file under `docs/superpowers/handoffs/current/` and
-`docs/superpowers/handoffs/archive/` has a `RETENTION.tsv` row, that retention
-decisions are valid, that tracked current handoffs stay compact, and that
-tracked archive cleanup remains manifest-driven. Ignored local handoffs are
-private workspace state and are not audited here.
+`docs/superpowers/handoffs/archive/` is surfaced as migration residue and that
+the header-only `RETENTION.tsv` sentinel does not silently normalize tracked
+transient state. Ignored local handoffs are private workspace state and are not
+audited here.
 **Topic group**: `docs_management_audit.py` + `handoff_retention_audit.py`
 **Governing doc**: `docs/superpowers/handoffs/README.md`
-**Status note**: Read-only docs governance audit. It reports Obsidian-transfer
-and cleanup candidates but never moves files, writes to Obsidian, stages
-changes, or authorizes tracked deletion.
-
----
-
-### `generate_stubs.py`
-
-**Purpose**: Generate compact repo stub files from a Link Stub Blockers TSV so
-historical links can point to Obsidian originals without keeping long private
-history bodies in repo.
-**Topic group**: `docs_management_audit.py` + `generate_stubs.py`
-**Governing doc**: `docs/agent/obsidian-handoff-contract.md`
-**Status note**: Dry-run by default; `--execute` writes stub files but does not
-move vault pages, update manifests, stage changes, or authorize deletion.
+**Status note**: Read-only docs governance audit. It never moves files, writes
+to Obsidian, stages changes, or authorizes tracked deletion.
 
 ---
 
 ### `retire_docs.py`
 
-**Purpose**: Retire completed transient docs/superpowers plans, specs, and
-notes after lifecycle metadata, retirement evidence, source-copy readback flag,
-source hash, and exact repo referrers are checked. Unreferenced completed docs
-leave the repo only with matching `pass_can_retire` evidence; referrer-bound
-docs are kept unless `--stub-bound` is explicitly supplied to create a short
-compatibility stub with matching referrer evidence. For a protected same-path
-replacement, `--source-copy-only` copies and reads back the exact preimage
-without deleting, stubbing, or editing the repo source.
+**Purpose**: Retire disposable construction records after owner absorption,
+source-hash verification, and an exact referrer scan. Approved
+`discard_git_history` evidence removes plans/specs without creating a permanent
+repo or vault copy; `obsidian_source_copy` remains available when private
+history has independent value. For the protected compatibility-index
+replacement, `--source-copy-only` preserves and reads back the exact preimage.
 **Topic group**: `docs_management_audit.py` + `retire_docs.py`
 **Governing doc**: `docs/project-layout.md`;
 `docs/agent/obsidian-handoff-contract.md`
-**Status note**: Dry-run unless `--execute` is supplied. It skips README,
-schema, JSON, TSV, active/draft lifecycle docs, missing-metadata docs, and
-control-plane anchors; it does not decide product authority or validation
-readiness. Product absorption review must happen before retirement and be
-recorded in the evidence JSON supplied through `--evidence`.
+**Status note**: Dry-run unless `--execute` is supplied. Product absorption and
+operator approval happen before retirement and are recorded in an ignored
+evidence JSON supplied through `--evidence`; the tool does not decide product
+authority or validation readiness.
 `--source-copy-only --execute` also requires that evidence, verifies both
 top-level and source-entry hashes, and reports only the stable repo source key
 and hash; the repository evidence stores no private absolute vault path.
