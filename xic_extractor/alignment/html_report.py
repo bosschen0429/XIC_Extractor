@@ -13,9 +13,9 @@ def write_alignment_review_html(
     *,
     production_decisions: ProductionDecisionSet,
 ) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
     if not isinstance(production_decisions, ProductionDecisionSet):
         raise TypeError("production_decisions must be owner-minted")
+    path.parent.mkdir(parents=True, exist_ok=True)
     counts = _status_counts(production_decisions)
     max_count = max(counts.values(), default=1)
     sample_count = len(matrix.sample_order)

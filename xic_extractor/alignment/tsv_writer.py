@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,6 @@ from xic_extractor.alignment.matrix_output_contract import (
 )
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
-    count_status,
     escape_excel_formula,
     format_value,
     row_id,
@@ -239,6 +239,12 @@ ALIGNMENT_OWNER_BACKFILL_CANDIDATE_AUDIT_COLUMNS = (
 )
 
 
+def _require_production_decisions(value: object) -> ProductionDecisionSet:
+    if not isinstance(value, ProductionDecisionSet):
+        raise TypeError("production_decisions must be owner-minted")
+    return value
+
+
 def write_alignment_review_tsv(
     path: Path,
     matrix: AlignmentMatrix,
@@ -246,6 +252,7 @@ def write_alignment_review_tsv(
     production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
 ) -> Path:
+    decisions = _require_production_decisions(production_decisions)
     config = alignment_config or AlignmentConfig()
     return _write_tsv(
         path,
@@ -254,7 +261,7 @@ def write_alignment_review_tsv(
             _review_rows(
                 matrix,
                 alignment_config=config,
-                production_decisions=production_decisions,
+                production_decisions=decisions,
             )
         ),
     )
@@ -267,10 +274,11 @@ def write_alignment_matrix_tsv(
     production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
 ) -> Path:
+    decisions = _require_production_decisions(production_decisions)
     rows = product_matrix_tsv_rows(
         matrix,
         alignment_config=alignment_config,
-        production_decisions=production_decisions,
+        production_decisions=decisions,
     )
     table = serialize_public_matrix_table(
         rows,
@@ -297,13 +305,14 @@ def write_alignment_matrix_identity_tsv(
     production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
 ) -> Path:
+    decisions = _require_production_decisions(production_decisions)
     return _write_tsv(
         path,
         ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
         formatted_identity_rows(
             matrix,
             alignment_config=alignment_config,
-            production_decisions=production_decisions,
+            production_decisions=decisions,
         ),
     )
 
@@ -466,8 +475,8 @@ def write_alignment_backfill_cell_evidence_tsv(
 ) -> Path:
     """Write the compact cell ledger needed by backfill evidence review surfaces."""
 
+    decisions = _require_production_decisions(production_decisions)
     clusters_by_id = {row_id(cluster): cluster for cluster in matrix.clusters}
-    decisions = production_decisions
     backfill_family_ids = _backfill_evidence_family_ids(matrix, decisions)
 
     def rows() -> Iterable[tuple[object, ...]]:
@@ -709,12 +718,15 @@ def _review_rows(
         cluster_id = row_id(cluster)
         cells = grouped_cells.get(cluster_id, ())
         row_decision = decisions.row(cluster_id)
-        detected_count = count_status(cells, "detected")
-        rescued_count = count_status(cells, "rescued")
-        absent_count = count_status(cells, "absent")
-        unchecked_count = count_status(cells, "unchecked")
-        duplicate_assigned_count = count_status(cells, "duplicate_assigned")
-        ambiguous_owner_count = count_status(cells, "ambiguous_ms1_owner")
+        raw_status_counts = Counter(
+            decisions.cell(cluster_id, cell.sample_stem).raw_status for cell in cells
+        )
+        detected_count = raw_status_counts["detected"]
+        rescued_count = raw_status_counts["rescued"]
+        absent_count = raw_status_counts["absent"]
+        unchecked_count = raw_status_counts["unchecked"]
+        duplicate_assigned_count = raw_status_counts["duplicate_assigned"]
+        ambiguous_owner_count = raw_status_counts["ambiguous_ms1_owner"]
         present_count = detected_count + rescued_count
         rows.append(
             {

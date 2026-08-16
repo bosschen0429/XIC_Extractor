@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.output_rows import (
     cells_by_cluster,
-    count_status,
     escape_excel_formula,
     row_id,
 )
@@ -39,10 +39,10 @@ def write_alignment_results_xlsx(
     production_decisions: ProductionDecisionSet,
     alignment_config: AlignmentConfig | None = None,
 ) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    config = alignment_config or AlignmentConfig()
     if not isinstance(production_decisions, ProductionDecisionSet):
         raise TypeError("production_decisions must be owner-minted")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    config = alignment_config or AlignmentConfig()
     workbook = Workbook()
     matrix_sheet = workbook.active
     matrix_sheet.title = "Matrix"
@@ -191,6 +191,9 @@ def _write_review_sheet(
         cluster_id = row_id(cluster)
         cells = grouped_cells.get(cluster_id, ())
         row_decision = decisions.row(cluster_id)
+        raw_status_counts = Counter(
+            decisions.cell(cluster_id, cell.sample_stem).raw_status for cell in cells
+        )
         group_projection = dict(delivery_group_projection(cluster))
         _append_xlsx_row(
             sheet,
@@ -201,8 +204,8 @@ def _write_review_sheet(
                     for column in GROUP_REVIEW_PROJECTION_COLUMNS
                 ],
                 cluster.neutral_loss_tag,
-                count_status(cells, "detected"),
-                count_status(cells, "rescued"),
+                raw_status_counts["detected"],
+                raw_status_counts["rescued"],
                 row_decision.identity_decision,
                 row_decision.identity_confidence,
                 row_decision.primary_evidence,
@@ -212,10 +215,10 @@ def _write_review_sheet(
                 row_decision.accepted_cell_count,
                 row_decision.accepted_rescue_count,
                 row_decision.review_rescue_count,
-                count_status(cells, "absent"),
-                count_status(cells, "unchecked"),
-                count_status(cells, "duplicate_assigned"),
-                count_status(cells, "ambiguous_ms1_owner"),
+                raw_status_counts["absent"],
+                raw_status_counts["unchecked"],
+                raw_status_counts["duplicate_assigned"],
+                raw_status_counts["ambiguous_ms1_owner"],
                 row_decision.include_in_primary_matrix,
                 ";".join(row_decision.row_flags),
                 _optional_attr(cluster, "artificial_adduct_role"),

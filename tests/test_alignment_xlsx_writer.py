@@ -10,27 +10,21 @@ from xic_extractor.alignment.owner_group_delivery import (
     CROSS_SAMPLE_GROUP_CELL_COLUMNS,
     GROUP_REVIEW_PROJECTION_COLUMNS,
 )
-from xic_extractor.alignment.production_decisions import build_production_decisions
-from xic_extractor.alignment.xlsx_writer import (
-    write_alignment_results_xlsx as _write_alignment_results_xlsx,
+from xic_extractor.alignment.production_decisions import (
+    ProductionDecisionSet,
+    build_production_decisions,
 )
+from xic_extractor.alignment.xlsx_writer import write_alignment_results_xlsx
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
-def write_alignment_results_xlsx(
-    path: Path,
+def _production_decisions(
     matrix: AlignmentMatrix,
-    *,
-    metadata: dict[str, str],
     alignment_config: AlignmentConfig | None = None,
-) -> Path:
-    config = alignment_config or AlignmentConfig()
-    return _write_alignment_results_xlsx(
-        path,
+) -> ProductionDecisionSet:
+    return build_production_decisions(
         matrix,
-        metadata=metadata,
-        alignment_config=config,
-        production_decisions=build_production_decisions(matrix, config),
+        alignment_config or AlignmentConfig(),
     )
 
 
@@ -44,6 +38,7 @@ def test_alignment_results_xlsx_has_matrix_review_metadata_sheets(tmp_path: Path
             "schema_version": "alignment-results-v3",
             "resolver_mode": "local_minimum",
         },
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -160,6 +155,7 @@ def test_alignment_results_xlsx_audit_projects_region_decision_fields(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -194,6 +190,7 @@ def test_alignment_results_xlsx_blanks_duplicate_assigned_matrix_area(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -231,6 +228,7 @@ def test_alignment_results_xlsx_prefers_ms1_morphology_area(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -260,6 +258,7 @@ def test_alignment_results_xlsx_excludes_review_only_rows_from_matrix(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -296,6 +295,7 @@ def test_alignment_results_xlsx_audit_explains_duplicate_blank(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "alignment-results-v3"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=True)
@@ -339,6 +339,7 @@ def test_alignment_results_xlsx_escapes_formula_like_external_strings(
         tmp_path / "alignment_results.xlsx",
         matrix,
         metadata={"schema_version": "@metadata value"},
+        production_decisions=_production_decisions(matrix),
     )
 
     workbook = load_workbook(path, data_only=False)
@@ -365,6 +366,7 @@ def test_alignment_results_xlsx_rejects_orphan_audit_cell(tmp_path: Path):
             tmp_path / "alignment_results.xlsx",
             matrix,
             metadata={"schema_version": "alignment-results-v3"},
+            production_decisions=_production_decisions(matrix),
         )
 
 
